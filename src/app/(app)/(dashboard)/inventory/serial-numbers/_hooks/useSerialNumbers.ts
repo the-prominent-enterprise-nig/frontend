@@ -1,6 +1,12 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import {
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getSerialNumbers } from '../_actions/get-serial-numbers'
@@ -12,6 +18,7 @@ import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
 import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { getBranches } from '../../purchase-requests/_actions/get-branches'
+import { getCustomers } from '@/src/libs/data/AccountingData'
 import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type {
   RegisterSerialsFormInput,
@@ -27,6 +34,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
   const [limit, setLimit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<SerialStatus | undefined>(undefined)
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined)
+  const [brandFilter, setBrandFilter] = useState<string | undefined>(undefined)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState<string | undefined>(undefined)
 
@@ -58,6 +66,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
             limit,
             status: statusFilter,
             categoryId: categoryFilter,
+            brandId: brandFilter,
             warehouseId: warehouseFilter,
             search,
           },
@@ -66,6 +75,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
       limit,
       statusFilter,
       categoryFilter,
+      brandFilter,
       warehouseFilter,
       search,
       caravanView,
@@ -114,12 +124,47 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     staleTime: 5 * 60 * 1000,
   })
 
+  // Only needed for the "Change Status" modal's "sold to" picker (Scenario:
+  // Serial Numbers tab revamp). `getCustomers` returns either a flat array
+  // or `{ items, total, page, limit }` depending on whether the backend
+  // paginated — normalized to a flat array here so callers don't have to
+  // know about that union.
+  const customersQuery = useQuery({
+    queryKey: ['inventory-customers-lookup'],
+    queryFn: () => getCustomers({ limit: 200 }),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Metric band on the All Serials tab — counts across every matching
+  // record, not just the current page, so each bucket is its own limit:1
+  // request (only `meta.total` is read from it). "Reserved" reads the
+  // `held` status and "In Transit" reads `pulled_out` — the closest real
+  // statuses to those two labels; the schema has no literal enum value for
+  // either concept.
+  const STATUS_COUNT_BUCKETS = ['in_stock', 'held', 'sold', 'returned', 'pulled_out'] as const
+  const statusCountQueries = useQueries({
+    queries: STATUS_COUNT_BUCKETS.map((status) => ({
+      queryKey: ['inventory-serial-status-count', status],
+      queryFn: () => getSerialNumbers({ status, limit: 1 }),
+      staleTime: 30 * 1000,
+      enabled: !caravanView,
+    })),
+  })
+  const statusCounts = STATUS_COUNT_BUCKETS.reduce(
+    (acc, status, i) => {
+      acc[status] = statusCountQueries[i]?.data?.data?.total ?? 0
+      return acc
+    },
+    {} as Record<(typeof STATUS_COUNT_BUCKETS)[number], number>
+  )
+
   const registerMutation = useMutation({
     mutationFn: (data: RegisterSerialsFormInput) => registerSerialNumbers(data),
     onSuccess: (result) => {
       if (result.success) {
         showToast({ title: 'Serials registered', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -133,6 +178,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
       if (result.success) {
         showToast({ title: 'Status updated', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -147,6 +193,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
         showToast({ title: 'Consigned', description: result.message, status: 'success' })
         setSelectedIds(new Set())
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -161,6 +208,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
         showToast({ title: 'Done', description: result.message, status: 'success' })
         setSelectedIds(new Set())
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -178,12 +226,14 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
   return {
     serials,
     pagination,
+    statusCounts,
     isLoading: serialsQuery.isLoading,
     isFetching: serialsQuery.isFetching,
     error: serialsQuery.error,
 
     statusFilter,
     categoryFilter,
+    brandFilter,
     warehouseFilter,
     search,
     setStatusFilter: (v: SerialStatus | undefined) => {
@@ -192,6 +242,10 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     },
     setCategoryFilter: (v: string | undefined) => {
       setCategoryFilter(v)
+      setPage(1)
+    },
+    setBrandFilter: (v: string | undefined) => {
+      setBrandFilter(v)
       setPage(1)
     },
     setWarehouseFilter: (v: string | undefined) => {
@@ -205,6 +259,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     resetFilters: () => {
       setStatusFilter(undefined)
       setCategoryFilter(undefined)
+      setBrandFilter(undefined)
       setWarehouseFilter(undefined)
       setSearch(undefined)
       setPage(1)
@@ -221,7 +276,18 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
     categoryOptions: flatToCategorySelectOptions(categoriesQuery.data?.data?.data ?? []),
-    branchOptions: branchesQuery.data?.data?.data ?? [],
+    // Scenario 50 Gap 6 - a caravan host must be a real branch, not one of
+    // the 2 warehouse-branches (NWHSE/PWHSE, Scenario 27's leftover). /branches
+    // has no server-side type filter, so this stays a plain client-side
+    // exclusion rather than a systemic fix - the same gap exists in several
+    // other pickers across the app and is explicitly out of scope here.
+    branchOptions: (branchesQuery.data?.data?.data ?? []).filter((b) => b.type !== 'warehouse'),
+    customerOptions: (() => {
+      const raw = customersQuery.data?.data
+      if (!raw) return []
+      const list = Array.isArray(raw) ? raw : (raw.items ?? [])
+      return list.map((c) => ({ id: String(c.id), name: c.name }))
+    })(),
 
     caravanView,
     setCaravanView: (v: boolean) => {

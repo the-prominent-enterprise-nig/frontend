@@ -13,7 +13,16 @@ type Params = {
   warehouseId?: string
   categoryId?: string
   search?: string
-  belowReorder?: boolean
+  // Scenario 50 — the Stock Balance screen's own filters. `branchIds` and
+  // `warehouseIds` are the two halves of one "Branches" picker: a branch
+  // carries its warehouses, the 2 standalone warehouses belong to no branch
+  // at all. They OR together server-side.
+  branchIds?: string[]
+  warehouseIds?: string[]
+  region?: 'panay' | 'negros'
+  /** 'item' rolls every location into one row per item. */
+  groupBy?: 'item'
+  stockStatus?: 'in_stock' | 'in_transit'
 }
 
 export async function getStockBalances(
@@ -26,11 +35,12 @@ export async function getStockBalances(
     warehouseId: params.warehouseId,
     categoryId: params.categoryId,
     search: params.search,
-    // Backend's StockBalanceFilterDto field is `belowReorderPoint` — this was
-    // previously sent as `belowReorder`, which the DTO silently ignores (no
-    // validation error, just never bound), so the "Below Reorder" toggle had
-    // no effect at all.
-    belowReorderPoint: params.belowReorder,
+    // Sent comma-separated; the DTO accepts either that or a repeated param.
+    branchIds: params.branchIds?.length ? params.branchIds.join(',') : undefined,
+    warehouseIds: params.warehouseIds?.length ? params.warehouseIds.join(',') : undefined,
+    region: params.region,
+    groupBy: params.groupBy,
+    stockStatus: params.stockStatus,
   }
 
   const result = await api.get<StockBalanceListResponse>('/inventory/stock/balances', query, {

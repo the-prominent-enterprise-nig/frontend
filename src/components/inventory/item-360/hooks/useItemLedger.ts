@@ -4,9 +4,14 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { STALE } from '@/src/libs/query/stale-times'
 import { getItemLedger } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item-ledger'
-import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
+import { splitLocationTokens } from '@/src/libs/inventory/location-tokens'
 
-export function useItemLedger(itemId: string) {
+/**
+ * @param locations branch:/warehouse: tokens the Item 360 drawer was opened
+ * with (see useItem360). Scopes Movements to the same locations as the Stock
+ * tab; empty/undefined means every location.
+ */
+export function useItemLedger(itemId: string, locations?: string[]) {
   const [page, setPage] = useState(1)
   const limit = 20
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined)
@@ -14,9 +19,22 @@ export function useItemLedger(itemId: string) {
   const [startDate, setStartDate] = useState<string | undefined>(undefined)
   const [endDate, setEndDate] = useState<string | undefined>(undefined)
 
+  const { branchIds, warehouseIds } = splitLocationTokens(locations)
+  const scopeKey = [...branchIds, ...warehouseIds].sort().join(',')
+
   const params = useMemo(
-    () => ({ page, limit, warehouseId, transactionType, startDate, endDate }),
-    [page, limit, warehouseId, transactionType, startDate, endDate]
+    () => ({
+      page,
+      limit,
+      warehouseId,
+      transactionType,
+      startDate,
+      endDate,
+      branchIds,
+      warehouseIds,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [page, limit, warehouseId, transactionType, startDate, endDate, scopeKey]
   )
 
   const ledgerQuery = useQuery({
@@ -26,17 +44,6 @@ export function useItemLedger(itemId: string) {
     placeholderData: keepPreviousData,
     enabled: !!itemId,
   })
-
-  const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup'],
-    queryFn: () => getWarehouses({ limit: 100, status: 'active' }),
-    staleTime: STALE.LOOKUP,
-  })
-
-  const warehouseOptions = useMemo(() => {
-    const warehouses = warehousesQuery.data?.data?.data ?? []
-    return warehouses.map((w) => ({ label: w.branch?.name ?? w.name, value: w.id }))
-  }, [warehousesQuery.data])
 
   const ledgerData = ledgerQuery.data?.data
 
@@ -86,7 +93,6 @@ export function useItemLedger(itemId: string) {
     setStartDate: setStartDateAndReset,
     endDate,
     setEndDate: setEndDateAndReset,
-    warehouseOptions,
     resetFilters,
   }
 }

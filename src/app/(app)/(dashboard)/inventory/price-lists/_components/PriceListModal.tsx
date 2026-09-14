@@ -48,6 +48,9 @@ const EMPTY_VALUES: PriceListFormValues = {
   priority: 0,
   allowedBranchIds: [],
   supersedesId: '',
+  // Scenario 50 Gap 7 — the client's stated norm; matches the backend's own
+  // default for a list created with this field omitted entirely.
+  pricingMode: 'inclusive',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -91,6 +94,10 @@ function toFormValues(list?: PriceList): PriceListFormValues {
     priority: list.priority,
     allowedBranchIds: list.allowedBranchIds ?? [],
     supersedesId: list.supersedesId ?? '',
+    // Null (a list from before this field existed) defaults to inclusive in
+    // the form the same way a brand-new list does — it's the declared norm,
+    // not a per-list toggle most lists are expected to actually change.
+    pricingMode: list.pricingMode ?? 'inclusive',
   }
 }
 
@@ -247,6 +254,26 @@ export default function PriceListModal({
               <label className="mb-1 block text-sm font-medium text-zinc-700">Currency</label>
               <div className={`${fieldClass} bg-zinc-50 text-zinc-500`}>Philippine Peso (PHP)</div>
             </div>
+          </div>
+
+          {/* Scenario 50 Gap 7 — declares whether the prices on this list
+              already have VAT baked in. Defaults to inclusive, matching the
+              client's stated norm; POS already knows how to price a line
+              either way via the same pricingMode concept on Branch Pricing. */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">VAT Treatment</label>
+            <Controller
+              name="pricingMode"
+              control={control}
+              render={({ field }) => (
+                <select {...field} className={fieldClass}>
+                  <option value="inclusive">VAT Inclusive — prices already include VAT</option>
+                  <option value="exclusive">
+                    VAT Exclusive — VAT added on top of these prices
+                  </option>
+                </select>
+              )}
+            />
           </div>
 
           <div>

@@ -159,6 +159,7 @@ export default function CreateReturnModal({
       // Kept for a repair intake too — it is the custody record the UDS is
       // built from, not just the credit-memo counterparty.
       customerId: data.customerId || undefined,
+      intakeReceivingReportNumber: data.intakeReceivingReportNumber || undefined,
     })
     if (result.success) onClose()
   }
@@ -549,6 +550,34 @@ export default function CreateReturnModal({
                         </div>
                       </button>
                     </div>
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Scenario 50 Gap 8 — the RR number the branch hands the
+                customer at intake, so they have something in hand naming
+                what was received. Free text: it doesn't create a real
+                document here, same as a standalone receiving report's own
+                free-text PO number field. Only meaningful once repair
+                custody is confirmed. */}
+            {isCustodialRepairIntake && (
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  RR # Issued to Customer{' '}
+                  <span className="text-xs font-normal text-zinc-400">(optional)</span>
+                </label>
+                <Controller
+                  name="intakeReceivingReportNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      type="text"
+                      placeholder="e.g. RR-20260910-0001"
+                      maxLength={50}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                    />
                   )}
                 />
               </div>

@@ -2,8 +2,10 @@ import { test, expect } from '@playwright/test'
 import {
   cancelStockTransfer,
   clickStable,
+  fillStable,
   findStockTransferIdByReason,
   gotoReady,
+  pickComboboxOption,
   sweepE2EStockTransfers,
 } from './utils'
 
@@ -38,19 +40,48 @@ async function createBulkRequest(page: import('@playwright/test').Page, uniqueRe
   await gotoReady(page, '/inventory/transfers')
   await clickStable(
     page.getByRole('button', { name: 'New Transfer' }),
-    page.getByRole('heading', { name: 'New Stock Transfer Request' })
+    page.getByRole('heading', { name: 'New Stock Transfer' })
   )
 
-  const modalForm = page.locator('form')
-  await modalForm.locator('select').nth(0).selectOption({ index: 1 })
-  await modalForm.locator('select').nth(1).selectOption({ index: 1 })
+  // Scenario 50 — From/To are SearchableSelect comboboxes now, not native
+  // <select> elements; the old `locator('select').selectOption()` calls timed
+  // out against elements that no longer exist. The destination list already
+  // excludes whatever the source is set to, so index 0 of each is a valid
+  // distinct pair.
+  await pickComboboxOption(page, 'Search source branch…')
+  await pickComboboxOption(page, 'Search destination branch…')
 
-  // TN-FAN-001 (Electric Stand Fan) — a real seeded, non-serial-tracked
-  // catalog item, so this stays a plain bulk request (mirrors the Part 2 spec).
-  const itemInput = page.getByPlaceholder('Search item')
-  await itemInput.click()
-  await itemInput.fill('TN-FAN-001')
-  const option = page.getByRole('button', { name: /TN-FAN-001/ }).first()
+  // Resolve a real non-serial-tracked item from the catalog rather than
+  // naming an SKU — this spec used to hardcode TN-FAN-001, which is no longer
+  // in the seed (the third stale SKU found in this directory, after TN-REF-001
+  // and TN-FURN-SET-001). Non-serial keeps this a plain bulk request.
+  const itemsRes = await page.request.get('/api/inventory/items', {
+    params: { limit: '100', lifecycle: 'active' },
+  })
+  const bulkItem = (
+    ((await itemsRes.json()).data ?? []) as {
+      id: string
+      sku: string
+      isSerialTracked: boolean
+      isService?: boolean
+    }[]
+  ).find((i) => !i.isSerialTracked && !i.isService)
+  if (!bulkItem) throw new Error('no non-serial-tracked active item found in the catalog')
+
+  // Items are added from the Items card's own "Add item" search — there is no
+  // per-row item picker. SearchCombobox renders a BUTTON when closed and only
+  // swaps in the search <input> once opened (see its own comment), so the
+  // closed control cannot be reached with getByPlaceholder — open it first,
+  // then type. Matched on a plain substring rather than the full placeholder,
+  // which carries an em dash and an ellipsis character.
+  await page
+    .getByRole('button', { name: /Add item/ })
+    .first()
+    .click()
+  const itemInput = page.locator('input[placeholder*="Add item"]')
+  await expect(itemInput).toBeVisible({ timeout: 10_000 })
+  await itemInput.fill(bulkItem.sku)
+  const option = page.getByRole('button', { name: new RegExp(bulkItem.sku) }).first()
   await expect(option).toBeVisible({ timeout: 10_000 })
   await option.click()
 
@@ -58,7 +89,7 @@ async function createBulkRequest(page: import('@playwright/test').Page, uniqueRe
 
   await expect(async () => {
     await page.getByRole('button', { name: 'Submit Request' }).click()
-    await expect(page.getByRole('heading', { name: 'New Stock Transfer Request' })).toHaveCount(0, {
+    await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toHaveCount(0, {
       timeout: 3_000,
     })
   }).toPass({ timeout: 15_000 })
@@ -93,6 +124,8 @@ async function openMine(page: import('@playwright/test').Page, uniqueReason: str
 // root avoids that ambiguity regardless of how many other rows share a
 // status — more robust here than relying on `.last()`.
 function detailModal(page: import('@playwright/test').Page) {
+  // Scenario 50 Gap 9 — full-bleed panel, not a centred dialog over a
+  // dimmed backdrop, so the wrapper is `absolute`, not `fixed`.
   return page.locator('.fixed.inset-0.z-50')
 }
 
@@ -128,6 +161,16 @@ test.describe('Inventory — Stock Transfer accept/reject + receiving report', (
       modal.getByRole('button', { name: 'Dispatch' }),
       modal.getByRole('button', { name: 'Confirm Dispatch' })
     )
+
+    // Dispatch gained four required driver/carrier fields
+    // (DispatchTransferFormSchema, all `min(1)`); without them Confirm
+    // Dispatch fails validation silently and the status never leaves
+    // Accepted. The sibling serial-override spec already fills these.
+    await fillStable(modal.getByPlaceholder('e.g. Juan dela Cruz'), 'E2E Driver')
+    await fillStable(modal.getByPlaceholder('e.g. 09171234567'), '09170001111')
+    await fillStable(modal.getByPlaceholder('e.g. ABC 1234'), 'E2E 001')
+    await fillStable(modal.getByPlaceholder('e.g. LBC Express'), 'E2E Carrier')
+
     await modal.getByRole('button', { name: 'Confirm Dispatch' }).click()
     await expect(modal.getByText('In Transit', { exact: true })).toBeVisible({ timeout: 10_000 })
 
@@ -136,10 +179,17 @@ test.describe('Inventory — Stock Transfer accept/reject + receiving report', (
       modal.getByRole('button', { name: 'Confirm Receipt' })
     )
     await modal.getByRole('button', { name: 'Confirm Receipt' }).click()
-    await expect(modal.getByText('Received', { exact: true })).toBeVisible({ timeout: 10_000 })
+    // `.first()` because the detail panel is an in-page overlay, so the list
+    // behind it is still in the DOM — "Received" also matches that table's
+    // own column header. Same disambiguation the sibling dispatch spec uses.
+    await expect(modal.getByText('Received', { exact: true }).first()).toBeVisible({
+      timeout: 10_000,
+    })
 
     await expect(modal.getByText('Receiving Report Issued')).toBeVisible()
-    await expect(modal.getByText(/^GRN-\d{8}-\d{4}$/)).toBeVisible()
+    // Transfer-issued receipts are numbered RR-YYYYMMDD-NNNN, not GRN- —
+    // verified against goods_receipts rows carrying a stockTransferId.
+    await expect(modal.getByText(/^RR-\d{8}-\d{4}$/).first()).toBeVisible()
 
     await modal.getByRole('button', { name: 'Close dialog' }).click()
   })

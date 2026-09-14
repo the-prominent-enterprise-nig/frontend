@@ -25,6 +25,10 @@ export const PriceListFormSchema = z.object({
   priority: z.number().int(),
   allowedBranchIds: z.array(z.string()).optional(),
   supersedesId: z.string().optional(),
+  // Scenario 50 Gap 7 — defaults to inclusive in the form itself (see
+  // PriceListModal), matching what the backend defaults a new list to when
+  // this is omitted entirely.
+  pricingMode: z.enum(['inclusive', 'exclusive']).optional(),
 })
 export type PriceListFormValues = z.infer<typeof PriceListFormSchema>
 
@@ -47,6 +51,10 @@ export const PriceListSchema = z.object({
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
   itemCount: z.number().optional().default(0),
+  // Scenario 50 Gap 7 — whether prices on this list already include VAT.
+  // Null on a list from before this field existed ("not yet declared");
+  // the backend defaults a NEW list to 'inclusive' unless told otherwise.
+  pricingMode: z.enum(['inclusive', 'exclusive']).optional().nullable(),
 })
 
 export const PriceListItemSchema = z.object({

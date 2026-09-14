@@ -1,45 +1,53 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady, fillStable } from './utils'
 
-// Clicking a serial on the Serials tab drills into that one physical unit's
-// own movement timeline (receipt/transfer/sale/etc.), assembled server-side
-// from the transaction-line tables that reference it — there's no per-serial
-// StockLedger row to read.
+// Clicking a serial chip under an expanded location (Stock tab) drills into
+// that one physical unit's own movement timeline (receipt/transfer/sale/
+// etc.), assembled server-side from the transaction-line tables that
+// reference it — there's no per-serial StockLedger row to read. There is no
+// standalone Serials tab: serials live inline under each location.
 test.describe('Inventory — Item 360 drawer, per-serial movement drill-down', () => {
-  test('clicking a serial shows its own timeline, with a way back to the list', async ({
-    page,
-  }) => {
+  test('clicking a serial shows its own timeline, with a way back to Stock', async ({ page }) => {
     await gotoReady(page, '/inventory/stock')
 
-    const searchInput = page.getByPlaceholder('Search item name, SKU, or serial number…')
+    const searchInput = page.getByPlaceholder('Search brand, model, or category…')
     await expect(searchInput).toBeVisible({ timeout: 15_000 })
 
-    const row = page.locator('tbody tr', { hasText: 'Washing Machine' }).first()
+    // The list is a CSS-grid table (role="table"/"row"), not a <table>,
+    // matching Purchase Orders.
+    const row = page.getByRole('row').filter({ hasText: 'Washing Machine' }).first()
     await expect(async () => {
       await fillStable(searchInput, 'Washing Machine')
       await expect(row).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 30_000 })
     await row.click()
 
-    // The underlying Stock Balance table stays mounted behind the drawer
-    // overlay, so an unscoped 'tbody tr' locator can resolve to either
-    // table — scope everything to the drawer itself.
     const drawer = page.getByRole('dialog', { name: 'Item Details' })
     const drawerTabs = drawer.getByRole('navigation', { name: 'Item 360 tabs' })
     await expect(drawerTabs).toBeVisible({ timeout: 10_000 })
-    await drawerTabs.getByRole('button', { name: 'Serials' }).click()
+    // Stock is the default tab for this context, so its content — including
+    // the location rows — is already showing.
 
-    const serialRow = drawer.locator('tbody tr').first()
-    await expect(serialRow).toBeVisible({ timeout: 10_000 })
-    const serialNumberText = await serialRow.locator('td').first().innerText()
-    await serialRow.click()
+    // Expanding a location row reveals its serial numbers as chips — seeded
+    // with 200 in-stock serials per branch (prisma/seed.ts).
+    const locationRow = drawer.getByTestId('stock-location-row').first()
+    await expect(locationRow).toBeVisible({ timeout: 10_000 })
+    await locationRow.click()
+    await expect(drawer.getByText('Serial numbers at this location')).toBeVisible({
+      timeout: 10_000,
+    })
+
+    const serialChip = drawer.getByTestId('serial-chip').first()
+    await expect(serialChip).toBeVisible({ timeout: 10_000 })
+    const serialNumberText = (await serialChip.innerText()).trim()
+    await serialChip.click()
 
     // Drilled in: tab nav is replaced by a back button + this one serial's
     // own header and timeline.
     await expect(drawerTabs).toHaveCount(0)
-    const backButton = drawer.getByRole('button', { name: 'Back to Serials' })
+    const backButton = drawer.getByRole('button', { name: 'Back to Stock' })
     await expect(backButton).toBeVisible({ timeout: 10_000 })
-    await expect(drawer.getByText(serialNumberText.trim(), { exact: true })).toBeVisible()
+    await expect(drawer.getByText(serialNumberText, { exact: true })).toBeVisible()
 
     // Seeded serials are bulk-registered directly (no goods-receipt or
     // transaction-line fixtures behind them), so the real, correct state

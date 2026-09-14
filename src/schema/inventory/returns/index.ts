@@ -17,6 +17,13 @@ export const CreateReturnFormSchema = z.object({
    *  raises the sales-return credit memo against it. */
   arInvoiceId: z.string().optional(),
   customerId: z.string().optional(),
+  // Scenario 50 Gap 8 — the backend DTO has carried this since the repair
+  // journey shipped ("RR number issued to the customer on intake"), but no
+  // form ever sent it — the branch clerk had nowhere to type the reference
+  // the customer walks away with. Free text: no real document gets created
+  // here (see UdsService#createFromReturn), matching how a standalone
+  // receiving report's own PO number field works — a reference, not a link.
+  intakeReceivingReportNumber: z.string().max(50).optional(),
 })
 
 export type CreateReturnFormValues = z.infer<typeof CreateReturnFormSchema>

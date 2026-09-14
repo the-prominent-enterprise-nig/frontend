@@ -300,6 +300,13 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                       <span className="text-[11px] text-zinc-400">
                         {pl.currency} · Priority {pl.priority}
                       </span>
+                      {/* Scenario 50 Gap 7 — defaults to inclusive display
+                          even for a pre-existing list with pricingMode still
+                          null, since that's the declared norm, not a signal
+                          the list is actually exclusive. */}
+                      <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                        VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+                      </span>
                     </div>
                     <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
                       <p>{formatEffectiveRange(pl.effectiveFrom, pl.effectiveTo)}</p>
@@ -366,6 +373,9 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             )}
                             <span className="text-[11px] text-zinc-400">
                               {pl.currency} · Priority {pl.priority}
+                            </span>
+                            <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                              VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
                             </span>
                           </div>
                         </td>

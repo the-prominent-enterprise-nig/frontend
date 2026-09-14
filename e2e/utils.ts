@@ -428,3 +428,29 @@ export async function loginAs(page: Page, email: string, password: string): Prom
     await expect(page).not.toHaveURL(/\/login(\?|$)/, { timeout: 3_000 })
   }).toPass({ timeout: 20_000 })
 }
+
+/**
+ * Picks an option out of a `SearchableSelect` combobox by its placeholder.
+ *
+ * Scenario 50 — several Inventory forms replaced native `<select>` elements
+ * with this type-ahead combobox (a div + input + a button list), so specs
+ * that reached for `locator('select').selectOption(...)` now time out against
+ * an element that no longer exists. Options carry
+ * `data-testid="searchable-select-option"`; only the open dropdown's options
+ * are in the DOM, so indexing is scoped to the combobox just clicked.
+ */
+export async function pickComboboxOption(
+  page: Page,
+  placeholder: string,
+  index = 0
+): Promise<string> {
+  const input = page.getByPlaceholder(placeholder)
+  await expect(input).toBeVisible({ timeout: 10_000 })
+  await input.click()
+
+  const option = page.getByTestId('searchable-select-option').nth(index)
+  await expect(option).toBeVisible({ timeout: 10_000 })
+  const label = (await option.innerText()).trim()
+  await option.click()
+  return label
+}
