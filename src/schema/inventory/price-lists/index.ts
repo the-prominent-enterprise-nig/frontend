@@ -52,8 +52,12 @@ export const PriceListSchema = z.object({
   updatedAt: z.string().optional(),
   itemCount: z.number().optional().default(0),
   // Scenario 50 Gap 7 — whether prices on this list already include VAT.
-  // Null on a list from before this field existed ("not yet declared");
-  // the backend defaults a NEW list to 'inclusive' unless told otherwise.
+  // No longer nullable in the database: the 2026-09-14 backfill migration
+  // filled every undeclared row and made the column NOT NULL DEFAULT
+  // 'inclusive', so the API always sends one. Kept tolerant here on purpose —
+  // this schema also parses responses from an older backend during a rolling
+  // deploy, and a hard failure there would blank the whole screen over a field
+  // used for one chip.
   pricingMode: z.enum(['inclusive', 'exclusive']).optional().nullable(),
 })
 

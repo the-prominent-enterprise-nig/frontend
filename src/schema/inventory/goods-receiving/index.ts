@@ -379,3 +379,17 @@ export const WithholdingSummaryResponseSchema = z.object({
 
 export type WithholdingSummaryRow = z.infer<typeof WithholdingSummaryRowSchema>
 export type WithholdingSummaryResponse = z.infer<typeof WithholdingSummaryResponseSchema>
+
+// Scenario 50 (Closing Gap 3) — the states the Stock Balance filter offers.
+// Four mirror the badge the list derives per row (`stockStatusOf` in
+// StockBalanceList, and `deriveStockState` server-side, which must stay in
+// step with it); `in_transit` is the separate open-transfer axis, counted off
+// open transfer lines rather than the balance row's own quantities.
+export const StockStateFilterSchema = z.enum([
+  'in_stock',
+  'in_transit',
+  'out',
+  'fully_reserved',
+  'low',
+])
+export type StockStateFilter = z.infer<typeof StockStateFilterSchema>

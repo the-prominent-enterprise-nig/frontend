@@ -4,6 +4,7 @@ import { api, ApiResponse } from '@/src/libs/api/client'
 import {
   StockBalanceListResponseSchema,
   type StockBalanceListResponse,
+  type StockStateFilter,
 } from '@/src/schema/inventory/goods-receiving'
 
 type Params = {
@@ -22,7 +23,7 @@ type Params = {
   region?: 'panay' | 'negros'
   /** 'item' rolls every location into one row per item. */
   groupBy?: 'item'
-  stockStatus?: 'in_stock' | 'in_transit'
+  stockStatus?: StockStateFilter
 }
 
 export async function getStockBalances(

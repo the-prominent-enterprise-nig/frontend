@@ -300,10 +300,11 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                       <span className="text-[11px] text-zinc-400">
                         {pl.currency} · Priority {pl.priority}
                       </span>
-                      {/* Scenario 50 Gap 7 — defaults to inclusive display
-                          even for a pre-existing list with pricingMode still
-                          null, since that's the declared norm, not a signal
-                          the list is actually exclusive. */}
+                      {/* Scenario 50 Gap 7 — every list now stores a real
+                          mode (the 2026-09-14 backfill made the column NOT
+                          NULL DEFAULT 'inclusive'), so this no longer papers
+                          over undeclared rows. The non-exclusive branch stays
+                          the default for resilience only. */}
                       <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
                         VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
                       </span>

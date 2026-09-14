@@ -8,7 +8,7 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import CategorySelect from '@/src/components/ui/CategorySelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
-import type { StockBalance } from '@/src/schema/inventory/goods-receiving'
+import type { StockBalance, StockStateFilter } from '@/src/schema/inventory/goods-receiving'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 
@@ -39,6 +39,25 @@ function itemTitle(
 const REGION_OPTIONS = [
   { value: 'panay', label: 'Panay' },
   { value: 'negros', label: 'Negros' },
+]
+
+// The five states the filter offers. The first four are exactly the badge the
+// rows already render (STOCK_STATUS_META below) — the server derives them with
+// `deriveStockState`, mirroring `stockStatusOf` here, and applies the filter
+// after the item roll-up so the filter and the visible badge can never
+// disagree. `in_transit` is a different axis: units on an open transfer,
+// counted off transfer lines rather than the balance row's own quantities, so
+// a row can be both In Stock and have units in transit.
+//
+// Deliberately no In Transit column: rows roll up per item across locations, so
+// a single qty there would flatten "3 in transit to Bago, 2 to Ajuy" into an
+// unattributed 5.
+const STOCK_STATE_OPTIONS = [
+  { value: 'in_stock', label: 'In Stock' },
+  { value: 'low', label: 'Low Stock' },
+  { value: 'fully_reserved', label: 'Fully Reserved' },
+  { value: 'out', label: 'Out of Stock' },
+  { value: 'in_transit', label: 'In Transit' },
 ]
 
 const CONTROL_CHROME = {
@@ -128,10 +147,12 @@ export default function StockBalanceList({
     region,
     search,
     categoryId,
+    stockStatus,
     setLocations,
     setRegion,
     setSearch,
     setCategoryId,
+    setStockStatus,
     resetFilters,
     page,
     setPage,
@@ -143,7 +164,9 @@ export default function StockBalanceList({
     refetch,
   } = useStockBalance(onLocationsChange)
 
-  const activeFilterCount = [locations.length > 0, !!region, !!categoryId].filter(Boolean).length
+  const activeFilterCount = [locations.length > 0, !!region, !!categoryId, !!stockStatus].filter(
+    Boolean
+  ).length
   const hasFilters = activeFilterCount > 0 || !!search
 
   const openDrawer = (bal: StockBalance) => {
@@ -311,6 +334,17 @@ export default function StockBalanceList({
             onChange={setCategoryId}
             options={categoryOptions}
             placeholder="All Categories"
+          />
+
+          {/* Stock state — settled stock vs units still on an open transfer. */}
+          <SearchableSelect
+            className="w-[170px]"
+            value={stockStatus ?? ''}
+            onChange={(v) => setStockStatus((v || undefined) as StockStateFilter | undefined)}
+            placeholder="All Stock"
+            chrome={CONTROL_CHROME}
+            clearable
+            options={STOCK_STATE_OPTIONS}
           />
 
           {hasFilters && (

@@ -1,5 +1,6 @@
 'use client'
 
+import type { StockStateFilter } from '@/src/schema/inventory/goods-receiving'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useState, useMemo, useEffect } from 'react'
 import { getStockBalances } from '../_actions/get-stock-balances'
@@ -19,9 +20,7 @@ export function useStockBalance(onLocationsChange?: (v: LocationToken[]) => void
   const [limit, setLimit] = useState(20)
   const [locations, setLocations] = useState<LocationToken[]>([])
   const [region, setRegion] = useState<'panay' | 'negros' | undefined>(undefined)
-  const [stockStatus, setStockStatusState] = useState<'in_stock' | 'in_transit' | undefined>(
-    undefined
-  )
+  const [stockStatus, setStockStatusState] = useState<StockStateFilter | undefined>(undefined)
   const [categoryId, setCategoryIdState] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
 
@@ -141,7 +140,7 @@ export function useStockBalance(onLocationsChange?: (v: LocationToken[]) => void
     region,
     stockStatus,
     search,
-    setStockStatus: (v: 'in_stock' | 'in_transit' | undefined) => {
+    setStockStatus: (v: StockStateFilter | undefined) => {
       setStockStatusState(v)
       setPage(1)
     },
