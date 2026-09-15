@@ -188,7 +188,13 @@ const LedgerWarehouseSchema = z.object({
 export const StockLedgerEntrySchema = z.object({
   id: z.string(),
   transactionType: z.string(),
+  /** Absolute size of the movement — no direction. Read `quantityChange`
+   *  for that: an `adjustment` goes either way, so transactionType alone
+   *  cannot tell an inflow from an outflow. */
   quantity: z.number(),
+  /** The signed movement: negative for sales, transfer-outs, write-offs and
+   *  supplier returns. Optional so older payloads still parse. */
+  quantityChange: z.number().optional().nullable(),
   condition: z.string().optional().nullable(),
   originalSaleId: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),

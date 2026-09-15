@@ -22,7 +22,7 @@ const CONTROL_CHROME = {
 }
 
 const TX_META: Record<string, { label: string; badge: string }> = {
-  receipt: { label: 'Receipt', badge: 'bg-[#e7f5ef] text-[#0b6644]' },
+  receipt: { label: 'Goods Receipt', badge: 'bg-[#e7f5ef] text-[#0b6644]' },
   sale: { label: 'Sale', badge: 'bg-[#eaf0fb] text-[#1f4b99]' },
   transfer_out: { label: 'Transfer Out', badge: 'bg-[#fdf3e7] text-[#8a4b06]' },
   transfer_in: { label: 'Transfer In', badge: 'bg-[#e3f6f6] text-[#0e6e6e]' },
@@ -33,7 +33,7 @@ const TX_META: Record<string, { label: string; badge: string }> = {
 }
 
 const TRANSACTION_TYPE_OPTIONS = [
-  { value: 'receipt', label: 'Receipt' },
+  { value: 'receipt', label: 'Goods Receipt' },
   { value: 'sale', label: 'Sale' },
   { value: 'transfer_out', label: 'Transfer Out' },
   { value: 'transfer_in', label: 'Transfer In' },
@@ -404,7 +404,11 @@ export default function StockLedgerTab({
                 <tbody className="divide-y divide-[#f4f4f6]">
                   {entries.map((entry) => {
                     const date = entry.occurredAt ?? entry.createdAt
-                    const positive = entry.quantity >= 0
+                    // `quantity` is absolute, so the direction has to come
+                    // off the signed value. Older payloads that carry only
+                    // `quantity` fall back to reading as an inflow.
+                    const signed = entry.quantityChange ?? entry.quantity
+                    const positive = signed >= 0
                     return (
                       <tr key={entry.id} className="hover:bg-[#fcfcfd]">
                         <td className="overflow-hidden px-4 py-[11px]">
@@ -445,7 +449,7 @@ export default function StockLedgerTab({
                             ) : (
                               <ArrowDownRight className="h-3 w-3" />
                             )}
-                            {positive ? `+${entry.quantity}` : entry.quantity}
+                            {positive ? `+${Math.abs(signed)}` : `-${Math.abs(signed)}`}
                           </span>
                         </td>
                         <td
