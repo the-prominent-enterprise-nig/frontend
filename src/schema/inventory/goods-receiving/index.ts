@@ -348,6 +348,18 @@ export const ReceivingReportSchema = z.object({
   vatAmount: z.number().optional().nullable(),
   lines: z.array(ReceivingReportLineSchema),
   hasAnyDiscrepancy: z.boolean(),
+  // Scenario 51 — the receipt-sourced invoice behind this receipt, if any.
+  // Used to warn before a cost correction pushes an already-settled invoice
+  // back to owing money.
+  apBill: z
+    .object({
+      id: z.string(),
+      status: z.string(),
+      totalAmount: z.number(),
+      amountPaid: z.number(),
+    })
+    .optional()
+    .nullable(),
 })
 
 export const ReceivingReportListResponseSchema = z.object({
