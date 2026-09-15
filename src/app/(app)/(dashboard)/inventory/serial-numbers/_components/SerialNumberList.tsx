@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Hash, RefreshCw, X, Truck, ArrowLeftRight, Search, Copy, Check } from 'lucide-react'
+import { Hash, RefreshCw, X, Truck, Search, Copy, Check } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 import { useSerialNumbers } from '../_hooks/useSerialNumbers'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -14,12 +14,10 @@ import {
   SERIAL_STATUS_DOT_COLORS,
   SerialStatusSchema,
   type SerialStatus,
-  type SerialNumberSummary,
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import ConsignToBranchModal from './ConsignToBranchModal'
-import ChangeSerialStatusModal from './ChangeSerialStatusModal'
 import CaravanItemTable from './CaravanItemTable'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -122,7 +120,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [isConsignOpen, setIsConsignOpen] = useState(false)
   const [moveTargetBranchId, setMoveTargetBranchId] = useState('')
-  const [statusChangeSerial, setStatusChangeSerial] = useState<SerialNumberSummary | null>(null)
 
   const {
     serials,
@@ -148,7 +145,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     warehouseOptions,
     itemOptions,
     branchOptions,
-    customerOptions,
     registerSerials,
     isRegistering,
     refetch,
@@ -171,8 +167,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     isClosingConsignment,
     consignToBranch,
     isConsigning,
-    updateStatus,
-    isUpdatingStatus,
   } = useSerialNumbers()
 
   const brandOptions = useMemo(() => {
@@ -527,7 +521,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                         {caravanView && <th className="px-4 py-[9px] text-left">Home Branch</th>}
                         {caravanView && <th className="px-4 py-[9px] text-left">Event</th>}
                         <th className="px-4 py-[9px] text-center">Status</th>
-                        {canManage && <th className="w-10 px-4 py-[9px]" aria-hidden="true" />}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f4f4f6]">
@@ -640,20 +633,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                           <td className="px-4 py-[11px] text-center">
                             <SerialStatusPill status={serial.status} />
                           </td>
-                          {canManage && (
-                            <td className="px-4 py-[11px] text-right">
-                              <Tooltip label="Change status" align="end">
-                                <button
-                                  type="button"
-                                  onClick={() => setStatusChangeSerial(serial)}
-                                  aria-label="Change status"
-                                  className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-                                >
-                                  <ArrowLeftRight className="h-4 w-4" />
-                                </button>
-                              </Tooltip>
-                            </td>
-                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -733,16 +712,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
         isSubmitting={isConsigning}
         selectedCount={selectedIds.size}
         branches={branchOptions}
-      />
-
-      <ChangeSerialStatusModal
-        isOpen={!!statusChangeSerial}
-        onClose={() => setStatusChangeSerial(null)}
-        serial={statusChangeSerial}
-        onSubmit={(id, data) => updateStatus({ id, data })}
-        isSubmitting={isUpdatingStatus}
-        warehouses={warehouseOptions}
-        customers={customerOptions}
       />
     </div>
   )
