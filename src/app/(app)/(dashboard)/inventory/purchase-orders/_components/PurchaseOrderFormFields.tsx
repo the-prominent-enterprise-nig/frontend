@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFieldArray, useWatch, Controller } from 'react-hook-form'
 import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form'
-import { ChevronDown, ChevronUp, Copy, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, RotateCcw, Trash2 } from 'lucide-react'
 import type { CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
@@ -268,7 +268,10 @@ function OrderSummaryRail({
         freeUnits += qty
         continue
       }
-      gross += (Number(line?.srp) || 0) * qty
+      // A line priced by hand carries no SRP — its own unit price is the
+      // only "before discounts" figure there is, so Subtotal at SRP counts
+      // that rather than reading as ₱0 against a non-zero grand total.
+      gross += (Number(line?.srp) || Number(line?.unitPrice) || 0) * qty
       net += (Number(line?.unitPrice) || 0) * qty
     }
     return { gross, net, units, freeUnits, lineCount: (lines ?? []).length }
@@ -334,11 +337,11 @@ function SummaryRow({
 // ─── Line items ───────────────────────────────────────────────────────────────
 
 const LINE_GRID =
-  'grid grid-cols-[28px_minmax(0,1fr)_60px_112px_128px_104px_116px_44px_52px] gap-x-2 items-center'
+  'grid grid-cols-[28px_minmax(0,1fr)_60px_112px_136px_112px_116px_44px_52px] gap-x-2 items-center'
 // Header keeps items-center; rows top-align so a wrapped item name doesn't
 // drag the numeric cells down with it.
 const LINE_GRID_ROW =
-  'grid grid-cols-[28px_minmax(0,1fr)_60px_112px_128px_104px_116px_44px_52px] gap-x-2 items-start'
+  'grid grid-cols-[28px_minmax(0,1fr)_60px_112px_136px_112px_116px_44px_52px] gap-x-2 items-start'
 
 function LineItemsCard({
   control,
@@ -565,34 +568,55 @@ function LineRow(props: LineRowProps): React.ReactElement {
   const quantity = useWatch({ control, name: `lines.${index}.quantity` })
   const unitPrice = useWatch({ control, name: `lines.${index}.unitPrice` })
 
-  // Unit Price defaults to srp with every discount step applied
-  // sequentially, but stays a normal editable input — reacting to
-  // srp/discounts via useWatch (not a setValue() call chained off this
-  // field's own onChange) so typing in SRP or a discount value never fires a
-  // cross-field form update synchronously inside its own change event. That
-  // re-entrant update was what dropped input focus after every keystroke.
+  // Unit Price is a real input the buyer can type the price actually
+  // negotiated into. Left alone it derives from srp with every discount step
+  // applied sequentially; the first keystroke in it marks the line manual
+  // and the derive below stops writing over it until Reset puts it back on
+  // the chain. Deriving reacts to srp/discounts via useWatch (not a
+  // setValue() call chained off those fields' own onChange) so typing in SRP
+  // or a discount value never fires a cross-field form update synchronously
+  // inside its own change event. That re-entrant update was what dropped
+  // input focus after every keystroke.
+  const [manual, setManual] = useState<boolean>(() => {
+    // An edit-mode line whose stored price doesn't match srp less its
+    // discounts was overridden when the PO was written — keep it overridden
+    // rather than silently repricing it the moment the modal opens.
+    if (!srp || isFreebie) return false
+    const derived = unitFromChain(Number(srp) || 0, discounts ?? []).unit
+    return Math.abs((Number(unitPrice) || 0) - derived) > 0.005
+  })
+
   useEffect(() => {
-    if (!srp) return
+    if (isFreebie) {
+      setValue(`lines.${index}.unitPrice`, 0)
+      return
+    }
+    if (manual || !srp) return
     const derived = unitFromChain(Number(srp) || 0, discounts ?? []).unit
     setValue(`lines.${index}.unitPrice`, Number(derived.toFixed(2)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [srp, discounts, index])
+  }, [srp, discounts, isFreebie, manual, index])
 
   const chain = unitFromChain(Number(srp) || 0, discounts)
   const qty = Number(quantity) || 0
   const unit = Number(unitPrice) || 0
   const lineTotal = isFreebie ? 0 : unit * qty
-  const effective = Number(srp) ? (1 - unit / Number(srp)) * 100 : 0
+  // The pill reports what the discount chain takes off, not what the unit
+  // price ended up at — an overridden price shouldn't be read back as a
+  // discount nobody entered.
+  const effective = Number(srp) ? (1 - chain.unit / Number(srp)) * 100 : 0
 
   const badQty = !!submitted && (!quantity || qty < 1)
-  const badSrp = !!submitted && !srp && !isFreebie
+  // A line priced by hand needs no SRP: one or the other has to give the
+  // line a cost, and either alone is enough.
+  const badSrp = !!submitted && !srp && !isFreebie && unit <= 0
   const badItem = !!submitted && !itemId
   const errorText = badItem
     ? 'Item is required.'
     : badQty
       ? 'Quantity must be at least 1.'
       : badSrp
-        ? 'SRP is required — this item has no price on the supplier’s list.'
+        ? 'Enter the supplier’s SRP, or type a unit price directly.'
         : ''
 
   const label = itemId ? labels[itemId] : undefined
@@ -620,6 +644,15 @@ function LineRow(props: LineRowProps): React.ReactElement {
     // A default empty discount row still counts toward discCount but takes
     // nothing off, so "has discounts" and "is actually discounted" differ.
     discounted: (Number(srp) || 0) > 0 && chain.unit < (Number(srp) || 0),
+    manual,
+    // Typing in Unit price takes the line off the discount chain…
+    onManualPrice: (): void => setManual(true),
+    // …and Reset puts it back on it.
+    onResetPrice: (): void => {
+      setManual(false)
+      const derived = unitFromChain(Number(srp) || 0, discounts ?? []).unit
+      setValue(`lines.${index}.unitPrice`, Number(derived.toFixed(2)))
+    },
     // The pill reads "+ Add discount" while the line has none, so clicking
     // it should actually add one rather than open an empty panel.
     onOpenDiscounts: (): void => {
@@ -660,12 +693,103 @@ type RenderProps = LineRowProps & {
   discountValues?: CreatePoFormValues['lines'][number]['discounts']
   discounted: boolean
   onOpenDiscounts: () => void
+  manual: boolean
+  onManualPrice: () => void
+  onResetPrice: () => void
 }
 
 function cellBox(bad: boolean): string {
   return `flex items-center rounded-md px-2.5 py-1.5 ${
     bad ? 'border border-[#b42318] bg-[#fdeceb]' : 'border border-[#e4e4e9] bg-white'
   }`
+}
+
+/** A right-aligned peso field. It holds whatever the user is typing verbatim
+ * while focused: committing "12." as the number 12 and echoing that back
+ * swallows the decimal point the moment it is typed, so centavos could never
+ * be entered at all. The form still only ever sees a number. */
+function MoneyInput({
+  label,
+  value,
+  onChange,
+  onType,
+  emptyIsUndefined,
+  disabled,
+  className,
+}: {
+  label: string
+  value: number | undefined
+  onChange: (v: number | undefined) => void
+  /** Fires on every keystroke, before the value commits. */
+  onType?: () => void
+  /** Clearing the field yields undefined rather than 0 — for optional fields. */
+  emptyIsUndefined?: boolean
+  disabled?: boolean
+  className?: string
+}): React.ReactElement {
+  const [draft, setDraft] = useState<string | null>(null)
+
+  return (
+    <input
+      aria-label={label}
+      placeholder="0.00"
+      inputMode="decimal"
+      disabled={disabled}
+      value={draft ?? value ?? ''}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^\d.]/g, '')
+        setDraft(raw)
+        onType?.()
+        if (raw === '') onChange(emptyIsUndefined ? undefined : 0)
+        else if (!Number.isNaN(Number(raw))) onChange(Number(raw))
+      }}
+      onBlur={() => setDraft(null)}
+      className={`${MONO} w-full border-none bg-transparent p-0 text-right text-[12.5px] outline-none disabled:text-[#a3a3b2] ${
+        className ?? ''
+      }`}
+    />
+  )
+}
+
+/** Unit price: editable, with the SRP it came off struck through beneath it —
+ * or, once typed into by hand, a Reset back onto the discount chain. */
+function UnitPriceCell(p: RenderProps): React.ReactElement {
+  const hasSrp = (Number(p.srp) || 0) > 0
+  return (
+    <div className="flex min-w-0 flex-col items-end gap-px">
+      <div className={`w-full ${cellBox(false)} ${p.isFreebie ? 'bg-[#f7f7f9]' : ''}`}>
+        <Controller
+          name={`lines.${p.index}.unitPrice`}
+          control={p.control}
+          render={({ field }) => (
+            <MoneyInput
+              label="Unit price"
+              value={field.value}
+              onChange={(v) => field.onChange(v ?? 0)}
+              onType={p.onManualPrice}
+              disabled={p.isFreebie}
+            />
+          )}
+        />
+      </div>
+      {p.manual && hasSrp && !p.isFreebie ? (
+        <Tooltip label="Reset to SRP less discounts" align="end">
+          <button
+            type="button"
+            onClick={p.onResetPrice}
+            className={`${MONO} flex items-center gap-1 text-[9.5px] tracking-[.04em] text-[#9a6b00] hover:text-[#3f1490]`}
+          >
+            <RotateCcw className="h-2.5 w-2.5" />
+            MANUAL
+          </button>
+        </Tooltip>
+      ) : p.discounted && !p.isFreebie ? (
+        <span className={`${MONO} text-[9.5px] text-[#a3a3b2] line-through`}>
+          {peso(Number(p.srp) || 0)}
+        </span>
+      ) : null}
+    </div>
+  )
 }
 
 function LineRowWide(p: RenderProps): React.ReactElement {
@@ -734,16 +858,11 @@ function LineRowWide(p: RenderProps): React.ReactElement {
             name={`lines.${index}.srp`}
             control={control}
             render={({ field }) => (
-              <input
-                aria-label="Supplier SRP"
-                placeholder="0.00"
-                inputMode="decimal"
-                value={field.value ?? ''}
-                onChange={(e) => {
-                  const raw = e.target.value.replace(/[^\d.]/g, '')
-                  field.onChange(raw === '' ? undefined : Number(raw))
-                }}
-                className={`${MONO} w-full border-none bg-transparent p-0 text-right text-[12.5px] outline-none`}
+              <MoneyInput
+                label="Supplier SRP"
+                value={field.value}
+                onChange={field.onChange}
+                emptyIsUndefined
               />
             )}
           />
@@ -763,12 +882,14 @@ function LineRowWide(p: RenderProps): React.ReactElement {
               >
                 {p.discCount}
               </span>
-              <span className={`${MONO} text-[11.5px] font-medium text-[#3f1490]`}>
+              <span
+                className={`${MONO} whitespace-nowrap text-[11.5px] font-medium text-[#3f1490]`}
+              >
                 −{p.effective.toFixed(1)}%
               </span>
             </span>
           ) : (
-            <span className="text-[12px] text-[#8b8b9b]">+ Add discount</span>
+            <span className="whitespace-nowrap text-[12px] text-[#8b8b9b]">+ Add discount</span>
           )}
           {open ? (
             <ChevronUp className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
@@ -777,20 +898,7 @@ function LineRowWide(p: RenderProps): React.ReactElement {
           )}
         </button>
 
-        <div className="flex min-h-8 flex-col items-end justify-center gap-px text-right">
-          <span
-            className={`${MONO} text-[12.5px] font-medium ${
-              p.isFreebie ? 'text-[#8b8b9b]' : p.discounted ? 'text-[#3f1490]' : 'text-[#17171c]'
-            }`}
-          >
-            {peso(p.unit)}
-          </span>
-          {p.discounted && (
-            <span className={`${MONO} text-[9.5px] text-[#a3a3b2] line-through`}>
-              {peso(Number(p.srp) || 0)}
-            </span>
-          )}
-        </div>
+        <UnitPriceCell {...p} />
 
         <span
           className={`${MONO} flex min-h-8 items-center justify-end text-right text-[13px] font-semibold ${
@@ -1151,19 +1259,11 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
               </div>
             )}
           />
-          <div className="flex min-w-0 flex-1 flex-col items-end gap-px">
-            <span
-              className={`${MONO} text-[12.5px] font-medium ${
-                p.isFreebie ? 'text-[#8b8b9b]' : p.discounted ? 'text-[#3f1490]' : 'text-[#17171c]'
-              }`}
-            >
-              {peso(p.unit)}
-            </span>
-            {p.discounted && (
-              <span className={`${MONO} text-[10px] text-[#a3a3b2] line-through`}>
-                {peso(Number(p.srp) || 0)}
-              </span>
-            )}
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className="shrink-0 text-[12px] text-[#5b5b6b]">Unit price</span>
+            <div className="min-w-0 flex-1">
+              <UnitPriceCell {...p} />
+            </div>
           </div>
         </div>
 
@@ -1174,16 +1274,11 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
             control={control}
             render={({ field }) => (
               <div className={`flex-1 ${cellBox(p.badSrp)}`}>
-                <input
-                  aria-label="Supplier SRP"
-                  placeholder="0.00"
-                  inputMode="decimal"
-                  value={field.value ?? ''}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[^\d.]/g, '')
-                    field.onChange(raw === '' ? undefined : Number(raw))
-                  }}
-                  className={`${MONO} w-full border-none bg-transparent p-0 text-right text-[12.5px] outline-none`}
+                <MoneyInput
+                  label="Supplier SRP"
+                  value={field.value}
+                  onChange={field.onChange}
+                  emptyIsUndefined
                 />
               </div>
             )}
