@@ -1,6 +1,6 @@
 'use client'
 
-import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
+import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { searchCustomers } from '../../_actions/pos-actions'
 
 type Props = {
@@ -8,6 +8,10 @@ type Props = {
   onChange: (id: string) => void
   error?: string
   initialLabel?: string
+  /** Fires alongside onChange with the picked row, for callers that need the
+   *  name as well as the id — a printed slip carries the customer's name, not
+   *  their UUID. Optional, so existing callers are unaffected. */
+  onSelect?: (option: SearchComboboxOption) => void
 }
 
 /** How many recent customers the field offers before anyone types. */
@@ -19,11 +23,12 @@ function customerDisplayName(c: { name?: string; firstName?: string; lastName?: 
 
 // Reuses the existing POS checkout customer search action rather than
 // inventing a new CRM lookup.
-export function CustomerSearchCombobox({ value, onChange, error, initialLabel }: Props) {
+export function CustomerSearchCombobox({ value, onChange, error, initialLabel, onSelect }: Props) {
   return (
     <SearchCombobox
       value={value}
       onChange={onChange}
+      onSelect={onSelect}
       error={error}
       initialLabel={initialLabel}
       queryKey="service-draft-customer-search"

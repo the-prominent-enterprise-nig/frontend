@@ -4,10 +4,9 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getReturns } from '../_actions/get-returns'
-import { createReturn } from '../_actions/create-return'
+import { createCustomerReturn } from '../_actions/create-customer-return'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
-import type { CreateReturnFormValues } from '@/src/schema/inventory/returns'
+import type { CustomerReturnFormValues } from '@/src/schema/inventory/returns'
 
 export function useReturnsManager() {
   const queryClient = useQueryClient()
@@ -15,7 +14,6 @@ export function useReturnsManager() {
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
-  const [itemFilter, setItemFilter] = useState<string | undefined>(undefined)
   const [fromDate, setFromDate] = useState<string | undefined>(undefined)
   const [toDate, setToDate] = useState<string | undefined>(undefined)
 
@@ -24,11 +22,10 @@ export function useReturnsManager() {
       page,
       limit,
       warehouseId: warehouseFilter,
-      itemId: itemFilter,
       startDate: fromDate,
       endDate: toDate,
     }),
-    [page, limit, warehouseFilter, itemFilter, fromDate, toDate]
+    [page, limit, warehouseFilter, fromDate, toDate]
   )
 
   const returnsQuery = useQuery({
@@ -44,48 +41,26 @@ export function useReturnsManager() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const serialsQuery = useQuery({
-    queryKey: ['inventory-serials-in-stock'],
-    queryFn: () => getSerialNumbers({ status: 'in_stock', limit: 500 }),
-    staleTime: 60 * 1000,
-  })
-
   const createMutation = useMutation({
-    mutationFn: (data: CreateReturnFormValues) => createReturn(data),
+    mutationFn: (data: CustomerReturnFormValues) => createCustomerReturn(data),
     onSuccess: (result) => {
-      if (result.success) {
-        // The stock always moved; the accounting may not have. A note comes
-        // back only when something did not happen, so it warns rather than
-        // reporting a clean success the accountant would have to go and
-        // disprove later.
-        const note = result.data?.accountingNote
-        const isRepairIntake = !!result.data?.uds?.intakeReceivingReportNumber
-        const rrNumber =
-          result.data?.uds?.intakeReceivingReportNumber ??
-          result.data?.ledger?.receivingReportNumber
+      if (!result.success) {
         showToast({
-          // A repair intake moves no stock and credits nothing — saying
-          // "Return processed" would describe the wrong event. What happened
-          // is that we took custody and issued a receipt for it.
-          title: isRepairIntake
-            ? 'Unit received for repair'
-            : note
-              ? 'Return recorded — check the accounting'
-              : rrNumber
-                ? 'Stock received back'
-                : 'Return processed',
-          description: result.message,
-          status: note && !isRepairIntake ? 'warning' : 'success',
-        })
-        queryClient.invalidateQueries({ queryKey: ['inventory-returns'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
-      } else {
-        showToast({
-          title: 'Failed to process return',
+          title: 'Could not record the return',
           description: result.message,
           status: 'error',
         })
+        return
       }
+
+      // No success toast. The screen now holds the result open in a dialog
+      // until the clerk dismisses it, because the RR number on it is what they
+      // write on the customer's copy — and a message that fades after four
+      // seconds is a number they have to go and look up again. The same dialog
+      // carries the credit-memo outcome, including the case where one was
+      // expected and did not happen.
+      queryClient.invalidateQueries({ queryKey: ['inventory-returns'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
     },
   })
 
@@ -105,15 +80,10 @@ export function useReturnsManager() {
     error: returnsQuery.error,
 
     warehouseFilter,
-    itemFilter,
     fromDate,
     toDate,
     setWarehouseFilter: (v: string | undefined) => {
       setWarehouseFilter(v)
-      setPage(1)
-    },
-    setItemFilter: (v: string | undefined) => {
-      setItemFilter(v)
       setPage(1)
     },
     setFromDate: (v: string | undefined) => {
@@ -126,7 +96,6 @@ export function useReturnsManager() {
     },
     resetFilters: () => {
       setWarehouseFilter(undefined)
-      setItemFilter(undefined)
       setFromDate(undefined)
       setToDate(undefined)
       setPage(1)
@@ -136,7 +105,6 @@ export function useReturnsManager() {
     setPage,
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
-    serialOptions: serialsQuery.data?.data?.data ?? [],
 
     createReturn: createMutation.mutateAsync,
     isCreating: createMutation.isPending,

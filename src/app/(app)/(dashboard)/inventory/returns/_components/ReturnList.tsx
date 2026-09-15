@@ -11,6 +11,8 @@ import {
   RotateCcw,
   ChevronDown,
   Wrench,
+  Trash2,
+  Repeat,
 } from 'lucide-react'
 import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import type { ReturnSummary } from '@/src/schema/inventory/returns'
@@ -18,10 +20,22 @@ import { useReturnsManager } from '../_hooks/useReturnsManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
-import CreateReturnModal from './CreateReturnModal'
+import CreateReturnScreen from './create-return/CreateReturnScreen'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 
-const CONDITION_CONFIG = {
+/**
+ * Reads both vocabularies on purpose.
+ *
+ * Rows written before the return document carry a ReturnCondition
+ * (sellable/damaged) in this field; rows written since carry a
+ * ReturnDisposition. Both will sit on this list for as long as the POS
+ * void/refund path keeps writing the old shape, which is indefinitely — so
+ * this is not a migration window, it is the steady state.
+ */
+const CONDITION_CONFIG: Record<
+  string,
+  { label: string; className: string; icon: typeof PackageCheck }
+> = {
   sellable: {
     label: 'Sellable',
     className: 'bg-green-100 text-green-700',
@@ -31,6 +45,31 @@ const CONDITION_CONFIG = {
     label: 'Damaged',
     className: 'bg-orange-100 text-orange-700',
     icon: AlertTriangle,
+  },
+  restock: {
+    label: 'Restocked',
+    className: 'bg-green-100 text-green-700',
+    icon: PackageCheck,
+  },
+  quarantine: {
+    label: 'Quarantined',
+    className: 'bg-orange-100 text-orange-700',
+    icon: AlertTriangle,
+  },
+  scrap: {
+    label: 'Scrapped',
+    className: 'bg-zinc-200 text-zinc-700',
+    icon: Trash2,
+  },
+  repair: {
+    label: 'For repair',
+    className: 'bg-red-100 text-red-700',
+    icon: Wrench,
+  },
+  exchange: {
+    label: 'Exchanged',
+    className: 'bg-prominent-purple-100 text-prominent-purple-700',
+    icon: Repeat,
   },
 }
 
@@ -141,6 +180,12 @@ function ReturnDetailRow({ ret }: { ret: ReturnSummary }) {
             )}
           </DetailField>
 
+          {ret.returnNumber && (
+            <DetailField label="Return no.">
+              <span className="font-mono text-xs">{ret.returnNumber}</span>
+            </DetailField>
+          )}
+
           <DetailField label="RR issued">
             {ret.receivingReportNumber ? (
               <span className="font-mono text-xs">{ret.receivingReportNumber}</span>
@@ -198,7 +243,6 @@ export default function ReturnList({ session }: { session: SessionUser }) {
     page,
     setPage,
     warehouseOptions,
-    serialOptions,
     createReturn,
     isCreating,
     refetch,
@@ -357,7 +401,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {returns.map((ret) => {
-                    const cond = ret.condition ? CONDITION_CONFIG[ret.condition] : null
+                    const cond = ret.condition ? (CONDITION_CONFIG[ret.condition] ?? null) : null
                     const isExpanded = expandedId === ret.id
                     return (
                       <Fragment key={ret.id}>
@@ -367,6 +411,15 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                         >
                           <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
                             {formatDate(ret.occurredAt ?? ret.createdAt)}
+                            {/* A return raised as a document has a number of
+                                its own, and it is what anyone asking about
+                                this return will quote. A legacy single-item
+                                row has none — nothing was ever issued. */}
+                            {ret.returnNumber && (
+                              <p className="mt-0.5 font-mono text-[11px] text-zinc-400">
+                                {ret.returnNumber}
+                              </p>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <p className="font-medium text-zinc-900">{ret.item?.name ?? '—'}</p>
@@ -510,14 +563,14 @@ export default function ReturnList({ session }: { session: SessionUser }) {
         )}
       </div>
 
-      <CreateReturnModal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onSubmit={createReturn}
-        isSubmitting={isCreating}
-        warehouseOptions={warehouseOptions}
-        serialOptions={serialOptions}
-      />
+      {isCreateOpen && (
+        <CreateReturnScreen
+          onClose={() => setIsCreateOpen(false)}
+          onSubmit={createReturn}
+          isSubmitting={isCreating}
+          warehouseOptions={warehouseOptions}
+        />
+      )}
     </div>
   )
 }
