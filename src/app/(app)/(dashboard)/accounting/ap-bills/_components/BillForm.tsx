@@ -198,11 +198,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // A received bill has nothing left to write. Source of Payment / Reference
-    // Number / Cheque No. were the last three writable fields, and they moved to
-    // the voucher, so this view is now a read-only summary and offers no Save.
-    if (isLocked) return
-    if (!form.supplierId) {
+    if (!isLocked && !form.supplierId) {
       setError('Supplier is required')
       return
     }
@@ -212,34 +208,48 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
     // "Pending SI" in the list until the number is filled in.
     setSaving(true)
     setError(null)
-    const payload = {
-      ...form,
-      purchaseOrderId: form.purchaseOrderId || undefined,
-      goodsReceiptIds: form.purchaseOrderId ? form.goodsReceiptIds : undefined,
-      billNumber: form.billNumber.trim() || undefined,
-      subtotal: Number(form.subtotal),
-      taxAmount: Number(form.taxAmount || 0),
-      // Omit entirely when blank so the backend auto-calculates from the
-      // supplier's withholding rate instead of overriding it with 0.
-      withholdingAmount: form.withholdingAmount === '' ? undefined : Number(form.withholdingAmount),
-      // Scenario 46 — when the invoice is itemised, the lines ARE the invoice
-      // and the backend recomputes subtotal/tax/total from them, ignoring the
-      // figures above. Omitted entirely when the table is empty, so a
-      // header-only bill keeps its typed subtotal.
-      lines: billLines.length
-        ? billLines.map((l) => ({
-            itemId: l.itemId || undefined,
-            description: l.description || undefined,
-            quantity: Number(l.quantity) || 0,
-            unitPrice: l.isFreebie ? 0 : Number(l.unitPrice) || 0,
-            isFreebie: l.isFreebie,
-            notes: l.notes || undefined,
-            discounts: l.discountValue
-              ? [{ type: l.discountType, value: Number(l.discountValue) }]
-              : undefined,
-          }))
-        : undefined,
-    }
+    // A received bill has nothing left to write except its own paperwork —
+    // dates, description, SI number. Its supplier/PO/matched-receipts links
+    // and its goods-cost figures (Subtotal, VAT, Withholding) are the
+    // Receiving Report's to own once one is attached; the backend now
+    // refuses anything beyond this narrower set here (see
+    // ap-bills.service.ts's update()).
+    const payload = isLocked
+      ? {
+          billDate: form.billDate,
+          dueDate: form.dueDate,
+          description: form.description,
+          billNumber: form.billNumber.trim() || undefined,
+        }
+      : {
+          ...form,
+          purchaseOrderId: form.purchaseOrderId || undefined,
+          goodsReceiptIds: form.purchaseOrderId ? form.goodsReceiptIds : undefined,
+          billNumber: form.billNumber.trim() || undefined,
+          subtotal: Number(form.subtotal),
+          taxAmount: Number(form.taxAmount || 0),
+          // Omit entirely when blank so the backend auto-calculates from the
+          // supplier's withholding rate instead of overriding it with 0.
+          withholdingAmount:
+            form.withholdingAmount === '' ? undefined : Number(form.withholdingAmount),
+          // Scenario 46 — when the invoice is itemised, the lines ARE the invoice
+          // and the backend recomputes subtotal/tax/total from them, ignoring the
+          // figures above. Omitted entirely when the table is empty, so a
+          // header-only bill keeps its typed subtotal.
+          lines: billLines.length
+            ? billLines.map((l) => ({
+                itemId: l.itemId || undefined,
+                description: l.description || undefined,
+                quantity: Number(l.quantity) || 0,
+                unitPrice: l.isFreebie ? 0 : Number(l.unitPrice) || 0,
+                isFreebie: l.isFreebie,
+                notes: l.notes || undefined,
+                discounts: l.discountValue
+                  ? [{ type: l.discountType, value: Number(l.discountValue) }]
+                  : undefined,
+              }))
+            : undefined,
+        }
     const body = { ...payload, confirmDuplicateBillNumber: duplicateSi !== null }
     const res = initial ? await APBills.update(initial.id, body) : await APBills.create(body)
     setSaving(false)
@@ -281,20 +291,56 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
         {isLocked ? (
           <div className="space-y-3">
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              This bill has been received and posted to the GL, so its figures are fixed. How it
-              gets paid is decided on its voucher — use Create voucher or Record Payment from the
-              invoice.
+              This bill has been received and posted to the GL, so its goods-cost figures (Subtotal,
+              VAT) are fixed — they only change by correcting the Receiving Report. Its own
+              paperwork below can still be edited. How it gets paid is decided on its voucher — use
+              Create voucher or Record Payment from the invoice.
             </div>
             <InfoRow label="Supplier" value={initial?.supplier?.name ?? '—'} />
             {initial?.purchaseOrder && (
               <InfoRow label="Purchase Order" value={initial.purchaseOrder.code} />
             )}
             <div className="grid grid-cols-2 gap-3">
-              <InfoRow label="Bill Date" value={fmtDate(initial?.billDate)} />
-              <InfoRow label="Due Date" value={fmtDate(initial?.dueDate)} />
+              <Field label="Bill Date *">
+                <input
+                  required
+                  type="date"
+                  value={form.billDate}
+                  onChange={(e) => setForm({ ...form, billDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
+              <Field label="Due Date *">
+                <input
+                  required
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
             </div>
-            {initial?.description && <InfoRow label="Description" value={initial.description} />}
-            <InfoRow label="SI / Invoice Number" value={initial?.billNumber ?? '—'} />
+            <Field label="Description">
+              <input
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </Field>
+            <Field label="SI / Invoice Number">
+              <input
+                value={form.billNumber}
+                onChange={(e) => {
+                  // Changing the number withdraws the question — otherwise the
+                  // next Save would carry a confirmation for a number nobody
+                  // was asked about.
+                  setDuplicateSi(null)
+                  setForm({ ...form, billNumber: e.target.value })
+                }}
+                placeholder="The Supplier Invoice (SI) number printed on the supplier's own invoice"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </Field>
             <div className="grid grid-cols-2 gap-3">
               <InfoRow label="Subtotal" value={fmtMoney(initial?.subtotal ?? 0)} />
               <InfoRow label="Input Tax (VAT)" value={fmtMoney(initial?.taxAmount ?? 0)} />
@@ -656,16 +702,14 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
           >
             Cancel
           </Link>
-          {!isLocked && (
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-            >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? 'Saving...' : duplicateSi ? 'Save anyway' : 'Save'}
-            </button>
-          )}
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            {saving ? 'Saving...' : duplicateSi ? 'Save anyway' : 'Save'}
+          </button>
         </div>
       </form>
     </div>
