@@ -1188,6 +1188,12 @@ export interface APBillReceiptChanges {
   edited: boolean
   editedAt: string | null
   syncedAt: string | null
+  /** Scenario 51 — this bill's own current status/amountPaid, and what would
+   * still be owed if this correction is accepted. Lets the notice warn about
+   * a paid invoice, and say what remains, before Update is even clicked. */
+  status: string
+  amountPaid: number
+  projectedOutstanding: number
   receipts: { id: string; code: string; contentEditedAt: string | null }[]
   /** Only the figures that move the payable. Empty when the correction touched
    * prices alone — an RR edit never restates unitCost, so the subtotal is
