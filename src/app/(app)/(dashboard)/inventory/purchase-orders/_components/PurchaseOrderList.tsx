@@ -341,6 +341,24 @@ export function PurchaseOrderList({
     router.replace(query ? `${pathname}?${query}` : pathname)
   }
 
+  // Deep link from a supplier's own screen (?newFor=<supplierId>): open the
+  // create form with them already picked. The name rides along purely as the
+  // picker's display label — the id is what is submitted — so this needs no
+  // second round trip to name a supplier the caller was just looking at.
+  const newForSupplierId = searchParams.get('newFor')
+  const deepLinkSupplier =
+    canCreate && newForSupplierId
+      ? { id: newForSupplierId, name: searchParams.get('supplierName') ?? '' }
+      : null
+  const clearDeepLinkSupplier = (): void => {
+    if (!newForSupplierId) return
+    const rest = new URLSearchParams(searchParams.toString())
+    rest.delete('newFor')
+    rest.delete('supplierName')
+    const query = rest.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname)
+  }
+
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [searchFocus, setSearchFocus] = useState(false)
   /** Guards the row's own Download button against a second click while its
@@ -1049,11 +1067,13 @@ export function PurchaseOrderList({
       {/* ── Modals & panels ────────────────────────────────────────────────── */}
 
       <CreatePoModal
-        open={showCreatePo || editingPo !== null}
+        open={showCreatePo || editingPo !== null || deepLinkSupplier !== null}
         onClose={() => {
           setShowCreatePo(false)
           setEditingPo(null)
+          clearDeepLinkSupplier()
         }}
+        initialSupplier={editingPo ? null : deepLinkSupplier}
         onCreate={async (data) => {
           await createPR(data)
           // Creating here always drafts a Purchase Request, not a Purchase
