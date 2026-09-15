@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Loader2, Search, X, History, Tag } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 import Tooltip from '@/src/components/ui/Tooltip'
+import { MONO } from '@/src/libs/design/plex'
 import {
   getSupplierItemSuggestions,
   bulkAddSupplierItems,
@@ -90,29 +91,29 @@ export default function SupplierItemSuggestions({
 
     if (res.success) {
       showToast({
-        title: `${res.data?.created ?? picked.length} item(s) linked`,
+        title: `${res.data?.created ?? picked.length} ${(res.data?.created ?? picked.length) === 1 ? 'item' : 'items'} linked`,
         description: res.data?.skipped ? `${res.data.skipped} already linked` : undefined,
         status: 'success',
       })
       onLinked()
     } else {
-      showToast({ title: 'Failed to link items', description: res.message, status: 'error' })
+      showToast({ title: 'Could not link the items', description: res.message, status: 'error' })
     }
   }
 
   if (isLoading)
     return (
-      <div className="flex items-center justify-center rounded-xl border border-zinc-200 py-10 text-zinc-400">
+      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] py-10 text-[#8b8b9b]">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
 
   return (
-    <div className="space-y-3 rounded-xl border border-prominent-purple-200 bg-prominent-purple-50/60 p-4">
+    <div className="flex flex-col gap-3 rounded-xl border border-[#ddd0f7] bg-[#fcfaff] px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h4 className="text-sm font-semibold text-zinc-800">Suggested items</h4>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <h4 className="text-[12.5px] font-semibold text-[#3f1490]">Suggested items</h4>
+          <p className="mt-0.5 text-[11.5px] leading-relaxed text-[#5b5b6b]">
             {suggestions.length === 0
               ? 'Nothing to suggest — no purchase history, and no item brand matches this supplier’s name.'
               : 'From past purchases and matching brand names. Review before linking — brand matches are a guess.'}
@@ -123,7 +124,7 @@ export default function SupplierItemSuggestions({
             type="button"
             onClick={onClose}
             aria-label="Close suggestions"
-            className="rounded p-1 text-zinc-400 hover:bg-white hover:text-zinc-600"
+            className="rounded p-1 text-[#8b8b9b] hover:bg-white hover:text-[#3d3d4a]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -134,48 +135,52 @@ export default function SupplierItemSuggestions({
         <>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[200px] flex-1">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b8b9b]" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Filter by SKU, name, or brand…"
-                className="w-full rounded-lg border border-zinc-200 bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-prominent-purple-500"
+                className="w-full rounded-lg border border-[#d3d3db] bg-white py-1.5 pl-8 pr-3 text-[12.5px] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
               />
             </div>
             <button
               type="button"
               onClick={toggleAllVisible}
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+              className="whitespace-nowrap rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-xs font-medium text-[#3d3d4a] hover:border-[#a3a3b2] hover:bg-[#fbfbfc]"
             >
               {allVisibleSelected ? 'Clear' : 'Select'} {visible.length} shown
             </button>
           </div>
 
-          <div className="max-h-80 divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200 bg-white">
+          <div className="max-h-80 divide-y divide-[#f4f4f6] overflow-y-auto rounded-lg border border-[#e4e4e9] bg-white">
             {visible.length === 0 ? (
-              <p className="py-8 text-center text-xs text-zinc-400">No suggestion matches.</p>
+              <p className="py-8 text-center text-[12.5px] text-[#5b5b6b]">
+                No suggestion matches.
+              </p>
             ) : (
               visible.map((s) => (
                 <label
                   key={s.itemId}
-                  className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-zinc-50"
+                  className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-[#fbfbfc]"
                 >
                   <input
                     type="checkbox"
                     checked={selected.has(s.itemId)}
                     onChange={() => toggleOne(s.itemId)}
-                    className="h-4 w-4 rounded border-zinc-300 accent-prominent-purple-700"
+                    className="h-4 w-4 shrink-0 rounded border-[#d3d3db] accent-[#5b21b6]"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-zinc-800">{s.name}</span>
-                    <span className="block text-xs text-zinc-400">
+                    <span className="block truncate text-[12.5px] font-medium text-[#17171c]">
+                      {s.name}
+                    </span>
+                    <span className={`${MONO} mt-0.5 block text-[10.5px] text-[#5b5b6b]`}>
                       {s.sku}
                       {s.brandName ? ` · ${s.brandName}` : ''}
                     </span>
                   </span>
                   {s.suggestedUnitPrice != null && (
-                    <span className="shrink-0 text-xs text-zinc-500">
+                    <span className={`${MONO} shrink-0 text-[11.5px] text-[#3d3d4a]`}>
                       ₱{Number(s.suggestedUnitPrice).toLocaleString()}
                     </span>
                   )}
@@ -186,12 +191,14 @@ export default function SupplierItemSuggestions({
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-zinc-500">{selected.size} selected</p>
+            <p className="text-[11.5px] text-[#5b5b6b]">
+              {selected.size === 0 ? 'Nothing selected yet' : `${selected.size} selected`}
+            </p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg px-3 py-1.5 text-xs text-zinc-600 hover:bg-white"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#5b5b6b] hover:bg-white hover:text-[#17171c]"
               >
                 Cancel
               </button>
@@ -199,10 +206,10 @@ export default function SupplierItemSuggestions({
                 type="button"
                 onClick={handleLink}
                 disabled={isSaving || selected.size === 0}
-                className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
               >
                 {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
-                Link {selected.size} item(s)
+                Link {selected.size} {selected.size === 1 ? 'item' : 'items'}
               </button>
             </div>
           </div>
@@ -226,7 +233,7 @@ function SourceBadge({
     <Tooltip label={title} align="end" className="shrink-0">
       <span
         className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-          isHistory ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+          isHistory ? 'bg-[#e7f5ef] text-[#0b6644]' : 'bg-[#fdf3e7] text-[#8a4b06]'
         }`}
       >
         <Icon className="h-3 w-3" />

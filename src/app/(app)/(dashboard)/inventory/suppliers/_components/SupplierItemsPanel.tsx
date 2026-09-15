@@ -1,22 +1,30 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Star, Loader2, X, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Loader2, Plus, Search, Sparkles, Star, Trash2 } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
+import Tooltip from '@/src/components/ui/Tooltip'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
+import { MONO } from '@/src/libs/design/plex'
 import SupplierItemSuggestions from './SupplierItemSuggestions'
 import {
-  getSupplierItems,
   addSupplierItem,
-  updateSupplierItem,
+  getSupplierItems,
   removeSupplierItem,
   type SupplierItemMapping,
 } from '../_actions/get-supplier-items'
 
 type ItemOption = { id: string; name: string; sku: string }
 
+/** A supplier that carries the whole catalogue would otherwise print hundreds
+ * of rows into a column 700px wide. Ten at a time, searchable — same treatment
+ * the price-list items table gets, for the same reason. */
+const PAGE_SIZE = 10
+
 const fieldClass =
-  'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+  'w-full rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
+const labelClass = 'block text-[11px] font-medium text-[#3d3d4a]'
 
 const emptyForm = {
   itemId: '',
@@ -27,6 +35,25 @@ const emptyForm = {
   notes: '',
 }
 
+/** "₱12,500 · SKU BEK-090 · 7d lead" — one line of whatever this mapping
+ * actually holds, instead of four mostly-empty table columns. */
+function mappingMeta(mapping: SupplierItemMapping): string[] {
+  const parts: string[] = []
+  if (mapping.supplierSku?.trim()) parts.push(`Their SKU ${mapping.supplierSku.trim()}`)
+  if (mapping.unitPrice != null) parts.push(`₱${Number(mapping.unitPrice).toLocaleString('en-US')}`)
+  if (mapping.leadTimeDays != null) parts.push(`${mapping.leadTimeDays}d lead`)
+  return parts
+}
+
+/**
+ * The items this supplier carries — what a purchase order raised against them
+ * is allowed to hold.
+ *
+ * A row, not a table cell, per mapping: this panel shares the screen with the
+ * supplier list, so there is no room to scan six columns across. Everything the
+ * old table showed is still here, printed as the one line of facts a buyer
+ * reads before picking the item.
+ */
 export default function SupplierItemsPanel({
   supplierId,
   itemOptions,
@@ -38,18 +65,13 @@ export default function SupplierItemsPanel({
 }) {
   const [mappings, setMappings] = useState<SupplierItemMapping[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [showAddForm, setShowAddForm] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [form, setForm] = useState(emptyForm)
-  const [isSaving, setIsSaving] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<Omit<typeof emptyForm, 'itemId'>>({
-    supplierSku: '',
-    unitPrice: '',
-    leadTimeDays: '',
-    isPreferred: false,
-    notes: '',
-  })
+  const [pendingRemoval, setPendingRemoval] = useState<SupplierItemMapping | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -61,6 +83,23 @@ export default function SupplierItemsPanel({
   useEffect(() => {
     load()
   }, [load])
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return mappings
+    return mappings.filter((m) =>
+      `${m.item.sku} ${m.item.name} ${m.supplierSku ?? ''}`.toLowerCase().includes(q)
+    )
+  }, [mappings, search])
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  // Clamped on read rather than corrected in an effect: a search that shortens
+  // the list, or a removal that empties the last page, would otherwise leave
+  // the reader parked past the end of it for one render.
+  const safePage = Math.min(page, totalPages)
+
+  const pageStart = (safePage - 1) * PAGE_SIZE
+  const paged = visible.slice(pageStart, pageStart + PAGE_SIZE)
 
   async function handleAdd() {
     if (!form.itemId) return
@@ -80,49 +119,21 @@ export default function SupplierItemsPanel({
       setShowAddForm(false)
       await load()
     } else {
-      showToast({ title: 'Failed to link item', description: res.message, status: 'error' })
-    }
-  }
-
-  async function handleUpdate(mapping: SupplierItemMapping) {
-    setIsSaving(true)
-    const res = await updateSupplierItem(supplierId, mapping.itemId, {
-      supplierSku: editForm.supplierSku || undefined,
-      unitPrice: editForm.unitPrice ? Number(editForm.unitPrice) : undefined,
-      leadTimeDays: editForm.leadTimeDays ? Number(editForm.leadTimeDays) : undefined,
-      isPreferred: editForm.isPreferred,
-      notes: editForm.notes || undefined,
-    })
-    setIsSaving(false)
-    if (res.success) {
-      showToast({ title: 'Mapping updated', status: 'success' })
-      setEditingId(null)
-      await load()
-    } else {
-      showToast({ title: 'Failed to update', description: res.message, status: 'error' })
+      showToast({ title: 'Could not link the item', description: res.message, status: 'error' })
     }
   }
 
   async function handleRemove(mapping: SupplierItemMapping) {
-    if (!confirm(`Remove ${mapping.item.name} from this supplier?`)) return
+    setIsSaving(true)
     const res = await removeSupplierItem(supplierId, mapping.itemId)
+    setIsSaving(false)
+    setPendingRemoval(null)
     if (res.success) {
-      showToast({ title: 'Mapping removed', status: 'success' })
+      showToast({ title: 'Item unlinked', status: 'success' })
       await load()
     } else {
-      showToast({ title: 'Failed to remove', description: res.message, status: 'error' })
+      showToast({ title: 'Could not unlink the item', description: res.message, status: 'error' })
     }
-  }
-
-  function startEdit(m: SupplierItemMapping) {
-    setEditingId(m.id)
-    setEditForm({
-      supplierSku: m.supplierSku ?? '',
-      unitPrice: m.unitPrice != null ? String(m.unitPrice) : '',
-      leadTimeDays: m.leadTimeDays != null ? String(m.leadTimeDays) : '',
-      isPreferred: m.isPreferred,
-      notes: m.notes ?? '',
-    })
   }
 
   const linkedItemIds = new Set(mappings.map((m) => m.itemId))
@@ -138,41 +149,57 @@ export default function SupplierItemsPanel({
       .map((i) => ({ id: i.id, primary: i.name, secondary: i.sku }))
   }
 
-  if (isLoading)
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-zinc-400">
+      <div className="flex items-center justify-center py-12 text-[#8b8b9b]">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-zinc-500">{mappings.length} item(s) linked to this supplier</p>
-        {canUpdate && !showAddForm && availableItems.length > 0 && (
-          <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-3.5">
+      {/* Head */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13.5px] font-semibold text-[#17171c]">
+            {mappings.length === 0
+              ? 'No items linked'
+              : `${mappings.length} ${mappings.length === 1 ? 'item' : 'items'} linked`}
+          </p>
+          <p className="text-[11.5px] leading-relaxed text-[#5b5b6b]">
+            Only a linked item can go on a purchase order raised against this supplier.
+          </p>
+        </div>
+        {canUpdate && !showAddForm && (
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => setShowSuggestions((open) => !open)}
-              className="flex items-center gap-1.5 rounded-lg border border-prominent-purple-200 bg-white px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+              className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-2 text-xs font-medium text-[#3f1490] hover:bg-[#f1ebfb]"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Suggest Items
+              {showSuggestions ? 'Hide suggestions' : 'Suggest items'}
             </button>
             <button
               type="button"
               onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800"
+              disabled={availableItems.length === 0}
+              title={
+                availableItems.length === 0
+                  ? 'Every active item is already linked'
+                  : 'Link an item to this supplier'
+              }
+              className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-2 text-xs font-medium text-white hover:bg-[#4a189b] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-3.5 w-3.5" />
-              Link Item
+              Link items
             </button>
           </div>
         )}
       </div>
 
-      {/* Bulk-link suggestions — the only practical way to link a catalog this
+      {/* Bulk-link suggestions — the only practical way to link a catalogue this
           size, since the client's master data has no supplier column. */}
       {canUpdate && showSuggestions && (
         <SupplierItemSuggestions
@@ -187,12 +214,12 @@ export default function SupplierItemsPanel({
 
       {/* Add form */}
       {showAddForm && (
-        <div className="rounded-xl border border-prominent-purple-200 bg-prominent-purple-50 p-4 space-y-3">
-          <h4 className="text-sm font-semibold text-zinc-800">Link an item</h4>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600">
-                Item <span className="text-red-500">*</span>
+        <div className="flex flex-col gap-3 rounded-xl border border-[#ddd0f7] bg-[#fcfaff] px-4 py-3.5">
+          <p className="text-[12.5px] font-semibold text-[#3f1490]">Link an item</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <label className={labelClass}>
+                Item <span className="text-[#b42318]">*</span>
               </label>
               <SearchCombobox
                 value={form.itemId}
@@ -203,18 +230,18 @@ export default function SupplierItemsPanel({
                 emptyMessage="No unlinked item matches."
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600">Supplier SKU</label>
+            <div className="flex flex-col gap-1.5">
+              <label className={labelClass}>Their SKU</label>
               <input
                 type="text"
                 value={form.supplierSku}
                 onChange={(e) => setForm((f) => ({ ...f, supplierSku: e.target.value }))}
-                placeholder="Supplier's own SKU"
+                placeholder="The supplier's own code"
                 className={fieldClass}
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600">Unit Price</label>
+            <div className="flex flex-col gap-1.5">
+              <label className={labelClass}>Unit price</label>
               <input
                 type="number"
                 min="0"
@@ -222,13 +249,11 @@ export default function SupplierItemsPanel({
                 value={form.unitPrice}
                 onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))}
                 placeholder="0.00"
-                className={fieldClass}
+                className={`${fieldClass} ${MONO} text-right`}
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600">
-                Lead Time (days)
-              </label>
+            <div className="flex flex-col gap-1.5">
+              <label className={labelClass}>Lead time (days)</label>
               <input
                 type="number"
                 min="0"
@@ -239,26 +264,23 @@ export default function SupplierItemsPanel({
               />
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-[12px] text-[#3d3d4a]">
             <input
               type="checkbox"
-              id="isPreferred"
               checked={form.isPreferred}
               onChange={(e) => setForm((f) => ({ ...f, isPreferred: e.target.checked }))}
-              className="h-4 w-4 rounded border-zinc-300 accent-prominent-purple-700"
+              className="h-4 w-4 rounded border-[#d3d3db] accent-[#5b21b6]"
             />
-            <label htmlFor="isPreferred" className="text-xs text-zinc-700">
-              Mark as preferred supplier for this item
-            </label>
-          </div>
-          <div className="flex justify-end gap-2">
+            Preferred supplier for this item
+          </label>
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => {
                 setShowAddForm(false)
                 setForm(emptyForm)
               }}
-              className="rounded-lg px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-100"
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
               Cancel
             </button>
@@ -266,149 +288,150 @@ export default function SupplierItemsPanel({
               type="button"
               onClick={handleAdd}
               disabled={isSaving || !form.itemId}
-              className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
             >
               {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
-              Save
+              Link item
             </button>
           </div>
         </div>
       )}
 
-      {/* Mappings list */}
-      {mappings.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-zinc-300 py-10 text-center text-sm text-zinc-400">
-          No items linked yet.
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-zinc-200">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
-              <tr>
-                <th className="px-4 py-2">Item</th>
-                <th className="px-4 py-2">Supplier SKU</th>
-                <th className="px-4 py-2">Unit Price</th>
-                <th className="px-4 py-2">Lead Time</th>
-                <th className="px-4 py-2 text-center">Preferred</th>
-                {canUpdate && <th className="px-4 py-2" />}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {mappings.map((m) =>
-                editingId === m.id ? (
-                  <tr key={m.id} className="bg-prominent-purple-50">
-                    <td className="px-4 py-2 font-medium text-zinc-800">
-                      <div>{m.item.name}</div>
-                      <div className="text-xs text-zinc-400">{m.item.sku}</div>
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="text"
-                        value={editForm.supplierSku}
-                        onChange={(e) =>
-                          setEditForm((f) => ({ ...f, supplierSku: e.target.value }))
-                        }
-                        className="w-full rounded border border-zinc-200 px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={editForm.unitPrice}
-                        onChange={(e) => setEditForm((f) => ({ ...f, unitPrice: e.target.value }))}
-                        className="w-24 rounded border border-zinc-200 px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={editForm.leadTimeDays}
-                        onChange={(e) =>
-                          setEditForm((f) => ({ ...f, leadTimeDays: e.target.value }))
-                        }
-                        className="w-20 rounded border border-zinc-200 px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      <input
-                        type="checkbox"
-                        checked={editForm.isPreferred}
-                        onChange={(e) =>
-                          setEditForm((f) => ({ ...f, isPreferred: e.target.checked }))
-                        }
-                        className="h-4 w-4 accent-prominent-purple-700"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdate(m)}
-                          disabled={isSaving}
-                          className="rounded px-2 py-1 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-100 disabled:opacity-50"
-                        >
-                          {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingId(null)}
-                          className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={m.id} className="hover:bg-zinc-50">
-                    <td className="px-4 py-2">
-                      <div className="font-medium text-zinc-800">{m.item.name}</div>
-                      <div className="text-xs text-zinc-400">{m.item.sku}</div>
-                    </td>
-                    <td className="px-4 py-2 text-zinc-600">{m.supplierSku ?? '—'}</td>
-                    <td className="px-4 py-2 text-zinc-600">
-                      {m.unitPrice != null ? `₱${Number(m.unitPrice).toLocaleString()}` : '—'}
-                    </td>
-                    <td className="px-4 py-2 text-zinc-600">
-                      {m.leadTimeDays != null ? `${m.leadTimeDays}d` : '—'}
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      {m.isPreferred ? (
-                        <Star className="mx-auto h-4 w-4 fill-amber-400 text-amber-400" />
-                      ) : (
-                        <span className="text-xs text-zinc-300">—</span>
-                      )}
-                    </td>
-                    {canUpdate && (
-                      <td className="px-4 py-2">
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(m)}
-                            className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemove(m)}
-                            className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                )
-              )}
-            </tbody>
-          </table>
+      {/* Search — only once there is enough to hunt through. */}
+      {mappings.length > PAGE_SIZE && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b8b9b]" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
+            placeholder="Search linked items by name or SKU…"
+            aria-label="Search linked items"
+            className="w-full rounded-lg border border-[#d3d3db] bg-white py-1.5 pl-9 pr-3 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
+          />
         </div>
       )}
+
+      {/* Rows */}
+      {mappings.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[#d3d3db] px-5 py-10 text-center">
+          <p className="text-sm font-medium text-[#3d3d4a]">No items linked yet</p>
+          <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[#5b5b6b]">
+            Link the items this supplier carries, or let the system suggest them from what has
+            already been bought from them.
+          </p>
+        </div>
+      ) : visible.length === 0 ? (
+        <p className="rounded-xl border border-[#e4e4e9] px-4 py-8 text-center text-[12.5px] text-[#5b5b6b]">
+          No linked item matches &ldquo;{search}&rdquo;.
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-[#e4e4e9]">
+          <ul>
+            {paged.map((mapping, index) => {
+              const meta = mappingMeta(mapping)
+              return (
+                <li
+                  key={mapping.id}
+                  className={`bg-white ${index ? 'border-t border-[#f4f4f6]' : ''}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start gap-1.5">
+                        {mapping.isPreferred && (
+                          <Tooltip
+                            label="Preferred supplier for this item"
+                            side="top"
+                            align="start"
+                          >
+                            <Star className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-[#e08a1e] text-[#e08a1e]" />
+                          </Tooltip>
+                        )}
+                        <p
+                          className="min-w-0 text-[12.5px] font-medium leading-snug text-[#17171c]"
+                          title={mapping.item.name}
+                        >
+                          {mapping.item.name}
+                        </p>
+                      </div>
+                      <p className={`${MONO} mt-1 text-[10.5px] text-[#5b5b6b]`}>
+                        {mapping.item.sku}
+                      </p>
+                      {meta.length > 0 && (
+                        <p className="mt-0.5 text-[10.5px] text-[#5b5b6b]">{meta.join(' · ')}</p>
+                      )}
+                    </div>
+                    {canUpdate && (
+                      <Tooltip label="Unlink from this supplier" side="top" align="end">
+                        <button
+                          type="button"
+                          onClick={() => setPendingRemoval(mapping)}
+                          aria-label={`Unlink ${mapping.item.name}`}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+
+          {(totalPages > 1 || search.trim() !== '') && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 text-[11.5px] text-[#5b5b6b]">
+              <span>
+                {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, visible.length)} of{' '}
+                {visible.length}
+                {search.trim() !== '' && ` matching · ${mappings.length} linked`}
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPage(Math.max(1, safePage - 1))}
+                    disabled={safePage <= 1}
+                    className="rounded-lg px-2.5 py-1 font-medium hover:bg-[#f1f1f4] disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <span className={`${MONO} px-1 text-[11px]`}>
+                    {safePage}/{totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+                    disabled={safePage >= totalPages}
+                    className="rounded-lg px-2.5 py-1 font-medium hover:bg-[#f1f1f4] disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={pendingRemoval !== null}
+        title={pendingRemoval ? `Unlink ${pendingRemoval.item.name}?` : 'Unlink item'}
+        message={
+          <p>
+            It can no longer be put on a purchase order for this supplier. Purchase orders that
+            already hold it are untouched, and it can be linked again later.
+          </p>
+        }
+        confirmLabel="Unlink"
+        destructive
+        loading={isSaving}
+        onConfirm={() => pendingRemoval && handleRemove(pendingRemoval)}
+        onCancel={() => setPendingRemoval(null)}
+      />
     </div>
   )
 }
