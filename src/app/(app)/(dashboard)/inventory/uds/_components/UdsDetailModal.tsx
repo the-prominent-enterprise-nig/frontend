@@ -11,6 +11,7 @@ import {
   UDS_ASSESSMENT_STYLES,
   type Uds,
 } from '@/src/schema/inventory/uds'
+import DocumentTrail from './DocumentTrail'
 
 function formatCurrency(value?: number | null): string {
   if (value == null) return '—'
@@ -29,6 +30,23 @@ type Props = {
   isOpen: boolean
   onClose: () => void
   onEditProvider?: (uds: Uds) => void
+  /** Advances the sheet to its next leg. Clicking a row is the natural way to
+   *  open a UDS, and this view used to dead-end: the whole journey could only
+   *  be driven from the list's own action column, which a reader who opened
+   *  the sheet to understand it had already navigated away from. */
+  onAdvance?: (uds: Uds) => void
+}
+
+/** What the next step actually is, named. Mirrors the list's action column so
+ *  the same sheet does not offer two differently-worded versions of one
+ *  button. Null once the sheet is closed, or while the unit is somewhere only
+ *  its own dedicated form can move it from. */
+function advanceLabel(uds: Uds): string | null {
+  if (uds.status === 'completed' || uds.status === 'cancelled') return null
+  if (uds.status === 'issued') return 'Send to Main'
+  if (uds.status === 'in_transit') return 'Receive at Main'
+  if (uds.status === 'at_provider') return null
+  return 'Update status'
 }
 
 function formatDate(iso?: string | null): string {
@@ -51,8 +69,10 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }: Props) {
+export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, onAdvance }: Props) {
   if (!isOpen || !uds) return null
+
+  const nextStep = advanceLabel(uds)
 
   const canEditProvider =
     uds.reason === 'repair' &&
@@ -198,6 +218,12 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
             </div>
           )}
 
+          {/* The paper trail. Every number on it is free text off a document
+              someone signed, and until now all five were captured at each
+              step and then shown nowhere — the customer holds an RR this
+              screen could not display. */}
+          <DocumentTrail uds={uds} />
+
           {/* Units */}
           <div>
             <p className="mb-2 text-sm font-medium text-zinc-700">Units ({uds.lines.length})</p>
@@ -236,7 +262,7 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end border-t border-zinc-200 px-6 py-4">
+        <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-6 py-4">
           <button
             type="button"
             onClick={onClose}
@@ -244,6 +270,15 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
           >
             Close
           </button>
+          {nextStep && onAdvance && (
+            <button
+              type="button"
+              onClick={() => onAdvance(uds)}
+              className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
+            >
+              {nextStep}
+            </button>
+          )}
         </div>
       </div>
     </div>

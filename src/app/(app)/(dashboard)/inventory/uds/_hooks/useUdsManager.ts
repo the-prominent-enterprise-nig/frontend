@@ -179,7 +179,11 @@ export function useUdsManager() {
       releaseToCustomer(id, data),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Released to customer', description: result.message, status: 'success' })
+        showToast({
+          title: 'Released to customer',
+          description: result.message,
+          status: 'success',
+        })
         queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
       } else {

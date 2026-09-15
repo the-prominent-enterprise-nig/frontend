@@ -30,6 +30,10 @@ type Props = {
   onSubmit: (data: UpdateUdsStatusFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
   currentStatus: UdsStatus
+  /** A customer-owned sheet closes only through Release to Customer, which is
+   *  what issues the DR and returns the serial to `sold`. The server refuses a
+   *  `completed` here for one, so offering it would be a button that fails. */
+  isCustodial?: boolean
 }
 
 const fieldClass =
@@ -106,8 +110,11 @@ export default function UpdateUdsStatusModal({
   onSubmit,
   isSubmitting,
   currentStatus,
+  isCustodial = false,
 }: Props) {
-  const allowedStatuses = ALLOWED_TRANSITIONS[currentStatus] ?? []
+  const allowedStatuses = (ALLOWED_TRANSITIONS[currentStatus] ?? []).filter(
+    (s) => !(isCustodial && s === 'completed')
+  )
   const [confirmingCancel, setConfirmingCancel] = useState(false)
 
   const {
@@ -118,16 +125,37 @@ export default function UpdateUdsStatusModal({
     formState: { errors },
   } = useForm<UpdateUdsStatusFormValues>({
     resolver: zodResolver(UpdateUdsStatusFormSchema),
-    defaultValues: { status: allowedStatuses[0] ?? currentStatus, notes: '' },
+    defaultValues: {
+      status: allowedStatuses[0] ?? currentStatus,
+      notes: '',
+      salesInvoiceNumber: '',
+    },
   })
   const selectedStatus = watch('status')
+  // The branch <-> main trip happens on exactly these two transitions: the
+  // unit leaves for main, and it is back at the branch when the sheet closes.
+  // Asking for the SI anywhere else would collect a number for a leg that
+  // isn't being made, and the server would drop it.
+  const siLeg =
+    selectedStatus === 'in_transit'
+      ? { label: 'SI for the transfer to main', hint: 'Raised by the branch with the unit' }
+      : selectedStatus === 'completed'
+        ? { label: 'SI for the return to branch', hint: 'Raised when the unit comes back' }
+        : null
 
   useEffect(() => {
     if (!isOpen) {
-      reset({ status: ALLOWED_TRANSITIONS[currentStatus]?.[0] ?? currentStatus, notes: '' })
+      reset({
+        status:
+          (ALLOWED_TRANSITIONS[currentStatus] ?? []).filter(
+            (s) => !(isCustodial && s === 'completed')
+          )[0] ?? currentStatus,
+        notes: '',
+        salesInvoiceNumber: '',
+      })
       setConfirmingCancel(false)
     }
-  }, [isOpen, currentStatus, reset])
+  }, [isOpen, currentStatus, isCustodial, reset])
 
   if (!isOpen) return null
 
@@ -161,7 +189,9 @@ export default function UpdateUdsStatusModal({
 
         {allowedStatuses.length === 0 ? (
           <div className="px-6 py-8 text-center text-sm text-zinc-500">
-            This UDS is already closed and cannot be updated.
+            {isCustodial
+              ? 'This unit belongs to the customer — close it with Release to Customer, which issues the DR they sign for.'
+              : 'This UDS is already closed and cannot be updated.'}
           </div>
         ) : (
           <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
@@ -219,6 +249,32 @@ export default function UpdateUdsStatusModal({
                   <p className="mt-1 text-xs text-red-600">{errors.status.message}</p>
                 )}
               </div>
+
+              {siLeg && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    {siLeg.label}
+                    <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                  </label>
+                  <Controller
+                    name="salesInvoiceNumber"
+                    control={control}
+                    render={({ field }) => (
+                      <input
+                        {...field}
+                        type="text"
+                        maxLength={50}
+                        placeholder="e.g. SI-20260914-0031"
+                        className={fieldClass}
+                      />
+                    )}
+                  />
+                  <p className="mt-1 text-xs text-zinc-400">
+                    {siLeg.hint} — the stock transfer records the movement, this records the paper
+                    it was signed on.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">

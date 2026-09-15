@@ -10,7 +10,7 @@ import {
 } from '@/src/schema/inventory/uds'
 import type { ApiResponse } from '@/src/libs/api/client'
 
-type SupplierOption = { id: string; code: string; name: string }
+export type SupplierOption = { id: string; code: string; name: string }
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
