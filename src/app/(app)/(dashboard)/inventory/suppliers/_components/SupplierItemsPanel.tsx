@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Star, Loader2, X } from 'lucide-react'
+import { Plus, Trash2, Star, Loader2, X, Sparkles } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
+import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
+import SupplierItemSuggestions from './SupplierItemSuggestions'
 import {
   getSupplierItems,
   addSupplierItem,
@@ -37,6 +39,7 @@ export default function SupplierItemsPanel({
   const [mappings, setMappings] = useState<SupplierItemMapping[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [isSaving, setIsSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -125,6 +128,16 @@ export default function SupplierItemsPanel({
   const linkedItemIds = new Set(mappings.map((m) => m.itemId))
   const availableItems = itemOptions.filter((i) => !linkedItemIds.has(i.id))
 
+  /** Client-side filter over the already-loaded item list — a plain <select>
+   * of 2,700 options is unusable, and the list is in memory already. */
+  async function searchAvailableItems(query: string): Promise<SearchComboboxOption[]> {
+    const q = query.trim().toLowerCase()
+    return availableItems
+      .filter((i) => !q || `${i.sku} ${i.name}`.toLowerCase().includes(q))
+      .slice(0, 50)
+      .map((i) => ({ id: i.id, primary: i.name, secondary: i.sku }))
+  }
+
   if (isLoading)
     return (
       <div className="flex items-center justify-center py-12 text-zinc-400">
@@ -138,16 +151,39 @@ export default function SupplierItemsPanel({
       <div className="flex items-center justify-between">
         <p className="text-sm text-zinc-500">{mappings.length} item(s) linked to this supplier</p>
         {canUpdate && !showAddForm && availableItems.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowAddForm(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Link Item
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSuggestions((open) => !open)}
+              className="flex items-center gap-1.5 rounded-lg border border-prominent-purple-200 bg-white px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Suggest Items
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddForm(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Link Item
+            </button>
+          </div>
         )}
       </div>
+
+      {/* Bulk-link suggestions — the only practical way to link a catalog this
+          size, since the client's master data has no supplier column. */}
+      {canUpdate && showSuggestions && (
+        <SupplierItemSuggestions
+          supplierId={supplierId}
+          onClose={() => setShowSuggestions(false)}
+          onLinked={async () => {
+            setShowSuggestions(false)
+            await load()
+          }}
+        />
+      )}
 
       {/* Add form */}
       {showAddForm && (
@@ -158,18 +194,14 @@ export default function SupplierItemsPanel({
               <label className="mb-1 block text-xs font-medium text-zinc-600">
                 Item <span className="text-red-500">*</span>
               </label>
-              <select
+              <SearchCombobox
                 value={form.itemId}
-                onChange={(e) => setForm((f) => ({ ...f, itemId: e.target.value }))}
-                className={`${fieldClass} bg-white`}
-              >
-                <option value="">Select item…</option>
-                {availableItems.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.sku} — {i.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(id: string) => setForm((f) => ({ ...f, itemId: id }))}
+                queryKey={`supplier-${supplierId}-item-picker`}
+                search={searchAvailableItems}
+                placeholder="Search by SKU or name…"
+                emptyMessage="No unlinked item matches."
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-600">Supplier SKU</label>
