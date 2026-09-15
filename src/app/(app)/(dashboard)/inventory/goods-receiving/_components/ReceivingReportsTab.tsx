@@ -259,12 +259,18 @@ export default function ReceivingReportsTab({
   const canCreate = !!me && hasPermission(me, INVENTORY_PERMISSIONS.RECEIVE_CREATE)
   const canViewCost = !!me && hasPermission(me, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
 
-  // Fetched lazily, only once the create modal is actually opened — a
-  // manual receipt's destination is always one of the 2 real warehouses
-  // (Scenario 27), and the item picker needs the full active catalogue.
+  // Fetched lazily, only once the create modal is actually opened — the
+  // destination picker offers both the real warehouses and the branches' own
+  // stock locations (the form lists the warehouses first and marks each branch
+  // as one), and the item picker needs the full active catalogue.
+  //
+  // Scenario 27 restricted this list to the 2 standalone warehouses. The server
+  // still enforces the rule that matters — a branch location is only accepted
+  // when the receipt is linked to a PO raised for that branch
+  // (stock.service.ts) — but the picker no longer hides the branches outright.
   const destinationWarehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup', 'standalone'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
+    queryKey: ['inventory-warehouses-lookup'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
     staleTime: STALE.LOOKUP,
     enabled: isCreateOpen,
   })

@@ -11,7 +11,7 @@ import ReceiveStockModal from './ReceiveStockModal'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 
 const TX_LABELS: Record<string, string> = {
-  receipt: 'Receipt',
+  receipt: 'Goods Receipt',
   sale: 'Sale',
   transfer_out: 'Transfer Out',
   transfer_in: 'Transfer In',
@@ -40,7 +40,6 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
     page,
     setPage,
     warehouseOptions,
-    destinationWarehouseOptions,
     itemOptions,
     receiveStock,
     isReceiving,
@@ -389,7 +388,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
         onClose={() => setIsReceiveOpen(false)}
         onSubmit={receiveStock}
         isSubmitting={isReceiving}
-        warehouses={destinationWarehouseOptions}
+        warehouses={warehouseOptions}
         items={itemOptions}
         canViewCost={canViewCost}
       />
