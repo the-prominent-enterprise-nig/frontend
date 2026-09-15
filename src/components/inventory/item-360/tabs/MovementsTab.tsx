@@ -9,7 +9,7 @@ import {
 } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_components/procurementTokens'
 
 const TX_LABELS: Record<string, string> = {
-  receipt: 'Receipt',
+  receipt: 'Goods Receipt',
   sale: 'Sale',
   transfer_out: 'Transfer Out',
   transfer_in: 'Transfer In',
@@ -40,7 +40,7 @@ function humanizeField(field: string): string {
 
 const TRANSACTION_TYPES = [
   { value: '', label: 'All Types' },
-  { value: 'receipt', label: 'Receipt' },
+  { value: 'receipt', label: 'Goods Receipt' },
   { value: 'sale', label: 'Sale' },
   { value: 'transfer_out', label: 'Transfer Out' },
   { value: 'transfer_in', label: 'Transfer In' },
