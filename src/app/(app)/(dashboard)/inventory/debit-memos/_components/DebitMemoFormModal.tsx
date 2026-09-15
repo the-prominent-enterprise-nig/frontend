@@ -54,9 +54,12 @@ const monoHeadClass = `${MONO} text-[10px] font-semibold uppercase tracking-[0.0
 
 // Shared by the column headings and every goods row — one definition so the
 // two can never drift out of alignment.
-// Item · Reason · Account · Qty · Unit Price · Tax Code · Tax Amount · Total ·
-// remove. Total is a read-only mirror of the server's own arithmetic, so a
-// line's figure is never typed twice.
+// Item · Reason · Account · Qty · Unit Price · Tax Code · Tax Amount · Total.
+// Total is a read-only mirror of the server's own arithmetic, so a line's
+// figure is never typed twice. Remove is deliberately not a column here: the
+// row's minimums add up past the content area whenever the nav sidebar is
+// open, so a last column scrolls out of sight. It sits on the reason line
+// below instead, which wraps to the container and is always in view.
 //
 // Account arrives prefilled with what the line would post to anyway (the
 // item's own account, else its category's, else the tenant mapping), so the
@@ -69,9 +72,11 @@ const monoHeadClass = `${MONO} text-[10px] font-semibold uppercase tracking-[0.0
 // holds "SKU — Item name", which is the one cell whose content has no bound,
 // while every column to its right is a number of known width. Reason gets the
 // remainder — it is free text, but the chips under the row already say the
-// common four, so it is rarely typed long.
+// common four, so it is rarely typed long. The minimums are set so the whole
+// row still fits the content area with the nav sidebar expanded; below that
+// the shared scroll container takes over.
 const lineGridClass =
-  'grid grid-cols-1 gap-2 md:grid-cols-[minmax(260px,1.9fr)_minmax(130px,1fr)_minmax(170px,1.1fr)_64px_102px_114px_102px_114px_36px]'
+  'grid grid-cols-1 gap-2 md:grid-cols-[minmax(230px,1.9fr)_minmax(130px,1fr)_minmax(152px,1.1fr)_64px_102px_114px_102px_114px]'
 // Every control on a line row shares this padding and font size so they come
 // out the same height — the two comboboxes reach it via their `compact` prop,
 // which uses exactly these values.
@@ -1051,7 +1056,6 @@ export default function DebitMemoFormModal({
                         <span className={monoHeadClass}>Tax code</span>
                         <span className={`${monoHeadClass} text-right`}>Tax amt</span>
                         <span className={`${monoHeadClass} text-right`}>Total</span>
-                        <span />
                       </div>
 
                       <div className="space-y-3">
@@ -1066,7 +1070,6 @@ export default function DebitMemoFormModal({
                                 initialItemLabel={
                                   field.itemId ? itemLabelById[field.itemId] : undefined
                                 }
-                                onRemove={() => remove(index)}
                                 onItemPicked={(itemId) => applySourcePrice(index, itemId)}
                                 onAmountEdited={() => claimAmount(index)}
                                 overQuantity={!!over}
@@ -1102,6 +1105,18 @@ export default function DebitMemoFormModal({
                                     invoice
                                   </span>
                                 )}
+                                {/* Sits here rather than at the end of the row
+                                    above: this line wraps to the container, so
+                                    the control stays in view however far the
+                                    columns have to scroll. */}
+                                <button
+                                  type="button"
+                                  onClick={() => remove(index)}
+                                  className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Remove line
+                                </button>
                               </div>
                             </div>
                           )
@@ -1407,7 +1422,6 @@ function LineRow({
   control,
   index,
   initialItemLabel,
-  onRemove,
   onItemPicked,
   onAmountEdited,
   overQuantity,
@@ -1426,7 +1440,6 @@ function LineRow({
    * the row mounts, which is why it comes down as a prop rather than being
    * looked up from the watched value. */
   initialItemLabel?: string
-  onRemove: () => void
   /** Prefills this line's Unit Price from the invoice, or the PO behind it. */
   onItemPicked: (itemId: string) => void
   /** Hands the Unit Price over to whoever typed in it, so no later prefill
@@ -1568,15 +1581,6 @@ function LineRow({
         </span>
         <span>{fmtMoney(lineGross(line))}</span>
       </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
-        aria-label="Remove line"
-        title="Remove line"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
     </div>
   )
 }
