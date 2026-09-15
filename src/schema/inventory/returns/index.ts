@@ -16,14 +16,15 @@ export const CreateReturnFormSchema = z.object({
    *  and posts its cost reversal, it just never reaches AR. Naming one also
    *  raises the sales-return credit memo against it. */
   arInvoiceId: z.string().optional(),
+  /** The cashier-entered SI off the original sale — the paper the customer
+   *  brings back with the goods. Recorded on the ledger row so the return can
+   *  be read against what they actually presented; distinct from
+   *  `arInvoiceId`, which only drives the credit memo. */
+  salesInvoiceNumber: z.string().max(100).optional(),
   customerId: z.string().optional(),
-  // Scenario 50 Gap 8 — the backend DTO has carried this since the repair
-  // journey shipped ("RR number issued to the customer on intake"), but no
-  // form ever sent it — the branch clerk had nowhere to type the reference
-  // the customer walks away with. Free text: no real document gets created
-  // here (see UdsService#createFromReturn), matching how a standalone
-  // receiving report's own PO number field works — a reference, not a link.
-  intakeReceivingReportNumber: z.string().max(50).optional(),
+  // The RR handed to the customer at repair intake is issued server-side
+  // (UdsService#generateIntakeReceivingReportNumber) and comes back on the
+  // response — it is not an input, so the form never sends one.
   // Scenario 50 — the customer's proof of purchase, so a repair can be traced
   // back to the sale it came from. Free text for the same reason the RR number
   // above is: the unit may have been sold on paper, before this system, or by
@@ -58,12 +59,25 @@ export const ReturnSummarySchema = z.object({
    *  id) — the create form dropped its free-text version of this in favour of
    *  the real Original Invoice link. */
   originalSaleId: z.string().optional().nullable(),
+  /** The readable number behind `originalSaleId`, resolved server-side — that
+   *  field holds a PosTransaction UUID, which is no use to anyone reading a
+   *  list. Null on a return processed at the counter, which has no POS
+   *  transaction behind it. */
+  posTransactionNumber: z.string().optional().nullable(),
+  /** The documents the return was transacted on: the SI the customer brought
+   *  in, and the RR the branch issued them for the goods. */
+  salesInvoiceNumber: z.string().optional().nullable(),
+  receivingReportNumber: z.string().optional().nullable(),
+  /** Which way the unit went after the counter. A restock moved stock; a
+   *  repair intake moved none — the unit stayed the customer's property — and
+   *  carries the UDS its custody is recorded on instead. */
+  outcome: z.enum(['restocked', 'in_repair']).optional(),
+  uds: z.object({ id: z.string(), code: z.string(), status: z.string() }).optional().nullable(),
   notes: z.string().optional().nullable(),
   item: ReturnItemSchema.optional().nullable(),
   warehouse: ReturnWarehouseSchema.optional().nullable(),
   occurredAt: z.string().optional(),
   createdAt: z.string().optional(),
-  createdBy: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
   unitCost: z.coerce.number().optional().nullable(),
   customerId: z.string().optional().nullable(),
   customer: z
@@ -104,6 +118,12 @@ export const CustomerPurchaseSchema = z.object({
   serialNumberId: z.string().nullable(),
   serialNumber: z.string().nullable(),
   transactionNumber: z.string(),
+  /** The cashier-entered Sales Invoice number off the POS. This is the paper
+   *  the customer keeps, so it is what they produce as proof of purchase —
+   *  not `arInvoiceNumber` (the AR sub-ledger's own number for a charge sale)
+   *  and not `transactionNumber` (internal to POS). Null when the cashier
+   *  left it blank. */
+  salesInvoiceNumber: z.string().nullable(),
   occurredAt: z.string(),
   arInvoiceId: z.string().nullable(),
   arInvoiceNumber: z.string().nullable(),

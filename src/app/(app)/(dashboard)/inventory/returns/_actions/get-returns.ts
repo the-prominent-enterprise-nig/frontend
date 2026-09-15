@@ -15,8 +15,10 @@ type GetReturnsParams = {
 export async function getReturns(
   params: GetReturnsParams = {}
 ): Promise<ApiResponse<ReturnListResponse>> {
-  const result = await api.get<ReturnListResponse>('/inventory/stock/ledger', {
-    transactionType: 'return',
+  // Not /ledger: a repair intake writes no ledger row by design, so half of
+  // what a clerk processed on this screen is invisible there. This endpoint
+  // unions both outcomes.
+  const result = await api.get<ReturnListResponse>('/inventory/stock/customer-returns', {
     page: params.page,
     limit: params.limit,
     itemId: params.itemId,

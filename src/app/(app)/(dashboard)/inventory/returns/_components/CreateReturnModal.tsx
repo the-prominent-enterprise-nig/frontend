@@ -4,9 +4,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { X, Loader2, PackageCheck, AlertTriangle, Wrench } from 'lucide-react'
+import {
+  X,
+  Loader2,
+  PackageCheck,
+  AlertTriangle,
+  Wrench,
+  FileText,
+  PackageSearch,
+} from 'lucide-react'
 import { CreateReturnFormSchema, CreateReturnFormValues } from '@/src/schema/inventory/returns'
 import { getCustomerPurchases } from '../_actions/get-customer-purchases'
+import PurchasePicker from './PurchasePicker'
 import ARInvoiceCombobox from '@/src/app/(app)/(dashboard)/accounting/_shared/ARInvoiceCombobox'
 import {
   ItemSearchCombobox,
@@ -58,7 +67,6 @@ export default function CreateReturnModal({
       // a Controller-driven input with an undefined value mounts uncontrolled
       // and switches to controlled on the first keystroke, which React warns
       // about. The RR field had this from the start; fixed here alongside.
-      intakeReceivingReportNumber: '',
       intakeSalesInvoiceNumber: '',
     },
   })
@@ -68,11 +76,9 @@ export default function CreateReturnModal({
   const selectedItemId = watch('itemId')
   const arInvoiceId = watch('arInvoiceId')
   const customerId = watch('customerId')
+  const serialNumberId = watch('serialNumberId')
   const [invoiceCustomerName, setInvoiceCustomerName] = useState<string | null>(null)
   const [selectedPurchaseId, setSelectedPurchaseId] = useState('')
-  /** Escape hatch: the unit being returned isn't always on the customer's own
-   *  record (a gift, a walk-in with no history, a pre-migration sale). */
-  const [browseCatalogue, setBrowseCatalogue] = useState(false)
 
   const purchasesQuery = useQuery({
     queryKey: ['return-customer-purchases', customerId],
@@ -95,7 +101,20 @@ export default function CreateReturnModal({
     staleTime: 60 * 1000,
   })
   const selectedPurchase = purchases.find((p) => p.id === selectedPurchaseId) ?? null
-  const showPurchasePicker = !!customerId && !browseCatalogue && purchases.length > 0
+  /** Locked only when a real document was found on the sale. A sale with no SI
+   *  on record leaves the field open — the customer may still be holding paper
+   *  this system never saw. */
+  const derivedSalesInvoice = !!(
+    selectedPurchase?.salesInvoiceNumber ?? selectedPurchase?.arInvoiceNumber
+  )
+  // Naming a customer commits the form to their own sale history — there is
+  // no catalogue fallback from here. A return recorded against a customer we
+  // cannot tie to a sale is a quantity with someone's name on it: it credits
+  // nothing, reverses no cost correctly, and reads later as though the sale
+  // was found when it never was. The loading tick counts as "has purchases"
+  // so the picker never flashes past on its way in.
+  const showPurchasePicker = !!customerId && (purchasesQuery.isLoading || purchases.length > 0)
+  const noPurchasesOnRecord = !!customerId && !purchasesQuery.isLoading && purchases.length === 0
 
   // A unit taken in for repair stays the customer's property — it is never
   // added to stock and never credited — so there is nothing an invoice could
@@ -106,10 +125,30 @@ export default function CreateReturnModal({
     () => serialOptions.filter((s) => s.item?.id === selectedItemId),
     [serialOptions, selectedItemId]
   )
-  const soldSerials = soldSerialsQuery.data?.data?.data ?? []
+  // Memoized because serialChoices below depends on it: the `?? []` fallback
+  // is a fresh array on every render, which would re-run that memo each time.
+  const soldSerials = useMemo(
+    () => soldSerialsQuery.data?.data?.data ?? [],
+    [soldSerialsQuery.data]
+  )
   /** Sold units first; the in-stock list is only a fallback for an item whose
-   *  sale history predates serial tracking. */
-  const serialChoices = soldSerials.length > 0 ? soldSerials : itemSerials
+   *  sale history predates serial tracking. The unit picked from the
+   *  customer's purchases is prepended when the sold-serials lookup has not
+   *  returned it — otherwise the select holds an id that is not among its own
+   *  options and silently renders as unselected, which is how the wrong unit
+   *  gets chosen by someone correcting what looks like an empty field. */
+  const serialChoices = useMemo(() => {
+    const base = soldSerials.length > 0 ? soldSerials : itemSerials
+    const picked = selectedPurchase?.serialNumberId
+    if (!picked || base.some((s) => s.id === picked)) return base
+    return [
+      {
+        id: picked,
+        serialNumber: selectedPurchase?.serialNumber ?? picked,
+      } as (typeof base)[number],
+      ...base,
+    ]
+  }, [soldSerials, itemSerials, selectedPurchase])
 
   const isRepairIntake = repairDecision === 'flag_for_repair'
   // A serial-tracked unit returned through the catalogue used to record no
@@ -121,16 +160,22 @@ export default function CreateReturnModal({
       reset()
       setInvoiceCustomerName(null)
       setSelectedPurchaseId('')
-      setBrowseCatalogue(false)
       setCatalogueItemIsSerialTracked(false)
     }
   }, [isOpen, reset])
 
   useEffect(() => {
+    // Only ever a convenience for a unit nobody has identified yet. A serial
+    // that came from the customer's own purchase is the unit physically on the
+    // counter, and this used to overwrite it with whichever in-stock unit of
+    // the same item happened to be the only one on the shelf — raising the UDS
+    // against the wrong serial, marking a unit that never left the warehouse
+    // "in repair", and leaving the customer's actual unit recorded as sold.
+    if (selectedPurchase || serialNumberId) return
     if (repairDecision === 'flag_for_repair' && itemSerials.length === 1) {
       setValue('serialNumberId', itemSerials[0].id)
     }
-  }, [repairDecision, itemSerials, setValue])
+  }, [repairDecision, itemSerials, selectedPurchase, serialNumberId, setValue])
 
   if (!isOpen) return null
 
@@ -143,6 +188,21 @@ export default function CreateReturnModal({
     setValue('itemId', purchase?.itemId ?? '')
     setValue('serialNumberId', purchase?.serialNumberId ?? '')
     setValue('arInvoiceId', purchase?.arInvoiceId ?? '')
+    // The customer's proof of purchase is the sale we just picked — the clerk
+    // was retyping a number the form already had, off a receipt it had already
+    // matched. A repair intake drops arInvoiceId on purpose (nothing is being
+    // credited), so without copying the number across, the SI was the one part
+    // of the sale a UDS could not carry. Falls back to the POS transaction
+    // number for a cash sale, which is the only reference that sale has.
+    // Only a real document the customer could put on the counter: the
+    // cashier-entered SI, or the AR invoice number for a charge sale whose SI
+    // was left blank. The POS transaction number is deliberately NOT a
+    // fallback — it appears on nothing they were handed, and writing it into a
+    // field named for an SI makes the two indistinguishable afterwards. Left
+    // blank instead, which is the truth: that sale has no SI on record.
+    const documentNumber = purchase?.salesInvoiceNumber ?? purchase?.arInvoiceNumber ?? ''
+    setValue('salesInvoiceNumber', documentNumber)
+    setValue('intakeSalesInvoiceNumber', documentNumber)
     if (purchase) setValue('quantity', purchase.quantity)
   }
 
@@ -150,11 +210,12 @@ export default function CreateReturnModal({
   function handleCustomerChange(id: string, onChange: (v: string) => void) {
     onChange(id)
     setSelectedPurchaseId('')
-    setBrowseCatalogue(false)
     setCatalogueItemIsSerialTracked(false)
     setValue('itemId', '')
     setValue('serialNumberId', '')
     setValue('arInvoiceId', '')
+    setValue('salesInvoiceNumber', '')
+    setValue('intakeSalesInvoiceNumber', '')
   }
 
   async function handleFormSubmit(data: CreateReturnFormValues) {
@@ -165,7 +226,7 @@ export default function CreateReturnModal({
       // Kept for a repair intake too — it is the custody record the UDS is
       // built from, not just the credit-memo counterparty.
       customerId: data.customerId || undefined,
-      intakeReceivingReportNumber: data.intakeReceivingReportNumber || undefined,
+      salesInvoiceNumber: data.salesInvoiceNumber || undefined,
       intakeSalesInvoiceNumber: data.intakeSalesInvoiceNumber || undefined,
     })
     if (result.success) onClose()
@@ -256,81 +317,25 @@ export default function CreateReturnModal({
               )}
             </div>
 
-            {/* Item — picked from the customer's own purchases where we know
-                them, so the unit, its serial, its price and its invoice all
-                come from one choice. Falls back to the catalogue otherwise. */}
+            {/* Item — picked from the customer's own purchases, so the unit,
+                its serial, its price and its invoice all come from one
+                choice. The catalogue search is only for an unattributed
+                return, where there is no sale history to pick from. */}
             <div className="md:col-span-2">
-              <div className="mb-1 flex items-baseline justify-between">
-                <label className="block text-sm font-medium text-zinc-700">
-                  {showPurchasePicker ? 'Returned unit' : 'Item'}{' '}
-                  <span className="text-red-500">*</span>
-                </label>
-                {!!customerId && purchases.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBrowseCatalogue(!browseCatalogue)
-                      setSelectedPurchaseId('')
-                      setValue('itemId', '')
-                    }}
-                    className="text-xs font-medium text-prominent-purple-700 hover:underline"
-                  >
-                    {browseCatalogue ? 'Pick from their purchases' : 'Search all items instead'}
-                  </button>
-                )}
-              </div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                {showPurchasePicker ? 'Returned unit' : 'Item'}{' '}
+                <span className="text-red-500">*</span>
+              </label>
 
               {showPurchasePicker ? (
-                <>
-                  <select
-                    value={selectedPurchaseId}
-                    onChange={(e) => handlePurchasePick(e.target.value)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">Select from their purchases…</option>
-                    {purchases.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.itemName ?? p.itemSku ?? 'Item'}
-                        {p.serialNumber ? ` · ${p.serialNumber}` : ''} · {p.transactionNumber}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedPurchase && (
-                    <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs sm:grid-cols-4">
-                      <div>
-                        <dt className="text-zinc-400">SKU</dt>
-                        <dd className="font-mono text-zinc-700">
-                          {selectedPurchase.itemSku ?? '—'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-zinc-400">Serial</dt>
-                        <dd className="font-mono text-zinc-700">
-                          {selectedPurchase.serialNumber ?? '—'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-zinc-400">Sold for</dt>
-                        <dd className="text-zinc-700">
-                          {selectedPurchase.unitPrice.toLocaleString('en-PH', {
-                            style: 'currency',
-                            currency: 'PHP',
-                          })}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-zinc-400">Sold on</dt>
-                        <dd className="text-zinc-700">
-                          {new Date(selectedPurchase.occurredAt).toLocaleDateString('en-PH', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </dd>
-                      </div>
-                    </dl>
-                  )}
-                </>
+                <PurchasePicker
+                  purchases={purchases}
+                  isLoading={purchasesQuery.isLoading}
+                  selectedId={selectedPurchaseId}
+                  onSelect={handlePurchasePick}
+                />
+              ) : noPurchasesOnRecord ? (
+                <NoPurchasesNotice />
               ) : (
                 <Controller
                   name="itemId"
@@ -350,15 +355,10 @@ export default function CreateReturnModal({
                 />
               )}
 
-              {!!customerId && purchasesQuery.isLoading && (
-                <p className="mt-1 text-xs text-zinc-400">Loading their purchases…</p>
-              )}
-              {!!customerId && !purchasesQuery.isLoading && purchases.length === 0 && (
-                <p className="mt-1 text-xs text-zinc-400">
-                  No recorded purchases for this customer — search the catalogue instead.
-                </p>
-              )}
-              {showPurchasePicker && errors.itemId && (
+              {/* The catalogue combobox renders its own error; the picker and the
+                  dead-end notice do not, so a blocked submit says why here
+                  rather than failing silently. */}
+              {(showPurchasePicker || noPurchasesOnRecord) && errors.itemId && (
                 <p className="mt-1 text-xs text-red-600">{errors.itemId.message}</p>
               )}
             </div>
@@ -391,41 +391,71 @@ export default function CreateReturnModal({
               )}
             </div>
 
-            {/* Original Invoice — the customer-side half of the return */}
-            {!isCustodialRepairIntake && (
+            {/* Original Invoice — the customer-side half of the return. Only
+                asked for on the catalogue path: a unit picked from the
+                customer's own purchases already arrives with its invoice
+                attached, shown on the line itself, so re-asking here invites
+                the clerk to name a different one. */}
+            {!isCustodialRepairIntake && !selectedPurchase && (
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Original Invoice
                   <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
                 </label>
-                {selectedPurchase ? (
-                  <div className="flex h-[38px] items-center rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-700">
-                    {selectedPurchase.arInvoiceNumber ??
-                      `${selectedPurchase.transactionNumber} — cash sale, no invoice`}
-                  </div>
-                ) : (
-                  <Controller
-                    name="arInvoiceId"
-                    control={control}
-                    render={({ field }) => (
-                      <ARInvoiceCombobox
-                        value={field.value ?? ''}
-                        requireOutstanding
-                        onChange={(invoice) => {
-                          field.onChange(invoice?.id ?? '')
-                          setValue('customerId', invoice?.customer?.id ?? invoice?.customerId ?? '')
-                          setInvoiceCustomerName(invoice?.customer?.name ?? null)
-                        }}
-                      />
-                    )}
-                  />
-                )}
+                <Controller
+                  name="arInvoiceId"
+                  control={control}
+                  render={({ field }) => (
+                    <ARInvoiceCombobox
+                      value={field.value ?? ''}
+                      requireOutstanding
+                      onChange={(invoice) => {
+                        field.onChange(invoice?.id ?? '')
+                        setValue('customerId', invoice?.customer?.id ?? invoice?.customerId ?? '')
+                        setInvoiceCustomerName(invoice?.customer?.name ?? null)
+                      }}
+                    />
+                  )}
+                />
                 <p className="mt-1 text-xs text-zinc-400">
-                  {selectedPurchase && !selectedPurchase.arInvoiceId
-                    ? 'That sale was settled at the till, so there is no invoice to credit — the stock movement is recorded on its own.'
-                    : arInvoiceId
-                      ? 'A sales-return credit memo will be issued against this invoice and its balance reduced.'
-                      : 'Leave blank to record the stock movement only — the customer will not be credited automatically.'}
+                  {arInvoiceId
+                    ? 'A sales-return credit memo will be issued against this invoice and its balance reduced.'
+                    : 'Leave blank to record the stock movement only — the customer will not be credited automatically.'}
+                </p>
+              </div>
+            )}
+
+            {/* What naming that invoice actually does, said once the unit is
+                chosen — the clerk should know a credit is about to be raised
+                (or not) before they confirm, not discover it in the toast. */}
+            {!isCustodialRepairIntake && selectedPurchase && (
+              <div
+                className={`flex items-start gap-2 rounded-lg border p-3 md:col-span-2 ${
+                  selectedPurchase.arInvoiceId
+                    ? 'border-prominent-orange-200 bg-prominent-orange-50'
+                    : 'border-zinc-200 bg-zinc-50'
+                }`}
+              >
+                <FileText
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${
+                    selectedPurchase.arInvoiceId ? 'text-prominent-orange-700' : 'text-zinc-400'
+                  }`}
+                />
+                <p className="text-xs text-zinc-700">
+                  {selectedPurchase.arInvoiceId ? (
+                    <>
+                      Invoice{' '}
+                      <span className="font-medium">{selectedPurchase.arInvoiceNumber}</span> is
+                      attached to this unit — a sales-return credit memo will be issued against it
+                      and its balance reduced.
+                    </>
+                  ) : (
+                    <>
+                      Sale <span className="font-medium">{selectedPurchase.transactionNumber}</span>{' '}
+                      was settled at the till, so there is no invoice to credit — the stock movement
+                      is recorded on its own.
+                    </>
+                  )}
                 </p>
               </div>
             )}
@@ -562,31 +592,19 @@ export default function CreateReturnModal({
               </div>
             )}
 
-            {/* Scenario 50 Gap 8 — the RR number the branch hands the
-                customer at intake, so they have something in hand naming
-                what was received. Free text: it doesn't create a real
-                document here, same as a standalone receiving report's own
-                free-text PO number field. Only meaningful once repair
-                custody is confirmed. */}
+            {/* The RR the customer walks away with. Issued by the server on
+                save, not typed: a clerk inventing a number off a pad meant
+                nothing stopped two branches issuing the same one, and nothing
+                checked the typed number against anything. Announced here so
+                the clerk knows a number is coming and does not write their own
+                on the pad first. */}
             {isCustodialRepairIntake && (
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  RR # Issued to Customer{' '}
-                  <span className="text-xs font-normal text-zinc-400">(optional)</span>
-                </label>
-                <Controller
-                  name="intakeReceivingReportNumber"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      type="text"
-                      placeholder="e.g. RR-20260910-0001"
-                      maxLength={50}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                    />
-                  )}
-                />
+              <div className="flex items-start gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 md:col-span-2">
+                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
+                <p className="text-xs text-zinc-600">
+                  An <strong>RR number</strong> will be issued when you confirm. Write it on the
+                  customer&apos;s copy — it is shown as soon as the intake is saved.
+                </p>
               </div>
             )}
 
@@ -612,10 +630,22 @@ export default function CreateReturnModal({
                       type="text"
                       placeholder="e.g. SI-20260101-0042"
                       maxLength={50}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                      readOnly={derivedSalesInvoice}
+                      className={`w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
+                        derivedSalesInvoice ? 'bg-zinc-50 text-zinc-700' : 'bg-white'
+                      }`}
                     />
                   )}
                 />
+                {selectedPurchase && (
+                  <p className="mt-1 text-xs text-zinc-400">
+                    {selectedPurchase.salesInvoiceNumber
+                      ? 'The SI the cashier recorded on that sale.'
+                      : selectedPurchase.arInvoiceNumber
+                        ? 'No SI was recorded at the till, so the AR invoice number stands in.'
+                        : `No SI was recorded on that sale (${selectedPurchase.transactionNumber}). Type the number off the customer's receipt if they have one.`}
+                  </p>
+                )}
               </div>
             )}
 
@@ -708,6 +738,32 @@ export default function CreateReturnModal({
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+/** A named customer with nothing on record is a dead end on purpose. The
+ *  catalogue used to sit here as a fallback, which let a clerk record a return
+ *  "for" someone against a sale that was never found — a quantity with a name
+ *  on it that credits nothing and reads later as though the sale matched.
+ *
+ *  Three things actually produce this: a sale imported from the old books or
+ *  done on paper, a POS sale rung up before the customer was identified, and a
+ *  sale already returned through the POS queue (excluded deliberately, so it
+ *  is not credited twice). The first two are recoverable by fixing the sale;
+ *  the third means the return is already done. Clearing the customer records
+ *  the stock movement on its own, which is the honest version of what the
+ *  catalogue fallback was doing silently. */
+function NoPurchasesNotice(): React.ReactElement {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-5 text-center">
+      <PackageSearch className="mx-auto h-5 w-5 text-zinc-300" />
+      <p className="mt-2 text-sm font-medium text-zinc-700">No sale on record for this customer</p>
+      <p className="mx-auto mt-1 max-w-md text-xs text-zinc-500">
+        Their purchase may predate the system, have been rung up before they were identified, or
+        already have been returned through POS. Attach the customer to the sale first, or clear the
+        Customer field above to record this as an unattributed return.
+      </p>
     </div>
   )
 }

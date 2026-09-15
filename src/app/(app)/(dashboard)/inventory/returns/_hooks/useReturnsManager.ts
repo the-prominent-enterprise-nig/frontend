@@ -59,10 +59,23 @@ export function useReturnsManager() {
         // reporting a clean success the accountant would have to go and
         // disprove later.
         const note = result.data?.accountingNote
+        const isRepairIntake = !!result.data?.uds?.intakeReceivingReportNumber
+        const rrNumber =
+          result.data?.uds?.intakeReceivingReportNumber ??
+          result.data?.ledger?.receivingReportNumber
         showToast({
-          title: note ? 'Return recorded — check the accounting' : 'Return processed',
+          // A repair intake moves no stock and credits nothing — saying
+          // "Return processed" would describe the wrong event. What happened
+          // is that we took custody and issued a receipt for it.
+          title: isRepairIntake
+            ? 'Unit received for repair'
+            : note
+              ? 'Return recorded — check the accounting'
+              : rrNumber
+                ? 'Stock received back'
+                : 'Return processed',
           description: result.message,
-          status: note ? 'warning' : 'success',
+          status: note && !isRepairIntake ? 'warning' : 'success',
         })
         queryClient.invalidateQueries({ queryKey: ['inventory-returns'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })

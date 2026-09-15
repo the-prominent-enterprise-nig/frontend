@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   RotateCcw,
   ChevronDown,
+  Wrench,
 } from 'lucide-react'
 import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import type { ReturnSummary } from '@/src/schema/inventory/returns'
@@ -65,7 +66,7 @@ function ReturnDetailRow({ ret }: { ret: ReturnSummary }) {
 
   return (
     <tr className="bg-zinc-50/60">
-      <td colSpan={10} className="px-4 pb-4 pt-1">
+      <td colSpan={9} className="px-4 pb-4 pt-1">
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 rounded-lg border border-zinc-200 bg-white p-4 sm:grid-cols-3 lg:grid-cols-4">
           <DetailField label="Customer">
             {ret.customer ? (
@@ -140,11 +141,27 @@ function ReturnDetailRow({ ret }: { ret: ReturnSummary }) {
             )}
           </DetailField>
 
-          <DetailField label="Reference">
-            {ret.originalSaleId ? (
-              <span className="font-mono text-xs">{ret.originalSaleId}</span>
+          <DetailField label="RR issued">
+            {ret.receivingReportNumber ? (
+              <span className="font-mono text-xs">{ret.receivingReportNumber}</span>
             ) : (
-              <span className="text-zinc-400">—</span>
+              <span className="text-zinc-400">None issued</span>
+            )}
+          </DetailField>
+
+          <DetailField label="Against SI">
+            {ret.salesInvoiceNumber ? (
+              <span className="font-mono text-xs">{ret.salesInvoiceNumber}</span>
+            ) : (
+              <span className="text-zinc-400">Not recorded</span>
+            )}
+          </DetailField>
+
+          <DetailField label="POS transaction">
+            {ret.posTransactionNumber ? (
+              <span className="font-mono text-xs">{ret.posTransactionNumber}</span>
+            ) : (
+              <span className="text-zinc-400">Not from POS</span>
             )}
           </DetailField>
 
@@ -316,6 +333,9 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                       Item
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
+                      Serial
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                       Location
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
@@ -328,13 +348,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                       Condition
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
-                      Reference
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
-                      Accounting
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                      Notes
+                      Outcome
                     </th>
                     <th className="w-10 px-2 py-3">
                       <span className="sr-only">Details</span>
@@ -358,7 +372,20 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                             <p className="font-medium text-zinc-900">{ret.item?.name ?? '—'}</p>
                             <p className="font-mono text-xs text-zinc-400">{ret.item?.sku}</p>
                           </td>
-                          <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
+                          {/* Which physical unit came back. On serial-tracked
+                              goods this is the row's real identity — it used
+                              to be one click down in the detail panel, while
+                              a dead Reference column held its place here. */}
+                          <td className="px-4 py-3 hidden sm:table-cell">
+                            {ret.serialNumber ? (
+                              <span className="font-mono text-xs text-zinc-700">
+                                {ret.serialNumber}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-zinc-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-600 hidden md:table-cell">
                             {ret.warehouse?.branch?.name ?? ret.warehouse?.name ?? '—'}
                           </td>
                           <td className="px-4 py-3 hidden lg:table-cell">
@@ -390,35 +417,50 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                               <span className="text-zinc-400">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-xs text-zinc-500 hidden md:table-cell">
-                            {ret.originalSaleId ? (
-                              <span className="font-mono">{ret.originalSaleId}</span>
+                          {/* Where the unit went after the counter, and the
+                              paper it moved on. A repair intake has no stock
+                              movement at all — the unit stays the customer's —
+                              so its row links to the UDS that holds custody
+                              instead. Before this, that intake simply vanished
+                              from the screen it was created on. */}
+                          <td className="px-4 py-3 hidden md:table-cell">
+                            {ret.outcome === 'in_repair' ? (
+                              <>
+                                <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700">
+                                  <Wrench className="h-3 w-3" />
+                                  In repair
+                                </span>
+                                {ret.uds && (
+                                  <Link
+                                    href="/inventory/uds"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="mt-0.5 block font-mono text-xs text-prominent-purple-700 hover:underline"
+                                    title="Custody is recorded on this UDS — no stock moved"
+                                  >
+                                    {ret.uds.code}
+                                  </Link>
+                                )}
+                              </>
                             ) : (
-                              '—'
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-xs hidden md:table-cell">
-                            {ret.creditMemoNumber ? (
-                              <Link
-                                href="/accounting/credit-memos"
-                                // The row itself toggles the detail panel, so the
-                                // link must not do both on its way out.
-                                onClick={(e) => e.stopPropagation()}
-                                className="font-mono text-prominent-purple-700 hover:underline"
-                                title="Credit memo issued against the original invoice"
-                              >
-                                {ret.creditMemoNumber}
-                              </Link>
-                            ) : ret.journalEntryId ? (
-                              <span className="text-zinc-500" title="Dr Inventory / Cr COGS posted">
-                                Stock only
+                              <span className="inline-flex items-center rounded-md bg-zinc-100 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600">
+                                Restocked
                               </span>
-                            ) : (
-                              <span className="text-zinc-400">Not posted</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-zinc-500 hidden lg:table-cell max-w-xs truncate">
-                            {ret.notes ?? '—'}
+                            {ret.receivingReportNumber && (
+                              <p className="mt-0.5 font-mono text-xs text-zinc-500">
+                                {ret.receivingReportNumber}
+                              </p>
+                            )}
+                            {ret.salesInvoiceNumber && (
+                              <p className="mt-0.5 font-mono text-xs text-zinc-400">
+                                against {ret.salesInvoiceNumber}
+                              </p>
+                            )}
+                            {ret.posTransactionNumber && (
+                              <p className="mt-0.5 font-mono text-xs text-zinc-400">
+                                POS {ret.posTransactionNumber}
+                              </p>
+                            )}
                           </td>
                           <td className="px-2 py-3 text-zinc-400">
                             <ChevronDown
