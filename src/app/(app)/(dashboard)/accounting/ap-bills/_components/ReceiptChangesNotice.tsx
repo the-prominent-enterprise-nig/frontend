@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { APBills, fmtMoney, type APBillReceiptChanges } from '@/src/libs/data/AccountingV2Data'
@@ -30,6 +31,12 @@ export default function ReceiptChangesNotice({
   const [data, setData] = useState<APBillReceiptChanges | null>(null)
   const [busy, setBusy] = useState<'apply' | 'supersede' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Scenario 51 — what accepting the correction just left owing, captured at
+  // the moment Update succeeds. `data` itself flips to `edited: false` right
+  // after, which hides the whole notice below — this is the one thing that
+  // has to survive that, so there's still something on screen prompting the
+  // follow-up payment rather than the notice just silently vanishing.
+  const [justSettledOutstanding, setJustSettledOutstanding] = useState<number | null>(null)
 
   useEffect(() => {
     APBills.receiptChanges(billId).then((res) => {
@@ -37,9 +44,8 @@ export default function ReceiptChangesNotice({
     })
   }, [billId])
 
-  if (!data?.edited) return null
-
   const apply = async () => {
+    if (!data) return
     setBusy('apply')
     setError(null)
     const res = await APBills.applyReceiptChanges(billId)
@@ -48,9 +54,45 @@ export default function ReceiptChangesNotice({
       setError(res.message || res.error || 'Could not update this invoice.')
       return
     }
+    if (data.projectedOutstanding > 0.005) setJustSettledOutstanding(data.projectedOutstanding)
     setData({ ...data, edited: false })
     onApplied()
   }
+
+  // Scenario 51 — the accepted-correction confirmation stays visible even
+  // once `data.edited` has flipped false and the section below returns null.
+  if (justSettledOutstanding != null) {
+    return (
+      <section className="mt-2.5 rounded-lg border border-amber-300 bg-amber-50 px-5 py-4">
+        <div className="flex items-start gap-2.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[13px] font-semibold text-amber-900">Invoice updated</h2>
+            <p className="mt-1 text-[12px] text-amber-800">
+              This correction left <strong>{fmtMoney(justSettledOutstanding)}</strong> still owed to
+              this supplier.
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <Link
+                href={`/accounting/ap-bills/payments/new?bills=${billId}`}
+                className="flex items-center gap-1.5 rounded-md bg-amber-700 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-800"
+              >
+                Pay the remaining {fmtMoney(justSettledOutstanding)}
+              </Link>
+              <button
+                onClick={() => setJustSettledOutstanding(null)}
+                className="rounded-md border border-amber-400 bg-white px-3 py-1.5 text-[12px] font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (!data?.edited) return null
 
   const supersede = async () => {
     setBusy('supersede')
@@ -109,6 +151,18 @@ export default function ReceiptChangesNotice({
             <p className="mt-2 text-[12px] text-amber-800">
               Nothing the invoice bills has moved — the correction was to prices or tax codes, which
               never restate what was already costed. Accepting it just clears this notice.
+            </p>
+          )}
+
+          {/* Scenario 51 — said before Update is clicked, not discovered after.
+              Only when accepting would actually leave something owed — a
+              paid bill whose correction nets to zero (price/tax alone)
+              settles right back to zero and needs no warning. */}
+          {data.status === 'PAID' && data.projectedOutstanding > 0.005 && (
+            <p className="mt-2 rounded-md border border-amber-400 bg-amber-100 px-3 py-2 text-[12px] font-medium text-amber-900">
+              This invoice is marked fully paid. Accepting this correction will reopen it —{' '}
+              <strong>{fmtMoney(data.projectedOutstanding)}</strong> will still be owed to this
+              supplier.
             </p>
           )}
 
