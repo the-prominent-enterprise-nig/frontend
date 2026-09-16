@@ -68,13 +68,5 @@ export const MODULES: AppModule[] = [
     requiredPermission: 'crm:*',
     icon: 'users-round',
   },
-  // {
-  //   key: 'sales',
-  //   routeSegment: 'sales',
-  //   label: 'Sales & Orders',
-  //   href: '/sales',
-  //   requiredPermission: 'sales:*',
-  //   icon: 'shopping-cart',
-  // },
   // add more modules here — sidebar auto-updates
 ]

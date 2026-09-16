@@ -25,6 +25,21 @@ export const ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
   mixed: 'Mixed Access',
 }
 
+/**
+ * Compact form for tight spaces — a resource row's own level buttons (two-up
+ * inside an expanded module, roughly a quarter of half the modal's width) and
+ * the roles list's per-module badges (up to 4 per row, "Accounting: Manage /
+ * Edit" repeated four times reads as a wall of text). The full label stays
+ * available as a title/tooltip wherever this is used.
+ */
+export const SHORT_ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
+  none: 'None',
+  view: 'View',
+  manage: 'Edit',
+  full: 'Full',
+  mixed: 'Mixed',
+}
+
 // Scenario 22 Part 9 follow-up: no separate 'procurement' entry — Purchase
 // Requests/Orders/Suppliers/Quotas permissions were folded into the
 // 'inventory' module (they already lived under the Inventory nav section;
@@ -130,8 +145,8 @@ export const PRESET_EXCLUDED_PERMISSIONS = new Set([
   // ...) is false against every READ_ACTIONS/EDIT_ACTIONS entry, so View Only and
   // Manage / Edit never select it regardless of whether it's listed here.
   // Kept anyway because isPresetExcluded also drives the "Sensitive" badge in
-  // Advanced permissions (see AssignPermissionsModal/CreateRoleModal), and that
-  // badge is correct information — this permission genuinely is restricted (see
+  // AdvancedPermissionsSection, and that badge is correct information — this
+  // permission genuinely is restricted (see
   // its own description in seed.ts) — even though the mechanism keeping it out of
   // the module buttons is "never classified as read or edit" rather than "matched,
   // then withheld" like every other entry in this list. #168 review (2026-09-14).
@@ -271,7 +286,33 @@ export function getAccessLevelForPermissions(
     )
   )
   if (levels.size > 1) return 'mixed'
-  return levels.values().next().value ?? 'none'
+  const uniformLevel = levels.values().next().value ?? 'none'
+
+  // "Full" is a stronger claim than the others: not "whatever this role
+  // touches, it's at this level" but "everything in this module, no
+  // exceptions". A resource sitting at zero permissions is rightly ignored
+  // above — a role legitimately scoped to 2 of 20 resources in a module
+  // isn't "Mixed" just because the other 18 were never granted — but it
+  // does contradict Full specifically. #169 review (2026-09-16): narrowing
+  // one resource of a Full module to None (dissolving the module:*:*
+  // wildcard per applyResourceLevel above) left every *other* resource
+  // individually at full, so the "resources that have something agree"
+  // check above found only one level and called it Full — while the
+  // narrowed resource sat at zero the whole time.
+  //
+  // Skipped entirely when the wildcard itself is held: holding module:*:*
+  // is exactly one row in `selected`, so none of the module's real
+  // resources appear in selectedByResource at all — that's the normal,
+  // unmodified "Full via wildcard" case, not the dissolved-and-partial one
+  // this check exists to catch, and it would wrongly downgrade it too.
+  if (uniformLevel === 'full' && !selectedByResource.has('*')) {
+    const everyRealResourceGranted = Array.from(availableByResource.keys())
+      .filter((resource) => resource !== '*')
+      .every((resource) => selectedByResource.has(resource))
+    if (!everyRealResourceGranted) return 'mixed'
+  }
+
+  return uniformLevel
 }
 
 /**
@@ -442,6 +483,39 @@ export function applyResourceLevel(
   for (const permission of resourcePermissions) next.delete(permission.id)
   for (const permission of getPermissionsForLevel(resourcePermissions, level))
     next.add(permission.id)
+
+  return collapseToWildcardIfComplete(next, modulePermissions)
+}
+
+/**
+ * Mirror image of the dissolve above: once every real resource in the
+ * module is individually back at 100%, the exception that forced the
+ * dissolve no longer exists — there's nothing left for the wildcard to
+ * silently override — so it's safe to swap the individual rows back out
+ * for the single module:*:* row.
+ *
+ * Without this, "Full Access" can mean two different things that read
+ * identically today and only diverge later: the wildcard (keeps up
+ * automatically when the module gains a new permission) or a frozen list of
+ * what existed the moment it was dissolved (does not). #169 review
+ * (2026-09-16) — narrowing one resource and then setting it straight back to
+ * Full used to leave the module on the frozen list forever, with no way
+ * back to the wildcard short of Advanced permissions.
+ */
+function collapseToWildcardIfComplete(
+  selected: Set<string>,
+  modulePermissions: Permission[]
+): Set<string> {
+  const wildcard = modulePermissions.find((permission) => permission.resource === '*')
+  if (!wildcard || selected.has(wildcard.id)) return selected
+
+  const realPermissions = modulePermissions.filter((permission) => permission.resource !== '*')
+  const everyResourceGranted = realPermissions.every((permission) => selected.has(permission.id))
+  if (!everyResourceGranted) return selected
+
+  const next = new Set(selected)
+  for (const permission of realPermissions) next.delete(permission.id)
+  next.add(wildcard.id)
   return next
 }
 
@@ -451,6 +525,13 @@ export type LevelAvailability = {
   enabled: boolean
   /** Present only when disabled — shown as the button tooltip. */
   reason?: string
+  /**
+   * What clicking this button actually grants, in the permission catalog's
+   * own words — the button tooltip when enabled, same as `reason` is when
+   * disabled. Sourced from formatPermission, not a hand-written summary, so
+   * it can't drift from what the backend actually enforces.
+   */
+  grants: string[]
 }
 
 /**
@@ -487,11 +568,17 @@ export function getResourceLevelAvailability(
     return []
   }
 
+  const grantsFor = (level: Exclude<AccessLevel, 'mixed'>) =>
+    getPermissionsForLevel(resourcePermissions, level).map((permission) =>
+      formatPermission(permission)
+    )
+
   return SETTABLE_ACCESS_LEVELS.map((level, index) => {
-    if (index === 0) return { level, enabled: true }
+    if (index === 0) return { level, enabled: true, grants: grantsFor(level) }
 
     const previous = SETTABLE_ACCESS_LEVELS[index - 1]
-    if (idsFor(level) !== idsFor(previous)) return { level, enabled: true }
+    if (idsFor(level) !== idsFor(previous))
+      return { level, enabled: true, grants: grantsFor(level) }
 
     const withheld = candidatesFor(level).filter(isPresetExcluded)
     if (withheld.length > 0) {
@@ -503,6 +590,7 @@ export function getResourceLevelAvailability(
           `Same as ${ACCESS_LEVEL_LABELS[previous]} here — ` +
           `${actions.join(', ')} are sensitive and never granted by these buttons. ` +
           'Use Full Access, or tick them under Advanced permissions.',
+        grants: grantsFor(level),
       }
     }
 
@@ -510,6 +598,7 @@ export function getResourceLevelAvailability(
       level,
       enabled: false,
       reason: `Same as ${ACCESS_LEVEL_LABELS[previous]} — this resource has no further actions.`,
+      grants: grantsFor(level),
     }
   })
 }
@@ -517,7 +606,7 @@ export function getResourceLevelAvailability(
 /**
  * Label for a module key that may or may not be one of the real, navigable
  * modules in MODULES. Real modules use their own curated label ('pos' ->
- * "Point of Sale", not "Pos"); anything else — admin, files, workspace, or
+ * "Point of Sale", not "Pos"); anything else — admin, files, or
  * whatever the permission catalog grows next — falls back to title-casing
  * the raw key, same treatment formatResourceLabel gives a resource name.
  */
@@ -533,7 +622,7 @@ export function formatModuleLabel(moduleKey: string): string {
 /**
  * Every permission that exists, grouped by its own module field — not
  * filtered through ACCESS_MODULES. That list is now the four real, curated
- * modules only (#171 review), so admin/files/workspace permissions have no
+ * modules only (#171 review), so admin/files permissions have no
  * quick-preset button — correct, they are not real modules — but they are
  * still real, grantable permissions. This is what Advanced permissions
  * renders instead of ACCESS_MODULES, so nothing a role could be granted
