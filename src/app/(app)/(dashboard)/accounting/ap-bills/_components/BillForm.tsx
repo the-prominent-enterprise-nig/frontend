@@ -294,7 +294,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
               This bill has been received and posted to the GL, so its goods-cost figures (Subtotal,
               VAT) are fixed — they only change by correcting the Receiving Report. Its own
               paperwork below can still be edited. How it gets paid is decided on its voucher — use
-              Create voucher or Record Payment from the invoice.
+              Record Payment from the invoice.
             </div>
             <InfoRow label="Supplier" value={initial?.supplier?.name ?? '—'} />
             {initial?.purchaseOrder && (

@@ -3,16 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import {
-  Plus,
-  Search,
-  Inbox,
-  PhilippinePeso,
-  Pencil,
-  Trash2,
-  Printer,
-  FileText,
-} from 'lucide-react'
+import { Plus, Search, Inbox, PhilippinePeso, Pencil, Trash2, Printer } from 'lucide-react'
 import {
   APBills,
   type APBill,
@@ -241,19 +232,19 @@ export default function APBillsList() {
     ...(b.status === 'DRAFT'
       ? [{ label: 'Receive', icon: Inbox, onClick: () => receiveOne(b) }]
       : []),
-    // Raise a voucher for this one invoice without going through the
-    // selection bar first. Offered only where it can actually be done: the
-    // bill has to be payable, still owe something, and not already be held by
-    // an unpaid voucher — the same conditions disabledReason() applies to the
-    // checkbox, and the server enforces regardless.
+    // Pay this one invoice without going through the selection bar first.
+    // Offered only where it can actually be done: the bill has to be payable,
+    // still owe something, and not already be held by an unpaid voucher — the
+    // same conditions disabledReason() applies to the checkbox, and the
+    // server enforces regardless.
     ...(PAYABLE.includes(b.status) && uncommitted(b) > 0.005
       ? [
           {
-            label: 'Create voucher',
-            icon: FileText,
+            label: 'Record Payment',
+            icon: PhilippinePeso,
             onClick: () =>
               router.push(
-                `/accounting/ap-bills/payments/new?supplier=${b.supplierId ?? ''}&bills=${b.id}&voucherOnly=1`
+                `/accounting/ap-bills/payments/new?supplier=${b.supplierId ?? ''}&bills=${b.id}`
               ),
           },
         ]
@@ -298,17 +289,11 @@ export default function APBillsList() {
     load()
   }
 
-  /** Both selection actions open the same form; the only difference is whether
-   * it starts with Pay now on. Two buttons rather than one, because "raise a
-   * voucher for these five invoices" is a distinct intent from "pay them", and
-   * hiding it behind a toggle inside a screen called Record Payment means
-   * nobody finds it. */
-  const openPaymentForm = (voucherOnly: boolean) => {
+  const openPaymentForm = () => {
     if (!selectedIds.length) return
     const params = new URLSearchParams()
     if (lockedSupplierId) params.set('supplier', lockedSupplierId)
     params.set('bills', selectedIds.join(','))
-    if (voucherOnly) params.set('voucherOnly', '1')
     // Carried in the URL rather than in memory so a refresh or a shared link
     // still lands on the same prefilled form.
     router.push(`/accounting/ap-bills/payments/new?${params.toString()}`)
@@ -378,20 +363,12 @@ export default function APBillsList() {
                 <Inbox className="h-4 w-4" /> Receive {selectedIds.length}
               </button>
             ) : (
-              <>
-                <button
-                  onClick={() => openPaymentForm(true)}
-                  className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-4 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
-                >
-                  <FileText className="h-4 w-4" /> Create Voucher
-                </button>
-                <button
-                  onClick={() => openPaymentForm(false)}
-                  className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800"
-                >
-                  <PhilippinePeso className="h-4 w-4" /> Record Payment
-                </button>
-              </>
+              <button
+                onClick={() => openPaymentForm()}
+                className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800"
+              >
+                <PhilippinePeso className="h-4 w-4" /> Record Payment
+              </button>
             )}
             <button
               onClick={() => setSelectedIds([])}

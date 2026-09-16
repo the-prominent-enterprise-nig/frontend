@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, FileText, Loader2, PhilippinePeso, Plus, X } from 'lucide-react'
+import { ArrowLeft, Loader2, PhilippinePeso, Plus, X } from 'lucide-react'
 import {
   APBills,
   APBillSuppliers,
@@ -270,10 +270,6 @@ export default function RecordPaymentForm() {
   // payment together, the same way an expense can be split — see
   // APDisbursement.sources. One row covers the ordinary case.
   const [sources, setSources] = useState<PaymentSource[]>([blankSource()])
-  // A voucher is the authorisation to pay; paying is a separate act. Leaving
-  // this off raises an UNPAID voucher — number issued, invoices recorded,
-  // nothing posted to the GL and no bill touched. On, and it is raised and
-  // settled in one go, which is what this screen always used to do.
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -521,16 +517,11 @@ export default function RecordPaymentForm() {
     setAllocations(next)
   }
 
-  /** Raising a voucher and paying one collect the same thing — a voucher IS
-   * the instruction to cut a cheque from a named account — so this is one form
-   * and `pay` says whether the money moved. It comes from whichever button was
-   * pressed rather than a checkbox chosen up front, which had to hide half the
-   * fields to mean anything. */
-  const submit = async (e: React.FormEvent, pay = true) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     if (selectedIds.length === 0) return setError('Select at least one invoice to pay.')
-    for (const src of pay ? sources : []) {
+    for (const src of sources) {
       if (src.method !== 'cash' && !src.bankAccountId)
         return setError(`Source of Fund is required for ${src.method.replace('_', ' ')} payments.`)
     }
@@ -639,12 +630,6 @@ export default function RecordPaymentForm() {
 
     const res = await APBills.createDisbursement({
       supplierId,
-      payNow: pay,
-      // The funding goes with the voucher whether or not it is being paid now:
-      // a voucher that does not say which account the cheque is drawn on is
-      // less than the paper it stands for, and whoever settles it would have
-      // to retype what was already decided.
-      //
       // Always sent as sources, even when there is one — the server records it
       // as source #1 and takes its bank/cheque as the primary.
       sources: sources.map((src) => ({
@@ -655,9 +640,7 @@ export default function RecordPaymentForm() {
         amount: sourceAmount(src),
       })),
       voucherDate: new Date(form.paymentDate).toISOString(),
-      // Same day when paying now, which is the common case; settling later
-      // asks for the payment date on its own screen.
-      ...(pay ? { paymentDate: new Date(form.paymentDate).toISOString() } : {}),
+      paymentDate: new Date(form.paymentDate).toISOString(),
       clearedType: form.clearedType,
       clearedDate:
         form.clearedType === 'LATER_DATE' && form.clearedDate
@@ -671,18 +654,7 @@ export default function RecordPaymentForm() {
       setError(res.message || res.error || 'Could not record this payment')
       return
     }
-    // Saving a voucher is not paying one, so it must not land on Payments:
-    // that screen is PAID-only by design, and the voucher just raised would be
-    // filtered straight out of the list it arrived at. Go where it is actually
-    // visible — the invoice's own Vouchers panel, which offers Print and Pay on
-    // the row, or the invoice list when the voucher spans several.
-    router.push(
-      pay
-        ? '/accounting/ap-bills/payments'
-        : rows.length === 1
-          ? `/accounting/ap-bills/${rows[0].apBillId}`
-          : '/accounting/ap-bills'
-    )
+    router.push('/accounting/ap-bills/payments')
   }
 
   return (
@@ -704,7 +676,7 @@ export default function RecordPaymentForm() {
           ? 'It keeps its number. Nothing has posted yet, so anything on it can still change.'
           : settling
             ? 'The invoices were decided when this voucher was raised — add the cheque and the date.'
-            : 'One cheque, one voucher. Save it to pay later, or record the payment now.'}
+            : 'One cheque, one voucher — recorded together with the payment.'}
       </p>
 
       {/* Beat 1 — who are we paying. Nothing else shows until this is set. */}
@@ -1255,21 +1227,6 @@ export default function RecordPaymentForm() {
           )}
           {saving ? 'Saving…' : editing ? 'Save changes' : 'Record Payment'}
         </button>
-        {/* Same form, same fields — the button says whether the money moved.
-            Settling a voucher raised earlier has only one outcome, and amending
-            one is not a payment at all, so this is offered only when raising a
-            new voucher. */}
-        {!settling && !editing && (
-          <button
-            type="button"
-            onClick={(e) => submit(e, false)}
-            disabled={saving || selectedIds.length === 0}
-            className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-white px-5 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
-          >
-            <FileText className="h-4 w-4" />
-            Save voucher
-          </button>
-        )}
         <Link
           href="/accounting/ap-bills"
           className="rounded-lg border border-gray-200 px-5 py-2 text-sm text-gray-600 hover:bg-gray-50"
