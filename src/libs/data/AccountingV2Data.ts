@@ -1072,9 +1072,7 @@ export interface CreateDisbursementBody {
   chequeNumber?: string
   method?: string
   reference?: string
-  /** Required when payNow is true (the default). A voucher raised before
-   * payment has no payment date yet. */
-  paymentDate?: string
+  paymentDate: string
   /** When the voucher was raised. Distinct from paymentDate — a voucher raised
    * on the 7th and paid on the 15th has both. Defaults to now. */
   voucherDate?: string
@@ -1090,10 +1088,6 @@ export interface CreateDisbursementBody {
    * bankAccountId/chequeNumber/method above; the server records that as one
    * source either way, and the voucher number derives from the first. */
   sources?: DisbursementSource[]
-  /** false raises an UNPAID voucher: invoices recorded and a number issued,
-   * but no cheque cut, nothing posted to the GL and the bills left unpaid.
-   * Settle it later with settleDisbursement(). Defaults to true. */
-  payNow?: boolean
 }
 /** One funding source of a disbursement. */
 export interface DisbursementSource {
@@ -1591,6 +1585,13 @@ export interface BusinessExpense {
   voucherNumber?: string | null
   customerId?: string | null
   customer?: { id: string; name: string } | null
+  /** payeeType=CUSTOMER only — optional Sales Invoice reference. No
+   * relation server-side, so there's no joined invoiceNumber here — the
+   * form re-resolves it against the customer's invoices. */
+  arInvoiceId?: string | null
+  /** Free-text Sales Invoice number, for when there's no ARInvoice on file
+   * to link via arInvoiceId. */
+  salesInvoiceNumber?: string | null
   employeeId?: string | null
   employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
   specialAccountType?: SpecialAccountType | null
@@ -1632,6 +1633,9 @@ export interface ExpenseDocument {
     payeeTin: string | null
     expenseNumber: string
     voucherNumber: string | null
+    /** payeeType=CUSTOMER only — the linked ARInvoice's own number, or the
+     * free-text one typed on the form when there's no ARInvoice on file. */
+    salesInvoice: string | null
     expenseDate: string
     description: string | null
     payments: {
