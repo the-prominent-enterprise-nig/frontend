@@ -79,6 +79,12 @@ export const ReceiveStockFormSchema = z
     // refine below — this used to be the other way round.
     deliveryReceiptNumber: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
+    // Who physically brought the delivery — the Receiving Report's
+    // "Driver/Helper" line. Free text, not the Vehicle roster: that roster is
+    // our own fleet, for branch-to-branch transfers, and a supplier's crew
+    // will never be on it.
+    driverName: z.string().max(150).optional(),
+    helperName: z.string().max(150).optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
   })
   .refine((data) => !!data.supplierId || data.lines.some((line) => !!line.purchaseOrderLineId), {
@@ -98,6 +104,11 @@ const StockBalanceItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   sku: z.string(),
+  // Scenario 50 — the Stock Balance list reads an item as brand + model
+  // ("Sharp SJML70"), and search resolves through these three.
+  modelNumber: z.string().nullable().optional(),
+  brand: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  primaryCategory: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 const StockBalanceWarehouseSchema = z.object({
@@ -109,11 +120,23 @@ const StockBalanceWarehouseSchema = z.object({
 
 export const StockBalanceSchema = z.object({
   id: z.string(),
+  itemId: z.string().optional(),
   item: StockBalanceItemSchema.optional().nullable(),
   warehouse: StockBalanceWarehouseSchema.optional().nullable(),
-  onHandQty: z.number().default(0),
-  availableQty: z.number().default(0),
-  reservedQty: z.number().default(0),
+  // A real StockBalance row's Decimal fields arrive as strings over JSON
+  // (Prisma Decimal.toJSON()), while the serial-derived and rolled-up rows
+  // are plain numbers — coerce so both shapes parse.
+  onHandQty: z.coerce.number().default(0),
+  availableQty: z.coerce.number().default(0),
+  reservedQty: z.coerce.number().default(0),
+  // Scenario 50 — all-time sold, scoped to the active filter.
+  soldQty: z.coerce.number().default(0),
+  // Scenario 50 — units on the road toward this location, summed from open
+  // transfer lines. Neither the balance rows nor the serials know about
+  // them: dispatch decrements the source and leaves the serial alone.
+  inTransitQty: z.coerce.number().default(0),
+  // Only present on a groupBy=item row: how many locations were rolled up.
+  locationCount: z.number().optional(),
   reorderPoint: z.number().optional().nullable(),
   unitCost: z.number().optional().nullable(),
   updatedAt: z.string().optional(),
@@ -128,6 +151,7 @@ const StockBalanceSummarySchema = z.object({
   totalOnHandQty: z.number(),
   totalAvailableQty: z.number(),
   totalReservedQty: z.number(),
+  totalSoldQty: z.number().optional(),
 })
 
 export const StockBalanceListResponseSchema = z
@@ -183,6 +207,15 @@ export const StockLedgerEntrySchema = z.object({
   unitCost: z.coerce.number().optional().nullable(),
   serialNumberId: z.string().optional().nullable(),
   serialNumber: z.string().optional().nullable(),
+  // Scenario 50 Gap 4 — where the movement came from. Present on every row
+  // for a stable shape; null on movements with no receipt behind them.
+  goodsReceiptLineId: z.string().optional().nullable(),
+  receivingReportId: z.string().optional().nullable(),
+  receivingReportCode: z.string().optional().nullable(),
+  purchaseOrderNumber: z.string().optional().nullable(),
+  deliveryReceiptNumber: z.string().optional().nullable(),
+  supplierInvoiceNumber: z.string().optional().nullable(),
+  supplier: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
   customerId: z.string().optional().nullable(),
   customer: z
     .object({
@@ -195,6 +228,14 @@ export const StockLedgerEntrySchema = z.object({
   journalEntryId: z.string().optional().nullable(),
   creditMemoId: z.string().optional().nullable(),
   creditMemoNumber: z.string().optional().nullable(),
+  // Where a transfer_out/transfer_in row leads: the ST number, and the
+  // OTHER end of the move (a dispatch row's own `warehouse` is already the
+  // source, so this is the destination, and vice versa for a receive row).
+  stockTransferNumber: z.string().optional().nullable(),
+  transferWarehouse: LedgerWarehouseSchema.optional().nullable(),
+  // A supplier_return row traces back to the RR its returned line
+  // originally arrived on (via the debit memo line), same as a receipt.
+  supplierDebitMemoNumber: z.string().optional().nullable(),
 })
 
 export const StockLedgerListResponseSchema = z.object({
@@ -295,6 +336,8 @@ export const ReceivingReportSchema = z.object({
   receivedByName: z.string().optional().nullable(),
   poDate: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
+  driverName: z.string().optional().nullable(),
+  helperName: z.string().optional().nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
   supplierInvoiceNumber: z.string().optional().nullable(),
   journalEntryId: z.string().optional().nullable(),
@@ -305,6 +348,18 @@ export const ReceivingReportSchema = z.object({
   vatAmount: z.number().optional().nullable(),
   lines: z.array(ReceivingReportLineSchema),
   hasAnyDiscrepancy: z.boolean(),
+  // Scenario 51 — the receipt-sourced invoice behind this receipt, if any.
+  // Used to warn before a cost correction pushes an already-settled invoice
+  // back to owing money.
+  apBill: z
+    .object({
+      id: z.string(),
+      status: z.string(),
+      totalAmount: z.number(),
+      amountPaid: z.number(),
+    })
+    .optional()
+    .nullable(),
 })
 
 export const ReceivingReportListResponseSchema = z.object({
@@ -344,3 +399,17 @@ export const WithholdingSummaryResponseSchema = z.object({
 
 export type WithholdingSummaryRow = z.infer<typeof WithholdingSummaryRowSchema>
 export type WithholdingSummaryResponse = z.infer<typeof WithholdingSummaryResponseSchema>
+
+// Scenario 50 (Closing Gap 3) — the states the Stock Balance filter offers.
+// Four mirror the badge the list derives per row (`stockStatusOf` in
+// StockBalanceList, and `deriveStockState` server-side, which must stay in
+// step with it); `in_transit` is the separate open-transfer axis, counted off
+// open transfer lines rather than the balance row's own quantities.
+export const StockStateFilterSchema = z.enum([
+  'in_stock',
+  'in_transit',
+  'out',
+  'fully_reserved',
+  'low',
+])
+export type StockStateFilter = z.infer<typeof StockStateFilterSchema>

@@ -7,6 +7,10 @@ export async function getItemLedger(
   itemId: string,
   params?: {
     warehouseId?: string
+    // Scenario 50 — scopes Movements to the locations the Item 360 drawer was
+    // opened with, same as the Stock tab's getItemStockSummary.
+    branchIds?: string[]
+    warehouseIds?: string[]
     transactionType?: string
     startDate?: string
     endDate?: string
@@ -17,7 +21,11 @@ export async function getItemLedger(
   try {
     const result = await api.get<ItemLedgerResponse>(
       `/inventory/items/${itemId}/ledger`,
-      { ...params },
+      {
+        ...params,
+        branchIds: params?.branchIds?.length ? params.branchIds.join(',') : undefined,
+        warehouseIds: params?.warehouseIds?.length ? params.warehouseIds.join(',') : undefined,
+      },
       { tags: [`inventory-item-ledger-${itemId}`] }
     )
 

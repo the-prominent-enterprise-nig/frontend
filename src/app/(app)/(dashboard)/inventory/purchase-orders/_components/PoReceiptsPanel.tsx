@@ -3,266 +3,288 @@
 import { useEffect, useState } from 'react'
 import {
   X,
-  Loader2,
   PackageCheck,
   AlertTriangle,
-  Hash,
   Warehouse,
   CalendarDays,
-  ChevronDown,
-  ChevronUp,
+  Printer,
+  Download,
+  Pencil,
 } from 'lucide-react'
 import { getPurchaseOrderReceipts, type PoReceipt } from '../_actions/get-purchase-order-receipts'
+import { getReceivingDocument } from '../../goods-receiving/_actions/get-receiving-document'
+import { getReceivingReport } from '../../goods-receiving/_actions/get-receiving-report'
+import ReceivingReportSheet, {
+  type ReceivingReportDocument,
+} from '../../../accounting/receiving-reports/_components/ReceivingReportSheet'
+import ReceivingReportEditForm from '../../../accounting/receiving-reports/_components/ReceivingReportEditForm'
+import {
+  printReceivingReportDocument,
+  downloadReceivingReportDocument,
+} from '@/src/libs/print/printInventoryDocument'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { PLEX, MONO, receiptTotals } from './procurementTokens'
 
 type Props = {
   po: PurchaseOrderSummary | null
   onClose: () => void
 }
 
-// ─── Variance badge ───────────────────────────────────────────────────────────
+// ─── Shared helpers ────────────────────────────────────────────────────────────
+// Same IBM Plex + #5b21b6 palette as procurementTokens/PoDetailModal — this
+// drawer is opened from that panel's "View Receipts" button, so it has to
+// read as the same screen rather than a visually separate one.
 
-function QtyVarianceBadge({ ordered, received }: { ordered: number; received: number }) {
-  const variance = received - ordered
-  if (variance === 0)
+function lineTotals(lines: PoReceipt['lines']): { received: number; ordered: number } {
+  return lines.reduce(
+    (acc, l) => ({
+      received: acc.received + l.quantityReceived,
+      ordered: acc.ordered + l.qtyOrdered,
+    }),
+    { received: 0, ordered: 0 }
+  )
+}
+
+function ReceiptStatusChip({ received, ordered }: { received: number; ordered: number }) {
+  if (received < ordered)
     return (
-      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-        Exact
+      <span className="rounded-[5px] bg-[#fdf3e7] px-[9px] py-[3px] text-[11px] font-medium text-[#8a4b06]">
+        Short
+      </span>
+    )
+  if (received > ordered)
+    return (
+      <span className="rounded-[5px] bg-[#eaf0fb] px-[9px] py-[3px] text-[11px] font-medium text-[#1f4b99]">
+        Over
       </span>
     )
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
-        variance < 0 ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
-      }`}
-    >
-      {variance > 0 ? `+${variance}` : variance}
+    <span className="rounded-[5px] bg-[#e7f5ef] px-[9px] py-[3px] text-[11px] font-medium text-[#0b6644]">
+      Complete
     </span>
   )
 }
 
-// ─── Overall progress bar ─────────────────────────────────────────────────────
+function QcHoldChip() {
+  return (
+    <span className="flex items-center gap-1 rounded-[5px] bg-[#fdf3e7] px-[9px] py-[3px] text-[11px] font-medium text-[#8a4b06]">
+      <AlertTriangle className="h-3 w-3" />
+      QC Hold
+    </span>
+  )
+}
 
-function OverallProgress({
-  totalOrdered,
-  totalReceived,
-}: {
-  totalOrdered: number
-  totalReceived: number
-}) {
-  const pct = totalOrdered > 0 ? Math.min((totalReceived / totalOrdered) * 100, 100) : 0
-  const barColor = pct >= 100 ? 'bg-green-500' : pct > 0 ? 'bg-amber-400' : 'bg-zinc-200'
+/** Sits directly under the Deliveries / Units received / Ordered tiles,
+ * stretched to their width, rather than inline with any one line of text. */
+function OverallProgress({ received, ordered }: { received: number; ordered: number }) {
+  const pct = ordered > 0 ? Math.min(Math.round((received / ordered) * 100), 100) : 0
+  const bar = pct >= 100 ? 'bg-[#0f7b52]' : pct > 0 ? 'bg-[#d18b1d]' : 'bg-[#e4e4e9]'
+  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#5b5b6b]'
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-xs text-zinc-500">
-        <span>
-          <span className="font-semibold text-zinc-800">{totalReceived}</span> of{' '}
-          <span className="font-semibold text-zinc-800">{totalOrdered}</span> units received
-        </span>
-        <span className="font-semibold text-zinc-700">{Math.round(pct)}%</span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+    <div className="flex items-center gap-2">
+      <div className="h-[6px] flex-1 overflow-hidden rounded-[3px] bg-[#eeeef1]">
         <div
-          className={`h-2 rounded-full transition-all duration-500 ${barColor}`}
+          className={`h-full rounded-[3px] transition-all duration-500 ${bar}`}
           style={{ width: `${pct}%` }}
         />
       </div>
+      <span className={`${MONO} shrink-0 text-[11.5px] font-semibold ${tone}`}>
+        {received}/{ordered} · {pct}%
+      </span>
     </div>
   )
 }
 
-// ─── Skeleton loading ─────────────────────────────────────────────────────────
+// ─── List pane ────────────────────────────────────────────────────────────────
 
-function SkeletonCard() {
+function SkeletonListItem() {
   return (
-    <div className="animate-pulse overflow-hidden rounded-xl border border-zinc-200 bg-white">
-      <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-4 py-3">
-        <div className="space-y-1.5">
-          <div className="h-4 w-32 rounded bg-zinc-200" />
-          <div className="h-3 w-48 rounded bg-zinc-200" />
-        </div>
-      </div>
-      <div className="divide-y divide-zinc-50">
-        {[1, 2].map((i) => (
-          <div key={i} className="flex gap-4 px-4 py-3">
-            <div className="flex-1 space-y-1.5">
-              <div className="h-3.5 w-40 rounded bg-zinc-200" />
-              <div className="h-3 w-24 rounded bg-zinc-200" />
-            </div>
-            <div className="h-3.5 w-16 rounded bg-zinc-200" />
-            <div className="h-3.5 w-16 rounded bg-zinc-200" />
-          </div>
-        ))}
+    <div className="animate-pulse space-y-2 rounded-xl border border-[#e4e4e9] bg-white p-3">
+      <div className="h-3.5 w-32 rounded bg-[#eeeef1]" />
+      <div className="h-3 w-40 rounded bg-[#eeeef1]" />
+      <div className="flex gap-1.5 pt-1">
+        <div className="h-4 w-14 rounded bg-[#eeeef1]" />
+        <div className="h-4 w-14 rounded bg-[#eeeef1]" />
       </div>
     </div>
   )
 }
 
-// ─── Receiving report card ───────────────────────────────────────────────────
+/** Full serial list belongs to the printed sheet, not the card — this is
+ * only enough to say "yes, these are serialized" at a glance. */
+function SerialPreview({ serials }: { serials: string[] }) {
+  if (serials.length === 0) return null
+  const shown = serials.slice(0, 4)
+  const hidden = serials.length - shown.length
 
-function GrnCard({ grn, index }: { grn: PoReceipt; index: number }) {
-  const [expanded, setExpanded] = useState(true)
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+      {shown.map((sn) => (
+        <span
+          key={sn}
+          className={`${MONO} rounded bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] text-[#3d3d4a]`}
+        >
+          {sn}
+        </span>
+      ))}
+      {hidden > 0 && (
+        <span className={`${MONO} rounded bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] text-[#a3a3b2]`}>
+          +{hidden}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ReceiptListItem({
+  grn,
+  index,
+  active,
+  onSelect,
+}: {
+  grn: PoReceipt
+  index: number
+  active: boolean
+  onSelect: () => void
+}) {
+  const { received, ordered } = lineTotals(grn.lines)
   const hasHold = grn.lines.some((l) => l.qualityHold)
-  const totalReceived = grn.lines.reduce((s, l) => s + l.quantityReceived, 0)
-  const totalOrdered = grn.lines.reduce((s, l) => s + l.qtyOrdered, 0)
+  const serials = grn.lines.flatMap((l) => l.serialNumbers ?? [])
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-      {/* Card header */}
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-start justify-between border-b border-zinc-100 bg-zinc-50 px-4 py-3 text-left hover:bg-zinc-100/70 transition-colors"
-      >
-        <div className="flex items-start gap-3">
-          {/* Delivery number */}
-          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-prominent-purple-100 text-xs font-bold text-prominent-purple-700">
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={active}
+      className={`w-full rounded-xl border bg-white p-2.5 text-left transition-colors ${
+        active
+          ? 'border-[#7c4fd1] shadow-[0_0_0_3px_#f4efff]'
+          : 'border-[#e4e4e9] hover:border-[#d3d3db]'
+      }`}
+    >
+      {/* One header row (badge, code, status) and one flex-wrap meta row
+          (date · warehouse · DR · line/unit count) instead of four stacked
+          blocks — the same facts, in about half the card height. */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+              active ? 'bg-[#5b21b6] text-white' : 'bg-[#f1ebfb] text-[#3f1490]'
+            }`}
+          >
             {index + 1}
           </span>
-          <div>
-            <p className="font-mono text-sm font-semibold text-zinc-900">{grn.code}</p>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500">
-              {grn.warehouse && (
-                <span className="flex items-center gap-1">
-                  <Warehouse className="h-3 w-3" />
-                  {locationLabel(grn.warehouse)}
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <CalendarDays className="h-3 w-3" />
-                {new Date(grn.receivedAt).toLocaleDateString('en-PH', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </span>
-              <span className="flex items-center gap-1">
-                <Hash className="h-3 w-3" />
-                {grn.lines.length} line{grn.lines.length !== 1 ? 's' : ''} · {totalReceived} units
-              </span>
-              {grn.deliveryReceiptNumber && (
-                <span className="flex items-center gap-1">DR: {grn.deliveryReceiptNumber}</span>
-              )}
-              {grn.supplierInvoiceNumber && (
-                <span className="flex items-center gap-1">SI: {grn.supplierInvoiceNumber}</span>
-              )}
-            </div>
-          </div>
+          <p className={`${MONO} text-[13px] font-semibold text-[#17171c]`}>{grn.code}</p>
         </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          {hasHold && (
-            <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-              <AlertTriangle className="h-3 w-3" />
-              QC Hold
-            </span>
-          )}
-          {totalReceived < totalOrdered ? (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-600">
-              Short
-            </span>
-          ) : totalReceived > totalOrdered ? (
-            <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-600">
-              Over
-            </span>
-          ) : (
-            <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-600">
-              Complete
-            </span>
-          )}
-          {expanded ? (
-            <ChevronUp className="h-4 w-4 text-zinc-400" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-zinc-400" />
-          )}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {hasHold && <QcHoldChip />}
+          <ReceiptStatusChip received={received} ordered={ordered} />
         </div>
-      </button>
+      </div>
 
-      {/* Lines table */}
-      {expanded && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-100">
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-zinc-400">Item</th>
-              <th className="px-4 py-2.5 text-center text-xs font-medium text-zinc-400">Ordered</th>
-              <th className="px-4 py-2.5 text-center text-xs font-medium text-zinc-400">
-                Received
-              </th>
-              <th className="px-4 py-2.5 text-center text-xs font-medium text-zinc-400">
-                Variance
-              </th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-zinc-400">
-                Batch / Notes
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-50">
-            {grn.lines.map((line) => (
-              <tr key={line.id} className={line.qualityHold ? 'bg-amber-50/60' : ''}>
-                <td className="px-4 py-3">
-                  <p className="font-medium text-zinc-800">{line.item?.name ?? line.itemId}</p>
-                  {line.item?.sku && (
-                    <p className="font-mono text-xs text-zinc-400">{line.item.sku}</p>
-                  )}
-                  {line.qualityHold && (
-                    <p className="mt-0.5 text-xs font-medium text-amber-600">QC Hold</p>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-center text-zinc-500">{line.qtyOrdered}</td>
-                <td className="px-4 py-3 text-center font-semibold text-zinc-900">
-                  {line.quantityReceived}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <QtyVarianceBadge ordered={line.qtyOrdered} received={line.quantityReceived} />
-                </td>
-                <td className="px-4 py-3">
-                  {line.batchNumber ? (
-                    <p className="font-mono text-xs text-zinc-600">{line.batchNumber}</p>
-                  ) : null}
-                  {line.expiryDate ? (
-                    <p className="text-xs text-zinc-400">
-                      Exp:{' '}
-                      {new Date(line.expiryDate).toLocaleDateString('en-PH', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </p>
-                  ) : null}
-                  {(line.serialNumbers ?? []).length > 0 && (
-                    <div className="max-w-[220px]">
-                      <p className="text-xs text-zinc-400">
-                        {(line.serialNumbers ?? []).length} S/N
-                      </p>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {(line.serialNumbers ?? []).map((sn) => (
-                          <span
-                            key={sn}
-                            className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600"
-                          >
-                            {sn}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {!line.batchNumber && !line.expiryDate && !(line.serialNumbers ?? []).length && (
-                    <span className="text-zinc-300">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-[#8b8b9b]">
+        <span className="flex items-center gap-1">
+          <CalendarDays className="h-3 w-3" />
+          {new Date(grn.receivedAt).toLocaleDateString('en-PH', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          })}
+        </span>
+        {grn.warehouse && (
+          <span className="flex items-center gap-1">
+            <Warehouse className="h-3 w-3" />
+            {locationLabel(grn.warehouse)}
+          </span>
+        )}
+        {grn.deliveryReceiptNumber && <span className={MONO}>DR {grn.deliveryReceiptNumber}</span>}
+        <span className={MONO}>
+          {grn.lines.length} line{grn.lines.length !== 1 ? 's' : ''} · {received} units
+        </span>
+      </div>
 
-      {grn.notes && expanded && (
-        <p className="border-t border-zinc-100 px-4 py-2.5 text-xs italic text-zinc-500">
-          {grn.notes}
-        </p>
-      )}
+      <SerialPreview serials={serials} />
+    </button>
+  )
+}
+
+// ─── Document pane ────────────────────────────────────────────────────────────
+// Renders the same faithful receiving-report preview the Goods Receiving
+// detail screen prints (ReceivingReportSheet + printReceivingReportDocument)
+// — so what a reader sees here is the actual paper, not a second rendering
+// of it that could quietly drift from what prints.
+
+function DocumentSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4 p-8">
+      <div className="h-6 w-48 rounded bg-[#eeeef1]" />
+      <div className="grid grid-cols-3 gap-6">
+        <div className="h-16 rounded bg-[#f1f1f4]" />
+        <div className="h-16 rounded bg-[#f1f1f4]" />
+        <div className="h-16 rounded bg-[#f1f1f4]" />
+      </div>
+      <div className="h-40 rounded bg-[#f1f1f4]" />
+    </div>
+  )
+}
+
+function DocumentToolbar({
+  grn,
+  receivedByName,
+  doc,
+  editing,
+  onEdit,
+}: {
+  grn: PoReceipt
+  receivedByName?: string | null
+  doc: ReceivingReportDocument | null
+  editing: boolean
+  onEdit: () => void
+}) {
+  const { received, ordered } = lineTotals(grn.lines)
+
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#e4e4e9] bg-white px-5 py-3">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className={`${MONO} text-[13px] font-semibold text-[#17171c]`}>{grn.code}</span>
+        <ReceiptStatusChip received={received} ordered={ordered} />
+        {receivedByName && (
+          <span className="text-[12px] text-[#5b5b6b]">Received by {receivedByName}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        {!editing && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#17171c] transition-colors hover:border-[#a3a3b2] hover:bg-[#f6f6f8]"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={!doc}
+          onClick={() => doc && downloadReceivingReportDocument(doc, grn.code)}
+          className="flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#17171c] transition-colors hover:border-[#a3a3b2] hover:bg-[#f6f6f8] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Download
+        </button>
+        <button
+          type="button"
+          disabled={!doc}
+          onClick={() => doc && printReceivingReportDocument(doc)}
+          className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-[#4a189b] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Printer className="h-3.5 w-3.5" />
+          Print
+        </button>
+      </div>
     </div>
   )
 }
@@ -273,6 +295,12 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
   const [receipts, setReceipts] = useState<PoReceipt[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [doc, setDoc] = useState<ReceivingReportDocument | null>(null)
+  const [record, setRecord] = useState<ReceivingReport | null>(null)
+  const [docLoading, setDocLoading] = useState(false)
+  const [docError, setDocError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (!po) return
@@ -280,16 +308,58 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
     setError(null)
     getPurchaseOrderReceipts(po.id)
       .then((res) => {
-        if (res.success) setReceipts(res.data?.data ?? [])
-        else setError(res.message ?? 'Failed to load receipts')
+        if (res.success) {
+          const data = res.data?.data ?? []
+          setReceipts(data)
+          setSelectedId(data[0]?.id ?? null)
+        } else {
+          setError(res.message ?? 'Failed to load receipts')
+        }
       })
       .finally(() => setIsLoading(false))
   }, [po])
 
+  // The lightweight receipt list already carries per-line quantities, so
+  // selecting a card is instant — these two fetches only back the full
+  // printable sheet (letterhead, unit costs, brand/model/type) and the
+  // editable record (SRP/discounts/tax/batch) the Edit form needs, neither of
+  // which the list carries or the receipts endpoint returns.
+  useEffect(() => {
+    setEditing(false)
+    if (!selectedId) {
+      setDoc(null)
+      setRecord(null)
+      return
+    }
+    setDocLoading(true)
+    setDocError(null)
+    Promise.all([getReceivingDocument(selectedId), getReceivingReport(selectedId)]).then(
+      ([docRes, recRes]) => {
+        if (docRes.success) setDoc(docRes.data as ReceivingReportDocument)
+        else setDocError(docRes.message ?? docRes.error ?? 'Failed to load document')
+        if (recRes.success && recRes.data) setRecord(recRes.data)
+        setDocLoading(false)
+      }
+    )
+  }, [selectedId])
+
   if (!po) return null
 
-  const totalOrdered = po.lines.reduce((s, l) => s + Number(l.quantity), 0)
-  const totalReceived = receipts.flatMap((r) => r.lines).reduce((s, l) => s + l.quantityReceived, 0)
+  const { received: totalReceived, ordered: totalOrdered } = receiptTotals(po.lines)
+  const selectedGrn = receipts.find((r) => r.id === selectedId) ?? null
+
+  // Re-fetch after a correction: the sheet renders the document, which the
+  // edit changed too, and the record backs the form should it reopen.
+  const refetchAfterSave = () => {
+    setEditing(false)
+    if (!selectedId) return
+    Promise.all([getReceivingDocument(selectedId), getReceivingReport(selectedId)]).then(
+      ([docRes, recRes]) => {
+        if (docRes.success) setDoc(docRes.data as ReceivingReportDocument)
+        if (recRes.success && recRes.data) setRecord(recRes.data)
+      }
+    )
+  }
 
   return (
     <>
@@ -301,79 +371,143 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
       />
 
       {/* Slide-over */}
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-white shadow-2xl">
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-zinc-200 px-6 py-5">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-900">Delivery Receipts</h2>
-            <p className="mt-0.5 font-mono text-sm font-medium text-prominent-purple-700">
-              {po.code}
-            </p>
-            <p className="mt-0.5 text-sm text-zinc-500">{po.supplier.name}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Summary strip */}
-        {!isLoading && !error && receipts.length > 0 && (
-          <div className="border-b border-zinc-100 bg-zinc-50 px-6 py-4">
-            <div className="mb-3 flex items-center gap-6 text-sm">
-              <div>
-                <p className="text-xs text-zinc-400">Deliveries</p>
-                <p className="font-semibold text-zinc-900">{receipts.length}</p>
-              </div>
-              <div className="h-6 w-px bg-zinc-200" />
-              <div>
-                <p className="text-xs text-zinc-400">Lines received</p>
-                <p className="font-semibold text-zinc-900">
-                  {receipts.flatMap((r) => r.lines).length}
-                </p>
-              </div>
-              <div className="h-6 w-px bg-zinc-200" />
-              <div>
-                <p className="text-xs text-zinc-400">Total received</p>
-                <p className="font-semibold text-zinc-900">{totalReceived} units</p>
-              </div>
-            </div>
-            <OverallProgress totalOrdered={totalOrdered} totalReceived={totalReceived} />
-          </div>
-        )}
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {isLoading ? (
-            <div className="space-y-4">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          ) : error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-              <p className="text-sm font-medium text-red-700">{error}</p>
-            </div>
-          ) : receipts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-100">
-                <PackageCheck className="h-8 w-8 text-zinc-400" />
-              </div>
-              <p className="text-sm font-semibold text-zinc-700">No deliveries yet</p>
-              <p className="mt-1 max-w-xs text-xs text-zinc-400">
-                Goods receipts will appear here once stock is received against this purchase order.
+      <div
+        className={`${PLEX} fixed inset-y-0 right-0 z-50 flex w-full max-w-6xl flex-col bg-white text-[#17171c] shadow-2xl`}
+      >
+        {/* Header — the progress bar sits under the Deliveries / Units
+            received / Ordered tiles, stretched to their width, rather than
+            on its own full-width row. */}
+        <div className="border-b border-[#e4e4e9] px-6 py-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex min-w-0 flex-col gap-[3px]">
+              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+                Delivery Receipts
+              </span>
+              <h2 className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>{po.code}</h2>
+              <p className="text-[13px] text-[#5b5b6b]">
+                {po.supplier.name} · {locationLabel(po.warehouse)}
               </p>
             </div>
-          ) : (
-            <div className="space-y-4">
+
+            <div className="flex items-start gap-5">
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-5 text-[13px]">
+                  <div>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+                      Deliveries
+                    </p>
+                    <p className="text-[15px] font-semibold text-[#17171c]">{receipts.length}</p>
+                  </div>
+                  <div className="h-6 w-px bg-[#e4e4e9]" />
+                  <div>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+                      Units received
+                    </p>
+                    <p className="text-[15px] font-semibold text-[#17171c]">{totalReceived}</p>
+                  </div>
+                  <div className="h-6 w-px bg-[#e4e4e9]" />
+                  <div>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+                      Ordered
+                    </p>
+                    <p className="text-[15px] font-semibold text-[#17171c]">{totalOrdered}</p>
+                  </div>
+                </div>
+
+                <OverallProgress received={totalReceived} ordered={totalOrdered} />
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+              >
+                <X className="h-4.5 w-4.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        {isLoading ? (
+          <div className="flex-1 space-y-3 overflow-y-auto bg-[#f7f7f8] p-6">
+            <SkeletonListItem />
+            <SkeletonListItem />
+          </div>
+        ) : error ? (
+          <div className="bg-[#f7f7f8] p-6">
+            <div className="rounded-xl border border-[#f3c9c5] bg-[#fdeceb] p-4">
+              <p className="text-[13px] font-medium text-[#b42318]">{error}</p>
+            </div>
+          </div>
+        ) : receipts.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center bg-[#f7f7f8] px-6 py-20 text-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#eeeef1]">
+              <PackageCheck className="h-8 w-8 text-[#a3a3b2]" />
+            </div>
+            <p className="text-[13px] font-semibold text-[#17171c]">No deliveries yet</p>
+            <p className="mt-1 max-w-xs text-[12px] text-[#8b8b9b]">
+              Receiving reports appear here as stock arrives against this purchase order.
+            </p>
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            {/* List pane */}
+            <div className="min-h-0 shrink-0 space-y-2.5 overflow-y-auto border-b border-[#eeeef1] bg-[#f7f7f8] px-4 py-4 lg:w-75 lg:border-b-0 lg:border-r lg:border-[#e4e4e9]">
               {receipts.map((grn, i) => (
-                <GrnCard key={grn.id} grn={grn} index={i} />
+                <ReceiptListItem
+                  key={grn.id}
+                  grn={grn}
+                  index={i}
+                  active={grn.id === selectedId}
+                  onSelect={() => setSelectedId(grn.id)}
+                />
               ))}
             </div>
-          )}
-        </div>
+
+            {/* Document pane */}
+            <div className="flex min-h-0 flex-1 flex-col bg-[#ececed]">
+              {selectedGrn && (
+                <DocumentToolbar
+                  grn={selectedGrn}
+                  receivedByName={doc?.document.receivedByName}
+                  doc={doc}
+                  editing={editing}
+                  onEdit={() => setEditing(true)}
+                />
+              )}
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                {docLoading ? (
+                  <div className="mx-auto max-w-3xl rounded-lg border border-[#e4e4e9] bg-white shadow-sm">
+                    <DocumentSkeleton />
+                  </div>
+                ) : docError ? (
+                  <div className="mx-auto max-w-3xl rounded-xl border border-[#f3c9c5] bg-[#fdeceb] p-4">
+                    <p className="text-[13px] font-medium text-[#b42318]">{docError}</p>
+                  </div>
+                ) : (
+                  <div className="mx-auto max-w-3xl space-y-4">
+                    {editing && record && selectedId && (
+                      <ReceivingReportEditForm
+                        id={selectedId}
+                        record={record}
+                        onCancel={() => setEditing(false)}
+                        onSaved={refetchAfterSave}
+                      />
+                    )}
+                    {doc && (
+                      <div className="rounded-lg border border-[#e4e4e9] bg-white shadow-sm">
+                        <ReceivingReportSheet doc={doc} />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

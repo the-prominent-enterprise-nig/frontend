@@ -1072,9 +1072,7 @@ export interface CreateDisbursementBody {
   chequeNumber?: string
   method?: string
   reference?: string
-  /** Required when payNow is true (the default). A voucher raised before
-   * payment has no payment date yet. */
-  paymentDate?: string
+  paymentDate: string
   /** When the voucher was raised. Distinct from paymentDate — a voucher raised
    * on the 7th and paid on the 15th has both. Defaults to now. */
   voucherDate?: string
@@ -1090,10 +1088,6 @@ export interface CreateDisbursementBody {
    * bankAccountId/chequeNumber/method above; the server records that as one
    * source either way, and the voucher number derives from the first. */
   sources?: DisbursementSource[]
-  /** false raises an UNPAID voucher: invoices recorded and a number issued,
-   * but no cheque cut, nothing posted to the GL and the bills left unpaid.
-   * Settle it later with settleDisbursement(). Defaults to true. */
-  payNow?: boolean
 }
 /** One funding source of a disbursement. */
 export interface DisbursementSource {
@@ -1169,6 +1163,38 @@ export interface APDisbursement {
   }[]
 }
 
+export interface APBillReceiptChange {
+  field: string
+  from: number
+  to: number
+}
+export interface APBillReceiptLine {
+  receiptCode: string
+  item: string | null
+  quantity: number
+  unitCost: number
+  srp: number | null
+  discountedCost: number | null
+  taxCode: string | null
+  taxAmount: number
+}
+export interface APBillReceiptChanges {
+  edited: boolean
+  editedAt: string | null
+  syncedAt: string | null
+  /** Scenario 51 — this bill's own current status/amountPaid, and what would
+   * still be owed if this correction is accepted. Lets the notice warn about
+   * a paid invoice, and say what remains, before Update is even clicked. */
+  status: string
+  amountPaid: number
+  projectedOutstanding: number
+  receipts: { id: string; code: string; contentEditedAt: string | null }[]
+  /** Only the figures that move the payable. Empty when the correction touched
+   * prices alone — an RR edit never restates unitCost, so the subtotal is
+   * frozen at receipt and a price fix can leave the total untouched. */
+  changes: APBillReceiptChange[]
+  lines: APBillReceiptLine[]
+}
 export const APBills = {
   list: (params?: {
     search?: string
@@ -1188,6 +1214,14 @@ export const APBills = {
     ),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
   getDocument: (id: string) => api.get<APBillDocument>(`/ap-bills/${id}/document`),
+  /** Corrections made to this invoice's receiving report since the invoice
+   * last agreed with it. A receipt stays editable after the goods land, and
+   * nothing used to tell AP. */
+  receiptChanges: (id: string) => api.get<APBillReceiptChanges>(`/ap-bills/${id}/receipt-changes`),
+  applyReceiptChanges: (id: string) =>
+    api.post<APBill>(`/ap-bills/${id}/receipt-changes/apply`, {}),
+  supersedeFromReceipt: (id: string) =>
+    api.post<APBill>(`/ap-bills/${id}/receipt-changes/supersede`, {}),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
   update: (id: string, body: any) => api.patch<APBill>(`/ap-bills/${id}`, body),
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
@@ -1551,6 +1585,13 @@ export interface BusinessExpense {
   voucherNumber?: string | null
   customerId?: string | null
   customer?: { id: string; name: string } | null
+  /** payeeType=CUSTOMER only — optional Sales Invoice reference. No
+   * relation server-side, so there's no joined invoiceNumber here — the
+   * form re-resolves it against the customer's invoices. */
+  arInvoiceId?: string | null
+  /** Free-text Sales Invoice number, for when there's no ARInvoice on file
+   * to link via arInvoiceId. */
+  salesInvoiceNumber?: string | null
   employeeId?: string | null
   employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
   specialAccountType?: SpecialAccountType | null
@@ -1592,6 +1633,9 @@ export interface ExpenseDocument {
     payeeTin: string | null
     expenseNumber: string
     voucherNumber: string | null
+    /** payeeType=CUSTOMER only — the linked ARInvoice's own number, or the
+     * free-text one typed on the form when there's no ARInvoice on file. */
+    salesInvoice: string | null
     expenseDate: string
     description: string | null
     payments: {
@@ -1630,8 +1674,17 @@ export interface ExpenseDocument {
 }
 /** One row of the Special Accounts register. */
 export interface SpecialAccountRow {
+  /** Null for a balance that exists only in the expense lines — nobody
+   * opened it, it appeared when the first entry named it. Still a real
+   * balance with a real ledger; it just has no record to edit. */
+  id: string | null
   name: string
   controlAccount: { id: string; number: string; name: string }
+  /** Who the name is, when the account was opened against someone on file. */
+  employee: { id: string; name: string } | null
+  customer: { id: string; name: string } | null
+  notes: string | null
+  active: boolean
   /** What is still carried against this person under that account. */
   balance: number
   entries: number
@@ -1640,6 +1693,43 @@ export interface SpecialAccountRow {
 export interface SpecialAccountRegister {
   rows: SpecialAccountRow[]
   totals: { people: number; balance: number }
+}
+
+/** One movement on a named balance. Debit is money out to them, credit is
+ * money recovered — shown as two positive columns rather than one signed
+ * figure, which is how a subsidiary ledger reads. */
+export interface SpecialAccountLedgerEntry {
+  expenseId: string
+  date: string | null
+  reference: string
+  description: string | null
+  debit: number
+  credit: number
+  /** Running balance after this entry, oldest first. */
+  balance: number
+  divisionName: string | null
+  status: string
+}
+export interface SpecialAccountLedger {
+  account: {
+    id: string | null
+    name: string
+    controlAccount: { id: string; number: string; name: string }
+    employee: { id: string; name: string } | null
+    customer: { id: string; name: string } | null
+    notes: string | null
+    active: boolean
+  }
+  entries: SpecialAccountLedgerEntry[]
+  totals: { debit: number; credit: number; balance: number }
+}
+
+export interface CreateSpecialAccountBody {
+  name: string
+  controlAccountId: string
+  employeeId?: string
+  customerId?: string
+  notes?: string
 }
 
 export const Expenses = {
@@ -1666,6 +1756,15 @@ export const Expenses = {
    * carried against, under the control account carrying it. */
   specialAccounts: (params?: { search?: string; accountId?: string }) =>
     api.get<SpecialAccountRegister>('/expenses/special-accounts', params),
+  /** Open a named balance under a control account, before anything has been
+   * posted to it. */
+  createSpecialAccount: (body: CreateSpecialAccountBody) =>
+    api.post<SpecialAccountRow>('/expenses/special-accounts', body),
+  /** One account's ledger — every debit and credit posted under that name.
+   * Identified by (control account, name), not by id: the balances that
+   * predate the register have no id of their own. */
+  specialAccountLedger: (params: { accountId: string; name: string }) =>
+    api.get<SpecialAccountLedger>('/expenses/special-accounts/ledger', params),
   getSpecialAccountBalance: (params: {
     specialAccountType: LiquidatableType
     employeeId?: string

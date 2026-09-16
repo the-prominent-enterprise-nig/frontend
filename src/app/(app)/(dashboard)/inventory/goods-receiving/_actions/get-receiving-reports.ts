@@ -8,6 +8,8 @@ type Params = {
   limit?: number
   warehouseId?: string
   branchId?: string
+  supplierId?: string
+  search?: string
   status?: string
   startDate?: string
   endDate?: string
@@ -20,6 +22,8 @@ export async function getReceivingReports(params: Params = {}) {
     limit: params.limit,
     warehouseId: params.warehouseId,
     branchId: params.branchId,
+    supplierId: params.supplierId,
+    search: params.search,
     status: params.status,
     startDate: params.startDate,
     endDate: params.endDate,

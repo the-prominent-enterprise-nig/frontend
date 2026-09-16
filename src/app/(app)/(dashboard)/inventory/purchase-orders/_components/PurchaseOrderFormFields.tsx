@@ -1,32 +1,79 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFieldArray, useWatch, Controller } from 'react-hook-form'
 import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form'
-import { Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Trash2 } from 'lucide-react'
 import type { CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
+import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import Tooltip from '@/src/components/ui/Tooltip'
+import { PLEX, MONO } from './procurementTokens'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+/** Display name + SKU per itemId — the form itself only carries itemId. */
+export type ItemLabel = { name: string; sku?: string }
 
 type Props = {
   control: Control<CreatePoFormValues>
   register: UseFormRegister<CreatePoFormValues>
   errors: FieldErrors<CreatePoFormValues>
   setValue: UseFormSetValue<CreatePoFormValues>
-  // Edit mode only — the already-selected item's display name per line
-  // index, since the form itself only carries itemId. See CreatePoModal.tsx.
-  initialItemLabels?: (string | undefined)[]
+  /** Item name by itemId — order-independent, so prepending a line
+   * doesn't shift labels onto the wrong rows. */
+  initialItemLabels?: Record<string, string>
   initialSupplierLabel?: string
   initialWarehouseLabel?: string
+  /** Rendered into the summary rail's footer by the parent, so the sticky
+   * action bar and the rail agree on what submitting will do. */
+  submitted?: boolean
 }
 
-// The Supplier/Location/Delivery Instructions/Notes/Line Items fields
-// rendered by CreatePoModal — the single "+ New Purchase"
-// modal used from both the Purchase Orders and Purchase Requests tabs.
-// Creating always drafts a Purchase Request pending approval; a PO only
-// exists once that's approved and converted. Keeping this as one component
-// is what stops the two tabs' create flows drifting apart again.
+const EMPTY_LINE = {
+  itemId: '',
+  quantity: 1,
+  unitPrice: 0,
+  description: undefined,
+  notes: undefined,
+  srp: undefined,
+  discounts: [] as { name?: string; type: 'percentage'; value: number }[],
+  isFreebie: false,
+}
+
+const CARD = 'rounded-xl border border-[#e4e4e9] bg-white'
+const CARD_HEAD =
+  'flex items-center justify-between gap-3.5 border-b border-[#eeeef1] px-[18px] py-[13px]'
+
+function peso(n: number): string {
+  return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** SRP with every discount step applied in order — each step's output feeds
+ * the next (cascading), matching the backend's own sequential rule. */
+function unitFromChain(
+  srp: number,
+  discounts: CreatePoFormValues['lines'][number]['discounts']
+): { unit: number; amounts: number[] } {
+  const amounts: number[] = []
+  let unit = srp
+  for (const d of discounts ?? []) {
+    const val = Number(d?.value)
+    if (!d?.type || d.value == null || Number.isNaN(val)) {
+      amounts.push(0)
+      continue
+    }
+    const cut = d.type === 'percentage' ? unit * (val / 100) : val
+    amounts.push(cut)
+    unit -= cut
+  }
+  return { unit: Math.max(0, unit), amounts }
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+
 export function PurchaseOrderFormFields({
   control,
   register,
@@ -35,414 +82,1189 @@ export function PurchaseOrderFormFields({
   initialItemLabels,
   initialSupplierLabel,
   initialWarehouseLabel,
-}: Props) {
-  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
-
-  const fmtAmount = (n: number) =>
-    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  submitted,
+}: Props): React.ReactElement {
+  const [openLines, setOpenLines] = useState<Record<string, boolean>>({})
+  const searchRef = useRef<HTMLDivElement>(null)
 
   return (
-    <>
-      {/* Supplier */}
-      <div>
-        <label className="mb-1 block text-sm font-medium text-zinc-700">
-          Supplier <span className="text-red-500">*</span>
-        </label>
-        <Controller
-          name="supplierId"
+    <div
+      className={`${PLEX} mx-auto flex w-full max-w-[1560px] flex-1 flex-col gap-4 p-3.5 min-[1240px]:p-5`}
+    >
+      <div className="grid grid-cols-[minmax(0,1fr)] items-stretch gap-4 min-[1240px]:grid-cols-[minmax(0,1fr)_340px]">
+        <PurchaseDetailsCard
           control={control}
-          render={({ field }) => (
-            <SupplierSearchCombobox
-              value={field.value}
-              onChange={field.onChange}
-              error={errors.supplierId?.message}
-              initialLabel={initialSupplierLabel}
-            />
-          )}
+          register={register}
+          errors={errors}
+          initialSupplierLabel={initialSupplierLabel}
+          initialWarehouseLabel={initialWarehouseLabel}
+          submitted={submitted}
         />
-        {errors.supplierId && (
-          <p className="mt-1 text-xs text-red-500">{errors.supplierId.message}</p>
-        )}
+        <OrderSummaryRail control={control} />
       </div>
 
-      {/* Location — the destination is decided once here at creation and
-          carried through unedited to receiving (see ReceiveAgainstPoModal,
-          which locks the field once this is set). Every location is on
-          offer, the standalone warehouses and each branch's own stock
-          location alike, so ordering for another branch doesn't need a
-          separate transfer afterward. */}
-      <div>
-        <label className="mb-1 block text-sm font-medium text-zinc-700">
-          Location <span className="text-red-500">*</span>
-        </label>
-        <Controller
-          name="warehouseId"
-          control={control}
-          render={({ field }) => (
-            <WarehouseSearchCombobox
-              value={field.value}
-              onChange={field.onChange}
-              error={errors.warehouseId?.message}
-              initialLabel={initialWarehouseLabel}
-            />
-          )}
-        />
-        {errors.warehouseId && (
-          <p className="mt-1 text-xs text-red-500">{errors.warehouseId.message}</p>
-        )}
-      </div>
-
-      {/* Expected delivery date isn't asked for at creation — it's still
-          part of the record (optional everywhere, shown in PoDetailModal),
-          just not something the requester is made to guess at up front. On
-          edit, whatever the record already carries rides along untouched in
-          the form's defaults. */}
-
-      {/* Delivery Instructions */}
-      <div>
-        <label className="mb-1 block text-sm font-medium text-zinc-700">
-          Delivery Instructions
-        </label>
-        <textarea
-          rows={2}
-          {...register('deliveryInstructions')}
-          className="w-full resize-none rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-        />
-        {errors.deliveryInstructions && (
-          <p className="mt-1 text-xs text-red-500">{errors.deliveryInstructions.message}</p>
-        )}
-      </div>
-
-      {/* Line Items */}
-      <div>
-        <div className="mb-2">
-          <label className="text-sm font-medium text-zinc-700">
-            Line Items <span className="text-red-500">*</span>
-          </label>
-        </div>
-
-        {errors.lines && !Array.isArray(errors.lines) && (
-          <p className="mb-2 text-xs text-red-500">{errors.lines.message}</p>
-        )}
-
-        <div className="hidden grid-cols-[minmax(180px,1fr)_80px_140px_36px] gap-2 px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400 md:grid">
-          <span>Item</span>
-          <span>Qty</span>
-          <span>SRP</span>
-          <span />
-        </div>
-
-        <div className="space-y-2">
-          {fields.map((field, index) => (
-            <PurchaseOrderLineCard
-              key={field.id}
-              control={control}
-              register={register}
-              setValue={setValue}
-              errors={errors}
-              index={index}
-              canRemove={fields.length > 1}
-              onRemove={() => remove(index)}
-              fmtAmount={fmtAmount}
-              initialItemLabel={initialItemLabels?.[index]}
-            />
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={() =>
-            append({
-              itemId: '',
-              quantity: 1,
-              unitPrice: 0,
-              description: undefined,
-              notes: undefined,
-              srp: undefined,
-              discounts: [{ name: undefined, type: 'percentage', value: 0 }],
-              isFreebie: false,
-            })
-          }
-          className="mt-2 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Line
-        </button>
-      </div>
-
-      {/* Subtotal */}
-      <div className="flex items-center justify-end rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5">
-        <span className="text-sm font-medium text-zinc-700">Subtotal:&nbsp;</span>
-        <PoSubtotal control={control} fmtAmount={fmtAmount} />
-      </div>
-    </>
+      <LineItemsCard
+        control={control}
+        register={register}
+        errors={errors}
+        setValue={setValue}
+        initialItemLabels={initialItemLabels}
+        submitted={submitted}
+        openLines={openLines}
+        setOpenLines={setOpenLines}
+        searchRef={searchRef}
+      />
+    </div>
   )
 }
 
-// Isolated in its own component so its useWatch({name: 'lines'}) subscription
-// never shares a component instance with the useFieldArray({name: 'lines'})
-// call above — watching a whole array a field array is also managing, in
-// the same scope, was regenerating the field array's own item keys on the
-// production React build (never reproduced under `next dev`), forcing every
-// PurchaseOrderLineCard to unmount/remount on each keystroke and dropping
-// both input focus and the Item combobox's selection.
-function PoSubtotal({
-  control,
-  fmtAmount,
-}: {
-  control: Control<CreatePoFormValues>
-  fmtAmount: (n: number) => string
-}) {
-  const lines = useWatch({ control, name: 'lines' })
-  const subtotal = (lines ?? []).reduce((sum, line) => {
-    if (line?.isFreebie) return sum
-    const qty = Number(line?.quantity) || 0
-    const price = Number(line?.unitPrice) || 0
-    return sum + qty * price
-  }, 0)
-  return <span className="text-base font-semibold text-zinc-900">{fmtAmount(subtotal)}</span>
-}
+// ─── Purchase details ─────────────────────────────────────────────────────────
 
-type LineCardProps = {
-  control: Control<CreatePoFormValues>
-  register: UseFormRegister<CreatePoFormValues>
-  setValue: UseFormSetValue<CreatePoFormValues>
-  errors: FieldErrors<CreatePoFormValues>
-  index: number
-  canRemove: boolean
-  onRemove: () => void
-  fmtAmount: (n: number) => string
-  initialItemLabel?: string
-}
-
-// One line's whole card — Item/Quantity/SRP/discount chain/Unit Price/
-// Description. Its own component (not inlined in the parent's .map()) so
-// the discount chain's own useFieldArray can be called per line, which the
-// Rules of Hooks don't allow inside a loop within a single component.
-function PurchaseOrderLineCard({
+function PurchaseDetailsCard({
   control,
   register,
-  setValue,
   errors,
-  index,
-  canRemove,
-  onRemove,
-  fmtAmount,
-  initialItemLabel,
-}: LineCardProps) {
+  initialSupplierLabel,
+  initialWarehouseLabel,
+  submitted,
+}: {
+  control: Control<CreatePoFormValues>
+  register: UseFormRegister<CreatePoFormValues>
+  errors: FieldErrors<CreatePoFormValues>
+  initialSupplierLabel?: string
+  initialWarehouseLabel?: string
+  submitted?: boolean
+}): React.ReactElement {
+  const instructions = useWatch({ control, name: 'deliveryInstructions' })
+
+  return (
+    <div className={CARD}>
+      <div className={CARD_HEAD}>
+        <span className="text-[13.5px] font-semibold">Purchase details</span>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-5 gap-y-4 px-[18px] py-4 min-[1240px]:grid-cols-2">
+        <Field label="Supplier" required>
+          <Controller
+            name="supplierId"
+            control={control}
+            render={({ field }) => (
+              <SupplierSearchCombobox
+                value={field.value}
+                onChange={field.onChange}
+                error={errors.supplierId?.message}
+                initialLabel={initialSupplierLabel}
+              />
+            )}
+          />
+        </Field>
+
+        {/* The destination is decided once here at creation and carried
+            through unedited to receiving (see ReceiveAgainstPoModal, which
+            locks the field once this is set). Every location is on offer,
+            the standalone warehouses and each branch's own stock location
+            alike, so ordering for another branch doesn't need a separate
+            transfer afterward. */}
+        <Field label="Location" required>
+          <Controller
+            name="warehouseId"
+            control={control}
+            render={({ field }) => (
+              <WarehouseSearchCombobox
+                value={field.value}
+                onChange={field.onChange}
+                error={errors.warehouseId?.message}
+                initialLabel={initialWarehouseLabel}
+              />
+            )}
+          />
+        </Field>
+
+        <div className="flex flex-col gap-1.5 min-[1240px]:col-span-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <label
+              htmlFor="po-delivery-instructions"
+              className="text-[12px] font-medium text-[#3d3d4a]"
+            >
+              Delivery instructions
+            </label>
+            <span className="text-[11px] text-[#a3a3b2]">
+              {(instructions ?? '').length} / 1000 characters
+            </span>
+          </div>
+          <textarea
+            id="po-delivery-instructions"
+            rows={2}
+            maxLength={1000}
+            placeholder="Receiving hours, dock access, packaging requirements…"
+            {...register('deliveryInstructions')}
+            className="w-full resize-y rounded-lg border border-[#d3d3db] px-3 py-2.5 text-[13px] leading-normal text-[#3d3d4a] outline-none placeholder:text-[#a3a3b2] focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
+          />
+          {errors.deliveryInstructions && (
+            <ErrorLine message={errors.deliveryInstructions.message ?? ''} />
+          )}
+        </div>
+      </div>
+      {submitted && null}
+    </div>
+  )
+}
+
+function Field({
+  label,
+  required,
+  error,
+  children,
+}: {
+  label: string
+  required?: boolean
+  error?: string
+  children: React.ReactNode
+}): React.ReactElement {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <label className="text-[12px] font-medium text-[#3d3d4a]">
+        {label} {required && <span className="text-[#b42318]">*</span>}
+      </label>
+      {children}
+      {error && <ErrorLine message={error} />}
+    </div>
+  )
+}
+
+function ErrorLine({ message }: { message: string }): React.ReactElement {
+  return (
+    <span className="flex items-center gap-1.5 text-[11.5px] text-[#b42318]">
+      <span className="inline-block h-[5px] w-[5px] shrink-0 rounded-full bg-[#b42318]" />
+      {message}
+    </span>
+  )
+}
+
+// ─── Order summary ────────────────────────────────────────────────────────────
+
+// Isolated in its own component so its useWatch({name: 'lines'}) subscription
+// never shares a component instance with the useFieldArray({name: 'lines'})
+// call in LineItemsCard — watching a whole array a field array is also
+// managing, in the same scope, was regenerating the field array's own item
+// keys on the production React build (never reproduced under `next dev`),
+// forcing every line to unmount/remount on each keystroke and dropping both
+// input focus and the Item combobox's selection.
+function OrderSummaryRail({
+  control,
+}: {
+  control: Control<CreatePoFormValues>
+}): React.ReactElement {
+  const lines = useWatch({ control, name: 'lines' })
+
+  const totals = useMemo(() => {
+    let gross = 0
+    let net = 0
+    let units = 0
+    let freeUnits = 0
+    for (const line of lines ?? []) {
+      const qty = Number(line?.quantity) || 0
+      units += qty
+      if (line?.isFreebie) {
+        freeUnits += qty
+        continue
+      }
+      gross += (Number(line?.srp) || 0) * qty
+      net += (Number(line?.unitPrice) || 0) * qty
+    }
+    return { gross, net, units, freeUnits, lineCount: (lines ?? []).length }
+  }, [lines])
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className={`${CARD} flex h-full flex-col overflow-hidden`}>
+        <div className="flex items-center justify-between border-b border-[#eeeef1] px-4 py-[13px]">
+          <span className="text-[13px] font-semibold">Order summary</span>
+          <span className={`${MONO} text-[10px] tracking-[.08em] text-[#a3a3b2]`}>PHP</span>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-[9px] px-4 py-3.5">
+          <SummaryRow label="Subtotal at SRP" value={peso(totals.gross)} />
+          <SummaryRow
+            label="Total discounts"
+            value={`−${peso(Math.max(0, totals.gross - totals.net))}`}
+            valueClass="text-[#0b6644]"
+          />
+          <div className="flex items-baseline justify-between gap-2.5 border-t border-[#eeeef1] pt-[9px] text-[11.5px] text-[#8b8b9b]">
+            <span>Lines / units</span>
+            <span className={MONO}>
+              {totals.lineCount} / {totals.units.toLocaleString('en-PH')}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between gap-2.5 text-[11.5px] text-[#8b8b9b]">
+            <span>Freebies (not billed)</span>
+            <span className={MONO}>
+              {totals.freeUnits ? `${totals.freeUnits.toLocaleString('en-PH')} units` : 'None'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#eee7fb] bg-[#faf7ff] px-4 py-[13px]">
+          <span className="text-[11.5px] text-[#5b5b6b]">Grand total</span>
+          <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em] text-[#3f1490]`}>
+            ₱{peso(totals.net)}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SummaryRow({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string
+  value: string
+  valueClass?: string
+}): React.ReactElement {
+  return (
+    <div className="flex items-baseline justify-between gap-2.5 text-[12.5px]">
+      <span className="text-[#5b5b6b]">{label}</span>
+      <span className={`${MONO} ${valueClass ?? ''}`}>{value}</span>
+    </div>
+  )
+}
+
+// ─── Line items ───────────────────────────────────────────────────────────────
+
+const LINE_GRID =
+  'grid grid-cols-[28px_minmax(0,1fr)_60px_112px_128px_104px_116px_44px_52px] gap-x-2 items-center'
+// Header keeps items-center; rows top-align so a wrapped item name doesn't
+// drag the numeric cells down with it.
+const LINE_GRID_ROW =
+  'grid grid-cols-[28px_minmax(0,1fr)_60px_112px_128px_104px_116px_44px_52px] gap-x-2 items-start'
+
+function LineItemsCard({
+  control,
+  register,
+  errors,
+  setValue,
+  initialItemLabels,
+  submitted,
+  openLines,
+  setOpenLines,
+  searchRef,
+}: {
+  control: Control<CreatePoFormValues>
+  register: UseFormRegister<CreatePoFormValues>
+  errors: FieldErrors<CreatePoFormValues>
+  setValue: UseFormSetValue<CreatePoFormValues>
+  initialItemLabels?: Record<string, string>
+  submitted?: boolean
+  openLines: Record<string, boolean>
+  setOpenLines: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
+  searchRef: React.RefObject<HTMLDivElement | null>
+}): React.ReactElement {
+  const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
+
+  // Names/SKUs for lines the form only knows by itemId: seeded from the
+  // record being edited, then extended as the catalog search adds lines.
+  const [labels, setLabels] = useState<Record<string, ItemLabel>>({})
+  const [nonce, setNonce] = useState(0)
+  const merged: Record<string, ItemLabel> = useMemo(() => {
+    const seed: Record<string, ItemLabel> = {}
+    for (const [id, name] of Object.entries(initialItemLabels ?? {})) seed[id] = { name }
+    return { ...seed, ...labels }
+  }, [initialItemLabels, labels])
+
+  const anyOpen = Object.values(openLines).some(Boolean)
+
+  const addFromCatalog = (option: SearchComboboxOption): void => {
+    setLabels((s) => ({ ...s, [option.id]: { name: option.primary, sku: option.secondary } }))
+    // SRP is deliberately left blank — it is the price on THIS supplier's
+    // quote, which the item's own last cost is not a safe stand-in for.
+    append({ ...EMPTY_LINE, itemId: option.id })
+    setNonce((n) => n + 1)
+  }
+
+  return (
+    <div className={`${CARD} flex flex-1 flex-col`}>
+      <div className={`${CARD_HEAD} flex-wrap`}>
+        <div className="flex items-center gap-2.5">
+          <span className="text-[13.5px] font-semibold">
+            Line items <span className="text-[#b42318]">*</span>
+          </span>
+          <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+            {fields.length} {fields.length === 1 ? 'line' : 'lines'}
+          </span>
+        </div>
+
+        {/* Catalog search — adds a line per pick, sitting inline beside the
+            section label. The nonce remounts it after each pick so it resets
+            to empty, ready for the next item (it has no clear-on-select of
+            its own). */}
+        <div ref={searchRef} className="min-w-[220px] flex-1">
+          <ItemSearchCombobox
+            key={nonce}
+            value=""
+            onChange={() => {}}
+            onSelect={addFromCatalog}
+            compact
+            placeholder="Search item by name or SKU to add a line…"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const next: Record<string, boolean> = {}
+              if (!anyOpen) fields.forEach((_, i) => (next[String(i)] = true))
+              setOpenLines(next)
+            }}
+            className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+          >
+            {anyOpen ? 'Collapse all stacks' : 'Expand all stacks'}
+          </button>
+          <button
+            type="button"
+            onClick={() => searchRef.current?.querySelector('button')?.click()}
+            className="rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+          >
+            + Add item
+          </button>
+        </div>
+      </div>
+
+      {errors.lines && !Array.isArray(errors.lines) && (
+        <div className="px-[18px] pt-3">
+          <ErrorLine message={errors.lines.message ?? ''} />
+        </div>
+      )}
+
+      <div className="flex flex-1 flex-col">
+        {fields.length === 0 ? (
+          <div className="px-[18px] pb-5 pt-[26px]">
+            <div className="flex flex-col items-center gap-2 rounded-[10px] border border-dashed border-[#d3d3db] bg-[#fbfbfc] px-[22px] py-[30px] text-center">
+              <div className="h-8 w-8 rounded-lg border border-[#ddd0f7] bg-[#f1ebfb]" />
+              <div className="mt-1 text-[14px] font-semibold">No line items yet</div>
+              <div className="max-w-[430px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                Search the catalog below to add a line. Discounts can be stacked on any line at any
+                point.
+              </div>
+              <button
+                type="button"
+                onClick={() => searchRef.current?.querySelector('button')?.click()}
+                className="mt-3 rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
+              >
+                Search items
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Wide: table */}
+            <div className="hidden min-[1240px]:block">
+              <div
+                className={`${LINE_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+              >
+                <span />
+                <span>Item / SKU</span>
+                <span className="text-right">Qty</span>
+                <span className="text-right">SRP</span>
+                <span>Discounts</span>
+                <span className="text-right">Unit price</span>
+                <span className="text-right">Line total</span>
+                <span className="text-center">Free</span>
+                <span />
+              </div>
+              {fields.map((field, index) => (
+                <LineRow
+                  key={field.id}
+                  narrow={false}
+                  control={control}
+                  register={register}
+                  errors={errors}
+                  setValue={setValue}
+                  index={index}
+                  lineCount={fields.length}
+                  labels={merged}
+                  submitted={submitted}
+                  open={!!openLines[String(index)]}
+                  onToggle={() =>
+                    setOpenLines((s) => ({ ...s, [String(index)]: !s[String(index)] }))
+                  }
+                  onRemove={() => remove(index)}
+                  onDuplicate={(line) => insert(index + 1, line)}
+                  onLabel={(id, label) => setLabels((s) => ({ ...s, [id]: label }))}
+                />
+              ))}
+            </div>
+
+            {/* Narrow: cards */}
+            <div className="flex flex-col gap-2.5 p-3 min-[1240px]:hidden">
+              {fields.map((field, index) => (
+                <LineRow
+                  key={field.id}
+                  narrow
+                  control={control}
+                  register={register}
+                  errors={errors}
+                  setValue={setValue}
+                  index={index}
+                  lineCount={fields.length}
+                  labels={merged}
+                  submitted={submitted}
+                  open={!!openLines[String(index)]}
+                  onToggle={() =>
+                    setOpenLines((s) => ({ ...s, [String(index)]: !s[String(index)] }))
+                  }
+                  onRemove={() => remove(index)}
+                  onDuplicate={(line) => insert(index + 1, line)}
+                  onLabel={(id, label) => setLabels((s) => ({ ...s, [id]: label }))}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── One line ─────────────────────────────────────────────────────────────────
+
+type LineRowProps = {
+  narrow: boolean
+  control: Control<CreatePoFormValues>
+  register: UseFormRegister<CreatePoFormValues>
+  errors: FieldErrors<CreatePoFormValues>
+  setValue: UseFormSetValue<CreatePoFormValues>
+  index: number
+  lineCount: number
+  labels: Record<string, ItemLabel>
+  submitted?: boolean
+  open: boolean
+  onToggle: () => void
+  onRemove: () => void
+  onDuplicate: (line: CreatePoFormValues['lines'][number]) => void
+  onLabel: (id: string, label: ItemLabel) => void
+}
+
+// One line's whole row — its own component (not inlined in the parent's
+// .map()) so the discount chain's own useFieldArray can be called per line,
+// which the Rules of Hooks don't allow inside a loop within one component.
+function LineRow(props: LineRowProps): React.ReactElement {
+  const { control, index, setValue, submitted, labels, narrow } = props
+
   const {
     fields: discountFields,
     append: appendDiscount,
     remove: removeDiscount,
-  } = useFieldArray({
-    control,
-    name: `lines.${index}.discounts` as `lines.${number}.discounts`,
-  })
+  } = useFieldArray({ control, name: `lines.${index}.discounts` as `lines.${number}.discounts` })
 
-  // Unit Price defaults to srp with every discount step applied
-  // sequentially (each step's output feeds the next — 30% then 20% off,
-  // not 30+20=50% off in one step), but stays a normal editable input —
-  // reacting to srp/discounts via useWatch (not a setValue() call chained
-  // off this field's own onChange) so typing in SRP/a discount value never
-  // fires a cross-field form update synchronously inside its own change
-  // event — that re-entrant update was what caused the input to drop focus
-  // after every keystroke.
+  const itemId = useWatch({ control, name: `lines.${index}.itemId` })
   const srp = useWatch({ control, name: `lines.${index}.srp` })
   const discounts = useWatch({ control, name: `lines.${index}.discounts` })
   const isFreebie = useWatch({ control, name: `lines.${index}.isFreebie` })
   const quantity = useWatch({ control, name: `lines.${index}.quantity` })
   const unitPrice = useWatch({ control, name: `lines.${index}.unitPrice` })
 
+  // Unit Price defaults to srp with every discount step applied
+  // sequentially, but stays a normal editable input — reacting to
+  // srp/discounts via useWatch (not a setValue() call chained off this
+  // field's own onChange) so typing in SRP or a discount value never fires a
+  // cross-field form update synchronously inside its own change event. That
+  // re-entrant update was what dropped input focus after every keystroke.
   useEffect(() => {
-    const srpNum = Number(srp)
-    if (!srp || !discounts || discounts.length === 0) return
-    const computed = discounts.reduce((price, d) => {
-      const val = Number(d?.value)
-      if (!d?.type || d.value == null || isNaN(val)) return price
-      return d.type === 'percentage' ? price * (1 - val / 100) : price - val
-    }, srpNum)
-    setValue(`lines.${index}.unitPrice`, Math.max(0, Number(computed.toFixed(2))))
+    if (!srp) return
+    const derived = unitFromChain(Number(srp) || 0, discounts ?? []).unit
+    setValue(`lines.${index}.unitPrice`, Number(derived.toFixed(2)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srp, discounts, index])
 
-  const hasRowError =
-    errors.lines?.[index]?.itemId ||
-    errors.lines?.[index]?.quantity ||
-    errors.lines?.[index]?.unitPrice
+  const chain = unitFromChain(Number(srp) || 0, discounts)
+  const qty = Number(quantity) || 0
+  const unit = Number(unitPrice) || 0
+  const lineTotal = isFreebie ? 0 : unit * qty
+  const effective = Number(srp) ? (1 - unit / Number(srp)) * 100 : 0
 
+  const badQty = !!submitted && (!quantity || qty < 1)
+  const badSrp = !!submitted && !srp && !isFreebie
+  const badItem = !!submitted && !itemId
+  const errorText = badItem
+    ? 'Item is required.'
+    : badQty
+      ? 'Quantity must be at least 1.'
+      : badSrp
+        ? 'SRP is required — this item has no price on the supplier’s list.'
+        : ''
+
+  const label = itemId ? labels[itemId] : undefined
+  const discCount = discountFields.length
+
+  const shared = {
+    ...props,
+    chain,
+    qty,
+    unit,
+    lineTotal,
+    effective,
+    errorText,
+    badQty,
+    badSrp,
+    label,
+    discCount,
+    isFreebie: !!isFreebie,
+    discountFields,
+    appendDiscount,
+    removeDiscount,
+    itemId,
+    srp,
+    discountValues: discounts,
+    // A default empty discount row still counts toward discCount but takes
+    // nothing off, so "has discounts" and "is actually discounted" differ.
+    discounted: (Number(srp) || 0) > 0 && chain.unit < (Number(srp) || 0),
+    // The pill reads "+ Add discount" while the line has none, so clicking
+    // it should actually add one rather than open an empty panel.
+    onOpenDiscounts: (): void => {
+      if (!props.open) {
+        if (discountFields.length === 0) {
+          appendDiscount({ name: undefined, type: 'percentage', value: 0 })
+        }
+      } else {
+        for (let i = (discounts ?? []).length - 1; i >= 0; i--) {
+          const d = (discounts ?? [])[i]
+          if (!Number(d?.value) && !d?.name?.trim()) removeDiscount(i)
+        }
+      }
+      props.onToggle()
+    },
+  }
+
+  return narrow ? <LineCardNarrow {...shared} /> : <LineRowWide {...shared} />
+}
+
+type RenderProps = LineRowProps & {
+  chain: { unit: number; amounts: number[] }
+  qty: number
+  unit: number
+  lineTotal: number
+  effective: number
+  errorText: string
+  badQty: boolean
+  badSrp: boolean
+  label?: ItemLabel
+  discCount: number
+  isFreebie: boolean
+  discountFields: { id: string }[]
+  appendDiscount: (v: { name?: string; type: 'percentage'; value: number }) => void
+  removeDiscount: (i: number) => void
+  itemId?: string
+  srp?: number
+  discountValues?: CreatePoFormValues['lines'][number]['discounts']
+  discounted: boolean
+  onOpenDiscounts: () => void
+}
+
+function cellBox(bad: boolean): string {
+  return `flex items-center rounded-md px-2.5 py-1.5 ${
+    bad ? 'border border-[#b42318] bg-[#fdeceb]' : 'border border-[#e4e4e9] bg-white'
+  }`
+}
+
+function LineRowWide(p: RenderProps): React.ReactElement {
+  const { index, control, open, errorText, label, itemId } = p
   return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
-      {/* Freebie sits on its own line above the item row: as an unlabelled
-          box in the grid it read as a select/remove toggle, and it silently
-          zeroes the price and drops the line out of the Subtotal. */}
-      <label
-        className="mb-1.5 flex w-fit items-center gap-2 text-xs font-medium text-zinc-600"
-        title="Freebie (supplier-given free unit — no cost)"
-      >
-        <input
-          type="checkbox"
-          checked={Boolean(isFreebie)}
-          onChange={(e) => {
-            setValue(`lines.${index}.isFreebie`, e.target.checked)
-            if (e.target.checked) setValue(`lines.${index}.unitPrice`, 0)
-          }}
-        />
-        Freebie
-      </label>
+    <div
+      className={`border-t border-[#f1f1f4] ${
+        errorText ? 'bg-[#fffbfa]' : open ? 'bg-[#fdfcff]' : 'bg-white'
+      }`}
+    >
+      <div className={`${LINE_GRID_ROW} px-[18px] py-[9px]`}>
+        <span
+          className={`${MONO} flex min-h-8 items-center justify-end text-[11px] text-[#a3a3b2]`}
+        >
+          {index + 1}
+        </span>
 
-      {/* Primary row — Item / Qty / SRP / Remove. Unit Price and Line Total
-          sit below the discount chain that derives them, matching the PO
-          line format used by ConvertPrToPoModal. */}
-      <div className="grid grid-cols-[minmax(180px,1fr)_80px_140px_36px] items-center gap-2">
-        <Controller
-          name={`lines.${index}.itemId`}
-          control={control}
-          render={({ field: f }) => (
-            <ItemSearchCombobox
-              value={f.value}
-              onChange={f.onChange}
-              error={errors.lines?.[index]?.itemId?.message}
-              initialLabel={initialItemLabel}
+        <div className="flex min-w-0 flex-col gap-0.5">
+          {itemId ? (
+            <>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="text-[13px] font-medium leading-snug break-words">
+                  {label?.name ?? 'Item'}
+                </span>
+                {p.isFreebie && <FreebieTag />}
+              </div>
+              <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{label?.sku ?? ''}</span>
+            </>
+          ) : (
+            // A line with no item yet (edit-mode leftovers) still needs a
+            // picker — the design assumes every line arrived via the search.
+            <Controller
+              name={`lines.${index}.itemId`}
+              control={control}
+              render={({ field }) => (
+                <ItemSearchCombobox
+                  value={field.value}
+                  onChange={field.onChange}
+                  onSelect={(o) => p.onLabel(o.id, { name: o.primary, sku: o.secondary })}
+                  compact
+                  placeholder="Search item…"
+                />
+              )}
             />
           )}
-        />
+        </div>
 
-        <input
-          type="number"
-          min={1}
-          step={1}
-          aria-label="Quantity"
-          placeholder="Qty"
-          {...register(`lines.${index}.quantity`, { valueAsNumber: true })}
-          className="w-full min-w-0 rounded-lg border border-zinc-200 px-2 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-        />
+        <div className={cellBox(p.badQty)}>
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field }) => (
+              <input
+                aria-label="Quantity"
+                inputMode="numeric"
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(Number(e.target.value.replace(/[^\d.]/g, '')) || 0)}
+                className={`${MONO} w-full border-none bg-transparent p-0 text-right text-[12.5px] outline-none`}
+              />
+            )}
+          />
+        </div>
 
-        <input
-          type="number"
-          min={0}
-          step={0.01}
-          aria-label="Supplier SRP"
-          placeholder="SRP"
-          {...register(`lines.${index}.srp`, {
-            setValueAs: (v) => (v === '' ? undefined : Number(v)),
-          })}
-          className="w-full min-w-0 rounded-lg border border-zinc-200 px-2 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-        />
+        <div className={cellBox(p.badSrp)}>
+          <Controller
+            name={`lines.${index}.srp`}
+            control={control}
+            render={({ field }) => (
+              <input
+                aria-label="Supplier SRP"
+                placeholder="0.00"
+                inputMode="decimal"
+                value={field.value ?? ''}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d.]/g, '')
+                  field.onChange(raw === '' ? undefined : Number(raw))
+                }}
+                className={`${MONO} w-full border-none bg-transparent p-0 text-right text-[12.5px] outline-none`}
+              />
+            )}
+          />
+        </div>
 
-        {canRemove ? (
-          <button
-            type="button"
-            onClick={onRemove}
-            aria-label="Remove line"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
+        <button
+          type="button"
+          onClick={p.onOpenDiscounts}
+          className={`flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 hover:border-[#a3a3b2] ${
+            open ? 'border border-[#ddd0f7] bg-[#f1ebfb]' : 'border border-[#e4e4e9] bg-white'
+          }`}
+        >
+          {p.discounted ? (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span
+                className={`${MONO} rounded px-1.5 py-px text-[10px] bg-[#f1ebfb] text-[#3f1490]`}
+              >
+                {p.discCount}
+              </span>
+              <span className={`${MONO} text-[11.5px] font-medium text-[#3f1490]`}>
+                −{p.effective.toFixed(1)}%
+              </span>
+            </span>
+          ) : (
+            <span className="text-[12px] text-[#8b8b9b]">+ Add discount</span>
+          )}
+          {open ? (
+            <ChevronUp className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
+          )}
+        </button>
+
+        <div className="flex min-h-8 flex-col items-end justify-center gap-px text-right">
+          <span
+            className={`${MONO} text-[12.5px] font-medium ${
+              p.isFreebie ? 'text-[#8b8b9b]' : p.discounted ? 'text-[#3f1490]' : 'text-[#17171c]'
+            }`}
           >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        ) : (
-          <span />
-        )}
+            {peso(p.unit)}
+          </span>
+          {p.discounted && (
+            <span className={`${MONO} text-[9.5px] text-[#a3a3b2] line-through`}>
+              {peso(Number(p.srp) || 0)}
+            </span>
+          )}
+        </div>
+
+        <span
+          className={`${MONO} flex min-h-8 items-center justify-end text-right text-[13px] font-semibold ${
+            p.isFreebie ? 'text-[#0b6644]' : 'text-[#17171c]'
+          }`}
+        >
+          {peso(p.lineTotal)}
+        </span>
+
+        <div className="flex min-h-8 items-center justify-center">
+          <FreebieBox index={index} control={control} setValue={p.setValue} />
+        </div>
+
+        <div className="flex min-h-8 items-center justify-end gap-0.5">
+          <Tooltip label="Duplicate line" align="end">
+            <button
+              type="button"
+              aria-label="Duplicate line"
+              onClick={() =>
+                p.onDuplicate({
+                  itemId: itemId ?? '',
+                  quantity: p.qty,
+                  unitPrice: p.unit,
+                  srp: p.srp,
+                  // Copy the discount stack by value, so editing the copy
+                  // never writes back into the line it came from.
+                  discounts: (p.discountValues ?? []).map((d) => ({ ...d })),
+                  isFreebie: p.isFreebie,
+                })
+              }
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[#a3a3b2] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
+            >
+              <Copy className="h-3.25 w-3.25" />
+            </button>
+          </Tooltip>
+          <Tooltip label="Remove line" align="end">
+            <button
+              type="button"
+              aria-label="Remove line"
+              onClick={p.onRemove}
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+            >
+              <Trash2 className="h-3.25 w-3.25" />
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
-      {hasRowError && (
-        <div className="mt-1 space-y-0.5 text-xs text-red-500">
-          {errors.lines?.[index]?.itemId && <p>{errors.lines[index]?.itemId?.message}</p>}
-          {errors.lines?.[index]?.quantity && <p>{errors.lines[index]?.quantity?.message}</p>}
-          {errors.lines?.[index]?.unitPrice && <p>{errors.lines[index]?.unitPrice?.message}</p>}
+      {errorText && (
+        <div className="flex items-center gap-1.5 pb-2.5 pl-[66px] pr-[18px] text-[11.5px] text-[#b42318]">
+          <span className="inline-block h-[5px] w-[5px] rounded-full bg-[#b42318]" />
+          {errorText}
         </div>
       )}
 
-      {/* Secondary block — supplier discount chain (Scenario 10 Part 6,
-          revised; applied in order off srp), then the Unit Price it feeds,
-          the Line Total, and Description */}
-      <div className="mt-1.5 flex flex-col items-start gap-1 border-t border-zinc-200 pt-1.5">
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Discounts <span className="normal-case tracking-normal">(off SRP)</span>
-        </span>
-        {discountFields.map((discountField, discountIndex) => (
-          <div key={discountField.id} className="flex items-center gap-1">
-            <input
-              type="text"
-              placeholder="Discount name"
-              maxLength={100}
-              aria-label="Discount name"
-              {...register(`lines.${index}.discounts.${discountIndex}.name`)}
-              className="w-44 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-            />
-            <select
-              aria-label="Discount type"
-              {...register(`lines.${index}.discounts.${discountIndex}.type`)}
-              className="w-16 rounded-lg border border-zinc-200 px-1 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-            >
-              <option value="percentage">%</option>
-              <option value="amount">₱</option>
-            </select>
-            <input
-              type="number"
-              min={0}
-              step={0.01}
-              aria-label="Discount value"
-              placeholder={discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'}
-              {...register(`lines.${index}.discounts.${discountIndex}.value`, {
-                valueAsNumber: true,
-              })}
-              className="w-20 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-            />
-            <button
-              type="button"
-              onClick={() => removeDiscount(discountIndex)}
-              className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
-              aria-label="Remove discount"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
+      {open && <DiscountStack {...p} />}
+    </div>
+  )
+}
+
+function FreebieTag(): React.ReactElement {
+  return (
+    <span
+      className={`${MONO} shrink-0 rounded px-1.5 py-px text-[9.5px] tracking-[.06em] bg-[#e7f5ef] text-[#0b6644]`}
+    >
+      FREEBIE
+    </span>
+  )
+}
+
+function FreebieBox({
+  index,
+  control,
+  setValue,
+}: {
+  index: number
+  control: Control<CreatePoFormValues>
+  setValue: UseFormSetValue<CreatePoFormValues>
+}): React.ReactElement {
+  return (
+    <Controller
+      name={`lines.${index}.isFreebie`}
+      control={control}
+      render={({ field }) => (
         <button
           type="button"
-          onClick={() => appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
-          className="flex items-center gap-1 text-sm font-medium text-prominent-purple-700 hover:underline"
+          role="checkbox"
+          aria-checked={!!field.value}
+          aria-label="Freebie"
+          title="Freebie (supplier-given free unit — no cost)"
+          onClick={() => {
+            const next = !field.value
+            field.onChange(next)
+            if (next) setValue(`lines.${index}.unitPrice`, 0)
+          }}
+          className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border text-[11px] ${
+            field.value
+              ? 'border-[#0f7b52] bg-[#0f7b52] text-white'
+              : 'border-[#d3d3db] bg-white text-transparent'
+          }`}
         >
-          <Plus className="h-3 w-3" />
-          Add
+          ✓
         </button>
+      )}
+    />
+  )
+}
 
-        {/* Unit Price — srp with the chain above applied, still editable —
-            and the resulting Line Total */}
-        <div className="mt-1 flex w-full flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
-            Unit Price
-          </span>
-          <input
-            type="number"
-            min={0}
-            step={0.01}
-            aria-label="Unit price"
-            placeholder="Unit price"
-            disabled={isFreebie}
-            {...register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
-            className="w-32 min-w-0 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-100 disabled:text-zinc-400"
-          />
-          <div className="ml-auto flex min-w-0 items-center gap-2">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
-              Line Total
-            </span>
-            <span
-              className="truncate text-sm font-semibold text-zinc-800"
-              title={fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
+// ─── Discount stack ───────────────────────────────────────────────────────────
+
+function DiscountStack(p: RenderProps): React.ReactElement {
+  const { control, index, narrow } = p
+  return (
+    <div
+      className={`relative overflow-hidden rounded-[10px] border border-[#ddd0f7] bg-[#fcfaff] ${
+        narrow ? 'mx-3 mb-3' : 'mb-3.5 ml-9 mr-[18px]'
+      }`}
+    >
+      {/* Collapse sits as a quiet icon in the panel's own corner rather than
+          a labelled button in a header strip — the row's Discounts pill is
+          the primary toggle, this is just the way back out once a tall stack
+          has pushed that pill out of view. */}
+      <span className="absolute right-2 top-2 z-10">
+        <Tooltip label="Collapse discounts" side="bottom" align="end">
+          <button
+            type="button"
+            onClick={p.onToggle}
+            aria-label="Collapse discounts"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-[#a3a3b2] hover:bg-white hover:text-[#3f1490]"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
+      </span>
+
+      <div className="flex min-w-0 flex-col gap-[9px] px-4 py-[13px]">
+        <div
+          className={`${MONO} hidden grid-cols-[22px_minmax(0,1fr)_76px_124px_120px_28px] gap-x-2 pb-0.5 text-[9.5px] uppercase tracking-[.09em] text-[#a3a3b2] min-[1240px]:grid`}
+        >
+          <span />
+          <span>Discount</span>
+          <span className="text-center">Type</span>
+          <span className="text-right">Value</span>
+          <span className="text-right">Off unit</span>
+          <span />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          {p.discountFields.map((field, di) => (
+            <div
+              key={field.id}
+              className="grid grid-cols-[22px_minmax(0,1fr)_76px_124px_120px_28px] items-center gap-x-2"
             >
-              {fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
+              <span className={`${MONO} text-center text-[10.5px] text-[#a3a3b2]`}>{di + 1}</span>
+
+              <Controller
+                name={`lines.${index}.discounts.${di}.name`}
+                control={control}
+                render={({ field: f }) => (
+                  <input
+                    aria-label="Discount name"
+                    placeholder="Discount name"
+                    maxLength={100}
+                    value={f.value ?? ''}
+                    onChange={f.onChange}
+                    className="w-full rounded-[7px] border border-[#e4e4e9] bg-white px-2.5 py-1.5 text-[12.5px] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
+                  />
+                )}
+              />
+
+              <Controller
+                name={`lines.${index}.discounts.${di}.type`}
+                control={control}
+                render={({ field: f }) => (
+                  <Tooltip
+                    label={
+                      f.value === 'amount'
+                        ? 'Click to switch to % (percentage off)'
+                        : 'Click to switch to ₱ (fixed amount off)'
+                    }
+                    className="w-full"
+                  >
+                    <button
+                      type="button"
+                      aria-label={`Discount type: ${
+                        f.value === 'amount' ? 'fixed amount' : 'percentage'
+                      } — click to change`}
+                      onClick={() => f.onChange(f.value === 'percentage' ? 'amount' : 'percentage')}
+                      className={`${MONO} w-full rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] py-1.5 text-[12px] text-[#3f1490] hover:bg-[#e8ddfa]`}
+                    >
+                      {f.value === 'amount' ? '₱' : '%'}
+                    </button>
+                  </Tooltip>
+                )}
+              />
+
+              <Controller
+                name={`lines.${index}.discounts.${di}.value`}
+                control={control}
+                render={({ field: f }) => (
+                  <div className="flex items-center gap-1 rounded-[7px] border border-[#e4e4e9] bg-white px-2.5 py-1.5">
+                    <input
+                      aria-label="Discount value"
+                      inputMode="decimal"
+                      value={f.value ?? ''}
+                      onChange={(e) =>
+                        f.onChange(Number(e.target.value.replace(/[^\d.]/g, '')) || 0)
+                      }
+                      className={`${MONO} w-full border-none bg-transparent p-0 text-right text-[12.5px] outline-none`}
+                    />
+                    <DiscountUnit control={control} index={index} di={di} />
+                  </div>
+                )}
+              />
+
+              <span className={`${MONO} text-right text-[12px] text-[#b42318]`}>
+                −{peso(p.chain.amounts[di] ?? 0)}
+              </span>
+
+              <Tooltip label="Remove discount" align="end">
+                <button
+                  type="button"
+                  aria-label="Remove discount"
+                  onClick={() => p.removeDiscount(di)}
+                  className="flex h-[22px] w-[22px] items-center justify-center rounded-[5px] text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </Tooltip>
+            </div>
+          ))}
+          {p.discountFields.length === 0 && (
+            <span className="py-0.5 pl-[30px] text-[12px] text-[#8b8b9b]">
+              No discounts on this line — it will be purchased at SRP.
             </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
+          <button
+            type="button"
+            onClick={() => p.appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
+            className="rounded-[7px] border border-[#ddd0f7] bg-white px-[11px] py-1.5 text-[12px] font-medium text-[#3f1490] hover:bg-[#f1ebfb]"
+          >
+            + Add discount
+          </button>
+          <span className="ml-auto flex items-baseline gap-2.5">
+            <span className="text-[12px] font-semibold text-[#3f1490]">Unit price</span>
+            <span className={`${MONO} text-[15px] font-semibold text-[#3f1490]`}>
+              ₱{peso(p.unit)}
+            </span>
+            <span className="text-[11.5px] text-[#8b8b9b]">× {p.qty}</span>
+            <span className={`${MONO} text-[13px] font-semibold`}>₱{peso(p.lineTotal)}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DiscountUnit({
+  control,
+  index,
+  di,
+}: {
+  control: Control<CreatePoFormValues>
+  index: number
+  di: number
+}): React.ReactElement {
+  const type = useWatch({ control, name: `lines.${index}.discounts.${di}.type` })
+  return (
+    <span className={`${MONO} text-[11px] text-[#a3a3b2]`}>{type === 'amount' ? '₱' : '%'}</span>
+  )
+}
+
+// ─── Narrow card ──────────────────────────────────────────────────────────────
+
+function LineCardNarrow(p: RenderProps): React.ReactElement {
+  const { control, index, open, errorText, label, itemId } = p
+  return (
+    <div
+      className={`overflow-hidden rounded-[11px] border bg-white ${
+        errorText ? 'border-[#f3c9c5]' : 'border-[#e4e4e9]'
+      }`}
+    >
+      <div className="flex flex-col gap-2.5 p-3">
+        <div className="flex items-start justify-between gap-2.5">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            {itemId ? (
+              <>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[13px] font-medium leading-snug">
+                    {label?.name ?? 'Item'}
+                  </span>
+                  {p.isFreebie && <FreebieTag />}
+                </div>
+                <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{label?.sku ?? ''}</span>
+              </>
+            ) : (
+              <Controller
+                name={`lines.${index}.itemId`}
+                control={control}
+                render={({ field }) => (
+                  <ItemSearchCombobox
+                    value={field.value}
+                    onChange={field.onChange}
+                    onSelect={(o) => p.onLabel(o.id, { name: o.primary, sku: o.secondary })}
+                    compact
+                    placeholder="Search item…"
+                  />
+                )}
+              />
+            )}
+          </div>
+          <Tooltip label="Remove line" align="end">
+            <button
+              type="button"
+              aria-label="Remove line"
+              onClick={p.onRemove}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+            >
+              <Trash2 className="h-3.75 w-3.75" />
+            </button>
+          </Tooltip>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field }) => (
+              <div className="flex items-center overflow-hidden rounded-lg border border-[#d3d3db]">
+                <button
+                  type="button"
+                  aria-label="Decrease quantity"
+                  onClick={() => field.onChange(Math.max(0, (Number(field.value) || 0) - 1))}
+                  className="flex h-10 w-11 items-center justify-center border-r border-[#e4e4e9] bg-white text-[16px] text-[#5b5b6b]"
+                >
+                  −
+                </button>
+                <input
+                  aria-label="Quantity"
+                  inputMode="numeric"
+                  value={field.value ?? ''}
+                  onChange={(e) =>
+                    field.onChange(Number(e.target.value.replace(/[^\d.]/g, '')) || 0)
+                  }
+                  className={`${MONO} h-10 w-14 border-none text-center text-[13px] outline-none`}
+                />
+                <button
+                  type="button"
+                  aria-label="Increase quantity"
+                  onClick={() => field.onChange((Number(field.value) || 0) + 1)}
+                  className="flex h-10 w-11 items-center justify-center border-l border-[#e4e4e9] bg-white text-[16px] text-[#5b5b6b]"
+                >
+                  +
+                </button>
+              </div>
+            )}
+          />
+          <div className="flex min-w-0 flex-1 flex-col items-end gap-px">
+            <span
+              className={`${MONO} text-[12.5px] font-medium ${
+                p.isFreebie ? 'text-[#8b8b9b]' : p.discounted ? 'text-[#3f1490]' : 'text-[#17171c]'
+              }`}
+            >
+              {peso(p.unit)}
+            </span>
+            {p.discounted && (
+              <span className={`${MONO} text-[10px] text-[#a3a3b2] line-through`}>
+                {peso(Number(p.srp) || 0)}
+              </span>
+            )}
           </div>
         </div>
 
-        <input
-          type="text"
-          placeholder="Description (optional)"
-          aria-label="Line description"
-          {...register(`lines.${index}.description`)}
-          className="mt-1 w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-xs focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-        />
+        <div className="flex items-center gap-2.5">
+          <span className="text-[12px] text-[#5b5b6b]">SRP</span>
+          <Controller
+            name={`lines.${index}.srp`}
+            control={control}
+            render={({ field }) => (
+              <div className={`flex-1 ${cellBox(p.badSrp)}`}>
+                <input
+                  aria-label="Supplier SRP"
+                  placeholder="0.00"
+                  inputMode="decimal"
+                  value={field.value ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^\d.]/g, '')
+                    field.onChange(raw === '' ? undefined : Number(raw))
+                  }}
+                  className={`${MONO} w-full border-none bg-transparent p-0 text-right text-[12.5px] outline-none`}
+                />
+              </div>
+            )}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={p.onOpenDiscounts}
+          className="flex min-h-11 w-full items-center justify-between gap-2.5 rounded-lg border border-[#ddd0f7] bg-[#f7f3ff] px-[11px] py-2.5"
+        >
+          <span className="flex items-center gap-1.5 text-[12px] font-medium text-[#3f1490]">
+            {p.discounted && (
+              <span className={`${MONO} rounded bg-white px-1.5 py-px text-[10px]`}>
+                {p.discCount}
+              </span>
+            )}
+            {p.discounted ? `discounts · −${p.effective.toFixed(1)}%` : 'Add discount'}
+          </span>
+          {open ? (
+            <ChevronUp className="h-4 w-4 shrink-0 text-[#7c4fd1]" />
+          ) : (
+            <ChevronDown className="h-4 w-4 shrink-0 text-[#7c4fd1]" />
+          )}
+        </button>
+
+        {errorText && <ErrorLine message={errorText} />}
+      </div>
+
+      {open && <DiscountStack {...p} />}
+
+      <div className="flex items-center justify-between gap-2.5 border-t border-[#eeeef1] bg-[#fbfbfc] px-3 py-2.5">
+        <FreebieToggleNarrow index={index} control={control} setValue={p.setValue} />
+        <div className="flex items-baseline gap-2">
+          <span className="text-[11.5px] text-[#8b8b9b]">Line total</span>
+          <span
+            className={`${MONO} text-[13px] font-semibold ${
+              p.isFreebie ? 'text-[#0b6644]' : 'text-[#17171c]'
+            }`}
+          >
+            ₱{peso(p.lineTotal)}
+          </span>
+        </div>
       </div>
     </div>
+  )
+}
+
+function FreebieToggleNarrow({
+  index,
+  control,
+  setValue,
+}: {
+  index: number
+  control: Control<CreatePoFormValues>
+  setValue: UseFormSetValue<CreatePoFormValues>
+}): React.ReactElement {
+  return (
+    <Controller
+      name={`lines.${index}.isFreebie`}
+      control={control}
+      render={({ field }) => (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={!!field.value}
+          aria-label="Freebie"
+          onClick={() => {
+            const next = !field.value
+            field.onChange(next)
+            if (next) setValue(`lines.${index}.unitPrice`, 0)
+          }}
+          className={`flex min-h-9 items-center gap-1.5 rounded-lg border px-[11px] py-1.5 text-[12px] ${
+            field.value
+              ? 'border-[#b6e0cd] bg-[#e7f5ef] text-[#0b6644]'
+              : 'border-[#d3d3db] bg-white text-[#5b5b6b]'
+          }`}
+        >
+          {field.value ? '✓ Freebie' : 'Mark as freebie'}
+        </button>
+      )}
+    />
   )
 }

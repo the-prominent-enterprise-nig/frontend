@@ -12,6 +12,8 @@ type Params = {
   transactionType?: string
   startDate?: string
   endDate?: string
+  /** Serial number, receiving report code, or invoice number. */
+  search?: string
 }
 
 export async function getStockLedger(params: Params = {}) {
@@ -24,6 +26,7 @@ export async function getStockLedger(params: Params = {}) {
     transactionType: params.transactionType,
     startDate: params.startDate,
     endDate: params.endDate,
+    search: params.search,
   }
 
   return api.get<StockLedgerListResponse>('/inventory/stock/ledger', query)

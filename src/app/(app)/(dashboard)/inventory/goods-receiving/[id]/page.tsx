@@ -1,11 +1,8 @@
-import ReceivingReportDetail from './_components/ReceivingReportDetail'
+import { redirect } from 'next/navigation'
 
-export const metadata = { title: 'Receiving Report' }
+// Receiving report detail now lives under the Stock module — this route
+// only exists so old links/bookmarks still land somewhere.
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <ReceivingReportDetail id={id} />
-    </div>
-  )
+  redirect(`/inventory/stock/reports/${id}`)
 }

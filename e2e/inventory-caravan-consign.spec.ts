@@ -1,14 +1,14 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady, fillStable, clickStable } from './utils'
 
-// Scenario 08 (Caravan) — "Consign to Branch" UI + event name/dates. Runs as
+// Scenario 08 (Caravan) — the Consign UI + event name/dates. Runs as
 // Business Owner (only seeded storage state) — has no own branch, so the
 // consign endpoint accepts any explicit hostBranchId with no own-branch
 // restriction. Self-cleaning: closes the consignment via a direct API call
 // (this spec is about consigning, not event close — that's covered by
 // inventory-caravan-close.spec.ts) so it doesn't leave a stray consigned
 // serial behind for other specs/manual QA to trip over.
-test.describe('Inventory — Consign to Branch', () => {
+test.describe('Inventory — Consign for Caravan', () => {
   test('selecting an in-stock serial and consigning it to a host branch with an event name/dates shows up on the Caravan tab', async ({
     page,
   }) => {
@@ -42,8 +42,8 @@ test.describe('Inventory — Consign to Branch', () => {
     await expect(page.getByText('1 selected')).toBeVisible()
 
     await clickStable(
-      page.getByRole('button', { name: 'Consign to Branch' }),
-      page.getByRole('heading', { name: 'Consign to Branch' })
+      page.getByRole('button', { name: 'Consign for Caravan' }),
+      page.getByRole('heading', { name: 'Consign for a Caravan' })
     )
 
     const hostPicker = page.getByPlaceholder('Search host branch…')
@@ -77,6 +77,68 @@ test.describe('Inventory — Consign to Branch', () => {
     const caravanRow = page.locator('tbody tr', { hasText: serial.serialNumber })
     await expect(caravanRow).toBeVisible({ timeout: 15_000 })
     await expect(caravanRow).toContainText('E2E Consign Test Event')
+
+    const closeRes = await page.request.post('/api/inventory/serial-numbers/close-consignment', {
+      data: { serialNumberIds: [serial.id] },
+    })
+    expect(closeRes.ok()).toBe(true)
+  })
+
+  test('consigning to a venue keeps the units on their own branch and lists them on its Caravan tab', async ({
+    page,
+  }) => {
+    const branchesRes = await page.request.get('/api/branches?limit=200')
+    expect(branchesRes.ok()).toBe(true)
+    const branches = (await branchesRes.json()).data as { id: string; name: string }[]
+    expect(branches.length).toBeGreaterThanOrEqual(1)
+    const origin = branches[0]
+
+    const serialsRes = await page.request.get(
+      `/api/inventory/serial-numbers?branchId=${origin.id}&status=in_stock&limit=1`
+    )
+    expect(serialsRes.ok()).toBe(true)
+    const serials = (await serialsRes.json()).data as { id: string; serialNumber: string }[]
+    expect(serials.length).toBeGreaterThanOrEqual(1)
+    const serial = serials[0]
+    const venueName = `E2E Lemery Fair ${Date.now()}`
+
+    await gotoReady(page, '/inventory/serial-numbers')
+
+    const row = page.locator('tbody tr', { hasText: serial.serialNumber })
+    await expect(async () => {
+      await fillStable(page.getByPlaceholder('Search serial numbers…'), serial.serialNumber)
+      await expect(row).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 20_000 })
+
+    await row.getByRole('checkbox').check()
+    await clickStable(
+      page.getByRole('button', { name: 'Consign for Caravan' }),
+      page.getByRole('heading', { name: 'Consign for a Caravan' })
+    )
+
+    // The destination switch is the whole point here: "Somewhere else"
+    // swaps the branch picker for a free-text venue.
+    await page.getByRole('button', { name: 'Somewhere else' }).click()
+    await fillStable(page.getByPlaceholder('e.g. Lemery Town Fair'), venueName)
+    await fillStable(page.getByPlaceholder(/Summer Caravan/), 'E2E Venue Event')
+
+    await expect(async () => {
+      await page.getByRole('button', { name: /Consign 1 Serial/ }).click()
+      await expect(page.getByText('Consigned out')).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 20_000 })
+
+    // No host branch took it in — it shows on the OWNING branch's Caravan
+    // tab, found through its own warehouse rather than consignedToBranchId.
+    await page.getByRole('button', { name: 'Caravan' }).click()
+    const branchPicker = page.getByPlaceholder('Select a branch…')
+    if (await branchPicker.isVisible().catch(() => false)) {
+      await branchPicker.click()
+      await page.getByText(origin.name, { exact: true }).click()
+    }
+
+    const caravanRow = page.locator('tbody tr', { hasText: serial.serialNumber })
+    await expect(caravanRow).toBeVisible({ timeout: 15_000 })
+    await expect(caravanRow).toContainText(venueName)
 
     const closeRes = await page.request.post('/api/inventory/serial-numbers/close-consignment', {
       data: { serialNumberIds: [serial.id] },

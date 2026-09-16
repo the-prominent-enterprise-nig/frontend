@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, pickComboboxOption } from './utils'
 
-// Scenario 06, Part 1 — a transfer line for a serial-tracked item must carry
-// a specific serial number (mirrors POS checkout's requirement). Refrigerator
-// (TN-REF-001) is seeded with 200 in-stock serials per warehouse specifically
-// so e2e/manual testing never runs low (see prisma/seed.ts "Variant item
-// serials"). Item/serial pickers are searchable comboboxes (ItemSearchCombobox
-// / SerialSearchCombobox), not native <select>s.
+// Scenario 06, Part 1 — a request for a serial-tracked item names the item and
+// how many units, never which physical units. The specific serials are chosen
+// by the source at dispatch (see TransferDetailModal's dispatch form and the
+// backend's assignDispatchSerials), since the requester can't see what's
+// actually on the shelf at the other branch. A quantity of N is split into N
+// single-unit lines at submit, satisfying the backend's per-line invariant
+// without making the requester add the same item N times.
 
 async function openCreateModal(page: import('@playwright/test').Page) {
   await gotoReady(page, '/inventory/transfers')
@@ -17,61 +18,78 @@ async function openCreateModal(page: import('@playwright/test').Page) {
 }
 
 async function pickWarehouses(page: import('@playwright/test').Page) {
-  const modalForm = page.locator('form')
-  const fromSelect = modalForm.locator('select').nth(0)
-  const toSelect = modalForm.locator('select').nth(1)
-  await fromSelect.selectOption({ index: 1 })
-  await toSelect.selectOption({ index: 1 })
+  // Scenario 50 — From/To are SearchableSelect comboboxes now, not native
+  // <select> elements. The destination list already excludes whatever the
+  // source is set to, so index 0 of each is a valid distinct pair.
+  await pickComboboxOption(page, 'Search source branch…')
+  await pickComboboxOption(page, 'Search destination branch…')
 }
 
-async function pickRefrigerator(page: import('@playwright/test').Page) {
-  // Once an option is selected, SearchCombobox's own placeholder attribute
-  // changes to the confirmed label text — so re-querying by the original
-  // "Search item…" placeholder afterward would legitimately find nothing.
-  // The "Specific serial number" section appearing (asserted by callers) is
-  // the meaningful confirmation that the right (serial-tracked) item landed.
-  const itemInput = page.getByPlaceholder('Search item')
-  await itemInput.click()
-  await itemInput.fill('TN-REF-001')
-  // Match on the SKU specifically, not "Refrigerator" — the search also
-  // surfaces "Refrigerator Deodorizer" (TN-CLN-REFDEODORIZER), which contains
-  // that same substring in its name.
-  const option = page.getByRole('button', { name: /TN-REF-001/ }).first()
+async function addSerialTrackedItem(page: import('@playwright/test').Page) {
+  // Resolve a real serial-tracked item instead of naming an SKU. This helper
+  // used to hardcode TN-REF-001, which is no longer in the seed — the third
+  // stale SKU found in this directory, after TN-FURN-SET-001 and TN-FAN-001.
+  const itemsRes = await page.request.get('/api/inventory/items', {
+    params: { limit: '100', lifecycle: 'active' },
+  })
+  const item = (
+    ((await itemsRes.json()).data ?? []) as {
+      sku: string
+      isSerialTracked: boolean
+    }[]
+  ).find((i) => i.isSerialTracked)
+  if (!item) throw new Error('no serial-tracked active item found in the catalog')
+
+  // Items are added from the Items card's own "Add item" search — there is no
+  // per-row item picker. SearchCombobox renders a BUTTON when closed and only
+  // swaps in the search <input> once opened (see its own comment), so the
+  // closed control cannot be reached with getByPlaceholder — open it first,
+  // then type. Matched on a plain substring rather than the full placeholder,
+  // which carries an em dash and an ellipsis character.
+  await page
+    .getByRole('button', { name: /Add item/ })
+    .first()
+    .click()
+  const addInput = page.locator('input[placeholder*="Add item"]')
+  await expect(addInput).toBeVisible({ timeout: 10_000 })
+  await addInput.fill(item.sku)
+  // Match on the SKU specifically, not the item name — a name substring can
+  // surface sibling products (e.g. "Refrigerator Deodorizer").
+  const option = page.getByRole('button', { name: new RegExp(item.sku) }).first()
   await expect(option).toBeVisible({ timeout: 10_000 })
   await option.click()
+  return item.sku
 }
 
-test.describe('Inventory — Stock Transfer serial-level requesting', () => {
-  test('creates a transfer with a specific serial, shows it on the detail view, then cancels it (cleanup)', async ({
+test.describe('Inventory — Stock Transfer serial-tracked requesting', () => {
+  test('a serial-tracked line asks for a quantity, not a specific unit', async ({ page }) => {
+    await openCreateModal(page)
+    await pickWarehouses(page)
+    await addSerialTrackedItem(page)
+
+    // The card says once — not per row — that the source decides which units
+    // leave, and no serial picker is offered anywhere in the form.
+    await expect(
+      page.getByText(
+        'Serial-tracked — the source picks which exact units leave when they dispatch.'
+      )
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('serial-pick-panel')).toHaveCount(0)
+    await expect(page.getByTestId('serial-pick-card')).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Close dialog' }).click()
+  })
+
+  test('creates a transfer for a serial-tracked item, then cancels it (cleanup)', async ({
     page,
   }) => {
-    // Identifies this run's own transfer reliably in the list — the serial
-    // picker deterministically selects the same physical serial every run
-    // (always the first option), so matching on serial text alone can't
-    // distinguish this run's draft from an older, already-cancelled one that
-    // happened to reference the same serial.
+    // Identifies this run's own transfer reliably in the list — nothing else
+    // about a bulk request is unique enough to match on.
     const uniqueReason = `E2E-TRF-SERIAL-${Date.now()}`
 
     await openCreateModal(page)
     await pickWarehouses(page)
-    await pickRefrigerator(page)
-
-    await expect(page.getByText('Specific serial number')).toBeVisible()
-    const serialInput = page.getByPlaceholder('Search serial number…')
-    // The serial list is fetched fresh (scoped to the chosen item + source
-    // warehouse) once both are picked — wait for the field to actually
-    // become interactive before opening it.
-    await expect(serialInput).toBeEnabled({ timeout: 10_000 })
-    await serialInput.click()
-    const serialOption = page.locator('button', { hasText: /^REF-001-/ }).first()
-    await expect(serialOption).toBeVisible({ timeout: 10_000 })
-    // Capture the text before clicking — same placeholder-staleness issue as
-    // the item input: selecting an option changes SearchCombobox's own
-    // placeholder to the confirmed label, so reading it back afterward via
-    // the original "Search serial number…" locator would find nothing.
-    const serialText = (await serialOption.textContent())?.trim() ?? ''
-    expect(serialText).toMatch(/^REF-001-/)
-    await serialOption.click()
+    await addSerialTrackedItem(page)
 
     await page.getByPlaceholder('e.g. Rebalancing stock for upcoming campaign').fill(uniqueReason)
 
@@ -105,40 +123,23 @@ test.describe('Inventory — Stock Transfer serial-level requesting', () => {
       }
     }).toPass({ timeout: 20_000 })
 
-    await expect(page.getByText(serialText, { exact: true })).toBeVisible()
-
     // Cleanup: cancel the draft so repeated runs don't pile up test transfers.
     await page.getByRole('button', { name: 'Cancel Transfer' }).click()
     await page.getByRole('button', { name: 'Yes, Cancel Transfer' }).click()
     await expect(page.getByText('Cancel this transfer?')).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test('blocks Submit Request with a required-field error when no serial is picked for a serial-tracked item', async ({
+  test('asking for several units of a serial-tracked item sends one line per unit', async ({
     page,
   }) => {
     await openCreateModal(page)
     await pickWarehouses(page)
-    await pickRefrigerator(page)
+    await addSerialTrackedItem(page)
 
-    await expect(page.getByText('Specific serial number')).toBeVisible()
-    // Deliberately leave the serial field untouched, then try to submit.
-    await page.getByRole('button', { name: 'Submit Request' }).click()
-
-    await expect(page.getByText('This field is required')).toBeVisible({ timeout: 10_000 })
-    // Modal must stay open — nothing should have been created.
-    await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toBeVisible()
-
-    await page.getByRole('button', { name: 'Close dialog' }).click()
-  })
-
-  test('serial field prompts for a warehouse first when none is picked yet', async ({ page }) => {
-    await openCreateModal(page)
-    await pickRefrigerator(page)
-
-    await expect(page.getByText('Specific serial number')).toBeVisible()
-    const serialInput = page.getByPlaceholder('Please select a warehouse first')
-    await expect(serialInput).toBeVisible()
-    await expect(serialInput).toBeDisabled()
+    // One UI line, three units — the split into three single-unit lines only
+    // happens at submit, so the header count is what proves the intent here.
+    await page.getByLabel('Units to send').fill('3')
+    await expect(page.getByText('1 line · 3 units')).toBeVisible()
 
     await page.getByRole('button', { name: 'Close dialog' }).click()
   })

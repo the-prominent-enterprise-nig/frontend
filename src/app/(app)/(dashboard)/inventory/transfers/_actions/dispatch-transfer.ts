@@ -20,7 +20,13 @@ export async function dispatchTransfer(id: string, input?: unknown): Promise<Api
     }
   }
 
-  const result = await api.patch(`/inventory/transfers/${id}/dispatch`, body.data)
+  // Scenario 50 — same empty-string-vs-undefined gap as create-transfer.ts's
+  // own copy of this comment, now reachable here too since Expected Arrival
+  // is no longer required at dispatch.
+  const result = await api.patch(`/inventory/transfers/${id}/dispatch`, {
+    ...body.data,
+    expectedArrival: (body.data as { expectedArrival?: string }).expectedArrival || undefined,
+  })
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')

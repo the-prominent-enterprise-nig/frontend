@@ -54,7 +54,7 @@ export function ProcurementHub({
         : TABS[0]?.id
 
   return (
-    <div className="min-h-screen bg-zinc-50/60">
+    <div className="min-h-screen bg-zinc-50">
       <InventoryTabNav tabs={TABS} />
       {tab === 'requests' ? (
         <PurchaseRequestList session={session} />

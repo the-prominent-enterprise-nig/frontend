@@ -300,6 +300,14 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                       <span className="text-[11px] text-zinc-400">
                         {pl.currency} · Priority {pl.priority}
                       </span>
+                      {/* Scenario 50 Gap 7 — every list now stores a real
+                          mode (the 2026-09-14 backfill made the column NOT
+                          NULL DEFAULT 'inclusive'), so this no longer papers
+                          over undeclared rows. The non-exclusive branch stays
+                          the default for resilience only. */}
+                      <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                        VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+                      </span>
                     </div>
                     <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
                       <p>{formatEffectiveRange(pl.effectiveFrom, pl.effectiveTo)}</p>
@@ -366,6 +374,9 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             )}
                             <span className="text-[11px] text-zinc-400">
                               {pl.currency} · Priority {pl.priority}
+                            </span>
+                            <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                              VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
                             </span>
                           </div>
                         </td>

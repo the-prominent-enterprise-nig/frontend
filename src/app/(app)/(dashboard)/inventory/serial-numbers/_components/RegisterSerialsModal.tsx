@@ -128,14 +128,15 @@ export default function RegisterSerialsModal({
                 name="warehouseId"
                 control={control}
                 render={({ field }) => (
-                  <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select location…</option>
-                    {warehouses.map((wh) => (
-                      <option key={wh.id} value={wh.id}>
-                        {wh.branch?.name ?? wh.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    placeholder="Search location…"
+                    options={warehouses.map((wh) => ({
+                      value: wh.id,
+                      label: wh.branch?.name ?? wh.name,
+                    }))}
+                  />
                 )}
               />
               {errors.warehouseId && (

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -12,7 +12,7 @@ import {
   Pencil,
   Trash2,
   Printer,
-  FileText,
+  PhilippinePeso,
 } from 'lucide-react'
 import {
   APBills,
@@ -26,6 +26,7 @@ import {
   printAPPaymentVoucherDocument,
 } from '@/src/libs/print/printInventoryDocument'
 import { getApDisbursementDocument } from '../../_actions/get-ap-disbursement-document'
+import ReceiptChangesNotice from '../../_components/ReceiptChangesNotice'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -68,6 +69,16 @@ function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function APBillDetail({ id }: { id: string }) {
+  // Where "back" goes depends on where the reader came from: opening an
+  // invoice from a purchase order's row action and then being dropped in the
+  // AP Invoices list loses the PO they were working on. Callers say so with
+  // ?from=; anything else keeps the list as the destination.
+  const cameFrom = useSearchParams().get('from')
+  const back =
+    cameFrom === 'purchase-orders'
+      ? { href: '/inventory/purchase-orders', label: 'Back to Purchase Orders' }
+      : { href: '/accounting/ap-bills', label: 'Back to AP Invoices' }
+
   const router = useRouter()
   const [doc, setDoc] = useState<APBillDocument | null>(null)
   // Scenario 46 — the list's per-row action icons moved here. Acting on a bill
@@ -105,10 +116,10 @@ export default function APBillDetail({ id }: { id: string }) {
     return (
       <div className="px-4 py-6 sm:px-6 lg:px-8">
         <Link
-          href="/accounting/ap-bills"
+          href={back.href}
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to AP Invoices
+          <ArrowLeft className="h-4 w-4" /> {back.label}
         </Link>
         <p className="text-red-600">{error ?? 'Not found'}</p>
       </div>
@@ -156,17 +167,17 @@ export default function APBillDetail({ id }: { id: string }) {
           },
         ]
       : []),
-    // Raise a voucher for this invoice. Several may be open at once, so the
-    // condition is whether anything is left to commit — not whether one exists
-    // already. The server applies the same cap.
+    // Pay this invoice. Several vouchers may be open at once, so the condition
+    // is whether anything is left to commit — not whether one exists already.
+    // The server applies the same cap.
     ...(['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(bill.status) && uncommitted > 0.005
       ? [
           {
-            label: 'Create voucher',
-            icon: FileText,
+            label: 'Record Payment',
+            icon: PhilippinePeso,
             onClick: () =>
               router.push(
-                `/accounting/ap-bills/payments/new?supplier=${bill.supplier?.id ?? ''}&bills=${id}&voucherOnly=1`
+                `/accounting/ap-bills/payments/new?supplier=${bill.supplier?.id ?? ''}&bills=${id}`
               ),
           },
         ]
@@ -245,10 +256,10 @@ export default function APBillDetail({ id }: { id: string }) {
     <div className="px-4 py-4 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
-          href="/accounting/ap-bills"
+          href={back.href}
           className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to AP Invoices
+          <ArrowLeft className="h-4 w-4" /> {back.label}
         </Link>
         {/* Scenario 46 — the list's per-row action icons live here now. One
             filled button for the action this bill's state actually calls for,
@@ -305,6 +316,10 @@ export default function APBillDetail({ id }: { id: string }) {
           — part of the balance on one, part on another — so a single line
           could only ever name one of them, and the amounts are the point:
           what is committed, and what is still free to voucher. */}
+      {/* Silent unless the receiving report behind this invoice was corrected
+          after the invoice was raised. */}
+      <ReceiptChangesNotice billId={id} onApplied={reload} />
+
       {vouchers.length > 0 && (
         <section className="mt-2.5 rounded-lg border border-gray-200 bg-white">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-100 px-5 py-2.5">

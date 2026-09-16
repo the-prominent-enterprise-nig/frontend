@@ -23,13 +23,29 @@ export function usePurchaseOrders() {
   const router = useRouter()
 
   const [page, setPage] = useState(1)
-  const [limit] = useState(20)
+  const [limit, setLimitState] = useState(25)
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
+  // Both are server-side filters (PoFilterDto: supplierId, branchId) — they
+  // narrow the whole result set, not just the page on screen, so the
+  // pagination footer's totals stay truthful.
+  const [supplierId, setSupplierIdState] = useState<string | undefined>(undefined)
+  const [branchId, setBranchIdState] = useState<string | undefined>(undefined)
+  // Newest first — the order this list has always used; the control just
+  // makes the other direction reachable.
+  const [sortDir, setSortDirState] = useState<'asc' | 'desc'>('desc')
 
   const queryParams = useMemo(
-    () => ({ page, limit, status: statusFilter, search: search || undefined }),
-    [page, limit, statusFilter, search]
+    () => ({
+      page,
+      limit,
+      status: statusFilter,
+      search: search || undefined,
+      supplierId,
+      branchId,
+      sortDir,
+    }),
+    [page, limit, statusFilter, search, supplierId, branchId, sortDir]
   )
 
   const listQuery = useQuery({
@@ -201,6 +217,11 @@ export function usePurchaseOrders() {
     isLoading: listQuery.isLoading,
     isFetching: listQuery.isFetching,
 
+    sortDir,
+    setSortDir: (v: 'asc' | 'desc') => {
+      setSortDirState(v)
+      setPage(1)
+    },
     statusFilter,
     setStatusFilter: (v: string | undefined) => {
       setStatusFilter(v)
@@ -213,8 +234,31 @@ export function usePurchaseOrders() {
       setPage(1)
     },
 
+    supplierId,
+    setSupplierId: (v: string | undefined) => {
+      setSupplierIdState(v)
+      setPage(1)
+    },
+    branchId,
+    setBranchId: (v: string | undefined) => {
+      setBranchIdState(v)
+      setPage(1)
+    },
+    resetFilters: () => {
+      setSearch('')
+      setStatusFilter(undefined)
+      setSupplierIdState(undefined)
+      setBranchIdState(undefined)
+      setPage(1)
+    },
+
     page,
     setPage,
+    limit,
+    setLimit: (v: number) => {
+      setLimitState(v)
+      setPage(1)
+    },
 
     createPO: (data: CreatePoFormValues) => createMutation.mutateAsync(data),
     isCreating: createMutation.isPending,
