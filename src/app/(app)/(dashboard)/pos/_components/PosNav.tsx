@@ -13,6 +13,7 @@ import {
   Gift,
   Star,
   GitBranch,
+  ClipboardCheck,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -31,12 +32,22 @@ const GROUPS: { label: string; paths: string[]; items: NavItem[] }[] = [
     // Parked Sales tab hidden for now (still a real, working feature — the
     // route/controller/service are untouched, and Scenario 09 still depends
     // on ParkedSalesService as-is — just no nav entry into it at the moment).
-    paths: ['/pos', '/pos/checkout', '/pos/reservations', '/pos/transactions'],
+    paths: [
+      '/pos',
+      '/pos/checkout',
+      '/pos/reservations',
+      '/pos/transactions',
+      '/pos/release-approvals',
+    ],
     items: [
       { label: 'Overview', href: '/pos', exact: true, icon: LayoutDashboard },
       { label: 'Checkout', href: '/pos/checkout', icon: ShoppingCart },
       { label: 'Reservations', href: '/pos/reservations', icon: BookmarkCheck },
       { label: 'Transactions', href: '/pos/transactions', icon: ReceiptText },
+      // Reachable from the checkout tab bar so a cashier holding a sale for
+      // release approval doesn't have to leave POS to find the queue. The
+      // standalone /pos/release-approvals page is unchanged.
+      { label: 'Release Approvals', href: '/pos/release-approvals', icon: ClipboardCheck },
     ] satisfies NavItem[],
   },
   {

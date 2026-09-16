@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, CreditCard } from 'lucide-react'
+import { X, CreditCard, Search } from 'lucide-react'
 import { useCreditApplications } from '../_hooks/useCreditApplications'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
@@ -28,6 +28,8 @@ export default function CreditApplicationList({ session }: { session: SessionUse
     error,
     statusFilter,
     setStatusFilter,
+    search,
+    setSearch,
     page,
     setPage,
     createApplication,
@@ -62,6 +64,17 @@ export default function CreditApplicationList({ session }: { session: SessionUse
         </div>
 
         <div className="flex flex-wrap gap-3">
+          <div className="relative min-w-[16rem] flex-1 md:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search application no., customer name or code…"
+              aria-label="Search credit applications"
+              className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-prominent-purple-500"
+            />
+          </div>
           <select
             value={statusFilter ?? ''}
             onChange={(e) =>
