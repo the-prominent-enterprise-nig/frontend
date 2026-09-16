@@ -178,19 +178,12 @@ export default function VoucherDocument({
         </div>
       </div>
 
-      {voucherDescription && (
-        <p className="mt-7 flex gap-4">
-          <span className="w-32 shrink-0 font-bold text-prominent-purple-900">Description</span>
-          <span className="text-gray-700">{voucherDescription}</span>
-        </p>
-      )}
-
       {/* Where the money came from leads, and what it was spent on follows: a
           reader checks the funding first and the account breakdown answers
           against it. The two used to sit side by side below the table, which
           put the answer before the question. */}
       {sources.length > 0 && (
-        <div className={voucherDescription ? 'mt-5' : 'mt-7'}>
+        <div className="mt-7">
           <p className="mb-1.5 font-bold text-prominent-purple-900">Source of Funds</p>
           {sources.map((src, i) => {
             const bank = src.bankAccount
@@ -217,6 +210,13 @@ export default function VoucherDocument({
             )
           })}
         </div>
+      )}
+
+      {voucherDescription && (
+        <p className={sources.length > 0 ? 'mt-5 flex gap-4' : 'mt-7 flex gap-4'}>
+          <span className="w-32 shrink-0 font-bold text-prominent-purple-900">Description</span>
+          <span className="text-gray-700">{voucherDescription}</span>
+        </p>
       )}
 
       <p className="mt-5 mb-1.5 font-bold text-prominent-purple-900">Account Details</p>

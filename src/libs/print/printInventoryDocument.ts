@@ -1,6 +1,5 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
-import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 
 export interface PrintDocumentEnvelope {
@@ -82,7 +81,7 @@ export function buildReceivingReportHtml(
   const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
-  const supplier = rr.supplier as { name?: string } | undefined
+  const supplier = rr.supplier as { name?: string; address?: string } | undefined
   const warehouse = rr.warehouse as { name?: string; branch?: { name?: string } | null } | undefined
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
@@ -98,9 +97,6 @@ export function buildReceivingReportHtml(
   // standalone receipt — same rule, and so the same answer, as the
   // Receiving Reports list column and the on-screen sheet.
   const poNumber = receivingReportPoNumber(rr as Parameters<typeof receivingReportPoNumber>[0])
-  const driverHelper = receivingReportDriverHelper(
-    rr as Parameters<typeof receivingReportDriverHelper>[0]
-  )
 
   let totalQty = 0
   let totalAmount = 0
@@ -173,7 +169,7 @@ export function buildReceivingReportHtml(
     <div class="info">
       <div class="party">
         <p class="party-name">${esc(supplier?.name) || '—'}</p>
-        <p class="party-address">Driver/Helper: ${esc(driverHelper) || '—'}</p>
+        <p class="party-address">${esc(supplier?.address) || '—'}</p>
       </div>
       <div class="meta">
         <p class="meta-label">No.</p>
@@ -182,8 +178,6 @@ export function buildReceivingReportHtml(
         <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
         <p class="meta-label">PO No.</p>
         <p class="meta-value">${esc(poNumber) || '—'}</p>
-        <p class="meta-label">PO Date</p>
-        <p class="meta-value">${rr.poDate ? fmtDate(rr.poDate) : '—'}</p>
         <p class="meta-label">Reference</p>
         <p class="meta-value">${esc(ref) || '—'}</p>
       </div>
@@ -1687,7 +1681,7 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     .total-wrap tr.strong td { font-weight: 700; border-top: 1px solid #999; border-bottom: none; }
     .section-label { font-weight: 700; margin: 20px 0 6px; font-size: 13px; }
     .fund + .fund { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
-    .doc-note { display: flex; gap: 16px; margin: 0 0 12px; }
+    .doc-note { display: flex; gap: 16px; margin: 20px 0 12px; }
     .doc-note-label { width: 130px; flex-shrink: 0; font-weight: 700; }
     .fund-row { display: flex; gap: 16px; padding: 2px 0; }
     .fund-label { width: 130px; flex-shrink: 0; font-weight: 700; }
@@ -1729,12 +1723,6 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       </div>
     </div>
 
-    ${
-      voucherDescription
-        ? `<p class="doc-note"><span class="doc-note-label">Description</span><span>${esc(voucherDescription)}</span></p>`
-        : ''
-    }
-
     <!-- Where the money came from leads, and what it was spent on follows:
          a reader checks the funding first and the account breakdown answers
          against it. The two used to sit side by side below the table, which
@@ -1743,6 +1731,12 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       sourceBlocks
         ? `<p class="section-label">Source of Funds</p>
     ${sourceBlocks}`
+        : ''
+    }
+
+    ${
+      voucherDescription
+        ? `<p class="doc-note"><span class="doc-note-label">Description</span><span>${esc(voucherDescription)}</span></p>`
         : ''
     }
 

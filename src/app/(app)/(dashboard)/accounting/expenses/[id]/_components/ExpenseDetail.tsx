@@ -216,6 +216,7 @@ export default function ExpenseDetail({ id }: { id: string }) {
           {e.payeeAddress && <Field label="Address">{e.payeeAddress}</Field>}
           {e.payeeTin && <Field label="Payee's TIN">{e.payeeTin}</Field>}
           {e.paidFor.length > 0 && <Field label="Supplier invoices">{e.paidFor.join(', ')}</Field>}
+          {e.salesInvoice && <Field label="Sales Invoice">{e.salesInvoice}</Field>}
           {e.costCenter && <Field label="Cost center">{e.costCenter}</Field>}
           {e.description && <Field label="Description">{e.description}</Field>}
         </div>

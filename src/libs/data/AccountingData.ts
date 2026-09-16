@@ -29,6 +29,10 @@ export interface Account {
    * gets a Special Account to pick. Set per account in the database; see
    * the client's own "SPECIAL ACCOUNTS" list. */
   isSpecialAccountControl?: boolean
+  /** Balance-sheet/income-statement classification (REVENUE, ASSET,
+   * ACCOUNTS_RECEIVABLE, …) — finer-grained than `type`. Drives whether an
+   * expense line posting here gets a Sales Invoice field to pick. */
+  category?: string
   isActive: boolean
   createdAt?: string
   updatedAt?: string
