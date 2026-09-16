@@ -111,27 +111,17 @@ export function can(user: SessionUser, permission: Permission): boolean {
   return user.permissions.some((p) => matchesPermission(p, permission))
 }
 
-const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  cashier: ['pos'],
-  'pos-manager': ['pos'],
-  pos: ['pos'],
-}
-
 export function canAccessModule(user: SessionUser, module: string): boolean {
   if (hasPrivilegedRole(user)) return true
 
-  const allRoles = [...(user.primaryRole ? [user.primaryRole] : []), ...user.roles].map((r) =>
-    r.toLowerCase()
-  )
-
-  // Roles with a fixed allowlist take precedence over moduleAccess — checked first
-  // so stray permissions (e.g. inventory:items:read on a cashier) don't bleed into
-  // modules the role isn't meant to access.
-  const restrictedRoles = allRoles.filter((r) => r in ROLE_MODULE_ACCESS)
-  if (restrictedRoles.length > 0) {
-    return restrictedRoles.some((r) => ROLE_MODULE_ACCESS[r]?.includes(module))
-  }
-
+  // Nav visibility follows granted access, not the role's name — a role-name
+  // allowlist used to override this for a hardcoded set of role names
+  // ('cashier', 'pos-manager', 'pos'), which meant a role actually granted
+  // real read access to, say, Inventory (Cashier's own checkout workflow
+  // needs dozens of inventory:*:read permissions to look up stock) would
+  // never see it in nav regardless — silently contradicting what was
+  // actually granted. Removed; a duplicate copy of the same allowlist in
+  // hasModuleAccess (src/hooks/usePermission.ts) is removed too.
   if (user.moduleAccess?.includes(module)) return true
   return user.permissions.some((p) => p === `${module}:*` || p.startsWith(`${module}:`))
 }

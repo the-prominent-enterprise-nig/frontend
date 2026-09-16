@@ -6,14 +6,6 @@ interface SessionUser {
   moduleAccess?: string[]
 }
 
-// Roles that have a fixed module allowlist. Keep in sync with ROLE_MODULE_ACCESS in
-// src/libs/guards/permission.ts — both must agree on which modules each role can reach.
-const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  cashier: ['pos'],
-  'pos-manager': ['pos'],
-  pos: ['pos'],
-}
-
 /**
  * Check if a permission pattern matches a user permission.
  * Supports wildcards (*) for flexible permission matching.
@@ -94,26 +86,19 @@ export function usePermission(session: SessionUser | null, permission: string): 
 }
 
 /**
- * Check if a user can see a top-level module tab.
- * For roles with an explicit allowlist (e.g. cashier → pos only), the allowlist
- * takes precedence so they cannot see other modules even if they happen to hold
- * stray permissions for them.
+ * Check if a user can see a top-level module tab. Follows granted access
+ * only — a role-name allowlist used to override this for a hardcoded set of
+ * role names ('cashier', 'pos-manager', 'pos'), which meant a role actually
+ * granted real access to another module (Cashier's own checkout workflow
+ * needs dozens of inventory/crm/accounting read permissions) would never see
+ * it in nav regardless of what was actually granted. Removed; the identical
+ * copy of this allowlist in canAccessModule (src/libs/guards/permission.ts)
+ * is removed too.
  */
 export function hasModuleAccess(session: SessionUser | null, moduleKey: string): boolean {
   if (!session) return false
   if (session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner'))
     return true
-
-  // Collect all role identifiers (primaryRole + roles[]), normalised to lowercase
-  // so backend casing variations like "Cashier" still match.
-  const allRoles = [...(session.primaryRole ? [session.primaryRole] : []), ...session.roles].map(
-    (r) => r.toLowerCase()
-  )
-
-  const restrictedRoles = allRoles.filter((r) => r in ROLE_MODULE_ACCESS)
-  if (restrictedRoles.length > 0) {
-    return restrictedRoles.some((r) => ROLE_MODULE_ACCESS[r]?.includes(moduleKey))
-  }
 
   // Trust the backend-computed moduleAccess list when present — it correctly handles
   // cross-module permission mappings (e.g. hr:payslips:read → payroll nav tab).

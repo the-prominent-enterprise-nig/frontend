@@ -72,6 +72,21 @@ type NavItem = {
   href: string
   icon: LucideIcon
   requiredPermission?: string | string[]
+  /**
+   * For an item with no single requiredPermission that still needs some
+   * gate — e.g. POS PIN, deliberately ungated on any specific pos:x:y
+   * permission so hiding one narrow permission from a POS role doesn't
+   * also remove their only way to set up their own PIN (see that item's
+   * own comment). requiredPermission can't express "any permission in this
+   * module" — a required 'pos:*' only matches a literal pos:* grant, not a
+   * narrow pos:application:view — so this checks hasModuleAccess instead,
+   * the same "any access to this module" test the top-level module list
+   * itself uses. Without it, filterItem's `if (!requiredPermission) return
+   * true` showed this item to every signed-in user regardless of module
+   * access, including one with none at all — the link stayed visible, only
+   * the /pos/pin route itself caught it with a 403.
+   */
+  requiresModuleAccess?: string
   badge?: { text: string; variant: 'count' | 'new'; color?: string }
   subItems?: Array<{ label: string; href: string; icon: LucideIcon }>
   /** Renders as an expand/collapse header instead of a link. The items it
@@ -212,6 +227,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Settings',
         href: '/inventory/settings',
         icon: Settings,
+        requiresModuleAccess: 'inventory',
       },
     ],
     bottom: [],
@@ -252,6 +268,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Special Accounts',
         href: '/accounting/special-accounts',
         icon: Wallet,
+        requiresModuleAccess: 'accounting',
       },
       {
         label: 'Unapplied Collections',
@@ -541,10 +558,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // Every POS role needs their own PIN (checkout PIN entry, manager
         // approvals) — kept separate from the Settings item above so hiding
         // that one from Cashier doesn't also remove their only way to reach
-        // this.
+        // this. requiresModuleAccess (not requiredPermission) so it still
+        // shows for any POS role regardless of which specific pos:x:y
+        // permissions they hold — it only needs to disappear for someone
+        // with no POS access at all.
         label: 'POS PIN',
         href: '/pos/pin',
         icon: Key,
+        requiresModuleAccess: 'pos',
       },
     ],
     bottom: [],
@@ -603,6 +624,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Settings',
         href: '/crm/settings',
         icon: Settings,
+        requiresModuleAccess: 'crm',
       },
     ],
     bottom: [],
@@ -1108,6 +1130,9 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const allWorkspaceItems = [...workspaceItems, ...bmWorkspaceItems]
 
   const filterItem = (item: NavItem) => {
+    if (item.requiresModuleAccess && !hasModuleAccess(session, item.requiresModuleAccess)) {
+      return false
+    }
     if (!item.requiredPermission) return true
     const required = Array.isArray(item.requiredPermission)
       ? item.requiredPermission
