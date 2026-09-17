@@ -134,7 +134,10 @@ const CreateCreditApplicationBaseSchema = z.object({
   // Only used when coMakerId === NEW_CO_MAKER_VALUE — creates a co-maker on
   // the applicant's profile via customersApi.addCoMaker() before the
   // application itself is submitted.
-  newCoMakerName: z.string().max(255).optional().or(z.literal('')),
+  // First/last are captured separately here and joined into the single
+  // CoMaker.name column on submit — the table has no split name columns.
+  newCoMakerFirstName: z.string().max(120).optional().or(z.literal('')),
+  newCoMakerLastName: z.string().max(120).optional().or(z.literal('')),
   newCoMakerRelationship: z.string().max(100).optional().or(z.literal('')),
   newCoMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
   newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
@@ -152,9 +155,23 @@ const CreateCreditApplicationBaseSchema = z.object({
 
 export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.superRefine(
   (data, ctx) => {
+    // A co-maker on a credit application is identified by first name, last
+    // name and relationship — contact details stay capturable but optional,
+    // since the branch often has only the name and relationship at intake.
     if (data.coMakerId === NEW_CO_MAKER_VALUE) {
-      if (!data.newCoMakerName?.trim()) {
-        ctx.addIssue({ code: 'custom', path: ['newCoMakerName'], message: 'Name is required' })
+      if (!data.newCoMakerFirstName?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['newCoMakerFirstName'],
+          message: 'First name is required',
+        })
+      }
+      if (!data.newCoMakerLastName?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['newCoMakerLastName'],
+          message: 'Last name is required',
+        })
       }
       if (!data.newCoMakerRelationship?.trim()) {
         ctx.addIssue({
@@ -163,19 +180,6 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
           message: 'Relationship is required',
         })
       }
-      if (!data.newCoMakerContactNumber?.trim()) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['newCoMakerContactNumber'],
-          message: 'Contact number is required',
-        })
-      }
-    } else if (data.coMakerId && !data.coMakerContactNumber?.trim()) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['coMakerContactNumber'],
-        message: 'Contact number is required',
-      })
     }
   }
 )

@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getCreditApplications } from '../_actions/get-applications'
 import { createCreditApplication } from '../_actions/create-application'
@@ -10,16 +10,29 @@ import type {
   CreditApplicationStatus,
 } from '@/src/schema/credit/applications'
 
+function useDebouncedValue(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(t)
+  }, [value, delayMs])
+  return debounced
+}
+
 export function useCreditApplications() {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<CreditApplicationStatus | undefined>(undefined)
+  const [search, setSearchState] = useState('')
+  // The box updates on every keystroke; only the debounced value reaches the
+  // query key, so typing a name doesn't fire a request per character.
+  const debouncedSearch = useDebouncedValue(search, 300)
 
   const queryParams = useMemo(
-    () => ({ page, limit, status: statusFilter }),
-    [page, limit, statusFilter]
+    () => ({ page, limit, status: statusFilter, search: debouncedSearch.trim() || undefined }),
+    [page, limit, statusFilter, debouncedSearch]
   )
 
   const applicationsQuery = useQuery({
@@ -71,6 +84,12 @@ export function useCreditApplications() {
     statusFilter,
     setStatusFilter: (v: CreditApplicationStatus | undefined) => {
       setStatusFilter(v)
+      setPage(1)
+    },
+
+    search,
+    setSearch: (v: string) => {
+      setSearchState(v)
       setPage(1)
     },
 

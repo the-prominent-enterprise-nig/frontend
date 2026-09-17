@@ -63,7 +63,7 @@ test.describe('Credit Applications — Cashier intake', () => {
     await fillStable(page.locator('input[type="number"]'), '25000')
 
     await expect(async () => {
-      await page.getByRole('button', { name: 'Open Application' }).click()
+      await page.getByRole('button', { name: 'Submit Application' }).click()
       await expect(page.getByRole('heading', { name: 'New Credit Application' })).toHaveCount(0, {
         timeout: 3_000,
       })

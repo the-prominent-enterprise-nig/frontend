@@ -95,7 +95,9 @@ export function CoMakerFields({
       {coMakerId && coMakerId !== NEW_CO_MAKER_VALUE && (
         <div className="grid grid-cols-2 gap-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-600">Co-Maker Phone</label>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">
+              Co-Maker Phone <span className="text-zinc-400">(optional)</span>
+            </label>
             <Controller
               name="coMakerContactNumber"
               control={control}
@@ -108,7 +110,9 @@ export function CoMakerFields({
             )}
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-600">Co-Maker Email</label>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">
+              Co-Maker Email <span className="text-zinc-400">(optional)</span>
+            </label>
             <Controller
               name="coMakerEmail"
               control={control}
@@ -124,20 +128,35 @@ export function CoMakerFields({
       )}
 
       {coMakerId === NEW_CO_MAKER_VALUE && (
-        <div className="grid grid-cols-2 gap-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-600">
-              Name <span className="text-red-500">*</span>
+              First Name <span className="text-red-500">*</span>
             </label>
             <Controller
-              name="newCoMakerName"
+              name="newCoMakerFirstName"
               control={control}
               render={({ field }) => (
                 <input {...field} value={field.value ?? ''} className={fieldClass} />
               )}
             />
-            {errors.newCoMakerName && (
-              <p className="mt-1 text-xs text-red-600">{errors.newCoMakerName.message}</p>
+            {errors.newCoMakerFirstName && (
+              <p className="mt-1 text-xs text-red-600">{errors.newCoMakerFirstName.message}</p>
+            )}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">
+              Last Name <span className="text-red-500">*</span>
+            </label>
+            <Controller
+              name="newCoMakerLastName"
+              control={control}
+              render={({ field }) => (
+                <input {...field} value={field.value ?? ''} className={fieldClass} />
+              )}
+            />
+            {errors.newCoMakerLastName && (
+              <p className="mt-1 text-xs text-red-600">{errors.newCoMakerLastName.message}</p>
             )}
           </div>
           <div>
@@ -157,7 +176,7 @@ export function CoMakerFields({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-600">
-              Phone <span className="text-red-500">*</span>
+              Phone <span className="text-zinc-400">(optional)</span>
             </label>
             <Controller
               name="newCoMakerContactNumber"
@@ -170,8 +189,10 @@ export function CoMakerFields({
               <p className="mt-1 text-xs text-red-600">{errors.newCoMakerContactNumber.message}</p>
             )}
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-600">Email</label>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-zinc-600">
+              Email <span className="text-zinc-400">(optional)</span>
+            </label>
             <Controller
               name="newCoMakerEmail"
               control={control}
