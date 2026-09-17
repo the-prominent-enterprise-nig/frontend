@@ -1,9 +1,8 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, fillStable } from './utils'
 
 // Batch of POS UX corrections requested 2026-09-16. Each check is a
-// UI-surface assertion that doesn't need seeded branch/warehouse fixtures,
-// except the availability endpoint check, which drives the API directly.
+// UI-surface assertion that doesn't need seeded branch/warehouse fixtures.
 
 test.describe('POS — opening balance', () => {
   test('Open Session shows an explicit 0.00 opening cash, not a blank box', async ({ page }) => {
@@ -37,40 +36,69 @@ test.describe('POS — release approvals reachable from the checkout tab bar', (
   })
 })
 
-test.describe('POS — cross-branch availability for an out-of-stock item', () => {
-  test('the catalog exposes an enterprise-wide availability lookup', async ({ page }) => {
+test.describe('POS — out-of-stock items open the cross-branch request picker', () => {
+  // Review on the POS/credit UX batch: an out-of-stock tile must lead to the
+  // existing serial picker — "Also available elsewhere" -> Request — not a
+  // read-only availability list. The picker already handles zero local
+  // stock, so the tile just adds the item like any other. Read-only: opens
+  // the picker and closes it, never raises a request.
+  test('clicking an out-of-stock serialized item opens the serial picker, and closing it leaves the cart empty', async ({
+    page,
+  }) => {
     await gotoReady(page, '/pos/checkout')
 
-    const catalogRes = await page.request.get('/api/pos/catalog?limit=1')
+    const sessionsRes = await page.request.get('/api/pos/sessions?status=open')
+    expect(sessionsRes.ok()).toBeTruthy()
+    const rawSessions: unknown = await sessionsRes.json()
+    type OpenSession = { id: string; terminal?: { branchId?: string; branch?: { id?: string } } }
+    const sessions = (
+      Array.isArray(rawSessions) ? rawSessions : ((rawSessions as { data?: unknown[] }).data ?? [])
+    ) as OpenSession[]
+    test.skip(sessions.length === 0, 'no open POS session in this environment')
+    const session = sessions[0]
+    const branchId = session.terminal?.branchId ?? session.terminal?.branch?.id
+    test.skip(!branchId, 'open session has no resolvable branch')
+
+    // Several open sessions render a picker in the top bar and leave stock
+    // unresolved (no out-of-stock labels at all) until one is chosen.
+    const sessionSelect = page
+      .locator('select')
+      .filter({ has: page.locator('option', { hasText: 'Select session…' }) })
+    // isVisible() doesn't wait — right after navigation the sessions query is
+    // still a skeleton. The API already says whether the picker will render
+    // (more than one open session), so wait for it deterministically.
+    if (sessions.length > 1) {
+      await sessionSelect.waitFor({ state: 'visible', timeout: 15_000 })
+      await expect(async () => {
+        await sessionSelect.selectOption(session.id)
+        await expect(sessionSelect).toHaveValue(session.id)
+      }).toPass({ timeout: 10_000 })
+    }
+
+    const catalogRes = await page.request.get(`/api/pos/catalog?branchId=${branchId}`)
     expect(catalogRes.ok()).toBeTruthy()
-    const raw: unknown = await catalogRes.json()
-    const items = Array.isArray(raw) ? raw : ((raw as { data?: unknown[] }).data ?? [])
-    test.skip(items.length === 0, 'no sellable items seeded in this environment')
+    const rawItems: unknown = await catalogRes.json()
+    type CatalogItem = { sku?: string; isSerialTracked?: boolean; stockQty?: number }
+    const items = (
+      Array.isArray(rawItems) ? rawItems : ((rawItems as { data?: unknown[] }).data ?? [])
+    ) as CatalogItem[]
+    const target = items.find((i) => i.isSerialTracked && (i.stockQty ?? 0) === 0 && i.sku)
+    test.skip(!target, 'no out-of-stock serialized item at this branch')
 
-    const itemId = (items[0] as { id: string }).id
-    const res = await page.request.get(`/api/pos/catalog/item-availability?itemId=${itemId}`)
-    expect(res.ok()).toBeTruthy()
+    await fillStable(page.getByPlaceholder('Search by name or serial'), target!.sku!)
+    const tile = page.getByRole('button').filter({ hasText: target!.sku! }).first()
+    await expect(tile).toContainText('Out of stock · find branch', { timeout: 15_000 })
+    await expect(tile).toBeEnabled()
 
-    const body = (await res.json()) as {
-      item: { id: string }
-      branches: { id: string; name: string; availableQty: number }[]
-    }
-    expect(body.item.id).toBe(itemId)
-    expect(Array.isArray(body.branches)).toBeTruthy()
-    // Quantities only — this endpoint is deliberately safe for a Cashier to
-    // hold, so it must never leak cost or pricing.
-    for (const b of body.branches) {
-      expect(b.availableQty).toBeGreaterThan(0)
-      expect(b).not.toHaveProperty('cost')
-      expect(b).not.toHaveProperty('price')
-    }
-  })
+    await tile.click()
+    await expect(page.getByRole('heading', { name: 'Select Serial Number' })).toBeVisible()
+    await expect(
+      page.getByText('No available serial numbers in stock for this item at this branch.')
+    ).toBeVisible()
 
-  test('an unknown itemId is a 404, not an empty success', async ({ page }) => {
-    await gotoReady(page, '/pos/checkout')
-    const res = await page.request.get(
-      '/api/pos/catalog/item-availability?itemId=00000000-0000-0000-0000-000000000000'
-    )
-    expect(res.status()).toBe(404)
+    // Closing without picking a serial must not strand a serial-less line.
+    await page.getByRole('button', { name: 'Close' }).click()
+    await expect(page.getByRole('heading', { name: 'Select Serial Number' })).toHaveCount(0)
+    await expect(page.getByText('Click an item above to add it to the cart')).toBeVisible()
   })
 })

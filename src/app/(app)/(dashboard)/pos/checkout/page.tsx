@@ -100,7 +100,6 @@ import { signPromissoryNote } from '../credit-applications/_actions/sign-promiss
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
-import { getItemAvailability, type ItemBranchAvailability } from './_actions/get-item-availability'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
@@ -731,11 +730,6 @@ export default function CheckoutPage() {
   // Measured-item quantity dialog
   const [measuredItem, setMeasuredItem] = useState<LookupItem | null>(null)
   const [measuredQtyInput, setMeasuredQtyInput] = useState('')
-
-  // Cross-branch availability dialog — opened by tapping an out-of-stock
-  // catalog tile, so the cashier can tell the customer where to go rather
-  // than hitting a dead, unclickable button.
-  const [availabilityItem, setAvailabilityItem] = useState<LookupItem | null>(null)
 
   // Load configured payment methods once
   useEffect(() => {
@@ -3030,7 +3024,6 @@ export default function CheckoutPage() {
                     qty={cartQtyMap[item.id] ?? 0}
                     onAdd={!!cancellationReqId ? () => {} : addToCart}
                     onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
-                    onShowAvailability={setAvailabilityItem}
                     stockKnown={catalogStockKnown}
                   />
                 ))}
@@ -3044,7 +3037,6 @@ export default function CheckoutPage() {
                     qty={cartQtyMap[item.id] ?? 0}
                     onAdd={!!cancellationReqId ? () => {} : addToCart}
                     onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
-                    onShowAvailability={setAvailabilityItem}
                     stockKnown={catalogStockKnown}
                   />
                 ))}
@@ -5136,14 +5128,6 @@ export default function CheckoutPage() {
         </Overlay>
       )}
 
-      {/* Where else is this item in stock? */}
-      {availabilityItem && (
-        <BranchAvailabilityModal
-          item={availabilityItem}
-          onClose={() => setAvailabilityItem(null)}
-        />
-      )}
-
       {/* Measured-item quantity picker */}
       {measuredItem &&
         (() => {
@@ -6037,39 +6021,31 @@ function CatalogCard({
   qty,
   onAdd,
   onAddMeasured,
-  onShowAvailability,
   stockKnown,
 }: {
   item: LookupItem
   qty: number
   onAdd: (item: LookupItem) => void
   onAddMeasured?: (item: LookupItem) => void
-  /** Tapping an out-of-stock item opens the cross-branch availability
-   * dialog instead of adding it — the tile stays live rather than dead. */
-  onShowAvailability: (item: LookupItem) => void
   /** False while stock hasn't been resolved to a specific branch yet (e.g.
    * multiple open sessions, none picked) — every item's stockQty defaults to
    * 0 in that window, so it must never be read as "genuinely out of stock"
    * until this is true. */
   stockKnown: boolean
 }) {
-  // Only serial-tracked items are hard-blocked at zero — a serial-tracked
-  // sale is impossible with nothing to pick, unlike a bulk/quantity item
-  // where allowNegativeStock or a backorder might still apply.
+  // Only serial-tracked items are flagged at zero — a bulk/quantity item may
+  // still sell via allowNegativeStock or a backorder. A flagged item is not
+  // blocked: adding it opens the serial picker, whose "Also available
+  // elsewhere" section is where the cashier requests a unit from another
+  // branch (the picker already handles zero local stock).
   const isOutOfStock = stockKnown && item.isSerialTracked && (item.stockQty ?? 0) === 0
   const isLowStock =
     stockKnown && item.stockQty !== undefined && item.stockQty > 0 && item.stockQty <= 5
 
   return (
     <button
-      title={isOutOfStock ? 'Out of stock here — tap to see other branches' : undefined}
-      onMouseDown={() =>
-        isOutOfStock
-          ? onShowAvailability(item)
-          : item.allowDecimal && onAddMeasured
-            ? onAddMeasured(item)
-            : onAdd(item)
-      }
+      title={isOutOfStock ? 'Out of stock here — tap to request from another branch' : undefined}
+      onMouseDown={() => (item.allowDecimal && onAddMeasured ? onAddMeasured(item) : onAdd(item))}
       className={`group relative flex flex-col rounded-xl border p-3 text-left shadow-sm transition-all ${
         isOutOfStock
           ? 'border-gray-200 bg-gray-50 opacity-75 hover:border-purple-300 hover:opacity-100'
@@ -6122,14 +6098,12 @@ function CatalogListRow({
   qty,
   onAdd,
   onAddMeasured,
-  onShowAvailability,
   stockKnown,
 }: {
   item: LookupItem
   qty: number
   onAdd: (item: LookupItem) => void
   onAddMeasured?: (item: LookupItem) => void
-  onShowAvailability: (item: LookupItem) => void
   stockKnown: boolean
 }) {
   const isOutOfStock = stockKnown && item.isSerialTracked && (item.stockQty ?? 0) === 0
@@ -6138,14 +6112,8 @@ function CatalogListRow({
 
   return (
     <button
-      title={isOutOfStock ? 'Out of stock here — tap to see other branches' : undefined}
-      onMouseDown={() =>
-        isOutOfStock
-          ? onShowAvailability(item)
-          : item.allowDecimal && onAddMeasured
-            ? onAddMeasured(item)
-            : onAdd(item)
-      }
+      title={isOutOfStock ? 'Out of stock here — tap to request from another branch' : undefined}
+      onMouseDown={() => (item.allowDecimal && onAddMeasured ? onAddMeasured(item) : onAdd(item))}
       className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all ${
         isOutOfStock
           ? 'border-gray-200 bg-gray-50 opacity-75 hover:border-purple-300 hover:opacity-100'
@@ -6188,110 +6156,6 @@ function CatalogListRow({
         )}
       </div>
     </button>
-  )
-}
-
-// ─── Cross-Branch Availability Modal ──────────────────────────────────────────
-
-/**
- * Answers "we don't have it — who does?" without the cashier leaving
- * checkout. Enterprise-wide on purpose: every other stock read scopes a
- * branch-assigned user to their own warehouse, which is exactly the answer
- * that isn't useful here.
- */
-function BranchAvailabilityModal({ item, onClose }: { item: LookupItem; onClose: () => void }) {
-  const [data, setData] = useState<ItemBranchAvailability | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError('')
-    getItemAvailability(item.id)
-      .then((res) => {
-        if (cancelled) return
-        if (res.success && res.data) setData(res.data)
-        else setError(res.error ?? 'Could not check other branches')
-      })
-      .catch(() => {
-        if (!cancelled) setError('Could not check other branches')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [item.id])
-
-  return (
-    // Overlay itself caps neither height nor overflow, so a tenant with 40+
-    // branches would push the header off-screen and the Close button out of
-    // reach. Only the branch list scrolls; header and footer stay put.
-    <Overlay onClose={onClose} width="lg">
-      <div className="flex max-h-[min(70vh,34rem)] flex-col">
-        <div className="shrink-0 pr-8">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-red-500">
-            Out of stock at this branch
-          </p>
-          <h2 className="mt-0.5 text-lg font-bold text-gray-900">
-            {itemDisplayLabel({
-              name: item.name,
-              brandName: item.brandName,
-              categoryName: item.category?.name,
-              modelNumber: item.modelNumber,
-            })}
-          </h2>
-          {item.sku && <p className="text-xs text-gray-400">{item.sku}</p>}
-        </div>
-
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-          {loading ? (
-            <p className="py-8 text-center text-sm text-gray-500">Checking other branches…</p>
-          ) : error ? (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-          ) : !data || data.branches.length === 0 ? (
-            <div className="rounded-lg bg-gray-50 px-4 py-8 text-center">
-              <p className="text-sm font-medium text-gray-700">
-                No branch currently has this item in stock.
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                Raise a purchase request or offer the customer an alternative model.
-              </p>
-            </div>
-          ) : (
-            <>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Available at {data.branches.length}{' '}
-                {data.branches.length === 1 ? 'branch' : 'branches'}
-              </p>
-              <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
-                {data.branches.map((b) => (
-                  <li key={b.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-gray-900">{b.name}</p>
-                      <p className="truncate text-xs text-gray-500">
-                        {[b.code, b.city].filter(Boolean).join(' · ') || '—'}
-                      </p>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-green-50 px-2.5 py-1 text-xs font-bold tabular-nums text-green-700">
-                      {b.availableQty} on hand
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-
-        <div className="mt-5 flex shrink-0 justify-end border-t border-gray-100 pt-4">
-          <button onClick={onClose} className="btn-secondary">
-            Close
-          </button>
-        </div>
-      </div>
-    </Overlay>
   )
 }
 
