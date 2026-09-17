@@ -420,6 +420,10 @@ export default function CheckoutPage() {
   const [serialSearchQuery, setSerialSearchQuery] = useState('')
   // Read-only "also available elsewhere" section — never sellable from here.
   const [elsewhereSerials, setElsewhereSerials] = useState<SerialNumberRecord[]>([])
+  // Whether the "elsewhere" lookup actually succeeded. A failed lookup and a
+  // genuine "no branch has it" both leave elsewhereSerials empty, so the
+  // picker's "not in stock at any branch" note needs this to tell them apart.
+  const [elsewhereLoaded, setElsewhereLoaded] = useState(false)
   // Which branch's individual serials are showing in the side panel —
   // master-detail style, one at a time; null means the panel is closed and
   // the summary view stays compact.
@@ -444,9 +448,13 @@ export default function CheckoutPage() {
       toBranchId: activeBranchId ?? undefined,
       customerName: selectedCustomer ? customerDisplayName(selectedCustomer) : undefined,
     })
+    // Already requested — by this cashier before the picker was reopened, or
+    // by another branch meanwhile — is a success from the cashier's side: the
+    // unit is on its way to being requested, so show it as such, not "Retry".
+    const alreadyRequested = !res.success && res.errorCode === 'SERIAL_ALREADY_REQUESTED'
     setSerialRequestStatus((prev) => ({
       ...prev,
-      [sn.id]: res.success ? 'requested' : 'error',
+      [sn.id]: res.success || alreadyRequested ? 'requested' : 'error',
     }))
   }
 
@@ -881,6 +889,7 @@ export default function CheckoutPage() {
   // failure here stays silent rather than surfacing as a picker-blocking
   // error the way the sellable fetch above does.
   useEffect(() => {
+    setElsewhereLoaded(false)
     if (!serialPickerTarget) {
       setElsewhereSerials([])
       return
@@ -889,6 +898,7 @@ export default function CheckoutPage() {
       (res) => {
         if (res.success && Array.isArray(res.data)) {
           setElsewhereSerials(res.data)
+          setElsewhereLoaded(true)
         } else {
           setElsewhereSerials([])
         }
@@ -4954,6 +4964,27 @@ export default function CheckoutPage() {
                     )}
                   </div>
 
+                  {/* Out of stock here AND at every other branch — there is no
+                      unit to request, so no stock request (and no purchase
+                      request) can come from this picker. Only once the
+                      lookup really succeeded: a failed lookup looks identical. */}
+                  {!serialLoading &&
+                    !serialError &&
+                    !serialSearchQuery &&
+                    visibleSerials.length === 0 &&
+                    elsewhereLoaded &&
+                    !hasElsewhere && (
+                      <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p className="text-sm font-semibold text-gray-700">
+                          Not in stock at any branch
+                        </p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          No other branch has a unit to request. Ask your Branch Manager to raise a
+                          purchase request with procurement.
+                        </p>
+                      </div>
+                    )}
+
                   {hasElsewhere && (
                     <div className="mt-4 border-t border-gray-100 pt-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
@@ -5012,7 +5043,10 @@ export default function CheckoutPage() {
                     </div>
                     <div className="max-h-88 space-y-1.5 overflow-y-auto pr-1">
                       {expandedSerials.map((sn) => {
-                        const status = serialRequestStatus[sn.id]
+                        // Falls back to the server's view so a unit requested
+                        // before the picker was reopened still shows as such.
+                        const status =
+                          serialRequestStatus[sn.id] ?? (sn.openTransfer ? 'requested' : undefined)
                         return (
                           <div
                             key={sn.id}
@@ -5025,9 +5059,18 @@ export default function CheckoutPage() {
                               {sn.serialNumber}
                             </span>
                             {status === 'requested' ? (
-                              <span className="flex items-center gap-1 text-xs font-semibold text-green-600">
-                                <CheckCircle2 size={12} /> Requested
-                              </span>
+                              <div className="flex flex-col items-center rounded-lg border border-green-200 bg-green-50 px-2 py-1">
+                                <span className="flex items-center gap-1 text-xs font-semibold text-green-700">
+                                  <CheckCircle2 size={12} /> Requested
+                                </span>
+                                {/* Own line, never wrapped — beside the label
+                                    in this narrow panel it broke mid-number. */}
+                                {sn.openTransfer && (
+                                  <span className="whitespace-nowrap font-mono text-[10px] text-green-700/70">
+                                    {sn.openTransfer.transferNumber}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <button
                                 onClick={() => requestSerial(sn)}
