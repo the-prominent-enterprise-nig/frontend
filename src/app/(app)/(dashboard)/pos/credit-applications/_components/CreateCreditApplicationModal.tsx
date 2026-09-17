@@ -72,8 +72,7 @@ export default function CreateCreditApplicationModal({
     setValue('coMakerId', '')
     setValue('coMakerContactNumber', '')
     setValue('coMakerEmail', '')
-    setValue('newCoMakerFirstName', '')
-    setValue('newCoMakerLastName', '')
+    setValue('newCoMakerName', '')
     setValue('newCoMakerRelationship', '')
     setValue('newCoMakerContactNumber', '')
     setValue('newCoMakerEmail', '')
@@ -132,11 +131,7 @@ export default function CreateCreditApplicationModal({
 
       if (data.coMakerId === NEW_CO_MAKER_VALUE) {
         const addRes = await customersApi.addCoMaker(data.applicantCustomerId, {
-          // CoMaker stores one name column — join the captured first/last.
-          name: [data.newCoMakerFirstName, data.newCoMakerLastName]
-            .map((v) => (v ?? '').trim())
-            .filter(Boolean)
-            .join(' '),
+          name: (data.newCoMakerName ?? '').trim(),
           relationship: (data.newCoMakerRelationship ?? '').trim(),
           contactNumber: (data.newCoMakerContactNumber ?? '').trim(),
           email: data.newCoMakerEmail || undefined,
@@ -181,8 +176,8 @@ export default function CreateCreditApplicationModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">New Credit Application</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
@@ -198,12 +193,8 @@ export default function CreateCreditApplicationModal({
           </button>
         </div>
 
-        <form
-          onSubmit={handleSubmit(handleFormSubmit)}
-          noValidate
-          className="flex min-h-0 flex-1 flex-col"
-        >
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
+          <div className="space-y-5 px-6 py-5">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Applicant <span className="text-red-500">*</span>
@@ -256,7 +247,7 @@ export default function CreateCreditApplicationModal({
             {serverError && <p className="text-sm text-red-600">{serverError}</p>}
           </div>
 
-          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
@@ -271,7 +262,7 @@ export default function CreateCreditApplicationModal({
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {(isSubmitting || isOrchestrating) && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting || isOrchestrating ? 'Submitting…' : 'Submit Application'}
+              {isSubmitting || isOrchestrating ? 'Creating…' : 'Open Application'}
             </button>
           </div>
         </form>
