@@ -362,9 +362,9 @@ export default function CheckoutPage() {
   // which is the same branch they can configure via "My Branch" settings.
   const [authBranchId, setAuthBranchId] = useState<string | null>(null)
   const [isBranchManager, setIsBranchManager] = useState(false)
-  // Whether this login already holds the approval authority a serialized
+  // Whether this login already holds the approval authority an installment
   // sale would otherwise need to ask someone else for (Business Owner or
-  // Branch Manager) — drives the serial-sale banner below.
+  // Branch Manager) — drives the installment approval banner below.
   const [canOverride, setCanOverride] = useState(false)
   // Scenario 17 Part 7 — whether this login can mark a Promissory Note as
   // signed (Cashier-level, cascades to Branch Manager/Business Owner).
@@ -697,7 +697,7 @@ export default function CheckoutPage() {
     invoices?: PosTransactionInvoice[]
   } | null>(null)
 
-  // Pending manager approval (serial-tracked sale awaiting Release Form review)
+  // Pending manager approval (installment sale awaiting Release Form review)
   const [pendingApproval, setPendingApproval] = useState<{
     releaseFormRequestId: string
     totalAmount: number
@@ -2311,7 +2311,7 @@ export default function CheckoutPage() {
           return
         }
 
-        // Serial-tracked line in the cart — backend deferred to manager approval
+        // Installment line in the cart — backend deferred to manager approval
         // instead of completing the sale. Show the pending screen and bail out
         // before any payment/loyalty steps run (there is no transaction yet).
         if (isPendingApproval(txRes.data)) {
@@ -2903,8 +2903,10 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Serial-tracked sale banner */}
-      {!cancellationReqId && cart.some((l) => l.isSerialTracked) && (
+      {/* Installment approval banner. Only installment sales (in-house or
+          TPF) wait for approval now — a cash sale of a serialized appliance
+          checks out directly, so a serial alone no longer shows this. */}
+      {!cancellationReqId && installmentCartLines.length > 0 && (
         <div
           className={`flex items-center gap-3 border-b px-5 py-3 ${canOverride ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}
         >
@@ -2915,8 +2917,8 @@ export default function CheckoutPage() {
           )}
           <p className={`text-sm font-medium ${canOverride ? 'text-green-700' : 'text-amber-700'}`}>
             {canOverride
-              ? 'This sale includes a serialized item — since you can already approve sales, it will post immediately.'
-              : 'This sale includes a serialized item — it will need Business Owner or Branch Manager approval before the invoice is created.'}
+              ? 'This sale includes an installment item — since you can already approve sales, it will post immediately.'
+              : 'This sale includes an installment item — it will need Business Owner or Branch Manager approval before the invoice is created.'}
           </p>
         </div>
       )}
