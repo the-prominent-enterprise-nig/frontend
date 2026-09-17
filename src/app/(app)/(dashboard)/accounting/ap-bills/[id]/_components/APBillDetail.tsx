@@ -12,7 +12,7 @@ import {
   Pencil,
   Trash2,
   Printer,
-  FileText,
+  PhilippinePeso,
 } from 'lucide-react'
 import {
   APBills,
@@ -167,17 +167,17 @@ export default function APBillDetail({ id }: { id: string }) {
           },
         ]
       : []),
-    // Raise a voucher for this invoice. Several may be open at once, so the
-    // condition is whether anything is left to commit — not whether one exists
-    // already. The server applies the same cap.
+    // Pay this invoice. Several vouchers may be open at once, so the condition
+    // is whether anything is left to commit — not whether one exists already.
+    // The server applies the same cap.
     ...(['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(bill.status) && uncommitted > 0.005
       ? [
           {
-            label: 'Create voucher',
-            icon: FileText,
+            label: 'Record Payment',
+            icon: PhilippinePeso,
             onClick: () =>
               router.push(
-                `/accounting/ap-bills/payments/new?supplier=${bill.supplier?.id ?? ''}&bills=${id}&voucherOnly=1`
+                `/accounting/ap-bills/payments/new?supplier=${bill.supplier?.id ?? ''}&bills=${id}`
               ),
           },
         ]
