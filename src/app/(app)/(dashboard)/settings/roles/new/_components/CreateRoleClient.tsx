@@ -83,8 +83,9 @@ export default function CreateRoleClient({ availablePermissions }: CreateRoleCli
   }
 
   return (
-    <div className="min-h-full bg-zinc-50">
-      <div className="mx-auto max-w-5xl space-y-6 px-6 pb-6 pt-6">
+    // See RoleAccessClient — keeps the save bar at the bottom on short pages.
+    <div className="flex min-h-full flex-col bg-zinc-50">
+      <div className="mx-auto w-full max-w-5xl flex-1 space-y-6 px-6 pb-6 pt-6">
         <button
           type="button"
           onClick={handleLeave}
@@ -151,13 +152,20 @@ export default function CreateRoleClient({ availablePermissions }: CreateRoleCli
           </div>
         </div>
 
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)]">
+        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)]">
+          <div className="border-b border-zinc-100 px-6 py-4">
+            <h2 className="text-sm font-semibold text-zinc-900">Module access</h2>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Choose which modules this role can see and what it can do in each. A module shows in
+              the top menu once the role has at least View Only.
+            </p>
+          </div>
           <ModuleAccessList
             availablePermissions={availablePermissions}
             selected={selected}
             onChange={setSelected}
           />
-        </div>
+        </section>
 
         <AdvancedPermissionsSection
           availablePermissions={availablePermissions}

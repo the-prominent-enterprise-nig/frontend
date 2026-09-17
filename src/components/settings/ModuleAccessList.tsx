@@ -43,10 +43,9 @@ type ModuleAccessListProps = {
  * four levels per resource, so "read AR invoices and nothing else in
  * accounting" is two clicks.
  *
- * Resource lists get long — inventory has 43, accounting 30 — against roughly
- * 600px of usable modal height. Three things keep that navigable: only one
- * module is open at a time, its resources filter by name, and they lay out two
- * per row on wide screens.
+ * Resource lists get long — inventory has 43, accounting 30. Three things keep
+ * that navigable: only one module is open at a time, its resources filter by
+ * name, and they lay out in two columns on wide screens.
  */
 export default function ModuleAccessList({
   availablePermissions,
@@ -55,7 +54,7 @@ export default function ModuleAccessList({
   moduleOrder,
 }: ModuleAccessListProps) {
   // One module open at a time. Expanding every module would otherwise stack to
-  // ~5,300px of resource rows in a modal that shows ~600px.
+  // ~5,300px of resource rows.
   const [expandedModule, setExpandedModule] = useState<string | null>(null)
   const [resourceQuery, setResourceQuery] = useState('')
   // Per-resource detail expansion — click a resource's name to see its full
@@ -136,7 +135,7 @@ export default function ModuleAccessList({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="divide-y divide-zinc-100">
       {moduleRows.map(
         ({
           moduleConfig,
@@ -156,36 +155,56 @@ export default function ModuleAccessList({
                   formatResourceLabel(row.resource).toLowerCase().includes(query)
               )
             : allResourceRows
+          const percentEnabled = permissionCount > 0 ? (selectedCount / permissionCount) * 100 : 0
 
           return (
             <div
               key={moduleConfig.key}
-              className={`rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)] transition-colors ${
-                level === 'mixed'
-                  ? 'border-l-4 border-l-amber-400'
-                  : level !== 'none'
-                    ? 'border-l-4 border-l-prominent-purple-600'
-                    : ''
-              }`}
+              className={`relative px-6 py-4 transition-colors ${isExpanded ? 'bg-zinc-50/40' : ''}`}
             >
+              {level !== 'none' && (
+                <span
+                  aria-hidden
+                  className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full ${
+                    level === 'mixed' ? 'bg-amber-400' : 'bg-prominent-purple-600'
+                  }`}
+                />
+              )}
+
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0 lg:flex-1">
                   <button
                     type="button"
                     onClick={() => toggleExpanded(moduleConfig.key)}
                     aria-expanded={isExpanded}
-                    className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 transition-colors hover:text-prominent-purple-700"
+                    className="group flex items-center gap-1.5 text-sm font-semibold text-zinc-900 transition-colors hover:text-prominent-purple-700"
                   >
                     {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                      <ChevronDown className="h-4 w-4 shrink-0 text-prominent-purple-500" />
                     ) : (
-                      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400 group-hover:text-prominent-purple-500" />
                     )}
                     {moduleConfig.label}
+                    {level === 'mixed' && (
+                      <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-200">
+                        Mixed
+                      </span>
+                    )}
                   </button>
-                  <p className="mt-1 pl-5 text-xs text-zinc-500">
-                    {selectedCount} of {permissionCount} capabilities enabled
-                  </p>
+                  <div className="mt-1.5 flex items-center gap-2.5 pl-5.5">
+                    <div className="h-1 w-24 overflow-hidden rounded-full bg-zinc-100">
+                      <div
+                        className={`h-full rounded-full transition-[width] duration-300 ${
+                          level === 'mixed' ? 'bg-amber-400' : 'bg-prominent-purple-600'
+                        }`}
+                        style={{ width: `${percentEnabled}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-zinc-500">
+                      <span className="font-medium text-zinc-700">{selectedCount}</span> of{' '}
+                      {permissionCount} capabilities
+                    </p>
+                  </div>
                 </div>
 
                 <div className="grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-zinc-200 bg-zinc-50 p-1 sm:grid-cols-4">
@@ -194,10 +213,10 @@ export default function ModuleAccessList({
                       key={accessLevel}
                       type="button"
                       onClick={() => handleModuleLevelChange(moduleConfig.key, accessLevel)}
-                      className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 sm:text-sm ${
+                      className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 sm:text-[13px] ${
                         level === accessLevel
                           ? 'bg-prominent-purple-700 text-white shadow-sm'
-                          : 'text-zinc-600 hover:bg-white hover:text-zinc-900'
+                          : 'text-zinc-600 hover:bg-white hover:text-zinc-900 hover:shadow-sm'
                       }`}
                     >
                       {ACCESS_LEVEL_LABELS[accessLevel]}
@@ -206,29 +225,30 @@ export default function ModuleAccessList({
                 </div>
               </div>
 
-              {level === 'mixed' && (
-                <p className="mt-2 text-xs font-medium text-amber-700">
+              {level === 'mixed' && !isExpanded && (
+                <p className="mt-2 pl-5.5 text-xs text-amber-700">
                   Resources are at different levels — expand to see which.
                 </p>
               )}
 
               {level === 'full' && !holdsWildcard && (
-                <p className="mt-2 text-xs text-zinc-400">
+                <p className="mt-2 pl-5.5 text-xs text-zinc-400">
                   Granted individually — new {moduleConfig.label} permissions won&apos;t be included
                   automatically.
                 </p>
               )}
 
               {isExpanded && (
-                <div className="mt-4 border-t border-zinc-200/70 pt-3">
-                  <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-4 rounded-xl border border-zinc-200/80 bg-zinc-50/80 p-4">
+                  <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-                        Per resource — the buttons above set all of these at once
+                      <p className="text-xs font-semibold text-zinc-700">
+                        Resources in {moduleConfig.label}
                       </p>
-                      <p className="mt-0.5 text-[11px] text-zinc-400">
-                        Click a level to set it — the active one stays highlighted. Click a
-                        resource&apos;s name for the full breakdown.
+                      <p className="mt-0.5 text-[11px] text-zinc-500">
+                        The buttons above set all of these at once. Click a level to set one
+                        resource — the active one stays highlighted. Click a resource&apos;s name
+                        for the full breakdown.
                       </p>
                     </div>
                     {allResourceRows.length > 8 && (
@@ -258,10 +278,10 @@ export default function ModuleAccessList({
                       return (
                         <div
                           key={row.resource}
-                          className={`overflow-hidden rounded-lg border transition-colors ${
+                          className={`overflow-hidden rounded-lg border bg-white transition-colors ${
                             isResourceExpanded
-                              ? 'border-prominent-purple-200 bg-white'
-                              : 'border-transparent bg-white hover:border-zinc-200'
+                              ? 'border-prominent-purple-200 shadow-sm'
+                              : 'border-zinc-200/80 hover:border-zinc-300'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-3 py-1.5 pl-2 pr-2.5">
@@ -323,7 +343,7 @@ export default function ModuleAccessList({
                           </div>
 
                           {isResourceExpanded && (
-                            <div className="space-y-1 border-t border-zinc-100 bg-zinc-50/60 px-3 py-2.5 pl-8">
+                            <div className="space-y-1 border-t border-zinc-100 bg-zinc-50/50 px-3 py-2.5 pl-8">
                               {row.permissions.map((permission) => {
                                 const isGranted = row.selectedPermissions.some(
                                   (selectedPermission) => selectedPermission.id === permission.id
@@ -351,11 +371,11 @@ export default function ModuleAccessList({
                     }
 
                     return (
-                      <div className="grid items-start gap-3 lg:grid-cols-2">
-                        <div className="space-y-1.5">
+                      <div className="grid items-start gap-2 lg:grid-cols-2">
+                        <div className="space-y-2">
                           {resourceRows.filter((_, index) => index % 2 === 0).map(renderRow)}
                         </div>
-                        <div className="space-y-1.5">
+                        <div className="space-y-2">
                           {resourceRows.filter((_, index) => index % 2 === 1).map(renderRow)}
                         </div>
                       </div>

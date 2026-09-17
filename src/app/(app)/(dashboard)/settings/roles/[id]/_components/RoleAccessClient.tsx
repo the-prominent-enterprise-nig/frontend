@@ -149,8 +149,10 @@ export default function RoleAccessClient({ role, availablePermissions }: RoleAcc
   }
 
   return (
-    <div className="min-h-full bg-zinc-50">
-      <div className="mx-auto max-w-5xl space-y-6 px-6 pb-6 pt-6">
+    // flex-col + flex-1 on the content: sticky only pins once content overflows,
+    // so on a short page the save bar would otherwise float mid-screen.
+    <div className="flex min-h-full flex-col bg-zinc-50">
+      <div className="mx-auto w-full max-w-5xl flex-1 space-y-6 px-6 pb-6 pt-6">
         <button
           type="button"
           onClick={handleLeave}
@@ -160,23 +162,40 @@ export default function RoleAccessClient({ role, availablePermissions }: RoleAcc
           Back to Roles
         </button>
 
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)]">
-          <div className="flex items-start gap-3.5">
-            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-prominent-purple-50 ring-1 ring-inset ring-prominent-purple-100">
-              <ShieldCheck className="h-5 w-5 text-prominent-purple-700" />
-            </span>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">{role.name}</h1>
-              {role.description && <p className="mt-1 text-sm text-zinc-500">{role.description}</p>}
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)]">
+          <div className="flex items-start justify-between gap-4 px-6 py-5">
+            <div className="flex min-w-0 items-center gap-3.5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-prominent-purple-50 ring-1 ring-inset ring-prominent-purple-100">
+                <ShieldCheck className="h-5 w-5 text-prominent-purple-700" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Manage access
+                </p>
+                <h1 className="truncate text-xl font-semibold tracking-tight text-zinc-900">
+                  {role.name}
+                </h1>
+                {role.description && (
+                  <p className="mt-0.5 text-sm text-zinc-500">{role.description}</p>
+                )}
+              </div>
             </div>
+            <span
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${
+                role.isActive
+                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                  : 'bg-zinc-100 text-zinc-600 ring-zinc-200'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${role.isActive ? 'bg-emerald-500' : 'bg-zinc-400'}`}
+              />
+              {role.isActive ? 'Active' : 'Inactive'}
+            </span>
           </div>
-          <p className="mt-4 text-sm text-zinc-600">
-            Choose which modules this role can see and what they can do inside each module. Users
-            see modules in the top menu when their role has at least View Only access.
-          </p>
 
           {isFounderRole && (
-            <div className="mt-4 flex items-start gap-2 rounded-xl border border-prominent-purple-100 bg-prominent-purple-50/60 px-4 py-3 text-sm text-prominent-purple-900">
+            <div className="mx-6 mb-5 flex items-start gap-2 rounded-xl border border-prominent-purple-100 bg-prominent-purple-50/60 px-4 py-3 text-sm text-prominent-purple-900">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-prominent-purple-500" />
               <span>
                 Business Owner&apos;s permissions are fixed and can&apos;t be edited — shown here
@@ -186,7 +205,7 @@ export default function RoleAccessClient({ role, availablePermissions }: RoleAcc
           )}
 
           {!role.isActive && (
-            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mx-6 mb-5 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 <span>
@@ -208,14 +227,21 @@ export default function RoleAccessClient({ role, availablePermissions }: RoleAcc
         </div>
 
         <fieldset disabled={isFounderRole} className="space-y-6 disabled:opacity-60">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)]">
+          <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)]">
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <h2 className="text-sm font-semibold text-zinc-900">Module access</h2>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Choose which modules this role can see and what it can do in each. A module shows in
+                the top menu once the role has at least View Only.
+              </p>
+            </div>
             <ModuleAccessList
               availablePermissions={availablePermissions}
               selected={selected}
               onChange={setSelected}
               moduleOrder={moduleOrder}
             />
-          </div>
+          </section>
 
           <AdvancedPermissionsSection
             availablePermissions={availablePermissions}
@@ -248,10 +274,18 @@ export default function RoleAccessClient({ role, availablePermissions }: RoleAcc
         // and up hide that tab bar entirely, so bottom-0 there is correct.
         <div className="sticky bottom-17.5 z-50 border-t border-zinc-200 bg-white px-6 shadow-[0_-6px_16px_-4px_rgb(0_0_0/0.08)] md:bottom-0">
           <div className="mx-auto flex max-w-5xl items-center justify-between py-4">
-            <p className="text-sm text-zinc-500">
-              <span className="font-semibold text-zinc-700">{selected.size}</span>{' '}
-              {selected.size === 1 ? 'capability' : 'capabilities'} selected
-            </p>
+            <div className="flex items-center gap-3 text-sm text-zinc-500">
+              <p>
+                <span className="font-semibold text-zinc-700">{selected.size}</span>{' '}
+                {selected.size === 1 ? 'capability' : 'capabilities'} selected
+              </p>
+              {hasUnsavedChanges && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  Unsaved changes
+                </span>
+              )}
+            </div>
             <div className="flex gap-3">
               <button
                 type="button"
