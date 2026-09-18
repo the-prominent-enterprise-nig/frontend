@@ -158,3 +158,25 @@ Parts 1-3 were implemented on `feat/employee-cash-loan-pos` (both repos) before 
 - The interest formula (see above) — using a flat-rate default, not confirmed.
 - Whether interest recognition/release is in scope now or deferred with payroll auto-deduction.
 - First Deduction Date — purely informational (like the old `nextDueDate`), or does it need to drive something later.
+
+## Implementation Log — 2026-09-18
+
+**For this scenario, I have done:**
+
+- **Part 1** — Employee Appliance Loans fully retired: Accounting nav entry, its three pages, and the backend module (controller/service/DTOs, `app.module.ts` registration). Historical `EmployeeApplianceLoan`/`EmployeeApplianceLoanPayment` rows and their posted journal entries are untouched.
+- **Parts 2-3, rebuilt to the revised (amortizing) design** — after Parts 2-3 were first implemented against the original "simple advance" plan and then found to not match the client's actual screen design (see the Revision section above), both were replaced, not extended:
+  - Backend: standalone `EmployeeCashLoan` + `EmployeeCashLoanScheduleLine` models, the recovered-and-adapted financing formula, employee search, a live financing preview endpoint, a bank-accounts endpoint, list/detail, and issuance posting the real gross-receivable/deferred-interest entry. New `EMPLOYEE_CASH_LOAN_RECEIVABLE` mapping key, wired to the real client COA account where imported, with a generic-chart fallback account (`1-03-041`) so a fresh environment without the client's chart (e.g. the isolated test DB) works correctly too.
+  - Frontend: three real pages (list/new/detail, no modal) — the New Loan page's two-panel layout matches the client's own proposed screen design directly (entry form left, live Computed Financing Terms right).
+  - `backend/test/pos-employee-cash-loans.e2e-spec.ts` (10/10) and `frontend/e2e/pos-employee-cash-loans.spec.ts` (3/3), both rewritten for the amortizing design.
+- **Two real bugs found during developer review, fixed same session**:
+  1. The interest formula wasn't scaling with term (`principal × rate` instead of `principal × rate × termMonths`) — fixed, and now reproduces the client's own worked example exactly (₱50,000 / 12mo / 1% monthly → ₱6,000 interest, ₱56,000 receivable, ₱4,666.67/mo).
+  2. The list page's client-side query cache was never invalidated after issuing a loan from the separate New Loan page (`revalidatePath` in the server action only affects Next's own RSC cache, not this client `useQuery` cache) — a cashier issuing a loan and returning to the list would see a stale "no loans" view for up to 30s. Fixed via an explicit `queryClient.invalidateQueries()` call on successful issuance.
+- Both repos committed and pushed to `feat/employee-cash-loan-pos` (backend `33d4c75`, frontend `56fc33c`).
+
+**Explicitly deferred, not part of this scenario — tracked here so they don't get lost:**
+
+1. **Automatic payroll deduction / repayment recognition.** Nothing in this scenario reduces `currentBalance` — it will sit equal to `openingBalance` until this is built. Needs its own scoping pass (how a payroll expense line identifies which loan it's paying down, given there's no structural link between a payroll line's typed name and a specific `EmployeeCashLoan` row today).
+2. **The interest-release batch** (recognizing the deferred `UNEARNED_INTEREST_INCOME` as earned `FINANCING_INCOME` over time, period by period) — the pattern to mirror is `installment-interest-release.service.ts` (built for customer `InstallmentSchedule`/`InstallmentScheduleLine`, not this scenario's employee-loan schedule table), but building an employee-loan equivalent is real, unscoped work, not a trivial extension.
+3. **No manual "Record Payment" action anywhere in POS.** Repayment recording stays exclusively in Accounting for now (and per #1, doesn't actually exist there yet either for this specific loan type — Accounting has no UI wired to `EmployeeCashLoan` at all, by design, since this was built POS-first).
+
+**Not yet done, worth flagging:** no manual click-through confirmation beyond what's described in this log — verification for both bug fixes was via the automated e2e suites plus live screenshots during the session, not a separate final manual pass.
