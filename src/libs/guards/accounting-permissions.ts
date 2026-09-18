@@ -85,9 +85,6 @@ export const ACCOUNTING_PERMISSIONS = {
   BANK_ACCOUNTS_ADJUST: 'accounting:bank-accounts:adjust',
   BANK_ACCOUNTS_TRANSFER: 'accounting:bank-accounts:transfer',
 
-  EMPLOYEE_APPLIANCE_LOAN_READ: 'accounting:employee-appliance-loan:read',
-  EMPLOYEE_APPLIANCE_LOAN_CREATE: 'accounting:employee-appliance-loan:create',
-
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
   BUDGET_UPDATE: 'accounting:budget:update',
@@ -220,9 +217,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
   'accounting:bank-accounts:transfer':
     'Transfer money between two bank/fund accounts (e.g. funding Petty Cash / the Revolving Fund)',
-  'accounting:employee-appliance-loan:read': 'View employee appliance loans',
-  'accounting:employee-appliance-loan:create':
-    'Create an employee appliance loan and record payments against it',
   'accounting:budget:read': 'View budgets + variance reports',
   'accounting:budget:create': 'Create budgets per account/dimension/period',
   'accounting:budget:update': 'Edit budgets',
