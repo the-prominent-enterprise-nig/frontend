@@ -1,6 +1,12 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import {
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
@@ -27,6 +33,7 @@ import type {
   ReleaseToCustomerFormValues,
   UdsStatus,
 } from '@/src/schema/inventory/uds'
+import { UDS_STATUSES } from '@/src/schema/inventory/uds'
 
 export function useUdsManager() {
   const queryClient = useQueryClient()
@@ -53,6 +60,33 @@ export function useUdsManager() {
     queryFn: () => getUdsList(queryParams),
     placeholderData: keepPreviousData,
     staleTime: STALE.REALTIME,
+  })
+
+  // One head count per status, so the band can show the shape of the queue
+  // without the list having to fetch every sheet. `limit: 1` makes each of
+  // these a count query in all but name — the rows come back with the page
+  // above, and only `meta.total` is read here.
+  const countParams = useMemo(
+    () => ({ reason: reasonFilter, warehouseId: warehouseFilter }),
+    [reasonFilter, warehouseFilter]
+  )
+
+  const countQueries = useQueries({
+    queries: UDS_STATUSES.map((status) => ({
+      // Keyed under the list's own prefix, not a sibling of it: every
+      // mutation here invalidates ['inventory-uds'], and TanStack matches
+      // prefixes — so the band's counts refresh with the rows instead of
+      // going stale the moment a sheet is issued or advanced.
+      queryKey: ['inventory-uds', 'count', status, countParams],
+      queryFn: () => getUdsList({ ...countParams, status, page: 1, limit: 1 }),
+      staleTime: STALE.REALTIME,
+    })),
+  })
+
+  const statusCounts: Partial<Record<UdsStatus, number>> = {}
+  UDS_STATUSES.forEach((status, i) => {
+    const total = countQueries[i]?.data?.data?.meta.total
+    if (typeof total === 'number') statusCounts[status] = total
   })
 
   const warehousesQuery = useQuery({
@@ -224,6 +258,8 @@ export function useUdsManager() {
     isLoading: udsQuery.isLoading,
     isFetching: udsQuery.isFetching,
     error: udsQuery.error,
+    refetch: udsQuery.refetch,
+    statusCounts,
 
     statusFilter,
     reasonFilter,

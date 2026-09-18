@@ -1,7 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { X, Paperclip, Truck, Download } from 'lucide-react'
+import { X, Paperclip, Download } from 'lucide-react'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
@@ -16,13 +15,6 @@ import DocumentTrail from './DocumentTrail'
 function formatCurrency(value?: number | null): string {
   if (value == null) return '—'
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value)
-}
-
-const TRANSFER_STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
-  in_transit: 'In Transit',
-  received: 'Received',
-  cancelled: 'Cancelled',
 }
 
 type Props = {
@@ -63,7 +55,7 @@ function formatDate(iso?: string | null): string {
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-medium text-zinc-400">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{label}</p>
       <p className="mt-0.5 text-zinc-800">{value}</p>
     </div>
   )
@@ -81,13 +73,15 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
     !uds.assessment
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex min-h-0 flex-1 flex-col">
         {/* Header */}
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div className="flex items-center gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900">Unit Document Sheet</h2>
+              <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
+                Unit Document Sheet
+              </h2>
               <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
             </div>
             <span
@@ -110,7 +104,7 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
           </button>
         </div>
 
-        <div className="space-y-5 px-6 py-5">
+        <div className="mx-auto w-full max-w-4xl flex-1 space-y-5 overflow-y-auto px-6 py-5">
           {/* Meta */}
           <div className="grid grid-cols-2 gap-3 text-sm">
             <InfoRow
@@ -122,24 +116,27 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
             <InfoRow label="Last Updated" value={formatDate(uds.updatedAt)} />
             {uds.notes && (
               <div className="col-span-2">
-                <p className="text-xs font-medium text-zinc-400">Notes</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Notes
+                </p>
                 <p className="mt-0.5 whitespace-pre-wrap text-zinc-800">{uds.notes}</p>
               </div>
             )}
           </div>
 
           {/* Repair details */}
-          {(uds.reason === 'repair' ||
-            uds.repairProvider ||
-            uds.rfsFormFile ||
-            uds.linkedStockTransfer ||
-            uds.assessment) && (
+          {(uds.reason === 'repair' || uds.repairProvider || uds.rfsFormFile || uds.assessment) && (
             <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+              {/* The branch→main StockTransfer is deliberately not repeated
+                  here: it is a leg of the Document trail below, and a number
+                  shown twice on one screen reads as two movements. */}
               <p className="mb-3 text-sm font-medium text-zinc-700">Repair Transfer</p>
               <div className="space-y-3 text-sm">
                 {uds.reason === 'repair' && (
                   <div>
-                    <p className="text-xs font-medium text-zinc-400">Repair Provider</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      Repair Provider
+                    </p>
                     <div className="mt-0.5 flex items-center gap-2">
                       <p className="text-zinc-800">
                         {uds.repairProvider
@@ -160,7 +157,9 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
                 )}
                 {uds.assessment && (
                   <div>
-                    <p className="text-xs font-medium text-zinc-400">Assessment</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      Assessment
+                    </p>
                     <div className="mt-0.5 flex items-center gap-2">
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${UDS_ASSESSMENT_STYLES[uds.assessment]}`}
@@ -187,7 +186,9 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
                 )}
                 {uds.rfsFormFile && (
                   <div>
-                    <p className="text-xs font-medium text-zinc-400">RFS Form</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      RFS Form
+                    </p>
                     <a
                       href={`/api/files/${uds.rfsFormFile.id}/download`}
                       target="_blank"
@@ -198,20 +199,6 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
                       {uds.rfsFormFile.originalName}
                       <Download className="h-3.5 w-3.5" />
                     </a>
-                  </div>
-                )}
-                {uds.linkedStockTransfer && (
-                  <div>
-                    <p className="text-xs font-medium text-zinc-400">Transfer to Main</p>
-                    <Link
-                      href="/inventory/transfers"
-                      className="mt-0.5 inline-flex items-center gap-1.5 text-prominent-purple-700 hover:underline"
-                    >
-                      <Truck className="h-3.5 w-3.5" />
-                      {uds.linkedStockTransfer.transferNumber} —{' '}
-                      {TRANSFER_STATUS_LABELS[uds.linkedStockTransfer.status] ??
-                        uds.linkedStockTransfer.status}
-                    </Link>
                   </div>
                 )}
               </div>
@@ -262,7 +249,7 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-6 py-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 px-6 py-4">
           <button
             type="button"
             onClick={onClose}
@@ -274,7 +261,7 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
             <button
               type="button"
               onClick={() => onAdvance(uds)}
-              className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
+              className="rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b]"
             >
               {nextStep}
             </button>

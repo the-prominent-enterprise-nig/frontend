@@ -169,11 +169,13 @@ export default function UpdateUdsStatusModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Update UDS Status</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
+              Update UDS Status
+            </h2>
             <p className="mt-0.5 text-sm text-zinc-500">
               Current: <span className="font-medium">{UDS_STATUS_LABELS[currentStatus]}</span>
             </p>
@@ -188,14 +190,18 @@ export default function UpdateUdsStatusModal({
         </div>
 
         {allowedStatuses.length === 0 ? (
-          <div className="px-6 py-8 text-center text-sm text-zinc-500">
+          <div className="flex-1 px-6 py-8 text-center text-sm text-zinc-500">
             {isCustodial
               ? 'This unit belongs to the customer — close it with Release to Customer, which issues the DR they sign for.'
               : 'This UDS is already closed and cannot be updated.'}
           </div>
         ) : (
-          <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-            <div className="space-y-4 px-6 py-5">
+          <form
+            onSubmit={handleSubmit(handleFormSubmit)}
+            noValidate
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
               <div>
                 <label className="mb-2 block text-sm font-medium text-zinc-700">
                   New Status <span className="text-red-500">*</span>
@@ -306,7 +312,7 @@ export default function UpdateUdsStatusModal({
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+            <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
               <button
                 type="button"
                 onClick={onClose}
@@ -318,13 +324,13 @@ export default function UpdateUdsStatusModal({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${
+                className={`flex items-center gap-[7px] rounded-lg px-[15px] py-[9px] text-[13px] font-semibold text-white disabled:opacity-60 ${
                   selectedStatus === 'cancelled'
                     ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-prominent-purple-700 hover:bg-prominent-purple-800'
+                    : 'bg-[#5b21b6] hover:bg-[#4a189b]'
                 }`}
               >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {isSubmitting
                   ? 'Updating…'
                   : selectedStatus === 'cancelled' && confirmingCancel

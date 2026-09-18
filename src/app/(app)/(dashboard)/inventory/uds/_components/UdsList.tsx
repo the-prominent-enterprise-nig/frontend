@@ -8,18 +8,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Paperclip,
-  Truck,
   ArrowRight,
-  Clock,
-  PackageCheck,
-  CheckCircle2,
-  XCircle,
-  Wrench,
-  Ban,
+  AlertTriangle,
+  RefreshCw,
+  X,
 } from 'lucide-react'
+import Tooltip from '@/src/components/ui/Tooltip'
+import UdsStatusBand from './UdsStatusBand'
+import { STATUS_CONFIG, ASSESSMENT_CONFIG, REASON_DOT, TRANSFER_STATUS_LABELS } from './udsDisplay'
 import { useUdsManager } from '../_hooks/useUdsManager'
 import CreateUdsModal from './CreateUdsModal'
-import { latestTrailLeg } from './DocumentTrail'
+import { latestTrailLeg, outstandingTrailCount } from './DocumentTrail'
 import UpdateUdsStatusModal from './UpdateUdsStatusModal'
 import UdsDetailModal from './UdsDetailModal'
 import AssessUdsModal from './AssessUdsModal'
@@ -33,12 +32,8 @@ import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
   UDS_ASSESSMENT_LABELS,
-  UDS_STATUSES,
   UDS_REASONS,
   type Uds,
-  type UdsStatus,
-  type UdsReason,
-  type UdsAssessment,
 } from '@/src/schema/inventory/uds'
 import type {
   UpdateUdsStatusFormValues,
@@ -50,41 +45,10 @@ import type {
   WriteOffUdsFormValues,
 } from '@/src/schema/inventory/uds'
 
-// Icon + color per status/assessment, mirroring TransferList's own
-// STATUS_CONFIG pattern (not exported from there) for visual consistency
-// across the inventory module's list tables.
-const STATUS_CONFIG: Record<UdsStatus, { color: string; icon: React.ElementType }> = {
-  issued: { color: 'bg-blue-100 text-blue-700', icon: Clock },
-  in_transit: { color: 'bg-yellow-100 text-yellow-700', icon: Truck },
-  received: { color: 'bg-purple-100 text-purple-700', icon: PackageCheck },
-  at_provider: { color: 'bg-amber-100 text-amber-700', icon: Wrench },
-  repaired: { color: 'bg-teal-100 text-teal-700', icon: PackageCheck },
-  completed: { color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  cancelled: { color: 'bg-zinc-100 text-zinc-500', icon: XCircle },
-}
-
-const ASSESSMENT_CONFIG: Record<UdsAssessment, { color: string; icon: React.ElementType }> = {
-  repairable: { color: 'bg-green-100 text-green-700', icon: Wrench },
-  unrepairable: { color: 'bg-red-100 text-red-700', icon: Ban },
-}
-
-const REASON_DOT: Record<UdsReason, string> = {
-  repair: 'bg-red-500',
-  maintenance: 'bg-orange-500',
-  quality_check: 'bg-yellow-500',
-  pull_out: 'bg-purple-500',
-  loan: 'bg-blue-500',
-}
-
-// Mirrors TransferList's own STATUS_CONFIG colors (not exported from there) —
-// kept minimal since this is just an inline reference badge, not the transfers
-// module's own status UI.
-const TRANSFER_STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
-  in_transit: 'In Transit',
-  received: 'Received',
-  cancelled: 'Cancelled',
-}
+// Same control chrome as the Stock Returns filter row, so the two screens'
+// narrowings look and focus alike.
+const FILTER_INPUT =
+  'rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-prominent-purple-500 focus:ring-2 focus:ring-prominent-purple-100'
 
 type StepAction = {
   label: string
@@ -180,6 +144,8 @@ export default function UdsList({ session }: { session: SessionUser }) {
     isLoading,
     isFetching,
     error,
+    refetch,
+    statusCounts,
     statusFilter,
     reasonFilter,
     setStatusFilter,
@@ -272,42 +238,50 @@ export default function UdsList({ session }: { session: SessionUser }) {
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Unit Document Sheets</h1>
-            <p className="mt-1 text-sm text-zinc-500">
+        {/* Same header chrome as Stock Returns and Stock Transfers — these
+            three inventory movement screens share one surface. */}
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="flex min-w-0 flex-col gap-1">
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[#17171c]">
+              Unit Document Sheets
+            </h1>
+            <p className="text-[13px] text-[#5b5b6b]">
               Track units leaving the branch for repair, pull-out, maintenance, or loan.
             </p>
           </div>
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-prominent-purple-700 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-prominent-purple-800"
-          >
-            <Plus className="h-4 w-4" />
-            Issue UDS
-          </button>
+          <div className="flex flex-wrap items-center gap-[9px]">
+            <Tooltip label="Reload the list">
+              <button
+                type="button"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                aria-label="Refresh"
+                className="flex items-center gap-[7px] rounded-lg border border-[#d3d3db] bg-white px-[14px] py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2] hover:bg-[#faf9fb] disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Refresh</span>
+              </button>
+            </Tooltip>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-[7px] rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Issue UDS
+            </button>
+          </div>
         </div>
+
+        <UdsStatusBand counts={statusCounts} selected={statusFilter} onSelect={setStatusFilter} />
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <select
-            value={statusFilter ?? ''}
-            onChange={(e) => setStatusFilter((e.target.value as UdsStatus) || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Statuses</option>
-            {UDS_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {UDS_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-
-          <select
             value={reasonFilter ?? ''}
             onChange={(e) => setReasonFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            aria-label="Reason"
+            className={`${FILTER_INPUT} cursor-pointer`}
           >
             <option value="">All Reasons</option>
             {UDS_REASONS.map((r) => (
@@ -319,9 +293,11 @@ export default function UdsList({ session }: { session: SessionUser }) {
 
           {hasFilters && (
             <button
+              type="button"
               onClick={resetFilters}
-              className="text-sm text-zinc-500 hover:text-zinc-700 underline"
+              className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
             >
+              <X className="h-4 w-4" />
               Clear filters
             </button>
           )}
@@ -393,6 +369,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
                     const StatusIcon = statusCfg.icon
                     const assessmentCfg = uds.assessment ? ASSESSMENT_CONFIG[uds.assessment] : null
                     const latestLeg = latestTrailLeg(uds)
+                    const outstandingDocs = outstandingTrailCount(uds)
                     const isClosed = uds.status === 'completed' || uds.status === 'cancelled'
                     const { next, alt } = nextStep(uds)
                     const AssessmentIcon = assessmentCfg?.icon
@@ -422,7 +399,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
                         {/* Status: lifecycle + assessment verdict stacked */}
                         <td className="px-4 py-3">
                           <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.color}`}
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.badge}`}
                           >
                             <StatusIcon className="h-3 w-3" />
                             {UDS_STATUS_LABELS[uds.status]}
@@ -481,12 +458,19 @@ export default function UdsList({ session }: { session: SessionUser }) {
                             unit nobody can prove was handed over. */}
                         <td className="px-4 py-3 hidden md:table-cell">
                           {latestLeg ? (
-                            <>
-                              <p className="font-mono text-xs text-zinc-700">{latestLeg.number}</p>
-                              <p className="mt-0.5 text-xs text-zinc-400">{latestLeg.label}</p>
-                            </>
+                            <p className="font-mono text-xs text-zinc-700">{latestLeg.number}</p>
                           ) : (
                             <span className="text-xs text-zinc-400">None recorded</span>
+                          )}
+                          {/* The gap, not the leg's own name: the label only
+                              repeated what the number already said, while the
+                              question this column exists to answer is which
+                              sheets somebody has to go chase paper for. */}
+                          {outstandingDocs > 0 && (
+                            <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-700">
+                              <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                              {outstandingDocs} outstanding
+                            </p>
                           )}
                         </td>
 
