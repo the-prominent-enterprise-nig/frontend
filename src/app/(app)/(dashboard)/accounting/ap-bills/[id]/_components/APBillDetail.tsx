@@ -12,7 +12,7 @@ import {
   Pencil,
   Trash2,
   Printer,
-  FileText,
+  PhilippinePeso,
 } from 'lucide-react'
 import {
   APBills,
@@ -26,6 +26,7 @@ import {
   printAPPaymentVoucherDocument,
 } from '@/src/libs/print/printInventoryDocument'
 import { getApDisbursementDocument } from '../../_actions/get-ap-disbursement-document'
+import ReceiptChangesNotice from '../../_components/ReceiptChangesNotice'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -166,17 +167,17 @@ export default function APBillDetail({ id }: { id: string }) {
           },
         ]
       : []),
-    // Raise a voucher for this invoice. Several may be open at once, so the
-    // condition is whether anything is left to commit — not whether one exists
-    // already. The server applies the same cap.
+    // Pay this invoice. Several vouchers may be open at once, so the condition
+    // is whether anything is left to commit — not whether one exists already.
+    // The server applies the same cap.
     ...(['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(bill.status) && uncommitted > 0.005
       ? [
           {
-            label: 'Create voucher',
-            icon: FileText,
+            label: 'Record Payment',
+            icon: PhilippinePeso,
             onClick: () =>
               router.push(
-                `/accounting/ap-bills/payments/new?supplier=${bill.supplier?.id ?? ''}&bills=${id}&voucherOnly=1`
+                `/accounting/ap-bills/payments/new?supplier=${bill.supplier?.id ?? ''}&bills=${id}`
               ),
           },
         ]
@@ -315,6 +316,10 @@ export default function APBillDetail({ id }: { id: string }) {
           — part of the balance on one, part on another — so a single line
           could only ever name one of them, and the amounts are the point:
           what is committed, and what is still free to voucher. */}
+      {/* Silent unless the receiving report behind this invoice was corrected
+          after the invoice was raised. */}
+      <ReceiptChangesNotice billId={id} onApplied={reload} />
+
       {vouchers.length > 0 && (
         <section className="mt-2.5 rounded-lg border border-gray-200 bg-white">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-100 px-5 py-2.5">

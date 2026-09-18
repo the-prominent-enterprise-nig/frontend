@@ -7,6 +7,7 @@ import { ArrowLeft, RefreshCw, Search, Plus, Printer, ChevronRight } from 'lucid
 import { getApPaymentDocument } from '../../_actions/get-ap-payment-document'
 import { getApDisbursementDocument } from '../../_actions/get-ap-disbursement-document'
 import { printAPPaymentVoucherDocument } from '@/src/libs/print/printInventoryDocument'
+import VoucherDocument, { type VoucherDocumentEnvelope } from '../../_components/VoucherDocument'
 import {
   APBills,
   fmtMoney,
@@ -67,13 +68,35 @@ export default function APPaymentsList() {
     }
   }
 
-  const toggle = (id: string) =>
+  // The voucher document behind an expanded row, fetched once and kept.
+  // Reading what a cheque actually covered used to mean opening the print
+  // window first; expanding the row now shows the voucher itself, and the
+  // printer button just sends that same paper to a printer.
+  const [voucherDocs, setVoucherDocs] = useState<Record<string, VoucherDocumentEnvelope>>({})
+
+  const loadVoucher = async (row: APDisbursementListItem) => {
+    if (voucherDocs[row.id]) return
+    // Same two shapes printVoucher() picks between, for the same reason.
+    const res =
+      row.kind === 'disbursement'
+        ? await getApDisbursementDocument(row.id)
+        : await getApPaymentDocument(row.invoices[0]?.billId ?? '', row.id)
+    if (res.success && res.data) {
+      setVoucherDocs((prev) => ({ ...prev, [row.id]: res.data as VoucherDocumentEnvelope }))
+    }
+  }
+
+  const toggle = (row: APDisbursementListItem) => {
+    const willOpen = !expanded.has(row.id)
     setExpanded((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (next.has(row.id)) next.delete(row.id)
+      else next.add(row.id)
       return next
     })
+    // Only on the way open, and only once — a collapse needs nothing fetched.
+    if (willOpen) void loadVoucher(row)
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -149,7 +172,7 @@ export default function APPaymentsList() {
                 const open = expanded.has(row.id)
                 return (
                   <Fragment key={row.id}>
-                    <tr onClick={() => toggle(row.id)} className="cursor-pointer hover:bg-gray-50">
+                    <tr onClick={() => toggle(row)} className="cursor-pointer hover:bg-gray-50">
                       <td className="px-3 py-2 text-gray-400">
                         <ChevronRight
                           className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`}
@@ -196,46 +219,20 @@ export default function APPaymentsList() {
                     {open && (
                       <tr className="bg-gray-50/60">
                         <td />
-                        <td colSpan={8} className="px-3 pb-3 pt-0">
-                          <p className="mb-1 mt-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                            Invoices settled
-                          </p>
-                          <ul className="divide-y divide-gray-100">
-                            {row.invoices.map((inv) => (
-                              <li
-                                key={inv.billId}
-                                onClick={() => router.push(`/accounting/ap-bills/${inv.billId}`)}
-                                className="flex cursor-pointer items-center justify-between py-1.5 text-[13px] hover:text-purple-700"
-                              >
-                                <span className="font-mono text-xs">
-                                  {inv.billNumber ?? 'Pending SI'}
-                                </span>
-                                <span className="tabular-nums">{fmtMoney(inv.amount)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                          {row.sources.length > 1 && (
-                            <>
-                              <p className="mb-1 mt-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                                Paid from
-                              </p>
-                              <ul className="divide-y divide-gray-100">
-                                {row.sources.map((src, i) => (
-                                  <li
-                                    key={i}
-                                    className="flex items-center justify-between py-1.5 text-[13px] text-gray-600"
-                                  >
-                                    <span>
-                                      {src.method.replace('_', ' ')}
-                                      {src.bankAccount?.name ? ` · ${src.bankAccount.name}` : ''}
-                                      {src.reference ? ` · ${src.reference}` : ''}
-                                      {src.description ? ` · ${src.description}` : ''}
-                                    </span>
-                                    <span className="tabular-nums">{fmtMoney(src.amount)}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </>
+                        <td colSpan={8} className="px-3 pb-4 pt-0">
+                          {/* The voucher, in place. It already carries the
+                              invoices it settled and what funded it, which is
+                              exactly what the two hand-rolled lists here used
+                              to say — only in the shape the paper uses. */}
+                          {voucherDocs[row.id] ? (
+                            <VoucherDocument
+                              envelope={voucherDocs[row.id]}
+                              onOpenInvoice={(billId) =>
+                                router.push(`/accounting/ap-bills/${billId}`)
+                              }
+                            />
+                          ) : (
+                            <p className="py-3 text-[13px] text-gray-400">Loading voucher…</p>
                           )}
                         </td>
                       </tr>

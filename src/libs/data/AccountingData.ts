@@ -29,6 +29,10 @@ export interface Account {
    * gets a Special Account to pick. Set per account in the database; see
    * the client's own "SPECIAL ACCOUNTS" list. */
   isSpecialAccountControl?: boolean
+  /** Balance-sheet/income-statement classification (REVENUE, ASSET,
+   * ACCOUNTS_RECEIVABLE, …) — finer-grained than `type`. Drives whether an
+   * expense line posting here gets a Sales Invoice field to pick. */
+  category?: string
   isActive: boolean
   createdAt?: string
   updatedAt?: string
@@ -59,7 +63,10 @@ export interface Transaction {
   journalEntryId?: string | null
   accountId: string
   account?: Account
-  item?: string | null
+  /** The item this ledger line is for, when it is for one. Present on the
+   *  per-item revenue/COGS/inventory lines a sale raises; absent on cash,
+   *  receivable, VAT and withholding lines, which are not for an item. */
+  item?: { id: string; name: string; sku: string } | null
   quantity?: number | null
   unitPrice?: number | null
   debit: number

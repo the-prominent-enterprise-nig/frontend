@@ -55,3 +55,28 @@ So: **one receivable**, a **schedule of dues**, and **receipts that draw the bal
 
 1. **Does NIG issue a Sales Invoice for the downpayment?** Today the DP is cash at the till with no AR at all — only `totalAmount - downPayment` is financed into the schedule. Neither `module-scenarios.md` nor any scenario plan says. Not blocking A-F: the DP is not a receivable either way today. Needs the client.
 2. **What is the single invoice's `dueDate`?** `ARInvoice.dueDate` is required and drives the `OVERDUE` badge. For one invoice spanning six dues, the honest answer is "the earliest unpaid line's dueDate", which means it becomes derived rather than stored — or the field stops being meaningful for installment invoices and aging reads the lines exclusively (see gap 8). Decide before B.
+
+## Fallout found later — 2026-09-14
+
+Two defects traced to this scenario's model change, both surfaced while working on [Scenario 50](./scenario-50-journal-entries-match-money-and-stock-plan.md). Same root cause in each: code written when **a due owned its own invoice**, never revisited once a plan became **one receivable with many dues**.
+
+**1. POS Collections reported 12× what the customer owed — FIXED.**
+
+`PosCustomersService.listCollectionsCustomers()` walked the schedule lines and, for each, added `arInvoice.totalAmount - arInvoice.amountPaid`. Every due of a plan cites the _same_ invoice, so a 12-month plan added the whole contract twelve times: a customer owing **₱19,620.00** was listed at **₱235,440.00**. The loop even carried the old assumption in a comment — _"each InstallmentScheduleLine is 1:1 with its own ARInvoice sharing that same due date"_.
+
+Two further faults in the same loop, invisible until the first one was fixed:
+
+- `dueAmount` did the same thing. Hidden only because nothing had matured yet; the first matured due would have told a collector to ask for the entire contract instead of one month.
+- Nothing was settlement-aware. `outstandingCount` counted settled dues, and `nextDueDate` was the earliest due paid or not, so the row would have kept advertising a date already collected.
+
+Now: the receivable counts **once per invoice**, a matured due asks for **its own** `amount - paidAmount`, settled dues are excluded, and `nextDueDate` is the earliest still-open due. Three regression tests in `pos-customers.service.spec.ts`, one pinned to the real ₱19,620 / ₱235,440 figures.
+
+**2. `collections-payment-rebate.e2e-spec.ts` has 3 failing tests — NOT fixed.**
+
+Commit `93cca3e3` (this scenario) deleted the in-order collection guard — the `"payment N on this schedule is still unpaid"` error no longer exists anywhere in `src`. The spec asserting it was never updated, so three tests still expect a `400` that cannot happen:
+
+- _rejects collecting a later due while an earlier one on the same schedule is unpaid_
+- _allows collecting the next due once every earlier one is settled_
+- _rolls excess on a single-due payment forward onto the next unpaid due_ (expects 500, gets 600)
+
+Left alone deliberately: deciding whether in-order collection should still be enforced is a product question, not a test-maintenance one. Either the guard comes back or those three tests go.

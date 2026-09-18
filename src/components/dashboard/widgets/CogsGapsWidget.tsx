@@ -21,7 +21,11 @@ export default function CogsGapsWidget() {
     ;(async () => {
       const res = await getMissingCogsReport(branchId ?? undefined)
       if (cancelled) return
-      setReport(res.success ? (res.data ?? { count: 0, sample: [] }) : { count: 0, sample: [] })
+      setReport(
+        res.success
+          ? (res.data ?? { count: 0, sample: [], items: [] })
+          : { count: 0, sample: [], items: [] }
+      )
     })()
     return () => {
       cancelled = true
@@ -49,21 +53,23 @@ export default function CogsGapsWidget() {
           {report.count} {report.count === 1 ? 'sale is' : 'sales are'} missing a COGS posting
         </p>
       </div>
-      {!isCompact && (
+      {!isCompact && report.items.length > 0 && (
         <div className="flex flex-col gap-0.5">
-          {report.sample.slice(0, limit).map((sale) => (
+          {/* The items, not the sales. A posted sale cannot be repaired after
+              the fact; giving the item a cost stops the next one. */}
+          <p className="px-2 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+            Items with no cost
+          </p>
+          {report.items.slice(0, limit).map((item) => (
             <div
-              key={sale.transactionId}
+              key={item.itemId}
               className="flex items-center justify-between rounded-lg px-2 py-1 hover:bg-zinc-50"
             >
-              <span className="truncate text-xs font-medium text-zinc-800">
-                {sale.transactionNumber}
+              <span className="truncate text-xs font-medium text-prominent-purple-900">
+                {item.name}
               </span>
               <span className="shrink-0 text-[10px] text-zinc-400">
-                {new Date(sale.occurredAt).toLocaleDateString('en-PH', {
-                  month: 'short',
-                  day: 'numeric',
-                })}
+                {item.salesAffected} {item.salesAffected === 1 ? 'sale' : 'sales'}
               </span>
             </div>
           ))}

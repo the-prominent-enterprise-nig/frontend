@@ -57,6 +57,15 @@ export default function JournalEntryDetail({ id }: { id: string }) {
   }
 
   const transactions = entry.transactions ?? []
+  // Most entries are not about items at all — a collection is cash in and a
+  // receivable down, a VAT accrual is one account against another. Showing
+  // Item/Qty/Unit Price/Subtotal on those printed four columns of dashes on
+  // every row. They appear only when at least one line actually has that
+  // detail, which today means the revenue/COGS/inventory lines a sale raises,
+  // and anything hand-keyed with a quantity.
+  const showItemColumns = transactions.some(
+    (t) => t.item != null || t.quantity != null || t.unitPrice != null
+  )
   const totalSubtotal = transactions.reduce((s, t) => {
     const q = t.quantity ?? 0
     const u = t.unitPrice ?? 0
@@ -73,10 +82,17 @@ export default function JournalEntryDetail({ id }: { id: string }) {
       </Link>
 
       <header>
-        <h1 className="font-mono text-2xl font-semibold text-gray-900">
-          {entry.reference || entry.id.slice(0, 8)}
+        {/* The description, not the reference. One sale raises two entries —
+            "Installment Plan …" and "Installment Down Payment …" — and both
+            carry the SAME source document number, so a reference heading made
+            them identical on screen and sent readers to the wrong one. What
+            the entry IS belongs at the top; the number it came from is a
+            detail, and is still shown below and beside the date. */}
+        <h1 className="text-2xl font-semibold text-prominent-purple-900">
+          {entry.description || entry.reference || entry.id.slice(0, 8)}
         </h1>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+          {entry.reference && <span className="font-mono text-gray-600">{entry.reference}</span>}
           <span>{formatDate(entry.date)}</span>
           {entry.sourceModule ? (
             <span className="rounded bg-purple-50 px-1.5 py-0.5 text-xs font-medium text-purple-700">
@@ -115,12 +131,6 @@ export default function JournalEntryDetail({ id }: { id: string }) {
               <span className="text-left font-medium text-gray-800">{entry.payee}</span>
             </>
           )}
-          {entry.description && (
-            <>
-              <span className="text-gray-500">Description</span>
-              <span className="text-left font-medium text-gray-800">{entry.description}</span>
-            </>
-          )}
           {entry.postedBy && (
             <>
               <span className="text-gray-500">Posted by</span>
@@ -153,11 +163,15 @@ export default function JournalEntryDetail({ id }: { id: string }) {
               <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
                   <th className="py-2 pr-4">Account</th>
-                  <th className="py-2 pr-4">Item</th>
+                  {showItemColumns && <th className="py-2 pr-4">Item</th>}
                   <th className="py-2 pr-4">Description</th>
-                  <th className="py-2 pr-4 text-right">Qty</th>
-                  <th className="py-2 pr-4 text-right">Unit Price</th>
-                  <th className="py-2 pr-4 text-right">Subtotal</th>
+                  {showItemColumns && (
+                    <>
+                      <th className="py-2 pr-4 text-right">Qty</th>
+                      <th className="py-2 pr-4 text-right">Unit Price</th>
+                      <th className="py-2 pr-4 text-right">Subtotal</th>
+                    </>
+                  )}
                   <th className="py-2 pr-4 text-right">Debit</th>
                   <th className="py-2 text-right">Credit</th>
                 </tr>
@@ -172,15 +186,21 @@ export default function JournalEntryDetail({ id }: { id: string }) {
                       <td className="py-2 pr-4 text-gray-900">
                         {t.account ? `${t.account.number} — ${t.account.name}` : t.accountId}
                       </td>
-                      <td className="py-2 pr-4 text-gray-600">{t.item || '—'}</td>
+                      {showItemColumns && (
+                        <td className="py-2 pr-4 text-gray-600">{t.item?.name ?? '—'}</td>
+                      )}
                       <td className="py-2 pr-4 text-gray-500">{t.description || '—'}</td>
-                      <td className="py-2 pr-4 text-right tabular-nums">{qty ?? '—'}</td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {unitPrice != null ? formatMoney(unitPrice) : '—'}
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {subtotal != null ? formatMoney(subtotal) : '—'}
-                      </td>
+                      {showItemColumns && (
+                        <>
+                          <td className="py-2 pr-4 text-right tabular-nums">{qty ?? '—'}</td>
+                          <td className="py-2 pr-4 text-right tabular-nums">
+                            {unitPrice != null ? formatMoney(unitPrice) : '—'}
+                          </td>
+                          <td className="py-2 pr-4 text-right tabular-nums">
+                            {subtotal != null ? formatMoney(subtotal) : '—'}
+                          </td>
+                        </>
+                      )}
                       <td className="py-2 pr-4 text-right font-medium tabular-nums">
                         {t.debit ? formatMoney(t.debit) : '—'}
                       </td>
@@ -193,12 +213,17 @@ export default function JournalEntryDetail({ id }: { id: string }) {
               </tbody>
               <tfoot className="border-t border-gray-300">
                 <tr>
-                  <td colSpan={5} className="py-2 pr-4 text-right font-semibold text-gray-600">
+                  <td
+                    colSpan={showItemColumns ? 5 : 2}
+                    className="py-2 pr-4 text-right font-semibold text-gray-600"
+                  >
                     Total
                   </td>
-                  <td className="py-2 pr-4 text-right font-bold tabular-nums">
-                    {formatMoney(totalSubtotal)}
-                  </td>
+                  {showItemColumns && (
+                    <td className="py-2 pr-4 text-right font-bold tabular-nums">
+                      {formatMoney(totalSubtotal)}
+                    </td>
+                  )}
                   <td className="py-2 pr-4 text-right font-bold tabular-nums">
                     {formatMoney(entry.totalDebit)}
                   </td>
