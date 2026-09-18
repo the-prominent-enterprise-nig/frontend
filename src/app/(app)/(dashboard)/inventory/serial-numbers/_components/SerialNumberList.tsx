@@ -496,7 +496,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                   <table className="w-full text-sm">
                     <thead>
                       <tr
-                        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
                       >
                         {showSelection && (
                           <th className="w-10 px-4 py-[9px]">
@@ -545,20 +545,20 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-1.5">
                                 <span
-                                  className={`${MONO} text-[12.5px] font-semibold text-[#17171c]`}
+                                  className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
                                 >
                                   {serial.serialNumber}
                                 </span>
                                 <CopySerialButton serialNumber={serial.serialNumber} />
                               </div>
                               {displayClassificationLabel(serial.item?.type?.name) && (
-                                <span className="text-[11px] text-[#8b8b9b]">
+                                <span className="text-[13px] text-[#8b8b9b]">
                                   {displayClassificationLabel(serial.item?.type?.name)}
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="px-4 py-[11px] text-[12.5px] text-[#5b5b6b] hidden sm:table-cell">
+                          <td className="px-4 py-[11px] text-[14.5px] text-[#5b5b6b] hidden sm:table-cell">
                             {(() => {
                               const wh = serial.warehouse ?? serial.currentWarehouse
                               const owner = wh?.branch?.name ?? wh?.name ?? '—'
@@ -571,53 +571,53 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                                   <div className="font-medium text-[#8a4b06]">
                                     {serial.consignedToVenue}
                                   </div>
-                                  <div className="text-[11px] text-[#8b8b9b]">out from {owner}</div>
+                                  <div className="text-[13px] text-[#8b8b9b]">out from {owner}</div>
                                 </div>
                               )
                             })()}
                           </td>
-                          <td className="px-4 py-[11px] text-[12.5px] font-medium text-[#17171c] hidden lg:table-cell">
+                          <td className="px-4 py-[11px] text-[14.5px] font-medium text-[#17171c] hidden lg:table-cell">
                             {brandModel(serial.item)}
                           </td>
                           <td className="px-4 py-[11px] hidden lg:table-cell">
                             {serial.goodsReceiptLine?.goodsReceipt ? (
                               <Link
                                 href={`/inventory/stock/reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
-                                className={`${MONO} text-[12px] text-[#5b21b6] hover:underline`}
+                                className={`${MONO} text-[14px] text-[#5b21b6] hover:underline`}
                               >
                                 {serial.goodsReceiptLine.goodsReceipt.code}
                               </Link>
                             ) : (
-                              <span className={`${MONO} text-[12px] text-[#5b5b6b]`}>—</span>
+                              <span className={`${MONO} text-[14px] text-[#5b5b6b]`}>—</span>
                             )}
                             {serial.goodsReceiptLine?.goodsReceipt?.stockTransfer
                               ?.transferNumber && (
-                              <div className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                              <div className={`${MONO} text-[13px] text-[#8b8b9b]`}>
                                 ST{' '}
                                 {serial.goodsReceiptLine.goodsReceipt.stockTransfer.transferNumber}
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-[11px] text-[12.5px] text-[#5b5b6b] hidden lg:table-cell">
+                          <td className="px-4 py-[11px] text-[14.5px] text-[#5b5b6b] hidden lg:table-cell">
                             {originLabel(serial)}
                           </td>
-                          <td className="px-4 py-[11px] text-[12.5px] text-[#8b8b9b] hidden md:table-cell">
+                          <td className="px-4 py-[11px] text-[14.5px] text-[#8b8b9b] hidden md:table-cell">
                             {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
                               ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
                               : '—'}
                           </td>
                           {caravanView && (
                             <td className="px-4 py-[11px]">
-                              <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf3e7] px-2.5 py-0.5 text-[11px] font-medium text-[#8a4b06]">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf3e7] px-2.5 py-0.5 text-[13px] font-medium text-[#8a4b06]">
                                 {locationLabel(serial.currentWarehouse)}
                               </span>
                             </td>
                           )}
                           {caravanView && (
-                            <td className="px-4 py-[11px] text-[12.5px] text-[#5b5b6b]">
+                            <td className="px-4 py-[11px] text-[14.5px] text-[#5b5b6b]">
                               <div>{serial.caravanEventName ?? '—'}</div>
                               {(serial.caravanEventStartDate || serial.caravanEventEndDate) && (
-                                <div className="text-[11px] text-[#8b8b9b]">
+                                <div className="text-[13px] text-[#8b8b9b]">
                                   {serial.caravanEventStartDate
                                     ? formatShortDate(serial.caravanEventStartDate)
                                     : '—'}

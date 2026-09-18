@@ -580,7 +580,7 @@ export default function ReceivingReportsTab({
             >
               <div
                 role="row"
-                className={`${grid} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                className={`${grid} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
               >
                 <span role="columnheader">Receipt No.</span>
                 <span role="columnheader" className="pl-6">
@@ -624,33 +624,33 @@ export default function ReceivingReportsTab({
                         </p>
                         <CopyCodeButton code={report.code} />
                       </div>
-                      <p className="text-[11px] text-[#a3a3b2]">{fmtDate(report.receivedAt)}</p>
+                      <p className="text-[13px] text-[#a3a3b2]">{fmtDate(report.receivedAt)}</p>
                     </div>
 
                     <div role="cell" className="flex min-w-0 flex-col gap-0.5 pl-6">
-                      <p className="truncate text-[12.5px] font-medium text-[#17171c]">
+                      <p className="truncate text-[14.5px] font-medium text-[#17171c]">
                         {report.supplier?.name ?? '—'}
                       </p>
                       <PoLink report={report} />
                     </div>
 
-                    <span role="cell" className="truncate text-[12.5px] text-[#5b5b6b]">
+                    <span role="cell" className="truncate text-[14.5px] text-[#5b5b6b]">
                       {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
                     </span>
 
-                    <span role="cell" className={`${MONO} text-right text-[12.5px] text-[#8b8b9b]`}>
+                    <span role="cell" className={`${MONO} text-right text-[14.5px] text-[#8b8b9b]`}>
                       {report.lines.length}
                     </span>
 
                     <span
                       role="cell"
-                      className={`${MONO} text-right text-[13px] font-semibold text-[#17171c]`}
+                      className={`${MONO} text-right text-[15px] font-semibold text-[#17171c]`}
                     >
                       {reportUnits(report)}
                     </span>
 
                     {showAmounts && (
-                      <span role="cell" className="text-right text-[12.5px] text-[#17171c]">
+                      <span role="cell" className="text-right text-[14.5px] text-[#17171c]">
                         {amount != null ? (
                           fmtMoney(amount)
                         ) : (

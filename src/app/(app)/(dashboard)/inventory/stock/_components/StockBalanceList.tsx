@@ -104,7 +104,7 @@ function StockStatusBadge({ status }: { status: StockStatus }) {
   const meta = STOCK_STATUS_META[status]
   return (
     <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[5px] px-[9px] py-[3px] text-[11.5px] font-medium ${meta.badge}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[5px] px-[9px] py-[3px] text-[13.5px] font-medium ${meta.badge}`}
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dot}`} />
       {status === 'low' && <AlertTriangle className="h-3 w-3" />}
@@ -367,7 +367,7 @@ export default function StockBalanceList({
             <div role="table" aria-label="Stock balance" className="hidden min-[1080px]:block">
               <div
                 role="row"
-                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
               >
                 <span role="columnheader">Item</span>
                 <span role="columnheader">Category</span>
@@ -406,32 +406,32 @@ export default function StockBalanceList({
                     className={`cursor-pointer border-t border-[#f4f4f6] bg-white hover:bg-[#fcfcfd] ${GRID} px-4 py-[11px]`}
                   >
                     <div role="cell" className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate text-[12.5px] font-medium text-[#17171c]">
+                      <span className="truncate text-[14.5px] font-medium text-[#17171c]">
                         {itemTitle(bal.item)}
                       </span>
                       {subline && (
-                        <span className="truncate text-[11px] text-[#8b8b9b]">{subline}</span>
+                        <span className="truncate text-[13px] text-[#8b8b9b]">{subline}</span>
                       )}
                     </div>
 
-                    <span role="cell" className="truncate text-[12px] text-[#5b5b6b]">
+                    <span role="cell" className="truncate text-[14px] text-[#5b5b6b]">
                       {bal.item?.primaryCategory?.name ?? '—'}
                     </span>
 
                     <span
                       role="cell"
-                      className={`${MONO} text-right text-[13px] font-semibold text-[#17171c]`}
+                      className={`${MONO} text-right text-[15px] font-semibold text-[#17171c]`}
                     >
                       {bal.onHandQty.toLocaleString()}
                     </span>
 
-                    <span role="cell" className={`${MONO} text-right text-[12.5px] text-[#8b8b9b]`}>
+                    <span role="cell" className={`${MONO} text-right text-[14.5px] text-[#8b8b9b]`}>
                       {bal.soldQty.toLocaleString()}
                     </span>
 
                     <span
                       role="cell"
-                      className={`${MONO} text-right text-[12.5px] ${
+                      className={`${MONO} text-right text-[14.5px] ${
                         bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]'
                       }`}
                     >
@@ -440,7 +440,7 @@ export default function StockBalanceList({
 
                     <span
                       role="cell"
-                      className={`${MONO} text-right text-[13.5px] font-semibold ${AVAILABLE_TEXT[status]}`}
+                      className={`${MONO} text-right text-[15.5px] font-semibold ${AVAILABLE_TEXT[status]}`}
                     >
                       {bal.availableQty.toLocaleString()}
                     </span>

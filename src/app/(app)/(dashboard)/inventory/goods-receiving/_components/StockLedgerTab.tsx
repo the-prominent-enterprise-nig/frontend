@@ -52,7 +52,7 @@ function TxBadge({ type }: { type: string }) {
   const meta = TX_META[type] ?? { label: type, badge: 'bg-[#f1f1f4] text-[#3d3d4a]' }
   return (
     <span
-      className={`inline-flex whitespace-nowrap rounded-[5px] px-[9px] py-[3px] text-[11.5px] font-medium ${meta.badge}`}
+      className={`inline-flex whitespace-nowrap rounded-[5px] px-[9px] py-[3px] text-[13.5px] font-medium ${meta.badge}`}
     >
       {meta.label}
     </span>
@@ -83,13 +83,13 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
         <>
           <Link
             href="/inventory/transfers"
-            className={`${MONO} truncate text-[11.5px] text-[#3d3d4a] hover:text-[#5b21b6] hover:underline`}
+            className={`${MONO} truncate text-[13.5px] text-[#3d3d4a] hover:text-[#5b21b6] hover:underline`}
             title="Stock transfer"
           >
             {entry.stockTransferNumber}
           </Link>
           {entry.transferWarehouse && (
-            <p className="truncate text-[11px] text-[#8b8b9b]">
+            <p className="truncate text-[13px] text-[#8b8b9b]">
               {entry.transactionType === 'transfer_out' ? 'to ' : 'from '}
               {entry.transferWarehouse.branch?.name ?? entry.transferWarehouse.name}
             </p>
@@ -97,7 +97,7 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
         </>
       )}
       {entry.supplierDebitMemoNumber && (
-        <p className={`${MONO} truncate text-[11px] text-[#a3a3b2]`} title="Supplier debit memo">
+        <p className={`${MONO} truncate text-[13px] text-[#a3a3b2]`} title="Supplier debit memo">
           DM {entry.supplierDebitMemoNumber}
         </p>
       )}
@@ -105,38 +105,38 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
         (entry.receivingReportId ? (
           <Link
             href={`/inventory/stock/reports/${entry.receivingReportId}`}
-            className={`${MONO} truncate text-[11.5px] text-[#3d3d4a] hover:text-[#5b21b6] hover:underline`}
+            className={`${MONO} truncate text-[13.5px] text-[#3d3d4a] hover:text-[#5b21b6] hover:underline`}
             title="Receiving report"
           >
             {entry.receivingReportCode}
           </Link>
         ) : (
-          <p className={`${MONO} truncate text-[11.5px] text-[#3d3d4a]`} title="Receiving report">
+          <p className={`${MONO} truncate text-[13.5px] text-[#3d3d4a]`} title="Receiving report">
             {entry.receivingReportCode}
           </p>
         ))}
       {entry.purchaseOrderNumber && (
         <Link
           href="/inventory/purchase-orders"
-          className={`${MONO} truncate text-[11px] text-[#8b8b9b] hover:text-[#5b21b6] hover:underline`}
+          className={`${MONO} truncate text-[13px] text-[#8b8b9b] hover:text-[#5b21b6] hover:underline`}
           title="Purchase order"
         >
           {entry.purchaseOrderNumber}
         </Link>
       )}
       {entry.supplier?.name && (
-        <p className="truncate text-[11px] text-[#8b8b9b]" title={entry.supplier.name}>
+        <p className="truncate text-[13px] text-[#8b8b9b]" title={entry.supplier.name}>
           {entry.supplier.name}
         </p>
       )}
       {entry.supplierInvoiceNumber && (
-        <p className={`${MONO} truncate text-[11px] text-[#a3a3b2]`} title="Supplier invoice">
+        <p className={`${MONO} truncate text-[13px] text-[#a3a3b2]`} title="Supplier invoice">
           SI {entry.supplierInvoiceNumber}
         </p>
       )}
       {entry.deliveryReceiptNumber && (
         <p
-          className={`${MONO} truncate text-[11px] text-[#a3a3b2]`}
+          className={`${MONO} truncate text-[13px] text-[#a3a3b2]`}
           title="Supplier's delivery receipt"
         >
           DR {entry.deliveryReceiptNumber}
@@ -388,7 +388,7 @@ export default function StockLedgerTab({
               <table className="w-full table-fixed text-left text-sm">
                 <thead>
                   <tr
-                    className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                    className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
                   >
                     <th className="w-[120px] px-4 py-[9px] font-medium">Type</th>
                     <th className="w-[320px] px-4 py-[9px] font-medium">Item</th>
@@ -420,24 +420,24 @@ export default function StockLedgerTab({
                           <TxBadge type={entry.transactionType} />
                         </td>
                         <td className="px-4 py-[11px]">
-                          <p className="break-words text-[12.5px] font-medium text-[#17171c]">
+                          <p className="break-words text-[14.5px] font-medium text-[#17171c]">
                             {entry.item?.name ?? '—'}
                           </p>
                           {entry.item?.sku && (
-                            <p className={`${MONO} truncate text-[11px] text-[#a3a3b2]`}>
+                            <p className={`${MONO} truncate text-[13px] text-[#a3a3b2]`}>
                               {entry.item.sku}
                             </p>
                           )}
                           {entry.serialNumber && (
                             <p
-                              className={`${MONO} truncate text-[11px] text-[#8b8b9b]`}
+                              className={`${MONO} truncate text-[13px] text-[#8b8b9b]`}
                               title="Serial number"
                             >
                               SN {entry.serialNumber}
                             </p>
                           )}
                         </td>
-                        <td className="hidden overflow-hidden truncate px-4 py-[11px] text-[12.5px] text-[#5b5b6b] sm:table-cell">
+                        <td className="hidden overflow-hidden truncate px-4 py-[11px] text-[14.5px] text-[#5b5b6b] sm:table-cell">
                           {entry.warehouse?.branch?.name ?? entry.warehouse?.name ?? '—'}
                         </td>
                         <td className="hidden overflow-hidden px-4 py-[11px] lg:table-cell">
@@ -445,7 +445,7 @@ export default function StockLedgerTab({
                         </td>
                         <td className="px-4 py-[11px]">
                           <span
-                            className={`${MONO} inline-flex items-center gap-0.5 justify-center whitespace-nowrap text-[13px] font-semibold ${
+                            className={`${MONO} inline-flex items-center gap-0.5 justify-center whitespace-nowrap text-[15px] font-semibold ${
                               positive ? 'text-[#0b6644]' : 'text-[#b42318]'
                             }`}
                           >
@@ -458,7 +458,7 @@ export default function StockLedgerTab({
                           </span>
                         </td>
                         <td
-                          className={`${MONO} hidden px-4 py-[11px] text-[11.5px] text-[#8b8b9b] md:table-cell`}
+                          className={`${MONO} hidden px-4 py-[11px] text-[13.5px] text-[#8b8b9b] md:table-cell`}
                         >
                           {date
                             ? new Date(date).toLocaleDateString('en-PH', {
