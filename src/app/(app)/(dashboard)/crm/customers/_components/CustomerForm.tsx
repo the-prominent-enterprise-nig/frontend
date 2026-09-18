@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, Paperclip, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Paperclip, X } from 'lucide-react'
 import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
@@ -274,7 +274,13 @@ export default function CustomerForm({ id }: { id?: string }) {
       branchId: form.branchId || undefined,
       accountType: form.accountType,
       notes: form.notes || undefined,
-      coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
+      // coMakers is deliberately NOT sent. This form no longer captures them,
+      // and CustomerService.update() treats a provided array as a full
+      // replace — deleteMany + recreate — which hands every co-maker a new id
+      // and, because CreditApplication.coMakerId is an optional FK (SET NULL
+      // on delete), silently detaches the guarantor from every credit
+      // application referencing them. Verified live 2026-09-16. Omitting the
+      // key takes the service's untouched path instead.
       idType: form.idType || undefined,
       idNumber: form.idNumber || undefined,
       idDocumentFileId: form.idDocumentFileId || undefined,
@@ -500,108 +506,10 @@ export default function CustomerForm({ id }: { id?: string }) {
           </div>
         )}
 
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="block text-[13px] font-medium text-gray-700">
-              Co-maker (guarantor)
-            </label>
-            <button
-              type="button"
-              onClick={() =>
-                setField('coMakers', [
-                  ...form.coMakers,
-                  { name: '', relationship: '', contactNumber: '', email: '' },
-                ])
-              }
-              className="flex items-center gap-1 text-[12px] font-medium text-prominent-orange-700 hover:text-prominent-orange-800"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add co-maker
-            </button>
-          </div>
-          <div className="mt-2 space-y-3">
-            {form.coMakers.map((cm, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
-              >
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Name</label>
-                  <input
-                    value={cm.name}
-                    maxLength={255}
-                    placeholder="e.g. Juan Dela Cruz"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], name: e.target.value }
-                      setField('coMakers', next)
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Relationship
-                  </label>
-                  <input
-                    value={cm.relationship}
-                    maxLength={100}
-                    placeholder="e.g. Spouse"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], relationship: e.target.value }
-                      setField('coMakers', next)
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Contact number
-                  </label>
-                  <input
-                    value={cm.contactNumber}
-                    maxLength={50}
-                    placeholder="e.g. 0917 000 1111"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], contactNumber: e.target.value }
-                      setField('coMakers', next)
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Email</label>
-                  <input
-                    value={cm.email ?? ''}
-                    maxLength={255}
-                    type="email"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], email: e.target.value }
-                      setField('coMakers', next)
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setField(
-                      'coMakers',
-                      form.coMakers.filter((_, i) => i !== idx)
-                    )
-                  }
-                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                  aria-label="Remove co-maker"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Co-maker capture lives on the Credit Application, not here — a
+            customer profile is just the customer. The existing coMakers are
+            still hydrated and submitted unchanged above so editing a profile
+            never wipes guarantors captured elsewhere. */}
 
         <div>
           <label className="block text-[13px] font-medium text-gray-700">
