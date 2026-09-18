@@ -309,12 +309,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
       },
       {
-        label: 'Employee Appliance Loans',
-        href: '/accounting/employee-appliance-loans',
-        icon: HandCoins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_APPLIANCE_LOAN_READ,
-      },
-      {
         label: 'Interest Release',
         href: '/accounting/installment-interest-release',
         icon: Percent,
@@ -449,6 +443,17 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // Has a real [id] detail route (unlike its sibling items here,
         // which are all single-page-with-modals) — without this, viewing
         // an application's detail page wouldn't highlight this as active.
+        usePrefix: true,
+      },
+      {
+        // Scenario 52 — issues against the same Employee Cash Loan Special
+        // Account ledger Accounting's Expense screen already posts to.
+        label: 'Employee Cash Loans',
+        href: '/pos/employee-cash-loans',
+        icon: HandCoins,
+        requiredPermission: POS_PERMISSIONS.EMPLOYEE_CASH_LOAN_READ,
+        // Has real [id]/new detail routes now (Scenario 52 revision), same
+        // reason Credit Applications sets this above.
         usePrefix: true,
       },
       {

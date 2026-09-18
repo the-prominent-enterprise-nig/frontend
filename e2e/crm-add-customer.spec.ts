@@ -93,14 +93,12 @@ test.describe('CRM — Add Customer', () => {
       `9${uniqueSuffix.toString().slice(-9)}`
     )
 
-    // Part 3 (scenario-02): co-maker capture.
+    // Co-maker capture was removed from the customer profile form — a
+    // profile is just the customer; guarantors are captured on the Credit
+    // Application (see credit-application-intake.spec.ts). The read-only
+    // display further down still has to render co-makers added elsewhere.
     const coMakerName = `E2E Co-maker ${uniqueSuffix}`
-    await page.getByRole('button', { name: 'Add co-maker' }).click()
-    await fillAllStable([
-      { locator: page.getByPlaceholder('e.g. Juan Dela Cruz'), value: coMakerName },
-      { locator: page.getByPlaceholder('e.g. Spouse'), value: 'Spouse' },
-      { locator: page.getByPlaceholder('e.g. 0917 000 1111'), value: '09171234567' },
-    ])
+    await expect(page.getByRole('button', { name: 'Add co-maker' })).toHaveCount(0)
 
     // The submit button can be un-hydrated (dead onClick) the instant navigation
     // finishes — same hydration race fillStable/fillAllStable work around for
@@ -127,7 +125,14 @@ test.describe('CRM — Add Customer', () => {
     expect(detail.barangayCode).toBe(PH_CHAIN.barangayCode)
     await expect(page.getByText(streetAddress, { exact: false })).toBeVisible()
 
-    // Co-maker shows in the profile's read-only display.
+    // A co-maker attached outside the profile form (here via the API, as
+    // the Credit Application does) still shows in the profile's read-only
+    // display — removing the capture fields must not hide existing data.
+    const addCoMakerRes = await page.request.post(`/api/crm/customers/${customerId}/co-makers`, {
+      data: { name: coMakerName, relationship: 'Spouse', contactNumber: '09171234567' },
+    })
+    expect(addCoMakerRes.ok()).toBeTruthy()
+    await page.reload()
     await expect(page.getByText('Co-maker (Guarantor)')).toBeVisible()
     await expect(page.getByText(`${coMakerName} — Spouse`)).toBeVisible()
 

@@ -52,6 +52,10 @@ export const POS_PERMISSIONS = {
   SERVICE_DRAFTS_SOURCE: 'pos:service-drafts:source',
   SERVICE_DRAFTS_INSTALL: 'pos:service-drafts:install',
   SERVICE_DRAFTS_COMPLETE: 'pos:service-drafts:complete',
+  // Scenario 52 — issues against the same Employee Cash Loan Special
+  // Account ledger Accounting's Expense screen already posts to.
+  EMPLOYEE_CASH_LOAN_READ: 'pos:employee-cash-loan:read',
+  EMPLOYEE_CASH_LOAN_CREATE: 'pos:employee-cash-loan:create',
   WILDCARD: 'pos:*',
 } as const
 
@@ -111,6 +115,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
     'Start the install step on a service job (assign a technician) and record actual materials used',
   'pos:service-drafts:complete':
     'Complete a service job: deduct actual materials used from stock and close the job',
+  'pos:employee-cash-loan:read': 'Search employees and view employee cash-loan balances from POS',
+  'pos:employee-cash-loan:create': 'Issue an employee cash loan from POS — no approval step',
   'pos:*': 'Wildcard full POS access',
 }
 

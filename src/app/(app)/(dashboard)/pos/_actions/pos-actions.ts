@@ -2415,6 +2415,10 @@ export interface SerialNumberRecord {
   /** Only populated by searchSerialsAcrossItems — the item this serial
    * belongs to, since that search doesn't scope to one itemId up front. */
   item?: { id: string; sku: string; name: string } | null
+  /** Set when this unit already has an open transfer (requested, awaiting
+   * approval, or in transit). The serial stays in_stock until dispatch, so
+   * this is the only way the POS picker knows not to offer Request again. */
+  openTransfer?: { transferNumber: string } | null
 }
 
 export async function getAvailableSerialNumbers(
@@ -2517,7 +2521,13 @@ export async function requestStockFromBranch(input: {
   try {
     const result = await api.post<{ id: string }>('/inventory/transfers/request-from-pos', input)
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to request stock' }
+      // errorCode passes through so the picker can tell "someone already
+      // requested this unit" (SERIAL_ALREADY_REQUESTED) from a real failure.
+      return {
+        success: false,
+        error: result.error || 'Failed to request stock',
+        errorCode: result.errorCode,
+      }
     }
     return { success: true, data: result.data }
   } catch {

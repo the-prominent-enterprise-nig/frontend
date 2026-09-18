@@ -352,7 +352,10 @@ function OpenSessionModal({
   const { data: terminalsData } = useTerminals(branchId ? { branchId } : undefined)
   const terminals = terminalsData?.data ?? []
 
-  const [form, setForm] = useState({ terminalId: '', openingCash: 0, notes: '' })
+  // Opening cash is held as a string so the field can show a real "0.00" —
+  // a till legitimately opens empty, and a blank box left cashiers unsure
+  // whether zero had been accepted or the field simply ignored.
+  const [form, setForm] = useState({ terminalId: '', openingCash: '0.00', notes: '' })
 
   const [filtered, setFiltered] = useState<{ id: string; name: string; email: string }[]>([])
   const [usersError, setUsersError] = useState('')
@@ -570,9 +573,10 @@ function OpenSessionModal({
             type="number"
             min={0}
             step={0.01}
-            value={form.openingCash === 0 ? '' : form.openingCash}
-            onChange={(e) =>
-              setForm((p) => ({ ...p, openingCash: parseFloat(e.target.value) || 0 }))
+            value={form.openingCash}
+            onChange={(e) => setForm((p) => ({ ...p, openingCash: e.target.value }))}
+            onBlur={(e) =>
+              setForm((p) => ({ ...p, openingCash: (parseFloat(e.target.value) || 0).toFixed(2) }))
             }
           />
         </Field>
@@ -590,7 +594,13 @@ function OpenSessionModal({
           Cancel
         </button>
         <button
-          onClick={() => onSubmit({ ...form, cashierId: verifiedCashier!.id })}
+          onClick={() =>
+            onSubmit({
+              ...form,
+              openingCash: parseFloat(form.openingCash) || 0,
+              cashierId: verifiedCashier!.id,
+            })
+          }
           disabled={!canSubmit}
           className="btn-primary disabled:opacity-50"
         >
