@@ -454,8 +454,8 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
           Release &amp; Application Form Approvals
         </h1>
         <p className="mt-0.5 text-sm text-gray-500">
-          Serial-tracked sales and credit (charge) sales awaiting manager approval before their
-          invoice is created.
+          Installment sales (in-house or TPF) awaiting manager approval before their invoice is
+          created.
         </p>
       </div>
 
