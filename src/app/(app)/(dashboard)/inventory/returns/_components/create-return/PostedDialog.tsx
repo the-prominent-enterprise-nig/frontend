@@ -8,7 +8,6 @@ type Props = {
   result: CustomerReturnResult
   settlement: ReturnSettlement
   branchName?: string
-  onPrint: () => void
   onClose: () => void
 }
 
@@ -22,7 +21,7 @@ type Props = {
  * a settled invoice posts correctly and credits nothing, and that is worth
  * saying in full rather than colouring a toast amber.
  */
-export default function PostedDialog({ result, settlement, branchName, onPrint, onClose }: Props) {
+export default function PostedDialog({ result, settlement, branchName, onClose }: Props) {
   // A null memo is only worth flagging where one was actually expected. A cash
   // return credits nothing by design and needs no explaining.
   const creditMissed = !!result.arInvoiceId && !result.creditMemoId
@@ -79,14 +78,10 @@ export default function PostedDialog({ result, settlement, branchName, onPrint, 
           </p>
         )}
 
+        {/* Print slip is deferred: the RR number above is what the clerk writes
+            on the customer's copy, and a printed slip has no agreed format yet.
+            printReturnSlip.ts stays put for when it does. */}
         <div className="flex flex-wrap items-center gap-[9px]">
-          <button
-            type="button"
-            onClick={onPrint}
-            className="cursor-pointer rounded-lg border border-[#b6e0cd] bg-white px-[15px] py-2.5 text-[13px] font-medium text-[#0b6644] hover:bg-[#f4fbf7]"
-          >
-            Print slip
-          </button>
           <button
             type="button"
             onClick={onClose}

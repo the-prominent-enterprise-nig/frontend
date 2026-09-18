@@ -106,6 +106,12 @@ export const CustomerReturnLineFormSchema = z
     faultNote: z.string().max(400).optional(),
     serialNumberId: z.string().optional(),
     serialNumber: z.string().optional(),
+    /** Whether the ITEM is serial-tracked — not whether this sale line
+     *  recorded a serial. The server decides whether an exchange needs a
+     *  named replacement off the item, so a tracked item sold without a
+     *  serial (a line from before tracking was switched on) has to ask for
+     *  one here too, or the post is refused after the fact. Never posted. */
+    itemSerialTracked: z.boolean().optional(),
     sourcePosTransactionLineId: z.string().optional(),
     sourceLedgerId: z.string().optional(),
     /** The receipt this line was sold on. Never posted — it is what the form
@@ -159,6 +165,19 @@ export const CustomerReturnLineFormSchema = z
           message: 'A repair covers exactly one unit',
         })
       }
+    }
+    // The server refuses a tracked exchange with no named replacement: the
+    // unit coming back is quarantined and an unnamed one walks out.
+    if (
+      line.disposition === 'exchange' &&
+      line.itemSerialTracked &&
+      !line.replacementSerialNumberId
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['replacementSerialNumberId'],
+        message: 'Pick the replacement unit going out',
+      })
     }
   })
 
@@ -224,6 +243,10 @@ export const ReturnSummarySchema = z.object({
   /** Set on a document row: the RTN- number, and the lines it carries. A
    *  legacy single-item return has neither. */
   returnNumber: z.string().optional().nullable(),
+  /** Whether the document posted. Distinct from `outcome`, which says what
+   *  shape of record the row is. Absent on the two legacy arms, which have
+   *  no header to carry a status. */
+  status: z.string().optional().nullable(),
   lineCount: z.number().optional(),
   accountingNote: z.string().optional().nullable(),
   arInvoiceId: z.string().optional().nullable(),
@@ -288,10 +311,26 @@ export const CustomerPurchaseSchema = z.object({
   itemId: z.string(),
   itemName: z.string().nullable(),
   itemSku: z.string().nullable(),
+  /** Whether the item is serial-tracked. Distinct from `serialNumberId`,
+   *  which only says whether THIS sale line recorded a unit — a tracked item
+   *  sold without one still needs a named replacement to be exchanged, which
+   *  is the rule the server enforces. Optional so an older backend that does
+   *  not send it falls back to the serial on the line. */
+  itemSerialTracked: z.boolean().optional(),
   quantity: z.coerce.number(),
   unitPrice: z.coerce.number(),
   serialNumberId: z.string().nullable(),
   serialNumber: z.string().nullable(),
+  /** The sale's own stock ledger row, so the FIFO/LIFO cost layer is restored
+   *  at the cost this exact unit left on. Null for a weighted-average item,
+   *  which never gets a sale-time ledger row — which is why the quantity cap
+   *  keys on the POS line instead. */
+  sourceLedgerId: z.string().nullable().optional(),
+  /** Who the sale was to, when it had an account behind it. A walk-in found
+   *  by invoice number starts with no customer, so the form learns the name
+   *  from the sale it matched rather than asking for it again. */
+  customerId: z.string().nullable().optional(),
+  customerName: z.string().nullable().optional(),
   transactionNumber: z.string(),
   /** The cashier-entered Sales Invoice number off the POS. This is the paper
    *  the customer keeps, so it is what they produce as proof of purchase —

@@ -56,7 +56,7 @@ function cells(s: ReturnSettlement): Cell[] {
 
 export default function SettlementLedger({ settlement, notes, onNotes }: Props) {
   return (
-    <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
+    <div className="shrink-0 overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
       <div className="grid grid-cols-2 md:grid-cols-[1fr_1fr_1fr_1.15fr]">
         {cells(settlement).map((cell, i) => (
           <div

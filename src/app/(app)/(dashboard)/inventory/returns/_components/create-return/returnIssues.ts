@@ -111,12 +111,17 @@ export function collectGaps(values: CustomerReturnFormValues): ReturnGap[] {
       }
     }
 
-    // Only a serial-tracked unit needs a named replacement, and the only
-    // thing the form knows about that is whether the unit coming back had a
-    // serial of its own. Saying "a serial-tracked swap needs one" on a line
-    // that is not serial-tracked sent people looking for a picker that had
-    // nothing to offer them.
-    if (line.disposition === 'exchange' && line.serialNumberId && !line.replacementSerialNumberId) {
+    // Only a serial-tracked item needs a named replacement — and that is a
+    // fact about the item, not about whether this sale line happened to
+    // record a serial. Keyed on the latter, a tracked item sold without one
+    // was offered a counted swap the server then refused. Saying it on a
+    // line that really is untracked is the other half of the same mistake:
+    // it sends people looking for a picker with nothing to offer them.
+    if (
+      line.disposition === 'exchange' &&
+      line.itemSerialTracked &&
+      !line.replacementSerialNumberId
+    ) {
       gaps.push({
         need: `a replacement unit on ${at}`,
         message: `${named}: choose the replacement unit going out.`,

@@ -8,14 +8,23 @@ import {
 } from '@/src/schema/inventory/returns'
 import { DISPOSITION_DOT } from './returnTokens'
 
+/** Why one of the five cannot be chosen for this particular line: `note`
+ *  replaces the consequence under the label, `why` is the tooltip. */
+export type DispositionBlock = { note: string; why: string }
+
 type Props = {
   value: ReturnDisposition | ''
   onChange: (value: ReturnDisposition) => void
-  /** No unit of this item is on the shelf here, so there is nothing to swap
-   *  it for. The option stays visible and says why rather than disappearing —
-   *  a button that is sometimes missing is harder to trust than one that is
-   *  greyed out with a reason. */
-  exchangeUnavailable: boolean
+  /** The options this line cannot take, and the reason for each — nothing of
+   *  this item on the shelf to swap for, or a sale that never recorded which
+   *  unit went out. They stay visible and say why rather than disappearing: a
+   *  button that is sometimes missing is harder to trust than one that is
+   *  greyed out with a reason. Anything absent from the map is available.
+   *
+   *  The reason a line cannot take an option is always something the server
+   *  would refuse too — the point of saying it here is that it is said before
+   *  the return is filled in, not after the post comes back. */
+  unavailable: Partial<Record<ReturnDisposition, DispositionBlock>>
   /** True once the clerk has tried to post, so an unanswered question can go
    *  red without nagging anyone who has only just ticked the row. */
   showError: boolean
@@ -30,18 +39,14 @@ type Props = {
  * the same reason — the clerk choosing "quarantine" needs to know it means the
  * unit is not sellable, at the moment of choosing.
  */
-export default function DispositionGrid({
-  value,
-  onChange,
-  exchangeUnavailable,
-  showError,
-}: Props) {
+export default function DispositionGrid({ value, onChange, unavailable, showError }: Props) {
   return (
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
       {DISPOSITION_ORDER.map((key) => {
         const meta = DISPOSITION_META[key]
         const selected = value === key
-        const off = key === 'exchange' && exchangeUnavailable
+        const blocked = unavailable[key]
+        const off = !!blocked
 
         const button = (
           <button
@@ -76,14 +81,14 @@ export default function DispositionGrid({
                   off ? 'text-[#a3a3b2]' : selected ? 'text-[#3d3d4a]' : 'text-[#5b5b6b]'
                 }`}
               >
-                {off ? 'none in stock' : meta.note}
+                {blocked ? blocked.note : meta.note}
               </span>
             </span>
           </button>
         )
 
-        return off ? (
-          <Tooltip key={key} label="No replacement unit in this branch" side="top">
+        return blocked ? (
+          <Tooltip key={key} label={blocked.why} side="top">
             {/* Wrapped, not applied to the button: a disabled button fires no
                 pointer events, so the tooltip would never open on the one
                 option that actually needs explaining. */}

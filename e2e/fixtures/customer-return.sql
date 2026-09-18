@@ -22,7 +22,9 @@ DECLARE
   v_item   text := gen_random_uuid()::text;
   v_txn    text := gen_random_uuid()::text;
   v_sitem  text := gen_random_uuid()::text;
+  v_uitem  text := gen_random_uuid()::text;
   v_receipt text := gen_random_uuid()::text;
+  v_ureceipt text := gen_random_uuid()::text;
   v_sold_sn text;
 BEGIN
   SELECT "enterpriseOwnerId" INTO v_tenant
@@ -40,7 +42,7 @@ BEGIN
   -- foreign keys are there to insist on.
   DELETE FROM customer_return_lines
    WHERE "itemId" IN (
-     SELECT id FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER')
+     SELECT id FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER', 'E2E-RETUI-NOSN')
    );
   DELETE FROM customer_returns
    WHERE "customerId" IN (
@@ -48,11 +50,11 @@ BEGIN
    );
   DELETE FROM stock_cost_layers
    WHERE "itemId" IN (
-     SELECT id FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER')
+     SELECT id FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER', 'E2E-RETUI-NOSN')
    );
   DELETE FROM stock_ledger
    WHERE "itemId" IN (
-     SELECT id FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER')
+     SELECT id FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER', 'E2E-RETUI-NOSN')
    );
   DELETE FROM serial_numbers
    WHERE "serialNumber" LIKE 'E2E-RETUI-SN-%';
@@ -63,9 +65,9 @@ BEGIN
   DELETE FROM pos_transactions WHERE "transactionNumber" = 'E2E-RETUI-TXN-01';
   DELETE FROM stock_balances
    WHERE "itemId" IN (
-     SELECT id FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER')
+     SELECT id FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER', 'E2E-RETUI-NOSN')
    );
-  DELETE FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER');
+  DELETE FROM items WHERE sku IN ('E2E-RETUI-ITEM', 'E2E-RETUI-SER', 'E2E-RETUI-NOSN');
   DELETE FROM customers WHERE "customerCode" = 'E2E-RETUI-01';
 
   INSERT INTO customers (id,"tenantId","customerCode",name,"customerType","paymentTerms","createdAt","updatedAt")
@@ -110,4 +112,31 @@ BEGIN
 
   INSERT INTO pos_transaction_lines (id,"tenantId","transactionId","itemId",quantity,"unitPrice","lineTotal","unitCost","serialNumberId","createdAt")
   VALUES (gen_random_uuid()::text, v_tenant, v_txn, v_sitem, 1, 2500, 2500, 1500, v_sold_sn, now());
+
+  -- ── A serial-tracked item sold WITHOUT a serial on the line.
+  -- The two ways of asking "is this tracked?" disagree here, and only here:
+  -- the item says yes, the sale line says nothing. The server decides off the
+  -- item, so an exchange of this unit needs a named replacement — while the
+  -- screen, which used to read the sale line, offered a counted swap and let
+  -- the clerk post a return the server then refused. A real POS line looks
+  -- like this whenever tracking was switched on after the sale.
+  INSERT INTO items (id,"tenantId",sku,name,"baseUnitId","sellingPrice","isSerialTracked","createdAt","updatedAt")
+  VALUES (v_uitem, v_tenant, 'E2E-RETUI-NOSN', 'E2E Returns UI Untracked Sale', v_uom, 1800, true, now(), now());
+
+  INSERT INTO stock_balances (id,"tenantId","itemId","warehouseId","onHandQty","availableQty","reservedQty")
+  VALUES (gen_random_uuid()::text, v_tenant, v_uitem, v_wh, 3, 3, 0);
+
+  INSERT INTO stock_ledger (id,"tenantId","itemId","warehouseId","transactionType","quantityChange","unitCost","occurredAt")
+  VALUES (v_ureceipt, v_tenant, v_uitem, v_wh, 'receipt', 3, 1100, now());
+
+  INSERT INTO stock_cost_layers (id,"tenantId","itemId","warehouseId","receiptLedgerId","unitCost","originalQty","remainingQty","receivedAt")
+  VALUES (gen_random_uuid()::text, v_tenant, v_uitem, v_wh, v_ureceipt, 1100, 3, 3, now());
+
+  -- The unit on the shelf the swap can hand over. Nothing corresponds to it
+  -- on the sale side — that is the whole point of this row.
+  INSERT INTO serial_numbers (id,"tenantId","itemId","serialNumber",status,"currentWarehouseId","createdAt","updatedAt")
+  VALUES (gen_random_uuid()::text, v_tenant, v_uitem, 'E2E-RETUI-SN-SPARE', 'in_stock', v_wh, now(), now());
+
+  INSERT INTO pos_transaction_lines (id,"tenantId","transactionId","itemId",quantity,"unitPrice","lineTotal","unitCost","createdAt")
+  VALUES (gen_random_uuid()::text, v_tenant, v_txn, v_uitem, 1, 1800, 1800, 1100, now());
 END $$;

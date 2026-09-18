@@ -9,7 +9,7 @@ import {
   type CustomerReturnLineFormValues,
   type ReturnDisposition,
 } from '@/src/schema/inventory/returns'
-import DispositionGrid from './DispositionGrid'
+import DispositionGrid, { type DispositionBlock } from './DispositionGrid'
 import ReplacementPicker from './ReplacementPicker'
 import FaultNoteCard from './FaultNoteCard'
 import { useReplacementUnits } from './useReplacementUnits'
@@ -45,6 +45,24 @@ const CHIP = `${MONO} rounded px-[7px] py-0.5 text-[10px]`
  * old two-panel arrangement made them match a row in the picker to a row in
  * the table by name to be sure they had answered about the right one.
  */
+/**
+ * Whether this sale's item is serial-tracked — the single rule the exchange
+ * turns on.
+ *
+ * Read off the item, never off `serialNumberId`. That field only says whether
+ * this sale line recorded a unit, and a tracked item sold without one (a line
+ * from before tracking was switched on, or a fixture) reads as untracked
+ * through it — which offered a counted swap for a unit the server then
+ * refused, with the return already filled in. `?? !!serialNumberId` is the
+ * fallback for a backend not yet sending the field.
+ */
+export function purchaseIsSerialTracked(purchase: {
+  itemSerialTracked?: boolean
+  serialNumberId?: string | null
+}): boolean {
+  return purchase.itemSerialTracked ?? !!purchase.serialNumberId
+}
+
 export default function PurchaseRow({
   purchase,
   line,
@@ -57,7 +75,7 @@ export default function PurchaseRow({
   const picked = !!line
   const days = daysSince(purchase.occurredAt)
   const outside = days > RETURN_WINDOW_DAYS
-  const serialTracked = !!purchase.serialNumberId
+  const serialTracked = purchaseIsSerialTracked(purchase)
   const soldQty = Number(purchase.quantity)
 
   const { units, isLoading } = useReplacementUnits({
@@ -78,6 +96,29 @@ export default function PurchaseRow({
       ? disposition
       : null
   const overSold = !!line && (!(line.quantity > 0) || line.quantity > soldQty)
+
+  // The two dispositions this line may not be able to take, worked out before
+  // the clerk picks one. Both are rules the server enforces anyway; saying
+  // them here is what stops a return being filled in against an option that
+  // was never going to post.
+  const unavailable: Partial<Record<ReturnDisposition, DispositionBlock>> = {}
+  if (serialTracked && !isLoading && units.length === 0) {
+    unavailable.exchange = {
+      note: 'none in stock',
+      why: 'No replacement unit in this branch',
+    }
+  }
+  // A custody sheet records one named serial, so a repair intake needs to
+  // know which unit it has. The sale is the only thing that can say — and a
+  // sale that recorded no serial leaves nothing to name, whatever is standing
+  // on the counter. Offering it anyway asked for "the specific unit" from a
+  // row that had no way to answer.
+  if (!purchase.serialNumberId) {
+    unavailable.repair = {
+      note: 'no unit on record',
+      why: 'This sale did not record which unit went out, and a repair intake takes custody of one named unit',
+    }
+  }
 
   return (
     <div className={`${first ? '' : 'border-t border-[#f4f4f6]'} ${picked ? 'bg-[#fdfcff]' : ''}`}>
@@ -202,7 +243,7 @@ export default function PurchaseRow({
                   faultNote: DISPOSITION_META[value].needs === 'text' ? line.faultNote : undefined,
                 })
               }
-              exchangeUnavailable={serialTracked && !isLoading && units.length === 0}
+              unavailable={unavailable}
               showError={showError}
             />
           </div>
