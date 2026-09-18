@@ -27,7 +27,7 @@ import { receivingReportPoCode } from '@/src/libs/format/receiving-report'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
-// Same IBM Plex + #5b21b6 palette as the sibling Stock Ledger/Stock Balance
+// Same #5b21b6 palette as the sibling Stock Ledger/Stock Balance
 // tabs, and the same CSS-grid "table" (role="table"/"row"/"cell" instead of
 // a real <table>) so columns line up the same way Stock Balance's do.
 

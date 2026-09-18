@@ -1,7 +1,7 @@
 // Shared type tokens and small formatters for the procurement screens, which
-// follow the Purchase Orders / Create Purchase Order designs' own IBM Plex +
-// #5b21b6 palette rather than the app-wide Poppins brand tokens. The two font
-// CSS variables are registered by next/font in app/layout.tsx.
+// follow the Purchase Orders / Create Purchase Order designs' own #5b21b6
+// palette. Typography is the app-wide Poppins brand font, same as every other
+// screen — see @/src/libs/design/plex.
 //
 // Colours stay as inline Tailwind arbitrary values at each call site — they
 // vary per element, whereas these two are applied wholesale.

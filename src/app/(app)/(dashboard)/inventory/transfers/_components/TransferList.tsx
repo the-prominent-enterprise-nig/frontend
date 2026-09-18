@@ -28,10 +28,9 @@ import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/pr
 import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
 
-// This screen follows the Stock Transfers design's own IBM Plex + #5b21b6
-// palette — the same system the Purchase Orders screens use, which is why the
-// badge spec and colour values come from procurementTokens rather than the
-// app-wide Poppins brand tokens.
+// This screen follows the Stock Transfers design's own #5b21b6 palette — the
+// same system the Purchase Orders screens use, which is why the badge spec and
+// colour values come from procurementTokens.
 // `tone` is the saturated per-status colour the design uses for the KPI tile
 // and pill icons — deliberately stronger than the badge's text colour, which
 // has to stay readable on its own tinted background.

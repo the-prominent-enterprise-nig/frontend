@@ -11,7 +11,7 @@ import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import type { StockLedgerEntry } from '@/src/schema/inventory/goods-receiving'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
-// Follows Stock Balance's own IBM Plex + #5b21b6 palette (PLEX/MONO imported
+// Follows Stock Balance's own #5b21b6 palette (PLEX/MONO imported
 // from procurementTokens, shared across the Inventory module's operational
 // screens) so the two tabs read as one system rather than Balance's polish
 // stopping at the tab boundary.
@@ -30,6 +30,10 @@ const TX_META: Record<string, { label: string; badge: string }> = {
   return: { label: 'Return', badge: 'bg-[#fdeaf0] text-[#9d174d]' },
   write_off: { label: 'Write-off', badge: 'bg-[#fdeceb] text-[#b42318]' },
   supplier_return: { label: 'Supplier Return', badge: 'bg-[#eceef5] text-[#3d4a7a]' },
+  // The replacement unit leaving on an exchange. Named for what the clerk did
+  // rather than the enum: an unmapped type fell through to the raw
+  // `exchange_out`, which is the one row on this ledger nobody could read.
+  exchange_out: { label: 'Exchange Out', badge: 'bg-[#e8e9fb] text-[#312e81]' },
 }
 
 const TRANSACTION_TYPE_OPTIONS = [
@@ -41,6 +45,7 @@ const TRANSACTION_TYPE_OPTIONS = [
   { value: 'return', label: 'Return' },
   { value: 'write_off', label: 'Write-off' },
   { value: 'supplier_return', label: 'Supplier Return' },
+  { value: 'exchange_out', label: 'Exchange Out' },
 ]
 
 function TxBadge({ type }: { type: string }) {

@@ -1,19 +1,13 @@
-// The IBM Plex + #5b21b6 design language, shared by the screens whose designs
-// call for it — procurement and price lists — rather than the app-wide
-// Poppins brand tokens. The two font CSS variables are registered by
-// next/font in app/layout.tsx.
+// The shared design language for the screens that follow the #5b21b6 palette —
+// procurement, price lists, returns and their siblings.
 //
-// These live here, not in one feature's token file, because two features now
-// bind to them: a second hand-written copy of the font-family syntax is how
-// the screens quietly drift onto different fonts.
-//
-// Do NOT write Tailwind's square-bracket arbitrary-value syntax for binding
-// font-family anywhere else in this repo unless it names a real, complete
-// variable as these two do — Tailwind v4 scans plain text for class
-// candidates, so a partial version compiles into invalid CSS and 500s every
-// page in the app.
-export const PLEX = 'font-[family-name:var(--font-plex-sans)]'
-export const MONO = 'font-[family-name:var(--font-plex-mono)]'
+// Typography is the app-wide Poppins brand font, same as every other screen:
+// PLEX and MONO resolve to the `--font-sans` / `--font-mono` theme tokens in
+// globals.css, both of which point at Poppins. They stay as named constants so
+// the screens that already bind to them keep one place to change if the
+// typography ever diverges again.
+export const PLEX = 'font-sans'
+export const MONO = 'font-mono'
 
 /** The border treatment shared by every control in these screens' toolbars —
  * search boxes, type-ahead pickers, sort selects — so the whole row reads as

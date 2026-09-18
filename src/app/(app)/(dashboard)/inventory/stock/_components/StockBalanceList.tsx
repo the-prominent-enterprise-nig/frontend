@@ -14,10 +14,9 @@ import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // This screen follows the Purchase Orders / Receiving Reports design's own
-// IBM Plex + #5b21b6 palette (PLEX/MONO imported from procurementTokens,
-// shared across the Inventory module's operational screens) rather than the
-// app-wide Poppins brand tokens — the same choice already made for
-// procurement. The page ground stays zinc-50 so it sits on the same
+// #5b21b6 palette (PLEX/MONO imported from procurementTokens, shared across
+// the Inventory module's operational screens) — the same choice already made
+// for procurement. The page ground stays zinc-50 so it sits on the same
 // background as the rest of the dashboard shell.
 
 /** Scenario 50 — the client reads an item as brand + model ("Sharp SJML70").

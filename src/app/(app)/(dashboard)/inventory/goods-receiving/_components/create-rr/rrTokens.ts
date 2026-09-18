@@ -1,4 +1,4 @@
-// The Create Receiving Report screen follows the same IBM Plex + #5b21b6
+// The Create Receiving Report screen follows the same #5b21b6
 // language as its sibling receive screen (Receive against PO) and the
 // Receiving Reports list it is launched from — see
 // ../../purchase-orders/_components/receive-po/receiveTokens.ts, whose PANEL /

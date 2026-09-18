@@ -30,9 +30,8 @@ import { locationLabel } from '@/src/libs/format/locationLabel'
 import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
-// Matches Stock Balance's own IBM Plex + #5b21b6 palette (same StockHub tab
-// group) rather than the app-wide Poppins brand tokens, so the two lists in
-// the Stock hub read as one design language.
+// Matches Stock Balance's own #5b21b6 palette (same StockHub tab group), so
+// the two lists in the Stock hub read as one design language.
 
 const statusOptions = SerialStatusSchema.options
 
