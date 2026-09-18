@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Select } from '@/src/components/ui/Select'
 import { X, CreditCard, Search } from 'lucide-react'
 import { useCreditApplications } from '../_hooks/useCreditApplications'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -65,29 +66,37 @@ export default function CreditApplicationList({ session }: { session: SessionUse
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search application no., customer name or code…"
+              placeholder="Search application no., customer, or item/model…"
               aria-label="Search credit applications"
               className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-prominent-purple-500"
             />
           </div>
-          <select
-            value={statusFilter ?? ''}
-            onChange={(e) =>
-              setStatusFilter((e.target.value || undefined) as CreditApplicationStatus | undefined)
-            }
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Statuses</option>
-            {statusOptions.map((s) => (
-              <option key={s} value={s}>
-                {CREDIT_APPLICATION_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-          {statusFilter && (
+          <div className="w-48">
+            <Select
+              value={statusFilter ?? ''}
+              onChange={(v) =>
+                setStatusFilter((v || undefined) as CreditApplicationStatus | undefined)
+              }
+              placeholder="All Statuses"
+              options={[
+                { value: '', label: 'All Statuses' },
+                ...statusOptions.map((s) => ({
+                  value: s,
+                  label: CREDIT_APPLICATION_STATUS_LABELS[s],
+                })),
+              ]}
+            />
+          </div>
+          {/* Clears the search box too — it previously only reset the status
+              dropdown, so "Clear" left the queue still filtered by whatever
+              was typed. */}
+          {(statusFilter || search) && (
             <button
               type="button"
-              onClick={() => setStatusFilter(undefined)}
+              onClick={() => {
+                setStatusFilter(undefined)
+                setSearch('')
+              }}
               className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
             >
               <X className="h-4 w-4" /> Clear
@@ -120,11 +129,29 @@ export default function CreditApplicationList({ session }: { session: SessionUse
           ) : applications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
               <CreditCard className="mb-3 h-10 w-10 text-zinc-300" />
-              <p className="text-sm font-medium text-zinc-500">No credit applications found</p>
-              {canCreate && (
-                <p className="mt-1 text-xs text-zinc-400">
-                  Submit a new application to start a customer&apos;s in-house financing request.
-                </p>
+              {/* "Nothing matched" and "nothing exists yet" are different
+                  problems with different next steps — the single generic
+                  message left the user unable to tell which they were
+                  looking at. */}
+              {search || statusFilter ? (
+                <>
+                  <p className="text-sm font-medium text-zinc-500">
+                    No applications match your filters
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    Try a different search term, or clear the filters above.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-zinc-500">No credit applications yet</p>
+                  {canCreate && (
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Submit a new application to start a customer&apos;s in-house financing
+                      request.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           ) : (

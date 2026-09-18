@@ -68,7 +68,11 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   // be once useFieldArray shifts indices.
   function handleSelectItem(meta: CreditApplicationItemMeta) {
     setItemMeta(meta)
-    setValue(estimatedPricePath, (meta.sellingPrice ?? undefined) as never)
+    // Number() because the API serializes Decimal as a string.
+    setValue(
+      estimatedPricePath,
+      (meta.sellingPrice != null ? Number(meta.sellingPrice) : undefined) as never
+    )
   }
 
   // Edit mode prefills itemMeta from the loaded application but reset()'s
@@ -77,7 +81,7 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   // financing preview's total is correct without a fresh item search.
   useEffect(() => {
     if (initialItem?.itemMeta.sellingPrice != null) {
-      setValue(estimatedPricePath, initialItem.itemMeta.sellingPrice as never)
+      setValue(estimatedPricePath, Number(initialItem.itemMeta.sellingPrice) as never)
     }
     // Only ever run once per row on mount — initialItem is a stable seed,
     // not something that should re-fire this on every parent re-render.
@@ -90,7 +94,12 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   return (
     <div className="space-y-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3">
       <div className="flex items-start gap-2">
-        <div className="flex-1">
+        {/* min-w-0: without it this flex item keeps its automatic minimum
+            and refuses to shrink below the combobox's min-content, which for
+            nowrap text is the FULL label. 57% of the catalog has labels over
+            80 chars (longest 148), so the row would widen the whole form
+            instead of letting the combobox's own truncate take effect. */}
+        <div className="min-w-0 flex-1">
           <label className="mb-1 block text-sm font-medium text-zinc-700">
             Item / Model <span className="text-red-500">*</span>
           </label>
@@ -124,7 +133,10 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
         <div className="rounded-lg bg-white px-3 py-2 text-sm text-zinc-600">
           Estimated amount:{' '}
           <span className="font-semibold text-zinc-900">
-            {itemMeta.sellingPrice != null ? formatPeso(itemMeta.sellingPrice) : '—'}
+            {/* Number() for the same Decimal-as-string reason: a string has
+                toLocaleString but ignores the options, so this rendered
+                "₱10744.67" with no thousands separator. */}
+            {itemMeta.sellingPrice != null ? formatPeso(Number(itemMeta.sellingPrice)) : '—'}
           </span>
         </div>
       )}

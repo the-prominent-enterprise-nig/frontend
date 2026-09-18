@@ -126,9 +126,24 @@ const CreateCreditApplicationBaseSchema = z.object({
   // Holds an existing co-maker's id, the NEW_CO_MAKER_VALUE sentinel (fill
   // in a brand-new co-maker below), or '' (no co-maker).
   coMakerId: z.string().optional(),
-  // Editable contact for whichever existing co-maker is selected above —
+  // Editable details for whichever existing co-maker is selected above —
   // same "diff and PATCH separately" treatment as applicantPhone/Email,
   // via customersApi.updateCoMaker().
+  //
+  // Name and relationship were added 2026-09-18: previously only phone and
+  // email were editable, so a co-maker saved with a misspelled name or the
+  // wrong relationship could not be corrected anywhere in the credit
+  // application UI.
+  //
+  // Split into first/last to match the CRM create-customer form (client
+  // request, 2026-09-19). CoMaker stores a single `name` column, so these
+  // are seeded by splitting the stored name on its first space and rejoined
+  // with a single space on save — the same fallback CustomerForm already
+  // uses for records predating its own firstName/lastName columns. Lossless
+  // on round-trip apart from collapsing repeated whitespace.
+  coMakerFirstName: z.string().max(120).optional().or(z.literal('')),
+  coMakerLastName: z.string().max(120).optional().or(z.literal('')),
+  coMakerRelationship: z.string().max(100).optional().or(z.literal('')),
   coMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
   coMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   // Only used when coMakerId === NEW_CO_MAKER_VALUE — creates a co-maker on
@@ -152,6 +167,12 @@ const CreateCreditApplicationBaseSchema = z.object({
     .array(
       z.object({
         itemId: z.string().min(1, 'Item is required'),
+        // Stays a strict number: every writer must Number() first, because
+        // the API serializes Decimal as a STRING ("10590.27") and feeding
+        // that in made this reject — invisibly, since the failure is nested
+        // inside an array, which is what left the edit modal's Save button
+        // looking dead. z.coerce would hide that but widens the schema's
+        // input type to unknown, breaking useForm's generic.
         estimatedPrice: z.number().optional(),
       })
     )

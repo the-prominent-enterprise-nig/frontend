@@ -78,6 +78,9 @@ export default function NewCreditApplicationForm({
     // for the previous one, and any contact edits/new-co-maker draft made
     // for it.
     setValue('coMakerId', '')
+    setValue('coMakerFirstName', '')
+    setValue('coMakerLastName', '')
+    setValue('coMakerRelationship', '')
     setValue('coMakerContactNumber', '')
     setValue('coMakerEmail', '')
     setValue('newCoMakerFirstName', '')
@@ -128,38 +131,71 @@ export default function NewCreditApplicationForm({
       let resolvedCoMakerId = data.coMakerId || undefined
 
       if (data.coMakerId === NEW_CO_MAKER_VALUE) {
-        const addRes = await customersApi.addCoMaker(data.applicantCustomerId, {
-          // CoMaker stores one name column — join the captured first/last.
-          name: [data.newCoMakerFirstName, data.newCoMakerLastName]
-            .map((v) => (v ?? '').trim())
-            .filter(Boolean)
-            .join(' '),
-          relationship: (data.newCoMakerRelationship ?? '').trim(),
-          contactNumber: (data.newCoMakerContactNumber ?? '').trim(),
-          email: data.newCoMakerEmail || undefined,
-        })
-        if (!addRes.success || !addRes.data) {
-          setServerError(addRes.error ?? 'Failed to add the new co-maker')
-          return
+        // CoMaker stores one name column — join the captured first/last.
+        const newName = [data.newCoMakerFirstName, data.newCoMakerLastName]
+          .map((v) => (v ?? '').trim())
+          .filter(Boolean)
+          .join(' ')
+        const newRelationship = (data.newCoMakerRelationship ?? '').trim()
+
+        // Reuse an identical co-maker instead of adding a second one.
+        // addCoMaker commits before the application is created, so if the
+        // application then fails validation the co-maker is already on the
+        // customer's profile — and every retry used to append another copy,
+        // walking towards the hard cap of 5. There is deliberately no
+        // rollback: CoMaker has no delete endpoint, and CreditApplication
+        // .coMakerId is SET NULL, so deleting one would silently detach it
+        // from other applications that reference it.
+        const existing = coMakers.find(
+          (cm) =>
+            cm.name.trim().toLowerCase() === newName.toLowerCase() &&
+            cm.relationship.trim().toLowerCase() === newRelationship.toLowerCase()
+        )
+        if (existing) {
+          resolvedCoMakerId = existing.id
+        } else {
+          const addRes = await customersApi.addCoMaker(data.applicantCustomerId, {
+            name: newName,
+            relationship: newRelationship,
+            contactNumber: (data.newCoMakerContactNumber ?? '').trim(),
+            email: data.newCoMakerEmail || undefined,
+          })
+          if (!addRes.success || !addRes.data) {
+            setServerError(addRes.error ?? 'Failed to add the new co-maker')
+            return
+          }
+          resolvedCoMakerId = addRes.data.id
         }
-        resolvedCoMakerId = addRes.data.id
       } else if (data.coMakerId) {
         const selected = coMakers.find((cm) => cm.id === data.coMakerId)
-        const contactChanged =
+        // The two inputs are rejoined into CoMaker's single `name` column,
+        // mirroring how they were split apart when the co-maker was picked.
+        const coMakerJoinedName = [data.coMakerFirstName, data.coMakerLastName]
+          .map((v) => (v ?? '').trim())
+          .filter(Boolean)
+          .join(' ')
+        // Name and relationship are diffed alongside contact now, so a
+        // misspelling captured earlier can be corrected here rather than
+        // being stuck on the record forever.
+        const changed =
           !!selected &&
-          ((data.coMakerContactNumber || '') !== selected.contactNumber ||
+          (coMakerJoinedName !== selected.name ||
+            (data.coMakerRelationship || '') !== selected.relationship ||
+            (data.coMakerContactNumber || '') !== selected.contactNumber ||
             (data.coMakerEmail || '') !== (selected.email ?? ''))
-        if (contactChanged) {
+        if (changed) {
           const updateRes = await customersApi.updateCoMaker(
             data.applicantCustomerId,
             data.coMakerId,
             {
+              name: coMakerJoinedName || undefined,
+              relationship: data.coMakerRelationship || undefined,
               contactNumber: data.coMakerContactNumber || undefined,
               email: data.coMakerEmail || undefined,
             }
           )
           if (!updateRes.success) {
-            setServerError(updateRes.error ?? "Failed to update the co-maker's contact info")
+            setServerError(updateRes.error ?? 'Failed to update the co-maker')
             return
           }
         }

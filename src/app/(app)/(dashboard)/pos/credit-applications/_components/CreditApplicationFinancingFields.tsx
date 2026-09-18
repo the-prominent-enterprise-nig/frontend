@@ -14,8 +14,10 @@ import {
   getPosPriceUseTypes,
   getActiveFinancingTerms,
   previewInstallment,
+  resolvePosPrices,
   type PosPriceUseType,
 } from '../../_actions/pos-actions'
+import { Select } from '@/src/components/ui/Select'
 import type { FinancingTerm, InstallmentPreview } from '@/src/schema/pos'
 
 function formatPeso(n: number): string {
@@ -56,7 +58,10 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   branchId,
 }: Props<T>) {
   const items = useWatch({ control, name: 'items' as Path<T> }) as
-    | { estimatedPrice?: number }[]
+    | { itemId?: string; estimatedPrice?: number }[]
+    | undefined
+  const priceUseTypeId = useWatch({ control, name: 'priceUseTypeId' as Path<T> }) as
+    | string
     | undefined
   const financingTermId = useWatch({ control, name: 'financingTermId' as Path<T> }) as
     | string
@@ -64,8 +69,6 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   const downPaymentInput = useWatch({ control, name: 'downPayment' as Path<T> }) as
     | string
     | undefined
-
-  const estimatedTotal = (items ?? []).reduce((sum, i) => sum + (i.estimatedPrice ?? 0), 0)
 
   const [priceUseTypes, setPriceUseTypes] = useState<PosPriceUseType[]>([])
   const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
@@ -77,6 +80,52 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   useEffect(() => {
     getActiveFinancingTerms(branchId ?? undefined).then((res) => setFinancingTerms(res.data ?? []))
   }, [branchId])
+
+  // The item total has to be resolved the same way the server will resolve
+  // it, or the figures here are a different number from the one that gets
+  // stored — and the "Min. ₱X" down-payment hint disagrees with the 10%
+  // floor the server actually enforces. So this calls the same
+  // /pos/catalog/resolve-prices that checkout uses, under the chosen Price
+  // Use, and mirrors CreditApplicationService.resolveItemPrice()'s chain:
+  // the selected Price Use, else WIP (which is how the backend's
+  // resolveDefaultSellingPrice finds its default — by the name 'WIP'),
+  // falling back per item to the flat catalog price the combobox carried.
+  const itemIds = (items ?? []).map((i) => i.itemId).filter((id): id is string => !!id)
+  const itemIdsKey = itemIds.join(',')
+  const wipTypeId = priceUseTypes.find((t) => t.name === 'WIP')?.id
+  const effectivePriceUseTypeId = priceUseTypeId || wipTypeId
+
+  const [resolvedPrices, setResolvedPrices] = useState<Record<string, number | null>>({})
+  const [isResolvingPrices, setIsResolvingPrices] = useState(false)
+
+  useEffect(() => {
+    if (!effectivePriceUseTypeId || itemIds.length === 0) {
+      setResolvedPrices({})
+      return
+    }
+    let cancelled = false
+    setIsResolvingPrices(true)
+    resolvePosPrices(effectivePriceUseTypeId, itemIds, branchId ?? undefined).then((res) => {
+      if (cancelled) return
+      setIsResolvingPrices(false)
+      const next: Record<string, number | null> = {}
+      for (const [id, resolved] of Object.entries(res.data ?? {})) {
+        next[id] = resolved ? Number(resolved.price) : null
+      }
+      setResolvedPrices(next)
+    })
+    return () => {
+      cancelled = true
+    }
+    // itemIdsKey rather than itemIds — a fresh array identity every render
+    // would re-fire this on every keystroke elsewhere in the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectivePriceUseTypeId, itemIdsKey, branchId])
+
+  const estimatedTotal = (items ?? []).reduce((sum, i) => {
+    const resolved = i.itemId ? resolvedPrices[i.itemId] : undefined
+    return sum + (resolved ?? i.estimatedPrice ?? 0)
+  }, 0)
 
   const [preview, setPreview] = useState<InstallmentPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
@@ -123,6 +172,10 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   }, [estimatedTotal, financingTermId, downPaymentInput])
 
   const selectedTerm = financingTerms.find((t) => t.id === financingTermId)
+  // Labels the total with whichever Price Use it was actually priced under,
+  // including the WIP default, so a changed dropdown visibly changes the
+  // number instead of silently doing nothing.
+  const selectedPriceUse = priceUseTypes.find((t) => t.id === effectivePriceUseTypeId)
   const downPaymentError = (errors.downPayment as { message?: string } | undefined)?.message
 
   return (
@@ -140,18 +193,15 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
             name={'priceUseTypeId' as Path<T>}
             control={control}
             render={({ field }) => (
-              <select
-                {...field}
+              <Select
                 value={(field.value as string | undefined) ?? ''}
-                className={`${fieldClass} bg-white`}
-              >
-                <option value="">Default (WIP)</option>
-                {priceUseTypes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+                onChange={field.onChange}
+                placeholder="Default (WIP)"
+                options={[
+                  { value: '', label: 'Default (WIP)' },
+                  ...priceUseTypes.map((t) => ({ value: t.id, label: t.name })),
+                ]}
+              />
             )}
           />
         </div>
@@ -161,18 +211,18 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
             name={'financingTermId' as Path<T>}
             control={control}
             render={({ field }) => (
-              <select
-                {...field}
+              <Select
                 value={(field.value as string | undefined) ?? ''}
-                className={`${fieldClass} bg-white`}
-              >
-                <option value="">No installment term</option>
-                {financingTerms.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.termMonths} mo. — factor {Number(t.factorRate).toFixed(2)}
-                  </option>
-                ))}
-              </select>
+                onChange={field.onChange}
+                placeholder="No installment term"
+                options={[
+                  { value: '', label: 'No installment term' },
+                  ...financingTerms.map((t) => ({
+                    value: t.id,
+                    label: `${t.termMonths} mo. — factor ${Number(t.factorRate).toFixed(2)}`,
+                  })),
+                ]}
+              />
             )}
           />
         </div>
@@ -208,8 +258,14 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
           not just recoverable later from the detail page. */}
       <div className="rounded-lg bg-white p-3 text-sm">
         <div className="flex items-center justify-between">
-          <span className="text-zinc-500">Item total</span>
-          <span className="font-semibold text-zinc-900">
+          <span className="text-zinc-500">
+            Item total
+            {selectedPriceUse ? (
+              <span className="text-zinc-400"> · {selectedPriceUse.name}</span>
+            ) : null}
+          </span>
+          <span className="flex items-center gap-1.5 font-semibold text-zinc-900">
+            {isResolvingPrices && <Loader2 className="h-3 w-3 animate-spin text-zinc-400" />}
             {estimatedTotal > 0 ? formatPeso(estimatedTotal) : '—'}
           </span>
         </div>
