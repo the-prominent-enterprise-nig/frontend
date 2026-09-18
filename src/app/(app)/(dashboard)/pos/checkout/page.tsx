@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import {
   Search,
   Plus,
@@ -30,11 +30,7 @@ import {
   List,
   Printer,
   FileSignature,
-  Trash2,
-  Paperclip,
 } from 'lucide-react'
-import PhoneInput from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import {
   computePricingTotals,
   resolveLineTaxRate,
@@ -42,20 +38,13 @@ import {
   effectiveUnitPrice,
   lineTaxAmount,
 } from './_utils/calculations'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import CustomerExtraFields, {
-  type CustomerExtraFieldsValues,
-} from '@/src/components/crm/CustomerExtraFields'
-import { ID_TYPE_OPTIONS, type CoMakerFormValues } from '@/src/schema/crm/customer'
-import type { DuplicateCheckResult } from '@/src/schema/crm/types'
-import { customersApi } from '@/src/libs/api/crm'
-import { uploadIdDocument } from '@/src/app/(app)/(dashboard)/crm/customers/_actions/upload-id-document'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
   itemLookup,
@@ -64,7 +53,6 @@ import {
   validatePromoCode,
   parkSale,
   searchCustomers,
-  createWalkInCustomer,
   getLoyaltyByCustomer,
   earnPoints,
   redeemPoints,
@@ -328,6 +316,7 @@ const DECIMAL_CODES = new Set([
 
 export default function CheckoutPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { branchId: switcherBranchId } = usePosBranchContext()
   const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
     status: 'open',
@@ -460,7 +449,6 @@ export default function CheckoutPage() {
   const [customerResults, setCustomerResults] = useState<PosCustomer[]>([])
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
   const [searchingCustomers, setSearchingCustomers] = useState(false)
-  const [showNewCustomerModal, setShowNewCustomerModal] = useState(false)
   const customerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Tax exempt
@@ -919,6 +907,25 @@ export default function CheckoutPage() {
       } catch {}
     }
   }, [])
+
+  // Coming back from the CRM create-customer form (goToCreateCustomer sends
+  // ?returnTo=/pos/checkout, which returns with the new customer appended):
+  // attach them to the sale the way the old in-page modal's onCreated did,
+  // so the cashier lands back at the till ready to continue. Query string is
+  // cleared straight after so a refresh doesn't re-attach. selectCustomer is
+  // a hoisted function declaration, hence safe to call from here.
+  const newCustomerHandled = useRef(false)
+  useEffect(() => {
+    if (newCustomerHandled.current) return
+    const newCustomerId = searchParams.get('customerId')
+    if (!newCustomerId) return
+    newCustomerHandled.current = true
+    selectCustomer({
+      id: newCustomerId,
+      name: searchParams.get('customerName') || 'Customer',
+    })
+    router.replace('/pos/checkout')
+  }, [searchParams, router])
 
   // Network detection
   useEffect(() => {
@@ -1486,6 +1493,23 @@ export default function CheckoutPage() {
       if (programRes.success && programRes.data) setLoyaltyProgram(programRes.data)
     }
     if (histRes.success) setCustomerHistory((histRes.data ?? []).slice(0, 5))
+  }
+
+  // "New Customer" leaves checkout for the canonical CRM create form
+  // (2026-09-18 client request) instead of the old in-page modal, so walk-ins
+  // and CRM-added customers go through one form and one endpoint. The cart is
+  // plain React state and this is a real route change, so it has to be stashed
+  // first or the in-progress sale is silently lost — reusing the same
+  // localStorage handoff the parked-sales page already resumes through
+  // (see the rehydrate effect above).
+  function goToCreateCustomer() {
+    // Only `lines` is stashed because only `lines` is read back — the
+    // rehydrate effect ignores the other keys parkSale writes, so an
+    // applied promo code still has to be re-entered on return.
+    if (cart.length > 0) {
+      localStorage.setItem('pos_resumed_cart', JSON.stringify({ lines: cart }))
+    }
+    router.push('/crm/customers/new?returnTo=/pos/checkout')
   }
 
   function clearCustomer() {
@@ -3190,7 +3214,7 @@ export default function CheckoutPage() {
                 )}
 
                 <button
-                  onClick={() => setShowNewCustomerModal(true)}
+                  onClick={goToCreateCustomer}
                   className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-purple-300 py-2 text-xs text-gray-700 transition-colors hover:border-purple-500 hover:bg-purple-50 hover:text-purple-600 active:scale-[0.98]"
                 >
                   <UserPlus size={12} /> New Customer
@@ -3699,7 +3723,7 @@ export default function CheckoutPage() {
                         </div>
                         {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
                           <p className="mt-1 text-[13px] text-amber-700">
-                            Every installment sale requires an approved credit application — open
+                            Every installment sale requires an approved credit application — submit
                             one in Credit Applications first.
                           </p>
                         )}
@@ -4674,14 +4698,6 @@ export default function CheckoutPage() {
             </button>
           </div>
         </Overlay>
-      )}
-
-      {/* New Customer Modal */}
-      {showNewCustomerModal && (
-        <NewCustomerModal
-          onClose={() => setShowNewCustomerModal(false)}
-          onCreated={selectCustomer}
-        />
       )}
 
       {/* Manager Override Dialog */}
@@ -6157,410 +6173,6 @@ function CatalogListRow({
         )}
       </div>
     </button>
-  )
-}
-
-// ─── New Customer Modal ───────────────────────────────────────────────────────
-
-function NewCustomerModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void
-  onCreated: (customer: PosCustomer) => void
-}) {
-  const [form, setForm] = useState({
-    firstName: '',
-    middleName: '',
-    lastName: '',
-    phone: '',
-    email: '',
-    customerType: 'individual' as CustomerExtraFieldsValues['customerType'],
-    companyName: '',
-    businessCategory: '',
-    employeeNumber: '',
-    birthday: '',
-    groupId: '',
-    taxId: '',
-    isTaxExempt: false,
-    taxExemptionRef: '',
-    address: '',
-    barangayCode: '',
-    notes: '',
-    coMakers: [] as CoMakerFormValues[],
-    idType: '',
-    idNumber: '',
-    idDocumentFileId: '',
-    consentGiven: false,
-  })
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-
-  // Same non-blocking, debounced check CRM's "Add Customer" form uses — never
-  // prevents submission, just warns so the cashier can double-check before
-  // creating a second profile for the same person.
-  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateCheckResult | null>(null)
-  const [duplicateDismissed, setDuplicateDismissed] = useState(false)
-  const duplicateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const [uploadingId, setUploadingId] = useState(false)
-  const [idDocumentName, setIdDocumentName] = useState<string | null>(null)
-
-  useEffect(() => {
-    const email = form.email.trim()
-    const phone = form.phone.trim()
-    if (!email && !phone) {
-      setDuplicateWarning(null)
-      return
-    }
-    if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
-    duplicateTimer.current = setTimeout(async () => {
-      const res = await customersApi.checkDuplicate({
-        email: email || undefined,
-        phone: phone || undefined,
-      })
-      if (res.success && res.data) {
-        setDuplicateWarning(res.data.duplicate ? res.data : null)
-        setDuplicateDismissed(false)
-      }
-    }, 300)
-    return () => {
-      if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
-    }
-  }, [form.email, form.phone])
-
-  async function handleIdFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setUploadingId(true)
-    const formData = new FormData()
-    formData.set('file', file)
-    const result = await uploadIdDocument(formData)
-    setUploadingId(false)
-
-    if (result.success && result.data) {
-      setForm((p) => ({ ...p, idDocumentFileId: result.data!.id }))
-      setIdDocumentName(result.data.originalName)
-    } else {
-      setError(result.message ?? 'ID document upload failed')
-      e.target.value = ''
-    }
-  }
-
-  async function handleSubmit() {
-    if (!form.firstName.trim()) {
-      setError('First name is required.')
-      return
-    }
-    if (!form.phone.trim()) {
-      setError('Phone number is required.')
-      return
-    }
-    setError('')
-    setSubmitting(true)
-    const res = await createWalkInCustomer({
-      firstName: form.firstName.trim(),
-      middleName: form.middleName.trim() || undefined,
-      lastName: form.lastName.trim(),
-      phoneNumber: form.phone.trim(),
-      email: form.email.trim() || undefined,
-      customerType: form.customerType,
-      companyName:
-        form.customerType === 'business' ? form.companyName.trim() || undefined : undefined,
-      businessCategory:
-        form.customerType === 'business' && form.businessCategory
-          ? (form.businessCategory as 'private' | 'government')
-          : undefined,
-      employeeNumber:
-        form.customerType === 'employee' ? form.employeeNumber.trim() || undefined : undefined,
-      birthday: form.birthday ? new Date(form.birthday) : undefined,
-      groupId: form.groupId.trim() || undefined,
-      taxId: form.taxId.trim() || undefined,
-      isTaxExempt: form.isTaxExempt,
-      taxExemptionRef: form.isTaxExempt ? form.taxExemptionRef.trim() || undefined : undefined,
-      address: form.address.trim() || undefined,
-      barangayCode: form.barangayCode || undefined,
-      // Fixed, not user-selectable — a walk-in customer always starts active.
-      status: 'active',
-      note: form.notes.trim() || undefined,
-      coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
-      idType: form.idType || undefined,
-      idNumber: form.idNumber || undefined,
-      idDocumentFileId: form.idDocumentFileId || undefined,
-      consentGiven: form.consentGiven,
-      consentGivenAt: form.consentGiven ? new Date() : undefined,
-    })
-    setSubmitting(false)
-    if (!res.success || !res.data) {
-      setError(res.error ?? 'Failed to create customer')
-      return
-    }
-    onCreated(res.data)
-    onClose()
-  }
-
-  return (
-    <Overlay onClose={onClose} width="2xl">
-      <h2 className="mb-4 text-lg font-bold text-gray-900">New Customer</h2>
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-      <div className="max-h-[78vh] space-y-3 overflow-y-auto pr-1">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">First Name *</label>
-            <input
-              autoFocus
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.firstName}
-              onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Last Name</label>
-            <input
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.lastName}
-              onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Middle Name</label>
-            <input
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.middleName}
-              onChange={(e) => setForm((p) => ({ ...p, middleName: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
-            <PhoneInput
-              value={form.phone}
-              defaultCountry="PH"
-              international
-              countryCallingCodeEditable={false}
-              onChange={(v) => setForm((p) => ({ ...p, phone: v ?? '' }))}
-              numberInputProps={{ className: 'phone-input-field' }}
-              className="ph-phone-input"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Email</label>
-            <input
-              type="email"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.email}
-              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-            />
-          </div>
-        </div>
-
-        {duplicateWarning?.duplicate && !duplicateDismissed && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] text-amber-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div className="flex-1">
-              A customer named{' '}
-              <span className="font-medium">{duplicateWarning.customer?.name}</span> already has
-              this {duplicateWarning.matchedField}. You can still create this profile if it&apos;s a
-              different person.
-            </div>
-            <button
-              type="button"
-              onClick={() => setDuplicateDismissed(true)}
-              className="shrink-0 text-amber-600 hover:text-amber-800"
-              aria-label="Dismiss duplicate warning"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        <CustomerExtraFields
-          values={form}
-          onChange={(patch) => setForm((p) => ({ ...p, ...patch }))}
-        />
-
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-semibold text-gray-600">
-              Co-maker (guarantor)
-            </label>
-            <button
-              type="button"
-              onClick={() =>
-                setForm((p) => ({
-                  ...p,
-                  coMakers: [
-                    ...p.coMakers,
-                    { name: '', relationship: '', contactNumber: '', email: '' },
-                  ],
-                }))
-              }
-              className="flex items-center gap-1 text-[12px] font-medium text-purple-700 hover:text-purple-800"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add co-maker
-            </button>
-          </div>
-          <div className="mt-2 space-y-3">
-            {form.coMakers.map((cm, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
-              >
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Name</label>
-                  <input
-                    value={cm.name}
-                    maxLength={255}
-                    placeholder="e.g. Juan Dela Cruz"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], name: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Relationship
-                  </label>
-                  <input
-                    value={cm.relationship}
-                    maxLength={100}
-                    placeholder="e.g. Spouse"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], relationship: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Contact number
-                  </label>
-                  <input
-                    value={cm.contactNumber}
-                    maxLength={50}
-                    placeholder="e.g. 0917 000 1111"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], contactNumber: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Email</label>
-                  <input
-                    value={cm.email ?? ''}
-                    maxLength={255}
-                    type="email"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], email: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((p) => ({
-                      ...p,
-                      coMakers: p.coMakers.filter((_, i) => i !== idx),
-                    }))
-                  }
-                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                  aria-label="Remove co-maker"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-gray-600">
-            ID & Consent <span className="font-normal text-gray-400">(optional)</span>
-          </label>
-          <div className="mt-2 grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[12px] font-medium text-gray-600">ID Type</label>
-              <select
-                value={form.idType}
-                onChange={(e) => setForm((p) => ({ ...p, idType: e.target.value }))}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-              >
-                <option value="">Select ID type</option>
-                {ID_TYPE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[12px] font-medium text-gray-600">ID Number</label>
-              <input
-                value={form.idNumber}
-                maxLength={100}
-                onChange={(e) => setForm((p) => ({ ...p, idNumber: e.target.value }))}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-              />
-            </div>
-          </div>
-          <div className="mt-3">
-            <label className="block text-[12px] font-medium text-gray-600">ID Document</label>
-            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-500">
-              <Paperclip className="h-4 w-4 shrink-0" />
-              <span className="truncate">
-                {uploadingId ? 'Uploading…' : (idDocumentName ?? 'Attach a scanned ID')}
-              </span>
-              <input
-                type="file"
-                className="hidden"
-                disabled={uploadingId}
-                onChange={handleIdFileChange}
-              />
-            </label>
-          </div>
-          <div className="mt-3 flex items-start gap-2">
-            <input
-              id="pos-new-customer-consent"
-              type="checkbox"
-              checked={form.consentGiven}
-              onChange={(e) => setForm((p) => ({ ...p, consentGiven: e.target.checked }))}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300"
-            />
-            <label htmlFor="pos-new-customer-consent" className="text-[13px] text-gray-700">
-              Customer has given consent to store their ID information on file.
-            </label>
-          </div>
-        </div>
-      </div>
-      <div className="mt-5 flex justify-end gap-3">
-        <button
-          onClick={onClose}
-          className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSubmit}
-          disabled={submitting || !form.firstName.trim() || !form.phone.trim()}
-          className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800 disabled:opacity-50"
-        >
-          {submitting ? 'Creating…' : 'Create Customer'}
-        </button>
-      </div>
-    </Overlay>
   )
 }
 

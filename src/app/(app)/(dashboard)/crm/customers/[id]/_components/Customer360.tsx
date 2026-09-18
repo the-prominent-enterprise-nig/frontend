@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   BellPlus,
   ChevronRight,
+  CreditCard,
   Download,
   GitMerge,
   Paperclip,
@@ -133,6 +134,7 @@ export default function Customer360({
   canEdit,
   canDelete,
   canScheduleReminder,
+  canApplyForCredit,
   currentUserId,
   tenantId,
 }: {
@@ -140,6 +142,7 @@ export default function Customer360({
   canEdit: boolean
   canDelete: boolean
   canScheduleReminder: boolean
+  canApplyForCredit: boolean
   currentUserId: string
   tenantId: string
 }) {
@@ -325,6 +328,21 @@ export default function Customer360({
               <BellPlus className="h-4 w-4" />
               Schedule reminder
             </button>
+          )}
+          {/* 2026-09-18 client request — apply for credit straight from the
+              customer's profile, instead of opening the POS credit
+              applications page and searching for them again. Carries the
+              applicant through so the modal opens with them pre-selected. */}
+          {canApplyForCredit && (
+            <Link
+              href={`/pos/credit-applications/new?applicantCustomerId=${id}&applicantName=${encodeURIComponent(
+                data.name ?? ''
+              )}`}
+              className="inline-flex items-center gap-2 rounded-xl bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800"
+            >
+              <CreditCard className="h-4 w-4" />
+              Apply for Credit
+            </Link>
           )}
           {canEdit && (
             <Link

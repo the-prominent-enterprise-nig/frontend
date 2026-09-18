@@ -599,6 +599,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Settings',
         href: '/crm/settings',
         icon: Settings,
+        // Matches the permission /crm/settings itself redirects on — without
+        // this the item showed to anyone who could reach the crm module at
+        // all (e.g. Cashier, added 2026-09-18 for Customers) and 403'd on
+        // click.
+        requiredPermission: CRM_PERMISSIONS.PIPELINE_MANAGE,
       },
     ],
     bottom: [],

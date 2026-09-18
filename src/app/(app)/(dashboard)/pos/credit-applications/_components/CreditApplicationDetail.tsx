@@ -48,7 +48,13 @@ export default function CreditApplicationDetail({
   const canCancel = hasPermission(session, CREDIT_PERMISSIONS.APPLICATION_CANCEL)
   const canStartInvestigation = hasPermission(session, CREDIT_PERMISSIONS.INVESTIGATION_START)
   const canRecordInvestigation = hasPermission(session, CREDIT_PERMISSIONS.INVESTIGATION_RECORD)
-  const canApprove = hasPermission(session, CREDIT_PERMISSIONS.APPLICATION_APPROVE)
+  // Business Owner only (2026-09-18 client decision), matching the backend
+  // gate in CreditApplicationController.decideItems(). Deliberately NOT a
+  // hasPermission() check: Branch Manager holds the wildcard 'pos:*:*',
+  // which satisfies any pos permission, so a permission check here would
+  // show Approve/Decline to them and then 403 on click.
+  const canApprove =
+    session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner')
 
   const {
     application,
@@ -434,6 +440,12 @@ export default function CreditApplicationDetail({
                 })}
               </dd>
             </div>
+            <div>
+              <dt className="text-zinc-500">Price Use</dt>
+              <dd className="mt-0.5 text-zinc-900">
+                {application.priceUseType?.name ?? 'Default (WIP)'}
+              </dd>
+            </div>
             {application.itemDescription && (
               <div className="sm:col-span-2">
                 <dt className="text-zinc-500">Notes</dt>
@@ -441,6 +453,54 @@ export default function CreditApplicationDetail({
               </div>
             )}
           </dl>
+
+          {/* Client request, 2026-09-18 — persists the same DP/monthly/
+              total-payable breakdown the intake modal previewed, so the
+              customer and whoever reviews this application later (credit
+              investigator, approver) both see the real numbers, not just
+              the raw item total. */}
+          {application.financingTerm && (
+            <div className="mt-4 rounded-lg border border-zinc-100 bg-zinc-50 p-4">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Financing
+              </h3>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-zinc-500">Term</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    {application.financingTerm.termMonths} mo.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Down Payment</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.downPayment ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Monthly Installment</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.monthlyInstallment ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Total Payable</dt>
+                  <dd className="mt-0.5 font-semibold text-zinc-900">
+                    ₱
+                    {Number(application.totalPayable ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-zinc-200 bg-white p-5">

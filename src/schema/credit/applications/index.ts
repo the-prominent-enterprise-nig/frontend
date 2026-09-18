@@ -117,7 +117,7 @@ const CreateCreditApplicationBaseSchema = z.object({
   applicantCustomerId: z.string().min(1, 'Applicant is required'),
   // Applicant contact — prefilled from the selected customer once picked,
   // and editable. These aren't part of the credit application payload:
-  // CreateCreditApplicationModal's submit handler diffs them against what
+  // NewCreditApplicationForm's submit handler diffs them against what
   // was loaded and, if changed, saves them to the customer's real record
   // via a separate PATCH /crm/customers/:id call before creating/updating
   // the application itself.
@@ -143,14 +143,35 @@ const CreateCreditApplicationBaseSchema = z.object({
   newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   // An application can cover a bundle of models (2026-08-15, second pass) —
   // checkout enforces an exact match against the sale's installment lines.
+  // estimatedPrice is client-side only (never sent past whitelist-stripping
+  // on the way in) — the flat catalog price the item combobox's search
+  // result carries, kept in form state (not component state) purely so the
+  // financing preview below can sum it reactively via watch('items') and
+  // stay index-safe across add/remove.
   items: z
     .array(
       z.object({
         itemId: z.string().min(1, 'Item is required'),
+        estimatedPrice: z.number().optional(),
       })
     )
     .min(1, 'At least one item is required'),
   itemDescription: z.string().max(500).optional(),
+  // 2026-09-18 client request — captured at intake so the applicant and the
+  // branch both see the real DP/monthly/total-payable numbers before
+  // submission, not just the raw item price. Both optional: an application
+  // can still be raised with no term chosen yet.
+  priceUseTypeId: z.string().optional().or(z.literal('')),
+  financingTermId: z.string().optional().or(z.literal('')),
+  // Plain string, like every other free-text field on this form (not a zod
+  // transform to number) — keeping the field's TS type a string end-to-end
+  // avoids a useForm generic split just for this one input. The backend DTO
+  // has @Type(() => Number), which class-transformer applies before
+  // validation runs, so a numeric string round-trips through the API layer
+  // as a real number; NewCreditApplicationForm normalizes '' to
+  // undefined before submit (an empty string would otherwise coerce to 0,
+  // not "no down payment").
+  downPayment: z.string().optional().or(z.literal('')),
 })
 
 export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.superRefine(
@@ -270,6 +291,17 @@ export interface CreditApplication {
   items: CreditApplicationItemLine[]
   requestedAmount: number
   itemDescription?: string | null
+  // 2026-09-18 — DP/terms captured at intake, all optional (an application
+  // can still be raised with no term chosen). See
+  // CreditApplicationService.resolveFinancing() for how these are computed.
+  priceUseTypeId?: string | null
+  priceUseType?: { id: string; name: string } | null
+  financingTermId?: string | null
+  financingTerm?: { id: string; termMonths: number; factorRate: number } | null
+  downPayment?: number | null
+  amountFinanced?: number | null
+  monthlyInstallment?: number | null
+  totalPayable?: number | null
   status: CreditApplicationStatus
   createdById: string
   submittedAt?: string | null

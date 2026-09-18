@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { X, CreditCard, Search } from 'lucide-react'
 import { useCreditApplications } from '../_hooks/useCreditApplications'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -13,12 +13,10 @@ import {
   CreditApplicationStatusSchema,
   type CreditApplicationStatus,
 } from '@/src/schema/credit/applications'
-import CreateCreditApplicationModal from './CreateCreditApplicationModal'
 
 export default function CreditApplicationList({ session }: { session: SessionUser }) {
   const router = useRouter()
   const canCreate = hasPermission(session, CREDIT_PERMISSIONS.APPLICATION_CREATE)
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const {
     applications,
@@ -32,8 +30,6 @@ export default function CreditApplicationList({ session }: { session: SessionUse
     setSearch,
     page,
     setPage,
-    createApplication,
-    isCreating,
   } = useCreditApplications()
 
   const statusOptions = CreditApplicationStatusSchema.options
@@ -51,14 +47,13 @@ export default function CreditApplicationList({ session }: { session: SessionUse
           </div>
           <div className="flex items-center gap-2">
             {canCreate && (
-              <button
-                type="button"
-                onClick={() => setIsCreateOpen(true)}
+              <Link
+                href="/pos/credit-applications/new"
                 className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
               >
                 <CreditCard className="h-4 w-4" />
                 New Application
-              </button>
+              </Link>
             )}
           </div>
         </div>
@@ -128,7 +123,7 @@ export default function CreditApplicationList({ session }: { session: SessionUse
               <p className="text-sm font-medium text-zinc-500">No credit applications found</p>
               {canCreate && (
                 <p className="mt-1 text-xs text-zinc-400">
-                  Open a new application to start a customer&apos;s in-house financing request.
+                  Submit a new application to start a customer&apos;s in-house financing request.
                 </p>
               )}
             </div>
@@ -241,14 +236,6 @@ export default function CreditApplicationList({ session }: { session: SessionUse
           </div>
         )}
       </div>
-
-      <CreateCreditApplicationModal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onSubmit={createApplication}
-        isSubmitting={isCreating}
-        sessionBranchId={session.branchId}
-      />
     </div>
   )
 }

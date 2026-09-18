@@ -1,49 +1,56 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { X, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import {
   CreateCreditApplicationFormSchema,
   NEW_CO_MAKER_VALUE,
   type CreateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
-import type { ApiResponse } from '@/src/libs/api/client'
 import { customersApi } from '@/src/libs/api/crm'
+import { useCreateCreditApplication } from '../_hooks/useCreateCreditApplication'
 import { ApplicantSearchCombobox } from './ApplicantSearchCombobox'
 import { ApplicantContactFields } from './ApplicantContactFields'
 import { CoMakerFields } from './CoMakerFields'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
+import { CreditApplicationFinancingFields } from './CreditApplicationFinancingFields'
 import { getApplicantCustomer } from '../_actions/search-applicants'
 
 type Props = {
-  isOpen: boolean
-  onClose: () => void
-  onSubmit: (data: CreateCreditApplicationFormValues) => Promise<ApiResponse<unknown>>
-  isSubmitting: boolean
   /** Sent as branchId when set (a branch-locked actor). Left unsent
    * otherwise — the backend defaults to the enterprise's main branch. Not
    * a usage restriction, just which branch the application is recorded
    * against for audit purposes (see CreditApplicationService.create()). */
   sessionBranchId?: string | null
+  /** Pre-selects the applicant, skipping the search step — set when this
+   * page is reached from a specific customer's CRM profile ("Apply for
+   * Credit"), which already knows who's applying. The field stays editable:
+   * this is a shortcut, not a lock. */
+  initialApplicantCustomerId?: string
+  /** What to show in the applicant box for a pre-selected applicant, since
+   * the combobox has no search result to take a label from yet. */
+  initialApplicantLabel?: string
 }
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-export default function CreateCreditApplicationModal({
-  isOpen,
-  onClose,
-  onSubmit,
-  isSubmitting,
+export default function NewCreditApplicationForm({
   sessionBranchId,
+  initialApplicantCustomerId,
+  initialApplicantLabel,
 }: Props) {
+  // 2026-09-18 — was a modal rendered inside the queue page; now its own
+  // route, so the form owns the submit + navigation rather than being handed
+  // an onSubmit/onClose pair by the list.
+  const { createApplication, isCreating } = useCreateCreditApplication()
   const {
     control,
     handleSubmit,
-    reset,
     watch,
     setValue,
     formState: { errors },
@@ -51,6 +58,7 @@ export default function CreateCreditApplicationModal({
     resolver: zodResolver(CreateCreditApplicationFormSchema),
     defaultValues: {
       branchId: sessionBranchId ?? undefined,
+      applicantCustomerId: initialApplicantCustomerId ?? undefined,
       items: [{ itemId: '' }],
     },
   })
@@ -89,19 +97,8 @@ export default function CreateCreditApplicationModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicant?.id, setValue])
 
-  useEffect(() => {
-    if (!isOpen) {
-      reset({
-        branchId: sessionBranchId ?? undefined,
-        items: [{ itemId: '' }],
-      })
-    }
-  }, [isOpen, sessionBranchId, reset])
-
   const [serverError, setServerError] = useState<string | undefined>(undefined)
   const [isOrchestrating, setIsOrchestrating] = useState(false)
-
-  if (!isOpen) return null
 
   async function handleFormSubmit(data: CreateCreditApplicationFormValues) {
     setServerError(undefined)
@@ -168,10 +165,22 @@ export default function CreateCreditApplicationModal({
         }
       }
 
-      const result = await onSubmit({ ...data, coMakerId: resolvedCoMakerId })
-      if (result.success) {
-        onClose()
-      } else {
+      // createApplication navigates to the new application's detail page on
+      // success (see useCreateCreditApplication) — nothing to close now that
+      // this is a route rather than an overlay.
+      const result = await createApplication({
+        ...data,
+        coMakerId: resolvedCoMakerId,
+        // Same empty-string-select → undefined normalization as coMakerId
+        // above — the backend's @IsUUID() rejects '' outright, and
+        // @IsOptional() only skips undefined/null, not an empty string.
+        priceUseTypeId: data.priceUseTypeId || undefined,
+        financingTermId: data.financingTermId || undefined,
+        // '' would otherwise coerce to 0 via the DTO's @Type(() => Number),
+        // not "no down payment given".
+        downPayment: data.downPayment || undefined,
+      })
+      if (!result.success) {
         setServerError(result.message)
       }
     } finally {
@@ -180,30 +189,25 @@ export default function CreateCreditApplicationModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900">New Credit Application</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              Opens as a draft — attach documents and submit for investigation next.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <div className="mx-auto max-w-3xl px-4 py-6 md:px-6 lg:px-8">
+      <Link
+        href="/pos/credit-applications"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to credit applications
+      </Link>
+
+      <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="border-b border-zinc-200 px-6 py-4">
+          <h1 className="text-lg font-semibold text-zinc-900">New Credit Application</h1>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            Saved as a draft — attach documents and submit for investigation next.
+          </p>
         </div>
 
-        <form
-          onSubmit={handleSubmit(handleFormSubmit)}
-          noValidate
-          className="flex min-h-0 flex-1 flex-col"
-        >
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
+          <div className="space-y-5 px-6 py-5">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Applicant <span className="text-red-500">*</span>
@@ -216,6 +220,7 @@ export default function CreateCreditApplicationModal({
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     error={errors.applicantCustomerId?.message}
+                    initialLabel={initialApplicantLabel}
                   />
                 )}
               />
@@ -233,6 +238,12 @@ export default function CreateCreditApplicationModal({
             />
 
             <CreditApplicationItemFields control={control} setValue={setValue} errors={errors} />
+
+            <CreditApplicationFinancingFields
+              control={control}
+              errors={errors}
+              branchId={sessionBranchId}
+            />
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
@@ -256,22 +267,20 @@ export default function CreateCreditApplicationModal({
             {serverError && <p className="text-sm text-red-600">{serverError}</p>}
           </div>
 
-          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting || isOrchestrating}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+            <Link
+              href="/pos/credit-applications"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
             >
               Cancel
-            </button>
+            </Link>
             <button
               type="submit"
-              disabled={isSubmitting || isOrchestrating}
+              disabled={isCreating || isOrchestrating}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
-              {(isSubmitting || isOrchestrating) && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting || isOrchestrating ? 'Submitting…' : 'Submit Application'}
+              {(isCreating || isOrchestrating) && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isCreating || isOrchestrating ? 'Submitting…' : 'Submit Application'}
             </button>
           </div>
         </form>

@@ -107,6 +107,17 @@ function toDisplayPhoneValue(raw: string): string | undefined {
   }
 }
 
+/** A co-maker row the user added but never typed into — treated as absent
+ * rather than as an incomplete entry to validate. */
+function isBlankCoMaker(cm: CoMakerFormValues): boolean {
+  return (
+    !cm.name.trim() &&
+    !cm.relationship.trim() &&
+    !cm.contactNumber.trim() &&
+    !(cm.email ?? '').trim()
+  )
+}
+
 /**
  * Shared by both /crm/customers/new and /crm/customers/[id]/edit — a single
  * `id` prop switches the few things that genuinely differ (customer code,
@@ -114,9 +125,25 @@ function toDisplayPhoneValue(raw: string): string | undefined {
  * check) so the two flows can no longer drift apart field-by-field the way
  * the previous two hand-rolled copies did.
  */
-export default function CustomerForm({ id }: { id?: string }) {
+export default function CustomerForm({
+  id,
+  returnTo,
+}: {
+  id?: string
+  /** Where to go after a successful CREATE instead of the new customer's
+   * CRM profile, with `?customerId=` appended so the caller can pick the
+   * customer up. Set by POS checkout, whose "New Customer" button sends the
+   * cashier here and needs them back at the till with the customer
+   * attached. Already validated as an internal path by the page — never
+   * interpolate a raw query param into a redirect. */
+  returnTo?: string
+}) {
   const isEdit = Boolean(id)
   const router = useRouter()
+  // In create mode a returnTo overrides the normal "back to the list"
+  // destination, so Back/Cancel return the cashier to the till rather than
+  // stranding them in CRM.
+  const cancelHref = isEdit ? `/crm/customers/${id}` : (returnTo ?? '/crm/customers')
   const [form, setForm] = useState<FormState>(empty)
   const [initialForm, setInitialForm] = useState<FormState>(empty)
   const [loading, setLoading] = useState(isEdit)
@@ -274,7 +301,15 @@ export default function CustomerForm({ id }: { id?: string }) {
       branchId: form.branchId || undefined,
       accountType: form.accountType,
       notes: form.notes || undefined,
-      coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
+      // A co-maker is optional, and so is any row that was added but left
+      // untouched — "Add co-maker" inserts a blank row, and sending it made
+      // CoMakerFormSchema's required name/relationship/contactNumber fail,
+      // which silently dead-ended the submit (the collapsed 'coMakers' error
+      // key was never rendered). Blank rows are dropped; a row with anything
+      // typed in it is still validated, and now reports per-field.
+      coMakers: form.coMakers
+        .filter((cm) => !isBlankCoMaker(cm))
+        .map((cm) => ({ ...cm, email: cm.email || undefined })),
       idType: form.idType || undefined,
       idNumber: form.idNumber || undefined,
       idDocumentFileId: form.idDocumentFileId || undefined,
@@ -297,7 +332,7 @@ export default function CustomerForm({ id }: { id?: string }) {
       if (!parsed.success) {
         const errs: Record<string, string> = {}
         parsed.error.issues.forEach((i) => {
-          errs[i.path[0] as string] = i.message
+          errs[i.path.join('.')] = i.message
         })
         setErrors(errs)
         setSubmitting(false)
@@ -326,7 +361,7 @@ export default function CustomerForm({ id }: { id?: string }) {
       if (!parsed.success) {
         const errs: Record<string, string> = {}
         parsed.error.issues.forEach((i) => {
-          errs[i.path[0] as string] = i.message
+          errs[i.path.join('.')] = i.message
         })
         setErrors(errs)
         setSubmitting(false)
@@ -336,7 +371,16 @@ export default function CustomerForm({ id }: { id?: string }) {
       const res = await customersApi.create(parsed.data)
       setSubmitting(false)
       if (res.success && res.data) {
-        router.push(`/crm/customers/${res.data.id}`)
+        if (returnTo) {
+          // Hand the new customer back to whoever sent us here (POS
+          // checkout attaches them to the open sale). name is passed so the
+          // caller can label the customer without a second fetch.
+          const sep = returnTo.includes('?') ? '&' : '?'
+          const label = encodeURIComponent(res.data.name ?? '')
+          router.push(`${returnTo}${sep}customerId=${res.data.id}&customerName=${label}`)
+        } else {
+          router.push(`/crm/customers/${res.data.id}`)
+        }
         router.refresh()
       } else {
         setServerError(res.error ?? 'Failed to create customer')
@@ -351,7 +395,7 @@ export default function CustomerForm({ id }: { id?: string }) {
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href={isEdit ? `/crm/customers/${id}` : '/crm/customers'}
+        href={cancelHref}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -538,6 +582,11 @@ export default function CustomerForm({ id }: { id?: string }) {
                     }}
                     className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
                   />
+                  {errors[`coMakers.${idx}.name`] && (
+                    <p className="mt-1 text-[12px] text-red-600">
+                      {errors[`coMakers.${idx}.name`]}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[12px] font-medium text-gray-600">
@@ -554,6 +603,11 @@ export default function CustomerForm({ id }: { id?: string }) {
                     }}
                     className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
                   />
+                  {errors[`coMakers.${idx}.relationship`] && (
+                    <p className="mt-1 text-[12px] text-red-600">
+                      {errors[`coMakers.${idx}.relationship`]}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[12px] font-medium text-gray-600">
@@ -570,6 +624,11 @@ export default function CustomerForm({ id }: { id?: string }) {
                     }}
                     className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
                   />
+                  {errors[`coMakers.${idx}.contactNumber`] && (
+                    <p className="mt-1 text-[12px] text-red-600">
+                      {errors[`coMakers.${idx}.contactNumber`]}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[12px] font-medium text-gray-600">Email</label>
@@ -584,6 +643,11 @@ export default function CustomerForm({ id }: { id?: string }) {
                     }}
                     className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
                   />
+                  {errors[`coMakers.${idx}.email`] && (
+                    <p className="mt-1 text-[12px] text-red-600">
+                      {errors[`coMakers.${idx}.email`]}
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -668,7 +732,7 @@ export default function CustomerForm({ id }: { id?: string }) {
 
         <div className="flex items-center justify-end gap-3">
           <Link
-            href={isEdit ? `/crm/customers/${id}` : '/crm/customers'}
+            href={cancelHref}
             className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
           >
             Cancel

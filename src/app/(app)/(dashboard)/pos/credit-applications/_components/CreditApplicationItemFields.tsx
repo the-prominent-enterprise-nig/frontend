@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Controller,
   useFieldArray,
@@ -27,7 +27,7 @@ function formatPeso(n: number): string {
 // declared optional here since the edit form's .partial() makes the array
 // itself optional (though each present element still requires an itemId).
 type ItemScopedFormValues = FieldValues & {
-  items?: { itemId?: string }[]
+  items?: { itemId?: string; estimatedPrice?: number }[]
 }
 
 export type InitialCreditApplicationItem = {
@@ -48,6 +48,7 @@ type RowProps<T extends ItemScopedFormValues> = {
 
 function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   control,
+  setValue,
   index,
   errors,
   onRemove,
@@ -55,10 +56,33 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   initialItem,
 }: RowProps<T>) {
   const itemIdPath = `items.${index}.itemId` as Path<T>
+  const estimatedPricePath = `items.${index}.estimatedPrice` as Path<T>
 
   const [itemMeta, setItemMeta] = useState<CreditApplicationItemMeta | null>(
     initialItem?.itemMeta ?? null
   )
+
+  // Mirrors the resolved price into form state (not just this row's local
+  // itemMeta) so the financing preview below can sum it via watch('items')
+  // — index-safe across add/remove, unlike a separate index-keyed map would
+  // be once useFieldArray shifts indices.
+  function handleSelectItem(meta: CreditApplicationItemMeta) {
+    setItemMeta(meta)
+    setValue(estimatedPricePath, (meta.sellingPrice ?? undefined) as never)
+  }
+
+  // Edit mode prefills itemMeta from the loaded application but reset()'s
+  // own defaultValues (built before this row exists) can't reach into a
+  // specific row's estimatedPrice — backfill it once here instead, so the
+  // financing preview's total is correct without a fresh item search.
+  useEffect(() => {
+    if (initialItem?.itemMeta.sellingPrice != null) {
+      setValue(estimatedPricePath, initialItem.itemMeta.sellingPrice as never)
+    }
+    // Only ever run once per row on mount — initialItem is a stable seed,
+    // not something that should re-fire this on every parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const itemsErrors = errors.items as { itemId?: { message?: string } }[] | undefined
   const itemError = itemsErrors?.[index]?.itemId?.message
@@ -77,7 +101,7 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
               <CreditApplicationItemSearchCombobox
                 value={(field.value as string | undefined) ?? ''}
                 onChange={field.onChange}
-                onSelectItem={setItemMeta}
+                onSelectItem={handleSelectItem}
                 error={itemError}
                 initialLabel={initialItem?.itemLabel}
               />
@@ -117,7 +141,7 @@ type Props<T extends ItemScopedFormValues> = {
   initialItems?: InitialCreditApplicationItem[]
 }
 
-// Shared by CreateCreditApplicationModal and the "edit financing request"
+// Shared by NewCreditApplicationForm and the "edit financing request"
 // flow on the detail page — an application can cover a bundle of models
 // (2026-08-15, second pass), so this renders one row per item with add/
 // remove controls instead of a single item picker.

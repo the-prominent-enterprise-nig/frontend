@@ -9,7 +9,10 @@ interface SessionUser {
 // Roles that have a fixed module allowlist. Keep in sync with ROLE_MODULE_ACCESS in
 // src/libs/guards/permission.ts — both must agree on which modules each role can reach.
 const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  cashier: ['pos'],
+  // 2026-09-18 — Cashier can create a customer profile from scratch now
+  // (crm:customers:create). See the sibling copy of this map in
+  // src/libs/guards/permission.ts for the full rationale.
+  cashier: ['pos', 'crm'],
   'pos-manager': ['pos'],
   pos: ['pos'],
 }
