@@ -362,9 +362,9 @@ export default function CheckoutPage() {
   // which is the same branch they can configure via "My Branch" settings.
   const [authBranchId, setAuthBranchId] = useState<string | null>(null)
   const [isBranchManager, setIsBranchManager] = useState(false)
-  // Whether this login already holds the approval authority a serialized
+  // Whether this login already holds the approval authority an installment
   // sale would otherwise need to ask someone else for (Business Owner or
-  // Branch Manager) — drives the serial-sale banner below.
+  // Branch Manager) — drives the installment approval banner below.
   const [canOverride, setCanOverride] = useState(false)
   // Scenario 17 Part 7 — whether this login can mark a Promissory Note as
   // signed (Cashier-level, cascades to Branch Manager/Business Owner).
@@ -420,6 +420,10 @@ export default function CheckoutPage() {
   const [serialSearchQuery, setSerialSearchQuery] = useState('')
   // Read-only "also available elsewhere" section — never sellable from here.
   const [elsewhereSerials, setElsewhereSerials] = useState<SerialNumberRecord[]>([])
+  // Whether the "elsewhere" lookup actually succeeded. A failed lookup and a
+  // genuine "no branch has it" both leave elsewhereSerials empty, so the
+  // picker's "not in stock at any branch" note needs this to tell them apart.
+  const [elsewhereLoaded, setElsewhereLoaded] = useState(false)
   // Which branch's individual serials are showing in the side panel —
   // master-detail style, one at a time; null means the panel is closed and
   // the summary view stays compact.
@@ -444,9 +448,13 @@ export default function CheckoutPage() {
       toBranchId: activeBranchId ?? undefined,
       customerName: selectedCustomer ? customerDisplayName(selectedCustomer) : undefined,
     })
+    // Already requested — by this cashier before the picker was reopened, or
+    // by another branch meanwhile — is a success from the cashier's side: the
+    // unit is on its way to being requested, so show it as such, not "Retry".
+    const alreadyRequested = !res.success && res.errorCode === 'SERIAL_ALREADY_REQUESTED'
     setSerialRequestStatus((prev) => ({
       ...prev,
-      [sn.id]: res.success ? 'requested' : 'error',
+      [sn.id]: res.success || alreadyRequested ? 'requested' : 'error',
     }))
   }
 
@@ -689,7 +697,7 @@ export default function CheckoutPage() {
     invoices?: PosTransactionInvoice[]
   } | null>(null)
 
-  // Pending manager approval (serial-tracked sale awaiting Release Form review)
+  // Pending manager approval (installment sale awaiting Release Form review)
   const [pendingApproval, setPendingApproval] = useState<{
     releaseFormRequestId: string
     totalAmount: number
@@ -881,6 +889,7 @@ export default function CheckoutPage() {
   // failure here stays silent rather than surfacing as a picker-blocking
   // error the way the sellable fetch above does.
   useEffect(() => {
+    setElsewhereLoaded(false)
     if (!serialPickerTarget) {
       setElsewhereSerials([])
       return
@@ -889,6 +898,7 @@ export default function CheckoutPage() {
       (res) => {
         if (res.success && Array.isArray(res.data)) {
           setElsewhereSerials(res.data)
+          setElsewhereLoaded(true)
         } else {
           setElsewhereSerials([])
         }
@@ -2301,7 +2311,7 @@ export default function CheckoutPage() {
           return
         }
 
-        // Serial-tracked line in the cart — backend deferred to manager approval
+        // Installment line in the cart — backend deferred to manager approval
         // instead of completing the sale. Show the pending screen and bail out
         // before any payment/loyalty steps run (there is no transaction yet).
         if (isPendingApproval(txRes.data)) {
@@ -2669,6 +2679,14 @@ export default function CheckoutPage() {
   }
 
   async function handleRequestCancellation() {
+    // Same guard handleConfirm already has. Without it, an unselected session
+    // (the normal state whenever more than one is open) posted to
+    // /pos/sessions//cancellation-requests — a doubled slash Nest matches no
+    // route for, surfacing as a raw "Cannot POST" instead of a usable error.
+    if (!sessionId) {
+      setCancelError('Select an open session first.')
+      return
+    }
     if (!cancelReason.trim()) {
       setCancelError('Grounds for cancellation are required.')
       return
@@ -2865,7 +2883,8 @@ export default function CheckoutPage() {
                 setShowCancelModal(true)
                 setCancelError('')
               }}
-              disabled={!!cancellationReqId}
+              disabled={!!cancellationReqId || !sessionId}
+              title={!sessionId ? 'Select an open session first' : undefined}
               className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
             >
               <XCircle size={13} /> Cancel Sale
@@ -2884,8 +2903,10 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Serial-tracked sale banner */}
-      {!cancellationReqId && cart.some((l) => l.isSerialTracked) && (
+      {/* Installment approval banner. Only installment sales (in-house or
+          TPF) wait for approval now — a cash sale of a serialized appliance
+          checks out directly, so a serial alone no longer shows this. */}
+      {!cancellationReqId && installmentCartLines.length > 0 && (
         <div
           className={`flex items-center gap-3 border-b px-5 py-3 ${canOverride ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}
         >
@@ -2896,8 +2917,8 @@ export default function CheckoutPage() {
           )}
           <p className={`text-sm font-medium ${canOverride ? 'text-green-700' : 'text-amber-700'}`}>
             {canOverride
-              ? 'This sale includes a serialized item — since you can already approve sales, it will post immediately.'
-              : 'This sale includes a serialized item — it will need Business Owner or Branch Manager approval before the invoice is created.'}
+              ? 'This sale includes an installment item — since you can already approve sales, it will post immediately.'
+              : 'This sale includes an installment item — it will need Business Owner or Branch Manager approval before the invoice is created.'}
           </p>
         </div>
       )}
@@ -4945,6 +4966,27 @@ export default function CheckoutPage() {
                     )}
                   </div>
 
+                  {/* Out of stock here AND at every other branch — there is no
+                      unit to request, so no stock request (and no purchase
+                      request) can come from this picker. Only once the
+                      lookup really succeeded: a failed lookup looks identical. */}
+                  {!serialLoading &&
+                    !serialError &&
+                    !serialSearchQuery &&
+                    visibleSerials.length === 0 &&
+                    elsewhereLoaded &&
+                    !hasElsewhere && (
+                      <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p className="text-sm font-semibold text-gray-700">
+                          Not in stock at any branch
+                        </p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          No other branch has a unit to request. Ask your Branch Manager to raise a
+                          purchase request with procurement.
+                        </p>
+                      </div>
+                    )}
+
                   {hasElsewhere && (
                     <div className="mt-4 border-t border-gray-100 pt-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
@@ -5003,7 +5045,10 @@ export default function CheckoutPage() {
                     </div>
                     <div className="max-h-88 space-y-1.5 overflow-y-auto pr-1">
                       {expandedSerials.map((sn) => {
-                        const status = serialRequestStatus[sn.id]
+                        // Falls back to the server's view so a unit requested
+                        // before the picker was reopened still shows as such.
+                        const status =
+                          serialRequestStatus[sn.id] ?? (sn.openTransfer ? 'requested' : undefined)
                         return (
                           <div
                             key={sn.id}
@@ -5016,9 +5061,18 @@ export default function CheckoutPage() {
                               {sn.serialNumber}
                             </span>
                             {status === 'requested' ? (
-                              <span className="flex items-center gap-1 text-xs font-semibold text-green-600">
-                                <CheckCircle2 size={12} /> Requested
-                              </span>
+                              <div className="flex flex-col items-center rounded-lg border border-green-200 bg-green-50 px-2 py-1">
+                                <span className="flex items-center gap-1 text-xs font-semibold text-green-700">
+                                  <CheckCircle2 size={12} /> Requested
+                                </span>
+                                {/* Own line, never wrapped — beside the label
+                                    in this narrow panel it broke mid-number. */}
+                                {sn.openTransfer && (
+                                  <span className="whitespace-nowrap font-mono text-[10px] text-green-700/70">
+                                    {sn.openTransfer.transferNumber}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <button
                                 onClick={() => requestSerial(sn)}
@@ -6024,26 +6078,22 @@ function CatalogCard({
    * until this is true. */
   stockKnown: boolean
 }) {
-  // Only serial-tracked items are hard-blocked at zero — a serial-tracked
-  // sale is impossible with nothing to pick, unlike a bulk/quantity item
-  // where allowNegativeStock or a backorder might still apply.
+  // Only serial-tracked items are flagged at zero — a bulk/quantity item may
+  // still sell via allowNegativeStock or a backorder. A flagged item is not
+  // blocked: adding it opens the serial picker, whose "Also available
+  // elsewhere" section is where the cashier requests a unit from another
+  // branch (the picker already handles zero local stock).
   const isOutOfStock = stockKnown && item.isSerialTracked && (item.stockQty ?? 0) === 0
   const isLowStock =
     stockKnown && item.stockQty !== undefined && item.stockQty > 0 && item.stockQty <= 5
 
   return (
     <button
-      disabled={isOutOfStock}
-      onMouseDown={() =>
-        isOutOfStock
-          ? undefined
-          : item.allowDecimal && onAddMeasured
-            ? onAddMeasured(item)
-            : onAdd(item)
-      }
+      title={isOutOfStock ? 'Out of stock here — tap to request from another branch' : undefined}
+      onMouseDown={() => (item.allowDecimal && onAddMeasured ? onAddMeasured(item) : onAdd(item))}
       className={`group relative flex flex-col rounded-xl border p-3 text-left shadow-sm transition-all ${
         isOutOfStock
-          ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-60'
+          ? 'border-gray-200 bg-gray-50 opacity-75 hover:border-purple-300 hover:opacity-100'
           : 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-md active:scale-[0.97]'
       }`}
     >
@@ -6073,7 +6123,7 @@ function CatalogCard({
           )}
           {isOutOfStock ? (
             <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">
-              Out of stock
+              Out of stock · find branch
             </p>
           ) : (
             isLowStock && (
@@ -6107,17 +6157,11 @@ function CatalogListRow({
 
   return (
     <button
-      disabled={isOutOfStock}
-      onMouseDown={() =>
-        isOutOfStock
-          ? undefined
-          : item.allowDecimal && onAddMeasured
-            ? onAddMeasured(item)
-            : onAdd(item)
-      }
+      title={isOutOfStock ? 'Out of stock here — tap to request from another branch' : undefined}
+      onMouseDown={() => (item.allowDecimal && onAddMeasured ? onAddMeasured(item) : onAdd(item))}
       className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all ${
         isOutOfStock
-          ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-60'
+          ? 'border-gray-200 bg-gray-50 opacity-75 hover:border-purple-300 hover:opacity-100'
           : 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm active:scale-[0.99]'
       }`}
     >
@@ -6134,7 +6178,7 @@ function CatalogListRow({
           {item.sku && <p className="truncate text-[11px] text-gray-400">{item.sku}</p>}
           {isOutOfStock ? (
             <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">
-              Out of stock
+              Out of stock · find branch
             </p>
           ) : (
             isLowStock && (

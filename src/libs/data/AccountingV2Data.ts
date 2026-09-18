@@ -2176,59 +2176,6 @@ export const UnidentifiedBankCredits = {
     ),
 }
 
-// ============ Employee Appliance Loans (Scenario 40 Part 4) ============
-export type EmployeeApplianceLoanStatus = 'ACTIVE' | 'PAID_OFF' | 'CANCELLED'
-export interface EmployeeApplianceLoanPaymentRow {
-  id: string
-  amount: number
-  paymentDate: string
-  note?: string | null
-  journalEntryId?: string | null
-}
-export interface EmployeeApplianceLoan {
-  id: string
-  loanNumber: string
-  employeeId: string
-  employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
-  itemDescription: string
-  listedCashPrice: number
-  downPayment: number
-  amountFinanced: number
-  termMonths: number
-  miFactor: number
-  monthlyInstallment: number
-  pnv: number
-  totalPrice: number
-  interestDifferential: number
-  ppd: number
-  openingBalance: number
-  currentBalance: number
-  status: EmployeeApplianceLoanStatus
-  startDate: string
-  nextDueDate?: string | null
-  journalEntryId?: string | null
-  payments?: EmployeeApplianceLoanPaymentRow[]
-}
-export const EmployeeApplianceLoans = {
-  list: (params?: { search?: string; status?: string; employeeId?: string }) =>
-    api.get<{ items: EmployeeApplianceLoan[]; total: number }>(
-      '/employee-appliance-loans',
-      params as any
-    ),
-  get: (id: string) => api.get<EmployeeApplianceLoan>(`/employee-appliance-loans/${id}`),
-  create: (body: {
-    employeeId: string
-    itemDescription: string
-    listedCashPrice: number
-    downPayment: number
-    termMonths: number
-    miFactor: number
-    startDate?: string
-  }) => api.post<EmployeeApplianceLoan>('/employee-appliance-loans', body),
-  recordPayment: (id: string, body: { amount: number; paymentDate: string; note?: string }) =>
-    api.post<EmployeeApplianceLoanPaymentRow>(`/employee-appliance-loans/${id}/payments`, body),
-}
-
 // ============ Helpers ============
 
 /**
