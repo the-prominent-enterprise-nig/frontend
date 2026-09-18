@@ -16,6 +16,11 @@ const TX_LABELS: Record<string, string> = {
   adjustment: 'Adjustment',
   return: 'Return',
   write_off: 'Write-off',
+  // Both were falling through to the raw enum value on this tab — the Stock
+  // Ledger already names them, and the same movement should not read as
+  // "Supplier Return" on one screen and "supplier_return" on another.
+  supplier_return: 'Supplier Return',
+  exchange_out: 'Exchange Out',
   field_edit: 'Edited',
 }
 
@@ -27,6 +32,8 @@ const TX_COLORS: Record<string, string> = {
   adjustment: 'bg-[#f1ebfb] text-[#3f1490]',
   return: 'bg-[#fdf0e5] text-[#b25e09]',
   write_off: 'bg-[#fdeceb] text-[#b42318]',
+  supplier_return: 'bg-[#eceef5] text-[#3d4a7a]',
+  exchange_out: 'bg-[#e8e9fb] text-[#312e81]',
   field_edit: 'bg-[#f1f1f4] text-[#5b5b6b]',
 }
 
@@ -47,6 +54,8 @@ const TRANSACTION_TYPES = [
   { value: 'adjustment', label: 'Adjustment' },
   { value: 'return', label: 'Return' },
   { value: 'write_off', label: 'Write-off' },
+  { value: 'supplier_return', label: 'Supplier Return' },
+  { value: 'exchange_out', label: 'Exchange Out' },
 ]
 
 const LEDGER_GRID = 'grid grid-cols-[100px_170px_110px_minmax(0,1fr)_70px] gap-x-3 items-center'
