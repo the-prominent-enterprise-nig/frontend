@@ -49,6 +49,11 @@ type Props = {
    * for a branch-scoped creator regardless of what's submitted.
    * null/undefined (Head Office / Business Owner) leaves it unattributed. */
   currentUserBranchId?: string | null
+  /** Pre-picks the supplier on a brand-new purchase — set when arriving from
+   * that supplier's own screen, where the buyer has already chosen who they
+   * are buying from. Ignored in edit mode, which takes its supplier off the
+   * record being edited. */
+  initialSupplier?: { id: string; name: string } | null
 }
 
 // Computes the form's default values for create mode (no pr/po), PR-edit
@@ -59,7 +64,8 @@ type Props = {
 function getDefaultValues(
   pr: PurchaseRequestSummary | null | undefined,
   po: PurchaseOrderSummary | null | undefined,
-  currentUserBranchId: string | null | undefined
+  currentUserBranchId: string | null | undefined,
+  initialSupplier?: { id: string; name: string } | null
 ): CreatePoFormValues {
   const source = po ?? pr
   if (source) {
@@ -87,7 +93,7 @@ function getDefaultValues(
   }
 
   return {
-    supplierId: '',
+    supplierId: initialSupplier?.id ?? '',
     branchId: currentUserBranchId ?? undefined,
     warehouseId: '',
     expectedDeliveryDate: undefined,
@@ -113,6 +119,7 @@ export function CreatePoModal({
   onUpdatePo,
   isSavingPo,
   currentUserBranchId,
+  initialSupplier,
 }: Props) {
   const isPrEditMode = !!pr
   const isPoEditMode = !!po
@@ -133,7 +140,7 @@ export function CreatePoModal({
       .filter((line) => line.itemId && line.item?.name)
       .map((line) => [line.itemId, line.item!.name as string])
   )
-  const initialSupplierLabel = (po ?? pr)?.supplier?.name
+  const initialSupplierLabel = (po ?? pr)?.supplier?.name ?? initialSupplier?.name ?? undefined
   // Location too, through the same helper the rest of the app labels a
   // destination with: a branch's location is stored as "{branch} Warehouse"
   // but reads as just the branch everywhere it is shown, while a standalone
@@ -154,18 +161,23 @@ export function CreatePoModal({
     formState: { errors, isDirty, isSubmitted },
   } = useForm<CreatePoFormValues>({
     resolver: zodResolver(CreatePoFormSchema),
-    defaultValues: getDefaultValues(pr, po, currentUserBranchId),
+    defaultValues: getDefaultValues(pr, po, currentUserBranchId, initialSupplier),
   })
 
   const [confirmDiscard, setConfirmDiscard] = useState(false)
 
+  const initialSupplierId = initialSupplier?.id
   useEffect(() => {
-    if (open && (pr || po)) {
-      reset(getDefaultValues(pr, po, currentUserBranchId))
-    } else if (!open) {
+    if (open) {
+      reset(getDefaultValues(pr, po, currentUserBranchId, initialSupplier))
+    } else {
       reset(getDefaultValues(null, null, currentUserBranchId))
     }
-  }, [open, pr, po, currentUserBranchId, reset])
+    // initialSupplier is rebuilt on every render by the caller, so the id is
+    // what this actually depends on — the object identity would re-reset the
+    // form under the buyer mid-edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pr, po, currentUserBranchId, initialSupplierId, reset])
 
   async function handleFormSubmit(data: CreatePoFormValues) {
     if (po) {

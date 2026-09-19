@@ -5,6 +5,7 @@ import Link from 'next/link'
 import {
   Plus,
   RefreshCw,
+  Search,
   Tag,
   Tags,
   Pencil,
@@ -18,7 +19,9 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
-import { usePriceLists } from '../_hooks/usePriceLists'
+import Tooltip from '@/src/components/ui/Tooltip'
+import { Select } from '@/src/components/ui/Select'
+import { usePriceLists, type PriceListSort } from '../_hooks/usePriceLists'
 import PriceListModal from './PriceListModal'
 import { ApprovePriceListModal } from './ApprovePriceListModal'
 import { RejectPriceListModal } from './RejectPriceListModal'
@@ -28,10 +31,13 @@ import {
   EDITABLE_STATUSES,
   DELETABLE_STATUSES,
   STATUS_LABELS,
-  statusBadge,
   itemCountLabel,
-  branchScopeLabel,
-  formatEffectiveRange,
+  statusTone,
+  branchScopeTooltip,
+  branchScopeShort,
+  effectiveSummary,
+  coverage,
+  THIN_COVERAGE_THRESHOLD,
 } from '../_lib/price-list-format'
 import type {
   ApprovePriceListFormValues,
@@ -39,6 +45,7 @@ import type {
   PriceListFormValues,
   RejectPriceListFormValues,
 } from '@/src/schema/inventory/price-lists'
+import { PLEX, MONO } from '@/src/libs/design/plex'
 
 type PriceListActionsProps = {
   pl: PriceList
@@ -93,39 +100,63 @@ function PriceListActions({
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-1 ${justify === 'end' ? 'justify-end' : 'justify-start'}`}
+      className={`flex flex-nowrap items-center gap-1 whitespace-nowrap ${justify === 'end' ? 'justify-end' : 'justify-start'}`}
     >
-      <Link
-        href={`/inventory/price-lists/${pl.id}`}
-        title="Manage Items"
-        className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100"
-      >
-        <ListChecks className="h-4 w-4" />
-      </Link>
+      <Tooltip label="Manage Items" side="top" align="end">
+        <Link
+          href={`/inventory/price-lists/${pl.id}`}
+          aria-label="Manage Items"
+          className="rounded-lg p-1.5 text-[#5b5b6b] hover:bg-[#f1f1f4]"
+        >
+          <ListChecks className="h-4 w-4" />
+        </Link>
+      </Tooltip>
       {pl.status === 'pending_approval' && canApprove && (
         <>
-          <button
-            type="button"
-            title="Approve"
-            onClick={onApprove}
-            className="rounded-lg p-1.5 text-green-700 hover:bg-green-50"
-          >
-            <CheckCircle className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            title="Reject"
-            onClick={onReject}
-            className="rounded-lg p-1.5 text-red-700 hover:bg-red-50"
-          >
-            <XCircle className="h-4 w-4" />
-          </button>
+          <Tooltip label="Approve" side="top" align="end">
+            <button
+              type="button"
+              aria-label="Approve"
+              onClick={onApprove}
+              className="rounded-lg p-1.5 text-[#0b6644] hover:bg-[#e7f5ef]"
+            >
+              <CheckCircle className="h-4 w-4" />
+            </button>
+          </Tooltip>
+          <Tooltip label="Reject" side="top" align="end">
+            <button
+              type="button"
+              aria-label="Reject"
+              onClick={onReject}
+              className="rounded-lg p-1.5 text-[#b42318] hover:bg-[#fdeceb]"
+            >
+              <XCircle className="h-4 w-4" />
+            </button>
+          </Tooltip>
         </>
       )}
       <RowActionsMenu items={menuItems} />
     </div>
   )
 }
+
+function StatusChip({ status }: { status: string }) {
+  const tone = statusTone(status)
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium ${tone.chip}`}
+    >
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
+      {STATUS_LABELS[status] ?? status}
+    </span>
+  )
+}
+
+const SORT_OPTIONS: { value: PriceListSort; label: string }[] = [
+  { value: 'items', label: 'Most items priced' },
+  { value: 'priority', label: 'Highest priority' },
+  { value: 'name', label: 'Name A–Z' },
+]
 
 export default function PriceListsPageView({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.PRICE_LISTS_CREATE)
@@ -141,14 +172,19 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
 
   const {
     priceLists,
+    allPriceLists,
+    catalogTotal,
+    stats,
+    filters,
+    setFilters,
+    resetFilters,
+    hasActiveFilters,
     pagination,
     isLoading,
     isFetching,
     error,
     page,
     setPage,
-    showInactive,
-    setShowInactive,
     branches,
     priceUseTypes,
     createPriceUseType,
@@ -194,40 +230,94 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
     await deletePriceList(id)
   }
 
+  // Each tile is also the filter for what it counts — the number and the way
+  // to go look at it are the same control, so nobody reads "3 rejected" and
+  // then has to hunt for where the rejected ones are.
+  const coverageTiles = [
+    {
+      key: 'active',
+      label: 'Live now',
+      value: stats.active,
+      note: 'pricing at the till',
+      dot: 'bg-[#0f7b52]',
+      status: 'active',
+    },
+    {
+      key: 'pending_approval',
+      label: 'Waiting on approval',
+      value: stats.pending,
+      note: 'not applying yet',
+      dot: 'bg-[#d18b1d]',
+      status: 'pending_approval',
+    },
+    {
+      key: 'thin',
+      label: 'Thin coverage',
+      value: stats.thinCoverage,
+      note: catalogTotal
+        ? `live lists under ${THIN_COVERAGE_THRESHOLD}% of catalog`
+        : 'catalog size unavailable',
+      dot: 'bg-orange-400',
+      // No status of its own — thin coverage is a property of live lists, so
+      // the tile narrows to those and leaves the reading to the Items column.
+      status: 'active',
+    },
+    {
+      key: 'retired',
+      label: 'Not selling',
+      value: stats.retired,
+      note: 'inactive or expired',
+      dot: 'bg-[#a3a3b2]',
+      status: 'inactive',
+    },
+  ]
+
+  const statusPills = [
+    { value: 'all', label: 'All', count: stats.total },
+    { value: 'active', label: 'Active', count: stats.active },
+    { value: 'pending_approval', label: 'Pending', count: stats.pending },
+    { value: 'rejected', label: 'Rejected', count: stats.rejected },
+    {
+      value: 'inactive',
+      label: 'Inactive',
+      count: allPriceLists.filter((p) => p.status === 'inactive').length,
+    },
+    {
+      value: 'expired',
+      label: 'Expired',
+      count: allPriceLists.filter((p) => p.status === 'expired').length,
+    },
+  ]
+
+  const isEmptyOverall = !isLoading && allPriceLists.length === 0
+  const isFilteredEmpty = !isLoading && allPriceLists.length > 0 && priceLists.length === 0
+
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className={`w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8 ${PLEX}`}>
+      <div className="mx-auto max-w-7xl space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Price Lists</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Manage pricing tiers for your inventory items.
+            <h1 className="text-2xl font-bold text-[#17171c] md:text-3xl">Price Lists</h1>
+            <p className="mt-1 text-sm text-[#5b5b6b]">
+              One selling price per item, per price use type, per branch. Priority settles the
+              overlaps.
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-sm text-zinc-500">
-              <input
-                type="checkbox"
-                checked={showInactive}
-                onChange={(e) => setShowInactive(e.target.checked)}
-                className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-600"
-              />
-              <span className="hidden sm:inline">Show inactive/expired</span>
-            </label>
             <button
               type="button"
               onClick={() => setIsCategoriesDrawerOpen(true)}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+              className="flex items-center gap-2 rounded-lg border border-[#e4e4e9] bg-white px-3 py-2 text-sm font-medium text-[#3d3d4a] hover:border-[#d3d3db] hover:bg-[#fbfbfc]"
             >
               <Tags className="h-4 w-4" />
-              <span className="hidden sm:inline">Price Use Types</span>
+              <span className="hidden sm:inline">Price use types</span>
             </button>
             <button
               type="button"
               onClick={() => refetch()}
               disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg border border-[#e4e4e9] bg-white px-3 py-2 text-sm font-medium text-[#3d3d4a] hover:border-[#d3d3db] hover:bg-[#fbfbfc] disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">Refresh</span>
@@ -236,213 +326,399 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-3 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 sm:px-4"
+                className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-3 py-2 text-sm font-medium text-white hover:bg-[#4a189b] sm:px-4"
               >
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New Price List</span>
+                <span className="hidden sm:inline">New price list</span>
               </button>
             )}
           </div>
         </div>
 
+        {/* Coverage band */}
+        <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-[#e4e4e9] bg-white lg:grid-cols-4">
+          {coverageTiles.map((tile, index) => {
+            const isOn = filters.status === tile.status
+            return (
+              <button
+                key={tile.key}
+                type="button"
+                onClick={() => setFilters({ status: isOn ? 'all' : tile.status })}
+                aria-pressed={isOn}
+                className={`flex flex-col gap-1 px-4 py-3 text-left transition-colors ${
+                  index % 2 === 1 ? 'border-l border-[#eeeef1]' : ''
+                } lg:border-l lg:first:border-l-0 ${index > 1 ? 'border-t border-[#eeeef1] lg:border-t-0' : ''} ${
+                  isOn ? 'bg-[#f1ebfb] shadow-[inset_0_-2px_0_#5b21b6]' : 'hover:bg-[#fbfbfc]'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tile.dot}`} />
+                  <span
+                    className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+                  >
+                    {tile.label}
+                  </span>
+                </span>
+                <span
+                  className={`${MONO} text-[20px] font-semibold tracking-tight ${tile.value === 0 ? 'text-[#a3a3b2]' : 'text-[#17171c]'}`}
+                >
+                  {isLoading ? '—' : tile.value}
+                </span>
+                <span className="text-[11px] text-[#5b5b6b]">{tile.note}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b8b9b]" />
+            <input
+              type="text"
+              value={filters.query}
+              onChange={(e) => setFilters({ query: e.target.value })}
+              placeholder="Search name, description, or use type…"
+              className="w-full rounded-lg border border-[#e4e4e9] bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#5b21b6] focus:ring-1 focus:ring-[#5b21b6]"
+            />
+          </div>
+          <div className="w-48">
+            <Select
+              value={filters.priceUseTypeId}
+              onChange={(value) => setFilters({ priceUseTypeId: value })}
+              options={[
+                { value: 'all', label: 'All use types' },
+                ...priceUseTypes.map((t) => ({ value: t.id, label: t.name })),
+              ]}
+              compact
+            />
+          </div>
+          <div className="w-48">
+            <Select
+              value={filters.sort}
+              onChange={(value) => setFilters({ sort: value as PriceListSort })}
+              options={SORT_OPTIONS}
+              compact
+            />
+          </div>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-[#3f1490] hover:bg-[#f1ebfb]"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        {/* Status pills */}
+        <div className="flex flex-wrap items-center gap-2">
+          {statusPills.map((pill) => {
+            const isOn = filters.status === pill.value
+            return (
+              <button
+                key={pill.value}
+                type="button"
+                onClick={() => setFilters({ status: pill.value })}
+                aria-pressed={isOn}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  isOn
+                    ? 'border-[#5b21b6] bg-[#5b21b6] text-white'
+                    : 'border-[#e4e4e9] bg-white text-[#3d3d4a] hover:border-[#d3d3db]'
+                }`}
+              >
+                {pill.label}
+                <span
+                  className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${isOn ? 'bg-white/20' : 'bg-[#f1f1f4] text-[#5b5b6b]'}`}
+                >
+                  {pill.count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-medium text-red-800">Failed to load price lists</p>
+          <div className="rounded-lg border border-[#f3c9c5] bg-[#fdeceb] p-4">
+            <p className="text-sm font-medium text-[#8f1c14]">Failed to load price lists</p>
           </div>
         )}
 
         {/* Table */}
         <div
-          className={`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
+          className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
         >
           {isLoading ? (
-            <div className="p-8 text-center text-sm text-zinc-400">Loading price lists…</div>
-          ) : priceLists.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              <Tag className="mb-3 h-10 w-10 text-zinc-300" />
-              <p className="text-sm font-medium text-zinc-500">No price lists yet</p>
+            <div className="p-8 text-center text-sm text-[#8b8b9b]">Loading price lists…</div>
+          ) : isEmptyOverall ? (
+            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+              <Tag className="mb-3 h-10 w-10 text-[#c9c9d3]" />
+              <p className="text-sm font-medium text-[#3d3d4a]">No price lists yet</p>
+              <p className="mt-1 max-w-md text-xs text-[#5b5b6b]">
+                A price list holds the selling price for each item under one price use type — cash,
+                credit card, zero interest. Create the first one, then price items into it.
+              </p>
               {canCreate && (
-                <p className="mt-1 text-xs text-zinc-400">
-                  Create a price list to define pricing tiers for your items.
-                </p>
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="mt-4 flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-sm font-medium text-white hover:bg-[#4a189b]"
+                >
+                  <Plus className="h-4 w-4" />
+                  New price list
+                </button>
               )}
+            </div>
+          ) : isFilteredEmpty ? (
+            <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+              <Search className="mb-3 h-8 w-8 text-[#c9c9d3]" />
+              <p className="text-sm font-medium text-[#3d3d4a]">No price lists match</p>
+              <p className="mt-1 max-w-md text-xs text-[#5b5b6b]">
+                {filters.query
+                  ? `Nothing matches “${filters.query}” inside the current filters.`
+                  : 'No price list falls inside these filters.'}
+              </p>
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="mt-4 rounded-lg border border-[#e4e4e9] px-4 py-2 text-sm font-medium text-[#3d3d4a] hover:border-[#d3d3db] hover:bg-[#fbfbfc]"
+              >
+                Clear search and filters
+              </button>
             </div>
           ) : (
             <>
               {/* Mobile: card list */}
-              <ul className="divide-y divide-zinc-100 md:hidden">
-                {priceLists.map((pl) => (
-                  <li key={pl.id} className="p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-zinc-900">{pl.name}</p>
-                        {pl.description && (
-                          <p className="truncate text-xs text-zinc-400">{pl.description}</p>
+              <ul className="divide-y divide-[#eeeef1] md:hidden">
+                {priceLists.map((pl) => {
+                  const scope = branchScopeShort(pl.allowedBranchIds, branches.length)
+                  const cover = coverage(pl.itemCount, catalogTotal)
+                  return (
+                    <li key={pl.id} className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <Link
+                            href={`/inventory/price-lists/${pl.id}`}
+                            className="truncate font-medium text-[#17171c] hover:text-[#3f1490] hover:underline"
+                          >
+                            {pl.name}
+                          </Link>
+                          {pl.description && (
+                            <p className="truncate text-xs text-[#8b8b9b]">{pl.description}</p>
+                          )}
+                        </div>
+                        <StatusChip status={pl.status} />
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {pl.priceUseType && (
+                          <span className="inline-flex rounded-md bg-[#f0e9fc] px-2 py-0.5 text-[11px] font-medium text-[#3f1490]">
+                            {pl.priceUseType.name}
+                          </span>
                         )}
+                        <span className="text-[11px] text-[#8b8b9b]">
+                          {pl.currency} · Priority {pl.priority}
+                        </span>
+                        {/* Scenario 50 Gap 7 — every list now stores a real
+                            mode (the 2026-09-14 backfill made the column NOT
+                            NULL DEFAULT 'inclusive'), so this no longer papers
+                            over undeclared rows. The non-exclusive branch stays
+                            the default for resilience only. */}
+                        <span className="inline-flex rounded-md bg-[#f1f1f4] px-2 py-0.5 text-[11px] font-medium text-[#5b5b6b]">
+                          VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+                        </span>
                       </div>
-                      <div className="flex shrink-0 flex-col items-end gap-0.5">
-                        <span
-                          className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(pl.status)}`}
-                        >
-                          {STATUS_LABELS[pl.status] ?? pl.status}
-                        </span>
-                        <span className="text-[11px] text-zinc-400">
-                          {itemCountLabel(pl.itemCount)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      {pl.priceUseType && (
-                        <span className="inline-flex rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
-                          {pl.priceUseType.name}
-                        </span>
+                      <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <dt className="text-[11px] text-[#8b8b9b]">Items priced</dt>
+                          <dd className="font-semibold text-[#17171c]">
+                            {(pl.itemCount ?? 0).toLocaleString()}
+                          </dd>
+                          <dd className="text-[11px] text-[#8b8b9b]">
+                            {itemCountLabel(pl.itemCount)} — {cover.note}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[11px] text-[#8b8b9b]">Applies to</dt>
+                          <dd className="text-[#3d3d4a]">{scope.label}</dd>
+                          <dd className="text-[11px] text-[#8b8b9b]">
+                            {effectiveSummary(pl.effectiveFrom, pl.effectiveTo).label}
+                          </dd>
+                        </div>
+                      </dl>
+                      {(canUpdate || canApprove || canDelete) && (
+                        <div className="mt-3 border-t border-[#eeeef1] pt-3">
+                          <PriceListActions
+                            pl={pl}
+                            canUpdate={canUpdate}
+                            canApprove={canApprove}
+                            canDelete={canDelete}
+                            isResubmitting={isResubmitting}
+                            justify="start"
+                            onEdit={() => openEditModal(pl)}
+                            onApprove={() => setApprovingList(pl)}
+                            onReject={() => setRejectingList(pl)}
+                            onResubmit={() => resubmitPriceList(pl.id)}
+                            onDelete={() => setDeletingList(pl)}
+                          />
+                        </div>
                       )}
-                      <span className="text-[11px] text-zinc-400">
-                        {pl.currency} · Priority {pl.priority}
-                      </span>
-                      {/* Scenario 50 Gap 7 — every list now stores a real
-                          mode (the 2026-09-14 backfill made the column NOT
-                          NULL DEFAULT 'inclusive'), so this no longer papers
-                          over undeclared rows. The non-exclusive branch stays
-                          the default for resilience only. */}
-                      <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
-                        VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
-                      </span>
-                    </div>
-                    <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
-                      <p>{formatEffectiveRange(pl.effectiveFrom, pl.effectiveTo)}</p>
-                      <p className="truncate">{branchScopeLabel(pl.allowedBranchIds, branches)}</p>
-                    </div>
-                    {(canUpdate || canApprove || canDelete) && (
-                      <div className="mt-3 border-t border-zinc-100 pt-3">
-                        <PriceListActions
-                          pl={pl}
-                          canUpdate={canUpdate}
-                          canApprove={canApprove}
-                          canDelete={canDelete}
-                          isResubmitting={isResubmitting}
-                          justify="start"
-                          onEdit={() => openEditModal(pl)}
-                          onApprove={() => setApprovingList(pl)}
-                          onReject={() => setRejectingList(pl)}
-                          onResubmit={() => resubmitPriceList(pl.id)}
-                          onDelete={() => setDeletingList(pl)}
-                        />
-                      </div>
-                    )}
-                  </li>
-                ))}
+                    </li>
+                  )
+                })}
               </ul>
 
               {/* Desktop: table */}
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-180 table-fixed text-sm">
+                <table className="w-full min-w-[64rem] table-fixed text-sm">
                   <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50">
-                      <th className="w-[40%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                        Price List
-                      </th>
-                      <th className="w-[14%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                        Status
-                      </th>
-                      <th className="w-[20%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                        Effective
-                      </th>
-                      <th className="w-[16%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                        Branches
-                      </th>
+                    <tr
+                      className={`border-b border-[#eeeef1] bg-[#fbfbfc] text-left ${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+                    >
+                      <th className="w-[23%] px-4 py-3">Price list</th>
+                      <th className="w-[16%] px-4 py-3">Use type</th>
+                      <th className="w-[12%] px-4 py-3 text-right">Items priced</th>
+                      <th className="w-[15%] px-4 py-3">Applies to</th>
+                      <th className="w-[15%] px-4 py-3">Effective</th>
+                      <th className="w-[10%] px-4 py-3">Status</th>
                       {(canUpdate || canApprove || canDelete) && (
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                          Actions
-                        </th>
+                        <th className="w-[9%] px-4 py-3 text-right">Actions</th>
                       )}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {priceLists.map((pl) => (
-                      <tr key={pl.id} className="hover:bg-zinc-50">
-                        <td className="px-4 py-3">
-                          <p className="truncate font-medium text-zinc-900">{pl.name}</p>
-                          {pl.description && (
-                            <p className="truncate text-xs text-zinc-400">{pl.description}</p>
-                          )}
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            {pl.priceUseType && (
-                              <span className="inline-flex rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
+                  <tbody className="divide-y divide-[#eeeef1]">
+                    {priceLists.map((pl) => {
+                      const scope = branchScopeShort(pl.allowedBranchIds, branches.length)
+                      const eff = effectiveSummary(pl.effectiveFrom, pl.effectiveTo)
+                      const cover = coverage(pl.itemCount, catalogTotal)
+                      const isThin =
+                        cover.percent !== null && cover.percent < THIN_COVERAGE_THRESHOLD
+                      return (
+                        <tr key={pl.id} className="align-top hover:bg-[#fbfbfc]">
+                          <td className="px-4 py-3">
+                            <Link
+                              href={`/inventory/price-lists/${pl.id}`}
+                              className="block truncate font-medium text-[#17171c] hover:text-[#3f1490] hover:underline"
+                            >
+                              {pl.name}
+                            </Link>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] text-[#8b8b9b]">{pl.currency}</span>
+                              <span className="inline-flex rounded-md bg-[#f1f1f4] px-2 py-0.5 text-[11px] font-medium text-[#5b5b6b]">
+                                VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {pl.priceUseType ? (
+                              <span
+                                className={`inline-flex rounded bg-[#f1ebfb] px-2 py-0.5 ${MONO} text-[10.5px] font-semibold text-[#3f1490]`}
+                              >
                                 {pl.priceUseType.name}
                               </span>
+                            ) : (
+                              <span className="text-xs text-[#8b8b9b]">—</span>
                             )}
-                            <span className="text-[11px] text-zinc-400">
-                              {pl.currency} · Priority {pl.priority}
-                            </span>
-                            <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
-                              VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(pl.status)}`}
-                          >
-                            {STATUS_LABELS[pl.status] ?? pl.status}
-                          </span>
-                          <p className="mt-1 text-[11px] text-zinc-400">
-                            {itemCountLabel(pl.itemCount)}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3 text-zinc-600">
-                          {formatEffectiveRange(pl.effectiveFrom, pl.effectiveTo)}
-                        </td>
-                        <td className="truncate px-4 py-3 text-zinc-600">
-                          {branchScopeLabel(pl.allowedBranchIds, branches)}
-                        </td>
-                        {(canUpdate || canApprove || canDelete) && (
-                          <td className="px-4 py-3 text-right">
-                            <PriceListActions
-                              pl={pl}
-                              canUpdate={canUpdate}
-                              canApprove={canApprove}
-                              canDelete={canDelete}
-                              isResubmitting={isResubmitting}
-                              onEdit={() => openEditModal(pl)}
-                              onApprove={() => setApprovingList(pl)}
-                              onReject={() => setRejectingList(pl)}
-                              onResubmit={() => resubmitPriceList(pl.id)}
-                              onDelete={() => setDeletingList(pl)}
-                            />
+                            <p className="mt-1 text-[11px] text-[#8b8b9b]">
+                              Priority {pl.priority}
+                            </p>
                           </td>
-                        )}
-                      </tr>
-                    ))}
+                          <td className="px-4 py-3 text-right">
+                            {/* The number carries the column; the tooltip
+                                spells the whole reading out, including how
+                                much of the catalog is left unpriced. */}
+                            <Tooltip
+                              label={`${itemCountLabel(pl.itemCount)} — ${cover.note}`}
+                              side="top"
+                              align="end"
+                            >
+                              <span
+                                className={`${MONO} text-[13.5px] font-semibold text-[#17171c]`}
+                              >
+                                {(pl.itemCount ?? 0).toLocaleString()}
+                              </span>
+                            </Tooltip>
+                            <p
+                              className={`text-[11px] ${isThin ? 'text-[#d18b1d]' : 'text-[#8b8b9b]'}`}
+                            >
+                              {cover.note}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            {/* The cell shows the count; the names live in the
+                                tooltip. A branch-scoped list can carry twenty
+                                of them, which no column width survives. */}
+                            <Tooltip
+                              label={branchScopeTooltip(pl.allowedBranchIds, branches)}
+                              side="top"
+                              align="start"
+                              className="max-w-full"
+                            >
+                              <span className="truncate text-[#3d3d4a]">{scope.label}</span>
+                            </Tooltip>
+                            <p className="text-[11px] text-[#8b8b9b]">{scope.note}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="truncate text-[#3d3d4a]">{eff.label}</p>
+                            <p className="text-[11px] text-[#8b8b9b]">{eff.note}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusChip status={pl.status} />
+                          </td>
+                          {(canUpdate || canApprove || canDelete) && (
+                            <td className="px-4 py-3 text-right">
+                              <PriceListActions
+                                pl={pl}
+                                canUpdate={canUpdate}
+                                canApprove={canApprove}
+                                canDelete={canDelete}
+                                isResubmitting={isResubmitting}
+                                onEdit={() => openEditModal(pl)}
+                                onApprove={() => setApprovingList(pl)}
+                                onReject={() => setRejectingList(pl)}
+                                onResubmit={() => resubmitPriceList(pl.id)}
+                                onDelete={() => setDeletingList(pl)}
+                              />
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
             </>
           )}
 
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3 text-sm text-zinc-500">
-              <span>
-                Page {page} of {pagination.totalPages}
+          {priceLists.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eeeef1] px-4 py-3 text-sm text-[#5b5b6b]">
+              <span className="text-xs">
+                Showing {priceLists.length} of {pagination.total} price list
+                {pagination.total === 1 ? '' : 's'}
               </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page <= 1}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                  disabled={page >= pagination.totalPages}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <span className="mr-2 text-xs">
+                    Page {page} of {pagination.totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage(Math.max(1, page - 1))}
+                    disabled={page <= 1}
+                    className="rounded-lg px-3 py-1.5 hover:bg-[#f1f1f4] disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                    disabled={page >= pagination.totalPages}
+                    className="rounded-lg px-3 py-1.5 hover:bg-[#f1f1f4] disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -455,7 +731,8 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         isSubmitting={editingList ? isUpdating : isCreating}
         branches={branches}
         priceUseTypes={priceUseTypes}
-        priceLists={priceLists}
+        priceLists={allPriceLists}
+        catalogTotal={catalogTotal}
         onCreatePriceUseType={createPriceUseType}
         isCreatingPriceUseType={isCreatingPriceUseType}
         initial={editingList}
@@ -489,6 +766,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         isOpen={isCategoriesDrawerOpen}
         onClose={() => setIsCategoriesDrawerOpen(false)}
         session={session}
+        priceLists={allPriceLists}
       />
     </div>
   )

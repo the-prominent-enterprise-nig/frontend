@@ -119,6 +119,12 @@ const CANCELLABLE_STATUSES = new Set([
   'draft',
 ])
 
+// Deliberately the same set, and a deliberate alias rather than a second
+// literal: the backend gates update() on exactly the statuses cancel()
+// accepts, on the principle that a request you can still withdraw is one you
+// can still fix instead. If one list moves, both must.
+const EDITABLE_STATUSES = CANCELLABLE_STATUSES
+
 function formatDate(iso?: string | null) {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('en-PH', {
@@ -624,6 +630,12 @@ type Props = {
   onDispatch: (id: string, data?: DispatchTransferFormValues) => Promise<ApiResponse<unknown>>
   onReceive: (id: string, data: ReceiveTransferFormValues) => Promise<ApiResponse<unknown>>
   onCancel: (id: string) => Promise<ApiResponse<unknown>>
+  // Editing reopens the request in the full transfer form rather than
+  // editing in place here — it is the same complete request shape the create
+  // screen builds, so it gets the same screen. This modal only has to close
+  // itself and say which transfer to load.
+  canEdit?: boolean
+  onEdit?: (transfer: TransferSummary) => void
   onApproveHq: (id: string) => Promise<ApiResponse<unknown>>
   onRejectHq: (id: string, data: RejectHqTransferFormValues) => Promise<ApiResponse<unknown>>
   onApproveManager: (id: string) => Promise<ApiResponse<unknown>>
@@ -663,6 +675,8 @@ export default function TransferDetailModal({
   onDispatch,
   onReceive,
   onCancel,
+  canEdit = false,
+  onEdit,
   onApproveHq,
   onRejectHq,
   onApproveManager,
@@ -801,6 +815,24 @@ export default function TransferDetailModal({
   // which captures a reason, so it doesn't get a "Cancel" button here too.
   const canCancelThis =
     CANCELLABLE_STATUSES.has(status) &&
+    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  // Two kinds of transfer are refused by the backend's update() and so are
+  // never offered here: one the UDS module auto-paired (the UDS owns which
+  // unit ships, not this form), and one whose lines are pinned to a specific
+  // serial — the POS "request this unit" flow, which also raised a purchase
+  // request against that same unit. The edit form carries no serial, so
+  // saving either would quietly describe a different request than the one
+  // the rest of the system is working from.
+  const isUdsPaired = (transfer?.linkedUds?.length ?? 0) > 0
+  const hasPinnedSerial = !!transfer?.lines?.some((line) => line.serialNumberId)
+  // Same branch direction as cancel — you correct your own request, you
+  // don't rewrite someone else's. The extra permission is what separates
+  // "withdraw it" from "change it and wipe the approvals it collected".
+  const canEditThis =
+    canEdit &&
+    EDITABLE_STATUSES.has(status) &&
+    !isUdsPaired &&
+    !hasPinnedSerial &&
     inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
 
   // Only worth a column when at least one line actually carries a serial —
@@ -2087,15 +2119,26 @@ export default function TransferDetailModal({
                   {(transfer.lines ?? []).length}{' '}
                   {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
                 </p>
-                {canCancelThis && (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmCancel(true)}
-                    className="mt-0.5 text-[12.5px] font-medium text-[#b42318] hover:underline"
-                  >
-                    Cancel Transfer
-                  </button>
-                )}
+                <div className="mt-0.5 flex items-center gap-3">
+                  {canEditThis && onEdit && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(transfer)}
+                      className="text-[12.5px] font-medium text-[#5b21b6] hover:underline"
+                    >
+                      Edit Request
+                    </button>
+                  )}
+                  {canCancelThis && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmCancel(true)}
+                      className="text-[12.5px] font-medium text-[#b42318] hover:underline"
+                    >
+                      Cancel Transfer
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex gap-3">
                 {(status === 'in_transit' || isReceivedStatus) && (

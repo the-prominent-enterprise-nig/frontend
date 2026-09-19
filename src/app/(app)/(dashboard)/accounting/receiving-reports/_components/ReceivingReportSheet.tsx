@@ -1,6 +1,10 @@
 'use client'
 
-import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
+import {
+  receivingReportSourceName,
+  receivingReportSourceRef,
+} from '@/src/libs/format/receiving-report'
+import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
 /** Print/document envelope for one goods receipt
  * (GET /reports/receiving-reports/:id/document) — the receipt plus the
@@ -21,22 +25,36 @@ export interface ReceivingReportDocument {
     code: string
     receivedAt: string
     receivedByName?: string | null
-    supplier?: { name?: string | null; address?: string | null } | null
+    supplier?: { name?: string | null } | null
     warehouse?: { name?: string | null; branch?: { name?: string | null } | null } | null
     purchaseOrderNumber?: string | null
     poDate?: string | null
-    driverName?: string | null
-    helperName?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
+    /** The delivery crew, printed on the sheet's "Driver/Helper" line. Either
+     * can be absent — a delivery often arrives with a driver and no helper. */
+    driverName?: string | null
+    helperName?: string | null
+    /** Set only on a receipt that came from a branch transfer rather than a
+     * supplier. Its number takes the sheet's PO slot — see
+     * receivingReportSourceRef(). */
+    stockTransfer?: {
+      id?: string | null
+      transferNumber?: string | null
+      transferDate?: string | null
+      /** With no supplier to name, the party block names the branch that
+       * sent the goods. */
+      fromWarehouse?: {
+        name?: string | null
+        branch?: { name?: string | null } | null
+      } | null
+    } | null
     lines?: {
       id: string
       quantityReceived: number | string
       unitCost?: number | string | null
       isFreebie?: boolean
       serialNumbers?: string[] | null
-      // Present when the receipt came from Receive Against PO — the order
-      // the printed PO No. is resolved from.
       purchaseOrderLine?: { purchaseOrder?: { code?: string | null } | null } | null
       item?: {
         name?: string | null
@@ -80,6 +98,7 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
   const rr = doc.document
   const enterprise = doc.enterprise
   const lines = rr.lines ?? []
+  const sourceRef = receivingReportSourceRef(rr)
 
   // The print builder's own running totals: units always, money only when
   // at least one line carries a cost (a transfer-sourced receipt has none).
@@ -109,17 +128,28 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
 
       <div className="mt-6 grid gap-7 md:grid-cols-3">
         <div>
-          <p className="font-bold text-prominent-purple-900">{rr.supplier?.name ?? '—'}</p>
-          <p className="mt-1 text-gray-700">{rr.supplier?.address ?? '—'}</p>
+          {/* The supplier on a bought-in delivery, the sending branch on one
+              that came from another branch — a transfer receipt has no
+              supplier to name here. */}
+          <p className="font-bold text-prominent-purple-900">
+            {receivingReportSourceName(rr) ?? '—'}
+          </p>
+          <p className="mt-1 text-gray-700">
+            Driver/Helper: {receivingReportDriverHelper(rr) ?? '—'}
+          </p>
         </div>
         <div className="text-right">
           <MetaPair label="No." value={doc.documentNumber ?? rr.code} />
           <MetaPair label="Date" value={docDate(rr.receivedAt)} />
-          <MetaPair label="PO No." value={receivingReportPoNumber(rr) ?? '—'} />
           <MetaPair
-            label="Reference"
+            label="Ref"
             value={rr.deliveryReceiptNumber || rr.supplierInvoiceNumber || '—'}
           />
+          {/* "P.O. No." on a supplier receipt, "Transfer No." on one that
+              came from another branch — the slot names what the receipt
+              actually points back at. */}
+          <MetaPair label={sourceRef.label} value={sourceRef.code ?? '—'} />
+          <MetaPair label="Dated" value={docDate(sourceRef.dated)} />
         </div>
         <div className="md:border-l md:border-gray-300 md:pl-7">
           <p className="font-bold text-prominent-purple-900">

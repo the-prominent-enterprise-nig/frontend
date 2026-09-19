@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus,
   RefreshCw,
@@ -28,10 +28,9 @@ import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/pr
 import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
 
-// This screen follows the Stock Transfers design's own IBM Plex + #5b21b6
-// palette — the same system the Purchase Orders screens use, which is why the
-// badge spec and colour values come from procurementTokens rather than the
-// app-wide Poppins brand tokens.
+// This screen follows the Stock Transfers design's own #5b21b6 palette — the
+// same system the Purchase Orders screens use, which is why the badge spec and
+// colour values come from procurementTokens.
 // `tone` is the saturated per-status colour the design uses for the KPI tile
 // and pill icons — deliberately stronger than the badge's text colour, which
 // has to stay readable on its own tinted background.
@@ -223,6 +222,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const canManagerApprove = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_APPROVE)
   const canManagerReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_REJECT)
   const canSkipApproval = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DIRECT)
+  const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_UPDATE)
 
   const {
     transfers,
@@ -250,6 +250,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     statusCounts,
     totalCount,
     createTransfer,
+    updateTransfer,
+    isUpdating,
     consignUnits,
     isConsigning,
     isCreating,
@@ -312,6 +314,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
   }
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  // The transfer being edited. Non-null turns the same create screen into an
+  // edit of this request — the two build the identical payload, so they share
+  // one form rather than keeping a near-duplicate of a 1300-line component.
+  const [editingTransfer, setEditingTransfer] = useState<TransferSummary | null>(null)
   const [searchFocused, setSearchFocused] = useState(false)
   const [createDraft, setCreateDraft] = useState<{
     fromWarehouseId: string
@@ -326,6 +332,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // doesn't silently reopen it. Which physical units ship is decided by the
   // source at dispatch, so only a count travels, never serial ids.
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   useEffect(() => {
     const fromWarehouseId = searchParams.get('prefillFromWarehouseId')
@@ -340,12 +347,55 @@ export default function TransferList({ session }: { session: SessionUser }) {
       })
       setIsCreateOpen(true)
       router.replace('/inventory/transfers')
+      return
+    }
+
+    // `?new=1` — the same "open straight into the create form" idea without a
+    // prefill, for links whose label is the verb: Item 360's "Transfer"
+    // button. Landing someone on a list of past transfers and asking them to
+    // find "New transfer" makes a button that says Transfer not transfer.
+    //
+    // Stripped relative to the current path rather than to
+    // /inventory/transfers like the prefill branch above, because this list is
+    // mounted at two routes — its own, and /inventory/operations?tab=transfers
+    // — and a hardcoded replace would move the user off whichever one they
+    // came in on.
+    if (searchParams.get('new') === '1' && canCreate) {
+      setIsCreateOpen(true)
+      const next = new URLSearchParams(searchParams.toString())
+      next.delete('new')
+      const qs = next.toString()
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
     }
     // Deliberately mount-only — the params are consumed once, then stripped;
     // re-running on every searchParams/router identity change would refight
     // that strip and never let the modal close normally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Deep link into one transfer — `?transfer=TRF-…`, as the receiving report
+  // that arrived on it links here. Transfers have no per-transfer route (the
+  // detail is a modal over this list), so the number is resolved in two
+  // steps: seed the search box on mount so the list actually contains the
+  // row, then open it once the matching row has loaded.
+  const deepLinkNumber = searchParams.get('transfer')
+  const [deepLinkOpened, setDeepLinkOpened] = useState(false)
+  useEffect(() => {
+    if (deepLinkNumber) setSearch(deepLinkNumber)
+    // Mount-only, for the same reason the prefill effect above is: the param
+    // is consumed once and then stripped.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (!deepLinkNumber || deepLinkOpened) return
+    const match = transfers.find((t) => t.transferNumber === deepLinkNumber)
+    if (!match) return
+    setSelectedTransfer(match)
+    setDeepLinkOpened(true)
+    // Stripped so a refresh or Back doesn't silently reopen the modal, same
+    // as the create-prefill params.
+    router.replace('/inventory/transfers')
+  }, [deepLinkNumber, deepLinkOpened, transfers, setSelectedTransfer, router])
 
   function openDetail(transfer: TransferSummary) {
     setSelectedTransfer(transfer)
@@ -751,13 +801,20 @@ export default function TransferList({ session }: { session: SessionUser }) {
       </div>
 
       <CreateTransferModal
-        isOpen={isCreateOpen}
+        isOpen={isCreateOpen || !!editingTransfer}
         onClose={() => {
           setIsCreateOpen(false)
           setCreateDraft(null)
+          setEditingTransfer(null)
         }}
-        onSubmit={createTransfer}
-        isSubmitting={isCreating}
+        // One screen, two destinations: the form produces the same complete
+        // request either way, so which endpoint it goes to is the only thing
+        // that changes. The modal itself stays unaware of the difference.
+        onSubmit={
+          editingTransfer ? (data) => updateTransfer(editingTransfer.id, data) : createTransfer
+        }
+        isSubmitting={editingTransfer ? isUpdating : isCreating}
+        editing={editingTransfer}
         onConsign={consignUnits}
         isConsigning={isConsigning}
         warehouses={warehouseOptions}
@@ -787,6 +844,14 @@ export default function TransferList({ session }: { session: SessionUser }) {
         onDispatch={dispatchTransfer}
         onReceive={receiveTransfer}
         onCancel={cancelTransfer}
+        canEdit={canUpdate}
+        onEdit={(tr) => {
+          // Close the detail panel first — the edit form is the same
+          // full-content sheet, and leaving both mounted would stack two of
+          // them over the page area.
+          setSelectedTransfer(null)
+          setEditingTransfer(tr)
+        }}
         onApproveHq={approveHqTransfer}
         onRejectHq={rejectHqTransfer}
         onApproveManager={approveManagerTransfer}

@@ -99,6 +99,13 @@ export const ReceivePoFormSchema = z.object({
     .string()
     .min(1, "Delivery receipt number is required — it's on the paper that came with the goods"),
   supplierInvoiceNumber: z.string().optional(),
+  // Who physically brought the delivery — the Receiving Report's
+  // "Driver/Helper" line. Free text, not the Vehicle roster: that roster is
+  // our own fleet, for branch-to-branch transfers, and a supplier's crew will
+  // never be on it. Same pair the direct-receive form carries, so a receipt
+  // raised against a PO prints the same line as one raised without.
+  driverName: z.string().max(150).optional(),
+  helperName: z.string().max(150).optional(),
   lines: z.array(ReceivePoLineSchema).min(1),
 })
 

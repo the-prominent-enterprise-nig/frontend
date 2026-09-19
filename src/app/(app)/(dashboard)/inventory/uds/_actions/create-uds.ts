@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
+import { udsErrorMessage } from '../_lib/uds-errors'
 import { CreateUdsFormSchema } from '@/src/schema/inventory/uds'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -44,7 +45,7 @@ export async function createUds(input: unknown): Promise<ApiResponse<{ id: strin
     return {
       success: false,
       error: errStr || 'Failed to create UDS',
-      message: msg || errStr || 'Failed to create UDS',
+      message: udsErrorMessage(msg || errStr, 'Failed to create UDS'),
     }
   }
 

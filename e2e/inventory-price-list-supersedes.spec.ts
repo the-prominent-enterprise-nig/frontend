@@ -4,6 +4,8 @@ import {
   clickStable,
   fillStable,
   sweepE2EPriceLists,
+  pickPriceUseType,
+  submitPriceListForm,
   pickFromCustomSelect,
 } from './utils'
 
@@ -26,9 +28,9 @@ test.describe('Inventory — Price List Supersedes picker', () => {
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
     )
-    await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
-    await pickFromCustomSelect(page, 'Select price use type…', 'SKYRO')
-    await page.getByRole('button', { name: 'Create Price List' }).click()
+    await fillStable(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'), name)
+    await pickPriceUseType(page, 'SKYRO')
+    await submitPriceListForm(page, 'Create Price List')
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
     })
@@ -59,10 +61,11 @@ test.describe('Inventory — Price List Supersedes picker', () => {
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
     )
-    await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), nameB)
-    await pickFromCustomSelect(page, 'Select price use type…', 'SKYRO')
-    await pickFromCustomSelect(page, 'None — this is a new list, not a replacement', nameA)
-    await page.getByRole('button', { name: 'Create Price List' }).click()
+    await fillStable(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'), nameB)
+    await pickPriceUseType(page, 'SKYRO')
+    await submitPriceListForm(page, 'Create Price List', async () => {
+      await pickFromCustomSelect(page, 'None — this is a new list, not a replacement', nameA)
+    })
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
     })
@@ -79,10 +82,9 @@ test.describe('Inventory — Price List Supersedes picker', () => {
 
     await expect(rowB).toContainText('Active')
 
-    // Expired lists are hidden by default (Scenario 15 follow-up — the page
-    // now hides retired statuses so old test/production data doesn't clutter
-    // the working view); reveal them to confirm A actually expired.
-    await page.getByLabel('Show inactive/expired').check()
+    // Every status is loaded now (the redesign's status pills and coverage
+    // tiles count across all of them), so A's row is on screen without a
+    // reveal step — only its status had to change.
     const rowA = page.getByRole('row').filter({ hasText: nameA })
     await expect(rowA).toContainText('Expired', { timeout: 10_000 })
 
@@ -103,8 +105,15 @@ test.describe('Inventory — Price List Supersedes picker', () => {
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
     )
-    await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), `${NAME_PREFIX}Promo`)
-    await pickFromCustomSelect(page, 'Select price use type…', 'PROMO')
+    await fillStable(
+      page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'),
+      `${NAME_PREFIX}Promo`
+    )
+    await pickPriceUseType(page, 'PROMO')
+    // Supersedes sits further down the same page, under Where it applies.
+    await expect(page.getByRole('heading', { name: 'Where it applies' })).toBeVisible({
+      timeout: 10_000,
+    })
 
     const supersedesCombobox = page.getByRole('combobox', {
       name: 'None — this is a new list, not a replacement',

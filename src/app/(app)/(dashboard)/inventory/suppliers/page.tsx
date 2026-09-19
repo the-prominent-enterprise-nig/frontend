@@ -6,7 +6,7 @@ import SupplierDirectory from './_components/SupplierDirectory'
 
 export const metadata = {
   title: 'Suppliers | Prominent Enterprise',
-  description: 'Manage supplier catalogue and item mappings',
+  description: 'Who you buy from, the terms you buy on, and the items they carry',
 }
 
 export default async function SuppliersPage() {

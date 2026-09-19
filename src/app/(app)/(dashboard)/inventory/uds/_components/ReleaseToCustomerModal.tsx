@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { z } from 'zod'
-import { X, Loader2, UserCheck } from 'lucide-react'
+import { X, Loader2, UserCheck, FileText } from 'lucide-react'
 import {
   ReleaseToCustomerFormSchema,
   type ReleaseToCustomerFormValues,
@@ -18,7 +18,7 @@ const fieldClass =
   'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
 const defaultValues: ReleaseToCustomerFormInput = {
-  deliveryReceiptNumber: '',
+  salesInvoiceNumber: '',
   notes: '',
 }
 
@@ -61,17 +61,24 @@ export default function ReleaseToCustomerModal({
 
   if (!isOpen || !uds) return null
 
+  // Mirrors the server's own rule so the clerk is told before submitting
+  // rather than after. A unit going back with no verdict is allowed; a unit
+  // going back with neither a verdict nor an explanation is not.
+  const needsReason = !uds.assessment
+
   async function handleFormSubmit(data: ReleaseToCustomerFormValues) {
     const result = await onSubmit(data)
     if (result.success) onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Release to Customer</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
+              Release to Customer
+            </h2>
             <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
           </div>
           <button
@@ -83,8 +90,12 @@ export default function ReleaseToCustomerModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="space-y-4 px-6 py-5">
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          noValidate
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
               <UserCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
               <p className="text-xs text-emerald-800">
@@ -95,46 +106,81 @@ export default function ReleaseToCustomerModal({
               </p>
             </div>
 
+            <div className="flex items-start gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
+              <p className="text-xs text-zinc-600">
+                A <strong>DR number</strong> will be issued when you confirm. Write it on the
+                customer&apos;s copy — it is shown as soon as the release is saved.
+              </p>
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                DR Number <span className="text-red-500">*</span>
+                SI for the return to branch
+                <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
               </label>
               <Controller
-                name="deliveryReceiptNumber"
+                name="salesInvoiceNumber"
                 control={control}
                 render={({ field }) => (
-                  <input {...field} placeholder="DR-000123" className={fieldClass} />
+                  <input
+                    {...field}
+                    type="text"
+                    maxLength={50}
+                    placeholder="e.g. SI-20260914-0031"
+                    className={fieldClass}
+                  />
                 )}
               />
               <p className="mt-1 text-xs text-zinc-400">
-                The delivery receipt the customer signs for.
+                The unit came back to the branch to be collected — this records the paper that leg
+                travelled on.
               </p>
-              {errors.deliveryReceiptNumber && (
-                <p className="mt-1 text-xs text-red-600">{errors.deliveryReceiptNumber.message}</p>
-              )}
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Notes
-                <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                {needsReason ? (
+                  <span className="text-red-500"> *</span>
+                ) : (
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                )}
               </label>
               <Controller
                 name="notes"
                 control={control}
+                rules={
+                  needsReason
+                    ? {
+                        validate: (v) => !!v?.trim() || 'Say why the unit is going back unassessed',
+                      }
+                    : undefined
+                }
                 render={({ field }) => (
                   <textarea
                     {...field}
                     rows={2}
-                    placeholder="Collected by, condition on release…"
+                    placeholder={
+                      needsReason
+                        ? 'Nothing was found wrong, customer withdrew the request…'
+                        : 'Collected by, condition on release…'
+                    }
                     className={`${fieldClass} resize-none`}
                   />
                 )}
               />
+              {needsReason && !errors.notes && (
+                <p className="mt-1 text-xs text-zinc-400">
+                  This unit has no assessment on record, so the sheet needs to say why it is going
+                  back untouched.
+                </p>
+              )}
+              {errors.notes && <p className="mt-1 text-xs text-red-600">{errors.notes.message}</p>}
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
@@ -146,9 +192,9 @@ export default function ReleaseToCustomerModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              className="flex items-center gap-[7px] rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
             >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {isSubmitting ? 'Releasing…' : 'Release to Customer'}
             </button>
           </div>

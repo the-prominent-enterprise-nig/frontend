@@ -8,16 +8,16 @@ last_synced: '2026-06-10'
 
 ## Summary
 
-| ID     | Title                                                                | Status | Priority |
-| ------ | -------------------------------------------------------------------- | ------ | -------- |
-| ACC-23 | AA Accountant, ISBAT work a collections worklist of overdue invoices | TO DO  | high     |
-| ACC-24 | AA Accountant, ISBAT paginate and sort the AR invoices table         | TO DO  | normal   |
+| ID    | Title                                                                | Status | Priority |
+| ----- | -------------------------------------------------------------------- | ------ | -------- |
+| ACC-1 | AA Accountant, ISBAT work a collections worklist of overdue invoices | TO DO  | high     |
+| ACC-2 | AA Accountant, ISBAT paginate and sort the AR invoices table         | TO DO  | normal   |
 
 ---
 
 ## Tickets
 
-### [ACC-23] — AA Accountant, ISBAT work a collections worklist of overdue invoices
+### [ACC-1] — AA Accountant, ISBAT work a collections worklist of overdue invoices
 
 **Status:** TO DO
 **Priority:** high
@@ -77,10 +77,10 @@ The system should:
 
 ---
 
-### SUBTASK (Frontend) — FE-ACC-23
+### SUBTASK (Frontend) — FE-ACC-1
 
 **Title:** FE: Collections worklist with contact log + promise-to-pay
-**Parent:** ACC-23
+**Parent:** ACC-1
 **Contract:** `contracts/accounting/collections.contract.md`
 
 **Scope:**
@@ -96,10 +96,10 @@ The system should:
 
 ---
 
-### SUBTASK (Backend) — BE-ACC-23-collections
+### SUBTASK (Backend) — BE-ACC-1-collections
 
 **Title:** BE: GET /accounting/collections + follow-up actions
-**Parent:** ACC-23
+**Parent:** ACC-1
 **Contract:** `contracts/accounting/collections.contract.md`
 
 **Scope:**
@@ -115,7 +115,7 @@ The system should:
 
 ---
 
-### [ACC-24] — AA Accountant, ISBAT paginate and sort the AR invoices table
+### [ACC-2] — AA Accountant, ISBAT paginate and sort the AR invoices table
 
 **Status:** TO DO
 **Priority:** normal
@@ -171,10 +171,10 @@ The system should:
 
 ---
 
-### SUBTASK (Frontend) — FE-ACC-24
+### SUBTASK (Frontend) — FE-ACC-2
 
 **Title:** FE: Server-side pagination + sorting on AR invoices table
-**Parent:** ACC-24
+**Parent:** ACC-2
 **Contract:** `contracts/accounting/ar-invoices-list.contract.md`
 
 **Scope:**
@@ -189,10 +189,10 @@ The system should:
 
 ---
 
-### SUBTASK (Backend) — BE-ACC-24-ar-pagination
+### SUBTASK (Backend) — BE-ACC-2-ar-pagination
 
 **Title:** BE: GET /ar-invoices — add page/pageSize/sort params
-**Parent:** ACC-24
+**Parent:** ACC-2
 **Contract:** `contracts/accounting/ar-invoices-list.contract.md`
 
 **Scope:**

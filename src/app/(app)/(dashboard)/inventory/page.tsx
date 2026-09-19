@@ -559,7 +559,7 @@ export default function InventoryPage() {
                   { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
                   {
                     label: 'Goods Receiving',
-                    href: '/inventory/operations?tab=receiving',
+                    href: '/inventory/stock?tab=reports',
                     icon: Package,
                   },
                   { label: 'Stock Counts', href: '/inventory/counting', icon: Layers },
@@ -836,7 +836,7 @@ export default function InventoryPage() {
                             </span>
                             <p className="text-[10px] text-gray-400">{alert.currentQty} on hand</p>
                             <Link
-                              href="/inventory/operations?tab=receiving"
+                              href="/inventory/stock?tab=reports&new=1"
                               className="inline-flex items-center gap-0.5 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-800 hover:bg-red-200"
                             >
                               Receive

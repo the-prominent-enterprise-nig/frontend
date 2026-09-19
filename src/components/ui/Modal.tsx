@@ -16,11 +16,11 @@ interface ModalProps {
   description?: string
   onClose: () => void
   children: ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   footer?: ReactNode
 }
 
-const SIZE_CLASSES: Record<NonNullable<ModalProps['size']>, string> = {
+const SIZE_CLASSES: Record<Exclude<NonNullable<ModalProps['size']>, 'full'>, string> = {
   sm: 'max-w-sm',
   md: 'max-w-lg',
   lg: 'max-w-2xl',
@@ -46,6 +46,34 @@ export function Modal({
   }, [open, onClose])
 
   if (!open) return null
+
+  // `full` is the app's full-content modal, the shape CreatePoModal already
+  // uses: `absolute inset-0` inside the non-scrolling `main.relative` frame in
+  // (app)/layout.tsx, so it fills the page area while the sidebar and top bar
+  // stay visible and usable. No backdrop — the sheet is opaque and there is
+  // nothing behind it left to dim.
+  if (size === 'full') {
+    return (
+      <div className="absolute inset-0 z-50 flex flex-col bg-zinc-50">
+        <div className="flex items-start justify-between border-b border-gray-200 bg-white px-6 py-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            {description && <p className="mt-0.5 text-sm text-gray-500">{description}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        {footer && <div className="border-t border-gray-200 bg-white px-6 py-3">{footer}</div>}
+      </div>
+    )
+  }
 
   return (
     <div

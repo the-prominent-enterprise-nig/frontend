@@ -34,6 +34,10 @@ export const INVENTORY_PERMISSIONS = {
   // ── Transfers ──────────────────────────────────────────────────────────────
   TRANSFERS_READ: 'inventory:transfers:read',
   TRANSFERS_CREATE: 'inventory:transfers:create',
+  // Edit an undispatched request. Separate from CREATE because editing wipes
+  // every sign-off the request had collected and re-runs approval routing —
+  // it can undo an approval decision, not just raise a new request.
+  TRANSFERS_UPDATE: 'inventory:transfers:update',
   TRANSFERS_ACCEPT: 'inventory:transfers:accept',
   TRANSFERS_REJECT: 'inventory:transfers:reject',
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
@@ -205,6 +209,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Investigate and approve/reject a confirmed stock adjustment (Business Owner)',
   'inventory:transfers:read': 'View stock transfers',
   'inventory:transfers:create': 'Create stock transfer requests',
+  'inventory:transfers:update':
+    'Edit an undispatched stock transfer request (resubmits it for approval)',
   'inventory:transfers:accept':
     'Accept an incoming transfer request on behalf of the source branch',
   'inventory:transfers:reject':

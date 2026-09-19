@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Hash, RefreshCw, X, Truck, ArrowLeftRight, Search, Copy, Check } from 'lucide-react'
+import { Hash, RefreshCw, X, Truck, Search, Copy, Check } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 import { useSerialNumbers } from '../_hooks/useSerialNumbers'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -14,12 +14,10 @@ import {
   SERIAL_STATUS_DOT_COLORS,
   SerialStatusSchema,
   type SerialStatus,
-  type SerialNumberSummary,
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import ConsignToBranchModal from './ConsignToBranchModal'
-import ChangeSerialStatusModal from './ChangeSerialStatusModal'
 import CaravanItemTable from './CaravanItemTable'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -32,9 +30,8 @@ import { locationLabel } from '@/src/libs/format/locationLabel'
 import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
-// Matches Stock Balance's own IBM Plex + #5b21b6 palette (same StockHub tab
-// group) rather than the app-wide Poppins brand tokens, so the two lists in
-// the Stock hub read as one design language.
+// Matches Stock Balance's own #5b21b6 palette (same StockHub tab group), so
+// the two lists in the Stock hub read as one design language.
 
 const statusOptions = SerialStatusSchema.options
 
@@ -122,7 +119,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [isConsignOpen, setIsConsignOpen] = useState(false)
   const [moveTargetBranchId, setMoveTargetBranchId] = useState('')
-  const [statusChangeSerial, setStatusChangeSerial] = useState<SerialNumberSummary | null>(null)
 
   const {
     serials,
@@ -148,7 +144,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     warehouseOptions,
     itemOptions,
     branchOptions,
-    customerOptions,
     registerSerials,
     isRegistering,
     refetch,
@@ -171,8 +166,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     isClosingConsignment,
     consignToBranch,
     isConsigning,
-    updateStatus,
-    isUpdatingStatus,
   } = useSerialNumbers()
 
   const brandOptions = useMemo(() => {
@@ -503,7 +496,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                   <table className="w-full text-sm">
                     <thead>
                       <tr
-                        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
                       >
                         {showSelection && (
                           <th className="w-10 px-4 py-[9px]">
@@ -527,7 +520,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                         {caravanView && <th className="px-4 py-[9px] text-left">Home Branch</th>}
                         {caravanView && <th className="px-4 py-[9px] text-left">Event</th>}
                         <th className="px-4 py-[9px] text-center">Status</th>
-                        {canManage && <th className="w-10 px-4 py-[9px]" aria-hidden="true" />}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f4f4f6]">
@@ -553,20 +545,20 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-1.5">
                                 <span
-                                  className={`${MONO} text-[12.5px] font-semibold text-[#17171c]`}
+                                  className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
                                 >
                                   {serial.serialNumber}
                                 </span>
                                 <CopySerialButton serialNumber={serial.serialNumber} />
                               </div>
                               {displayClassificationLabel(serial.item?.type?.name) && (
-                                <span className="text-[11px] text-[#8b8b9b]">
+                                <span className="text-[13px] text-[#8b8b9b]">
                                   {displayClassificationLabel(serial.item?.type?.name)}
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="px-4 py-[11px] text-[12.5px] text-[#5b5b6b] hidden sm:table-cell">
+                          <td className="px-4 py-[11px] text-[14.5px] text-[#5b5b6b] hidden sm:table-cell">
                             {(() => {
                               const wh = serial.warehouse ?? serial.currentWarehouse
                               const owner = wh?.branch?.name ?? wh?.name ?? '—'
@@ -579,53 +571,53 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                                   <div className="font-medium text-[#8a4b06]">
                                     {serial.consignedToVenue}
                                   </div>
-                                  <div className="text-[11px] text-[#8b8b9b]">out from {owner}</div>
+                                  <div className="text-[13px] text-[#8b8b9b]">out from {owner}</div>
                                 </div>
                               )
                             })()}
                           </td>
-                          <td className="px-4 py-[11px] text-[12.5px] font-medium text-[#17171c] hidden lg:table-cell">
+                          <td className="px-4 py-[11px] text-[14.5px] font-medium text-[#17171c] hidden lg:table-cell">
                             {brandModel(serial.item)}
                           </td>
                           <td className="px-4 py-[11px] hidden lg:table-cell">
                             {serial.goodsReceiptLine?.goodsReceipt ? (
                               <Link
                                 href={`/inventory/stock/reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
-                                className={`${MONO} text-[12px] text-[#5b21b6] hover:underline`}
+                                className={`${MONO} text-[14px] text-[#5b21b6] hover:underline`}
                               >
                                 {serial.goodsReceiptLine.goodsReceipt.code}
                               </Link>
                             ) : (
-                              <span className={`${MONO} text-[12px] text-[#5b5b6b]`}>—</span>
+                              <span className={`${MONO} text-[14px] text-[#5b5b6b]`}>—</span>
                             )}
                             {serial.goodsReceiptLine?.goodsReceipt?.stockTransfer
                               ?.transferNumber && (
-                              <div className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                              <div className={`${MONO} text-[13px] text-[#8b8b9b]`}>
                                 ST{' '}
                                 {serial.goodsReceiptLine.goodsReceipt.stockTransfer.transferNumber}
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-[11px] text-[12.5px] text-[#5b5b6b] hidden lg:table-cell">
+                          <td className="px-4 py-[11px] text-[14.5px] text-[#5b5b6b] hidden lg:table-cell">
                             {originLabel(serial)}
                           </td>
-                          <td className="px-4 py-[11px] text-[12.5px] text-[#8b8b9b] hidden md:table-cell">
+                          <td className="px-4 py-[11px] text-[14.5px] text-[#8b8b9b] hidden md:table-cell">
                             {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
                               ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
                               : '—'}
                           </td>
                           {caravanView && (
                             <td className="px-4 py-[11px]">
-                              <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf3e7] px-2.5 py-0.5 text-[11px] font-medium text-[#8a4b06]">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf3e7] px-2.5 py-0.5 text-[13px] font-medium text-[#8a4b06]">
                                 {locationLabel(serial.currentWarehouse)}
                               </span>
                             </td>
                           )}
                           {caravanView && (
-                            <td className="px-4 py-[11px] text-[12.5px] text-[#5b5b6b]">
+                            <td className="px-4 py-[11px] text-[14.5px] text-[#5b5b6b]">
                               <div>{serial.caravanEventName ?? '—'}</div>
                               {(serial.caravanEventStartDate || serial.caravanEventEndDate) && (
-                                <div className="text-[11px] text-[#8b8b9b]">
+                                <div className="text-[13px] text-[#8b8b9b]">
                                   {serial.caravanEventStartDate
                                     ? formatShortDate(serial.caravanEventStartDate)
                                     : '—'}
@@ -640,20 +632,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                           <td className="px-4 py-[11px] text-center">
                             <SerialStatusPill status={serial.status} />
                           </td>
-                          {canManage && (
-                            <td className="px-4 py-[11px] text-right">
-                              <Tooltip label="Change status" align="end">
-                                <button
-                                  type="button"
-                                  onClick={() => setStatusChangeSerial(serial)}
-                                  aria-label="Change status"
-                                  className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-                                >
-                                  <ArrowLeftRight className="h-4 w-4" />
-                                </button>
-                              </Tooltip>
-                            </td>
-                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -733,16 +711,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
         isSubmitting={isConsigning}
         selectedCount={selectedIds.size}
         branches={branchOptions}
-      />
-
-      <ChangeSerialStatusModal
-        isOpen={!!statusChangeSerial}
-        onClose={() => setStatusChangeSerial(null)}
-        serial={statusChangeSerial}
-        onSubmit={(id, data) => updateStatus({ id, data })}
-        isSubmitting={isUpdatingStatus}
-        warehouses={warehouseOptions}
-        customers={customerOptions}
       />
     </div>
   )

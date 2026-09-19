@@ -32,11 +32,11 @@ type Tab = (typeof TABS)[number]['id']
 const DEFAULT_TAB: Record<DrawerContext, Tab> = { catalog: 'overview', stock: 'stock' }
 
 // The 'stock' tabs (Stock/Movements — every entry point except the Items
-// catalog) follow Purchase Orders' own IBM Plex + #5b21b6 palette, same
-// choice already made for Stock Balance, which is where most of this
-// drawer's traffic comes from. The 'catalog' Overview tab is untouched and
-// keeps the app-wide Poppins/zinc/prominent-purple look — PLEX is applied
-// per-section below, not at the drawer root, so it never bleeds into it.
+// catalog) follow Purchase Orders' own #5b21b6 palette, same choice already
+// made for Stock Balance, which is where most of this drawer's traffic comes
+// from. The 'catalog' Overview tab is untouched and keeps the app-wide
+// zinc/prominent-purple look — PLEX is applied per-section below, not at the
+// drawer root, so it never bleeds into it.
 const LIFECYCLE_META: Record<string, string> = {
   active: 'bg-[#e7f5ef] text-[#0b6644]',
   discontinued: 'bg-[#fdf3e7] text-[#8a4b06]',
@@ -191,14 +191,14 @@ function Item360Content({
         {itemData && context === 'stock' && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <a
-              href={`/inventory/operations?tab=receiving`}
+              href={`/inventory/stock?tab=reports&new=1`}
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#4a189b]"
             >
               <PackageCheck className="h-3.5 w-3.5" />
               Receive Stock
             </a>
             <a
-              href={`/inventory/transfers`}
+              href={`/inventory/transfers?new=1`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-[12px] font-medium text-[#3d3d4a] hover:border-[#a3a3b2]"
             >
               <ArrowLeftRight className="h-3.5 w-3.5" />

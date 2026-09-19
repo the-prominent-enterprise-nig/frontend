@@ -8,8 +8,13 @@ type DrawerProps = {
   isOpen: boolean
   onClose: () => void
   title?: string
+  /** Sits under the title, in the same fixed header. */
+  subtitle?: string
   children: ReactNode
-  width?: 'sm' | 'md' | 'lg'
+  width?: 'sm' | 'md' | 'lg' | 'xl'
+  /** Extra classes for the sliding panel — it portals to <body>, so a font
+   *  or theme set on the calling page can't reach it any other way. */
+  panelClassName?: string
   footer?: ReactNode
 }
 
@@ -17,14 +22,17 @@ const WIDTHS = {
   sm: 'w-full max-w-sm',
   md: 'w-full max-w-[560px]',
   lg: 'w-full max-w-[760px]',
+  xl: 'w-full max-w-[880px]',
 }
 
 export default function Drawer({
   isOpen,
   onClose,
   title,
+  subtitle,
   children,
   width = 'md',
+  panelClassName = '',
   footer,
 }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -99,16 +107,20 @@ export default function Drawer({
         inert={!isOpen}
         className={`fixed inset-y-0 right-0 z-50 flex flex-col bg-white shadow-2xl transition-transform duration-300 ease-out ${WIDTHS[width]} ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
-        } ${isVisible ? '' : 'invisible'}`}
+        } ${isVisible ? '' : 'invisible'} ${panelClassName}`}
       >
         {/* Header */}
         {title && (
-          <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
-            <h2 className="text-base font-semibold text-zinc-900">{title}</h2>
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-200 px-5 py-4">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-zinc-900">{title}</h2>
+              {subtitle && <p className="mt-0.5 text-sm text-zinc-500">{subtitle}</p>}
+            </div>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+              aria-label="Close"
+              className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
             >
               <X className="h-4 w-4" />
             </button>

@@ -1,6 +1,6 @@
 import path from 'path'
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, pickComboboxOption } from './utils'
 
 // Scenario 07 (Repair Transfer) — Part 1: UnitDocumentSheet extended with an
 // RFS-form file attachment and a repair provider (reused Supplier), plus a
@@ -88,45 +88,47 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     // labels render with a trailing "(optional)" span, so this can't use
     // exact text matching — the `form` scope alone is enough to avoid
     // colliding with the list table's "Repair Provider" column header.
-    const repairProviderSelect = form.getByText('Repair Provider').locator('..').locator('select')
+    const repairProviderInput = form.getByPlaceholder('Search repair provider…')
     // The file <input> itself is visually hidden (className="hidden") behind
     // a styled, clickable <label> — assert the label, not the input, is
     // visible; setInputFiles works on a hidden input regardless.
     const rfsFileInput = form.getByText('RFS Form').locator('..').locator('input[type="file"]')
-    await expect(repairProviderSelect).toBeVisible()
+    await expect(repairProviderInput).toBeVisible()
     await expect(form.getByText('Attach supporting document')).toBeVisible()
 
-    const warehouseSelect = form
-      .getByText('Warehouse', { exact: true })
-      .locator('..')
-      .locator('select')
-    await warehouseSelect.selectOption({ index: 1 })
+    // The field is labelled "Location" — it was renamed from "Warehouse" in
+    // 0b55a6c and this selector was left behind, which stalled every test in
+    // this file at the first create.
+    await pickComboboxOption(page, 'Search location…')
 
     // Units' serial picker is a SearchableSelect (type-ahead over the
     // already-loaded in-stock serials), not a native <select> — open it,
     // narrow by typing a substring of the first option's own label, and
     // confirm the list actually filters down before picking it.
     const serialInput = form.locator('input[placeholder="Search serial number…"]')
-    const serialCombobox = serialInput.locator('..').locator('..')
+    // The option list is portalled to <body> (so it floats over the modal
+    // rather than growing its scroll box), so it can't be reached by walking
+    // up from the input — only one list is ever open, so the page-level
+    // testid is the scope.
+    const serialOptions = page.getByTestId('searchable-select-option')
     await serialInput.click()
-    const firstOption = serialCombobox.locator('button').first()
+    const firstOption = serialOptions.first()
     await expect(firstOption).toBeVisible({ timeout: 10_000 })
-    const optionCountBeforeSearch = await serialCombobox.locator('button').count()
+    const optionCountBeforeSearch = await serialOptions.count()
     const searchTerm = (await firstOption.innerText()).slice(0, 6)
 
     await serialInput.fill(searchTerm)
     await expect(async () => {
-      const count = await serialCombobox.locator('button').count()
+      const count = await serialOptions.count()
       expect(count).toBeGreaterThan(0)
       expect(count).toBeLessThanOrEqual(optionCountBeforeSearch)
     }).toPass({ timeout: 5_000 })
-    for (const text of await serialCombobox.locator('button').allInnerTexts()) {
+    for (const text of await serialOptions.allInnerTexts()) {
       expect(text.toLowerCase()).toContain(searchTerm.toLowerCase())
     }
-    await serialCombobox.locator('button').first().click()
+    await serialOptions.first().click()
 
-    await repairProviderSelect.selectOption({ index: 1 })
-    const providerLabel = await repairProviderSelect.locator('option:checked').innerText()
+    const providerLabel = await pickComboboxOption(page, 'Search repair provider…')
     const providerName = providerLabel.split('—').slice(1).join('—').trim()
 
     await rfsFileInput.setInputFiles(path.join(__dirname, 'fixtures', 'rfs-form-sample.txt'))
@@ -137,13 +139,13 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     // separate newest-row-capture race documented at waitForNewRowCode.
     const rfsFileLabel = form.getByText('rfs-form-sample.txt')
     await expect(async () => {
-      if ((await repairProviderSelect.inputValue()) === '') {
-        await repairProviderSelect.selectOption({ index: 1 })
+      if ((await repairProviderInput.inputValue()) === '') {
+        await pickComboboxOption(page, 'Search repair provider…')
       }
       if (!(await rfsFileLabel.isVisible().catch(() => false))) {
         await rfsFileInput.setInputFiles(path.join(__dirname, 'fixtures', 'rfs-form-sample.txt'))
       }
-      await expect(repairProviderSelect).not.toHaveValue('')
+      await expect(repairProviderInput).not.toHaveValue('')
       await expect(rfsFileLabel).toBeVisible({ timeout: 3_000 })
       await form.getByRole('button', { name: 'Issue UDS' }).click()
       await expect(page.getByText('UDS issued').first()).toBeVisible({ timeout: 3_000 })
@@ -212,19 +214,25 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
 
     const form = page.locator('form')
-    const warehouseSelect = form
-      .getByText('Warehouse', { exact: true })
-      .locator('..')
-      .locator('select')
-    const binalbaganOption = warehouseSelect.locator('option').filter({ hasText: 'Binalbagan' })
+    const locationInput = form.getByPlaceholder('Search location…')
+    await locationInput.click()
+    // Typing narrows the type-ahead list — the same "pick Binalbagan
+    // explicitly rather than by index" intent the native <select> had.
+    await locationInput.fill('Binalbagan')
+    const binalbaganOption = page
+      .getByTestId('searchable-select-option')
+      .filter({ hasText: 'Binalbagan' })
     await expect(binalbaganOption).toHaveCount(1)
-    const binalbaganLabel = await binalbaganOption.innerText()
-    await warehouseSelect.selectOption({ label: binalbaganLabel })
+    await binalbaganOption.click()
 
     const serialInput = form.locator('input[placeholder="Search serial number…"]')
-    const serialCombobox = serialInput.locator('..').locator('..')
+    // The option list is portalled to <body> (so it floats over the modal
+    // rather than growing its scroll box), so it can't be reached by walking
+    // up from the input — only one list is ever open, so the page-level
+    // testid is the scope.
+    const serialOptions = page.getByTestId('searchable-select-option')
     await serialInput.click()
-    const firstOption = serialCombobox.locator('button').first()
+    const firstOption = serialOptions.first()
     await expect(firstOption).toBeVisible({ timeout: 10_000 })
     await firstOption.click()
 
@@ -255,17 +263,17 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
 
     const form = page.locator('form')
-    const warehouseSelect = form
-      .getByText('Warehouse', { exact: true })
-      .locator('..')
-      .locator('select')
-    await warehouseSelect.selectOption({ index: 1 })
+    await pickComboboxOption(page, 'Search location…')
 
     const serialInput = form.locator('input[placeholder="Search serial number…"]')
-    const serialCombobox = serialInput.locator('..').locator('..')
+    // The option list is portalled to <body> (so it floats over the modal
+    // rather than growing its scroll box), so it can't be reached by walking
+    // up from the input — only one list is ever open, so the page-level
+    // testid is the scope.
+    const serialOptions = page.getByTestId('searchable-select-option')
     await serialInput.click()
-    await expect(serialCombobox.locator('button').first()).toBeVisible({ timeout: 10_000 })
-    await serialCombobox.locator('button').first().click()
+    await expect(serialOptions.first()).toBeVisible({ timeout: 10_000 })
+    await serialOptions.first().click()
 
     await expect(async () => {
       await form.getByRole('button', { name: 'Issue UDS' }).click()
@@ -332,25 +340,27 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
 
     const form = page.locator('form')
-    const warehouseSelect = form
-      .getByText('Warehouse', { exact: true })
-      .locator('..')
-      .locator('select')
+    // The options arrive from their own query, so the list can still be empty
+    // on the first attempt — retry the whole pick until one actually lands.
     await expect(async () => {
-      await warehouseSelect.selectOption({ index: 1 })
-      await expect(warehouseSelect).not.toHaveValue('')
+      await pickComboboxOption(page, 'Search location…')
+      await expect(form.getByPlaceholder('Search location…')).not.toHaveValue('')
     }).toPass({ timeout: 10_000 })
 
     const serialInput = form.locator('input[placeholder="Search serial number…"]')
-    const serialCombobox = serialInput.locator('..').locator('..')
+    // The option list is portalled to <body> (so it floats over the modal
+    // rather than growing its scroll box), so it can't be reached by walking
+    // up from the input — only one list is ever open, so the page-level
+    // testid is the scope.
+    const serialOptions = page.getByTestId('searchable-select-option')
     await serialInput.click()
-    await expect(serialCombobox.locator('button').first()).toBeVisible({ timeout: 10_000 })
-    await serialCombobox.locator('button').first().click()
+    await expect(serialOptions.first()).toBeVisible({ timeout: 10_000 })
+    await serialOptions.first().click()
 
-    const repairProviderSelect = form.getByText('Repair Provider').locator('..').locator('select')
+    const repairProviderInput = form.getByPlaceholder('Search repair provider…')
     await expect(async () => {
-      await repairProviderSelect.selectOption({ index: 1 })
-      await expect(repairProviderSelect).not.toHaveValue('')
+      await pickComboboxOption(page, 'Search repair provider…')
+      await expect(repairProviderInput).not.toHaveValue('')
       await form.getByRole('button', { name: 'Issue UDS' }).click()
       await expect(page.getByText('UDS issued').first()).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 20_000 })
@@ -434,17 +444,17 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
 
     const form = page.locator('form')
-    const warehouseSelect = form
-      .getByText('Warehouse', { exact: true })
-      .locator('..')
-      .locator('select')
-    await warehouseSelect.selectOption({ index: 1 })
+    await pickComboboxOption(page, 'Search location…')
 
     const serialInput = form.locator('input[placeholder="Search serial number…"]')
-    const serialCombobox = serialInput.locator('..').locator('..')
+    // The option list is portalled to <body> (so it floats over the modal
+    // rather than growing its scroll box), so it can't be reached by walking
+    // up from the input — only one list is ever open, so the page-level
+    // testid is the scope.
+    const serialOptions = page.getByTestId('searchable-select-option')
     await serialInput.click()
-    await expect(serialCombobox.locator('button').first()).toBeVisible({ timeout: 10_000 })
-    await serialCombobox.locator('button').first().click()
+    await expect(serialOptions.first()).toBeVisible({ timeout: 10_000 })
+    await serialOptions.first().click()
 
     // No repair provider selected on purpose — this test covers the "issued
     // without one" recovery path.
@@ -509,20 +519,22 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
 
     const form = page.locator('form')
-    const warehouseSelect = form
-      .getByText('Warehouse', { exact: true })
-      .locator('..')
-      .locator('select')
+    // The options arrive from their own query, so the list can still be empty
+    // on the first attempt — retry the whole pick until one actually lands.
     await expect(async () => {
-      await warehouseSelect.selectOption({ index: 1 })
-      await expect(warehouseSelect).not.toHaveValue('')
+      await pickComboboxOption(page, 'Search location…')
+      await expect(form.getByPlaceholder('Search location…')).not.toHaveValue('')
     }).toPass({ timeout: 10_000 })
 
     const serialInput = form.locator('input[placeholder="Search serial number…"]')
-    const serialCombobox = serialInput.locator('..').locator('..')
+    // The option list is portalled to <body> (so it floats over the modal
+    // rather than growing its scroll box), so it can't be reached by walking
+    // up from the input — only one list is ever open, so the page-level
+    // testid is the scope.
+    const serialOptions = page.getByTestId('searchable-select-option')
     await serialInput.click()
-    await expect(serialCombobox.locator('button').first()).toBeVisible({ timeout: 10_000 })
-    await serialCombobox.locator('button').first().click()
+    await expect(serialOptions.first()).toBeVisible({ timeout: 10_000 })
+    await serialOptions.first().click()
 
     await expect(async () => {
       await form.getByRole('button', { name: 'Issue UDS' }).click()
