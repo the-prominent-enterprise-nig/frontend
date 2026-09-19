@@ -67,10 +67,16 @@ export function CashInTransitList({
   canManage,
   restrictedBranchId,
   isUnrestricted,
+  // Scenario 53 — POS calls this balance "Undeposited Funds" (the client's own
+  // word, and the BALANCE column on their Daily Collection Report), while
+  // Accounting keeps "Cash-in-Transit" because that is the GL account an
+  // accountant reconciles against. Same data, same screen, two vocabularies.
+  title = 'Cash-in-Transit',
 }: {
   canManage: boolean
   restrictedBranchId: string | null
   isUnrestricted: boolean
+  title?: string
 }) {
   const [rows, setRows] = useState<CashInTransitSessionRow[]>([])
   const [accounts, setAccounts] = useState<BankAccount[]>([])
@@ -147,7 +153,7 @@ export function CashInTransitList({
     if (res.success && res.data) {
       setMonitorRows(res.data)
     } else {
-      setMonitorError(res.error ?? 'Failed to load Cash-in-Transit monitor.')
+      setMonitorError(res.error ?? '`Failed to load ${title} monitor.`')
     }
     setMonitorLoading(false)
   }
@@ -201,20 +207,16 @@ export function CashInTransitList({
                 className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
               >
                 <ArrowLeft size={15} />
-                Back to Cash-in-Transit
+                Back to {title}
               </button>
-              <h2 className="mt-1 text-2xl font-bold text-prominent-purple-900">
-                Cash-in-Transit History
-              </h2>
+              <h2 className="mt-1 text-2xl font-bold text-prominent-purple-900">{title} History</h2>
               <p className="mt-0.5 text-sm text-gray-500">Sessions already deposited to a bank.</p>
             </>
           ) : view === 'monitor' ? (
             <>
-              <h2 className="text-2xl font-bold text-prominent-purple-900">
-                Cash-in-Transit Monitor
-              </h2>
+              <h2 className="text-2xl font-bold text-prominent-purple-900">{title} Monitor</h2>
               <p className="text-sm text-gray-500">
-                Every branch&apos;s outstanding Cash-in-Transit balance, company-wide.
+                Every branch&apos;s outstanding {title.toLowerCase()} balance, company-wide.
               </p>
             </>
           ) : drillBranchId ? (
@@ -227,7 +229,7 @@ export function CashInTransitList({
                 Back to monitor
               </button>
               <h2 className="mt-1 text-2xl font-bold text-prominent-purple-900">
-                {drillBranchName ?? 'Branch'} — Cash-in-Transit
+                {drillBranchName ?? 'Branch'} — {title}
               </h2>
               <p className="mt-0.5 text-sm text-gray-500">
                 Closed sessions with cash still awaiting an actual bank deposit.
@@ -235,7 +237,7 @@ export function CashInTransitList({
             </>
           ) : (
             <>
-              <h2 className="text-2xl font-bold text-prominent-purple-900">Cash-in-Transit</h2>
+              <h2 className="text-2xl font-bold text-prominent-purple-900">{title}</h2>
               <p className="text-sm text-gray-500">
                 Closed sessions with cash still awaiting an actual bank deposit.
               </p>
@@ -378,7 +380,7 @@ export function CashInTransitList({
                 ) : historyRows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
-                      No Cash-in-Transit history yet.
+                      No {title.toLowerCase()} history yet.
                     </td>
                   </tr>
                 ) : (
@@ -429,7 +431,7 @@ export function CashInTransitList({
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={canManage ? 6 : 5} className="px-3 py-8 text-center text-gray-400">
-                    No outstanding Cash-in-Transit sessions.
+                    No outstanding {title.toLowerCase()} sessions.
                   </td>
                 </tr>
               ) : (
@@ -510,10 +512,10 @@ function DepositForm({
     })
     setSaving(false)
     if (!res.success) {
-      setError(res.error || res.message || 'Failed to clear Cash-in-Transit')
+      setError(res.error || res.message || 'Failed to post the deposit')
       return
     }
-    alert('Cash-in-Transit deposit posted to GL.')
+    alert('Deposit posted to GL.')
     onSaved()
   }
 
