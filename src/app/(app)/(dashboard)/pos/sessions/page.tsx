@@ -12,6 +12,7 @@ import {
   verifyCashierPin,
   searchUsers,
   getSessionReconciliation,
+  getSessionTenderSummary,
   getCurrentSessionUser,
 } from '../_actions/pos-actions'
 import { PosDateTime } from '../_components/PosDate'
@@ -24,6 +25,7 @@ import type {
   CloseSessionInput,
   HandoverSessionInput,
   SessionReconciliation,
+  SessionTenderSummary,
 } from '@/src/schema/pos'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
@@ -848,6 +850,25 @@ function CloseSessionModal({
   // the seed only sets a cashierPin on cashier accounts so there is no PIN to
   // enter either. Two separate dead ends for the one role that bypasses every
   // permission check in the app.
+  // Scenario 53 Part 3 — what the shift took on every tender except cash.
+  // Loaded when the modal opens so the cashier can see it while counting.
+  // Cash is withheld by the endpoint itself, not filtered here: the count has
+  // to stay blind, and opening float + cash total would give the answer away.
+  const [tenderSummary, setTenderSummary] = useState<SessionTenderSummary | null>(null)
+  const [tendersLoading, setTendersLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    getSessionTenderSummary(session.id).then((res) => {
+      if (cancelled) return
+      if (res.success && res.data) setTenderSummary(res.data)
+      setTendersLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [session.id])
+
   const { data: me } = useMe()
   const selfCanApprove = !!me && can(me, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
 
@@ -930,6 +951,38 @@ function CloseSessionModal({
         </p>
       )}
       <div className="space-y-4">
+        <div>
+          <label className="mb-2 block text-xs font-semibold text-gray-600">
+            Taken This Shift (non-cash)
+          </label>
+          <div className="rounded-lg border border-gray-200 bg-gray-50/70 px-4 py-2">
+            {tendersLoading ? (
+              <Skeleton className="h-4 w-40" />
+            ) : tenderSummary && Object.keys(tenderSummary.tenders).length > 0 ? (
+              <dl className="space-y-1">
+                {Object.entries(tenderSummary.tenders).map(([method, amount]) => (
+                  <div key={method} className="flex items-center justify-between gap-4 text-sm">
+                    <dt className="text-gray-600">{tenderLabel(method)}</dt>
+                    <dd className="tabular-nums font-medium text-gray-800">
+                      {formatCurrency(amount)}
+                    </dd>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-4 border-t border-gray-200 pt-1 text-sm">
+                  <dt className="font-semibold text-gray-700">Total</dt>
+                  <dd className="tabular-nums font-bold text-gray-900">
+                    {formatCurrency(tenderSummary.totalNonCash)}
+                  </dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="text-sm text-gray-400">No non-cash payments this shift.</p>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            Recorded by the system and not editable. Count cash only.
+          </p>
+        </div>
         <div>
           <label className="mb-2 block text-xs font-semibold text-gray-600">
             Cash Denomination Count

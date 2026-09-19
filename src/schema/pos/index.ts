@@ -84,6 +84,18 @@ export interface CloseSessionInput {
   managerUserId?: string
 }
 
+/**
+ * Scenario 53 Part 3 — non-cash tenders for the close screen's read-only
+ * panel. Cash is deliberately absent: the drawer count is blind by design, and
+ * cash + the visible opening float would give away the expected figure.
+ */
+export interface SessionTenderSummary {
+  sessionId: string
+  status: PosSessionStatus
+  tenders: Record<string, number>
+  totalNonCash: number
+}
+
 export interface SessionReconciliation {
   sessionId: string
   openingCash: number
