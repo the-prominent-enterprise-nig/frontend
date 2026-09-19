@@ -12,7 +12,7 @@ import {
   NEW_CO_MAKER_VALUE,
   type CreateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
-import { customersApi } from '@/src/libs/api/crm'
+import { posCustomersApi } from '@/src/libs/api/pos-customers'
 import { useCreateCreditApplication } from '../_hooks/useCreateCreditApplication'
 import { ApplicantSearchCombobox } from './ApplicantSearchCombobox'
 import { ApplicantContactFields } from './ApplicantContactFields'
@@ -58,6 +58,7 @@ export default function NewCreditApplicationForm({
     handleSubmit,
     watch,
     setValue,
+    trigger,
     getValues,
     reset,
     formState: { errors },
@@ -124,7 +125,7 @@ export default function NewCreditApplicationForm({
 
   function goToCreateCustomer() {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(getValues()))
-    router.push('/crm/customers/new?returnTo=/pos/credit-applications/new')
+    router.push('/pos/customers/new?returnTo=/pos/credit-applications/new')
   }
 
   const applicantQuery = useQuery({
@@ -185,7 +186,7 @@ export default function NewCreditApplicationForm({
         const phoneChanged = (data.applicantPhone || '') !== (applicant.phone ?? '')
         const emailChanged = (data.applicantEmail || '') !== (applicant.email ?? '')
         if (phoneChanged || emailChanged) {
-          const contactRes = await customersApi.update(data.applicantCustomerId, {
+          const contactRes = await posCustomersApi.update(data.applicantCustomerId, {
             phone: data.applicantPhone || undefined,
             email: data.applicantEmail || undefined,
           })
@@ -225,7 +226,7 @@ export default function NewCreditApplicationForm({
         if (existing) {
           resolvedCoMakerId = existing.id
         } else {
-          const addRes = await customersApi.addCoMaker(data.applicantCustomerId, {
+          const addRes = await posCustomersApi.addCoMaker(data.applicantCustomerId, {
             name: newName,
             relationship: newRelationship,
             contactNumber: (data.newCoMakerContactNumber ?? '').trim(),
@@ -255,7 +256,7 @@ export default function NewCreditApplicationForm({
             (data.coMakerContactNumber || '') !== selected.contactNumber ||
             (data.coMakerEmail || '') !== (selected.email ?? ''))
         if (changed) {
-          const updateRes = await customersApi.updateCoMaker(
+          const updateRes = await posCustomersApi.updateCoMaker(
             data.applicantCustomerId,
             data.coMakerId,
             {
@@ -286,6 +287,10 @@ export default function NewCreditApplicationForm({
         // '' would otherwise coerce to 0 via the DTO's @Type(() => Number),
         // not "no down payment given".
         downPayment: data.downPayment || undefined,
+        // Form-only: it exists so the schema can check the down-payment
+        // floor against the resolved total. The DTO whitelist would drop it
+        // anyway, but sending a field the API never declares is noise.
+        resolvedItemTotal: undefined,
       })
       if (!result.success) {
         setServerError(result.message)
@@ -367,6 +372,8 @@ export default function NewCreditApplicationForm({
 
             <CreditApplicationFinancingFields
               control={control}
+              setValue={setValue}
+              trigger={trigger}
               errors={errors}
               branchId={sessionBranchId}
             />

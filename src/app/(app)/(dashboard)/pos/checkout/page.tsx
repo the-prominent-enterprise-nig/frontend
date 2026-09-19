@@ -94,6 +94,12 @@ import PriceUseSelector from './_components/PriceUseSelector'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
+import {
+  AUTO_PARK_CONSUMED_KEY,
+  readCheckoutHandoff,
+  writeCheckoutHandoff,
+  clearCheckoutHandoff,
+} from '@/src/libs/pos/checkout-handoff'
 import type {
   PosPaymentMethod,
   PosCardTxnMode,
@@ -313,7 +319,6 @@ const POS_FROM_TAB_KEY = 'pos_from_tab'
 // The nonce ties the two together so returning to checkout can close out
 // the row it just picked back up, instead of leaving the list showing a
 // sale that is already back on screen.
-const AUTO_PARK_CONSUMED_KEY = 'pos_autopark_consumed'
 
 // Leaving checkout is not the same as abandoning the sale — a cashier
 // checking stock, a price or the parked list is back in seconds, and parking
@@ -992,16 +997,13 @@ export default function CheckoutPage() {
       } = saleSnapshotRef.current
       if (lines.length === 0) return false
       try {
-        localStorage.setItem(
-          'pos_resumed_cart',
-          JSON.stringify({
-            lines,
-            customerId: customer?.id,
-            promoCodeId: promo?.promoCode?.id,
-            ...extra,
-          })
-        )
-        return true
+        return writeCheckoutHandoff({
+          lines,
+          customerId: customer?.id,
+          promoCodeId: promo?.promoCode?.id,
+          sessionId: saleSnapshotRef.current.sessionId || undefined,
+          ...extra,
+        })
       } catch {
         return false
       }
@@ -1057,13 +1059,9 @@ export default function CheckoutPage() {
             if (!res.success || !res.data) return
             const id = res.data.id
             try {
-              const raw = localStorage.getItem('pos_resumed_cart')
-              const parsed = raw ? (JSON.parse(raw) as { autoParkNonce?: string }) : null
+              const parsed = readCheckoutHandoff<CartLine>()
               if (parsed?.autoParkNonce === nonce) {
-                localStorage.setItem(
-                  'pos_resumed_cart',
-                  JSON.stringify({ ...parsed, autoParkedId: id })
-                )
+                writeCheckoutHandoff({ ...parsed, autoParkedId: id })
                 return
               }
               // The stash is gone or belongs to someone else. Either checkout
@@ -1095,48 +1093,88 @@ export default function CheckoutPage() {
     if (!success && !pendingApproval && !reservationSuccess) return
     cancelPendingAutoPark()
     try {
-      localStorage.removeItem('pos_resumed_cart')
+      clearCheckoutHandoff()
       localStorage.removeItem(AUTO_PARK_CONSUMED_KEY)
     } catch {}
   }, [success, pendingApproval, reservationSuccess])
 
-  // Resume a parked sale or QMS tab stored in localStorage
+  // Restores an in-progress sale on arrival, from whichever direction the
+  // cashier came: a parked sale, a QMS tab, a detour to create a customer,
+  // or simply wandering off and back.
+  //
+  // ONE effect owns this. It used to be two — a stash reader and a
+  // ?customerId= reader — which raced: the stash resolved its customer
+  // asynchronously and could land AFTER the query string had attached a
+  // freshly created one, silently replacing it. The two also disagreed
+  // about what a customer is: the query-string path attached a bare
+  // {id, name} stub with no code, phone or loyalty context.
+  //
+  // Precedence is explicit: a customer named in the URL was just created
+  // for THIS sale, so it wins over whatever the stash remembers. Either way
+  // the full record is fetched, so both routes end up with the same object.
+  const handoffConsumed = useRef(false)
   useEffect(() => {
-    const raw = localStorage.getItem('pos_resumed_cart')
-    if (raw) {
-      try {
-        const data = JSON.parse(raw) as {
-          lines?: CartLine[]
-          customerId?: string
-          autoParkNonce?: string
-          autoParkedId?: string
-        }
-        if (Array.isArray(data.lines) && data.lines.length > 0) setCart(data.lines)
-        // Left by the auto-park teardown. The cart itself has just come back
-        // from this stash, so the parked row is redundant — resume it purely
-        // to take it off the Parked Sales list, which would otherwise show a
-        // sale that is already open on this screen. The nonce covers the
-        // race where we get back here before the park request lands: the
-        // teardown reads this key and closes the row out itself.
-        if (data.autoParkNonce) {
-          localStorage.setItem(AUTO_PARK_CONSUMED_KEY, data.autoParkNonce)
-        }
-        if (data.autoParkedId) {
+    // Waits for the open-session list: a handoff is only honoured if the
+    // session it was rung up under is still open, so a fresh shift never
+    // inherits the last cashier's cart. Until the list arrives there is no
+    // way to tell, so nothing is consumed yet.
+    if (sessionsLoading) return
+    if (handoffConsumed.current) return
+    handoffConsumed.current = true
+
+    const handoff = readCheckoutHandoff<CartLine>()
+    // A handoff with no sessionId predates this rule (or was written with
+    // no session selected) — honoured, since discarding it would lose a
+    // cart for no stated reason.
+    const belongsToAnOpenSession =
+      !handoff?.sessionId || openSessions.some((os) => os.id === handoff.sessionId)
+    if (handoff && !belongsToAnOpenSession) {
+      clearCheckoutHandoff()
+    }
+    if (handoff && belongsToAnOpenSession) {
+      if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
+        setCart(handoff.lines)
+      }
+      // Auto-park bookkeeping: the cart has just come back from this stash,
+      // so any row parked alongside it is redundant. Resume it purely to
+      // take it off the Parked Sales list. The nonce covers the race where
+      // we arrive before the park request lands — the teardown reads this
+      // key and closes the row out itself.
+      if (handoff.autoParkNonce) {
+        try {
+          localStorage.setItem(AUTO_PARK_CONSUMED_KEY, handoff.autoParkNonce)
+        } catch {}
+      }
+      if (handoff.autoParkedId) {
+        try {
           localStorage.removeItem(AUTO_PARK_CONSUMED_KEY)
-          void resumeParkedSale(data.autoParkedId)
-        }
-        // parkSale has always written customerId here, but this handler only
-        // ever read `lines` — so resuming dropped the customer and left an
-        // installment cart with nobody attached, which the flow requires and
-        // which gives the cashier no hint what's wrong. Re-select them.
-        if (data.customerId) {
-          getCustomerById(data.customerId).then((res) => {
-            if (res.success && res.data) selectCustomer(res.data)
+        } catch {}
+        void resumeParkedSale(handoff.autoParkedId)
+      }
+      clearCheckoutHandoff()
+    }
+
+    const createdCustomerId = searchParams.get('customerId')
+    const customerId = createdCustomerId ?? handoff?.customerId
+    if (customerId) {
+      getCustomerById(customerId).then((res) => {
+        if (res.success && res.data) {
+          void selectCustomer(res.data)
+        } else if (createdCustomerId) {
+          // The record exists — it was just saved — so a failed lookup is a
+          // transport problem, not a missing customer. Fall back to the
+          // name the form handed over so the sale still has someone on it
+          // rather than silently losing them.
+          void selectCustomer({
+            id: createdCustomerId,
+            name: searchParams.get('customerName') || 'Customer',
           })
         }
-      } catch {}
-      localStorage.removeItem('pos_resumed_cart')
+      })
     }
+    // Clear the query string so a refresh doesn't re-attach.
+    if (createdCustomerId) router.replace('/pos/checkout')
+
     const tabMeta = localStorage.getItem(POS_FROM_TAB_KEY)
     if (tabMeta) {
       try {
@@ -1149,26 +1187,11 @@ export default function CheckoutPage() {
         setFromTab(meta)
       } catch {}
     }
-  }, [])
-
-  // Coming back from the CRM create-customer form (goToCreateCustomer sends
-  // ?returnTo=/pos/checkout, which returns with the new customer appended):
-  // attach them to the sale the way the old in-page modal's onCreated did,
-  // so the cashier lands back at the till ready to continue. Query string is
-  // cleared straight after so a refresh doesn't re-attach. selectCustomer is
-  // a hoisted function declaration, hence safe to call from here.
-  const newCustomerHandled = useRef(false)
-  useEffect(() => {
-    if (newCustomerHandled.current) return
-    const newCustomerId = searchParams.get('customerId')
-    if (!newCustomerId) return
-    newCustomerHandled.current = true
-    selectCustomer({
-      id: newCustomerId,
-      name: searchParams.get('customerName') || 'Customer',
-    })
-    router.replace('/pos/checkout')
-  }, [searchParams, router])
+    // Runs once, on the first render where the session list is known —
+    // handoffConsumed guards re-entry. searchParams/router are read once,
+    // on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsLoading, openSessions])
 
   // Network detection
   useEffect(() => {
@@ -1740,28 +1763,63 @@ export default function CheckoutPage() {
     if (histRes.success) setCustomerHistory((histRes.data ?? []).slice(0, 5))
   }
 
-  // "New Customer" leaves checkout for the canonical CRM create form
+  // "New Customer" leaves checkout for POS's own create form
   // (2026-09-18 client request) instead of the old in-page modal, so walk-ins
   // and CRM-added customers go through one form and one endpoint. The cart is
   // plain React state and this is a real route change, so it has to be stashed
   // first or the in-progress sale is silently lost — reusing the same
   // localStorage handoff the parked-sales page already resumes through
   // (see the rehydrate effect above).
-  function goToCreateCustomer() {
-    // This detour hands the cart over itself and brings it straight back, so
-    // it doesn't want a parked row on top of that — it's a trip to a form,
-    // not an abandoned sale.
+  /**
+   * Creating a customer starts a new sale, so the till is left empty rather
+   * than carrying the old cart through the detour (client decision,
+   * 2026-09-19). Anything already rung up is PARKED first — cleared from
+   * the screen, never discarded — so it can be picked back up from Parked
+   * Sales by this cashier or anyone else at the branch.
+   *
+   * This deliberately replaces the old stash-and-restore handoff. That
+   * carried the cart and the customer across in localStorage, and the
+   * overlap between it, the ?customerId= return and the parked row is what
+   * produced three separate lost-customer bugs. One rule now: leave the
+   * till clean, put the sale somewhere durable, come back to a fresh
+   * screen.
+   */
+  async function goToCreateCustomer() {
+    // Nothing for the auto-park teardown to do — this function parks
+    // deliberately, and a scheduled row on top would duplicate it.
     skipAutoParkRef.current = true
-    // Only `lines` is stashed because only `lines` is read back — the
-    // rehydrate effect ignores the other keys parkSale writes, so an
-    // applied promo code still has to be re-entered on return.
-    if (cart.length > 0) {
-      localStorage.setItem(
-        'pos_resumed_cart',
-        JSON.stringify({ lines: cart, customerId: selectedCustomer?.id })
-      )
+    // Any previous handoff is stale the moment we decide not to carry one.
+    clearCheckoutHandoff()
+
+    const session = openSessions.find((os) => os.id === sessionId)
+    if (cart.length > 0 && session) {
+      const res = await parkSale({
+        sessionId: session.id,
+        terminalId: session.terminalId,
+        label: `Held to add a customer — ${selectedCustomer?.name?.trim() || 'Walk-in'}`,
+        cartData: {
+          lines: cart,
+          customerId: selectedCustomer?.id,
+          promoCodeId: promoResult?.promoCode?.id,
+        },
+      })
+      if (!res.success) {
+        // Refuse to navigate rather than silently drop the sale: without a
+        // parked row and without a stash, leaving would destroy it.
+        setError(
+          res.error ?? 'Could not hold this sale. Complete or park it before adding a customer.'
+        )
+        skipAutoParkRef.current = false
+        return
+      }
+      resetSale()
+    } else if (cart.length > 0 && !session) {
+      setError('Select a session before adding a customer, so the current sale can be held.')
+      skipAutoParkRef.current = false
+      return
     }
-    router.push('/crm/customers/new?returnTo=/pos/checkout')
+
+    router.push('/pos/customers/new?returnTo=/pos/checkout')
   }
 
   /**
@@ -1781,10 +1839,15 @@ export default function CheckoutPage() {
   function goToRaiseCreditApplication() {
     skipAutoParkRef.current = true
     if (cart.length > 0) {
-      localStorage.setItem(
-        'pos_resumed_cart',
-        JSON.stringify({ lines: cart, customerId: selectedCustomer?.id })
-      )
+      // Unlike "New Customer", this detour DOES carry the cart: the
+      // application is raised for these exact items, so leaving them behind
+      // would mean re-entering every one of them on the form. Stamped with
+      // the session so a later shift can't inherit it.
+      writeCheckoutHandoff({
+        lines: cart,
+        customerId: selectedCustomer?.id,
+        sessionId: sessionId || undefined,
+      })
     }
     localStorage.setItem(
       'credit_application_draft',

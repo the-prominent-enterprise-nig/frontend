@@ -198,7 +198,76 @@ const CreateCreditApplicationBaseSchema = z.object({
   // undefined before submit (an empty string would otherwise coerce to 0,
   // not "no down payment").
   downPayment: z.string().optional().or(z.literal('')),
+  // Client-only, like estimatedPrice above, and stripped the same way. The
+  // item total as actually RESOLVED under the chosen Price Use — not the
+  // flat catalog price — mirrored out of CreditApplicationFinancingFields
+  // so refineDownPayment below can check the floor against the very number
+  // the form is showing. Summing items[].estimatedPrice instead would use
+  // the flat price and compute a floor off a different total (a real item
+  // in the catalog differs by PHP 4,009 between the two).
+  resolvedItemTotal: z.number().optional(),
 })
+
+/** Mirrors CreditApplicationService.resolveFinancing()'s own rules so a bad
+ * down payment is caught under the field, at the moment it is typed, rather
+ * than coming back as a generic banner after submit.
+ *
+ * The floor only applies once a financing term is chosen, which is exactly
+ * when the server starts enforcing it — an application can still be raised
+ * with no term yet. The half-centavo tolerance matches the server's, which
+ * exists for float rounding on the client's computed 10%. */
+export function refineDownPayment(
+  data: {
+    financingTermId?: string
+    downPayment?: string
+    resolvedItemTotal?: number
+  },
+  ctx: z.RefinementCtx
+) {
+  if (!data.financingTermId) return
+
+  const raw = data.downPayment?.trim()
+  if (!raw) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['downPayment'],
+      message: 'Down payment is required once a term is selected',
+    })
+    return
+  }
+
+  const downPayment = Number(raw)
+  if (Number.isNaN(downPayment)) {
+    ctx.addIssue({ code: 'custom', path: ['downPayment'], message: 'Enter a valid amount' })
+    return
+  }
+
+  // No resolved total yet (prices still loading) — the server still has the
+  // final say, so don't invent a floor from a number we don't have.
+  const total = data.resolvedItemTotal ?? 0
+  if (total <= 0) return
+
+  const floor = total * 0.1
+  if (downPayment < floor - 0.005) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['downPayment'],
+      message: `Down payment must be at least ${pesos(floor)} (10% of the item total)`,
+    })
+    return
+  }
+  if (downPayment > total) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['downPayment'],
+      message: `Down payment cannot exceed the item total (${pesos(total)})`,
+    })
+  }
+}
+
+function pesos(n: number): string {
+  return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
 
 export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.superRefine(
   (data, ctx) => {
@@ -228,6 +297,8 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
         })
       }
     }
+
+    refineDownPayment(data, ctx)
   }
 )
 export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditApplicationBaseSchema>
@@ -237,7 +308,11 @@ export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditAppli
 // aren't exposed for edit, but the backend's PATCH accepts any subset via
 // PartialType(CreateCreditApplicationDto), so this stays a full .partial()
 // off the base (pre-refinement) schema.
-export const UpdateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.partial()
+// .superRefine, not a bare .partial(): the Edit modal exposes the financing
+// fields too, so a draft edited down to a 1% down payment would otherwise
+// sail past the form and be rejected by the server instead.
+export const UpdateCreditApplicationFormSchema =
+  CreateCreditApplicationBaseSchema.partial().superRefine(refineDownPayment)
 export type UpdateCreditApplicationFormValues = z.infer<typeof UpdateCreditApplicationFormSchema>
 
 export const CancelCreditApplicationFormSchema = z.object({

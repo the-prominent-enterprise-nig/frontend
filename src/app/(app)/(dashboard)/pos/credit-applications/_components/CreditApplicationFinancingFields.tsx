@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Controller,
   useWatch,
@@ -8,6 +8,8 @@ import {
   type FieldErrors,
   type FieldValues,
   type Path,
+  type UseFormSetValue,
+  type UseFormTrigger,
 } from 'react-hook-form'
 import { Calculator, Loader2 } from 'lucide-react'
 import {
@@ -36,6 +38,8 @@ type FinancingScopedFormValues = FieldValues & {
 
 type Props<T extends FinancingScopedFormValues> = {
   control: Control<T>
+  setValue: UseFormSetValue<T>
+  trigger: UseFormTrigger<T>
   errors: FieldErrors<T>
   /** Scopes the financing term list the same way checkout's own selector
    * does — a branch's own terms plus tenant-wide ones. */
@@ -54,6 +58,8 @@ type Props<T extends FinancingScopedFormValues> = {
 // server-side snapshot taken at submit time.
 export function CreditApplicationFinancingFields<T extends FinancingScopedFormValues>({
   control,
+  setValue,
+  trigger,
   errors,
   branchId,
 }: Props<T>) {
@@ -127,6 +133,59 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     return sum + (resolved ?? i.estimatedPrice ?? 0)
   }, 0)
 
+  // The floor is checked in the schema, which can only see form state — so
+  // the resolved total has to live there too, not just in this component.
+  useEffect(() => {
+    setValue('resolvedItemTotal' as Path<T>, estimatedTotal as never, { shouldDirty: false })
+  }, [estimatedTotal, setValue])
+
+  // Seed Down Payment with the 10% floor as a real value rather than a
+  // greyed-out hint (review feedback, 2026-09-19). The hint vanished the
+  // moment anything was typed, so nothing on screen held the collector to
+  // the minimum and the first genuine check was a generic banner after
+  // submit. Re-seeds when the term or the total changes, since the floor
+  // moves with them, but never overwrites a figure already entered — the
+  // collector is free to take more up front, and the schema refuses less.
+  const seededForRef = useRef<string | null>(null)
+  // The exact string this component last wrote. Changing the Price Use moves
+  // the item total, and therefore the floor — a figure we seeded should
+  // follow it, but one the collector typed must not be overwritten, so the
+  // two cases are told apart by value rather than by guessing.
+  const lastSeededValueRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!financingTermId || estimatedTotal <= 0) return
+    const key = `${financingTermId}:${estimatedTotal.toFixed(2)}`
+    if (seededForRef.current === key) return
+    seededForRef.current = key
+
+    const current = downPaymentInput?.trim()
+    const isOurs = !current || current === lastSeededValueRef.current
+    if (!isOurs) return
+
+    const seeded = (estimatedTotal * 0.1).toFixed(2)
+    lastSeededValueRef.current = seeded
+    setValue('downPayment' as Path<T>, seeded as never, { shouldValidate: true })
+  }, [financingTermId, estimatedTotal, downPaymentInput, setValue])
+
+  // Validate this one field as it is typed. The form's default mode only
+  // validates on submit, so a too-low figure sat there looking accepted
+  // until the collector pressed the button — which is the same
+  // find-out-afterwards problem the floor was added to remove. Scoped to
+  // downPayment via trigger() rather than switching the whole form to
+  // onChange, which would light up "Item is required" and friends before
+  // anything had been filled in.
+  //
+  // Debounced at the same 400ms as the preview below, so the message
+  // doesn't flicker through "must be at least..." on the way from "3" to
+  // "3000".
+  useEffect(() => {
+    if (!financingTermId) return
+    const timer = setTimeout(() => {
+      void trigger('downPayment' as Path<T>)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [downPaymentInput, estimatedTotal, financingTermId, trigger])
+
   const [preview, setPreview] = useState<InstallmentPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -196,9 +255,9 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
               <Select
                 value={(field.value as string | undefined) ?? ''}
                 onChange={field.onChange}
-                placeholder="Default (WIP)"
+                placeholder="WIP (default)"
                 options={[
-                  { value: '', label: 'Default (WIP)' },
+                  { value: '', label: 'WIP (default)' },
                   ...priceUseTypes.map((t) => ({ value: t.id, label: t.name })),
                 ]}
               />

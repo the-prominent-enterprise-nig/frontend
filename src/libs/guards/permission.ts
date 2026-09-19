@@ -112,13 +112,14 @@ export function can(user: SessionUser, permission: Permission): boolean {
 }
 
 const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  // 2026-09-18 client request — a cashier can now create a customer profile
-  // from scratch (crm:customers:create granted in prisma/seed.ts) for a
-  // credit application or a POS sale with no existing profile. Only the
-  // Customers nav item actually surfaces under this: every other CRM
-  // sub-item is still individually gated by its own requiredPermission
-  // (leads, collectors, segments, agents, ...), which Cashier doesn't hold.
-  cashier: ['pos', 'crm'],
+  // Cashier reaches POS only. Creating a customer profile from scratch —
+  // for a credit application or a sale with no existing profile — happens
+  // through POS's own Customers screen (/pos/customers, pos:customers:*),
+  // not CRM's. Both write to the same Customer table via the same
+  // CustomerService, so it is the permission surface that differs, not the
+  // data (2026-09-19 review request, replacing the 'crm' entry added
+  // 2026-09-18).
+  cashier: ['pos'],
   'pos-manager': ['pos'],
   pos: ['pos'],
 }

@@ -143,6 +143,7 @@ export default function CreditApplicationDetail({
     control: editControl,
     handleSubmit: handleEditSubmit,
     setValue: editSetValue,
+    trigger: editTrigger,
     reset: resetEditForm,
     formState: { errors: editErrors },
   } = useForm<UpdateCreditApplicationFormValues>({
@@ -895,6 +896,8 @@ export default function CreditApplicationDetail({
 
                 <CreditApplicationFinancingFields
                   control={editControl}
+                  setValue={editSetValue}
+                  trigger={editTrigger}
                   errors={editErrors}
                   branchId={application.branchId}
                 />
