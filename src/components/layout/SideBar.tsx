@@ -467,6 +467,15 @@ const navItemsBySegment: Record<string, NavConfig> = {
       {
         // Scenario 53 — POS speaks in Undeposited Funds now; Accounting keeps
         // the Cash-in-Transit name for the GL account it reconciles against.
+        // Scenario 53 — the client's own end-of-day document. Its own
+        // permission, so the cashier who closes the shift can print and sign
+        // it without the Branch-Manager-tier sales reports coming with it.
+        label: 'Daily Collection',
+        href: '/pos/daily-collection',
+        icon: Wallet,
+        requiredPermission: POS_PERMISSIONS.DAILY_COLLECTION_READ,
+      },
+      {
         label: 'Undeposited Funds',
         href: '/pos/undeposited-funds',
         icon: Wallet,

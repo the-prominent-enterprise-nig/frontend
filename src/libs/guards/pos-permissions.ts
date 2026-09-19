@@ -13,6 +13,16 @@ export const POS_PERMISSIONS = {
   // rather than riding on TRANSACTIONS_READ: these expose unit cost and
   // margin, so they're Branch-Manager tier and withheld from Cashier.
   REPORTS_READ: 'pos:reports:read',
+  // Scenario 53 — its own permission, not pos:reports:read. The sales reports
+  // expose unit cost and margin (Branch-Manager tier, withheld from Cashier);
+  // this one exposes neither, and the cashier closing the shift is the person
+  // who prints and signs it.
+  DAILY_COLLECTION_READ: 'pos:daily-collection:read',
+  // Same tier as the read, for the same reason: the cashier who closes the
+  // shift fills in the form's handwritten half. A corrected denomination count
+  // is gated here too — it never rewrites the session's own closing count,
+  // only what this form prints beside it.
+  DAILY_COLLECTION_UPDATE: 'pos:daily-collection:update',
   TRANSACTIONS_OVERRIDE: 'pos:transaction:override',
   TRANSACTIONS_PRICE_OVERRIDE: 'pos:transactions:price_override',
   PROMO_CODES_READ: 'pos:promo-codes:read',
@@ -77,6 +87,9 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:sessions:close': 'Close a POS session',
   'pos:transactions:read': 'View POS transactions',
   'pos:reports:read': 'View and export POS sales reports (Branch Manager tier)',
+  'pos:daily-collection:read': "View and export a branch's Daily Collection Report",
+  'pos:daily-collection:update':
+    "Fill in a Daily Collection Report's signatories, remarks and corrected denomination count",
   'pos:transactions:create': 'Process POS sales',
   'pos:transactions:void': 'Void a transaction',
   'pos:transactions:refund': 'Process refunds',
