@@ -204,6 +204,45 @@ export function RrDeliveryPanel({
           <Hint>Fill it in later if the invoice follows on.</Hint>
         </Field>
 
+        {/* The Receiving Report's "Driver/Helper" line — who physically
+            brought the delivery. Free text on purpose: the Vehicle roster is
+            our own fleet, for branch-to-branch transfers, and a supplier's
+            crew will never be on it. A delivery often arrives with a driver
+            and no helper, so neither is required. */}
+        <Field label="Driver" hint="optional">
+          <Controller
+            name="driverName"
+            control={control}
+            render={({ field }) => (
+              <input
+                {...field}
+                value={field.value ?? ''}
+                type="text"
+                placeholder="Name of whoever drove it in"
+                className={INPUT}
+              />
+            )}
+          />
+          <Hint>Prints on the report&rsquo;s Driver/Helper line.</Hint>
+        </Field>
+
+        <Field label="Helper" hint="optional">
+          <Controller
+            name="helperName"
+            control={control}
+            render={({ field }) => (
+              <input
+                {...field}
+                value={field.value ?? ''}
+                type="text"
+                placeholder="Name of the helper, if any"
+                className={INPUT}
+              />
+            )}
+          />
+          <Hint>Leave blank if the driver came alone.</Hint>
+        </Field>
+
         <Field label="PO Number" hint="optional">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
             <Controller

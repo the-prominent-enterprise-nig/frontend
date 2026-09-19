@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady, clickStable } from './utils'
 
+// Receiving moved to the Stock hub: /inventory/operations?tab=receiving is
+// gone and the entry point is the Receiving Reports tab's "New Receipt"
+// button, which opens the same ReceiveStockModal (heading: "Receive Stock").
+
 // Scenario 27 Part 3 restricted the receive form's "Destination Location"
 // picker to the 2 real warehouses, hiding the 41 branch-local stock locations
 // outright. The picker now offers both, because a delivery raised against a
@@ -14,10 +18,10 @@ import { gotoReady, clickStable } from './utils'
 test('Receive Stock destination leads with the real warehouses and marks the branches', async ({
   page,
 }) => {
-  await gotoReady(page, '/inventory/operations?tab=receiving')
+  await gotoReady(page, '/inventory/stock?tab=reports')
 
   const label = page.getByText('Destination Location', { exact: false })
-  await clickStable(page.getByRole('button', { name: 'Receive Stock' }), label)
+  await clickStable(page.getByRole('button', { name: 'New Receipt' }), label)
 
   // A type-ahead (SearchableSelect), not a native <select>: clicking the box
   // opens a list of option buttons carrying this testid.

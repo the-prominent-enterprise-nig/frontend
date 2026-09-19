@@ -191,14 +191,14 @@ function Item360Content({
         {itemData && context === 'stock' && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <a
-              href={`/inventory/operations?tab=receiving`}
+              href={`/inventory/stock?tab=reports&new=1`}
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#4a189b]"
             >
               <PackageCheck className="h-3.5 w-3.5" />
               Receive Stock
             </a>
             <a
-              href={`/inventory/transfers`}
+              href={`/inventory/transfers?new=1`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-[12px] font-medium text-[#3d3d4a] hover:border-[#a3a3b2]"
             >
               <ArrowLeftRight className="h-3.5 w-3.5" />

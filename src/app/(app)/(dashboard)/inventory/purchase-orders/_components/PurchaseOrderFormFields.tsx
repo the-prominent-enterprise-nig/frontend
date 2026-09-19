@@ -597,6 +597,19 @@ function LineRow(props: LineRowProps): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srp, discounts, isFreebie, manual, index])
 
+  // A line priced by hand alone has no SRP for the chain to cut from, so its
+  // discounts would silently take nothing off. The first discount added to
+  // such a line promotes the typed unit price into SRP — that price is the
+  // pre-discount one the buyer was quoted — and hands the line back to the
+  // chain so the cut actually lands.
+  const addDiscount = (v: { name?: string; type: 'percentage'; value: number }): void => {
+    if (!isFreebie && !(Number(srp) || 0) && (Number(unitPrice) || 0) > 0) {
+      setValue(`lines.${index}.srp`, Number(unitPrice) || 0)
+      setManual(false)
+    }
+    appendDiscount(v)
+  }
+
   const chain = unitFromChain(Number(srp) || 0, discounts)
   const qty = Number(quantity) || 0
   const unit = Number(unitPrice) || 0
@@ -636,7 +649,7 @@ function LineRow(props: LineRowProps): React.ReactElement {
     discCount,
     isFreebie: !!isFreebie,
     discountFields,
-    appendDiscount,
+    appendDiscount: addDiscount,
     removeDiscount,
     itemId,
     srp,
@@ -658,7 +671,7 @@ function LineRow(props: LineRowProps): React.ReactElement {
     onOpenDiscounts: (): void => {
       if (!props.open) {
         if (discountFields.length === 0) {
-          appendDiscount({ name: undefined, type: 'percentage', value: 0 })
+          addDiscount({ name: undefined, type: 'percentage', value: 0 })
         }
       } else {
         for (let i = (discounts ?? []).length - 1; i >= 0; i--) {

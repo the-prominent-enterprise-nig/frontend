@@ -1,6 +1,10 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
-import { receivingReportPoCode } from '@/src/libs/format/receiving-report'
+import {
+  receivingReportSourceName,
+  receivingReportSourceRef,
+} from '@/src/libs/format/receiving-report'
+import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -81,7 +85,6 @@ export function buildReceivingReportHtml(
   const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
-  const supplier = rr.supplier as { name?: string } | undefined
   const warehouse = rr.warehouse as { name?: string; branch?: { name?: string } | null } | undefined
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
@@ -93,13 +96,27 @@ export function buildReceivingReportHtml(
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
-  // `Ref`/`Dated` is the supplier-document pair (their DR, or the SI when
-  // no DR was given). The PO is a separate reference and gets its own slot
-  // — it was reachable from the record all along but never printed, while
-  // `Dated` sat hardcoded as an em-dash with nothing to fill it. `poDate`
-  // is the only reference date the record actually carries, so it pairs
-  // with the PO number rather than leaving the slot permanently blank.
-  const poCode = receivingReportPoCode(rr as Parameters<typeof receivingReportPoCode>[0])
+  // `Ref` is the supplier-document number (their DR, or the SI when no DR was
+  // given). The source document is a separate reference and gets its own
+  // slot, paired with its own date in `Dated` — both were reachable from the
+  // record all along but never printed, and `Dated` sat hardcoded as an
+  // em-dash with nothing to fill it.
+  //
+  // Which source that is depends on where the stock came from: "P.O. No."
+  // dated by `poDate` on a supplier receipt, "Transfer No." dated by the
+  // dispatch date on one that arrived from another branch. The on-screen
+  // sheet makes the same swap through this same formatter.
+  const sourceRef = receivingReportSourceRef(rr as Parameters<typeof receivingReportSourceRef>[0])
+  // The supplier on a bought-in delivery, the sending branch on one that came
+  // from another branch — a transfer receipt has no supplier to name.
+  const sourceName = receivingReportSourceName(
+    rr as Parameters<typeof receivingReportSourceName>[0]
+  )
+  // The same formatter the on-screen sheet uses, so the printout and the
+  // preview never disagree on how the crew is written.
+  const driverHelper = receivingReportDriverHelper(
+    rr as Parameters<typeof receivingReportDriverHelper>[0]
+  )
 
   let totalQty = 0
   let totalAmount = 0
@@ -171,8 +188,8 @@ export function buildReceivingReportHtml(
 
     <div class="info">
       <div class="party">
-        <p class="party-name">${esc(supplier?.name) || '—'}</p>
-        <p class="party-address">Driver/Helper: —</p>
+        <p class="party-name">${esc(sourceName) || '—'}</p>
+        <p class="party-address">Driver/Helper: ${esc(driverHelper) || '—'}</p>
       </div>
       <div class="meta">
         <p class="meta-label">No.</p>
@@ -181,10 +198,10 @@ export function buildReceivingReportHtml(
         <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
         <p class="meta-label">Ref</p>
         <p class="meta-value">${esc(ref) || '—'}</p>
-        <p class="meta-label">P.O. No.</p>
-        <p class="meta-value">${esc(poCode) || '—'}</p>
+        <p class="meta-label">${esc(sourceRef.label)}</p>
+        <p class="meta-value">${esc(sourceRef.code) || '—'}</p>
         <p class="meta-label">Dated</p>
-        <p class="meta-value">${rr.poDate ? fmtDate(rr.poDate) : '—'}</p>
+        <p class="meta-value">${sourceRef.dated ? fmtDate(sourceRef.dated) : '—'}</p>
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>

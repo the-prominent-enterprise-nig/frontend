@@ -23,6 +23,8 @@ interface EditLine {
 interface EditState {
   supplierInvoiceNumber: string
   deliveryReceiptNumber: string
+  driverName: string
+  helperName: string
   notes: string
   vatAmount: string
   withheldAmount: string
@@ -33,6 +35,8 @@ function initialFormFrom(record: ReceivingReport): EditState {
   return {
     supplierInvoiceNumber: record.supplierInvoiceNumber ?? '',
     deliveryReceiptNumber: record.deliveryReceiptNumber ?? '',
+    driverName: record.driverName ?? '',
+    helperName: record.helperName ?? '',
     notes: record.notes ?? '',
     vatAmount: record.vatAmount != null ? String(record.vatAmount) : '',
     withheldAmount: record.withheldAmount != null ? String(record.withheldAmount) : '',
@@ -88,6 +92,8 @@ export default function ReceivingReportEditForm({ id, record, onCancel, onSaved 
     const res = await updateReceivingReport(id, {
       supplierInvoiceNumber: form.supplierInvoiceNumber || undefined,
       deliveryReceiptNumber: form.deliveryReceiptNumber || undefined,
+      driverName: form.driverName || undefined,
+      helperName: form.helperName || undefined,
       notes: form.notes || undefined,
       vatAmount: form.vatAmount === '' ? undefined : Number(form.vatAmount),
       withheldAmount: form.withheldAmount === '' ? undefined : Number(form.withheldAmount),
@@ -137,6 +143,27 @@ export default function ReceivingReportEditForm({ id, record, onCancel, onSaved 
             value={form.supplierInvoiceNumber}
             onChange={(e) => setForm({ ...form, supplierInvoiceNumber: e.target.value })}
             placeholder="e.g. SI-00456"
+            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+          />
+        </label>
+        {/* The report's "Driver/Helper" line. Editable here chiefly so
+            receipts posted before the fields existed can have it filled in —
+            the printed report has carried the line all along. */}
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-zinc-700">Driver</span>
+          <input
+            value={form.driverName}
+            onChange={(e) => setForm({ ...form, driverName: e.target.value })}
+            placeholder="Name of whoever drove it in"
+            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-zinc-700">Helper</span>
+          <input
+            value={form.helperName}
+            onChange={(e) => setForm({ ...form, helperName: e.target.value })}
+            placeholder="Blank if the driver came alone"
             className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
           />
         </label>

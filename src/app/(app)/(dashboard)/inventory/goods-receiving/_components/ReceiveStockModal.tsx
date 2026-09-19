@@ -82,6 +82,8 @@ const defaultValues: ReceiveStockFormValues = {
   notes: '',
   deliveryReceiptNumber: '',
   supplierInvoiceNumber: '',
+  driverName: '',
+  helperName: '',
   lines: [],
 }
 
@@ -689,7 +691,7 @@ export default function ReceiveStockModal({
                 {...field}
                 value={field.value ?? ''}
                 rows={2}
-                placeholder="Damage on arrival, the driver's name, anything the next person should know…"
+                placeholder="Damage on arrival, short-shipped cartons, anything the next person should know…"
                 className="w-full resize-y rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[13px] leading-[1.5] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
               />
             )}

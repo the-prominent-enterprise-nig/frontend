@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus,
   RefreshCw,
@@ -332,6 +332,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // doesn't silently reopen it. Which physical units ship is decided by the
   // source at dispatch, so only a count travels, never serial ids.
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   useEffect(() => {
     const fromWarehouseId = searchParams.get('prefillFromWarehouseId')
@@ -346,12 +347,55 @@ export default function TransferList({ session }: { session: SessionUser }) {
       })
       setIsCreateOpen(true)
       router.replace('/inventory/transfers')
+      return
+    }
+
+    // `?new=1` — the same "open straight into the create form" idea without a
+    // prefill, for links whose label is the verb: Item 360's "Transfer"
+    // button. Landing someone on a list of past transfers and asking them to
+    // find "New transfer" makes a button that says Transfer not transfer.
+    //
+    // Stripped relative to the current path rather than to
+    // /inventory/transfers like the prefill branch above, because this list is
+    // mounted at two routes — its own, and /inventory/operations?tab=transfers
+    // — and a hardcoded replace would move the user off whichever one they
+    // came in on.
+    if (searchParams.get('new') === '1' && canCreate) {
+      setIsCreateOpen(true)
+      const next = new URLSearchParams(searchParams.toString())
+      next.delete('new')
+      const qs = next.toString()
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
     }
     // Deliberately mount-only — the params are consumed once, then stripped;
     // re-running on every searchParams/router identity change would refight
     // that strip and never let the modal close normally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Deep link into one transfer — `?transfer=TRF-…`, as the receiving report
+  // that arrived on it links here. Transfers have no per-transfer route (the
+  // detail is a modal over this list), so the number is resolved in two
+  // steps: seed the search box on mount so the list actually contains the
+  // row, then open it once the matching row has loaded.
+  const deepLinkNumber = searchParams.get('transfer')
+  const [deepLinkOpened, setDeepLinkOpened] = useState(false)
+  useEffect(() => {
+    if (deepLinkNumber) setSearch(deepLinkNumber)
+    // Mount-only, for the same reason the prefill effect above is: the param
+    // is consumed once and then stripped.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (!deepLinkNumber || deepLinkOpened) return
+    const match = transfers.find((t) => t.transferNumber === deepLinkNumber)
+    if (!match) return
+    setSelectedTransfer(match)
+    setDeepLinkOpened(true)
+    // Stripped so a refresh or Back doesn't silently reopen the modal, same
+    // as the create-prefill params.
+    router.replace('/inventory/transfers')
+  }, [deepLinkNumber, deepLinkOpened, transfers, setSelectedTransfer, router])
 
   function openDetail(transfer: TransferSummary) {
     setSelectedTransfer(transfer)

@@ -1,6 +1,10 @@
 import { test, expect, type Page } from '@playwright/test'
 import { gotoReady } from './utils'
 
+// Receiving moved to the Stock hub: /inventory/operations?tab=receiving is
+// gone and the entry point is the Receiving Reports tab's "New Receipt"
+// button, which opens the same ReceiveStockModal (heading: "Receive Stock").
+
 // Scenario 05 (Receiving) followup — a promotional/free item included in a
 // delivery gets its own "Freebie" flag per line, zero-cost but still
 // received into stock. Server-side enforcement (unitCost forced to 0
@@ -30,9 +34,9 @@ async function addFirstItem(page: Page): Promise<void> {
 
 test.describe('Inventory — Receiving freebies (Scenario 05 followup)', () => {
   test('marking a line as a freebie zeroes and locks its unit cost', async ({ page }) => {
-    await gotoReady(page, '/inventory/operations?tab=receiving')
+    await gotoReady(page, '/inventory/stock?tab=reports')
 
-    await page.getByRole('button', { name: 'Receive Stock' }).click()
+    await page.getByRole('button', { name: 'New Receipt' }).click()
     await expect(page.getByRole('heading', { name: 'Receive Stock' })).toBeVisible({
       timeout: 10_000,
     })

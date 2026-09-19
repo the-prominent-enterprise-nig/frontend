@@ -6,11 +6,18 @@ import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import ReceivingReportSheet, { type ReceivingReportDocument } from './ReceivingReportSheet'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { receivingReportSourceName } from '@/src/libs/format/receiving-report'
 
 interface ReceivingReportRow {
   id: string
   code: string
   supplier?: { name: string } | null
+  /** Set instead of `supplier` on a receipt that arrived from another branch
+   * — the Source column names the sending branch in the supplier's place. */
+  stockTransfer?: {
+    transferNumber?: string | null
+    fromWarehouse?: { name?: string | null; branch?: { name?: string | null } | null } | null
+  } | null
   warehouse?: { name: string } | null
   receivedAt: string
   total: number
@@ -59,7 +66,9 @@ export default function ReceivingReportsList() {
     const q = search.toLowerCase()
     return (
       r.code?.toLowerCase().includes(q) ||
-      r.supplier?.name?.toLowerCase().includes(q) ||
+      // The Source column's own value, so searching a sending branch finds
+      // transfer-sourced rows too — matching supplier alone never did.
+      (receivingReportSourceName(r) ?? '').toLowerCase().includes(q) ||
       // Match what the Location column actually shows, not the raw
       // warehouse name behind it.
       locationLabel(r.warehouse, '').toLowerCase().includes(q)
@@ -86,7 +95,7 @@ export default function ReceivingReportsList() {
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by receipt #, supplier, or warehouse…"
+        placeholder="Search by receipt #, source, or warehouse…"
         className="w-full max-w-sm mb-4 px-3 py-2 text-sm border border-gray-200 rounded-lg"
       />
 
@@ -95,7 +104,9 @@ export default function ReceivingReportsList() {
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
             <tr>
               <th className="px-3 py-2 text-left">Receipt #</th>
-              <th className="px-3 py-2 text-left">Supplier</th>
+              {/* "Source", not "Supplier": a transfer-sourced receipt has no
+                  supplier and names its sending branch here instead. */}
+              <th className="px-3 py-2 text-left">Source</th>
               <th className="px-3 py-2 text-left">Warehouse</th>
               <th className="px-3 py-2 text-left">Received</th>
               <th className="px-3 py-2 text-right">Amount</th>
@@ -125,7 +136,7 @@ export default function ReceivingReportsList() {
                   className="cursor-pointer hover:bg-gray-50"
                 >
                   <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
-                  <td className="px-3 py-2">{r.supplier?.name ?? '—'}</td>
+                  <td className="px-3 py-2">{receivingReportSourceName(r) ?? '—'}</td>
                   <td className="px-3 py-2 text-xs">{locationLabel(r.warehouse)}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(r.receivedAt)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(r.total)}</td>

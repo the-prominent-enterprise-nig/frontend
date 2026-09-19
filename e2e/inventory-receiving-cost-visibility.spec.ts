@@ -1,6 +1,10 @@
 import { test, expect, type Page } from '@playwright/test'
 import { gotoReady, loginAs } from './utils'
 
+// Receiving moved to the Stock hub: /inventory/operations?tab=receiving is
+// gone and the entry point is the Receiving Reports tab's "New Receipt"
+// button, which opens the same ReceiveStockModal (heading: "Receive Stock").
+
 // Scenario 05 (Receiving) followup — unit cost / net delivered cost (NNDP,
 // `nndpCost` on the wire) is sensitive
 // pricing data, restricted to Business Owner/Accountant via the new
@@ -27,7 +31,7 @@ const ITEM_SEARCH_PLACEHOLDER = 'Scan or search an item to add a line…'
 // portals its dropdown to document.body as a `fixed z-100` panel, so the pick
 // is: click the button, type, choose from the portal.
 async function openReceiveForm(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Receive Stock' }).click()
+  await page.getByRole('button', { name: 'New Receipt' }).click()
   await expect(page.getByRole('heading', { name: 'Receive Stock' })).toBeVisible({
     timeout: 10_000,
   })
@@ -52,7 +56,7 @@ test.describe('Inventory — Receiving cost visibility (Scenario 05 followup)', 
     page,
   }) => {
     await loginAs(page, OWNER_EMAIL, PASSWORD)
-    await gotoReady(page, '/inventory/operations?tab=receiving')
+    await gotoReady(page, '/inventory/stock?tab=reports')
 
     await openReceiveForm(page)
     await expect(page.getByText('Net Delivered Cost')).toBeVisible()
@@ -67,7 +71,7 @@ test.describe('Inventory — Receiving cost visibility (Scenario 05 followup)', 
     page,
   }) => {
     await loginAs(page, STOCK_CONTROLLER_EMAIL, PASSWORD)
-    await gotoReady(page, '/inventory/operations?tab=receiving')
+    await gotoReady(page, '/inventory/stock?tab=reports')
 
     await openReceiveForm(page)
     await expect(page.getByText('Net Delivered Cost')).toHaveCount(0)

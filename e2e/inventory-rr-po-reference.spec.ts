@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady } from './utils'
 
+// Receiving moved to the Stock hub: /inventory/operations?tab=receiving is
+// gone and the entry point is the Receiving Reports tab's "New Receipt"
+// button, which opens the same ReceiveStockModal (heading: "Receive Stock").
+
 /**
  * Scenario 50 Gap 1 — printed-document references.
  *
@@ -51,7 +55,7 @@ async function ensureSupplier(page: import('@playwright/test').Page): Promise<st
 
 test.describe('Inventory — receiving report PO reference', () => {
   test('shows the P.O. No. on both the sheet and the printed document', async ({ page }) => {
-    await gotoReady(page, '/inventory/operations?tab=receiving')
+    await gotoReady(page, '/inventory/stock?tab=reports')
 
     const warehouses = await (
       await page.request.get('/api/inventory/warehouses?standaloneOnly=true&limit=1&status=active')
