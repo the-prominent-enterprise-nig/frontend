@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Controller,
   useFieldArray,
+  useWatch,
   type ArrayPath,
   type Control,
   type FieldErrors,
@@ -27,7 +28,7 @@ function formatPeso(n: number): string {
 // declared optional here since the edit form's .partial() makes the array
 // itself optional (though each present element still requires an itemId).
 type ItemScopedFormValues = FieldValues & {
-  items?: { itemId?: string; estimatedPrice?: number }[]
+  items?: { itemId?: string; estimatedPrice?: number; itemLabel?: string }[]
 }
 
 export type InitialCreditApplicationItem = {
@@ -66,8 +67,16 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   // itemMeta) so the financing preview below can sum it via watch('items')
   // — index-safe across add/remove, unlike a separate index-keyed map would
   // be once useFieldArray shifts indices.
-  function handleSelectItem(meta: CreditApplicationItemMeta) {
+  const itemLabelPath = `items.${index}.itemLabel` as Path<T>
+  // Lets a restored draft redisplay its picker: the id alone can't produce
+  // a label, and this row's own itemMeta is empty after a remount.
+  const restoredLabel = useWatch({ control, name: itemLabelPath }) as string | undefined
+
+  function handleSelectItem(meta: CreditApplicationItemMeta, label: string) {
     setItemMeta(meta)
+    // Kept in form state so a draft restored from storage can redisplay the
+    // picker — meta/label live only in this row otherwise.
+    setValue(itemLabelPath, label as never)
     // Number() because the API serializes Decimal as a string.
     setValue(
       estimatedPricePath,
@@ -110,9 +119,9 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
               <CreditApplicationItemSearchCombobox
                 value={(field.value as string | undefined) ?? ''}
                 onChange={field.onChange}
-                onSelectItem={handleSelectItem}
+                onSelectItem={(meta, label) => handleSelectItem(meta, label)}
                 error={itemError}
-                initialLabel={initialItem?.itemLabel}
+                initialLabel={initialItem?.itemLabel ?? restoredLabel}
               />
             )}
           />

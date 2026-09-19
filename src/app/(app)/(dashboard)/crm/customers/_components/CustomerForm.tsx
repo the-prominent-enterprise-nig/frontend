@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowLeft, Paperclip, X } from 'lucide-react'
 import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
+import { showToast } from '@/src/components/ui/toast'
 import { uploadIdDocument } from '../_actions/upload-id-document'
 import {
   createCustomerSchema,
@@ -329,6 +330,7 @@ export default function CustomerForm({
       const res = await customersApi.update(id, parsed.data)
       setSubmitting(false)
       if (res.success) {
+        showToast({ title: 'Customer updated', status: 'success' })
         router.push(`/crm/customers/${id}`)
         router.refresh()
       } else {
@@ -358,6 +360,16 @@ export default function CustomerForm({
       const res = await customersApi.create(parsed.data)
       setSubmitting(false)
       if (res.success && res.data) {
+        // Confirms the save before navigating away. Matters most on the
+        // returnTo path: the caller's page just repopulates with the new
+        // customer selected, which on its own is easy to misread as
+        // "nothing happened". The Toaster is mounted in (app)/layout, so
+        // the toast outlives this route change.
+        showToast({
+          title: 'Customer saved',
+          description: res.data.name ? `${res.data.name} (${res.data.customerCode})` : undefined,
+          status: 'success',
+        })
         if (returnTo) {
           // Hand the new customer back to whoever sent us here (POS
           // checkout attaches them to the open sale). name is passed so the

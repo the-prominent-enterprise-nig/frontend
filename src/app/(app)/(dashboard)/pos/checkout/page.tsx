@@ -3,6 +3,7 @@
 import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import {
   Search,
+  CreditCard,
   Plus,
   Minus,
   X,
@@ -52,7 +53,9 @@ import {
   addPayment,
   validatePromoCode,
   parkSale,
+  resumeParkedSale,
   searchCustomers,
+  getCustomerById,
   getLoyaltyByCustomer,
   earnPoints,
   redeemPoints,
@@ -291,6 +294,47 @@ function customerDisplayName(c: PosCustomer) {
 
 const OFFLINE_QUEUE_KEY = 'pos_offline_queue'
 const POS_FROM_TAB_KEY = 'pos_from_tab'
+
+// Auto-park (2026-09-19 client request: "just park the sale instead").
+// The cart is plain React state, so until now any route change that wasn't
+// one of the two deliberate handoffs destroyed an in-progress sale with no
+// warning — the cashier's only defence was remembering to park first.
+// Parking is safe to do on their behalf: server-side it writes one
+// ParkedSale row and emits a socket event, and touches neither stock nor
+// any financial record.
+//
+// Two mechanisms on purpose:
+//   • pos_resumed_cart is written synchronously on the way out, so coming
+//     straight back restores the cart with no request in the way. This is
+//     the common case and the one the cashier actually experiences.
+//   • the ParkedSale row is the durable copy — it outlives a closed browser,
+//     a different device or cleared storage, and unlike localStorage it is
+//     visible to the branch in the Parked Sales tab.
+// The nonce ties the two together so returning to checkout can close out
+// the row it just picked back up, instead of leaving the list showing a
+// sale that is already back on screen.
+const AUTO_PARK_CONSUMED_KEY = 'pos_autopark_consumed'
+
+// Leaving checkout is not the same as abandoning the sale — a cashier
+// checking stock, a price or the parked list is back in seconds, and parking
+// instantly meant their own in-flight sale appeared in the Parked Sales tab
+// while they stood there looking at it, resumable and cancellable out from
+// under them. So the row is scheduled, not written, and coming back to
+// checkout cancels it: a quick detour leaves no trace and restores from the
+// stash, while a real walk-away shows up as a parked sale.
+//
+// Module scope deliberately — the timer has to outlive this page's unmount,
+// which is the whole point. A full reload kills it, but that path never had
+// a server row anyway (see the pagehide leg) and the stash still holds the
+// cart on that machine.
+const AUTO_PARK_DELAY_MS = 30_000
+let autoParkTimer: ReturnType<typeof setTimeout> | null = null
+function cancelPendingAutoPark() {
+  if (autoParkTimer) {
+    clearTimeout(autoParkTimer)
+    autoParkTimer = null
+  }
+}
 
 const DECIMAL_CODES = new Set([
   'kg',
@@ -574,6 +618,12 @@ export default function CheckoutPage() {
       applicationNumber: string
       requestedAmount: number
       items: { itemName: string }[]
+      // The terms the customer agreed to and the owner approved. Carried so
+      // selecting an application can fill the cart's own term/down payment
+      // in, rather than the cashier re-keying figures that were already
+      // agreed — and possibly keying different ones.
+      financingTermId?: string | null
+      downPayment?: number | null
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
@@ -894,13 +944,196 @@ export default function CheckoutPage() {
     )
   }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
 
+  // ─── Auto-park on leaving checkout ───────────────────────────────────────
+  // Latest-value mirror for the teardown below: an unmount cleanup created
+  // with [] deps closes over first-render state, which for the cart is
+  // always empty — reading it there would park nothing, every time.
+  // saleCompleted rides along because a posted sale KEEPS its cart: the
+  // receipt on the success screen is drawn from live cart/payments state, so
+  // it can't be cleared until the cashier starts a new sale. That cart is
+  // display-only and must never be parked or stashed — restoring it later
+  // would put an already-posted sale back on the till, ready to be rung up
+  // a second time.
+  const saleSnapshotRef = useRef({
+    cart,
+    selectedCustomer,
+    promoResult,
+    sessionId,
+    openSessions,
+    saleCompleted: false,
+  })
+  useEffect(() => {
+    saleSnapshotRef.current = {
+      cart,
+      selectedCustomer,
+      promoResult,
+      sessionId,
+      openSessions,
+      saleCompleted: Boolean(success || pendingApproval || reservationSuccess),
+    }
+  })
+
+  // Raised by the exits that already look after the cart themselves: the two
+  // handoff buttons stash it deliberately and bring it back on return, and a
+  // confirmed or manually parked sale has already emptied it. Without this
+  // each of those would also leave a stray parked row behind.
+  const skipAutoParkRef = useRef(false)
+
+  useEffect(() => {
+    // Back at the till: whatever was scheduled on the way out was a detour,
+    // not an abandoned sale. The cart comes back from the stash below.
+    cancelPendingAutoPark()
+
+    function stashCart(extra: Record<string, unknown> = {}) {
+      const {
+        cart: lines,
+        selectedCustomer: customer,
+        promoResult: promo,
+      } = saleSnapshotRef.current
+      if (lines.length === 0) return false
+      try {
+        localStorage.setItem(
+          'pos_resumed_cart',
+          JSON.stringify({
+            lines,
+            customerId: customer?.id,
+            promoCodeId: promo?.promoCode?.id,
+            ...extra,
+          })
+        )
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    // A real page unload (refresh, tab close) never runs the React cleanup
+    // below, and can't wait on a request either — so this leg is the
+    // synchronous stash only. It covers the accidental F5 mid-sale.
+    function handlePageHide() {
+      if (skipAutoParkRef.current || saleSnapshotRef.current.saleCompleted) return
+      stashCart()
+    }
+    window.addEventListener('pagehide', handlePageHide)
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide)
+      if (skipAutoParkRef.current || saleSnapshotRef.current.saleCompleted) return
+      const {
+        cart: lines,
+        selectedCustomer: customer,
+        promoResult: promo,
+        sessionId: sid,
+        openSessions: sessions,
+      } = saleSnapshotRef.current
+      if (lines.length === 0) return
+
+      const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      stashCart({ autoParkNonce: nonce })
+
+      // Nothing to park against without a session — the stash above still
+      // holds the cart, so the sale survives the navigation either way.
+      const session = sessions.find((s) => s.id === sid)
+      if (!session) return
+
+      const cartData = {
+        lines,
+        customerId: customer?.id,
+        promoCodeId: promo?.promoCode?.id,
+      }
+      // Scheduled rather than sent: if checkout mounts again before this
+      // fires, the effect above cancels it and no row is ever written.
+      // Not awaited when it does fire — there is no UI left to report into.
+      cancelPendingAutoPark()
+      autoParkTimer = setTimeout(() => {
+        autoParkTimer = null
+        void parkSale({
+          sessionId: session.id,
+          terminalId: session.terminalId,
+          label: `Unfinished sale — ${customer?.name?.trim() || 'Walk-in'}`,
+          cartData,
+        })
+          .then((res) => {
+            if (!res.success || !res.data) return
+            const id = res.data.id
+            try {
+              const raw = localStorage.getItem('pos_resumed_cart')
+              const parsed = raw ? (JSON.parse(raw) as { autoParkNonce?: string }) : null
+              if (parsed?.autoParkNonce === nonce) {
+                localStorage.setItem(
+                  'pos_resumed_cart',
+                  JSON.stringify({ ...parsed, autoParkedId: id })
+                )
+                return
+              }
+              // The stash is gone or belongs to someone else. Either checkout
+              // already picked this cart back up before the request landed —
+              // in which case close the row out now — or the Parked Sales page
+              // overwrote it with a different sale, and this row must stay
+              // parked because nothing else is holding its cart.
+              if (localStorage.getItem(AUTO_PARK_CONSUMED_KEY) === nonce) {
+                localStorage.removeItem(AUTO_PARK_CONSUMED_KEY)
+                void resumeParkedSale(id)
+              }
+            } catch {}
+          })
+          .catch(() => {})
+      }, AUTO_PARK_DELAY_MS)
+    }
+    // Mounts and tears down once with the page; everything it reads comes
+    // from the ref above rather than from deps.
+  }, [])
+
+  // A posted sale invalidates every stashed copy of its cart. The teardown
+  // above already refuses to write one, but anything written EARLIER in this
+  // sale's life is still sitting in storage: a trip to the customer form, a
+  // credit application, or a tab the cashier checked before taking payment.
+  // Any of those would restore a cart that has since been sold, and the
+  // cashier could ring it up a second time. Clearing on completion closes
+  // the whole class rather than guarding one path at a time.
+  useEffect(() => {
+    if (!success && !pendingApproval && !reservationSuccess) return
+    cancelPendingAutoPark()
+    try {
+      localStorage.removeItem('pos_resumed_cart')
+      localStorage.removeItem(AUTO_PARK_CONSUMED_KEY)
+    } catch {}
+  }, [success, pendingApproval, reservationSuccess])
+
   // Resume a parked sale or QMS tab stored in localStorage
   useEffect(() => {
     const raw = localStorage.getItem('pos_resumed_cart')
     if (raw) {
       try {
-        const data = JSON.parse(raw) as { lines?: CartLine[] }
+        const data = JSON.parse(raw) as {
+          lines?: CartLine[]
+          customerId?: string
+          autoParkNonce?: string
+          autoParkedId?: string
+        }
         if (Array.isArray(data.lines) && data.lines.length > 0) setCart(data.lines)
+        // Left by the auto-park teardown. The cart itself has just come back
+        // from this stash, so the parked row is redundant — resume it purely
+        // to take it off the Parked Sales list, which would otherwise show a
+        // sale that is already open on this screen. The nonce covers the
+        // race where we get back here before the park request lands: the
+        // teardown reads this key and closes the row out itself.
+        if (data.autoParkNonce) {
+          localStorage.setItem(AUTO_PARK_CONSUMED_KEY, data.autoParkNonce)
+        }
+        if (data.autoParkedId) {
+          localStorage.removeItem(AUTO_PARK_CONSUMED_KEY)
+          void resumeParkedSale(data.autoParkedId)
+        }
+        // parkSale has always written customerId here, but this handler only
+        // ever read `lines` — so resuming dropped the customer and left an
+        // installment cart with nobody attached, which the flow requires and
+        // which gives the cashier no hint what's wrong. Re-select them.
+        if (data.customerId) {
+          getCustomerById(data.customerId).then((res) => {
+            if (res.success && res.data) selectCustomer(res.data)
+          })
+        }
       } catch {}
       localStorage.removeItem('pos_resumed_cart')
     }
@@ -1392,6 +1625,8 @@ export default function CheckoutPage() {
                 items: approvedOnly.map((i) => ({
                   itemName: i.item?.name ?? '—',
                 })),
+                financingTermId: a.financingTermId ?? null,
+                downPayment: a.downPayment != null ? Number(a.downPayment) : null,
               }
             })
             .filter((a) => a.items.length > 0)
@@ -1513,13 +1748,60 @@ export default function CheckoutPage() {
   // localStorage handoff the parked-sales page already resumes through
   // (see the rehydrate effect above).
   function goToCreateCustomer() {
+    // This detour hands the cart over itself and brings it straight back, so
+    // it doesn't want a parked row on top of that — it's a trip to a form,
+    // not an abandoned sale.
+    skipAutoParkRef.current = true
     // Only `lines` is stashed because only `lines` is read back — the
     // rehydrate effect ignores the other keys parkSale writes, so an
     // applied promo code still has to be re-entered on return.
     if (cart.length > 0) {
-      localStorage.setItem('pos_resumed_cart', JSON.stringify({ lines: cart }))
+      localStorage.setItem(
+        'pos_resumed_cart',
+        JSON.stringify({ lines: cart, customerId: selectedCustomer?.id })
+      )
     }
     router.push('/crm/customers/new?returnTo=/pos/checkout')
+  }
+
+  /**
+   * Raises a credit application for the cart that's already on screen.
+   *
+   * An installment sale needs an APPROVED application, and approval is
+   * Business Owner only — so this cannot make the sale completable in one
+   * visit. What it removes is the retyping: the cashier used to leave
+   * checkout, find the customer again, and re-enter every item by hand.
+   *
+   * Reuses the two handoffs that already exist rather than inventing a
+   * third: the cart goes through pos_resumed_cart (same as "New Customer"),
+   * and the application form's own draft key carries the customer and the
+   * installment lines across, labels included, so its item pickers render
+   * filled in rather than blank.
+   */
+  function goToRaiseCreditApplication() {
+    skipAutoParkRef.current = true
+    if (cart.length > 0) {
+      localStorage.setItem(
+        'pos_resumed_cart',
+        JSON.stringify({ lines: cart, customerId: selectedCustomer?.id })
+      )
+    }
+    localStorage.setItem(
+      'credit_application_draft',
+      JSON.stringify({
+        applicantCustomerId: selectedCustomer?.id,
+        items: inhouseInstallmentCartLines.map((l) => ({
+          itemId: l.itemId,
+          itemLabel: l.itemName,
+          estimatedPrice: l.unitPrice,
+        })),
+      })
+    )
+    const params = new URLSearchParams({
+      applicantCustomerId: selectedCustomer?.id ?? '',
+      applicantName: selectedCustomer?.name ?? '',
+    })
+    router.push(`/pos/credit-applications/new?${params.toString()}`)
   }
 
   function clearCustomer() {
@@ -1703,6 +1985,57 @@ export default function CheckoutPage() {
           installmentProvider: provider,
           financingTermId: undefined,
           downPaymentInput: l.downPaymentInput ?? Math.ceil(0.1 * lineAmount).toFixed(2),
+        }
+      })
+    )
+  }
+
+  /**
+   * Copies an approved application's agreed terms onto the cart.
+   *
+   * Without this the cashier re-keys the down payment and term at checkout,
+   * with the line defaulting to a generic 10% — so the figures actually
+   * charged could differ from the ones the customer agreed to and the owner
+   * approved, and nothing would object. The application is the record of
+   * that agreement, so selecting one should carry it.
+   *
+   * An application holds ONE term and ONE total down payment for the whole
+   * bundle, while the cart tracks them per line, so a multi-item bundle
+   * apportions the down payment pro-rata by line value — with any rounding
+   * remainder pushed onto the last line so the parts still sum to the
+   * approved total.
+   */
+  function applyCreditApplicationTerms(applicationId: string) {
+    const application = approvedCreditApplications.find((a) => a.id === applicationId)
+    if (!application) return
+    const lines = inhouseInstallmentCartLines
+    if (lines.length === 0) return
+
+    const lineAmount = (l: CartLine) => l.unitPrice * l.quantity
+    const total = lines.reduce((sum, l) => sum + lineAmount(l), 0)
+    const approvedDp = application.downPayment ?? null
+
+    let allocated = 0
+    const dpByLine = new Map<string, string>()
+    if (approvedDp != null && total > 0) {
+      lines.forEach((l, idx) => {
+        const isLast = idx === lines.length - 1
+        const share = isLast
+          ? approvedDp - allocated
+          : Math.round(approvedDp * (lineAmount(l) / total) * 100) / 100
+        allocated += share
+        dpByLine.set(l.lineId, share.toFixed(2))
+      })
+    }
+
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!dpByLine.has(l.lineId) && !application.financingTermId) return l
+        if (!lines.some((x) => x.lineId === l.lineId)) return l
+        return {
+          ...l,
+          financingTermId: application.financingTermId ?? l.financingTermId,
+          downPaymentInput: dpByLine.get(l.lineId) ?? l.downPaymentInput,
         }
       })
     )
@@ -1979,6 +2312,10 @@ export default function CheckoutPage() {
   // ─── Confirm sale ──────────────────────────────────────────────────────────
 
   async function handleConfirm() {
+    // Survives a park/resume or any remount, unlike the override state set
+    // when the PIN was approved — see the payload below.
+    const restoredPriceOverrideBy =
+      cart.find((l) => l.priceOverrideBy)?.priceOverrideBy ?? undefined
     if (!sessionId) {
       setError('Select an open session first.')
       return
@@ -2252,8 +2589,21 @@ export default function CheckoutPage() {
           totalAmount,
           isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
-          managerOverride: managerOverrideApproved || undefined,
-          managerUserId: managerOverrideApproved ? overrideManagerId : undefined,
+          // The approving manager's id is read back off the cart when the
+          // component state that normally holds it is gone. A price override
+          // writes to both: priceOverrideBy on the line (which is part of
+          // cartData, so it survives a park) and managerOverrideApproved /
+          // overrideManagerId beside it (which are not, and reset on any
+          // remount). Without this fallback a resumed sale still sent
+          // priceOverride: true on the line with no sale-level pair, and the
+          // backend rejected it at Confirm — "A price override requires
+          // managerOverride: true and managerUserId" — after the cashier had
+          // already keyed in the payment. Nothing is taken on trust: the
+          // backend re-checks that this user really holds
+          // pos:transactions:price_override.
+          managerOverride: managerOverrideApproved || !!restoredPriceOverrideBy || undefined,
+          managerUserId:
+            (managerOverrideApproved ? overrideManagerId : restoredPriceOverrideBy) || undefined,
           allowNegativeStock: allowNegativeStock || undefined,
           lines: cart.map((l) => ({
             itemId: l.itemId,
@@ -3716,7 +4066,10 @@ export default function CheckoutPage() {
                         <div className="relative">
                           <select
                             value={creditApplicationId}
-                            onChange={(e) => setCreditApplicationId(e.target.value)}
+                            onChange={(e) => {
+                              setCreditApplicationId(e.target.value)
+                              if (e.target.value) applyCreditApplicationTerms(e.target.value)
+                            }}
                             disabled={creditApplicationsLoading}
                             className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
                           >
@@ -3743,10 +4096,27 @@ export default function CheckoutPage() {
                           />
                         </div>
                         {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <p className="mt-1 text-[13px] text-amber-700">
-                            Every installment sale requires an approved credit application — submit
-                            one in Credit Applications first.
-                          </p>
+                          <div className="mt-1">
+                            <p className="text-[13px] text-amber-700">
+                              Every installment sale requires an approved credit application.
+                            </p>
+                            {/* Was a dead sentence telling the cashier to go
+                                do it themselves. Carries the customer and
+                                these installment lines straight into the
+                                form, and brings the cart back afterwards. */}
+                            <button
+                              type="button"
+                              onClick={goToRaiseCreditApplication}
+                              className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
+                            >
+                              <CreditCard size={12} />
+                              Raise one for this cart
+                            </button>
+                            <p className="mt-1 text-[11px] text-amber-600">
+                              Your cart is kept — it still needs the owner&apos;s approval before
+                              this sale can be completed.
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}

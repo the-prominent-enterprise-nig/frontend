@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, UserPlus } from 'lucide-react'
 import {
   CreateCreditApplicationFormSchema,
   NEW_CO_MAKER_VALUE,
@@ -16,7 +17,10 @@ import { useCreateCreditApplication } from '../_hooks/useCreateCreditApplication
 import { ApplicantSearchCombobox } from './ApplicantSearchCombobox'
 import { ApplicantContactFields } from './ApplicantContactFields'
 import { CoMakerFields } from './CoMakerFields'
-import { CreditApplicationItemFields } from './CreditApplicationItemFields'
+import {
+  CreditApplicationItemFields,
+  type InitialCreditApplicationItem,
+} from './CreditApplicationItemFields'
 import { CreditApplicationFinancingFields } from './CreditApplicationFinancingFields'
 import { getApplicantCustomer } from '../_actions/search-applicants'
 
@@ -48,11 +52,14 @@ export default function NewCreditApplicationForm({
   // route, so the form owns the submit + navigation rather than being handed
   // an onSubmit/onClose pair by the list.
   const { createApplication, isCreating } = useCreateCreditApplication()
+  const router = useRouter()
   const {
     control,
     handleSubmit,
     watch,
     setValue,
+    getValues,
+    reset,
     formState: { errors },
   } = useForm<CreateCreditApplicationFormValues>({
     resolver: zodResolver(CreateCreditApplicationFormSchema),
@@ -65,6 +72,61 @@ export default function NewCreditApplicationForm({
 
   const applicantCustomerId = watch('applicantCustomerId')
 
+  // "+ New customer" leaves this page for the canonical CRM create form
+  // and comes back via returnTo. This form's state is plain React state, so
+  // — exactly like checkout's cart — it has to be stashed first or a
+  // half-filled application is silently lost on the detour. Read-and-delete
+  // on the way back, the same shape as the pos_resumed_cart handoff.
+  const DRAFT_KEY = 'credit_application_draft'
+
+  // The item combobox shows a label, not an id, and reads its initialLabel
+  // only once at mount — so restoring a draft into an already-mounted row
+  // left the picker blank even though the itemId was back in form state.
+  // Handing the restored rows to CreditApplicationItemFields and changing
+  // its key remounts it with the labels in place.
+  const [restoredItems, setRestoredItems] = useState<InitialCreditApplicationItem[] | null>(null)
+
+  useEffect(() => {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return
+    localStorage.removeItem(DRAFT_KEY)
+    try {
+      const draft = JSON.parse(raw) as Partial<CreateCreditApplicationFormValues>
+      reset({
+        // Defaults first: reset() replaces every value, and checkout seeds
+        // only the customer and the installment lines — without this a
+        // partial seed would blank branchId, which a full round-trip draft
+        // happens to carry but a seed does not.
+        branchId: sessionBranchId ?? undefined,
+        items: [{ itemId: '' }],
+        ...draft,
+        // The customer just created wins over whatever the draft had —
+        // that's the whole point of the trip.
+        applicantCustomerId: initialApplicantCustomerId ?? draft.applicantCustomerId ?? '',
+      } as CreateCreditApplicationFormValues)
+      const rows = (draft.items ?? [])
+        .filter((i) => i.itemId)
+        .map((i) => ({
+          itemId: i.itemId,
+          itemLabel: i.itemLabel ?? '',
+          itemMeta: {
+            sellingPrice: i.estimatedPrice ?? null,
+            modelNumber: null,
+          },
+        }))
+      if (rows.length) setRestoredItems(rows)
+    } catch {
+      // A corrupt draft shouldn't block the form; fall through to a blank one.
+    }
+    // Once, on mount, before anything else can touch the fields.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function goToCreateCustomer() {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(getValues()))
+    router.push('/crm/customers/new?returnTo=/pos/credit-applications/new')
+  }
+
   const applicantQuery = useQuery({
     queryKey: ['credit-application-applicant-detail', applicantCustomerId],
     queryFn: () => getApplicantCustomer(applicantCustomerId),
@@ -73,7 +135,16 @@ export default function NewCreditApplicationForm({
   const coMakers = applicantQuery.data?.data?.coMakers ?? []
   const applicant = applicantQuery.data?.data
 
+  // Skips the first run so restoring a stashed draft (or arriving with a
+  // pre-selected applicant) isn't immediately undone by the clear below —
+  // that effect is about *changing* applicant, not about initial load.
+  const applicantSettled = useRef(false)
+
   useEffect(() => {
+    if (!applicantSettled.current) {
+      applicantSettled.current = true
+      return
+    }
     // Selecting a new applicant invalidates whichever co-maker was picked
     // for the previous one, and any contact edits/new-co-maker draft made
     // for it.
@@ -245,9 +316,22 @@ export default function NewCreditApplicationForm({
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="space-y-5 px-6 py-5">
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Applicant <span className="text-red-500">*</span>
-              </label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-sm font-medium text-zinc-700">
+                  Applicant <span className="text-red-500">*</span>
+                </label>
+                {/* A walk-in with no profile can't be searched for. Sends
+                    the cashier to the CRM create form and back, rather than
+                    adding a second place customers get created. */}
+                <button
+                  type="button"
+                  onClick={goToCreateCustomer}
+                  className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:underline"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  New customer
+                </button>
+              </div>
               <Controller
                 name="applicantCustomerId"
                 control={control}
@@ -273,7 +357,13 @@ export default function NewCreditApplicationForm({
               isLoading={applicantQuery.isLoading}
             />
 
-            <CreditApplicationItemFields control={control} setValue={setValue} errors={errors} />
+            <CreditApplicationItemFields
+              key={restoredItems ? 'restored' : 'fresh'}
+              control={control}
+              setValue={setValue}
+              errors={errors}
+              initialItems={restoredItems ?? undefined}
+            />
 
             <CreditApplicationFinancingFields
               control={control}

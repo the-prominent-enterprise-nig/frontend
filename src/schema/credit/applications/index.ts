@@ -174,6 +174,11 @@ const CreateCreditApplicationBaseSchema = z.object({
         // looking dead. z.coerce would hide that but widens the schema's
         // input type to unknown, breaking useForm's generic.
         estimatedPrice: z.number().optional(),
+        // Also client-only. The combobox shows a label, not an id, and it
+        // has no way to look one up from an id alone — so without this a
+        // restored draft kept its itemId but rendered an empty picker, and
+        // the item looked lost. Stripped server-side by the DTO whitelist.
+        itemLabel: z.string().optional(),
       })
     )
     .min(1, 'At least one item is required'),
