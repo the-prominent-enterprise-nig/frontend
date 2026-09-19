@@ -1426,34 +1426,43 @@ export default function CheckoutPage() {
       limit: 50,
     })
       .then((res) => {
-        setApprovedCreditApplications(
-          (res.data?.data ?? [])
-            .map((a) => {
-              // Only the approved items are ever usable — a
-              // partially_approved application's declined items are never
-              // includable, so neither the displayed scope nor the total
-              // should count them.
-              const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
-              return {
-                id: a.id,
-                applicationNumber: a.applicationNumber,
-                // requestedAmount comes off the wire as a Prisma Decimal,
-                // which JSON-serializes to a string — summing it unconverted
-                // does string concatenation (0 + "8800" = "08800") instead
-                // of addition.
-                requestedAmount: approvedOnly.reduce(
-                  (sum, i) => sum + Number(i.requestedAmount),
-                  0
-                ),
-                items: approvedOnly.map((i) => ({
-                  itemName: i.item?.name ?? '—',
-                })),
-                financingTermId: a.financingTermId ?? null,
-                downPayment: a.downPayment != null ? Number(a.downPayment) : null,
-              }
-            })
-            .filter((a) => a.items.length > 0)
-        )
+        const list = (res.data?.data ?? [])
+          .map((a) => {
+            // Only the approved items are ever usable — a
+            // partially_approved application's declined items are never
+            // includable, so neither the displayed scope nor the total
+            // should count them.
+            const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
+            return {
+              id: a.id,
+              applicationNumber: a.applicationNumber,
+              // requestedAmount comes off the wire as a Prisma Decimal,
+              // which JSON-serializes to a string — summing it unconverted
+              // does string concatenation (0 + "8800" = "08800") instead
+              // of addition.
+              requestedAmount: approvedOnly.reduce((sum, i) => sum + Number(i.requestedAmount), 0),
+              items: approvedOnly.map((i) => ({
+                itemName: i.item?.name ?? '—',
+              })),
+              financingTermId: a.financingTermId ?? null,
+              downPayment: a.downPayment != null ? Number(a.downPayment) : null,
+            }
+          })
+          .filter((a) => a.items.length > 0)
+
+        setApprovedCreditApplications(list)
+
+        // One approved application and one cart waiting for it: there is
+        // nothing to choose between, so choosing is just a step the cashier
+        // can forget. Picking it also fills the term and down payment in,
+        // which is the whole point of having approved them.
+        //
+        // Two or more is a real choice — which application this sale should
+        // consume changes what gets marked used — so that still asks.
+        if (list.length === 1) {
+          setCreditApplicationId(list[0].id)
+          applyCreditApplicationTerms(list[0].id, list)
+        }
       })
       .finally(() => setCreditApplicationsLoading(false))
   }, [installmentCartLines.length, selectedCustomer])
@@ -1862,8 +1871,14 @@ export default function CheckoutPage() {
    * remainder pushed onto the last line so the parts still sum to the
    * approved total.
    */
-  function applyCreditApplicationTerms(applicationId: string) {
-    const application = approvedCreditApplications.find((a) => a.id === applicationId)
+  function applyCreditApplicationTerms(
+    applicationId: string,
+    /** The list to look the application up in. The auto-apply below calls
+     * this from inside the fetch that produced the list, before React has
+     * committed it to state, so it has to pass its own copy. */
+    from?: typeof approvedCreditApplications
+  ) {
+    const application = (from ?? approvedCreditApplications).find((a) => a.id === applicationId)
     if (!application) return
     const lines = inhouseInstallmentCartLines
     if (lines.length === 0) return
