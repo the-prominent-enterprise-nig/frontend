@@ -50,6 +50,14 @@ export interface PosSession {
   declaredClosingCash?: number | null
   expectedClosingCash?: number | null
   cashVariance?: number | null
+  /**
+   * Scenario 53 Part 1 — the closing record. Null on every session closed
+   * before that migration, and on any still open, so the detail view must
+   * treat absence as "not recorded" rather than zero.
+   */
+  denominationBreakdown?: Record<string, number> | null
+  closingNotes?: string | null
+  tenderBreakdown?: Record<string, number> | null
   handedOverTo?: string | null
   status: PosSessionStatus
   createdAt: string
@@ -83,6 +91,18 @@ export interface SessionReconciliation {
   declaredClosingCash: number
   cashVariance: number
   paymentBreakdown: Record<string, number>
+  /**
+   * Scenario 53 Part 2 — these were always returned by the backend but never
+   * declared here, so the close screen couldn't show the sales context behind
+   * a variance even though it had it in hand.
+   */
+  totalSales: number
+  totalRefunds: number
+  netSales: number
+  transactionCount: number
+  totalCashDrops: number
+  totalPettyCashIn: number
+  totalPettyCashOut: number
 }
 
 export interface SalesSummary {

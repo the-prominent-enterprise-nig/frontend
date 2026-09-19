@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import {
   useSessions,
   useOpenSession,
@@ -27,6 +27,8 @@ import type {
 } from '@/src/schema/pos'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 const statusColor: Record<string, string> = {
   open: 'bg-green-100 text-green-700',
@@ -35,8 +37,14 @@ const statusColor: Record<string, string> = {
 }
 
 function formatCurrency(n: number) {
-  const safe = n == null || isNaN(n) ? 0 : n
-  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(safe)
+  // Coerced explicitly: Prisma Decimal fields arrive as strings over JSON, and
+  // a string that reaches arithmetic upstream concatenates instead of adding
+  // (Scenario 53 Part 2 — "1000" + 0 === "10000"). Number() here means a
+  // stray string still renders correctly rather than silently misreporting.
+  const parsed = Number(n)
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
+    Number.isFinite(parsed) ? parsed : 0
+  )
 }
 
 type ModalState =
@@ -48,6 +56,7 @@ type ModalState =
 
 export default function SessionsPage() {
   const { session, status } = useRequirePermission(POS_PERMISSIONS.SESSIONS_READ)
+  const [expanded, setExpanded] = useState<string | null>(null)
   const { branchId } = usePosBranchContext()
   const branchFilter = branchId ? { branchId } : undefined
   const { data, isLoading, isFetching, refetch } = useSessions(branchFilter)
@@ -82,22 +91,21 @@ export default function SessionsPage() {
     const rec = await getSessionReconciliation(id)
     setModal((prev) => {
       if (rec.success && rec.data && prev.type === 'close') {
-        // Backend may omit cash summary fields — compute fallbacks from what we know
-        const openingCash = rec.data.openingCash ?? prev.session.openingCash ?? 0
-        const declaredClosingCash = rec.data.declaredClosingCash ?? form.declaredClosingCash ?? 0
-        const cashCollected = rec.data.paymentBreakdown?.cash ?? 0
-        const expectedClosingCash = rec.data.expectedClosingCash ?? openingCash + cashCollected
-        const cashVariance = rec.data.cashVariance ?? declaredClosingCash - expectedClosingCash
+        // Scenario 53 Part 2 — no fallbacks. The backend is the only source of
+        // these figures; it computes them with the same helper close() uses to
+        // post the variance journal entry, so anything derived here could only
+        // ever contradict what was actually posted.
+        //
+        // The fallbacks this replaces did exactly that: the backend's field
+        // names never matched what was read here, so every figure fell through
+        // to client-side arithmetic, and `openingCash + cashCollected` read a
+        // Prisma Decimal serialised as the string "1000", making
+        // `"1000" + 0 === "10000"`. A no-sale session opened with ₱1,000
+        // reported ₱10,000 expected and a ₱10,000 shortage.
         return {
           type: 'reconciliation',
           session: prev.session,
-          data: {
-            ...rec.data,
-            openingCash,
-            declaredClosingCash,
-            expectedClosingCash,
-            cashVariance,
-          },
+          data: rec.data,
         }
       }
       return { type: 'none' }
@@ -217,6 +225,7 @@ export default function SessionsPage() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
+                  <th className="w-8 px-2 py-3" />
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Branch
                   </th>
@@ -243,53 +252,80 @@ export default function SessionsPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {sessions.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3 text-gray-700">{s.terminal?.branch?.name ?? '—'}</td>
-                    <td className="px-5 py-3 font-medium text-gray-800">
-                      {s.terminal?.name ?? s.terminalId}
-                    </td>
-                    <td className="px-5 py-3 text-gray-600">{s.cashier?.name || s.cashierId}</td>
-                    <td className="px-5 py-3 text-gray-600">
-                      <PosDateTime iso={s.openedAt} />
-                    </td>
-                    <td className="px-5 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[s.status]}`}
-                      >
-                        {s.status.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-right text-gray-700">
-                      {formatCurrency(s.openingCash)}
-                    </td>
-                    <td className="px-5 py-3 text-right text-gray-600">
-                      {s._count?.transactions ?? 0}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      {s.status === 'open' && (
-                        <div className="flex items-center justify-end gap-3">
-                          <button
-                            onClick={() => {
-                              setError('')
-                              setModal({ type: 'handover', session: s })
-                            }}
-                            className="text-xs font-medium text-yellow-600 hover:underline"
-                          >
-                            Handover
-                          </button>
-                          <button
-                            onClick={() => {
-                              setError('')
-                              setModal({ type: 'close', session: s })
-                            }}
-                            className="text-xs font-medium text-red-600 hover:underline"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
+                  <Fragment key={s.id}>
+                    <tr
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setExpanded((prev) => (prev === s.id ? null : s.id))}
+                    >
+                      <td className="px-2 py-3 text-gray-400">
+                        <button
+                          type="button"
+                          aria-expanded={expanded === s.id}
+                          aria-label={
+                            expanded === s.id ? 'Hide session detail' : 'Show session detail'
+                          }
+                          className="cursor-pointer rounded p-1 hover:bg-gray-100 hover:text-gray-700"
+                        >
+                          <ChevronDown
+                            size={15}
+                            className={`transition-transform ${expanded === s.id ? 'rotate-180' : ''}`}
+                          />
+                        </button>
+                      </td>
+                      <td className="px-5 py-3 text-gray-700">{s.terminal?.branch?.name ?? '—'}</td>
+                      <td className="px-5 py-3 font-medium text-gray-800">
+                        {s.terminal?.name ?? s.terminalId}
+                      </td>
+                      <td className="px-5 py-3 text-gray-600">{s.cashier?.name || s.cashierId}</td>
+                      <td className="px-5 py-3 text-gray-600">
+                        <PosDateTime iso={s.openedAt} />
+                      </td>
+                      <td className="px-5 py-3">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[s.status]}`}
+                        >
+                          {s.status.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-right text-gray-700">
+                        {formatCurrency(s.openingCash)}
+                      </td>
+                      <td className="px-5 py-3 text-right text-gray-600">
+                        {s._count?.transactions ?? 0}
+                      </td>
+                      <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        {s.status === 'open' && (
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              onClick={() => {
+                                setError('')
+                                setModal({ type: 'handover', session: s })
+                              }}
+                              className="text-xs font-medium text-yellow-600 hover:underline"
+                            >
+                              Handover
+                            </button>
+                            <button
+                              onClick={() => {
+                                setError('')
+                                setModal({ type: 'close', session: s })
+                              }}
+                              className="text-xs font-medium text-red-600 hover:underline"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                    {expanded === s.id && (
+                      <tr className="bg-gray-50/70">
+                        <td colSpan={9} className="px-5 py-4">
+                          <SessionDetail session={s} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -611,7 +647,151 @@ function OpenSessionModal({
   )
 }
 
-const DENOMINATIONS = [1000, 500, 200, 100, 50, 20]
+// Scenario 53 — extended below ₱20. The grid used to stop there, which made
+// any drawer holding coins impossible to declare accurately: a ₱9,273.50
+// count had nowhere to put the ₱3 or the ₱0.50. Mirrors the denomination
+// block on the client's own Daily Collection Report form, which lists
+// 1000/500/200/100/50/20 and then a single lump COINS line.
+/** Human label for a PosPaymentMethod key, e.g. bank_transfer -> Bank Transfer. */
+function tenderLabel(method: string): string {
+  if (method === 'qr') return 'QR / Online'
+  if (method === 'tpf') return 'TPF'
+  return method
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+/**
+ * Scenario 53 — the expanded detail for one session row.
+ *
+ * Reads only what the session row already carries, so opening a row costs no
+ * extra request. Everything below the cash summary comes from the closing
+ * record persisted in Part 1, which is null for any session closed before that
+ * shipped and for any still open — hence the explicit "not recorded" states
+ * rather than rendering a zero that would read as a real counted figure.
+ */
+function SessionDetail({ session }: { session: PosSession }) {
+  const tenders = Object.entries(session.tenderBreakdown ?? {}).filter(([, amount]) => amount !== 0)
+  const denominations = Object.entries(session.denominationBreakdown ?? {})
+  const isClosed = session.status !== 'open'
+  const variance = Number(session.cashVariance ?? 0)
+
+  return (
+    <div className="grid gap-5 md:grid-cols-3">
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Cash</p>
+        <dl className="space-y-1 text-sm">
+          <div className="flex justify-between gap-4">
+            <dt className="text-gray-500">Opening</dt>
+            <dd className="tabular-nums text-gray-800">{formatCurrency(session.openingCash)}</dd>
+          </div>
+          {isClosed ? (
+            <>
+              <div className="flex justify-between gap-4">
+                <dt className="text-gray-500">Expected</dt>
+                <dd className="tabular-nums text-gray-800">
+                  {formatCurrency(Number(session.expectedClosingCash ?? 0))}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-gray-500">Declared</dt>
+                <dd className="tabular-nums text-gray-800">
+                  {formatCurrency(Number(session.declaredClosingCash ?? 0))}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t border-gray-200 pt-1">
+                <dt className="font-medium text-gray-600">Variance</dt>
+                <dd
+                  className={`font-semibold tabular-nums ${
+                    Math.abs(variance) < 0.01
+                      ? 'text-gray-800'
+                      : variance < 0
+                        ? 'text-red-600'
+                        : 'text-amber-600'
+                  }`}
+                >
+                  {formatCurrency(variance)}
+                </dd>
+              </div>
+            </>
+          ) : (
+            <p className="pt-1 text-xs text-gray-400">Still open — no closing figures yet.</p>
+          )}
+        </dl>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Tenders taken
+        </p>
+        {tenders.length > 0 ? (
+          <dl className="space-y-1 text-sm">
+            {tenders.map(([method, amount]) => (
+              <div key={method} className="flex justify-between gap-4">
+                <dt className="text-gray-500">{tenderLabel(method)}</dt>
+                <dd className="tabular-nums text-gray-800">{formatCurrency(amount)}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="text-xs text-gray-400">
+            {isClosed ? 'No payments taken this session.' : 'Recorded at close.'}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Denomination count
+        </p>
+        {denominations.length > 0 ? (
+          <dl className="space-y-1 text-sm">
+            {denominations
+              // 'coins' carries an amount rather than a count, so it sorts last
+              // instead of into the numeric run.
+              .sort(([a], [b]) => (a === 'coins' ? 1 : b === 'coins' ? -1 : Number(b) - Number(a)))
+              .map(([denomination, value]) => (
+                <div key={denomination} className="flex justify-between gap-4">
+                  <dt className="text-gray-500">
+                    {denomination === 'coins' ? 'Coins' : `₱${denomination}`}
+                    {denomination !== 'coins' && (
+                      <span className="ml-1 text-xs text-gray-400">× {value}</span>
+                    )}
+                  </dt>
+                  <dd className="tabular-nums text-gray-800">
+                    {formatCurrency(
+                      denomination === 'coins' ? value : Number(denomination) * value
+                    )}
+                  </dd>
+                </div>
+              ))}
+          </dl>
+        ) : (
+          <p className="text-xs text-gray-400">
+            {isClosed ? 'No count recorded for this session.' : 'Recorded at close.'}
+          </p>
+        )}
+        {session.closingNotes && (
+          <p className="mt-3 border-t border-gray-200 pt-2 text-xs text-gray-600">
+            <span className="font-medium text-gray-500">Note: </span>
+            {session.closingNotes}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const DENOMINATIONS = [1000, 500, 200, 100, 50, 20, 10, 5, 1]
+
+/** Pesos with centavos always shown — a drawer total of 9273.5 is ₱9,273.50. */
+function peso(amount: number): string {
+  return amount.toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
 
 // Scenario 38 Gap 3 — the backend rejects a non-zero cash variance with a
 // message naming these two required fields; matching on it (rather than a
@@ -635,6 +815,10 @@ function CloseSessionModal({
   const [counts, setCounts] = useState<Record<number, number>>(
     Object.fromEntries(DENOMINATIONS.map((d) => [d, 0]))
   )
+  // Loose coin as a single peso amount rather than a row per centavo
+  // denomination — matches the client form's own COINS line, and no cashier
+  // wants to tally 25-sentimo pieces individually.
+  const [coins, setCoins] = useState('')
   const [notes, setNotes] = useState('')
 
   // Manager approval, revealed only once the backend rejects a variance —
@@ -652,11 +836,31 @@ function CloseSessionModal({
   const branchId = session.terminal?.branchId
   const needsOverride = error.includes(VARIANCE_OVERRIDE_MARKER)
 
-  const total = DENOMINATIONS.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0)
+  // Whoever is already signed in approves their own variance automatically if
+  // they hold the override permission — no checkbox, no PIN. The manager
+  // search + PIN below exists for the other case: a cashier is at the terminal
+  // and a manager walks over to authorise. Challenging an already-authenticated
+  // approver for their own approval is pure friction.
+  //
+  // Without this a Business Owner could not close a session with a variance at
+  // all: /users/search filters on `employee: { branchId }` and a Business
+  // Owner has no Employee record, so no branch search ever returns them, and
+  // the seed only sets a cashierPin on cashier accounts so there is no PIN to
+  // enter either. Two separate dead ends for the one role that bypasses every
+  // permission check in the app.
+  const { data: me } = useMe()
+  const selfCanApprove = !!me && can(me, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
+
+  const coinsAmount = Math.max(0, parseFloat(coins) || 0)
+  const total = DENOMINATIONS.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0) + coinsAmount
 
   const denominationBreakdown = Object.fromEntries(
     DENOMINATIONS.filter((d) => (counts[d] ?? 0) > 0).map((d) => [String(d), counts[d]])
   )
+  // 'coins' carries a peso AMOUNT, unlike every other key which carries a
+  // COUNT of that denomination. Deliberate: it reproduces the client form's
+  // single COINS line. The backend's count-vs-declared check knows about it.
+  if (coinsAmount > 0) denominationBreakdown.coins = coinsAmount
 
   useEffect(() => {
     if (!search.trim()) {
@@ -701,12 +905,19 @@ function CloseSessionModal({
       notes: notes || undefined,
       denominationBreakdown:
         Object.keys(denominationBreakdown).length > 0 ? denominationBreakdown : undefined,
-      ...(verified && { managerOverride: true, managerUserId: verified.id }),
+      // Sent on the FIRST submit, not after a rejection — a privileged closer
+      // never sees the manager-approval block at all, because the backend
+      // never has cause to reject them for a missing override.
+      ...(verified
+        ? { managerOverride: true, managerUserId: verified.id }
+        : selfCanApprove && me
+          ? { managerOverride: true, managerUserId: me.id }
+          : {}),
     })
   }
 
   return (
-    <Overlay onClose={onClose}>
+    <Overlay onClose={onClose} size="lg">
       <h2 className="mb-1 text-lg font-bold text-gray-900">Close Session</h2>
       <p className="mb-4 text-sm text-gray-500">
         Terminal: {session.terminal?.name ?? session.terminalId}
@@ -724,29 +935,60 @@ function CloseSessionModal({
             Cash Denomination Count
           </label>
           <div className="overflow-hidden rounded-lg border border-gray-200">
-            {DENOMINATIONS.map((d, i) => (
-              <div
-                key={d}
-                className={`flex items-center gap-3 px-4 py-2 ${i < DENOMINATIONS.length - 1 ? 'border-b border-gray-100' : ''}`}
-              >
-                <span className="w-16 text-sm font-medium text-gray-700">₱{d}</span>
+            {/* Two columns, deliberately: nine denominations plus a coins line
+                stacked vertically runs past the bottom of a laptop viewport
+                once the notes and manager-approval blocks open. Paired up it
+                fits on screen whole, so the cashier never scrolls away from
+                the running total while counting. */}
+            <div className="grid grid-cols-2">
+              {DENOMINATIONS.map((d, i) => (
+                <div
+                  key={d}
+                  className={`flex items-center gap-2 border-gray-100 px-3 py-1.5 ${
+                    i % 2 === 0 ? 'border-r' : ''
+                  } border-b`}
+                >
+                  <span className="w-11 text-sm font-medium text-gray-700">₱{d}</span>
+                  <input
+                    className="input w-14 px-1 text-center"
+                    type="number"
+                    min={0}
+                    step={1}
+                    aria-label={`${d} peso count`}
+                    value={counts[d] === 0 ? '' : counts[d]}
+                    onChange={(e) =>
+                      setCounts((p) => ({ ...p, [d]: parseInt(e.target.value) || 0 }))
+                    }
+                  />
+                  <span className="flex-1 text-right text-sm tabular-nums text-gray-600">
+                    {peso(d * (counts[d] ?? 0))}
+                  </span>
+                </div>
+              ))}
+              {/* Coins takes the tenth cell, squaring off the 2x5 grid. A peso
+                  amount rather than a count — matches the single lump COINS
+                  line on the client's own Daily Collection Report form. */}
+              <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-1.5">
+                <span className="w-11 text-sm font-medium text-gray-700">Coins</span>
                 <input
-                  className="input w-20 text-center"
+                  className="input w-14 px-1 text-center"
                   type="number"
                   min={0}
-                  step={1}
-                  value={counts[d] === 0 ? '' : counts[d]}
-                  onChange={(e) => setCounts((p) => ({ ...p, [d]: parseInt(e.target.value) || 0 }))}
+                  step={0.01}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  aria-label="Loose coin total"
+                  value={coins}
+                  onChange={(e) => setCoins(e.target.value)}
                 />
-                <span className="text-xs text-gray-400">×</span>
-                <span className="w-20 text-right text-sm text-gray-600">
-                  ₱{(d * (counts[d] ?? 0)).toLocaleString()}
+                <span className="flex-1 text-right text-sm tabular-nums text-gray-600">
+                  {peso(coinsAmount)}
                 </span>
               </div>
-            ))}
+            </div>
             <div className="flex items-center justify-between bg-gray-50 px-4 py-2">
               <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-sm font-bold text-gray-900">₱{total.toLocaleString()}</span>
+              <span className="text-sm font-bold text-gray-900">₱{peso(total)}</span>
             </div>
           </div>
         </div>
@@ -855,7 +1097,7 @@ function CloseSessionModal({
           disabled={isLoading || (needsOverride && !verified)}
           className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
         >
-          {isLoading ? 'Closing…' : `Close Session (₱${total.toLocaleString()})`}
+          {isLoading ? 'Closing…' : `Close Session (₱${peso(total)})`}
         </button>
       </div>
     </Overlay>
@@ -1155,12 +1397,29 @@ function ReconciliationModal({
   )
 }
 
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Overlay({
+  children,
+  onClose,
+  size = 'md',
+}: {
+  children: React.ReactNode
+  onClose: () => void
+  /** 'lg' for modals that lay content out in columns (see CloseSessionModal). */
+  size?: 'md' | 'lg'
+}) {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      {/* items-start + my-auto (rather than items-center) keeps a modal taller
+          than the viewport fully reachable — with items-center the top of an
+          overflowing panel gets clipped out of reach in every browser. This is
+          a safety net for small viewports; no modal should need it by default. */}
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain p-4">
+        <div
+          className={`relative my-auto w-full rounded-2xl bg-white p-6 shadow-xl ${
+            size === 'lg' ? 'max-w-lg' : 'max-w-md'
+          }`}
+        >
           <button
             onClick={onClose}
             className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
