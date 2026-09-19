@@ -222,6 +222,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const canManagerApprove = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_APPROVE)
   const canManagerReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_REJECT)
   const canSkipApproval = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DIRECT)
+  const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_UPDATE)
 
   const {
     transfers,
@@ -249,6 +250,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     statusCounts,
     totalCount,
     createTransfer,
+    updateTransfer,
+    isUpdating,
     consignUnits,
     isConsigning,
     isCreating,
@@ -311,6 +314,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
   }
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  // The transfer being edited. Non-null turns the same create screen into an
+  // edit of this request — the two build the identical payload, so they share
+  // one form rather than keeping a near-duplicate of a 1300-line component.
+  const [editingTransfer, setEditingTransfer] = useState<TransferSummary | null>(null)
   const [searchFocused, setSearchFocused] = useState(false)
   const [createDraft, setCreateDraft] = useState<{
     fromWarehouseId: string
@@ -750,13 +757,20 @@ export default function TransferList({ session }: { session: SessionUser }) {
       </div>
 
       <CreateTransferModal
-        isOpen={isCreateOpen}
+        isOpen={isCreateOpen || !!editingTransfer}
         onClose={() => {
           setIsCreateOpen(false)
           setCreateDraft(null)
+          setEditingTransfer(null)
         }}
-        onSubmit={createTransfer}
-        isSubmitting={isCreating}
+        // One screen, two destinations: the form produces the same complete
+        // request either way, so which endpoint it goes to is the only thing
+        // that changes. The modal itself stays unaware of the difference.
+        onSubmit={
+          editingTransfer ? (data) => updateTransfer(editingTransfer.id, data) : createTransfer
+        }
+        isSubmitting={editingTransfer ? isUpdating : isCreating}
+        editing={editingTransfer}
         onConsign={consignUnits}
         isConsigning={isConsigning}
         warehouses={warehouseOptions}
@@ -786,6 +800,14 @@ export default function TransferList({ session }: { session: SessionUser }) {
         onDispatch={dispatchTransfer}
         onReceive={receiveTransfer}
         onCancel={cancelTransfer}
+        canEdit={canUpdate}
+        onEdit={(tr) => {
+          // Close the detail panel first — the edit form is the same
+          // full-content sheet, and leaving both mounted would stack two of
+          // them over the page area.
+          setSelectedTransfer(null)
+          setEditingTransfer(tr)
+        }}
         onApproveHq={approveHqTransfer}
         onRejectHq={rejectHqTransfer}
         onApproveManager={approveManagerTransfer}
