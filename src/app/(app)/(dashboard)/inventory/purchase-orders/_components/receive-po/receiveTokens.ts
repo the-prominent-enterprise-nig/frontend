@@ -1,6 +1,5 @@
 // The receive screen follows the Purchase Orders / Create Purchase Order
-// design's own IBM Plex + #5b21b6 palette rather than the app-wide Poppins
-// brand tokens — see ../procurementTokens.ts. Only the strings repeated
+// design's own #5b21b6 palette — see ../procurementTokens.ts. Only the strings repeated
 // across more than one of these files live here; one-off colours stay as
 // inline Tailwind arbitrary values at their call site.
 

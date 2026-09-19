@@ -120,6 +120,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       notes: '',
       deliveryReceiptNumber: '',
       supplierInvoiceNumber: '',
+      driverName: '',
+      helperName: '',
       lines: po.lines.map((l) => {
         const remaining = remainingOf(l)
         return {
@@ -346,6 +348,10 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       notes: data.notes || undefined,
       deliveryReceiptNumber: data.deliveryReceiptNumber || undefined,
       supplierInvoiceNumber: data.supplierInvoiceNumber || undefined,
+      // Left off entirely when blank, so the printed Driver/Helper line falls
+      // back to its blank rather than to an empty string.
+      driverName: data.driverName?.trim() || undefined,
+      helperName: data.helperName?.trim() || undefined,
       supplierId: po.supplier.id,
       // Unit costs are what the supplier charges per unit, i.e. VAT-inclusive,
       // so the amount is carved out of them rather than added on top. Always

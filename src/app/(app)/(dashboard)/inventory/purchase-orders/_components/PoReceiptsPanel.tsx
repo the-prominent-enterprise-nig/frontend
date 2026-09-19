@@ -33,7 +33,7 @@ type Props = {
 }
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
-// Same IBM Plex + #5b21b6 palette as procurementTokens/PoDetailModal — this
+// Same #5b21b6 palette as procurementTokens/PoDetailModal — this
 // drawer is opened from that panel's "View Receipts" button, so it has to
 // read as the same screen rather than a visually separate one.
 

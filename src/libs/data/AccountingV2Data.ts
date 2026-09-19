@@ -1477,6 +1477,13 @@ export const SupplierDebitMemos = {
   update: (id: string, body: Partial<SupplierDebitMemoInput>) =>
     api.patch<SupplierDebitMemo>(`/supplier-debit-memos/${id}`, body),
   approve: (id: string) => api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/approve`, {}),
+  /** The inventory account each item currently resolves to (item → category →
+   * tenant mapping) — what the form prefills a goods line with, so what is on
+   * screen is what would post if nobody changes it. */
+  inventoryAccounts: (itemIds: string[]) =>
+    api.get<Record<string, string>>('/supplier-debit-memos/inventory-accounts', {
+      itemIds: itemIds.join(','),
+    }),
   void: (id: string, voidReason?: string) =>
     api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/void`, { voidReason }),
 }

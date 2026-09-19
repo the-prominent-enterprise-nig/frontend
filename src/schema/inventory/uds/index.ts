@@ -23,6 +23,20 @@ export type UdsReason = z.infer<typeof UdsReasonSchema>
 export type UdsStatus = z.infer<typeof UdsStatusSchema>
 export type UdsAssessment = z.infer<typeof UdsAssessmentSchema>
 
+/**
+ * An id field the form leaves empty rather than unset.
+ *
+ * A `<select>` with nothing chosen holds `''`, and the API validates these as
+ * UUIDs — class-validator's `@IsOptional()` waives validation for `undefined`
+ * and `null` only, so an untouched picker posts `''` and comes back as
+ * "repairProviderId must be a UUID". Narrowing it to `undefined` here means
+ * the empty field is simply not sent, which is what "optional" meant.
+ */
+const optionalId = z
+  .string()
+  .optional()
+  .transform((v) => (v === '' ? undefined : v))
+
 // ─── Create UDS ───────────────────────────────────────────────────────────────
 
 const UdsLineFormSchema = z.object({
@@ -32,12 +46,12 @@ const UdsLineFormSchema = z.object({
 })
 
 export const CreateUdsFormSchema = z.object({
-  warehouseId: z.string().optional(),
+  warehouseId: optionalId,
   reason: UdsReasonSchema,
   expectedReturnDate: z.string().optional(),
   notes: z.string().max(1000).optional(),
-  rfsFormFileId: z.string().optional(),
-  repairProviderId: z.string().optional(),
+  rfsFormFileId: optionalId,
+  repairProviderId: optionalId,
   lines: z.array(UdsLineFormSchema).min(1, 'At least one unit is required'),
 })
 
@@ -60,6 +74,11 @@ export type ManualUdsStatus = z.infer<typeof ManualUdsStatusSchema>
 export const UpdateUdsStatusFormSchema = z.object({
   status: ManualUdsStatusSchema,
   notes: z.string().max(1000).optional(),
+  /** The SI for the branch <-> main leg. Only meaningful on the two
+   *  transitions where the unit makes that trip — the server writes it to the
+   *  outbound column on in_transit and the return column on completed, and
+   *  ignores it anywhere else. */
+  salesInvoiceNumber: z.string().max(50).optional(),
 })
 
 export type UpdateUdsStatusFormValues = z.infer<typeof UpdateUdsStatusFormSchema>
@@ -77,7 +96,15 @@ export type SetRepairProviderFormValues = z.infer<typeof SetRepairProviderFormSc
 export const AssessUdsFormSchema = z
   .object({
     assessment: UdsAssessmentSchema,
-    estimatedCost: z.coerce.number().positive().optional(),
+    /** Zero is a real estimate: a warranty or goodwill repair costs nothing
+     *  and still has to be assessed, priced and sent to a provider. It is
+     *  `undefined` — never answered — that blocks a repairable verdict. */
+    estimatedCost: z.coerce.number().min(0, 'Estimated cost cannot be negative').optional(),
+    /** Bound to the sheet as part of the verdict. A sheet raised from a
+     *  customer return has no provider — the intake never asks — so requiring
+     *  one to be set beforehand made every custodial repair fail its first
+     *  assessment. Only required when the sheet does not already have one. */
+    repairProviderId: optionalId,
     notes: z.string().max(1000).optional(),
   })
   .refine((data) => data.assessment !== 'repairable' || data.estimatedCost != null, {
@@ -104,17 +131,22 @@ export const ReceiveFromProviderFormSchema = z.object({
     .string()
     .min(1, 'RR number is required')
     .max(50, 'RR number is too long'),
-  actualCost: z.coerce.number().positive('Actual cost must be greater than 0'),
+  /** Zero is a real figure — the provider fixed it under warranty and billed
+   *  nothing. Against a non-zero estimate it posts the whole accrual back as
+   *  a saving, which is exactly right. */
+  actualCost: z.coerce.number().min(0, 'Actual cost cannot be negative'),
   notes: z.string().max(1000).optional(),
 })
 
 export type ReceiveFromProviderFormValues = z.infer<typeof ReceiveFromProviderFormSchema>
 
 export const ReleaseToCustomerFormSchema = z.object({
-  deliveryReceiptNumber: z
-    .string()
-    .min(1, 'DR number is required')
-    .max(50, 'DR number is too long'),
+  // The DR that closes the journey is issued server-side
+  // (UdsService#generateCustomerDeliveryReceiptNumber) and comes back on the
+  // response — the form never sends one.
+  /** The SI for the unit's return leg to the branch. Captured here because a
+   *  customer-owned sheet can only be closed by releasing it. */
+  salesInvoiceNumber: z.string().max(50).optional(),
   notes: z.string().max(1000).optional(),
 })
 
@@ -216,6 +248,19 @@ export const UdsSchema = z.object({
   intakeReceivingReportNumber: z.string().optional().nullable(),
   intakeSalesInvoiceNumber: z.string().optional().nullable(),
   releaseDeliveryReceiptNumber: z.string().optional().nullable(),
+  // The branch <-> main leg. On a custodial sheet there is no stock transfer
+  // for this hop, so the timestamp and actor here are the only record that the
+  // handover happened.
+  /** The gate pass the unit physically travels on for the branch <-> main hop.
+   *  Not a stock transfer — a custodial unit has no stock to move. */
+  transferToMainCustodyNumber: z.string().optional().nullable(),
+  returnToBranchCustodyNumber: z.string().optional().nullable(),
+  transferToMainSalesInvoiceNumber: z.string().optional().nullable(),
+  transferredToMainAt: z.string().optional().nullable(),
+  transferredToMainById: z.string().optional().nullable(),
+  returnToBranchSalesInvoiceNumber: z.string().optional().nullable(),
+  returnedToBranchAt: z.string().optional().nullable(),
+  returnedToBranchById: z.string().optional().nullable(),
   releasedAt: z.string().optional().nullable(),
   repairDebitJournalEntryId: z.string().optional().nullable(),
   writeOffAdjustmentId: z.string().optional().nullable(),

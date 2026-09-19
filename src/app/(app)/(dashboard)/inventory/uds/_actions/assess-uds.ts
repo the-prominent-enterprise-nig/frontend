@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
+import { udsErrorMessage } from '../_lib/uds-errors'
 import { AssessUdsFormSchema } from '@/src/schema/inventory/uds'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -38,7 +39,7 @@ export async function assessUds(id: string, input: unknown): Promise<ApiResponse
     return {
       success: false,
       error: errStr || 'Failed to assess UDS',
-      message: msg || errStr || 'Failed to assess UDS',
+      message: udsErrorMessage(msg || errStr, 'Failed to assess UDS'),
     }
   }
 

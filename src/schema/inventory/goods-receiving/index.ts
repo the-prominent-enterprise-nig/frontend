@@ -194,7 +194,13 @@ const LedgerWarehouseSchema = z.object({
 export const StockLedgerEntrySchema = z.object({
   id: z.string(),
   transactionType: z.string(),
+  /** Absolute size of the movement — no direction. Read `quantityChange`
+   *  for that: an `adjustment` goes either way, so transactionType alone
+   *  cannot tell an inflow from an outflow. */
   quantity: z.number(),
+  /** The signed movement: negative for sales, transfer-outs, write-offs and
+   *  supplier returns. Optional so older payloads still parse. */
+  quantityChange: z.number().optional().nullable(),
   condition: z.string().optional().nullable(),
   originalSaleId: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -338,6 +344,21 @@ export const ReceivingReportSchema = z.object({
   purchaseOrderNumber: z.string().optional().nullable(),
   driverName: z.string().optional().nullable(),
   helperName: z.string().optional().nullable(),
+  // Set only on a receipt that arrived from another branch rather than a
+  // supplier. Its number takes the printed report's PO slot — a transfer
+  // receipt has no purchase order behind it.
+  stockTransfer: z
+    .object({
+      id: z.string().optional(),
+      transferNumber: z.string().optional().nullable(),
+      transferDate: z.string().optional().nullable(),
+      // Where the goods came FROM. The reports list has no supplier to name
+      // on a transfer-sourced row, so it names this branch instead; only the
+      // list endpoint selects it, hence optional.
+      fromWarehouse: ReceivingReportWarehouseSchema.optional().nullable(),
+    })
+    .optional()
+    .nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
   supplierInvoiceNumber: z.string().optional().nullable(),
   journalEntryId: z.string().optional().nullable(),

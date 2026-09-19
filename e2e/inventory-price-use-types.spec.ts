@@ -6,6 +6,7 @@ import {
   loginAs,
   sweepE2EPriceUseTypes,
   openCustomSelect,
+  submitPriceListForm,
 } from './utils'
 
 const NAME_PREFIX = 'E2E Price Use Type — '
@@ -47,7 +48,7 @@ test.describe('Inventory — Price Use Types', () => {
     const drawer = await openPriceUseTypesDrawer(page)
 
     await clickStable(
-      page.getByRole('button', { name: 'New Price Use Type' }),
+      page.getByRole('button', { name: 'New use type', exact: true }),
       page.getByRole('heading', { name: 'New Price Use Type' })
     )
     await fillStable(page.getByPlaceholder('e.g. SSC'), name)
@@ -154,10 +155,9 @@ test.describe('Inventory — Price Use Types', () => {
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
     )
-    await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), listName)
+    await fillStable(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'), listName)
 
-    await openCustomSelect(page.getByRole('combobox', { name: 'Select price use type…' }))
-    await page.getByRole('button', { name: 'Add new price use type…' }).click()
+    await page.getByRole('button', { name: 'New use type', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'New Price Use Type' })).toBeVisible({
       timeout: 10_000,
     })
@@ -168,15 +168,19 @@ test.describe('Inventory — Price Use Types', () => {
       timeout: 10_000,
     })
 
-    // Back on the New Price List modal: the name typed earlier survived, and
-    // the dropdown now shows the type just created as selected — not reset
-    // to the empty placeholder. The combobox's accessible name IS its
-    // current selection, so this alone proves both.
+    // Back on the price list form: the name typed earlier survived, and the
+    // type just created is both present in the grid and already picked —
+    // not reset to nothing chosen.
     await expect(page.getByRole('heading', { name: 'New Price List' })).toBeVisible()
-    await expect(page.getByPlaceholder('e.g. Retail Standard 2026')).toHaveValue(listName)
-    await expect(page.getByRole('combobox', { name: typeName, exact: true })).toBeVisible()
+    await expect(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026')).toHaveValue(
+      listName
+    )
+    await expect(page.getByRole('radio', { name: typeName, exact: true })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
 
-    await page.getByRole('button', { name: 'Create Price List' }).click()
+    await submitPriceListForm(page, 'Create Price List')
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
     })
@@ -194,7 +198,7 @@ test.describe('Inventory — Price Use Types', () => {
     if (match) await request.delete(`/api/inventory/price-lists/${match.id}`)
   })
 
-  test('shows a clear error when deleting a price use type still referenced by a price list', async ({
+  test('refuses to delete a price use type still referenced by a price list, and offers to turn it off instead', async ({
     page,
     request,
   }) => {
@@ -211,19 +215,25 @@ test.describe('Inventory — Price Use Types', () => {
 
     const drawer = await openPriceUseTypesDrawer(page)
     const row = drawer.getByRole('row').filter({ hasText: name })
+    // The drawer counts how many lists each type carries, so a delete the
+    // database would reject is stopped before it is sent — the dialog
+    // explains why and offers the thing that does work instead.
     await clickStable(
       row.getByRole('button', { name: 'Delete' }),
       page.getByRole('heading', { name: 'Delete price use type?' })
     )
-    await page.getByRole('button', { name: 'Delete', exact: true }).last().click()
+    await expect(page.getByText(/is used by 1 price list/)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0)
 
-    await expect(
-      page.getByText(
-        'This price use type is still used by one or more price lists — reassign or remove those first.'
-      )
-    ).toBeVisible({ timeout: 10_000 })
-    // The row must still be there — the failed delete didn't optimistically remove it.
+    await page.getByRole('button', { name: 'Turn off instead' }).click()
+    await expect(page.getByRole('heading', { name: 'Delete price use type?' })).not.toBeVisible({
+      timeout: 10_000,
+    })
+    // Still listed — turned off, not removed.
     await expect(row).toBeVisible()
+    await expect(row.getByRole('switch')).toHaveAttribute('aria-checked', 'false', {
+      timeout: 10_000,
+    })
 
     // Cleanup: the price list has to go before afterEach's type sweep can
     // succeed (the same FK restriction this test is exercising).

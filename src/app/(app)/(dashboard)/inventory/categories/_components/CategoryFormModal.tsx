@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Upload, ImageOff } from 'lucide-react'
 import {
@@ -16,6 +17,7 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import { uploadCategoryFile } from '../_actions/category-cover'
 import { showToast } from '@/src/components/ui/toast'
 import { formatClassificationLabel } from '@/src/libs/format/text'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 
 type CreateProps = {
   mode: 'create'
@@ -67,6 +69,7 @@ export default function CategoryFormModal(props: Props) {
           color: props.node.color ?? undefined,
           allowsCustomAttributes: false,
           coverImageFileId: props.node.coverImageFileId ?? undefined,
+          defaultGlAccountId: props.node.categoryDefault?.defaultGlAccountId ?? '',
         }
       : {
           name: '',
@@ -77,8 +80,25 @@ export default function CategoryFormModal(props: Props) {
           status: 'active',
           allowsCustomAttributes: false,
           coverImageFileId: undefined,
+          defaultGlAccountId: '',
         },
   })
+
+  // Only the asset accounts can hold stock, and the list is small enough to
+  // fetch whole — same call the item form's account overrides make.
+  const accountsQuery = useQuery({
+    queryKey: ['coa-asset-accounts'],
+    queryFn: () => getAccounts({ limit: 500 }),
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  })
+  // GET /accounts answers with a bare array even though the client types it as
+  // a paginated envelope, so accept either shape — same guard the item form
+  // and ExpenseForm use.
+  const accountsRaw = accountsQuery.data?.data as Account[] | { items?: Account[] } | undefined
+  const stockAccounts: Account[] = (
+    Array.isArray(accountsRaw) ? accountsRaw : (accountsRaw?.items ?? [])
+  ).filter((a) => String(a.type).toUpperCase() === 'ASSET')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(
@@ -230,6 +250,40 @@ export default function CategoryFormModal(props: Props) {
                   </select>
                 )}
               />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Inventory GL Account
+              </label>
+              <Controller
+                name="defaultGlAccountId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    disabled={accountsQuery.isLoading}
+                    className={`${fieldClass} bg-white`}
+                  >
+                    <option value="">
+                      {accountsQuery.isLoading
+                        ? 'Loading accounts…'
+                        : '— Inherit from parent, then the default mapping —'}
+                    </option>
+                    {stockAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.number ?? a.code} — {a.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+              <p className="mt-1 text-xs text-zinc-500">
+                Where stock in this category sits in the books — what receiving debits and a sale or
+                supplier return credits. Items under it inherit this unless one names an account of
+                its own.
+              </p>
             </div>
 
             <div>
