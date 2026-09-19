@@ -465,8 +465,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         usePrefix: true,
       },
       {
-        label: 'Cash-in-Transit',
-        href: '/pos/cash-in-transit',
+        // Scenario 53 — POS speaks in Undeposited Funds now; Accounting keeps
+        // the Cash-in-Transit name for the GL account it reconciles against.
+        label: 'Undeposited Funds',
+        href: '/pos/undeposited-funds',
         icon: Wallet,
         requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },

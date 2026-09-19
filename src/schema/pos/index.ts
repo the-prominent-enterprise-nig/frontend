@@ -85,15 +85,23 @@ export interface CloseSessionInput {
 }
 
 /**
- * Scenario 53 Part 3 — non-cash tenders for the close screen's read-only
- * panel. Cash is deliberately absent: the drawer count is blind by design, and
- * cash + the visible opening float would give away the expected figure.
+ * Scenario 53 Part 3 — cash taken this shift, for the close screen's
+ * read-only panel. Sales cash only: the opening float, cash drops and petty
+ * cash are excluded, so this is what the shift rang up, not what the drawer
+ * should hold.
  */
 export interface SessionTenderSummary {
   sessionId: string
   status: PosSessionStatus
-  tenders: Record<string, number>
+  totalCash: number
+  /**
+   * Per-tender non-cash totals, keyed by PosPaymentMethod. The client's own
+   * requirement: "the online payment (gcash, bank, etc.) should be displayed
+   * and cannot be edited".
+   */
+  nonCash: Record<string, number>
   totalNonCash: number
+  totalTaken: number
 }
 
 export interface SessionReconciliation {
@@ -115,6 +123,12 @@ export interface SessionReconciliation {
   totalCashDrops: number
   totalPettyCashIn: number
   totalPettyCashOut: number
+  /**
+   * Scenario 53 Part 5b — installment collections taken over the counter on
+   * this session. Part of the drawer, and part of why expected cash can
+   * exceed the shift's own sales.
+   */
+  totalCollectionsCash: number
 }
 
 export interface SalesSummary {

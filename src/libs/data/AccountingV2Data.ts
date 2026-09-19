@@ -446,6 +446,13 @@ export interface RecordArPaymentInput {
   bankAccountId?: string
   branchId?: string
   collectorId?: string
+  /**
+   * Scenario 53 Part 5b — the open POS session, when this collection is taken
+   * over the counter. Cash then counts toward that session's expected drawer
+   * total and posts to Undeposited Funds instead of Cash in Bank. Omitted for
+   * field collections and Accounting-side entries.
+   */
+  posSessionId?: string
 }
 
 export interface ARInvoiceSerialGoodsReceipt {
@@ -575,6 +582,13 @@ export interface BulkRecordArPaymentInput {
   notes?: string
   branchId?: string
   collectorId?: string
+  /**
+   * Scenario 53 Part 5b — the open POS session, when this collection is taken
+   * over the counter. Cash then counts toward that session's expected drawer
+   * total and posts to Undeposited Funds instead of Cash in Bank. Omitted for
+   * field collections and Accounting-side entries.
+   */
+  posSessionId?: string
 }
 
 export interface BulkRecordPaymentResult {

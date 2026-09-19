@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
-import { CashInTransitList } from '../../pos/cash-in-transit/_components/CashInTransitList'
+import { CashInTransitList } from '../../pos/undeposited-funds/_components/CashInTransitList'
 
 export const metadata = { title: 'Cash-in-Transit | Prominent Enterprise' }
 

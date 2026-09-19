@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { CashInTransitList } from './_components/CashInTransitList'
 
-export const metadata = { title: 'Cash-in-Transit | Prominent Enterprise' }
+export const metadata = { title: 'Undeposited Funds | Prominent Enterprise' }
 
 export default async function CashInTransitPage() {
   const session = await getSessionOrNull()
@@ -34,6 +34,7 @@ export default async function CashInTransitPage() {
 
   return (
     <CashInTransitList
+      title="Undeposited Funds"
       canManage={canManage}
       restrictedBranchId={restrictedBranchId}
       isUnrestricted={restrictedBranchId === null}

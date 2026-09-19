@@ -850,10 +850,11 @@ function CloseSessionModal({
   // the seed only sets a cashierPin on cashier accounts so there is no PIN to
   // enter either. Two separate dead ends for the one role that bypasses every
   // permission check in the app.
-  // Scenario 53 Part 3 — what the shift took on every tender except cash.
-  // Loaded when the modal opens so the cashier can see it while counting.
-  // Cash is withheld by the endpoint itself, not filtered here: the count has
-  // to stay blind, and opening float + cash total would give the answer away.
+  // Scenario 53 Part 3 — cash the shift took in, loaded when the modal opens
+  // so the cashier can see it while counting. Developer-confirmed 2026-09-19:
+  // this replaced the non-cash breakdown that used to sit here, which means
+  // the drawer count is no longer blind — the figure comes straight from the
+  // endpoint and is read-only, so variance still catches a miscount.
   const [tenderSummary, setTenderSummary] = useState<SessionTenderSummary | null>(null)
   const [tendersLoading, setTendersLoading] = useState(true)
 
@@ -952,35 +953,38 @@ function CloseSessionModal({
       )}
       <div className="space-y-4">
         <div>
-          <label className="mb-2 block text-xs font-semibold text-gray-600">
-            Taken This Shift (non-cash)
-          </label>
+          <label className="mb-2 block text-xs font-semibold text-gray-600">Taken This Shift</label>
           <div className="rounded-lg border border-gray-200 bg-gray-50/70 px-4 py-2">
             {tendersLoading ? (
               <Skeleton className="h-4 w-40" />
-            ) : tenderSummary && Object.keys(tenderSummary.tenders).length > 0 ? (
-              <dl className="space-y-1">
-                {Object.entries(tenderSummary.tenders).map(([method, amount]) => (
-                  <div key={method} className="flex items-center justify-between gap-4 text-sm">
+            ) : tenderSummary ? (
+              <dl className="space-y-1 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="text-gray-600">Cash sales</dt>
+                  <dd className="tabular-nums text-gray-800">
+                    {formatCurrency(tenderSummary.totalCash)}
+                  </dd>
+                </div>
+                {Object.entries(tenderSummary.nonCash ?? {}).map(([method, amount]) => (
+                  <div key={method} className="flex items-center justify-between gap-4">
                     <dt className="text-gray-600">{tenderLabel(method)}</dt>
-                    <dd className="tabular-nums font-medium text-gray-800">
-                      {formatCurrency(amount)}
-                    </dd>
+                    <dd className="tabular-nums text-gray-800">{formatCurrency(amount)}</dd>
                   </div>
                 ))}
-                <div className="flex items-center justify-between gap-4 border-t border-gray-200 pt-1 text-sm">
+                <div className="flex items-center justify-between gap-4 border-t border-gray-200 pt-1">
                   <dt className="font-semibold text-gray-700">Total</dt>
                   <dd className="tabular-nums font-bold text-gray-900">
-                    {formatCurrency(tenderSummary.totalNonCash)}
+                    {formatCurrency(tenderSummary.totalTaken)}
                   </dd>
                 </div>
               </dl>
             ) : (
-              <p className="text-sm text-gray-400">No non-cash payments this shift.</p>
+              <p className="text-sm text-gray-400">Unable to load what this shift has taken.</p>
             )}
           </div>
           <p className="mt-1 text-xs text-gray-400">
-            Recorded by the system and not editable. Count cash only.
+            Recorded by the system and not editable — count the drawer, not this. Cash is sales cash
+            only: it excludes the opening float, cash drops and petty cash.
           </p>
         </div>
         <div>
@@ -1416,6 +1420,21 @@ function ReconciliationModal({
             </span>
           </div>
         </div>
+
+        {Number(data.totalCollectionsCash ?? 0) > 0 && (
+          <div className="rounded-xl border border-gray-200 px-4 py-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600">Installment collections (cash)</span>
+              <span className="text-sm font-medium text-gray-900">
+                {formatCurrency(Number(data.totalCollectionsCash))}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-gray-400">
+              Counter collections taken this shift — included in expected cash, because the money is
+              in the drawer.
+            </p>
+          </div>
+        )}
 
         {Object.keys(data.paymentBreakdown ?? {}).length > 0 && (
           <div>
