@@ -53,7 +53,6 @@ import {
   addPayment,
   validatePromoCode,
   parkSale,
-  resumeParkedSale,
   searchCustomers,
   getCustomerById,
   getLoyaltyByCustomer,
@@ -95,7 +94,6 @@ import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import {
-  AUTO_PARK_CONSUMED_KEY,
   readCheckoutHandoff,
   writeCheckoutHandoff,
   clearCheckoutHandoff,
@@ -300,46 +298,6 @@ function customerDisplayName(c: PosCustomer) {
 
 const OFFLINE_QUEUE_KEY = 'pos_offline_queue'
 const POS_FROM_TAB_KEY = 'pos_from_tab'
-
-// Auto-park (2026-09-19 client request: "just park the sale instead").
-// The cart is plain React state, so until now any route change that wasn't
-// one of the two deliberate handoffs destroyed an in-progress sale with no
-// warning — the cashier's only defence was remembering to park first.
-// Parking is safe to do on their behalf: server-side it writes one
-// ParkedSale row and emits a socket event, and touches neither stock nor
-// any financial record.
-//
-// Two mechanisms on purpose:
-//   • pos_resumed_cart is written synchronously on the way out, so coming
-//     straight back restores the cart with no request in the way. This is
-//     the common case and the one the cashier actually experiences.
-//   • the ParkedSale row is the durable copy — it outlives a closed browser,
-//     a different device or cleared storage, and unlike localStorage it is
-//     visible to the branch in the Parked Sales tab.
-// The nonce ties the two together so returning to checkout can close out
-// the row it just picked back up, instead of leaving the list showing a
-// sale that is already back on screen.
-
-// Leaving checkout is not the same as abandoning the sale — a cashier
-// checking stock, a price or the parked list is back in seconds, and parking
-// instantly meant their own in-flight sale appeared in the Parked Sales tab
-// while they stood there looking at it, resumable and cancellable out from
-// under them. So the row is scheduled, not written, and coming back to
-// checkout cancels it: a quick detour leaves no trace and restores from the
-// stash, while a real walk-away shows up as a parked sale.
-//
-// Module scope deliberately — the timer has to outlive this page's unmount,
-// which is the whole point. A full reload kills it, but that path never had
-// a server row anyway (see the pagehide leg) and the stash still holds the
-// cart on that machine.
-const AUTO_PARK_DELAY_MS = 30_000
-let autoParkTimer: ReturnType<typeof setTimeout> | null = null
-function cancelPendingAutoPark() {
-  if (autoParkTimer) {
-    clearTimeout(autoParkTimer)
-    autoParkTimer = null
-  }
-}
 
 const DECIMAL_CODES = new Set([
   'kg',
@@ -949,158 +907,16 @@ export default function CheckoutPage() {
     )
   }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
 
-  // ─── Auto-park on leaving checkout ───────────────────────────────────────
-  // Latest-value mirror for the teardown below: an unmount cleanup created
-  // with [] deps closes over first-render state, which for the cart is
-  // always empty — reading it there would park nothing, every time.
-  // saleCompleted rides along because a posted sale KEEPS its cart: the
-  // receipt on the success screen is drawn from live cart/payments state, so
-  // it can't be cleared until the cashier starts a new sale. That cart is
-  // display-only and must never be parked or stashed — restoring it later
-  // would put an already-posted sale back on the till, ready to be rung up
-  // a second time.
-  const saleSnapshotRef = useRef({
-    cart,
-    selectedCustomer,
-    promoResult,
-    sessionId,
-    openSessions,
-    saleCompleted: false,
-  })
-  useEffect(() => {
-    saleSnapshotRef.current = {
-      cart,
-      selectedCustomer,
-      promoResult,
-      sessionId,
-      openSessions,
-      saleCompleted: Boolean(success || pendingApproval || reservationSuccess),
-    }
-  })
-
-  // Raised by the exits that already look after the cart themselves: the two
-  // handoff buttons stash it deliberately and bring it back on return, and a
-  // confirmed or manually parked sale has already emptied it. Without this
-  // each of those would also leave a stray parked row behind.
-  const skipAutoParkRef = useRef(false)
-
-  useEffect(() => {
-    // Back at the till: whatever was scheduled on the way out was a detour,
-    // not an abandoned sale. The cart comes back from the stash below.
-    cancelPendingAutoPark()
-
-    function stashCart(extra: Record<string, unknown> = {}) {
-      const {
-        cart: lines,
-        selectedCustomer: customer,
-        promoResult: promo,
-      } = saleSnapshotRef.current
-      if (lines.length === 0) return false
-      try {
-        return writeCheckoutHandoff({
-          lines,
-          customerId: customer?.id,
-          promoCodeId: promo?.promoCode?.id,
-          sessionId: saleSnapshotRef.current.sessionId || undefined,
-          ...extra,
-        })
-      } catch {
-        return false
-      }
-    }
-
-    // A real page unload (refresh, tab close) never runs the React cleanup
-    // below, and can't wait on a request either — so this leg is the
-    // synchronous stash only. It covers the accidental F5 mid-sale.
-    function handlePageHide() {
-      if (skipAutoParkRef.current || saleSnapshotRef.current.saleCompleted) return
-      stashCart()
-    }
-    window.addEventListener('pagehide', handlePageHide)
-
-    return () => {
-      window.removeEventListener('pagehide', handlePageHide)
-      if (skipAutoParkRef.current || saleSnapshotRef.current.saleCompleted) return
-      const {
-        cart: lines,
-        selectedCustomer: customer,
-        promoResult: promo,
-        sessionId: sid,
-        openSessions: sessions,
-      } = saleSnapshotRef.current
-      if (lines.length === 0) return
-
-      const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-      stashCart({ autoParkNonce: nonce })
-
-      // Nothing to park against without a session — the stash above still
-      // holds the cart, so the sale survives the navigation either way.
-      const session = sessions.find((s) => s.id === sid)
-      if (!session) return
-
-      const cartData = {
-        lines,
-        customerId: customer?.id,
-        promoCodeId: promo?.promoCode?.id,
-      }
-      // Scheduled rather than sent: if checkout mounts again before this
-      // fires, the effect above cancels it and no row is ever written.
-      // Not awaited when it does fire — there is no UI left to report into.
-      cancelPendingAutoPark()
-      autoParkTimer = setTimeout(() => {
-        autoParkTimer = null
-        void parkSale({
-          sessionId: session.id,
-          terminalId: session.terminalId,
-          label: `Unfinished sale — ${customer?.name?.trim() || 'Walk-in'}`,
-          cartData,
-        })
-          .then((res) => {
-            if (!res.success || !res.data) return
-            const id = res.data.id
-            try {
-              const parsed = readCheckoutHandoff<CartLine>()
-              if (parsed?.autoParkNonce === nonce) {
-                writeCheckoutHandoff({ ...parsed, autoParkedId: id })
-                return
-              }
-              // The stash is gone or belongs to someone else. Either checkout
-              // already picked this cart back up before the request landed —
-              // in which case close the row out now — or the Parked Sales page
-              // overwrote it with a different sale, and this row must stay
-              // parked because nothing else is holding its cart.
-              if (localStorage.getItem(AUTO_PARK_CONSUMED_KEY) === nonce) {
-                localStorage.removeItem(AUTO_PARK_CONSUMED_KEY)
-                void resumeParkedSale(id)
-              }
-            } catch {}
-          })
-          .catch(() => {})
-      }, AUTO_PARK_DELAY_MS)
-    }
-    // Mounts and tears down once with the page; everything it reads comes
-    // from the ref above rather than from deps.
-  }, [])
-
-  // A posted sale invalidates every stashed copy of its cart. The teardown
-  // above already refuses to write one, but anything written EARLIER in this
-  // sale's life is still sitting in storage: a trip to the customer form, a
-  // credit application, or a tab the cashier checked before taking payment.
-  // Any of those would restore a cart that has since been sold, and the
-  // cashier could ring it up a second time. Clearing on completion closes
-  // the whole class rather than guarding one path at a time.
-  useEffect(() => {
-    if (!success && !pendingApproval && !reservationSuccess) return
-    cancelPendingAutoPark()
-    try {
-      clearCheckoutHandoff()
-      localStorage.removeItem(AUTO_PARK_CONSUMED_KEY)
-    } catch {}
-  }, [success, pendingApproval, reservationSuccess])
-
-  // Restores an in-progress sale on arrival, from whichever direction the
-  // cashier came: a parked sale, a QMS tab, a detour to create a customer,
-  // or simply wandering off and back.
+  // Restores a sale that was handed here DELIBERATELY: resumed from Parked
+  // Sales, carried across by the credit-application detour, or a QMS tab.
+  //
+  // Wandering off the till and back does not restore anything — that cart
+  // is gone, which is the behaviour the client asked to return to
+  // (2026-09-19). Automatic persistence (a scheduled parked row, a pagehide
+  // stash, a cart reappearing on its own) was removed with it: three
+  // separate lost-customer bugs came out of mechanisms firing without the
+  // cashier asking for them. Anything that survives a navigation now does
+  // so because someone pressed a button.
   //
   // ONE effect owns this. It used to be two — a stash reader and a
   // ?customerId= reader — which raced: the stash resolved its customer
@@ -1134,22 +950,6 @@ export default function CheckoutPage() {
     if (handoff && belongsToAnOpenSession) {
       if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
         setCart(handoff.lines)
-      }
-      // Auto-park bookkeeping: the cart has just come back from this stash,
-      // so any row parked alongside it is redundant. Resume it purely to
-      // take it off the Parked Sales list. The nonce covers the race where
-      // we arrive before the park request lands — the teardown reads this
-      // key and closes the row out itself.
-      if (handoff.autoParkNonce) {
-        try {
-          localStorage.setItem(AUTO_PARK_CONSUMED_KEY, handoff.autoParkNonce)
-        } catch {}
-      }
-      if (handoff.autoParkedId) {
-        try {
-          localStorage.removeItem(AUTO_PARK_CONSUMED_KEY)
-        } catch {}
-        void resumeParkedSale(handoff.autoParkedId)
       }
       clearCheckoutHandoff()
     }
@@ -1785,9 +1585,6 @@ export default function CheckoutPage() {
    * screen.
    */
   async function goToCreateCustomer() {
-    // Nothing for the auto-park teardown to do — this function parks
-    // deliberately, and a scheduled row on top would duplicate it.
-    skipAutoParkRef.current = true
     // Any previous handoff is stale the moment we decide not to carry one.
     clearCheckoutHandoff()
 
@@ -1804,18 +1601,16 @@ export default function CheckoutPage() {
         },
       })
       if (!res.success) {
-        // Refuse to navigate rather than silently drop the sale: without a
-        // parked row and without a stash, leaving would destroy it.
+        // Refuse to navigate rather than silently drop the sale: nothing
+        // else is holding it, so leaving would destroy it.
         setError(
           res.error ?? 'Could not hold this sale. Complete or park it before adding a customer.'
         )
-        skipAutoParkRef.current = false
         return
       }
       resetSale()
     } else if (cart.length > 0 && !session) {
       setError('Select a session before adding a customer, so the current sale can be held.')
-      skipAutoParkRef.current = false
       return
     }
 
@@ -1837,7 +1632,6 @@ export default function CheckoutPage() {
    * filled in rather than blank.
    */
   function goToRaiseCreditApplication() {
-    skipAutoParkRef.current = true
     if (cart.length > 0) {
       // Unlike "New Customer", this detour DOES carry the cart: the
       // application is raised for these exact items, so leaving them behind

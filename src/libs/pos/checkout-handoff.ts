@@ -1,26 +1,24 @@
 /**
- * The single handoff record for an in-progress POS sale.
+ * The single handoff record for a POS sale being carried across a
+ * navigation ON PURPOSE.
  *
- * Checkout's cart is plain React state, so every route change away from the
- * till has to hand it somewhere. Three mechanisms grew up doing that
- * separately — this localStorage stash, a `?customerId=` query string from
- * the create-customer form, and a server-side parked sale — and each one
- * had its own idea of who owned the customer. They raced: the stash
- * restored its customer asynchronously and could overwrite the newly
- * created one that the query string had just attached.
+ * Only three things write one: resuming from Parked Sales, the
+ * credit-application detour (which needs the cart's exact items), and
+ * "New Customer" clearing the till after parking. Checkout reads it once on
+ * arrival and deletes it.
  *
- * So: one record, one key, one shape, one reader. Anything that needs to
- * carry a sale across a navigation goes through here rather than reaching
- * for localStorage directly. The query string is still the transport for a
- * just-created customer (it survives a fresh tab, which localStorage
- * handoffs deliberately do not), but checkout now resolves BOTH sources in
- * one place with an explicit precedence instead of two effects fighting.
+ * It is deliberately NOT a general persistence layer. An earlier version
+ * also auto-parked on any navigation and stashed on pagehide, so a cart
+ * could reappear without the cashier asking — that overlapped with the
+ * ?customerId= return and the parked row, and the three of them racing
+ * produced three separate lost-customer bugs. Removed 2026-09-19 at the
+ * client's request: wandering off the till now loses the cart, and anything
+ * that survives does so because someone pressed a button.
+ *
+ * One key, one shape, one reader. Anything needing to carry a sale goes
+ * through here rather than reaching for localStorage directly.
  */
 export const CHECKOUT_HANDOFF_KEY = 'pos_resumed_cart'
-
-/** Set when the auto-park teardown has consumed a stash before its parked
- * row was written — see checkout's teardown for why the nonce exists. */
-export const AUTO_PARK_CONSUMED_KEY = 'pos_autopark_consumed'
 
 /** Generic over the cart-line type: CartLine is declared inside the
  * checkout page, and this module deliberately sits below it so both the
@@ -35,12 +33,6 @@ export type CheckoutHandoff<TLine = unknown> = {
    * (2026-09-19). A genuinely abandoned sale still exists server-side as a
    * parked sale, which is the durable copy and is branch-visible. */
   sessionId?: string
-  /** Ties a stash to the parked row scheduled alongside it, so returning to
-   * checkout can close that row out instead of leaving the Parked Sales
-   * list showing a sale already back on screen. */
-  autoParkNonce?: string
-  /** Filled in once the parked row actually exists. */
-  autoParkedId?: string
 }
 
 /** Never throws: localStorage can be unavailable (private windows, blocked
