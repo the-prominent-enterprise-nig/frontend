@@ -206,6 +206,15 @@ const CreateCreditApplicationBaseSchema = z.object({
   // the flat price and compute a floor off a different total (a real item
   // in the catalog differs by PHP 4,009 between the two).
   resolvedItemTotal: z.number().optional(),
+  // Also client-only. The down-payment floor the SALE will demand, which is
+  // not simply 10% of the total above: checkout measures its 10% against
+  // the tax-effective line amount, while an application is priced from the
+  // ex-tax price list. With exclusive pricing and 12% VAT that makes
+  // checkout's floor ~12% higher, so an application approved at exactly its
+  // own floor could never be sold — "down payment must be at least 10% of
+  // its sale amount" at the till, on an application the server had already
+  // accepted. The form computes the stricter figure and passes it here.
+  downPaymentFloor: z.number().optional(),
 })
 
 /** Mirrors CreditApplicationService.resolveFinancing()'s own rules so a bad
@@ -221,6 +230,7 @@ export function refineDownPayment(
     financingTermId?: string
     downPayment?: string
     resolvedItemTotal?: number
+    downPaymentFloor?: number
   },
   ctx: z.RefinementCtx
 ) {
@@ -247,7 +257,10 @@ export function refineDownPayment(
   const total = data.resolvedItemTotal ?? 0
   if (total <= 0) return
 
-  const floor = total * 0.1
+  // Prefer the floor the form worked out from the tax-effective amount;
+  // fall back to a plain 10% when it hasn't been supplied (an API caller,
+  // or prices still resolving).
+  const floor = data.downPaymentFloor ?? total * 0.1
   if (downPayment < floor - 0.005) {
     ctx.addIssue({
       code: 'custom',

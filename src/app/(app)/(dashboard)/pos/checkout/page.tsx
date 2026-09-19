@@ -1868,7 +1868,16 @@ export default function CheckoutPage() {
     const lines = inhouseInstallmentCartLines
     if (lines.length === 0) return
 
-    const lineAmount = (l: CartLine) => l.unitPrice * l.quantity
+    // Apportion on the SAME amount the submit check measures against —
+    // effectiveUnitPrice × quantity, tax included. Splitting on the raw
+    // unitPrice instead left every share about 12% short under exclusive
+    // pricing, so a sale built from an approved application was refused
+    // with "down payment must be at least 10% of its sale amount".
+    const lineAmount = (l: CartLine) =>
+      effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
+    // Whole centavos, rounded UP, so a fractional 10% can't land a hair
+    // under the floor.
+    const lineFloor = (l: CartLine) => Math.ceil(lineAmount(l) * 0.1 * 100) / 100
     const total = lines.reduce((sum, l) => sum + lineAmount(l), 0)
     const approvedDp = application.downPayment ?? null
 
@@ -1877,10 +1886,17 @@ export default function CheckoutPage() {
     if (approvedDp != null && total > 0) {
       lines.forEach((l, idx) => {
         const isLast = idx === lines.length - 1
-        const share = isLast
+        const rawShare = isLast
           ? approvedDp - allocated
           : Math.round(approvedDp * (lineAmount(l) / total) * 100) / 100
-        allocated += share
+        allocated += rawShare
+        // The approved down payment is a MINIMUM for the application as a
+        // whole, not a per-line cap. A line whose share falls under its own
+        // floor is raised to it — collecting a little more up front always
+        // completes, collecting less cannot. This is also what absorbs the
+        // quantity gap: an application carries no quantity, so ringing two
+        // units doubles the line while the approved figure covered one.
+        const share = Math.max(rawShare, lineFloor(l))
         dpByLine.set(l.lineId, share.toFixed(2))
       })
     }
@@ -1889,10 +1905,19 @@ export default function CheckoutPage() {
       prev.map((l) => {
         if (!dpByLine.has(l.lineId) && !application.financingTermId) return l
         if (!lines.some((x) => x.lineId === l.lineId)) return l
+        // Never reduce a figure the cashier has already entered — they may
+        // have agreed a larger down payment at the counter, and silently
+        // replacing it with the apportioned share both loses that and can
+        // drop the line under its floor.
+        const typed = parseFloat(l.downPaymentInput ?? '') || 0
+        const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
+        const downPaymentInput = dpByLine.has(l.lineId)
+          ? Math.max(typed, apportioned).toFixed(2)
+          : l.downPaymentInput
         return {
           ...l,
           financingTermId: application.financingTermId ?? l.financingTermId,
-          downPaymentInput: dpByLine.get(l.lineId) ?? l.downPaymentInput,
+          downPaymentInput,
         }
       })
     )

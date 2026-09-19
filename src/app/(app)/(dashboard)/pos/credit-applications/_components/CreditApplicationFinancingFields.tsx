@@ -17,8 +17,10 @@ import {
   getActiveFinancingTerms,
   previewInstallment,
   resolvePosPrices,
+  getActivePosConfig,
   type PosPriceUseType,
 } from '../../_actions/pos-actions'
+import { DEFAULT_VAT_RATE } from '../../_actions/pos-constants'
 import { Select } from '@/src/components/ui/Select'
 import type { FinancingTerm, InstallmentPreview } from '@/src/schema/pos'
 
@@ -75,6 +77,17 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   const downPaymentInput = useWatch({ control, name: 'downPayment' as Path<T> }) as
     | string
     | undefined
+
+  // Mirrors checkout: prices are tax-exclusive unless the tenant says
+  // otherwise, in which case the list price already carries the tax.
+  const [inclusivePricing, setInclusivePricing] = useState(false)
+  useEffect(() => {
+    getActivePosConfig().then((res) => {
+      if (res.success && res.data) {
+        setInclusivePricing(res.data.defaultPricingMode === 'inclusive')
+      }
+    })
+  }, [])
 
   const [priceUseTypes, setPriceUseTypes] = useState<PosPriceUseType[]>([])
   const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
@@ -133,11 +146,29 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     return sum + (resolved ?? i.estimatedPrice ?? 0)
   }, 0)
 
+  // Checkout measures its own 10% against the TAX-EFFECTIVE line amount,
+  // while these prices come straight off the price list. Under exclusive
+  // pricing that makes the sale's floor ~12% higher than the application's,
+  // so an application approved at exactly its own floor was rejected at the
+  // till ("down payment must be at least 10% of its sale amount") on an
+  // application the server had already accepted. Work the floor out on the
+  // same basis the sale will use, so what is approved is sellable.
+  //
+  // The stricter basis is used even though a tax-exempt customer would be
+  // charged the lower one: erring high means the collector takes a little
+  // more up front, which never blocks a sale, while erring low blocks it
+  // outright.
+  const floorBasis = inclusivePricing
+    ? estimatedTotal
+    : estimatedTotal * (1 + DEFAULT_VAT_RATE.rate / 100)
+  const downPaymentFloor = floorBasis * 0.1
+
   // The floor is checked in the schema, which can only see form state — so
-  // the resolved total has to live there too, not just in this component.
+  // both figures have to live there too, not just in this component.
   useEffect(() => {
     setValue('resolvedItemTotal' as Path<T>, estimatedTotal as never, { shouldDirty: false })
-  }, [estimatedTotal, setValue])
+    setValue('downPaymentFloor' as Path<T>, downPaymentFloor as never, { shouldDirty: false })
+  }, [estimatedTotal, downPaymentFloor, setValue])
 
   // Seed Down Payment with the 10% floor as a real value rather than a
   // greyed-out hint (review feedback, 2026-09-19). The hint vanished the
@@ -153,8 +184,8 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // two cases are told apart by value rather than by guessing.
   const lastSeededValueRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!financingTermId || estimatedTotal <= 0) return
-    const key = `${financingTermId}:${estimatedTotal.toFixed(2)}`
+    if (!financingTermId || downPaymentFloor <= 0) return
+    const key = `${financingTermId}:${downPaymentFloor.toFixed(2)}`
     if (seededForRef.current === key) return
     seededForRef.current = key
 
@@ -162,10 +193,10 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     const isOurs = !current || current === lastSeededValueRef.current
     if (!isOurs) return
 
-    const seeded = (estimatedTotal * 0.1).toFixed(2)
+    const seeded = downPaymentFloor.toFixed(2)
     lastSeededValueRef.current = seeded
     setValue('downPayment' as Path<T>, seeded as never, { shouldValidate: true })
-  }, [financingTermId, estimatedTotal, downPaymentInput, setValue])
+  }, [financingTermId, downPaymentFloor, downPaymentInput, setValue])
 
   // Validate this one field as it is typed. The form's default mode only
   // validates on submit, so a too-low figure sat there looking accepted
@@ -301,9 +332,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
                 value={(field.value as string | undefined) ?? ''}
                 type="text"
                 inputMode="decimal"
-                placeholder={
-                  estimatedTotal > 0 ? `Min. ${formatPeso(estimatedTotal * 0.1)}` : '0.00'
-                }
+                placeholder={downPaymentFloor > 0 ? `Min. ${formatPeso(downPaymentFloor)}` : '0.00'}
                 className={fieldClass}
               />
             )}

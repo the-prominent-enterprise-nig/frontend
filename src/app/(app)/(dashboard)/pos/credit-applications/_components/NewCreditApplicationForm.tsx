@@ -291,6 +291,7 @@ export default function NewCreditApplicationForm({
         // floor against the resolved total. The DTO whitelist would drop it
         // anyway, but sending a field the API never declares is noise.
         resolvedItemTotal: undefined,
+        downPaymentFloor: undefined,
       })
       if (!result.success) {
         setServerError(result.message)
