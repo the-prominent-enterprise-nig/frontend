@@ -383,6 +383,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Wallet,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
       },
+      {
+        // Scenario 53 — the same screen POS shows read-only, but this is the
+        // one where the cash actually gets banked.
+        label: 'Cash-in-Transit',
+        href: '/accounting/cash-in-transit',
+        icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ,
+      },
       // Its own entry, not a button on Bank Reconciliation: moving money
       // between two fund accounts is a disbursement, not part of agreeing a
       // statement to the books.
@@ -460,7 +468,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Cash-in-Transit',
         href: '/pos/cash-in-transit',
         icon: Wallet,
-        requiredPermission: 'pos:cash-in-transit:read',
+        requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },
       {
         label: 'Void Requests',

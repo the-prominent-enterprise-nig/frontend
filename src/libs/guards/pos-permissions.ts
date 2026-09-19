@@ -38,6 +38,13 @@ export const POS_PERMISSIONS = {
   TPF_PROVIDERS_READ: 'pos:tpf-providers:read',
   TPF_PROVIDERS_MANAGE: 'pos:tpf-providers:manage',
   CASH_IN_TRANSIT_READ: 'pos:cash-in-transit:read',
+  /**
+   * Scenario 53 — retired. The deposit is now gated on
+   * ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_MANAGE, because banking the
+   * branches' cash is an Accounting job and that is what enforces "POS cannot
+   * deposit, only accountant". Kept as a constant only so nothing silently
+   * resurrects the string; it is checked nowhere and reaches no endpoint.
+   */
   CASH_IN_TRANSIT_MANAGE: 'pos:cash-in-transit:manage',
   // No matching Permission row currently seeded in the live DB — flagged as
   // a backend seed-data gap, not a frontend bug. Kept as-is (matches the
@@ -102,7 +109,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:tpf-providers:read': 'View TPF (third-party financing) providers',
   'pos:tpf-providers:manage': 'Create and edit TPF (third-party financing) providers',
   'pos:cash-in-transit:read': 'View outstanding Cash-in-Transit sessions',
-  'pos:cash-in-transit:manage': 'Clear Cash-in-Transit sessions into a bank deposit',
+  'pos:cash-in-transit:manage':
+    'Retired (Scenario 53) — the deposit is now accounting:cash-in-transit:manage',
   'pos:collections:manage':
     "Collect payments against a customer's existing installment dues at POS",
   'pos:service-drafts:create': 'Open a new service job / materials estimate',
