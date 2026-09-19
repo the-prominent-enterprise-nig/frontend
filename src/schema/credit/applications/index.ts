@@ -117,7 +117,7 @@ const CreateCreditApplicationBaseSchema = z.object({
   applicantCustomerId: z.string().min(1, 'Applicant is required'),
   // Applicant contact — prefilled from the selected customer once picked,
   // and editable. These aren't part of the credit application payload:
-  // CreateCreditApplicationModal's submit handler diffs them against what
+  // NewCreditApplicationForm's submit handler diffs them against what
   // was loaded and, if changed, saves them to the customer's real record
   // via a separate PATCH /crm/customers/:id call before creating/updating
   // the application itself.
@@ -126,35 +126,181 @@ const CreateCreditApplicationBaseSchema = z.object({
   // Holds an existing co-maker's id, the NEW_CO_MAKER_VALUE sentinel (fill
   // in a brand-new co-maker below), or '' (no co-maker).
   coMakerId: z.string().optional(),
-  // Editable contact for whichever existing co-maker is selected above —
+  // Editable details for whichever existing co-maker is selected above —
   // same "diff and PATCH separately" treatment as applicantPhone/Email,
   // via customersApi.updateCoMaker().
+  //
+  // Name and relationship were added 2026-09-18: previously only phone and
+  // email were editable, so a co-maker saved with a misspelled name or the
+  // wrong relationship could not be corrected anywhere in the credit
+  // application UI.
+  //
+  // Split into first/last to match the CRM create-customer form (client
+  // request, 2026-09-19). CoMaker stores a single `name` column, so these
+  // are seeded by splitting the stored name on its first space and rejoined
+  // with a single space on save — the same fallback CustomerForm already
+  // uses for records predating its own firstName/lastName columns. Lossless
+  // on round-trip apart from collapsing repeated whitespace.
+  coMakerFirstName: z.string().max(120).optional().or(z.literal('')),
+  coMakerLastName: z.string().max(120).optional().or(z.literal('')),
+  coMakerRelationship: z.string().max(100).optional().or(z.literal('')),
   coMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
   coMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   // Only used when coMakerId === NEW_CO_MAKER_VALUE — creates a co-maker on
   // the applicant's profile via customersApi.addCoMaker() before the
   // application itself is submitted.
-  newCoMakerName: z.string().max(255).optional().or(z.literal('')),
+  // First/last are captured separately here and joined into the single
+  // CoMaker.name column on submit — the table has no split name columns.
+  newCoMakerFirstName: z.string().max(120).optional().or(z.literal('')),
+  newCoMakerLastName: z.string().max(120).optional().or(z.literal('')),
   newCoMakerRelationship: z.string().max(100).optional().or(z.literal('')),
   newCoMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
   newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   // An application can cover a bundle of models (2026-08-15, second pass) —
   // checkout enforces an exact match against the sale's installment lines.
+  // estimatedPrice is client-side only (never sent past whitelist-stripping
+  // on the way in) — the flat catalog price the item combobox's search
+  // result carries, kept in form state (not component state) purely so the
+  // financing preview below can sum it reactively via watch('items') and
+  // stay index-safe across add/remove.
   items: z
     .array(
       z.object({
         itemId: z.string().min(1, 'Item is required'),
+        // Stays a strict number: every writer must Number() first, because
+        // the API serializes Decimal as a STRING ("10590.27") and feeding
+        // that in made this reject — invisibly, since the failure is nested
+        // inside an array, which is what left the edit modal's Save button
+        // looking dead. z.coerce would hide that but widens the schema's
+        // input type to unknown, breaking useForm's generic.
+        estimatedPrice: z.number().optional(),
+        // Also client-only. The combobox shows a label, not an id, and it
+        // has no way to look one up from an id alone — so without this a
+        // restored draft kept its itemId but rendered an empty picker, and
+        // the item looked lost. Stripped server-side by the DTO whitelist.
+        itemLabel: z.string().optional(),
       })
     )
     .min(1, 'At least one item is required'),
   itemDescription: z.string().max(500).optional(),
+  // 2026-09-18 client request — captured at intake so the applicant and the
+  // branch both see the real DP/monthly/total-payable numbers before
+  // submission, not just the raw item price. Both optional: an application
+  // can still be raised with no term chosen yet.
+  priceUseTypeId: z.string().optional().or(z.literal('')),
+  financingTermId: z.string().optional().or(z.literal('')),
+  // Plain string, like every other free-text field on this form (not a zod
+  // transform to number) — keeping the field's TS type a string end-to-end
+  // avoids a useForm generic split just for this one input. The backend DTO
+  // has @Type(() => Number), which class-transformer applies before
+  // validation runs, so a numeric string round-trips through the API layer
+  // as a real number; NewCreditApplicationForm normalizes '' to
+  // undefined before submit (an empty string would otherwise coerce to 0,
+  // not "no down payment").
+  downPayment: z.string().optional().or(z.literal('')),
+  // Client-only, like estimatedPrice above, and stripped the same way. The
+  // item total as actually RESOLVED under the chosen Price Use — not the
+  // flat catalog price — mirrored out of CreditApplicationFinancingFields
+  // so refineDownPayment below can check the floor against the very number
+  // the form is showing. Summing items[].estimatedPrice instead would use
+  // the flat price and compute a floor off a different total (a real item
+  // in the catalog differs by PHP 4,009 between the two).
+  resolvedItemTotal: z.number().optional(),
+  // Also client-only. The down-payment floor the SALE will demand, which is
+  // not simply 10% of the total above: checkout measures its 10% against
+  // the tax-effective line amount, while an application is priced from the
+  // ex-tax price list. With exclusive pricing and 12% VAT that makes
+  // checkout's floor ~12% higher, so an application approved at exactly its
+  // own floor could never be sold — "down payment must be at least 10% of
+  // its sale amount" at the till, on an application the server had already
+  // accepted. The form computes the stricter figure and passes it here.
+  downPaymentFloor: z.number().optional(),
 })
+
+/** Mirrors CreditApplicationService.resolveFinancing()'s own rules so a bad
+ * down payment is caught under the field, at the moment it is typed, rather
+ * than coming back as a generic banner after submit.
+ *
+ * The floor only applies once a financing term is chosen, which is exactly
+ * when the server starts enforcing it — an application can still be raised
+ * with no term yet. The half-centavo tolerance matches the server's, which
+ * exists for float rounding on the client's computed 10%. */
+export function refineDownPayment(
+  data: {
+    financingTermId?: string
+    downPayment?: string
+    resolvedItemTotal?: number
+    downPaymentFloor?: number
+  },
+  ctx: z.RefinementCtx
+) {
+  if (!data.financingTermId) return
+
+  const raw = data.downPayment?.trim()
+  if (!raw) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['downPayment'],
+      message: 'Down payment is required once a term is selected',
+    })
+    return
+  }
+
+  const downPayment = Number(raw)
+  if (Number.isNaN(downPayment)) {
+    ctx.addIssue({ code: 'custom', path: ['downPayment'], message: 'Enter a valid amount' })
+    return
+  }
+
+  // No resolved total yet (prices still loading) — the server still has the
+  // final say, so don't invent a floor from a number we don't have.
+  const total = data.resolvedItemTotal ?? 0
+  if (total <= 0) return
+
+  // Prefer the floor the form worked out from the tax-effective amount;
+  // fall back to a plain 10% when it hasn't been supplied (an API caller,
+  // or prices still resolving).
+  const floor = data.downPaymentFloor ?? total * 0.1
+  if (downPayment < floor - 0.005) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['downPayment'],
+      message: `Down payment must be at least ${pesos(floor)} (10% of the item total)`,
+    })
+    return
+  }
+  if (downPayment > total) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['downPayment'],
+      message: `Down payment cannot exceed the item total (${pesos(total)})`,
+    })
+  }
+}
+
+function pesos(n: number): string {
+  return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
 
 export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.superRefine(
   (data, ctx) => {
+    // A co-maker on a credit application is identified by first name, last
+    // name and relationship — contact details stay capturable but optional,
+    // since the branch often has only the name and relationship at intake.
     if (data.coMakerId === NEW_CO_MAKER_VALUE) {
-      if (!data.newCoMakerName?.trim()) {
-        ctx.addIssue({ code: 'custom', path: ['newCoMakerName'], message: 'Name is required' })
+      if (!data.newCoMakerFirstName?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['newCoMakerFirstName'],
+          message: 'First name is required',
+        })
+      }
+      if (!data.newCoMakerLastName?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['newCoMakerLastName'],
+          message: 'Last name is required',
+        })
       }
       if (!data.newCoMakerRelationship?.trim()) {
         ctx.addIssue({
@@ -163,20 +309,9 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
           message: 'Relationship is required',
         })
       }
-      if (!data.newCoMakerContactNumber?.trim()) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['newCoMakerContactNumber'],
-          message: 'Contact number is required',
-        })
-      }
-    } else if (data.coMakerId && !data.coMakerContactNumber?.trim()) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['coMakerContactNumber'],
-        message: 'Contact number is required',
-      })
     }
+
+    refineDownPayment(data, ctx)
   }
 )
 export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditApplicationBaseSchema>
@@ -186,7 +321,11 @@ export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditAppli
 // aren't exposed for edit, but the backend's PATCH accepts any subset via
 // PartialType(CreateCreditApplicationDto), so this stays a full .partial()
 // off the base (pre-refinement) schema.
-export const UpdateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.partial()
+// .superRefine, not a bare .partial(): the Edit modal exposes the financing
+// fields too, so a draft edited down to a 1% down payment would otherwise
+// sail past the form and be rejected by the server instead.
+export const UpdateCreditApplicationFormSchema =
+  CreateCreditApplicationBaseSchema.partial().superRefine(refineDownPayment)
 export type UpdateCreditApplicationFormValues = z.infer<typeof UpdateCreditApplicationFormSchema>
 
 export const CancelCreditApplicationFormSchema = z.object({
@@ -266,6 +405,17 @@ export interface CreditApplication {
   items: CreditApplicationItemLine[]
   requestedAmount: number
   itemDescription?: string | null
+  // 2026-09-18 — DP/terms captured at intake, all optional (an application
+  // can still be raised with no term chosen). See
+  // CreditApplicationService.resolveFinancing() for how these are computed.
+  priceUseTypeId?: string | null
+  priceUseType?: { id: string; name: string } | null
+  financingTermId?: string | null
+  financingTerm?: { id: string; termMonths: number; factorRate: number } | null
+  downPayment?: number | null
+  amountFinanced?: number | null
+  monthlyInstallment?: number | null
+  totalPayable?: number | null
   status: CreditApplicationStatus
   createdById: string
   submittedAt?: string | null

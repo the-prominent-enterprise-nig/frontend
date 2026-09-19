@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Controller,
   useFieldArray,
+  useWatch,
   type ArrayPath,
   type Control,
   type FieldErrors,
@@ -27,7 +28,7 @@ function formatPeso(n: number): string {
 // declared optional here since the edit form's .partial() makes the array
 // itself optional (though each present element still requires an itemId).
 type ItemScopedFormValues = FieldValues & {
-  items?: { itemId?: string }[]
+  items?: { itemId?: string; estimatedPrice?: number; itemLabel?: string }[]
 }
 
 export type InitialCreditApplicationItem = {
@@ -48,6 +49,7 @@ type RowProps<T extends ItemScopedFormValues> = {
 
 function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   control,
+  setValue,
   index,
   errors,
   onRemove,
@@ -55,10 +57,45 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   initialItem,
 }: RowProps<T>) {
   const itemIdPath = `items.${index}.itemId` as Path<T>
+  const estimatedPricePath = `items.${index}.estimatedPrice` as Path<T>
 
   const [itemMeta, setItemMeta] = useState<CreditApplicationItemMeta | null>(
     initialItem?.itemMeta ?? null
   )
+
+  // Mirrors the resolved price into form state (not just this row's local
+  // itemMeta) so the financing preview below can sum it via watch('items')
+  // — index-safe across add/remove, unlike a separate index-keyed map would
+  // be once useFieldArray shifts indices.
+  const itemLabelPath = `items.${index}.itemLabel` as Path<T>
+  // Lets a restored draft redisplay its picker: the id alone can't produce
+  // a label, and this row's own itemMeta is empty after a remount.
+  const restoredLabel = useWatch({ control, name: itemLabelPath }) as string | undefined
+
+  function handleSelectItem(meta: CreditApplicationItemMeta, label: string) {
+    setItemMeta(meta)
+    // Kept in form state so a draft restored from storage can redisplay the
+    // picker — meta/label live only in this row otherwise.
+    setValue(itemLabelPath, label as never)
+    // Number() because the API serializes Decimal as a string.
+    setValue(
+      estimatedPricePath,
+      (meta.sellingPrice != null ? Number(meta.sellingPrice) : undefined) as never
+    )
+  }
+
+  // Edit mode prefills itemMeta from the loaded application but reset()'s
+  // own defaultValues (built before this row exists) can't reach into a
+  // specific row's estimatedPrice — backfill it once here instead, so the
+  // financing preview's total is correct without a fresh item search.
+  useEffect(() => {
+    if (initialItem?.itemMeta.sellingPrice != null) {
+      setValue(estimatedPricePath, Number(initialItem.itemMeta.sellingPrice) as never)
+    }
+    // Only ever run once per row on mount — initialItem is a stable seed,
+    // not something that should re-fire this on every parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const itemsErrors = errors.items as { itemId?: { message?: string } }[] | undefined
   const itemError = itemsErrors?.[index]?.itemId?.message
@@ -66,7 +103,12 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   return (
     <div className="space-y-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3">
       <div className="flex items-start gap-2">
-        <div className="flex-1">
+        {/* min-w-0: without it this flex item keeps its automatic minimum
+            and refuses to shrink below the combobox's min-content, which for
+            nowrap text is the FULL label. 57% of the catalog has labels over
+            80 chars (longest 148), so the row would widen the whole form
+            instead of letting the combobox's own truncate take effect. */}
+        <div className="min-w-0 flex-1">
           <label className="mb-1 block text-sm font-medium text-zinc-700">
             Item / Model <span className="text-red-500">*</span>
           </label>
@@ -77,9 +119,9 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
               <CreditApplicationItemSearchCombobox
                 value={(field.value as string | undefined) ?? ''}
                 onChange={field.onChange}
-                onSelectItem={setItemMeta}
+                onSelectItem={(meta, label) => handleSelectItem(meta, label)}
                 error={itemError}
-                initialLabel={initialItem?.itemLabel}
+                initialLabel={initialItem?.itemLabel ?? restoredLabel}
               />
             )}
           />
@@ -100,7 +142,10 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
         <div className="rounded-lg bg-white px-3 py-2 text-sm text-zinc-600">
           Estimated amount:{' '}
           <span className="font-semibold text-zinc-900">
-            {itemMeta.sellingPrice != null ? formatPeso(itemMeta.sellingPrice) : '—'}
+            {/* Number() for the same Decimal-as-string reason: a string has
+                toLocaleString but ignores the options, so this rendered
+                "₱10744.67" with no thousands separator. */}
+            {itemMeta.sellingPrice != null ? formatPeso(Number(itemMeta.sellingPrice)) : '—'}
           </span>
         </div>
       )}
@@ -117,7 +162,7 @@ type Props<T extends ItemScopedFormValues> = {
   initialItems?: InitialCreditApplicationItem[]
 }
 
-// Shared by CreateCreditApplicationModal and the "edit financing request"
+// Shared by NewCreditApplicationForm and the "edit financing request"
 // flow on the detail page — an application can cover a bundle of models
 // (2026-08-15, second pass), so this renders one row per item with add/
 // remove controls instead of a single item picker.

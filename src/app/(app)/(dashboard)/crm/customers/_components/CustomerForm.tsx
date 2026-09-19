@@ -7,6 +7,8 @@ import { AlertTriangle, ArrowLeft, Paperclip, X } from 'lucide-react'
 import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
+import { posCustomersApi } from '@/src/libs/api/pos-customers'
+import { showToast } from '@/src/components/ui/toast'
 import { uploadIdDocument } from '../_actions/upload-id-document'
 import {
   createCustomerSchema,
@@ -114,9 +116,53 @@ function toDisplayPhoneValue(raw: string): string | undefined {
  * check) so the two flows can no longer drift apart field-by-field the way
  * the previous two hand-rolled copies did.
  */
-export default function CustomerForm({ id }: { id?: string }) {
+export default function CustomerForm({
+  id,
+  returnTo,
+  scope = 'crm',
+}: {
+  id?: string
+  /** Where to go when this form is done — on save in either mode, and on
+   * Back/Cancel. On CREATE the new customer is appended as `?customerId=`
+   * so the caller can pick them up; POS checkout's "New Customer" button
+   * relies on that to get the cashier back to the till with the customer
+   * attached. On EDIT it is simply the page the caller came from, which is
+   * how the list's Edit action returns to the list rather than to a profile
+   * the cashier never visited.
+   *
+   * Already validated as an internal path by the page via safeReturnTo() —
+   * never interpolate a raw query param into a redirect. */
+  returnTo?: string
+  /** Which module is hosting this form. Selects the API it writes through
+   * and the routes it navigates back to, so the POS copy uses
+   * pos:customers:* and returns to /pos/customers instead of stranding a
+   * cashier in a CRM route they cannot open. Both APIs reach the same
+   * Customer table through the same CustomerService — it is the permission
+   * surface that differs, not the data (2026-09-19 review request).
+   *
+   * A plain string rather than the API object itself: these pages are
+   * server components, and functions cannot cross the server/client
+   * boundary as props. Passing the object threw "Functions cannot be passed
+   * directly to Client Components". */
+  scope?: 'crm' | 'pos'
+}) {
   const isEdit = Boolean(id)
+  const api = scope === 'pos' ? posCustomersApi : customersApi
+  const basePath = scope === 'pos' ? '/pos/customers' : '/crm/customers'
   const router = useRouter()
+  // In create mode a returnTo overrides the normal "back to the list"
+  // destination, so Back/Cancel return the cashier to the till rather than
+  // stranding them in CRM.
+  // Both modules have a customer detail page to land on after a save or a
+  // cancel — CRM's full 360, POS's read-only profile — so this resolves the
+  // same way for either scope.
+  const detailHref = (customerId: string) => `${basePath}/${customerId}`
+  // returnTo wins in BOTH modes. Reaching Edit from the list and pressing
+  // Back used to land on the customer's profile — a page the cashier had
+  // not come from — because edit mode always resolved to the detail route.
+  // The caller says where it sent you from; only fall back to the profile
+  // when nobody said.
+  const cancelHref = returnTo ?? (isEdit && id ? detailHref(id) : basePath)
   const [form, setForm] = useState<FormState>(empty)
   const [initialForm, setInitialForm] = useState<FormState>(empty)
   const [loading, setLoading] = useState(isEdit)
@@ -147,7 +193,7 @@ export default function CustomerForm({ id }: { id?: string }) {
 
   useEffect(() => {
     if (!id) return
-    customersApi.get(id).then((res) => {
+    api.get(id).then((res) => {
       if (res.success && res.data) {
         const c = res.data
         // Prefer the real stored firstName/lastName (developer-requested
@@ -230,7 +276,7 @@ export default function CustomerForm({ id }: { id?: string }) {
     }
     if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
     duplicateTimer.current = setTimeout(async () => {
-      const res = await customersApi.checkDuplicate({
+      const res = await api.checkDuplicate({
         email: email || undefined,
         phone: phone || undefined,
       })
@@ -303,17 +349,18 @@ export default function CustomerForm({ id }: { id?: string }) {
       if (!parsed.success) {
         const errs: Record<string, string> = {}
         parsed.error.issues.forEach((i) => {
-          errs[i.path[0] as string] = i.message
+          errs[i.path.join('.')] = i.message
         })
         setErrors(errs)
         setSubmitting(false)
         return
       }
       setErrors({})
-      const res = await customersApi.update(id, parsed.data)
+      const res = await api.update(id, parsed.data)
       setSubmitting(false)
       if (res.success) {
-        router.push(`/crm/customers/${id}`)
+        showToast({ title: 'Customer updated', status: 'success' })
+        router.push(returnTo ?? detailHref(id))
         router.refresh()
       } else {
         setServerError(res.error ?? 'Failed to update customer')
@@ -332,17 +379,36 @@ export default function CustomerForm({ id }: { id?: string }) {
       if (!parsed.success) {
         const errs: Record<string, string> = {}
         parsed.error.issues.forEach((i) => {
-          errs[i.path[0] as string] = i.message
+          errs[i.path.join('.')] = i.message
         })
         setErrors(errs)
         setSubmitting(false)
         return
       }
       setErrors({})
-      const res = await customersApi.create(parsed.data)
+      const res = await api.create(parsed.data)
       setSubmitting(false)
       if (res.success && res.data) {
-        router.push(`/crm/customers/${res.data.id}`)
+        // Confirms the save before navigating away. Matters most on the
+        // returnTo path: the caller's page just repopulates with the new
+        // customer selected, which on its own is easy to misread as
+        // "nothing happened". The Toaster is mounted in (app)/layout, so
+        // the toast outlives this route change.
+        showToast({
+          title: 'Customer saved',
+          description: res.data.name ? `${res.data.name} (${res.data.customerCode})` : undefined,
+          status: 'success',
+        })
+        if (returnTo) {
+          // Hand the new customer back to whoever sent us here (POS
+          // checkout attaches them to the open sale). name is passed so the
+          // caller can label the customer without a second fetch.
+          const sep = returnTo.includes('?') ? '&' : '?'
+          const label = encodeURIComponent(res.data.name ?? '')
+          router.push(`${returnTo}${sep}customerId=${res.data.id}&customerName=${label}`)
+        } else {
+          router.push(detailHref(res.data.id))
+        }
         router.refresh()
       } else {
         setServerError(res.error ?? 'Failed to create customer')
@@ -357,7 +423,7 @@ export default function CustomerForm({ id }: { id?: string }) {
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href={isEdit ? `/crm/customers/${id}` : '/crm/customers'}
+        href={cancelHref}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -576,7 +642,7 @@ export default function CustomerForm({ id }: { id?: string }) {
 
         <div className="flex items-center justify-end gap-3">
           <Link
-            href={isEdit ? `/crm/customers/${id}` : '/crm/customers'}
+            href={cancelHref}
             className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
           >
             Cancel
