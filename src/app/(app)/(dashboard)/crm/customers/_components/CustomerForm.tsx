@@ -122,12 +122,16 @@ export default function CustomerForm({
   scope = 'crm',
 }: {
   id?: string
-  /** Where to go after a successful CREATE instead of the new customer's
-   * CRM profile, with `?customerId=` appended so the caller can pick the
-   * customer up. Set by POS checkout, whose "New Customer" button sends the
-   * cashier here and needs them back at the till with the customer
-   * attached. Already validated as an internal path by the page — never
-   * interpolate a raw query param into a redirect. */
+  /** Where to go when this form is done — on save in either mode, and on
+   * Back/Cancel. On CREATE the new customer is appended as `?customerId=`
+   * so the caller can pick them up; POS checkout's "New Customer" button
+   * relies on that to get the cashier back to the till with the customer
+   * attached. On EDIT it is simply the page the caller came from, which is
+   * how the list's Edit action returns to the list rather than to a profile
+   * the cashier never visited.
+   *
+   * Already validated as an internal path by the page via safeReturnTo() —
+   * never interpolate a raw query param into a redirect. */
   returnTo?: string
   /** Which module is hosting this form. Selects the API it writes through
    * and the routes it navigates back to, so the POS copy uses
@@ -153,7 +157,12 @@ export default function CustomerForm({
   // cancel — CRM's full 360, POS's read-only profile — so this resolves the
   // same way for either scope.
   const detailHref = (customerId: string) => `${basePath}/${customerId}`
-  const cancelHref = isEdit && id ? detailHref(id) : (returnTo ?? basePath)
+  // returnTo wins in BOTH modes. Reaching Edit from the list and pressing
+  // Back used to land on the customer's profile — a page the cashier had
+  // not come from — because edit mode always resolved to the detail route.
+  // The caller says where it sent you from; only fall back to the profile
+  // when nobody said.
+  const cancelHref = returnTo ?? (isEdit && id ? detailHref(id) : basePath)
   const [form, setForm] = useState<FormState>(empty)
   const [initialForm, setInitialForm] = useState<FormState>(empty)
   const [loading, setLoading] = useState(isEdit)
@@ -351,7 +360,7 @@ export default function CustomerForm({
       setSubmitting(false)
       if (res.success) {
         showToast({ title: 'Customer updated', status: 'success' })
-        router.push(detailHref(id))
+        router.push(returnTo ?? detailHref(id))
         router.refresh()
       } else {
         setServerError(res.error ?? 'Failed to update customer')
