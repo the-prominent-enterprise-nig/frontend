@@ -18,8 +18,8 @@ const PRICE_LIST_ERROR_MESSAGES: Record<string, string> = {
  * The backend raises short snake_case codes for expected failure states
  * (matching this codebase's existing convention elsewhere) — this maps the
  * ones this feature can produce into a sentence before it ever reaches a
- * toast. Messages the backend already writes as full sentences (floor price
- * and date-overlap violations) pass through unchanged.
+ * toast. Messages the backend already writes as full sentences (date-overlap
+ * violations) pass through unchanged.
  */
 export function humanizePriceListError(message?: string): string | undefined {
   if (!message) return message

@@ -1,142 +1,112 @@
-import { test, expect } from '@playwright/test'
-import { gotoReady, loginAs, fillAllStable } from './utils'
+import { test, expect, type Page } from '@playwright/test'
+import { gotoReady, clickStable, fillStable } from './utils'
 
-// Scenario 29 RR-05 — manual receiving report: origination path for a
-// serial with no PO/transfer/count context. Owner-only by default, async
-// submit-then-approve, self-approval blocked. Covers:
-//  - Business Owner submits via the UI (item search, warehouse select,
-//    serial input, reason select) and it lands as "Pending Approval".
-//  - Self-approval is blocked at the UI level too — opening the report as
-//    its own submitter shows no Approve/Reject buttons.
-//  - A genuinely distinct second permission-holder (Branch Manager,
-//    granted the permission for the duration of this test via the same
-//    REST endpoint the Roles & Access UI itself uses) sees Approve/Reject
-//    and a successful approve moves the report to "Approved".
+/**
+ * The warehouse list re-renders once its query resolves (loading → loaded),
+ * which can detach an option between opening the dropdown and clicking it.
+ * Retries the whole open+click as one unit rather than trying to time the
+ * two steps separately.
+ */
+async function pickSearchableOption(
+  page: Page,
+  triggerPlaceholder: string,
+  optionText: string | RegExp
+): Promise<void> {
+  await expect(async () => {
+    await page.getByPlaceholder(triggerPlaceholder).click()
+    await page
+      .locator('[data-testid="searchable-select-option"]')
+      .filter({ hasText: optionText })
+      .first()
+      .click({ timeout: 3_000 })
+  }).toPass({ timeout: 40_000 })
+}
+
+// Scenario 53 — rebuilt from RR-05's single-item/submit-then-approve shape
+// (Scenario 29) into a multi-line, draft-then-post document mirroring the
+// normal Create Receiving Report screen. Real differences from that normal
+// flow: a line's item may be "Something else" (a typed name, not a catalog
+// pick — resolved into a brand-new Item only once the report is posted),
+// and there's no approval gate — the same person who saves the draft posts
+// it themselves, whenever ready.
 //
-// Branch Manager doesn't hold inventory:manual-rr:create by default (it's
-// owner-only), so this test grants it via POST /roles/:id/permissions
-// (merged onto the role's existing list — that endpoint fully replaces,
-// so the original list is restored afterward, not just the one addition
-// removed).
+// Covers: Business Owner creates a draft with one catalog line and one
+// "Something else" line, saves it (lands on the detail page as "Draft"),
+// then posts it themselves (no second approver) and sees it flip to
+// "Posted" with both lines shown.
 
-const DEV_PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
-const MANAGER_EMAIL = 'technova.b1.manager@test.com'
+test('Business Owner creates a multi-line draft (catalog + Something else) and posts it themselves', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  const uniqueName = `E2E Ad-Hoc Widget ${Date.now()}`
 
-test.describe('Inventory — Manual Receiving Report (Scenario 29 RR-05)', () => {
-  let managerRoleId: string
-  let originalManagerPermissionIds: string[]
-  let manualRrPermissionId: string
-
-  test.beforeAll(async ({ request }) => {
-    const rolesRes = await request.get('/api/roles')
-    const roles = (await rolesRes.json()) as { id: string; name: string }[]
-    const managerRole = roles.find((r) => r.name === 'Branch Manager')
-    if (!managerRole) throw new Error('Branch Manager role not found')
-    managerRoleId = managerRole.id
-
-    const permsRes = await request.get('/api/permissions')
-    const perms = (await permsRes.json()) as {
-      id: string
-      module: string
-      resource: string
-      action: string
-    }[]
-    const manualRrPerm = perms.find(
-      (p) => p.module === 'inventory' && p.resource === 'manual-rr' && p.action === 'create'
-    )
-    if (!manualRrPerm) throw new Error('inventory:manual-rr:create permission not found')
-    manualRrPermissionId = manualRrPerm.id
-
-    const roleDetailRes = await request.get(`/api/roles/${managerRoleId}`)
-    const roleDetail = (await roleDetailRes.json()) as {
-      permissions: { permissionId: string }[]
-    }
-    originalManagerPermissionIds = roleDetail.permissions.map((rp) => rp.permissionId)
-
-    const grantRes = await request.post(`/api/roles/${managerRoleId}/permissions`, {
-      data: { permissionIds: [...originalManagerPermissionIds, manualRrPermissionId] },
-    })
-    expect(grantRes.ok()).toBeTruthy()
+  await gotoReady(page, '/accounting/receiving-reports')
+  // The TanStack Query devtools floating toggle (dev-only) sits over the
+  // sticky footer's action buttons and intercepts clicks — same fix already
+  // used in inventory-price-use-types.spec.ts.
+  await page.addStyleTag({ content: '.tsqd-parent-container { display: none !important; }' })
+  // A single click, not clickStable's retry-click pattern: a cold Next dev
+  // compile of a never-before-loaded route can take well over 1s, and
+  // re-clicking the same link mid-transition risks a second push onto the
+  // history stack rather than just missing the first click.
+  await page.getByRole('link', { name: 'New Manual RR' }).click()
+  await expect(page).toHaveURL(/\/accounting\/receiving-reports\/manual-rr\/new$/, {
+    timeout: 30_000,
+  })
+  await expect(page.getByRole('heading', { name: 'New Manual Receiving Report' })).toBeVisible({
+    timeout: 30_000,
   })
 
-  test.afterAll(async ({ request }) => {
-    await request.post(`/api/roles/${managerRoleId}/permissions`, {
-      data: { permissionIds: originalManagerPermissionIds },
+  // ── Location ─────────────────────────────────────────────────────────────
+  await pickSearchableOption(page, 'Select location…', 'Panay Warehouse')
+
+  // ── Line 1: a catalog item ──────────────────────────────────────────────
+  // Closed state is a button, not the search <input> — clicking it is what
+  // puts the caret in the search (same convention as ReceiveStockModal.tsx).
+  await clickStable(
+    page.getByRole('button', { name: 'Search item by name or SKU…' }),
+    page.getByPlaceholder('Search item by name or SKU…')
+  )
+  const itemInput = page.getByPlaceholder('Search item by name or SKU…')
+  await fillStable(itemInput, 'TN-NIG-PART-AIR-FILTER')
+  const itemOption = page.getByRole('button', { name: /TN-NIG-PART-AIR-FILTER/ }).first()
+  await expect(itemOption).toBeVisible({ timeout: 10_000 })
+  await itemOption.click()
+
+  // ── Line 2: "Something else" — not in the catalog ───────────────────────
+  await clickStable(
+    page.getByRole('button', { name: 'Add Line' }),
+    page.getByRole('button', { name: 'Something else' }).last()
+  )
+  await clickStable(
+    page.getByRole('button', { name: 'Something else' }).last(),
+    page.getByPlaceholder('What was it? e.g. "10 assorted screws"')
+  )
+  await fillStable(page.getByPlaceholder('What was it? e.g. "10 assorted screws"'), uniqueName)
+
+  // ── Save the draft ───────────────────────────────────────────────────────
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Save Draft' }).click()
+    // A successful save navigates straight to the new report's own detail
+    // page — there's no modal to close, no list to poll.
+    await expect(page).toHaveURL(/\/accounting\/receiving-reports\/manual-rr\/[^/]+$/, {
+      timeout: 15_000,
     })
-  })
+  }).toPass({ timeout: 20_000 })
 
-  test('Business Owner submits, self-approval is hidden, a distinct Branch Manager approves', async ({
-    page,
-  }) => {
-    const uniqueSerial = `E2E-MANUAL-RR-${Date.now()}`
+  // ── Confirm it landed as a draft, with both lines shown ─────────────────
+  await expect(page.getByText('Draft', { exact: true })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('TN-NIG-PART-AIR-FILTER', { exact: false })).toBeVisible()
+  await expect(page.getByText(uniqueName)).toBeVisible()
 
-    // ── Submit as Business Owner ──────────────────────────────────────────
-    await gotoReady(page, '/inventory/counting?tab=manual-rr')
-    await page.getByRole('button', { name: 'New Manual RR' }).click()
-    await expect(page.getByRole('heading', { name: 'New Manual Receiving Report' })).toBeVisible({
-      timeout: 10_000,
-    })
+  // ── Post it — same actor, no second approver ────────────────────────────
+  const postButton = page.getByRole('button', { name: 'Post' })
+  await expect(postButton).toBeVisible({ timeout: 10_000 })
+  await postButton.click()
 
-    const itemInput = page.getByPlaceholder('Search item by name or SKU…')
-    await itemInput.click()
-    await itemInput.fill('TN-FURN-SET-001')
-    const itemOption = page.getByRole('button', { name: /TN-FURN-SET-001/ }).first()
-    await expect(itemOption).toBeVisible({ timeout: 10_000 })
-    await itemOption.click()
-
-    const modal = page.locator('.fixed.inset-0.z-50')
-    // Must be Bago specifically — that's technova.b1.manager@test.com's own
-    // branch, and the list/detail is branch-scoped for a branch-assigned
-    // caller (same convention as every other branch-tied resource in this
-    // app), so the second-approver step below needs the report to actually
-    // be visible to that Branch Manager.
-    await modal.locator('select').first().selectOption({ label: 'Bago' })
-    await fillAllStable([
-      {
-        locator: modal.getByPlaceholder('Exactly as printed on the physical unit'),
-        value: uniqueSerial,
-      },
-    ])
-    await modal.locator('select').nth(1).selectOption('found')
-
-    await expect(async () => {
-      await modal.getByRole('button', { name: 'Submit' }).click()
-      await expect(page.getByRole('heading', { name: 'New Manual Receiving Report' })).toHaveCount(
-        0,
-        { timeout: 3_000 }
-      )
-    }).toPass({ timeout: 15_000 })
-
-    // ── Confirm it landed, pending, and self-approval is hidden ───────────
-    const row = page.locator('tbody tr', { hasText: uniqueSerial })
-    await expect(row).toBeVisible({ timeout: 15_000 })
-    await expect(row).toContainText('Pending Approval')
-    await row.click()
-
-    const detailModal = page.locator('.fixed.inset-0.z-50')
-    await expect(detailModal.getByText('Pending Approval')).toBeVisible({ timeout: 10_000 })
-    await expect(detailModal.getByText('You submitted this report', { exact: false })).toBeVisible()
-    await expect(detailModal.getByRole('button', { name: 'Approve' })).toHaveCount(0)
-    await expect(detailModal.getByRole('button', { name: 'Reject' })).toHaveCount(0)
-    await detailModal.getByRole('button', { name: 'Close dialog' }).click()
-
-    // ── Switch to a distinct, genuinely permitted second approver ─────────
-    await page.context().clearCookies()
-    await loginAs(page, MANAGER_EMAIL, DEV_PASSWORD)
-
-    await gotoReady(page, '/inventory/counting?tab=manual-rr')
-    const managerRow = page.locator('tbody tr', { hasText: uniqueSerial })
-    await expect(managerRow).toBeVisible({ timeout: 15_000 })
-    await managerRow.click()
-
-    const managerDetailModal = page.locator('.fixed.inset-0.z-50')
-    const approveButton = managerDetailModal.getByRole('button', { name: 'Approve' })
-    await expect(approveButton).toBeVisible({ timeout: 10_000 })
-    await approveButton.click()
-
-    await expect(managerDetailModal.getByText('Approved', { exact: true })).toBeVisible({
-      timeout: 10_000,
-    })
-    await expect(managerDetailModal.getByText('originated, now in stock')).toBeVisible()
-  })
+  // .first(): the status badge and the success toast's title both read
+  // "Posted" — either one confirms the post went through.
+  await expect(page.getByText('Posted', { exact: true }).first()).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('button', { name: 'Post' })).toHaveCount(0)
 })

@@ -1119,6 +1119,12 @@ export default function CheckoutPage() {
   const inhouseInstallmentCartLines = installmentCartLines.filter(
     (l) => l.installmentProvider !== 'tpf'
   )
+  // Institutional (business) customers under the government sub-category
+  // skip the credit application requirement entirely — a private business
+  // or an individual customer still needs one for every installment sale.
+  const isGovernmentInstitutionalCustomer =
+    selectedCustomer?.customerType === 'business' &&
+    selectedCustomer?.businessCategory === 'government'
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -2023,7 +2029,11 @@ export default function CheckoutPage() {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
       return
     }
-    if (inhouseInstallmentCartLines.length > 0 && !creditApplicationId) {
+    if (
+      inhouseInstallmentCartLines.length > 0 &&
+      !creditApplicationId &&
+      !isGovernmentInstitutionalCustomer
+    ) {
       setError(
         'Select the approved credit application for this customer — every installment sale requires one.'
       )
@@ -2191,7 +2201,9 @@ export default function CheckoutPage() {
           // so the backend's transaction-level fallback (for older/other
           // callers) never needs to apply here.
           creditApplicationId:
-            inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
+            inhouseInstallmentCartLines.length > 0 && creditApplicationId
+              ? creditApplicationId
+              : undefined,
           salesInvoiceNumber: invoiceNumberInput.trim(),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
@@ -3684,7 +3696,12 @@ export default function CheckoutPage() {
                       Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
                       financed into each item&apos;s own AR schedule.
                     </p>
-                    {selectedCustomer && (
+                    {selectedCustomer && isGovernmentInstitutionalCustomer && (
+                      <p className="mt-2.5 text-[13px] text-prominent-purple-500">
+                        Government institutional customer — no credit application required.
+                      </p>
+                    )}
+                    {selectedCustomer && !isGovernmentInstitutionalCustomer && (
                       <div className="mt-2.5">
                         <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           Approved Credit Application
@@ -4520,7 +4537,9 @@ export default function CheckoutPage() {
                 (l) => !l.financingTermId
               )
               const installmentMissingCreditApplication =
-                inhouseInstallmentCartLines.length > 0 && !creditApplicationId
+                inhouseInstallmentCartLines.length > 0 &&
+                !creditApplicationId &&
+                !isGovernmentInstitutionalCustomer
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
               const tpfMissingDownPayment = tpfInstallmentCartLines.some(
@@ -5437,14 +5456,6 @@ function SuccessScreen({
         ? 'border-prominent-purple-100'
         : 'border-green-100'
 
-  const iconBg = success.offlineBuffered
-    ? 'bg-amber-100'
-    : allCharge
-      ? 'bg-blue-100'
-      : allInstallment
-        ? 'bg-prominent-purple-100'
-        : 'bg-green-100'
-
   return (
     <div className="flex min-h-full items-start justify-center bg-zinc-50 p-6">
       <div className="w-full max-w-sm">
@@ -5470,20 +5481,8 @@ function SuccessScreen({
             )}
           </div>
 
-          {/* Icon + title */}
+          {/* Title */}
           <div className="flex flex-col items-center gap-3 px-8 pb-4 pt-6">
-            <div className={`flex h-14 w-14 items-center justify-center rounded-full ${iconBg}`}>
-              {success.offlineBuffered ? (
-                <WifiOff size={28} className="text-amber-600" />
-              ) : hasChargeOrInstallment ? (
-                <Receipt
-                  size={28}
-                  className={allInstallment ? 'text-prominent-purple-600' : 'text-blue-600'}
-                />
-              ) : (
-                <CheckCircle2 size={28} className="text-green-600" />
-              )}
-            </div>
             <div className="text-center">
               <p className="text-xl font-bold text-gray-900">
                 {success.offlineBuffered
@@ -5741,7 +5740,7 @@ function SuccessScreen({
           onClick={onReset}
           className="mt-4 w-full rounded-xl bg-purple-700 px-8 py-3 text-sm font-bold text-white hover:bg-purple-800"
         >
-          New Sale
+          Back to POS
         </button>
       </div>
     </div>

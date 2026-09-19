@@ -9,13 +9,12 @@ import { MONO } from '@/src/libs/design/plex'
 
 type SearchResult = { id: string; name: string; sku: string }
 
-type FieldKey = 'price' | 'floorPrice' | 'downPayment' | 'minQty' | 'cmAmount' | 'creditAmount'
+type FieldKey = 'price' | 'downPayment' | 'minQty' | 'cmAmount' | 'creditAmount'
 
 type StagedItem = { itemId: string; name: string; sku: string } & Record<FieldKey, string>
 
 const EMPTY_FIELDS: Record<FieldKey, string> = {
   price: '',
-  floorPrice: '',
   downPayment: '',
   minQty: '',
   cmAmount: '',
@@ -26,7 +25,6 @@ type FieldColumn = { key: FieldKey; label: string; required?: boolean; step?: st
 
 const CORE_COLUMNS: FieldColumn[] = [
   { key: 'price', label: 'Price', required: true },
-  { key: 'floorPrice', label: 'Floor Price' },
   { key: 'downPayment', label: 'Down Payment' },
 ]
 
@@ -114,7 +112,6 @@ export function AddItemsPanel({ onAdd, isAdding }: Props) {
     const items: UpsertPriceListItemFormValues[] = staged.map((s) => ({
       itemId: s.itemId,
       price: Number(s.price),
-      floorPrice: s.floorPrice ? Number(s.floorPrice) : undefined,
       downPayment: s.downPayment ? Number(s.downPayment) : undefined,
       minQty: s.minQty ? Number(s.minQty) : undefined,
       cmAmount: s.cmAmount ? Number(s.cmAmount) : undefined,

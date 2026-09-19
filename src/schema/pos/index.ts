@@ -511,6 +511,8 @@ export interface PosCustomer {
   lastName?: string
   phone?: string
   email?: string
+  customerType?: 'individual' | 'business' | 'employee'
+  businessCategory?: 'private' | 'government'
 }
 
 // POS Collections — one row per customer with at least one outstanding

@@ -263,27 +263,6 @@ export function printReceivingReportDocument(
   win.document.close()
 }
 
-/**
- * Saves the same markup printReceivingReportDocument() opens as a file the
- * browser downloads directly — for a reader who wants the receipt on disk
- * (attaching it to an email, archiving it) rather than a print dialog. It's
- * the identical HTML, so it opens showing the same paper and can still be
- * printed to PDF from there.
- */
-export function downloadReceivingReportDocument(
-  data: unknown,
-  filename: string,
-  opts: { showAmounts?: boolean } = {}
-): void {
-  const blob = new Blob([buildReceivingReportHtml(data, opts)], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename.endsWith('.html') ? filename : `${filename}.html`
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
 /** One line of a customer return, as the document endpoint emits it. */
 type CustomerReturnDocLine = {
   item?: { sku?: string | null; name?: string | null } | null
@@ -661,15 +640,18 @@ export function printStockTransferDocument(data: unknown): void {
  * doesn't reuse printInventoryDocument()'s generic "Enterprise" meta-grid
  * shell, since a PO needs its own two-party (supplier + enterprise) header,
  * a delivery note, and signature blocks that don't fit that shared shape.
+ *
+ * Split out into its own function purely so printPurchaseOrderDocument()
+ * doesn't have to inline this much markup — it's the only caller.
  */
-export function printPurchaseOrderDocument(
+function buildPurchaseOrderHtml(
   data: unknown,
   // Purchase order lines don't carry their received serial numbers
   // themselves (those live on the goods receipt) — pass in a
   // purchaseOrderLineId -> serials map (see get-purchase-order-receipts.ts)
   // once the PO is closed, so a fully-received PO's printout can show them.
   serialsByLineId?: Record<string, string[]>
-): void {
+): string {
   const doc = data as PrintDocumentEnvelope
   const po = doc.document as Record<string, unknown>
   const supplier = po.supplier as { name?: string; address?: string; taxId?: string } | undefined
@@ -774,10 +756,7 @@ export function printPurchaseOrderDocument(
     })
     .join('')
 
-  const win = window.open('', '_blank', 'width=950,height=750')
-  if (!win) return
-
-  win.document.write(`<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
@@ -902,7 +881,16 @@ export function printPurchaseOrderDocument(
     }
 
     <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
-  </body></html>`)
+  </body></html>`
+}
+
+export function printPurchaseOrderDocument(
+  data: unknown,
+  serialsByLineId?: Record<string, string[]>
+): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildPurchaseOrderHtml(data, serialsByLineId))
   win.document.close()
 }
 

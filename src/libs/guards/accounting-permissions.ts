@@ -56,6 +56,12 @@ export const ACCOUNTING_PERMISSIONS = {
 
   FINANCIAL_REPORT_READ: 'accounting:financial_report:read',
 
+  // Scenario 53 — same manual RR capability as
+  // INVENTORY_PERMISSIONS.MANUAL_RR_CREATE, via Accounting's own namespace.
+  // Backend's RequirePermissions is OR, so a caller needs only one of the
+  // two; check both here too (canAny) rather than only this one.
+  MANUAL_RR_CREATE: 'accounting:manual-rr:create',
+
   AP_BILLS_READ: 'accounting:ap-bills:read',
   AP_BILLS_CREATE: 'accounting:ap-bills:create',
   AP_BILLS_UPDATE: 'accounting:ap-bills:update',
@@ -189,6 +195,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:bir_export:generate': 'Generate BIR forms',
   'accounting:financial_report:read':
     'View financial reports (Balance Sheet, Income Statement, Trial Balance, Cash Flow)',
+  'accounting:manual-rr:create':
+    'Submit or approve a manual receiving report with no PO/transfer/count context, from Accounting',
   'accounting:ap-bills:read': 'View AP bills, match-check results, and payment documents',
   'accounting:ap-bills:create': 'Create an AP bill (vendor invoice)',
   'accounting:ap-bills:update': 'Edit a DRAFT AP bill',
