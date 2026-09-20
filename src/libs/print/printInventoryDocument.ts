@@ -973,12 +973,17 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
       </tr>`
     )
     .join('')
+  // A "Bill" row's debit is shown for legibility but never added into
+  // outstanding (see InstallmentLedgerRow.displayOnly) — the amount is
+  // already recognized via the upfront lump Sale debit, so this footer must
+  // skip it too, or it double-counts against the on-screen ledger's own Total.
+  const billableRows = rows.filter((r) => !r.displayOnly)
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
         <td colspan="4"><strong>Total</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
         <td></td>
       </tr>`
@@ -1149,12 +1154,17 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       </tr>`
     )
     .join('')
+  // A "Bill" row's debit is shown for legibility but never added into
+  // outstanding (see InstallmentLedgerRow.displayOnly) — the amount is
+  // already recognized via the upfront lump Sale debit, so this footer must
+  // skip it too, or it double-counts against the on-screen ledger's own Total.
+  const billableRows = rows.filter((r) => !r.displayOnly)
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
         <td colspan="4"><strong>Total</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
         <td></td>
       </tr>`
@@ -2180,6 +2190,7 @@ export function buildCollectionReceiptHtml(data: unknown): string {
       ? row('Withholding (2307)', fmt(Number(r.withholdingAmount)))
       : '',
     Number(r.rebateAmount ?? 0) > 0 ? row('Rebate applied', fmt(Number(r.rebateAmount))) : '',
+    Number(r.penaltyAmount ?? 0) > 0 ? row('Late Payment', fmt(Number(r.penaltyAmount))) : '',
   ].join('')
 
   const appliedTo = grouped

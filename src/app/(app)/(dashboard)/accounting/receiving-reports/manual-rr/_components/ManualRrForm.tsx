@@ -19,12 +19,14 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2, Plus, PackagePlus } from 'lucide-react'
+import { Loader2, Plus, PackagePlus, Info } from 'lucide-react'
+import Tooltip from '@/src/components/ui/Tooltip'
 import { useQuery } from '@tanstack/react-query'
 import {
   CreateManualReceivingReportFormSchema,
+  MANUAL_RR_TAX_CODES,
+  MANUAL_RR_WITHHOLDING_CLASSES,
   type CreateManualReceivingReportFormValues,
-  VatTreatmentSchema,
 } from '@/src/schema/inventory/manual-receiving-reports'
 import SearchableSelect, { type SearchableSelectOption } from '@/src/components/ui/SearchableSelect'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
@@ -44,32 +46,54 @@ import { getWarehouses } from '../../../../inventory/warehouses/_actions/get-war
 import { createManualReceivingReport } from '../../../../inventory/manual-receiving-reports/_actions/create-manual-receiving-report'
 import { showToast } from '@/src/components/ui/toast'
 import ManualRrLineRow from './ManualRrLineRow'
+import { ManualRrTotalsPanel } from './ManualRrTotalsPanel'
 import { manualRrTotals } from './manualRrCosting'
 
 function Field({
   label,
   required,
   hint,
+  tooltip,
+  footer,
   children,
 }: {
   label: string
   required?: boolean
   hint?: string
+  /** Explanatory text that would otherwise sit as a line below the
+   * control — an info icon + hover tooltip instead, so it never affects
+   * this field's height (and so never disagrees with a sibling field
+   * whose own control needs to line up with this one across the row). */
+  tooltip?: string
+  /** Rare, transient content below the control (e.g. a validation
+   * FieldError) — kept as a separate prop so callers don't have to stack
+   * it as a plain child. Unlike `tooltip`, this can still occasionally
+   * affect row height, since an error is a temporary state, not the
+   * steady-state layout. */
+  footer?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
     <label className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-[12px] font-medium text-[#3d3d4a]">
+      <span className="flex items-center gap-1 text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
         {hint && <span className="ml-1 font-normal text-[#8b8b9b]">{hint}</span>}
+        {tooltip && (
+          <Tooltip label={tooltip}>
+            <Info className="h-3 w-3 text-[#a3a3b2]" />
+          </Tooltip>
+        )}
       </span>
-      {children}
+      {/* flex-1 + justify-end: when a sibling field (Source, which has a
+       * toggle row above its own control) stretches this row taller than
+       * this field's own content needs, the control still bottom-aligns
+       * with everyone else's instead of floating at the top of the extra
+       * space. */}
+      <div className="flex flex-1 flex-col justify-end gap-1.5">{children}</div>
+      {footer}
     </label>
   )
-}
-function Hint({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] leading-[1.4] text-[#8b8b9b]">{children}</span>
 }
 function FieldError({ text }: { text?: string }) {
   return (
@@ -79,36 +103,8 @@ function FieldError({ text }: { text?: string }) {
     </span>
   )
 }
-const fmtPeso = (n: number) => n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })
-function TotalRow({
-  label,
-  value,
-  negative,
-  muted,
-  emphasize,
-}: {
-  label: string
-  value: number
-  negative?: boolean
-  muted?: boolean
-  emphasize?: boolean
-}) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] text-[#8b8b9b]">{label}</span>
-      <span
-        className={`${MONO} text-[13px] ${
-          muted ? 'text-[#a3a3b2]' : emphasize ? 'font-semibold text-[#17171c]' : 'text-[#17171c]'
-        }`}
-      >
-        {negative && value > 0 ? '−' : ''}
-        {fmtPeso(value)}
-      </span>
-    </div>
-  )
-}
 const toggleBtnClass = (active: boolean) =>
-  `flex-1 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+  `shrink-0 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors ${
     active
       ? 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490]'
       : 'border-[#d3d3db] text-[#5b5b6b] hover:border-[#a3a3b2]'
@@ -123,8 +119,9 @@ const defaultValues: CreateManualReceivingReportFormValues = {
   notes: '',
   supplierId: '',
   newSourceName: '',
-  vatTreatment: 'inclusive',
-  lines: [{ itemId: '', quantityReceived: 1 }],
+  // Goods + VAT is the common case (mirrors the old document-wide toggle's
+  // own default) — a receiver overrides per line only for the exception.
+  lines: [{ itemId: '', quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }],
 }
 
 type LineMeta = { name?: string; isSerialTracked: boolean }
@@ -142,6 +139,12 @@ export default function ManualRrForm() {
   // instant a line is inserted, so keying on it would lose this metadata).
   const [itemMeta, setItemMeta] = useState<Record<string, LineMeta>>({})
   const [lineTrackSerial, setLineTrackSerial] = useState<Record<string, boolean>>({})
+  // Applied to every NEW line going forward, not retroactively to existing
+  // ones — changing this is "set the default from here on," not a bulk
+  // edit. A line that genuinely differs (mixed goods+services, an exempt
+  // item) is overridden individually, tucked away in its own row.
+  const [defaultTaxCode, setDefaultTaxCode] = useState('VAT')
+  const [defaultWithholdingClass, setDefaultWithholdingClass] = useState('goods')
 
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
@@ -163,9 +166,6 @@ export default function ManualRrForm() {
       .filter(isBranchLocation)
       .map((wh) => ({ value: wh.id, label: locationLabel(wh, wh.name) })),
   ]
-  const vatTreatmentOptions: SearchableSelectOption[] = VatTreatmentSchema.options
-    .filter((o) => o !== 'exempt')
-    .map((o) => ({ value: o, label: o === 'inclusive' ? 'VAT inclusive' : 'VAT exclusive' }))
 
   const form = useForm<CreateManualReceivingReportFormValues>({
     resolver: zodResolver(CreateManualReceivingReportFormSchema),
@@ -241,7 +241,12 @@ export default function ManualRrForm() {
   }
 
   function addLine() {
-    append({ itemId: '', quantityReceived: 1 })
+    append({
+      itemId: '',
+      quantityReceived: 1,
+      taxCode: defaultTaxCode,
+      withholdingClass: defaultWithholdingClass,
+    })
   }
 
   function duplicateLine(index: number) {
@@ -295,9 +300,7 @@ export default function ManualRrForm() {
           <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
             Accounting › Receiving Reports › New
           </div>
-          <h2 className="text-[21px] font-semibold tracking-[-.02em]">
-            New Manual Receiving Report
-          </h2>
+          <h2 className="text-[21px] font-semibold tracking-[-.02em]">Create Receiving Report</h2>
           <p className="text-[12.5px] text-[#5b5b6b]">
             No PO/transfer/count context. Saves as a draft — you post it yourself when ready, no
             second approver needed.
@@ -313,7 +316,66 @@ export default function ManualRrForm() {
           </div>
 
           <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 px-4.5 pb-4 pt-3.5 sm:grid-cols-2 xl:grid-cols-3">
-            <Field label="Location" required>
+            <Field
+              label="Source"
+              required={anyCosted}
+              footer={
+                sourceMode === 'registered' &&
+                errors.supplierId && <FieldError text={errors.supplierId.message} />
+              }
+            >
+              <div className="mb-1 flex gap-1.5">
+                <button
+                  type="button"
+                  className={toggleBtnClass(sourceMode === 'registered')}
+                  onClick={() => setSourceMode('registered')}
+                >
+                  Registered
+                </button>
+                <button
+                  type="button"
+                  className={toggleBtnClass(sourceMode === 'new')}
+                  onClick={() => setSourceMode('new')}
+                >
+                  Other
+                </button>
+              </div>
+              {sourceMode === 'registered' ? (
+                <Controller
+                  name="supplierId"
+                  control={control}
+                  render={({ field: f }) => (
+                    <SupplierSearchCombobox
+                      value={f.value ?? ''}
+                      onChange={f.onChange}
+                      onSelect={(option) => setSupplierName(option.primary)}
+                      initialLabel={supplierName}
+                      error={errors.supplierId?.message}
+                    />
+                  )}
+                />
+              ) : (
+                <Controller
+                  name="newSourceName"
+                  control={control}
+                  render={({ field: f }) => (
+                    <input
+                      {...f}
+                      value={f.value ?? ''}
+                      type="text"
+                      placeholder="Who or what this came from"
+                      className={INPUT}
+                    />
+                  )}
+                />
+              )}
+            </Field>
+
+            <Field
+              label="Location"
+              required
+              footer={errors.warehouseId && <FieldError text={errors.warehouseId.message} />}
+            >
               <Controller
                 name="warehouseId"
                 control={control}
@@ -330,13 +392,17 @@ export default function ManualRrForm() {
                         : CONTROL_CHROME
                     }
                     options={locationOptions}
+                    portal
                   />
                 )}
               />
-              {errors.warehouseId && <FieldError text={errors.warehouseId.message} />}
             </Field>
 
-            <Field label="Date Received" hint="optional">
+            <Field
+              label="Date Received"
+              hint="optional"
+              tooltip="Leave blank to stamp it when this is posted."
+            >
               <Controller
                 name="receivedAt"
                 control={control}
@@ -344,7 +410,6 @@ export default function ManualRrForm() {
                   <input {...f} value={f.value ?? ''} type="date" className={INPUT} />
                 )}
               />
-              <Hint>Leave blank to stamp it when this is posted.</Hint>
             </Field>
 
             <Field label="Delivery Receipt No." hint="optional">
@@ -405,6 +470,34 @@ export default function ManualRrForm() {
             </button>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
+            <span className="text-[11px] text-[#8b8b9b]">Defaults</span>
+            <select
+              value={defaultTaxCode}
+              onChange={(e) => setDefaultTaxCode(e.target.value)}
+              aria-label="Default tax code"
+              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+            >
+              {MANUAL_RR_TAX_CODES.map((code) => (
+                <option key={code.value} value={code.value}>
+                  {code.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={defaultWithholdingClass}
+              onChange={(e) => setDefaultWithholdingClass(e.target.value)}
+              aria-label="Default withholding"
+              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+            >
+              {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
+                <option key={cls.value} value={cls.value}>
+                  {cls.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {fields.length === 0 ? (
             <div className="flex flex-col items-center gap-2 px-5.5 py-10 text-center">
               <PackagePlus className="h-7 w-7 text-[#d3d3db]" />
@@ -420,15 +513,15 @@ export default function ManualRrForm() {
           ) : (
             <>
               <div
-                className={`${MONO} hidden grid-cols-[minmax(0,1fr)_64px_100px_120px_112px_96px_60px_60px] gap-x-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] sm:grid`}
+                className={`${MONO} hidden grid-cols-[minmax(0,1fr)_64px_100px_120px_112px_96px_60px_60px] gap-x-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] xl:grid`}
               >
-                <span>Item / SKU</span>
-                <span className="text-right">Qty</span>
-                <span className="text-right">SRP</span>
-                <span>Discounts</span>
-                <span className="text-right">Unit Price</span>
-                <span className="text-right">Line Total</span>
-                <span className="text-center">Free</span>
+                <span className="whitespace-nowrap">Item / SKU</span>
+                <span className="whitespace-nowrap text-right">Qty</span>
+                <span className="whitespace-nowrap text-right">SRP</span>
+                <span className="whitespace-nowrap">Discounts</span>
+                <span className="whitespace-nowrap text-right">Unit Price</span>
+                <span className="whitespace-nowrap text-right">Line Total</span>
+                <span className="whitespace-nowrap text-center">Free</span>
                 <span />
               </div>
               {fields.map((field, index) => {
@@ -479,95 +572,8 @@ export default function ManualRrForm() {
           )}
         </div>
 
-        <div className={`${PANEL} flex flex-col overflow-hidden`}>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-2.5">
-            <span className="text-[13.5px] font-semibold">Source &amp; tax</span>
-          </div>
-          <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 px-4.5 pb-4 pt-3.5 sm:grid-cols-2 xl:grid-cols-4">
-            <Field label="Source" required={anyCosted}>
-              <div className="mb-1.5 flex gap-2">
-                <button
-                  type="button"
-                  className={toggleBtnClass(sourceMode === 'registered')}
-                  onClick={() => setSourceMode('registered')}
-                >
-                  Registered
-                </button>
-                <button
-                  type="button"
-                  className={toggleBtnClass(sourceMode === 'new')}
-                  onClick={() => setSourceMode('new')}
-                >
-                  Other
-                </button>
-              </div>
-              {sourceMode === 'registered' ? (
-                <Controller
-                  name="supplierId"
-                  control={control}
-                  render={({ field: f }) => (
-                    <SupplierSearchCombobox
-                      value={f.value ?? ''}
-                      onChange={f.onChange}
-                      onSelect={(option) => setSupplierName(option.primary)}
-                      initialLabel={supplierName}
-                      error={errors.supplierId?.message}
-                    />
-                  )}
-                />
-              ) : (
-                <Controller
-                  name="newSourceName"
-                  control={control}
-                  render={({ field: f }) => (
-                    <input
-                      {...f}
-                      value={f.value ?? ''}
-                      type="text"
-                      placeholder="Who or what this came from"
-                      className={INPUT}
-                    />
-                  )}
-                />
-              )}
-              {sourceMode === 'registered' && errors.supplierId && (
-                <FieldError text={errors.supplierId.message} />
-              )}
-            </Field>
-
-            <Field label="VAT Treatment">
-              <Controller
-                name="vatTreatment"
-                control={control}
-                render={({ field }) => (
-                  <SearchableSelect
-                    value={field.value ?? 'inclusive'}
-                    onChange={field.onChange}
-                    chrome={CONTROL_CHROME}
-                    options={vatTreatmentOptions}
-                    portal
-                  />
-                )}
-              />
-            </Field>
-          </div>
-        </div>
-
         {anyCosted && (
-          <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
-            <span className="text-[13.5px] font-semibold">Totals</span>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
-              <TotalRow label="Stock value" value={totals.net} />
-              <TotalRow label="Input VAT" value={totals.vat} muted={totals.vat === 0} />
-              <TotalRow
-                label="Withholding"
-                value={totals.withheld}
-                negative
-                muted={totals.withheld === 0}
-              />
-              <TotalRow label="Payable to source" value={totals.payable} emphasize />
-            </div>
-          </div>
+          <ManualRrTotalsPanel totals={totals} lines={fields.length} units={totalUnits} />
         )}
 
         <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>

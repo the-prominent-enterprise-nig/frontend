@@ -42,21 +42,51 @@ export type ManualRrTotals = {
   payable: number
 }
 
+// Real BIR EWT rates vary by the nature of the payment, not one flat
+// document-wide rate — goods and services are withheld differently, and a
+// single delivery can mix both. Independent of taxCode: a line can be
+// VAT + Goods, Exempt + Services, etc.
+const WITHHOLDING_RATES: Record<string, number> = {
+  goods: 0.01,
+  services: 0.02,
+}
+
+/** This line's own VAT-exclusive net cost — the base withholding applies
+ * off, same as the server. */
+function lineNet(
+  line: Pick<ManualRrLine, 'quantityReceived' | 'unitCost' | 'isFreebie' | 'taxCode'>
+): number {
+  const gross = lineTotal(line)
+  return line.taxCode === 'VAT' ? round2(gross / 1.12) : gross
+}
+
 /**
  * Preview-only, mirrors the server's post()-time math exactly (developer
- * decision, 2026-09-19): vatTreatment alone decides, never the resolved
- * source. 'inclusive' (the form's own default) backs 12% VAT out of the
- * gross total and applies 1% withholding on the resulting net; anything
- * else computes neither — gross carries through unchanged.
+ * decision, 2026-09-20): both VAT and withholding are per line, not a
+ * document-wide toggle. A line coded 'VAT' has its unitCost treated as
+ * VAT-inclusive and 12% backed out of it; every other code (Non-VAT/Exempt/
+ * none) leaves it as-is. A line classed 'goods' withholds 1% of its own net
+ * cost, 'services' withholds 2% — summed into one document-level figure.
  */
 export function manualRrTotals(
-  values: Pick<CreateManualReceivingReportFormValues, 'lines' | 'vatTreatment'>
+  values: Pick<CreateManualReceivingReportFormValues, 'lines'>
 ): ManualRrTotals {
-  const gross = (values.lines ?? []).reduce((sum, line) => sum + lineTotal(line), 0)
-  const applyTax = (values.vatTreatment ?? 'inclusive') === 'inclusive'
-  const vat = !applyTax ? 0 : round2(gross - gross / 1.12)
+  const lines = values.lines ?? []
+  const gross = lines.reduce((sum, line) => sum + lineTotal(line), 0)
+  const vat = round2(
+    lines.reduce((sum, line) => {
+      if (line.taxCode !== 'VAT') return sum
+      const lineGross = lineTotal(line)
+      return sum + (lineGross - lineGross / 1.12)
+    }, 0)
+  )
   const net = round2(gross - vat)
-  const withheld = !applyTax ? 0 : round2(net * 0.01)
+  const withheld = round2(
+    lines.reduce((sum, line) => {
+      const rate = WITHHOLDING_RATES[line.withholdingClass ?? ''] ?? 0
+      return rate === 0 ? sum : sum + lineNet(line) * rate
+    }, 0)
+  )
   const payable = round2(net + vat - withheld)
   return { gross, vat, net, withheld, payable }
 }

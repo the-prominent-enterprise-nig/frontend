@@ -20,6 +20,26 @@ const ManualRrItemSchema = z.object({
   isSerialTracked: z.boolean().optional(),
 })
 
+// None/VAT/Non-VAT/Exempt — same free-text convention and options as the
+// regular Receive Stock flow's per-line tax code
+// (create-rr/RrPricingDrawer.tsx's own TAX_CODES).
+export const MANUAL_RR_TAX_CODES = [
+  { value: '', label: 'None' },
+  { value: 'VAT', label: 'VAT' },
+  { value: 'NON_VAT', label: 'Non-VAT' },
+  { value: 'EXEMPT', label: 'Exempt' },
+]
+
+// Real BIR EWT rates vary by the nature of the payment, not one flat
+// document-wide rate — goods and services are withheld differently, and a
+// single delivery can mix both. Independent of MANUAL_RR_TAX_CODES: a line
+// can be VAT + Goods, Exempt + Services, etc.
+export const MANUAL_RR_WITHHOLDING_CLASSES = [
+  { value: '', label: 'None' },
+  { value: 'goods', label: 'Goods (1%)' },
+  { value: 'services', label: 'Services (2%)' },
+]
+
 const ManualRrWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -46,6 +66,8 @@ export const ManualReceivingReportLineSchema = z.object({
   unitCost: z.union([z.string(), z.number()]).nullable().optional(),
   srp: z.union([z.string(), z.number()]).nullable().optional(),
   discounts: z.array(LineDiscountSchema).nullable().optional(),
+  taxCode: z.string().nullable().optional(),
+  withholdingClass: z.string().nullable().optional(),
   isFreebie: z.boolean().optional(),
   serialNumbers: z.array(z.string()).optional(),
 })
@@ -64,7 +86,6 @@ export const ManualReceivingReportSchema = z.object({
   supplierId: z.string().nullable().optional(),
   supplier: ManualRrSupplierSchema.nullable().optional(),
   newSourceName: z.string().nullable().optional(),
-  vatTreatment: z.string().nullable().optional(),
   vatAmount: z.union([z.string(), z.number()]).nullable().optional(),
   withheldAmount: z.union([z.string(), z.number()]).nullable().optional(),
   journalEntryId: z.string().nullable().optional(),
@@ -94,8 +115,6 @@ export type ManualReceivingReportListResponse = z.infer<
   typeof ManualReceivingReportListResponseSchema
 >
 
-export const VatTreatmentSchema = z.enum(['inclusive', 'exclusive', 'exempt'])
-
 // Scenario 53 — a line's itemId/newItemName mirrors the header's
 // supplierId/newSourceName either/or rule, just scoped to one row: a
 // document can receive several different items, some catalog, some not.
@@ -112,6 +131,15 @@ export const ManualReceivingReportLineFormSchema = z
     // "Something else" line with no catalog SRP to reference).
     srp: z.number().min(0).optional(),
     discounts: z.array(LineDiscountSchema).optional(),
+    // Scenario 53 (3rd pass, developer decision 2026-09-20) — per-line, not
+    // a single document-wide toggle: a 'VAT' line has 12% backed out of its
+    // unitCost; every other code (Non-VAT/Exempt/none) leaves it as-is.
+    taxCode: z.string().optional(),
+    // Scenario 53 (4th pass, same day) — withholding moved per-line too,
+    // independent of taxCode: 'goods' withholds 1% of this line's net cost,
+    // 'services' withholds 2%, summed into one document-level figure — see
+    // manualRrCosting.ts.
+    withholdingClass: z.string().optional(),
     isFreebie: z.boolean().optional(),
     serialNumbers: z.array(z.string().min(1, 'Required')).optional(),
   })
@@ -133,13 +161,6 @@ export const CreateManualReceivingReportFormSchema = z
     notes: z.string().max(1000).optional(),
     supplierId: z.string().optional(),
     newSourceName: z.string().max(255).optional(),
-    // Scenario 53 (2nd pass, developer decision 2026-09-19) — the single tax
-    // control for the whole document, and the only one. Inclusive (the
-    // form's own default) backs 12% VAT out of every costed line AND
-    // applies 1% withholding on the resulting net; exclusive computes
-    // neither. A new source no longer has its own VAT/withholding fields
-    // to fill in either — its Supplier row just defaults to none/none.
-    vatTreatment: VatTreatmentSchema.optional(),
     lines: z.array(ManualReceivingReportLineFormSchema).min(1, 'At least one line is required.'),
   })
   .refine(

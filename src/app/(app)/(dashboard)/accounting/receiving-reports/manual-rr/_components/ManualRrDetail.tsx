@@ -16,6 +16,8 @@ import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import {
   MANUAL_RR_STATUS_LABELS,
+  MANUAL_RR_TAX_CODES,
+  MANUAL_RR_WITHHOLDING_CLASSES,
   type ManualReceivingReport,
 } from '@/src/schema/inventory/manual-receiving-reports'
 import { PLEX, MONO } from '../../../../inventory/purchase-orders/_components/procurementTokens'
@@ -32,6 +34,12 @@ const STATUS_COLORS: Record<string, string> = {
 
 const money = (v: string | number) =>
   Number(v).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })
+
+const taxCodeLabel = (code?: string | null) =>
+  MANUAL_RR_TAX_CODES.find((c) => c.value === code)?.label
+
+const withholdingClassLabel = (cls?: string | null) =>
+  MANUAL_RR_WITHHOLDING_CLASSES.find((c) => c.value === cls)?.label
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -156,14 +164,6 @@ export default function ManualRrDetail({ id }: { id: string }) {
               <InfoRow label="Supplier Invoice No." value={report.supplierInvoiceNumber} mono />
             )}
             {report.poNumber && <InfoRow label="PO Number" value={report.poNumber} mono />}
-            {report.lines.some((l) => l.unitCost != null) && (
-              <InfoRow
-                label="VAT Treatment"
-                value={
-                  report.vatTreatment === 'exclusive' ? 'Exclusive (no auto-calc)' : 'Inclusive'
-                }
-              />
-            )}
             {(report.supplier || report.newSourceName) && (
               <InfoRow
                 label="Source"
@@ -193,7 +193,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
             </span>
           </div>
           <div
-            className={`${MONO} hidden grid-cols-[1fr_80px_100px_100px_1fr] items-end border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+            className={`${MONO} hidden grid-cols-[1fr_80px_100px_100px_1fr] items-end gap-x-4 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
           >
             <span>Item</span>
             <span className="text-right">Qty</span>
@@ -215,6 +215,16 @@ export default function ManualRrDetail({ id }: { id: string }) {
                   {line.isFreebie && (
                     <span className="ml-1.5 rounded-full bg-[#f1ebfb] px-1.5 py-0.5 text-[10px] font-medium text-[#3f1490]">
                       FREE
+                    </span>
+                  )}
+                  {line.taxCode && taxCodeLabel(line.taxCode) && (
+                    <span className="ml-1.5 rounded-full bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">
+                      {taxCodeLabel(line.taxCode)}
+                    </span>
+                  )}
+                  {line.withholdingClass && withholdingClassLabel(line.withholdingClass) && (
+                    <span className="ml-1.5 rounded-full bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">
+                      {withholdingClassLabel(line.withholdingClass)}
                     </span>
                   )}
                 </span>

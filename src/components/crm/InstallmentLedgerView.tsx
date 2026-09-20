@@ -268,10 +268,18 @@ export default function InstallmentLedgerView({
                           Total
                         </td>
                         <td className="border-r border-gray-100 px-4 py-1.5 text-right">
-                          {fmtMoney(ledger.rows.reduce((sum, r) => sum + r.debit, 0))}
+                          {fmtMoney(
+                            ledger.rows
+                              .filter((r) => !r.displayOnly)
+                              .reduce((sum, r) => sum + r.debit, 0)
+                          )}
                         </td>
                         <td className="border-r border-gray-100 px-4 py-1.5 text-right">
-                          {fmtMoney(ledger.rows.reduce((sum, r) => sum + r.credit, 0))}
+                          {fmtMoney(
+                            ledger.rows
+                              .filter((r) => !r.displayOnly)
+                              .reduce((sum, r) => sum + r.credit, 0)
+                          )}
                         </td>
                         <td className="border-r border-gray-100 px-4 py-1.5" />
                         <td className="px-4 py-1.5" />

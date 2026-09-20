@@ -21,9 +21,11 @@ import {
   type UseFormSetValue,
 } from 'react-hook-form'
 import { ChevronDown, ChevronUp, Copy, Trash2 } from 'lucide-react'
-import type {
-  CreateManualReceivingReportFormValues,
-  ManualReceivingReportLineFormValues,
+import {
+  MANUAL_RR_TAX_CODES,
+  MANUAL_RR_WITHHOLDING_CLASSES,
+  type CreateManualReceivingReportFormValues,
+  type ManualReceivingReportLineFormValues,
 } from '@/src/schema/inventory/manual-receiving-reports'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -37,6 +39,18 @@ import { costFromPricing, lineTotal } from './manualRrCosting'
 
 const fmtPeso = (n: number) =>
   n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+const TAX_CODE_SHORT: Record<string, string> = {
+  '': 'None',
+  VAT: 'VAT',
+  NON_VAT: 'Non-VAT',
+  EXEMPT: 'Exempt',
+}
+const WITHHOLDING_SHORT: Record<string, string> = {
+  '': 'None',
+  goods: 'Goods',
+  services: 'Services',
+}
 
 type Props = {
   control: Control<CreateManualReceivingReportFormValues>
@@ -82,6 +96,14 @@ export default function ManualRrLineRow({
   } = useFieldArray({ control, name: `lines.${index}.discounts` })
   const hasSrp = !!line?.srp
   const [stackOpen, setStackOpen] = useState(false)
+  // Collapsed by default even when the line already carries a document
+  // default (VAT/Goods etc.) — same convention stackOpen uses for
+  // discounts: the summary chip is enough, the editor is only for an
+  // override.
+  const [taxOpen, setTaxOpen] = useState(false)
+  const taxSummary = `${TAX_CODE_SHORT[line?.taxCode ?? ''] ?? 'None'} · ${
+    WITHHOLDING_SHORT[line?.withholdingClass ?? ''] ?? 'None'
+  }`
 
   // Unit Price follows the SRP → discount chain, the same rule the PO form
   // applies — but only once an SRP is actually set. A hand-typed cost (the
@@ -115,24 +137,25 @@ export default function ManualRrLineRow({
 
   return (
     <div className="border-b border-[#eeeef1] px-4.5 py-3.5 last:border-b-0">
-      <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-[minmax(0,1fr)_64px_100px_120px_112px_96px_60px_60px]">
+      <div className="mb-1 flex items-center gap-1.5">
+        <button
+          type="button"
+          className={toggleBtnClass(mode === 'catalog')}
+          onClick={() => onSetMode('catalog')}
+        >
+          Catalog item
+        </button>
+        <button
+          type="button"
+          className={toggleBtnClass(mode === 'other')}
+          onClick={() => onSetMode('other')}
+        >
+          Something else
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-x-3 gap-y-2 xl:grid-cols-[minmax(0,1fr)_64px_100px_120px_112px_96px_60px_60px] xl:items-center">
         <div className="min-w-0">
-          <div className="mb-1.5 flex gap-2">
-            <button
-              type="button"
-              className={toggleBtnClass(mode === 'catalog')}
-              onClick={() => onSetMode('catalog')}
-            >
-              Catalog item
-            </button>
-            <button
-              type="button"
-              className={toggleBtnClass(mode === 'other')}
-              onClick={() => onSetMode('other')}
-            >
-              Something else
-            </button>
-          </div>
           {mode === 'catalog' ? (
             <Controller
               name={`lines.${index}.itemId`}
@@ -277,6 +300,60 @@ export default function ManualRrLineRow({
         </div>
       </div>
 
+      <div className="mt-2">
+        <button
+          type="button"
+          onClick={() => setTaxOpen((v) => !v)}
+          className="flex items-center gap-1 rounded-md border border-[#d3d3db] px-2 py-1 text-[11.5px] font-medium text-[#5b5b6b] hover:border-[#a3a3b2]"
+        >
+          Tax: {taxSummary}
+          {taxOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        </button>
+      </div>
+
+      {taxOpen && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[10px] border border-[#e4e4e9] bg-[#fbfbfc] px-3.5 py-2.5">
+          <span className="text-[11px] text-[#8b8b9b]">Tax code</span>
+          <Controller
+            name={`lines.${index}.taxCode`}
+            control={control}
+            render={({ field: f }) => (
+              <select
+                {...f}
+                value={f.value ?? ''}
+                aria-label="Tax code"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+              >
+                {MANUAL_RR_TAX_CODES.map((code) => (
+                  <option key={code.value} value={code.value}>
+                    {code.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
+          <span className="text-[11px] text-[#8b8b9b]">Withholding</span>
+          <Controller
+            name={`lines.${index}.withholdingClass`}
+            control={control}
+            render={({ field: f }) => (
+              <select
+                {...f}
+                value={f.value ?? ''}
+                aria-label="Withholding"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+              >
+                {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
+                  <option key={cls.value} value={cls.value}>
+                    {cls.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
+        </div>
+      )}
+
       {discountCount > 0 && stackOpen && (
         <div className="relative mt-2.5 rounded-[10px] border border-[#ddd0f7] bg-[#fcfaff] px-3.5 py-3">
           <button
@@ -291,7 +368,7 @@ export default function ManualRrLineRow({
             {discountFields.map((discountField, di) => (
               <div
                 key={discountField.id}
-                className="grid grid-cols-[minmax(0,1fr)_44px_100px_28px] items-center gap-2"
+                className="grid grid-cols-[220px_44px_100px_28px] items-center gap-2"
               >
                 <Controller
                   name={`lines.${index}.discounts.${di}.name`}
@@ -401,7 +478,7 @@ function FieldError({ text }: { text?: string }) {
 }
 
 const toggleBtnClass = (active: boolean) =>
-  `flex-1 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+  `shrink-0 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors ${
     active
       ? 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490]'
       : 'border-[#d3d3db] text-[#5b5b6b] hover:border-[#a3a3b2]'

@@ -50,11 +50,11 @@ test('Business Owner creates a multi-line draft (catalog + Something else) and p
   // compile of a never-before-loaded route can take well over 1s, and
   // re-clicking the same link mid-transition risks a second push onto the
   // history stack rather than just missing the first click.
-  await page.getByRole('link', { name: 'New Manual RR' }).click()
+  await page.getByRole('link', { name: 'Create Receipt' }).click()
   await expect(page).toHaveURL(/\/accounting\/receiving-reports\/manual-rr\/new$/, {
     timeout: 30_000,
   })
-  await expect(page.getByRole('heading', { name: 'New Manual Receiving Report' })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Create Receiving Report' })).toBeVisible({
     timeout: 30_000,
   })
 

@@ -4,7 +4,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import ManualRrForm from '../_components/ManualRrForm'
 
-export const metadata = { title: 'New Manual Receiving Report' }
+export const metadata = { title: 'Create Receiving Report' }
 export default async function Page() {
   const session = await getSessionOrNull()
   requirePermission(session, [
