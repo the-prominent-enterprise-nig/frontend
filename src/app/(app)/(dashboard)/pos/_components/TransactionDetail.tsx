@@ -12,7 +12,7 @@ import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
 import { PosDateTime } from './PosDate'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import { type SessionUser, can } from '@/src/libs/guards/permission'
+import { type SessionUser, can, canAccessModule } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
 
@@ -126,9 +126,23 @@ export function TransactionDetail({
                 `txn:`, the one key a receipt can produce: this screen knows
                 the transaction but not whether it became an installment
                 account, a charge invoice or neither. */}
+            {/* Scenario 59 — this hardcoded /crm/ and so bounced a Cashier
+                off /403: they are confined to the `pos` module by
+                ROLE_MODULE_ACCESS, even though the ledger DATA is readable
+                to them (crm:customers:read). POS has had its own read-only
+                /pos/customers/:id/ledger since the customer-view parity
+                work; this link never got pointed at it.
+
+                Resolved from the session rather than a scope prop, because
+                this modal is opened from CRM (Customer360), the POS
+                dashboard and the POS transactions list — sending the viewer
+                wherever they can actually open is right in all three, and
+                needs no change at any call site. */}
             {tx.customerId && (
               <Link
-                href={`/crm/customers/${tx.customerId}/ledger?transactionId=txn:${tx.id}`}
+                href={`${
+                  canAccessModule(session, 'crm') ? '/crm/customers' : '/pos/customers'
+                }/${tx.customerId}/ledger?transactionId=txn:${tx.id}`}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
               >
                 <Receipt size={13} />
