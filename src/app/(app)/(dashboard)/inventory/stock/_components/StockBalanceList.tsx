@@ -10,6 +10,9 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { StockBalance, StockStateFilter } from '@/src/schema/inventory/goods-receiving'
 import type { SessionUser } from '@/src/libs/guards/permission'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { AddItemButton } from '../../items/_components/AddItemButton'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
@@ -90,7 +93,7 @@ function SkeletonBar({ wide }: { wide?: boolean }) {
 }
 
 export default function StockBalanceList({
-  session: _session,
+  session,
   onLocationsChange,
 }: {
   session: SessionUser
@@ -163,15 +166,19 @@ export default function StockBalanceList({
               selected location.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Scenario 56 — add an item without leaving Stock. */}
+            {hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE) && <AddItemButton />}
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
         </div>
 
         {/* Error */}
