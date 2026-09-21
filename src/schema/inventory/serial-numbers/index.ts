@@ -11,6 +11,7 @@ export const SerialStatusSchema = z.enum([
   'in_repair',
   'pulled_out',
   'lost_in_transit',
+  'in_transit',
 ])
 export type SerialStatus = z.infer<typeof SerialStatusSchema>
 
@@ -24,6 +25,7 @@ export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   in_repair: 'In Repair',
   pulled_out: 'Pulled Out',
   lost_in_transit: 'Lost in Transit',
+  in_transit: 'In Transit',
 }
 
 export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
@@ -38,6 +40,7 @@ export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   in_repair: 'bg-orange-100 text-orange-700',
   pulled_out: 'bg-purple-100 text-purple-700',
   lost_in_transit: 'bg-pink-100 text-pink-700',
+  in_transit: 'bg-sky-100 text-sky-700',
 }
 
 // The leading dot the Serial Numbers tab's pill badges use — kept separate
@@ -53,6 +56,7 @@ export const SERIAL_STATUS_DOT_COLORS: Record<SerialStatus, string> = {
   in_repair: 'bg-orange-500',
   pulled_out: 'bg-purple-500',
   lost_in_transit: 'bg-pink-500',
+  in_transit: 'bg-sky-500',
 }
 
 // Statuses that mean this specific unit should not be sold as-is — the
@@ -64,6 +68,7 @@ export const NON_SALEABLE_SERIAL_STATUSES: SerialStatus[] = [
   'in_repair',
   'pulled_out',
   'lost_in_transit',
+  'in_transit',
 ]
 
 export const RegisterSerialsFormSchema = z.object({
