@@ -133,6 +133,7 @@ export default function ReportsHub() {
   // needsPnlView instead so it doesn't follow the picker onto this tab.
   const needsBranch = tab === 'pnl' || tab === 'expenses'
   const needsPnlView = tab === 'pnl'
+  const exportTarget = hubExport(tab, { asOf, startDate, endDate, branchId, pnlView, customerId })
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -261,6 +262,15 @@ export default function ReportsHub() {
         >
           {loading ? 'Loading...' : 'Run Report'}
         </button>
+        {exportTarget && (
+          <div className="ml-auto">
+            <ExportButton
+              endpoint={exportTarget.endpoint}
+              params={exportTarget.params}
+              fallbackFilename={exportTarget.filename}
+            />
+          </div>
+        )}
       </div>
 
       <div
@@ -569,6 +579,80 @@ function CashFlowView({ data }: { data: any }) {
       </div>
     </>
   )
+}
+
+type ExportTarget = {
+  endpoint: string
+  params: Record<string, string | undefined>
+  filename: string
+}
+
+/** The Excel export (with pivot tables) behind each hub tab — same params the
+ * tab's own report is loaded with. Expenses has its own button inside its
+ * view; AR Aging and Reconciliation manage their own; BI Summary is KPI
+ * tiles with nothing to pivot. */
+function hubExport(
+  tab: Tab,
+  f: {
+    asOf: string
+    startDate: string
+    endDate: string
+    branchId: string
+    pnlView: 'internal' | 'net'
+    customerId: string
+  }
+): ExportTarget | null {
+  const range = { startDate: f.startDate, endDate: f.endDate }
+  switch (tab) {
+    case 'trial-balance':
+      return {
+        endpoint: '/reports/trial-balance/export',
+        params: { asOf: f.asOf },
+        filename: `trial-balance-asof-${f.asOf}.xlsx`,
+      }
+    case 'pnl':
+      return {
+        endpoint: '/reports/profit-and-loss/export',
+        params: { ...range, branchId: f.branchId || undefined, view: f.pnlView },
+        filename: `profit-and-loss-${f.startDate}-to-${f.endDate}.xlsx`,
+      }
+    case 'balance-sheet':
+      return {
+        endpoint: '/reports/balance-sheet/export',
+        params: { asOf: f.asOf },
+        filename: `balance-sheet-asof-${f.asOf}.xlsx`,
+      }
+    case 'cash-flow':
+      return {
+        endpoint: '/reports/cash-flow/export',
+        params: range,
+        filename: `cash-flow-${f.startDate}-to-${f.endDate}.xlsx`,
+      }
+    case 'ap-aging':
+      return {
+        endpoint: '/reports/aging/ap/export',
+        params: { asOf: f.asOf },
+        filename: `ap-aging-asof-${f.asOf}.xlsx`,
+      }
+    case 'grni':
+      return { endpoint: '/reports/grni/export', params: {}, filename: 'grni.xlsx' }
+    case 'cost-center':
+      return {
+        endpoint: '/reports/cost-center/export',
+        params: range,
+        filename: `cost-center-${f.startDate}-to-${f.endDate}.xlsx`,
+      }
+    case 'customer-statement':
+      return f.customerId
+        ? {
+            endpoint: `/reports/customer-statement/${f.customerId}/export`,
+            params: {},
+            filename: 'customer-statement.xlsx',
+          }
+        : null
+    default:
+      return null
+  }
 }
 
 function AgingView({ data, type }: { data: any; type: 'ar' | 'ap' }) {

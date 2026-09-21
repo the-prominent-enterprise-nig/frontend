@@ -28,6 +28,7 @@ import type {
   ConsignToBranchFormValues,
 } from '@/src/schema/inventory/serial-numbers'
 import { caravanGroupKey } from '@/src/schema/inventory/serial-numbers'
+import { useLocationFilter } from '@/src/libs/inventory/useLocationFilter'
 
 export function useSerialNumbers() {
   const queryClient = useQueryClient()
@@ -37,7 +38,10 @@ export function useSerialNumbers() {
   const [statusFilter, setStatusFilter] = useState<SerialStatus | undefined>(undefined)
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined)
   const [brandFilter, setBrandFilter] = useState<string | undefined>(undefined)
-  const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
+  // Scenario 56 — Operations + multi-select Branches, shared with the other
+  // inventory lists (was a single warehouse picker).
+  const locationFilter = useLocationFilter({ onChange: () => setPage(1) })
+  const { branchIds, warehouseIds, region } = locationFilter
   const [search, setSearch] = useState<string | undefined>(undefined)
 
   // Scenario 08 (Caravan) Part 2 — "Caravan" view. A branch-restricted
@@ -76,7 +80,9 @@ export function useSerialNumbers() {
             status: statusFilter,
             categoryId: categoryFilter,
             brandId: brandFilter,
-            warehouseId: warehouseFilter,
+            branchIds,
+            warehouseIds,
+            region,
             search,
           },
     [
@@ -85,7 +91,9 @@ export function useSerialNumbers() {
       statusFilter,
       categoryFilter,
       brandFilter,
-      warehouseFilter,
+      branchIds,
+      warehouseIds,
+      region,
       search,
       caravanView,
       caravanBranchId,
@@ -198,9 +206,7 @@ export function useSerialNumbers() {
   // Metric band on the All Serials tab — counts across every matching
   // record, not just the current page, so each bucket is its own limit:1
   // request (only `meta.total` is read from it). "Reserved" reads the
-  // `held` status and "In Transit" reads `pulled_out` — the closest real
-  // statuses to those two labels; the schema has no literal enum value for
-  // either concept.
+  // `held` status (the schema has no literal "reserved" value).
   const STATUS_COUNT_BUCKETS = ['in_stock', 'held', 'sold', 'returned', 'pulled_out'] as const
   const statusCountQueries = useQueries({
     queries: STATUS_COUNT_BUCKETS.map((status) => ({
@@ -301,7 +307,7 @@ export function useSerialNumbers() {
     statusFilter,
     categoryFilter,
     brandFilter,
-    warehouseFilter,
+    locationFilter,
     search,
     setStatusFilter: (v: SerialStatus | undefined) => {
       setStatusFilter(v)
@@ -315,10 +321,6 @@ export function useSerialNumbers() {
       setBrandFilter(v)
       setPage(1)
     },
-    setWarehouseFilter: (v: string | undefined) => {
-      setWarehouseFilter(v)
-      setPage(1)
-    },
     setSearch: (v: string | undefined) => {
       setSearch(v)
       setPage(1)
@@ -327,7 +329,7 @@ export function useSerialNumbers() {
       setStatusFilter(undefined)
       setCategoryFilter(undefined)
       setBrandFilter(undefined)
-      setWarehouseFilter(undefined)
+      locationFilter.reset()
       setSearch(undefined)
       setPage(1)
     },

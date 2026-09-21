@@ -721,7 +721,6 @@ function buildPurchaseOrderHtml(
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(name)}${discountNote}</td>
-        <td>${esc(l.description) || '—'}</td>
         <td class="right">${qty}</td>
         <td class="right">${fmt(unitPrice)}</td>
         <td class="right">${fmt(lineTotal)}</td>
@@ -834,7 +833,6 @@ function buildPurchaseOrderHtml(
         <tr>
           <th class="num">#</th>
           <th>Item</th>
-          <th>Description</th>
           <th class="right">Qty</th>
           <th class="right">Unit price</th>
           <th class="right">Total</th>

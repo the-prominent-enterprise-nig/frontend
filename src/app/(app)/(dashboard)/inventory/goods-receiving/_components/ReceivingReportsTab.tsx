@@ -58,9 +58,9 @@ const STATUS_OPTIONS = Object.entries(STATUS_META).map(([value, meta]) => ({
 // The column track the header, rows and skeletons all share — same
 // CSS-grid approach as Stock Balance, since a plain <table> couldn't keep
 // numeric columns aligned once the Amount column is conditionally present.
-const GRID = 'grid grid-cols-[196px_minmax(0,1fr)_140px_64px_80px_120px] gap-x-3 items-center'
+const GRID = 'grid grid-cols-[196px_minmax(0,1fr)_140px_80px_150px_120px] gap-x-3 items-center'
 const GRID_WITH_AMOUNT =
-  'grid grid-cols-[196px_minmax(0,1fr)_140px_64px_80px_110px_120px] gap-x-3 items-center'
+  'grid grid-cols-[196px_minmax(0,1fr)_140px_80px_110px_150px_120px] gap-x-3 items-center'
 
 function fmtMoney(n: number): string {
   return n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
@@ -77,6 +77,47 @@ function lineAmount(line: ReceivingReport['lines'][number]): number | null {
 function reportAmount(report: ReceivingReport): number | null {
   const amounts = report.lines.map(lineAmount).filter((a): a is number => a != null)
   return amounts.length > 0 ? amounts.reduce((sum, a) => sum + a, 0) : null
+}
+
+const DELIVERY_LABEL = { partial: 'Partial delivery', complete: 'PO complete' } as const
+
+/** The supplier invoice (SI) behind a receipt, from the AP bill it feeds or
+ * the SI typed on the RR itself. Every supplier receipt gets a draft bill
+ * straight away, so "has a bill" says nothing; "has an SI" is what tells
+ * you the supplier has actually invoiced this delivery. */
+function invoiceNumberOf(report: ReceivingReport): string | null {
+  return report.apBill?.billNumber || report.supplierInvoiceNumber || null
+}
+
+/** Scenario 56 — where this receipt leaves its PO (more coming, or done) and
+ * whether the supplier has invoiced it. A transfer receipt has no PO and no
+ * supplier invoice, so it shows neither. */
+function DeliveryBillCell({ report }: { report: ReceivingReport }): React.ReactElement {
+  const delivery = report.deliveryStatus
+  const si = invoiceNumberOf(report)
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {delivery && (
+        <span
+          className={`rounded-[5px] px-1.5 py-0.5 text-[11px] font-medium ${
+            delivery === 'partial' ? 'bg-[#fdf3e7] text-[#8a4b06]' : 'bg-[#e7f5ef] text-[#0b6644]'
+          }`}
+        >
+          {DELIVERY_LABEL[delivery]}
+        </span>
+      )}
+      {!report.stockTransfer &&
+        (si ? (
+          <span className="rounded-[5px] bg-[#eaf0fb] px-1.5 py-0.5 text-[11px] font-medium text-[#1f4b99]">
+            SI {si}
+          </span>
+        ) : (
+          <span className="rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[11px] font-medium text-[#5b5b6b]">
+            Awaiting SI
+          </span>
+        ))}
+    </span>
+  )
 }
 
 function reportUnits(report: ReceivingReport): number {
@@ -213,7 +254,7 @@ function PoLink({ report }: { report: ReceivingReport }) {
   const href = report.stockTransfer
     ? `/inventory/transfers?transfer=${encodeURIComponent(code)}`
     : poId
-      ? `/inventory/purchase-orders?po=${poId}`
+      ? `/inventory/purchase-orders?tab=orders&po=${poId}`
       : null
 
   // A typed-in (unlinked) PO number names a document the system doesn't
@@ -408,8 +449,9 @@ export default function ReceivingReportsTab({
         sourceName(r) === '—' ? '' : sourceName(r),
         receivingReportSourceRef(r).code ?? '',
         r.warehouse?.branch?.name ?? r.warehouse?.name ?? '',
-        r.lines.length,
         reportUnits(r),
+        r.deliveryStatus ? DELIVERY_LABEL[r.deliveryStatus] : '',
+        r.stockTransfer ? '' : (invoiceNumberOf(r) ?? 'Awaiting SI'),
         STATUS_META[r.status]?.label ?? r.status,
         ...(showAmounts ? [reportAmount(r) ?? ''] : []),
       ])
@@ -423,8 +465,9 @@ export default function ReceivingReportsTab({
           'Source',
           'PO / Transfer Reference',
           'Location',
-          'Lines',
           'Units',
+          'Delivery',
+          'Supplier Invoice',
           'Status',
           ...(showAmounts ? ['Amount'] : []),
         ],
@@ -597,9 +640,9 @@ export default function ReceivingReportsTab({
               <span>Receipt No.</span>
               <span>Source / Ref.</span>
               <span>Location</span>
-              <span className="text-right">Lines</span>
               <span className="text-right">Units</span>
               {showAmounts && <span className="text-right">Amount</span>}
+              <span>Delivery / SI</span>
               <span className="text-center">Status</span>
             </div>
             {Array.from({ length: 6 }).map((_, i) => (
@@ -661,9 +704,6 @@ export default function ReceivingReportsTab({
                 </span>
                 <span role="columnheader">Location</span>
                 <span role="columnheader" className="text-right">
-                  Lines
-                </span>
-                <span role="columnheader" className="text-right">
                   Units
                 </span>
                 {showAmounts && (
@@ -671,6 +711,7 @@ export default function ReceivingReportsTab({
                     Amount
                   </span>
                 )}
+                <span role="columnheader">Delivery / SI</span>
                 <span role="columnheader" className="text-center">
                   Status
                 </span>
@@ -711,10 +752,6 @@ export default function ReceivingReportsTab({
                       {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
                     </span>
 
-                    <span role="cell" className={`${MONO} text-right text-[14.5px] text-[#8b8b9b]`}>
-                      {report.lines.length}
-                    </span>
-
                     <span
                       role="cell"
                       className={`${MONO} text-right text-[15px] font-semibold text-[#17171c]`}
@@ -731,6 +768,10 @@ export default function ReceivingReportsTab({
                         )}
                       </span>
                     )}
+
+                    <span role="cell">
+                      <DeliveryBillCell report={report} />
+                    </span>
 
                     <span role="cell" className="flex justify-center">
                       <StatusBadge
@@ -780,18 +821,8 @@ export default function ReceivingReportsTab({
                     </div>
 
                     <div
-                      className={`grid gap-[6px] ${showAmounts ? 'grid-cols-3' : 'grid-cols-2'}`}
+                      className={`grid gap-[6px] ${showAmounts ? 'grid-cols-2' : 'grid-cols-1'}`}
                     >
-                      <div className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]">
-                        <span
-                          className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
-                        >
-                          Lines
-                        </span>
-                        <span className={`${MONO} text-[14px] font-semibold text-[#17171c]`}>
-                          {report.lines.length}
-                        </span>
-                      </div>
                       <div className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]">
                         <span
                           className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
@@ -815,6 +846,8 @@ export default function ReceivingReportsTab({
                         </div>
                       )}
                     </div>
+
+                    <DeliveryBillCell report={report} />
 
                     <div className="text-[12px] text-[#5b5b6b]">
                       {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}

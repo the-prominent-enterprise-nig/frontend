@@ -17,6 +17,9 @@ export type Panel = {
   // filter leak the client reported. Empty/omitted means no filter was
   // active, so the drawer shows every location.
   locations?: string[]
+  // Scenario 56 — the list's Operations (region) filter, carried along with
+  // `locations` so picking "Panay" doesn't show Negros stock in the drawer.
+  region?: 'panay' | 'negros'
 }
 
 interface UIShellStore {

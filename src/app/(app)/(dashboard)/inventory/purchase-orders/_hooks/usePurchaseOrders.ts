@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
@@ -21,10 +21,31 @@ import type {
 export function usePurchaseOrders() {
   const queryClient = useQueryClient()
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Scenario 56 — the list AND any single PO opened by id (`?po=<id>`, cached
+  // under ['purchase-order', id]). Clearing only the list left a PO reopened
+  // after approve/send/close showing its old status for up to five minutes.
+  const invalidatePurchaseOrders = (): void => {
+    queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+    queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
+  }
+
+  // Scenario 56 — the status pill lives in the URL (`?status=`), so leaving
+  // for Inventory and coming back (or refreshing) lands on the same filter
+  // instead of silently resetting to All.
+  const statusFilter = searchParams.get('status') ?? undefined
+  const setStatusFilter = (v: string | undefined): void => {
+    const next = new URLSearchParams(searchParams.toString())
+    if (v) next.set('status', v)
+    else next.delete('status')
+    const query = next.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+  }
 
   const [page, setPage] = useState(1)
   const [limit, setLimitState] = useState(25)
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
   // Both are server-side filters (PoFilterDto: supplierId, branchId) — they
   // narrow the whole result set, not just the page on screen, so the
@@ -69,7 +90,7 @@ export function usePurchaseOrders() {
           description: result.message,
           status: 'success',
         })
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+        invalidatePurchaseOrders()
       } else {
         showToast({
           title: 'Failed to create purchase order',
@@ -90,7 +111,7 @@ export function usePurchaseOrders() {
           description: result.message,
           status: 'success',
         })
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+        invalidatePurchaseOrders()
         queryClient.invalidateQueries({ queryKey: ['purchase-requests'] })
         // Same reasoning as the auto-convert-on-approve path in
         // usePurchaseRequests.ts — the source PR just left the default
@@ -116,7 +137,7 @@ export function usePurchaseOrders() {
           description: result.message,
           status: 'success',
         })
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+        invalidatePurchaseOrders()
       } else {
         showToast({
           title: 'Failed to update purchase order',
@@ -136,7 +157,7 @@ export function usePurchaseOrders() {
           description: result.message,
           status: 'success',
         })
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+        invalidatePurchaseOrders()
       } else {
         showToast({
           title: 'Failed to approve purchase order',
@@ -152,7 +173,7 @@ export function usePurchaseOrders() {
     onSuccess: (result) => {
       if (result.success) {
         showToast({ title: 'Purchase order sent', description: result.message, status: 'success' })
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+        invalidatePurchaseOrders()
       } else {
         showToast({
           title: 'Failed to send purchase order',
@@ -172,7 +193,7 @@ export function usePurchaseOrders() {
           description: result.message,
           status: 'success',
         })
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+        invalidatePurchaseOrders()
       } else {
         showToast({
           title: 'Failed to close purchase order',
@@ -192,7 +213,7 @@ export function usePurchaseOrders() {
           description: result.message,
           status: 'success',
         })
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+        invalidatePurchaseOrders()
       } else {
         showToast({
           title: 'Failed to cancel purchase order',
@@ -283,6 +304,6 @@ export function usePurchaseOrders() {
       cancelMutation.mutateAsync({ id, reason }),
     isCancelling: cancelMutation.isPending,
 
-    refetch: () => queryClient.invalidateQueries({ queryKey: ['purchase-orders'] }),
+    refetch: invalidatePurchaseOrders,
   }
 }

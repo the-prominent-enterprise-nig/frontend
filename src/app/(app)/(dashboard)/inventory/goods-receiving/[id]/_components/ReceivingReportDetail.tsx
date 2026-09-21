@@ -254,8 +254,9 @@ export default function ReceivingReportDetail({
                 <tr>
                   <th className="py-2 pr-4">Item</th>
                   <th className="py-2 pr-4 text-right">Ordered</th>
-                  <th className="py-2 pr-4 text-right">Received</th>
-                  <th className="py-2 pr-4 text-right">Variance</th>
+                  <th className="py-2 pr-4 text-right">This delivery</th>
+                  <th className="py-2 pr-4 text-right">Received to date</th>
+                  <th className="py-2 pr-4 text-right">Outstanding</th>
                   <th className="py-2 pr-4">Condition</th>
                   <th className="py-2 pr-4">Batch</th>
                   <th className="py-2">Notes</th>
@@ -263,9 +264,16 @@ export default function ReceivingReportDetail({
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {lines.map((l) => {
+                  // Scenario 56 — judged across every delivery on the PO line,
+                  // so a correct partial delivery reads "2 outstanding", not a
+                  // shortfall of −2 against the whole order.
                   const ordered = l.purchaseOrderLine?.quantity ?? null
-                  const variance =
-                    ordered != null ? Number(l.quantityReceived) - Number(ordered) : null
+                  const toDate =
+                    ordered != null
+                      ? (l.discrepancy?.qtyReceivedToDate ?? Number(l.quantityReceived))
+                      : null
+                  const outstanding =
+                    ordered != null && toDate != null ? Number(ordered) - toDate : null
                   return (
                     <tr key={l.id}>
                       <td className="py-2 pr-4 text-gray-900">
@@ -278,12 +286,25 @@ export default function ReceivingReportDetail({
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">{ordered ?? '—'}</td>
                       <td className="py-2 pr-4 text-right tabular-nums">{l.quantityReceived}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-gray-500">
+                        {toDate ?? '—'}
+                      </td>
                       <td
                         className={`py-2 pr-4 text-right tabular-nums ${
-                          variance ? 'font-semibold text-amber-600' : 'text-gray-500'
+                          outstanding != null && outstanding < 0
+                            ? 'font-semibold text-red-600'
+                            : outstanding
+                              ? 'font-semibold text-amber-600'
+                              : 'text-gray-500'
                         }`}
                       >
-                        {variance == null ? '—' : variance > 0 ? `+${variance}` : variance}
+                        {outstanding == null
+                          ? '—'
+                          : outstanding < 0
+                            ? `+${-outstanding} over`
+                            : outstanding === 0
+                              ? 'None'
+                              : outstanding}
                       </td>
                       <td className="py-2 pr-4">
                         {l.qualityHold ? (
