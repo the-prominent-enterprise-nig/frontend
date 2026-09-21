@@ -676,6 +676,7 @@ export function PurchaseOrderList({
                 <button
                   key={f.label}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => setStatusFilter(f.value)}
                   className={`rounded-[20px] border px-3 py-[6px] text-[12.5px] transition-colors ${
                     on

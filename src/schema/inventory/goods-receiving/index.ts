@@ -218,6 +218,8 @@ export const StockLedgerEntrySchema = z.object({
   goodsReceiptLineId: z.string().optional().nullable(),
   receivingReportId: z.string().optional().nullable(),
   receivingReportCode: z.string().optional().nullable(),
+  // Scenario 56 — the linked PO's id, so the ledger's PO link opens it.
+  purchaseOrderId: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
   supplierInvoiceNumber: z.string().optional().nullable(),
