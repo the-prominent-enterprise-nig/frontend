@@ -91,6 +91,13 @@ export const ACCOUNTING_PERMISSIONS = {
   BANK_ACCOUNTS_ADJUST: 'accounting:bank-accounts:adjust',
   BANK_ACCOUNTS_TRANSFER: 'accounting:bank-accounts:transfer',
 
+  // Scenario 53 — banking the branches' cash is an Accounting job. The deposit
+  // endpoint always lived in the accounting module but was gated on
+  // pos:cash-in-transit:manage, which would have forced POS permissions onto
+  // the Accountant. These keep the Accountant accounting-only.
+  CASH_IN_TRANSIT_READ: 'accounting:cash-in-transit:read',
+  CASH_IN_TRANSIT_MANAGE: 'accounting:cash-in-transit:manage',
+
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
   BUDGET_UPDATE: 'accounting:budget:update',
@@ -221,6 +228,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:bank-accounts:update': 'Edit a bank account',
   'accounting:bank-accounts:delete': 'Deactivate a bank account',
   'accounting:bank-accounts:reconcile': 'Create and complete a bank reconciliation',
+  'accounting:cash-in-transit:read': 'View outstanding Cash-in-Transit from Accounting',
+  'accounting:cash-in-transit:manage': 'Deposit Cash-in-Transit into a bank account',
   'accounting:bank-accounts:adjust':
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
   'accounting:bank-accounts:transfer':

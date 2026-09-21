@@ -11,7 +11,11 @@ import {
   Loader2,
   Users,
 } from 'lucide-react'
-import { useCustomerInstallmentSchedules, useCollectionsCustomers } from '../../_hooks/usePos'
+import {
+  useCustomerInstallmentSchedules,
+  useCollectionsCustomers,
+  useSessions,
+} from '../../_hooks/usePos'
 import {
   getBranches,
   getPaymentMethods,
@@ -931,6 +935,21 @@ function PaymentPanel({
   // exactly what gets recorded.
   const bulkAllocated = allocateBulkPayment(resolvedLines, Number(form.amount) || 0)
 
+  /**
+   * Scenario 53 Part 5b — the branch's currently-open session, if any.
+   *
+   * Cash taken here physically lands in that cashier's drawer, so the session
+   * has to be named on the collection or close() cannot count it: the drawer
+   * count included the cash while expectedClosingCash did not, and an honest
+   * count closed as an unexplainable overage. Null is a legitimate answer (a
+   * field collection, or the counter open with no session), and the backend
+   * treats it as "not counter cash".
+   */
+  const { data: openSessions } = useSessions(
+    form.branchId ? { branchId: form.branchId, status: 'open' } : { status: 'open' }
+  )
+  const openSessionId = openSessions?.success ? openSessions.data?.[0]?.id : undefined
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
@@ -950,6 +969,7 @@ function PaymentPanel({
         notes: form.notes || undefined,
         branchId: form.branchId || undefined,
         collectorId: form.collectorId || undefined,
+        posSessionId: openSessionId,
       })
       if (!res.success) {
         setSubmitting(false)
@@ -981,6 +1001,7 @@ function PaymentPanel({
         notes: form.notes || undefined,
         branchId: form.branchId || undefined,
         collectorId: form.collectorId || undefined,
+        posSessionId: openSessionId,
       })
       if (!res.success) {
         setSubmitting(false)
