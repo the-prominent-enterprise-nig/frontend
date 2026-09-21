@@ -309,7 +309,16 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
                   { value: '', label: 'No installment term' },
                   ...financingTerms.map((t) => ({
                     value: t.id,
-                    label: `${t.termMonths} mo. — factor ${Number(t.factorRate).toFixed(2)}`,
+                    // Just the term. The factor is a financing multiplier
+                    // (1.08 = 8% markup on the financed amount over the whole
+                    // term, not per year) — meaningful to whoever configures
+                    // the rate card under POS Settings → Financing Terms,
+                    // which is where it still shows, but noise to the person
+                    // taking an application. Checkout's own term selector
+                    // never showed it either. The numbers it drives are
+                    // already on screen in the breakdown below: amount
+                    // financed, monthly installment and total payable.
+                    label: `${t.termMonths} months`,
                   })),
                 ]}
               />
