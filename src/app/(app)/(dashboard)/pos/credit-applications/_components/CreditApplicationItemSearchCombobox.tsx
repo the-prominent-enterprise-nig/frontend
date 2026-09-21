@@ -14,7 +14,7 @@ type Props = {
   /** Fires with the picked item's price info — lets the parent form preview
    * an amount. Not fired for a value arriving via `initialLabel` (edit-mode
    * prefill). */
-  onSelectItem?: (meta: CreditApplicationItemMeta) => void
+  onSelectItem?: (meta: CreditApplicationItemMeta, label: string) => void
   error?: string
   initialLabel?: string
 }
@@ -33,7 +33,9 @@ export function CreditApplicationItemSearchCombobox({
     <SearchCombobox
       value={value}
       onChange={onChange}
-      onSelect={(option) => onSelectItem?.(option.meta as CreditApplicationItemMeta)}
+      onSelect={(option) =>
+        onSelectItem?.(option.meta as CreditApplicationItemMeta, option.primary)
+      }
       error={error}
       initialLabel={initialLabel}
       queryKey="credit-application-item-search"

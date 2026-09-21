@@ -423,6 +423,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
       },
       {
+        // POS's own customers screen, over the same Customer records CRM
+        // lists — same table, same CustomerService, different permission
+        // (2026-09-19 review request). It exists so a cashier can create
+        // and correct customer profiles for a sale or a credit application
+        // while holding no crm:* permission at all.
+        label: 'Customers',
+        href: '/pos/customers',
+        icon: Users,
+        requiredPermission: 'pos:customers:read',
+        activeWhen: ['/pos/customers'],
+      },
+      {
         label: 'Collections',
         href: '/pos/collections',
         icon: Coins,
@@ -625,6 +637,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Settings',
         href: '/crm/settings',
         icon: Settings,
+        // Matches the permission /crm/settings itself redirects on — without
+        // this the item showed to anyone who could reach the crm module at
+        // all (e.g. Cashier, added 2026-09-18 for Customers) and 403'd on
+        // click.
+        requiredPermission: CRM_PERMISSIONS.PIPELINE_MANAGE,
       },
     ],
     bottom: [],

@@ -1502,7 +1502,10 @@ export async function searchCustomers(q: string): Promise<ApiResponse<PosCustome
 
 export async function getCustomerById(id: string): Promise<ApiResponse<PosCustomer>> {
   try {
-    const result = await api.get<PosCustomer>(`/crm/customers/${id}`)
+    // POS's own route, not /crm/customers/:id — a cashier holds no crm:*
+    // permission, so the CRM path 403s for them. Same record either way:
+    // both resolve through CustomerService against the one Customer table.
+    const result = await api.get<PosCustomer>(`/pos/customers/${id}`)
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Not found' }
     }
