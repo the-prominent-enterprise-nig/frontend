@@ -202,6 +202,12 @@ interface CartLine {
   payNowMethod?: PayNowMethod
   financingTermId?: string
   downPaymentInput?: string
+  /** Which priceListItemId downPaymentInput was auto-derived for (curated
+   * or 10%-floor) — unset when the cashier typed it themselves, or copied
+   * in from an approved credit application. Lets a later Price Use change
+   * tell "stale auto-fill, safe to recompute" apart from "an entry that
+   * must never be silently overwritten". */
+  downPaymentAutoForPriceListItemId?: string | null
 }
 
 interface PaymentRow {
@@ -657,13 +663,27 @@ export default function CheckoutPage() {
       prev.map((line) => {
         if (line.priceOverrideBy) return line
         if (!line.priceUseTypeId) return line
+        // A downPaymentInput this line auto-filled for its PREVIOUS
+        // priceListItemId (curated or 10%-floor) is now stale the moment
+        // Price Use resolves to a different one — e.g. WIP's curated 2,900
+        // must not linger once the line switches to CR-BR's 2,600. A value
+        // the cashier actually typed (or one copied from an approved
+        // credit application) never carries this marker, so it survives.
+        // Recomputed immediately (never just cleared to blank) since a
+        // financingTermId may already be active and the installment-preview
+        // fetch reads downPaymentInput directly — a blank value would send
+        // a 0 down payment to that preview until something else refilled it.
+        const isStaleAutoDownPayment = (newPriceListItemId: string | null) =>
+          line.downPaymentAutoForPriceListItemId !== undefined &&
+          line.downPaymentAutoForPriceListItemId !== newPriceListItemId
         const resolved = resolvedPrices[resolutionKey(line.itemId, line.priceUseTypeId)]
         if (!resolved) {
           // No active price list matches this line's picked Price Use — clear
           // unitPrice back to 0 too, not just the resolved flags. Leaving the
           // old Price Use's unitPrice in place kept the Order Summary total
           // frozen on the stale price even though the per-line cell correctly
-          // switched to "No price — Override".
+          // switched to "No price — Override". Nothing to recompute a down
+          // payment against here, so a stale auto-fill just goes blank.
           return line.priceResolved
             ? {
                 ...line,
@@ -671,16 +691,38 @@ export default function CheckoutPage() {
                 priceResolved: false,
                 priceListItemId: null,
                 priceListDownPayment: null,
+                ...(isStaleAutoDownPayment(null)
+                  ? { downPaymentInput: undefined, downPaymentAutoForPriceListItemId: undefined }
+                  : {}),
               }
             : line
         }
         if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line
+        const recomputedDownPayment = isStaleAutoDownPayment(resolved.priceListItemId)
+          ? {
+              downPaymentInput: (resolved.downPayment != null
+                ? Number(resolved.downPayment)
+                : Math.ceil(
+                    effectiveUnitPrice(
+                      { ...line, unitPrice: resolved.price },
+                      activeTaxRate,
+                      inclusivePricing,
+                      isTaxExempt
+                    ) *
+                      line.quantity *
+                      0.1
+                  )
+              ).toFixed(2),
+              downPaymentAutoForPriceListItemId: resolved.priceListItemId,
+            }
+          : {}
         return {
           ...line,
           unitPrice: resolved.price,
           priceListItemId: resolved.priceListItemId,
           priceListDownPayment: resolved.downPayment,
           priceResolved: true,
+          ...recomputedDownPayment,
         }
       })
     )
@@ -1925,6 +1967,7 @@ export default function CheckoutPage() {
                 ? {
                     financingTermId: undefined,
                     downPaymentInput: undefined,
+                    downPaymentAutoForPriceListItemId: undefined,
                     installmentProvider: undefined,
                   }
                 : {}),
@@ -1972,6 +2015,9 @@ export default function CheckoutPage() {
           installmentProvider: provider,
           financingTermId: undefined,
           downPaymentInput: l.downPaymentInput ?? fallbackDownPayment,
+          downPaymentAutoForPriceListItemId: l.downPaymentInput
+            ? l.downPaymentAutoForPriceListItemId
+            : (l.priceListItemId ?? null),
         }
       })
     )
@@ -2054,6 +2100,12 @@ export default function CheckoutPage() {
           ...l,
           financingTermId: application.financingTermId ?? l.financingTermId,
           downPaymentInput,
+          // An approved application's figure is authoritative, same as a
+          // cashier's own typed entry — a later Price Use change must not
+          // treat it as a stale auto-fill and silently recompute it away.
+          downPaymentAutoForPriceListItemId: dpByLine.has(l.lineId)
+            ? undefined
+            : l.downPaymentAutoForPriceListItemId,
         }
       })
     )
@@ -2082,14 +2134,27 @@ export default function CheckoutPage() {
                   l.quantity *
                   0.1
               ).toFixed(2)
-        return { ...l, financingTermId, downPaymentInput }
+        return {
+          ...l,
+          financingTermId,
+          downPaymentInput,
+          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+        }
       })
     )
   }
 
   function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, downPaymentInput } : l)))
+    setCart((prev) =>
+      prev.map((l) =>
+        ids.has(l.lineId)
+          ? // An explicit cashier edit — no longer an auto-fill a later
+            // Price Use change is allowed to silently recompute.
+            { ...l, downPaymentInput, downPaymentAutoForPriceListItemId: undefined }
+          : l
+      )
+    )
   }
 
   function toggleDownPaymentEdit(lineId: string) {
