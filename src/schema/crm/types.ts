@@ -410,6 +410,8 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   totalPrice: number | string
   interestDifferential: number | string
   ppd: number | string
+  /** Scenario 57 — false when the contract earns no PPD (rebate). */
+  rebateEligible?: boolean
   openingBalance: number | string
   dpBalance: number | string
   nextDueDate?: string | null

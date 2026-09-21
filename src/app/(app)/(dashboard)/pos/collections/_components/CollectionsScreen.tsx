@@ -205,6 +205,8 @@ function toggleLineSelection(
 const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
   rebate_exceeds_ppd:
     'The rebate is more than the prompt payment discount these dues have earned. A due only earns its PPD once the payment covers it in full.',
+  rebate_not_eligible:
+    'This installment plan is not eligible for rebate, so no rebate can be applied.',
   rebate_requires_installment_account:
     'A rebate can only be given on an installment plan. This invoice has no linked installment account.',
   penalty_exceeds_assessed:
@@ -228,8 +230,16 @@ function paymentErrorMessage(res: { message?: string; error?: string }): string 
 function dueSuggestions(
   line: InstallmentScheduleLineWithInvoice,
   ppd: number | null,
-  paymentDateIso: string
-): { isLate: boolean; suggestedRebate: number | null; suggestedPenalty: number } {
+  paymentDateIso: string,
+  // Scenario 57 — false when the cashier marked the contract not eligible
+  // at checkout; mirrors applySingleInvoicePayment()'s rebate_not_eligible.
+  rebateEligible = true
+): {
+  isLate: boolean
+  rebateNotEligible: boolean
+  suggestedRebate: number | null
+  suggestedPenalty: number
+} {
   // A due paid after its own due date forfeits its rebate entirely — mirrors
   // ar-invoices.service.ts's applySingleInvoicePayment() cap logic exactly,
   // so this preview can never promise more than the backend will allow. Raw
@@ -248,7 +258,10 @@ function dueSuggestions(
     // null (no linked account) stays null — only a real, otherwise-positive
     // ppd gets zeroed out by lateness, so "no account" and "forfeited" stay
     // distinguishable to anything downstream that checks for null specifically.
-    suggestedRebate: ppd == null ? null : isLate ? 0 : ppd,
+    // An ineligible contract suggests 0 the same way (never null — it does
+    // have an account), flagged separately so the UI can say why.
+    rebateNotEligible: ppd != null && !rebateEligible,
+    suggestedRebate: ppd == null ? null : isLate || !rebateEligible ? 0 : ppd,
     suggestedPenalty: daysLate >= 15 ? Math.round(Number(line.amount) * 0.05 * 100) / 100 : 0,
   }
 }
@@ -384,6 +397,7 @@ export default function CollectionsScreen() {
       .map((l) => ({
         line: l,
         ppd: s.installmentAccount?.ppd != null ? Number(s.installmentAccount.ppd) : null,
+        rebateEligible: s.installmentAccount?.rebateEligible ?? true,
       }))
   )
 
@@ -725,6 +739,8 @@ function PaymentPanel({
      * backend will actually allow for that date — never a stale snapshot of
      * the date this panel happened to open with. */
     ppd: number | null
+    /** Scenario 57 — the linked contract's "Eligible for rebate" flag. */
+    rebateEligible: boolean
   }[]
   customerName?: string
   /** Falls back to the Collections list's own branch filter, if the cashier
@@ -763,10 +779,10 @@ function PaymentPanel({
   // do, whether a due still counts as late, its rebate eligibility, and its
   // penalty all have to move with that field, since the backend recomputes
   // this exact same math against whatever paymentDate actually submits.
-  const liveLines = lines.map(({ line, ppd }) => ({
+  const liveLines = lines.map(({ line, ppd, rebateEligible }) => ({
     line,
     ppd,
-    ...dueSuggestions(line, ppd, form.paymentDate),
+    ...dueSuggestions(line, ppd, form.paymentDate, rebateEligible),
   }))
 
   // Distinguishes the single-due UI (an "Outstanding" reference row) from
@@ -810,9 +826,9 @@ function PaymentPanel({
   // ever submitting more than the backend will actually allow.
   const [rebateChecked, setRebateChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
-      lines.map(({ line, ppd }) => [
+      lines.map(({ line, ppd, rebateEligible }) => [
         line.id,
-        (dueSuggestions(line, ppd, initialPaymentDateIso).suggestedRebate ?? 0) > 0,
+        (dueSuggestions(line, ppd, initialPaymentDateIso, rebateEligible).suggestedRebate ?? 0) > 0,
       ])
     )
   )
@@ -1145,7 +1161,11 @@ function PaymentPanel({
                   {fmtMoney(outstanding)}
                 </span>
               </div>
-              {single.isLate ? (
+              {single.rebateNotEligible ? (
+                <p className="mt-1.5 text-[12px] text-zinc-500">
+                  Not eligible for rebate on this plan.
+                </p>
+              ) : single.isLate ? (
                 <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-red-700">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                   Late — this due&apos;s rebate is forfeited.
@@ -1236,88 +1256,92 @@ function PaymentPanel({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {liveLines.map(({ line, isLate, suggestedRebate, suggestedPenalty }) => {
-                    const remaining = dueOutstanding(line)
-                    const cap = suggestedRebate ?? 0
-                    // isLate/suggestedRebate/suggestedPenalty are all live
-                    // against form.paymentDate (see liveLines above), so
-                    // this badge and the Rebate/Penalty columns beside it
-                    // can never disagree with each other or with what the
-                    // backend will actually allow for that date.
-                    //
-                    // Live per-due checkbox state — not just the cap — so
-                    // Net reflects exactly what's about to be applied, same
-                    // as resolvedLines/bulkAllocated below.
-                    const rowRebate = rebateAmountFor(line.id, suggestedRebate)
-                    const rowPenalty = penaltyAmountFor(line.id, suggestedPenalty)
-                    const net = Math.max(Math.round((remaining - rowRebate) * 100) / 100, 0)
-                    return (
-                      <tr key={line.id}>
-                        <td className="px-3 py-2 text-zinc-700">
-                          Payment {line.lineNumber} · due {fmtDate(line.dueDate)}
-                        </td>
-                        <td className="px-3 py-2">
-                          {isLate ? (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
-                              Late
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
-                              On-time
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right text-zinc-500">
-                          {fmtMoney(remaining)}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {isLate ? (
-                            <span className="text-[11px] text-zinc-400">forfeited</span>
-                          ) : cap > 0 ? (
-                            <label className="flex items-center justify-end gap-1.5 text-emerald-700">
-                              <input
-                                type="checkbox"
-                                checked={rebateChecked[line.id] ?? false}
-                                onChange={(e) =>
-                                  setRebateChecked((prev) => ({
-                                    ...prev,
-                                    [line.id]: e.target.checked,
-                                  }))
-                                }
-                                className="h-3.5 w-3.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              −{fmtMoney(rowRebate)}
-                            </label>
-                          ) : (
-                            <span className="text-zinc-400">{fmtMoney(0)}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {suggestedPenalty > 0 ? (
-                            <label className="flex items-center justify-end gap-1.5 text-red-700">
-                              <input
-                                type="checkbox"
-                                checked={penaltyChecked[line.id] ?? false}
-                                onChange={(e) =>
-                                  setPenaltyChecked((prev) => ({
-                                    ...prev,
-                                    [line.id]: e.target.checked,
-                                  }))
-                                }
-                                className="h-3.5 w-3.5 rounded border-red-400 text-red-600 focus:ring-red-500"
-                              />
-                              +{fmtMoney(rowPenalty)}
-                            </label>
-                          ) : (
-                            <span className="text-zinc-400">{fmtMoney(0)}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium text-zinc-900">
-                          {fmtMoney(net)}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {liveLines.map(
+                    ({ line, isLate, rebateNotEligible, suggestedRebate, suggestedPenalty }) => {
+                      const remaining = dueOutstanding(line)
+                      const cap = suggestedRebate ?? 0
+                      // isLate/suggestedRebate/suggestedPenalty are all live
+                      // against form.paymentDate (see liveLines above), so
+                      // this badge and the Rebate/Penalty columns beside it
+                      // can never disagree with each other or with what the
+                      // backend will actually allow for that date.
+                      //
+                      // Live per-due checkbox state — not just the cap — so
+                      // Net reflects exactly what's about to be applied, same
+                      // as resolvedLines/bulkAllocated below.
+                      const rowRebate = rebateAmountFor(line.id, suggestedRebate)
+                      const rowPenalty = penaltyAmountFor(line.id, suggestedPenalty)
+                      const net = Math.max(Math.round((remaining - rowRebate) * 100) / 100, 0)
+                      return (
+                        <tr key={line.id}>
+                          <td className="px-3 py-2 text-zinc-700">
+                            Payment {line.lineNumber} · due {fmtDate(line.dueDate)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {isLate ? (
+                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                                Late
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                                On-time
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right text-zinc-500">
+                            {fmtMoney(remaining)}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {rebateNotEligible ? (
+                              <span className="text-[11px] text-zinc-400">not eligible</span>
+                            ) : isLate ? (
+                              <span className="text-[11px] text-zinc-400">forfeited</span>
+                            ) : cap > 0 ? (
+                              <label className="flex items-center justify-end gap-1.5 text-emerald-700">
+                                <input
+                                  type="checkbox"
+                                  checked={rebateChecked[line.id] ?? false}
+                                  onChange={(e) =>
+                                    setRebateChecked((prev) => ({
+                                      ...prev,
+                                      [line.id]: e.target.checked,
+                                    }))
+                                  }
+                                  className="h-3.5 w-3.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                −{fmtMoney(rowRebate)}
+                              </label>
+                            ) : (
+                              <span className="text-zinc-400">{fmtMoney(0)}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {suggestedPenalty > 0 ? (
+                              <label className="flex items-center justify-end gap-1.5 text-red-700">
+                                <input
+                                  type="checkbox"
+                                  checked={penaltyChecked[line.id] ?? false}
+                                  onChange={(e) =>
+                                    setPenaltyChecked((prev) => ({
+                                      ...prev,
+                                      [line.id]: e.target.checked,
+                                    }))
+                                  }
+                                  className="h-3.5 w-3.5 rounded border-red-400 text-red-600 focus:ring-red-500"
+                                />
+                                +{fmtMoney(rowPenalty)}
+                              </label>
+                            ) : (
+                              <span className="text-zinc-400">{fmtMoney(0)}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-zinc-900">
+                            {fmtMoney(net)}
+                          </td>
+                        </tr>
+                      )
+                    }
+                  )}
                 </tbody>
               </table>
             </div>

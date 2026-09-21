@@ -38,6 +38,8 @@ export const createInstallmentAccountSchema = z.object({
   // value, editable for either origin (unlike priceUseTypeId/sellingAgentId,
   // which are POS-checkout-only and never appear in this form).
   insuranceCharge: z.coerce.number().min(0, 'Insurance charge must be 0 or more').optional(),
+  // Scenario 57 — whether this contract earns its PPD at all. Omitted → true.
+  rebateEligible: z.boolean().optional(),
   lastOrNumber: z.string().optional().or(z.literal('')),
   lastOrDate: z.string().optional().or(z.literal('')),
   lastOrAmount: z.coerce.number().min(0).optional(),

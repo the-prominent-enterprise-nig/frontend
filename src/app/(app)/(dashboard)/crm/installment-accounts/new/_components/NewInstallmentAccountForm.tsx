@@ -21,6 +21,7 @@ const initial: CreateInstallmentAccountInput = {
   downPayment: 0,
   termMonths: 12,
   miFactor: 0,
+  rebateEligible: true,
 }
 
 function round2(n: number): number {
@@ -309,6 +310,21 @@ export default function NewInstallmentAccountForm() {
               {errors.insuranceCharge && (
                 <p className="mt-1 text-[12px] text-red-600">{errors.insuranceCharge}</p>
               )}
+            </div>
+            <div className="sm:col-span-3">
+              <label className="flex items-center gap-2 text-[13px] font-medium text-gray-700">
+                <input
+                  id="rebateEligible"
+                  type="checkbox"
+                  checked={form.rebateEligible ?? true}
+                  onChange={(e) => setField('rebateEligible', e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-prominent-purple-600 focus:ring-prominent-purple-500"
+                />
+                Eligible for rebate (PPD)
+              </label>
+              <p className="mt-1 text-[12px] text-gray-400">
+                Unchecked, no rebate can be applied to this account at collection.
+              </p>
             </div>
           </div>
 

@@ -534,7 +534,10 @@ export default function InstallmentAccountDetail({
           <Row label="PNV" value={peso(account.pnv)} />
           <Row label="Total price" value={peso(account.totalPrice)} />
           <Row label="Interest differential" value={peso(account.interestDifferential)} />
-          <Row label="PPD" value={peso(account.ppd)} />
+          <Row
+            label="PPD"
+            value={account.rebateEligible === false ? 'Not eligible' : peso(account.ppd)}
+          />
           <Row
             label="IC (Insurance charge)"
             value={account.insuranceCharge != null ? peso(account.insuranceCharge) : '—'}
@@ -834,6 +837,7 @@ export default function InstallmentAccountDetail({
         accountId={id}
         suggestedAmount={Number(account.monthlyInstallment)}
         suggestedRebate={Number(account.ppd)}
+        rebateEligible={account.rebateEligible !== false}
         monthlyInstallment={Number(account.monthlyInstallment)}
         partialPaymentOnNextDue={Number(account.partialPaymentOnNextDue)}
       />
