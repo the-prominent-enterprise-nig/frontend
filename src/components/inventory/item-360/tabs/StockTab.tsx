@@ -13,6 +13,7 @@ import {
   MONO,
 } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_components/procurementTokens'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
+import { SerialAges } from '@/src/components/inventory/SerialAges'
 import { stockStatusOf } from '@/src/libs/inventory/stock-status'
 
 const GONE_STATUSES = new Set<SerialNumberSummary['status']>(['sold', 'scrapped', 'pulled_out'])
@@ -391,10 +392,19 @@ export default function StockTab({
                                   }}
                                   className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
                                 >
-                                  <span
-                                    className={`${MONO} truncate text-[11.5px] font-medium text-[#3d3d4a]`}
-                                  >
-                                    {serial.serialNumber}
+                                  <span className="flex min-w-0 flex-col">
+                                    <span
+                                      className={`${MONO} truncate text-[11.5px] font-medium text-[#3d3d4a]`}
+                                    >
+                                      {serial.serialNumber}
+                                    </span>
+                                    <span className="text-[10.5px] text-[#8b8b9b]">
+                                      <SerialAges
+                                        firstReceivedAt={serial.firstReceivedAt}
+                                        locationSince={serial.locationSince}
+                                        inline
+                                      />
+                                    </span>
                                   </span>
                                   {!selectable && (
                                     <span className="shrink-0 rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">

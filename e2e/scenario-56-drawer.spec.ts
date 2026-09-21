@@ -24,3 +24,17 @@ test.describe('Scenario 56 Part 4 — Item 360 drawer', () => {
     await expect(drawer.getByRole('combobox').first()).toBeVisible({ timeout: 20_000 })
   })
 })
+
+// Scenario 56 Part 5 — serial ages: RR age (first received) and branch age
+// (arrived at its current location). Date maths is covered server-side.
+test.describe('Scenario 56 Part 5 — serial ages', () => {
+  test('Serial Numbers table shows an Age column with RR and branch ages', async ({ page }) => {
+    await gotoReady(page, '/inventory/stock?tab=serials')
+    await expect(page.getByRole('columnheader', { name: 'Age', exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    const firstRow = page.locator('tbody tr').first()
+    await expect(firstRow).toContainText('RR')
+    await expect(firstRow).toContainText('Branch')
+  })
+})

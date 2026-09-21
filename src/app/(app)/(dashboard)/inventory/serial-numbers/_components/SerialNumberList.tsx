@@ -24,6 +24,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatShortDate } from '@/src/libs/format/date'
+import { SerialAges } from '@/src/components/inventory/SerialAges'
 import { originLabel } from '@/src/libs/format/serial-provenance'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
@@ -513,6 +514,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Receipt</th>
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Origin</th>
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">Date In</th>
+                        <th className="px-4 py-[9px] text-left hidden md:table-cell">Age</th>
                         {caravanView && <th className="px-4 py-[9px] text-left">Home Branch</th>}
                         {caravanView && <th className="px-4 py-[9px] text-left">Event</th>}
                         <th className="px-4 py-[9px] text-center">Status</th>
@@ -601,6 +603,12 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                             {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
                               ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
                               : '—'}
+                          </td>
+                          <td className="px-4 py-[11px] text-[13px] text-[#5b5b6b] hidden md:table-cell">
+                            <SerialAges
+                              firstReceivedAt={serial.firstReceivedAt}
+                              locationSince={serial.locationSince}
+                            />
                           </td>
                           {caravanView && (
                             <td className="px-4 py-[11px]">

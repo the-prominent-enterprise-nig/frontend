@@ -226,6 +226,9 @@ export const SerialNumberSummarySchema = z.object({
   // Set while an open transfer (requested through partially received)
   // already claims this unit.
   openTransfer: z.object({ transferNumber: z.string() }).nullable().optional(),
+  // Scenario 56 — RR age (first received) and branch age (arrived here).
+  firstReceivedAt: z.string().nullable().optional(),
+  locationSince: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })
