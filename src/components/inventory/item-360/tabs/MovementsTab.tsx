@@ -2,6 +2,7 @@
 
 import { X, RefreshCw, Activity } from 'lucide-react'
 import { useItemLedger } from '../hooks/useItemLedger'
+import OpenTransfersSection from './OpenTransfersSection'
 import type { ItemLedgerEntry } from '@/src/schema/inventory/items/ledger'
 import {
   PLEX,
@@ -75,9 +76,10 @@ function sourceHref(entry: ItemLedgerEntry): string | null {
 type Props = {
   itemId: string
   locations?: string[]
+  region?: 'panay' | 'negros'
 }
 
-export default function MovementsTab({ itemId, locations }: Props) {
+export default function MovementsTab({ itemId, locations, region }: Props) {
   const {
     currentBalances,
     entries,
@@ -95,7 +97,7 @@ export default function MovementsTab({ itemId, locations }: Props) {
     endDate,
     setEndDate,
     resetFilters,
-  } = useItemLedger(itemId, locations)
+  } = useItemLedger(itemId, locations, { region })
 
   const hasFilters = !!warehouseId || !!transactionType || !!startDate || !!endDate
   const totalPages = meta?.lastPage ?? 1
@@ -103,6 +105,9 @@ export default function MovementsTab({ itemId, locations }: Props) {
 
   return (
     <div className={`${PLEX} flex flex-col gap-4 p-5`}>
+      {/* Scenario 56 — transfers not yet in the ledger below */}
+      <OpenTransfersSection itemId={itemId} />
+
       {/* Current stock summary */}
       {currentBalances.length > 0 && (
         <div className="space-y-1">

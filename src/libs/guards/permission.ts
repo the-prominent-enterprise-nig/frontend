@@ -112,6 +112,13 @@ export function can(user: SessionUser, permission: Permission): boolean {
 }
 
 const ROLE_MODULE_ACCESS: Record<string, string[]> = {
+  // Cashier reaches POS only. Creating a customer profile from scratch —
+  // for a credit application or a sale with no existing profile — happens
+  // through POS's own Customers screen (/pos/customers, pos:customers:*),
+  // not CRM's. Both write to the same Customer table via the same
+  // CustomerService, so it is the permission surface that differs, not the
+  // data (2026-09-19 review request, replacing the 'crm' entry added
+  // 2026-09-18).
   cashier: ['pos'],
   'pos-manager': ['pos'],
   pos: ['pos'],

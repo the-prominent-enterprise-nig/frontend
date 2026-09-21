@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Pencil, Trash2, ChevronDown, Layers } from 'lucide-react'
+import { Archive, CheckCircle2, Layers, PauseCircle, Pencil, Trash2 } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
+import type { StockBalance } from '@/src/schema/inventory/goods-receiving'
+import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
+import { stockStatusOf } from '@/src/libs/inventory/stock-status'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
@@ -48,20 +50,42 @@ const APPROVAL_STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-red-100 text-red-700',
 }
 
+const LIFECYCLE_ACTIONS = [
+  { lifecycle: 'active', label: 'Mark active', icon: CheckCircle2 },
+  { lifecycle: 'discontinued', label: 'Discontinue', icon: PauseCircle },
+  { lifecycle: 'archived', label: 'Archive', icon: Archive },
+] as const
+
+/** The Status column's old job, as a tag under the name: approval state
+ * while an item is still in review, then lifecycle once it isn't active.
+ * A normal approved, active item shows nothing. */
+function ItemStateTag({ item }: { item: ItemSummary }): React.ReactElement | null {
+  if (item.approvalStatus && item.approvalStatus !== 'approved') {
+    return <ApprovalStatusBadge item={item} />
+  }
+  const lifecycle = item.lifecycle ?? 'active'
+  if (lifecycle === 'active') return null
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${LIFECYCLE_COLORS[lifecycle] ?? LIFECYCLE_COLORS.active}`}
+    >
+      {lifecycle}
+    </span>
+  )
+}
+
 function ApprovalStatusBadge({ item }: { item: ItemSummary }) {
   const status = item.approvalStatus
   if (!status || status === 'approved') return null
   return (
     <span
       title={status === 'rejected' ? (item.rejectedReason ?? undefined) : undefined}
-      className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${APPROVAL_STATUS_COLORS[status] ?? 'bg-zinc-100 text-zinc-600'}`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${APPROVAL_STATUS_COLORS[status] ?? 'bg-zinc-100 text-zinc-600'}`}
     >
       {APPROVAL_STATUS_LABELS[status] ?? status}
     </span>
   )
 }
-
-type DropdownPos = { top: number; right: number }
 
 type Props = {
   items: ItemSummary[]
@@ -84,75 +108,28 @@ type Props = {
   onRejectAccounting: (item: ItemSummary) => void
   onApproveItem: (item: ItemSummary) => void
   onRejectItem: (item: ItemSummary) => void
+  /** Scenario 56 — per-item stock roll-up; the Stock column is hidden when absent. */
+  stockByItem?: Map<string, StockBalance>
 }
 
-function LifecycleDropdown({
+/** A service has no stock; an item with no balance row anywhere has never
+ * been stocked, which reads as Out of Stock. */
+function ItemStockCell({
   item,
-  onLifecycleChange,
+  balance,
 }: {
   item: ItemSummary
-  onLifecycleChange: (id: string, lifecycle: 'active' | 'discontinued' | 'archived') => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState<DropdownPos | null>(null)
-  const btnRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    function handleMouseDown(e: MouseEvent) {
-      if (btnRef.current?.contains(e.target as Node) || menuRef.current?.contains(e.target as Node))
-        return
-      setOpen(false)
-    }
-    document.addEventListener('mousedown', handleMouseDown)
-    return () => document.removeEventListener('mousedown', handleMouseDown)
-  }, [open])
-
-  function handleOpen() {
-    if (!btnRef.current) return
-    const rect = btnRef.current.getBoundingClientRect()
-    setPos({
-      top: rect.bottom + window.scrollY + 4,
-      right: window.innerWidth - rect.right,
-    })
-    setOpen(true)
-  }
-
+  balance?: StockBalance
+}): React.ReactElement {
+  if (item.isService) return <span className="text-zinc-400">—</span>
+  if (!balance) return <StockStatusBadge status="out" size="sm" />
   return (
-    <div className="relative inline-block">
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={handleOpen}
-        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${LIFECYCLE_COLORS[item.lifecycle ?? 'active'] ?? LIFECYCLE_COLORS.active}`}
-      >
-        {item.lifecycle ?? 'active'}
-        <ChevronDown className="h-3 w-3" />
-      </button>
-
-      {open && pos && (
-        <div
-          ref={menuRef}
-          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
-          className="w-36 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
-        >
-          {(['active', 'discontinued', 'archived'] as const).map((lc) => (
-            <button
-              key={lc}
-              type="button"
-              onClick={() => {
-                onLifecycleChange(item.id, lc)
-                setOpen(false)
-              }}
-              className="w-full px-3 py-1.5 text-left text-sm capitalize text-zinc-700 hover:bg-zinc-50"
-            >
-              {lc}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <StockStatusBadge
+      status={stockStatusOf(balance)}
+      inTransitQty={balance.inTransitQty}
+      size="sm"
+      stacked
+    />
   )
 }
 
@@ -176,6 +153,7 @@ export default function ItemMasterTable({
   onRejectAccounting,
   onApproveItem,
   onRejectItem,
+  stockByItem,
 }: Props) {
   const { pushPanel } = useUIShell()
   const showActionsColumn =
@@ -184,7 +162,8 @@ export default function ItemMasterTable({
     !!onViewBundle ||
     canSubmitReview ||
     canConfirmAccounting ||
-    canApproveItem
+    canApproveItem ||
+    canManageLifecycle
 
   if (isLoading) {
     return (
@@ -232,9 +211,11 @@ export default function ItemMasterTable({
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Price
               </th>
-              <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Status
-              </th>
+              {stockByItem && (
+                <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Stock
+                </th>
+              )}
               {showActionsColumn && (
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   Actions
@@ -269,6 +250,7 @@ export default function ItemMasterTable({
                         Service
                       </span>
                     )}
+                    <ItemStateTag item={item} />
                     {(item._count?.serialNumbers ?? 0) > 0 && (
                       <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
                         {item._count?.serialNumbers} unit
@@ -282,24 +264,11 @@ export default function ItemMasterTable({
                 <td className="px-4 py-3 text-right text-zinc-700">
                   {item.sellingPrice != null ? formatCurrency(item.sellingPrice) : '—'}
                 </td>
-                <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                  {/* Scenario 16: lifecycle (active/discontinued/archived) is a
-                      post-publish concept — showing it alongside "Pending
-                      Approval" reads as contradictory, so a governed item
-                      (anything not yet approved) shows only its approval
-                      status here; lifecycle only appears once approved. */}
-                  {item.approvalStatus && item.approvalStatus !== 'approved' ? (
-                    <ApprovalStatusBadge item={item} />
-                  ) : canManageLifecycle ? (
-                    <LifecycleDropdown item={item} onLifecycleChange={onLifecycleChange} />
-                  ) : (
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${LIFECYCLE_COLORS[item.lifecycle ?? 'active'] ?? LIFECYCLE_COLORS.active}`}
-                    >
-                      {item.lifecycle ?? 'active'}
-                    </span>
-                  )}
-                </td>
+                {stockByItem && (
+                  <td className="px-4 py-3 text-center">
+                    <ItemStockCell item={item} balance={stockByItem.get(item.id)} />
+                  </td>
+                )}
                 {showActionsColumn && (
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
@@ -363,6 +332,18 @@ export default function ItemMasterTable({
                             : []),
                           ...(canUpdate
                             ? [{ label: 'Edit', icon: Pencil, onClick: () => onEdit(item) }]
+                            : []),
+                          // Lifecycle is a post-approval concept (Scenario 16),
+                          // so only offered once the item is approved.
+                          ...(canManageLifecycle &&
+                          (!item.approvalStatus || item.approvalStatus === 'approved')
+                            ? LIFECYCLE_ACTIONS.filter(
+                                (a) => a.lifecycle !== (item.lifecycle ?? 'active')
+                              ).map((a) => ({
+                                label: a.label,
+                                icon: a.icon,
+                                onClick: () => onLifecycleChange(item.id, a.lifecycle),
+                              }))
                             : []),
                           ...(canDelete
                             ? [

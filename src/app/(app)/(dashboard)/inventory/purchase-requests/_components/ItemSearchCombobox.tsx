@@ -6,6 +6,7 @@ import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/g
 export type ItemSearchMeta = {
   costPrice: number | null
   isSerialTracked: boolean
+  isBatchTracked: boolean
 }
 
 type Props = {
@@ -55,6 +56,7 @@ export function ItemSearchCombobox({
           meta: {
             costPrice: item.costPrice ?? null,
             isSerialTracked: item.isSerialTracked ?? false,
+            isBatchTracked: item.isBatchTracked ?? false,
           } satisfies ItemSearchMeta,
         }))
       }}

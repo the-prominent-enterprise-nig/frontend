@@ -49,6 +49,8 @@ export function useItemMaster() {
   )
   const [approvalStatus, setApprovalStatus] = useState<ItemApprovalStatus | undefined>(undefined)
   const [primaryCategoryId, setPrimaryCategoryId] = useState<string | undefined>(undefined)
+  // Scenario 56 — Operations: items with stock on hand in that region.
+  const [region, setRegion] = useState<'panay' | 'negros' | undefined>(undefined)
   const [sortBy, setSortBy] = useState<'name' | 'sku' | 'createdAt' | 'costPrice' | 'sellingPrice'>(
     'name'
   )
@@ -68,10 +70,11 @@ export function useItemMaster() {
       lifecycle,
       approvalStatus,
       primaryCategoryId,
+      region,
       sortBy,
       sortOrder,
     }),
-    [page, limit, search, lifecycle, approvalStatus, primaryCategoryId, sortBy, sortOrder]
+    [page, limit, search, lifecycle, approvalStatus, primaryCategoryId, region, sortBy, sortOrder]
   )
 
   const itemsQuery = useQuery({
@@ -338,6 +341,7 @@ export function useItemMaster() {
     setLifecycle(undefined)
     setApprovalStatus(undefined)
     setPrimaryCategoryId(undefined)
+    setRegion(undefined)
     setSortBy('name')
     setSortOrder('asc')
     setPage(1)
@@ -382,6 +386,11 @@ export function useItemMaster() {
     },
     setPrimaryCategoryId: (val: string | undefined) => {
       setPrimaryCategoryId(val)
+      setPage(1)
+    },
+    region,
+    setRegion: (val: 'panay' | 'negros' | undefined) => {
+      setRegion(val)
       setPage(1)
     },
     sortBy,

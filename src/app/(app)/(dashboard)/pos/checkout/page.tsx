@@ -1,8 +1,9 @@
 'use client'
 
-import { Fragment, useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import {
   Search,
+  CreditCard,
   Plus,
   Minus,
   X,
@@ -30,11 +31,7 @@ import {
   List,
   Printer,
   FileSignature,
-  Trash2,
-  Paperclip,
 } from 'lucide-react'
-import PhoneInput from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import {
   computePricingTotals,
   resolveLineTaxRate,
@@ -42,20 +39,13 @@ import {
   effectiveUnitPrice,
   lineTaxAmount,
 } from './_utils/calculations'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import CustomerExtraFields, {
-  type CustomerExtraFieldsValues,
-} from '@/src/components/crm/CustomerExtraFields'
-import { ID_TYPE_OPTIONS, type CoMakerFormValues } from '@/src/schema/crm/customer'
-import type { DuplicateCheckResult } from '@/src/schema/crm/types'
-import { customersApi } from '@/src/libs/api/crm'
-import { uploadIdDocument } from '@/src/app/(app)/(dashboard)/crm/customers/_actions/upload-id-document'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
   itemLookup,
@@ -64,13 +54,14 @@ import {
   validatePromoCode,
   parkSale,
   searchCustomers,
-  createWalkInCustomer,
+  getCustomerById,
   getLoyaltyByCustomer,
   earnPoints,
   redeemPoints,
   getCustomerTransactions,
   getActiveLoyaltyProgram,
   getActivePosConfig,
+  getSellingAgents,
   validateManagerByPin,
   syncTransactions,
   updateSessionDisplay,
@@ -93,6 +84,8 @@ import {
   type SerialNumberRecord,
   type PosPriceUseType,
 } from '../_actions/pos-actions'
+import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
@@ -103,6 +96,11 @@ import PriceUseSelector from './_components/PriceUseSelector'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
+import {
+  readCheckoutHandoff,
+  writeCheckoutHandoff,
+  clearCheckoutHandoff,
+} from '@/src/libs/pos/checkout-handoff'
 import type {
   PosPaymentMethod,
   PosCardTxnMode,
@@ -328,6 +326,7 @@ const DECIMAL_CODES = new Set([
 
 export default function CheckoutPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { branchId: switcherBranchId } = usePosBranchContext()
   const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
     status: 'open',
@@ -361,6 +360,13 @@ export default function CheckoutPage() {
   // Auth session branchId — Branch Managers are scoped to their assigned branch,
   // which is the same branch they can configure via "My Branch" settings.
   const [authBranchId, setAuthBranchId] = useState<string | null>(null)
+  // Scenario 57 — the selling agent tagged on this sale. Restored after
+  // 1b82138 removed it: PosTransaction.sellingAgentId still drives
+  // commission and the Salesperson row on an installment ledger, so the
+  // field was the only part that had gone. Optional, as it was before —
+  // a walk-in sale need not have an agent behind it.
+  const [sellingAgentId, setSellingAgentId] = useState('')
+  const [sellingAgents, setSellingAgents] = useState<{ id: string; name: string }[]>([])
   const [isBranchManager, setIsBranchManager] = useState(false)
   // Whether this login already holds the approval authority an installment
   // sale would otherwise need to ask someone else for (Business Owner or
@@ -401,6 +407,14 @@ export default function CheckoutPage() {
   }, [openSessions, sessionId, isBranchManager, authBranchId])
 
   // Cart
+  useEffect(() => {
+    getSellingAgents().then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setSellingAgents(res.data.map((a) => ({ id: a.id, name: a.name })))
+      }
+    })
+  }, [])
+
   const [cart, setCart] = useState<CartLine[]>([])
 
   // Item search
@@ -468,7 +482,6 @@ export default function CheckoutPage() {
   const [customerResults, setCustomerResults] = useState<PosCustomer[]>([])
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
   const [searchingCustomers, setSearchingCustomers] = useState(false)
-  const [showNewCustomerModal, setShowNewCustomerModal] = useState(false)
   const customerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Tax exempt
@@ -586,6 +599,12 @@ export default function CheckoutPage() {
       applicationNumber: string
       requestedAmount: number
       items: { itemName: string }[]
+      // The terms the customer agreed to and the owner approved. Carried so
+      // selecting an application can fill the cart's own term/down payment
+      // in, rather than the cashier re-keying figures that were already
+      // agreed — and possibly keying different ones.
+      financingTermId?: string | null
+      downPayment?: number | null
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
@@ -906,16 +925,74 @@ export default function CheckoutPage() {
     )
   }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
 
-  // Resume a parked sale or QMS tab stored in localStorage
+  // Restores a sale that was handed here DELIBERATELY: resumed from Parked
+  // Sales, carried across by the credit-application detour, or a QMS tab.
+  //
+  // Wandering off the till and back does not restore anything — that cart
+  // is gone, which is the behaviour the client asked to return to
+  // (2026-09-19). Automatic persistence (a scheduled parked row, a pagehide
+  // stash, a cart reappearing on its own) was removed with it: three
+  // separate lost-customer bugs came out of mechanisms firing without the
+  // cashier asking for them. Anything that survives a navigation now does
+  // so because someone pressed a button.
+  //
+  // ONE effect owns this. It used to be two — a stash reader and a
+  // ?customerId= reader — which raced: the stash resolved its customer
+  // asynchronously and could land AFTER the query string had attached a
+  // freshly created one, silently replacing it. The two also disagreed
+  // about what a customer is: the query-string path attached a bare
+  // {id, name} stub with no code, phone or loyalty context.
+  //
+  // Precedence is explicit: a customer named in the URL was just created
+  // for THIS sale, so it wins over whatever the stash remembers. Either way
+  // the full record is fetched, so both routes end up with the same object.
+  const handoffConsumed = useRef(false)
   useEffect(() => {
-    const raw = localStorage.getItem('pos_resumed_cart')
-    if (raw) {
-      try {
-        const data = JSON.parse(raw) as { lines?: CartLine[] }
-        if (Array.isArray(data.lines) && data.lines.length > 0) setCart(data.lines)
-      } catch {}
-      localStorage.removeItem('pos_resumed_cart')
+    // Waits for the open-session list: a handoff is only honoured if the
+    // session it was rung up under is still open, so a fresh shift never
+    // inherits the last cashier's cart. Until the list arrives there is no
+    // way to tell, so nothing is consumed yet.
+    if (sessionsLoading) return
+    if (handoffConsumed.current) return
+    handoffConsumed.current = true
+
+    const handoff = readCheckoutHandoff<CartLine>()
+    // A handoff with no sessionId predates this rule (or was written with
+    // no session selected) — honoured, since discarding it would lose a
+    // cart for no stated reason.
+    const belongsToAnOpenSession =
+      !handoff?.sessionId || openSessions.some((os) => os.id === handoff.sessionId)
+    if (handoff && !belongsToAnOpenSession) {
+      clearCheckoutHandoff()
     }
+    if (handoff && belongsToAnOpenSession) {
+      if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
+        setCart(handoff.lines)
+      }
+      clearCheckoutHandoff()
+    }
+
+    const createdCustomerId = searchParams.get('customerId')
+    const customerId = createdCustomerId ?? handoff?.customerId
+    if (customerId) {
+      getCustomerById(customerId).then((res) => {
+        if (res.success && res.data) {
+          void selectCustomer(res.data)
+        } else if (createdCustomerId) {
+          // The record exists — it was just saved — so a failed lookup is a
+          // transport problem, not a missing customer. Fall back to the
+          // name the form handed over so the sale still has someone on it
+          // rather than silently losing them.
+          void selectCustomer({
+            id: createdCustomerId,
+            name: searchParams.get('customerName') || 'Customer',
+          })
+        }
+      })
+    }
+    // Clear the query string so a refresh doesn't re-attach.
+    if (createdCustomerId) router.replace('/pos/checkout')
+
     const tabMeta = localStorage.getItem(POS_FROM_TAB_KEY)
     if (tabMeta) {
       try {
@@ -928,7 +1005,11 @@ export default function CheckoutPage() {
         setFromTab(meta)
       } catch {}
     }
-  }, [])
+    // Runs once, on the first render where the session list is known —
+    // handoffConsumed guards re-entry. searchParams/router are read once,
+    // on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsLoading, openSessions])
 
   // Network detection
   useEffect(() => {
@@ -1350,18 +1431,75 @@ export default function CheckoutPage() {
     )
     .join('|')
 
+  // Approval happens in someone ELSE's session — only Business Owner holds
+  // pos:application:approve — so "approve in another tab, come back to the
+  // till" is the normal path, not an edge case. Neither dependency below
+  // changes on that return trip, so the cart kept showing the pre-approval
+  // (empty) list: no application to apply, no down payment on the line, and
+  // therefore nothing to collect, which reaches the cashier as a payment
+  // box that will not accept a number. The only way out was re-entering the
+  // whole cart, which changed the deps and refetched by accident.
+  //
+  // Bumping this on focus/visibility re-runs the fetch below with the same
+  // context, so a freshly-approved application is picked up on return.
+  const [creditAppsRefreshNonce, setCreditAppsRefreshNonce] = useState(0)
+
+  // Focus alone only covers a cashier who LEAVES and returns. One who stays
+  // on this screen while the owner approves from another machine never fires
+  // a focus event, so the list would sit stale indefinitely.
+  //
+  // CreditApplicationService.notifyResolved() already pushes
+  // 'credit_application_resolved' to the user who submitted the application
+  // — i.e. this cashier — so the event needed is already on the wire. Listen
+  // for it rather than polling: the refresh lands the moment the decision is
+  // made, and a till that is simply waiting makes no requests at all.
+  useNotificationsSocket(true, {
+    onNotificationCreated: (payload) => {
+      if (payload.eventType === 'credit_application_resolved') {
+        setCreditAppsRefreshNonce((v) => v + 1)
+      }
+    },
+  })
+
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState === 'visible') setCreditAppsRefreshNonce((v) => v + 1)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [])
+
+  // Tells a real context change (different customer, different line count)
+  // from a plain refresh. Only the former may clear the cashier's choice —
+  // wiping it on every tab-focus would be its own bug.
+  const creditAppsContextKey = `${selectedCustomer?.id ?? ''}:${installmentCartLines.length}`
+  const lastCreditAppsContextRef = useRef<string | null>(null)
+  // This fetch now fires on focus and on a socket event, not just on a cart
+  // change, so two can genuinely be in flight at once — alt-tab twice and
+  // the first response can land after the second and overwrite it, leaving a
+  // stale list that may auto-select an application already consumed
+  // elsewhere. Same requestIdRef guard usePriceResolution.ts uses.
+  const creditAppsRequestIdRef = useRef(0)
+
   // Scenario 17 Part 6 — reload this customer's approved, unused credit
   // applications whenever the customer or cart's installment-line count
   // changes; a stale selection from a previously-selected customer must
   // never carry over. One credit application covers every installment line
   // in the cart (the backend gate runs once per transaction, not per line).
   useEffect(() => {
-    setCreditApplicationId('')
+    const contextChanged = lastCreditAppsContextRef.current !== creditAppsContextKey
+    lastCreditAppsContextRef.current = creditAppsContextKey
+    if (contextChanged) setCreditApplicationId('')
     if (installmentCartLines.length === 0 || !selectedCustomer) {
       setApprovedCreditApplications([])
       return
     }
     setCreditApplicationsLoading(true)
+    const requestId = ++creditAppsRequestIdRef.current
     getCreditApplications({
       checkoutEligible: true, // Scenario 29 POS-02 — approved or partially_approved
       applicantCustomerId: selectedCustomer.id,
@@ -1369,35 +1507,81 @@ export default function CheckoutPage() {
       limit: 50,
     })
       .then((res) => {
-        setApprovedCreditApplications(
-          (res.data?.data ?? [])
-            .map((a) => {
-              // Only the approved items are ever usable — a
-              // partially_approved application's declined items are never
-              // includable, so neither the displayed scope nor the total
-              // should count them.
-              const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
-              return {
-                id: a.id,
-                applicationNumber: a.applicationNumber,
-                // requestedAmount comes off the wire as a Prisma Decimal,
-                // which JSON-serializes to a string — summing it unconverted
-                // does string concatenation (0 + "8800" = "08800") instead
-                // of addition.
-                requestedAmount: approvedOnly.reduce(
-                  (sum, i) => sum + Number(i.requestedAmount),
-                  0
-                ),
-                items: approvedOnly.map((i) => ({
-                  itemName: i.item?.name ?? '—',
-                })),
-              }
-            })
-            .filter((a) => a.items.length > 0)
-        )
+        // A newer request superseded this one — drop the stale response.
+        if (requestId !== creditAppsRequestIdRef.current) return
+        const list = (res.data?.data ?? [])
+          .map((a) => {
+            // Only the approved items are ever usable — a
+            // partially_approved application's declined items are never
+            // includable, so neither the displayed scope nor the total
+            // should count them.
+            const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
+            return {
+              id: a.id,
+              applicationNumber: a.applicationNumber,
+              // requestedAmount comes off the wire as a Prisma Decimal,
+              // which JSON-serializes to a string — summing it unconverted
+              // does string concatenation (0 + "8800" = "08800") instead
+              // of addition.
+              requestedAmount: approvedOnly.reduce((sum, i) => sum + Number(i.requestedAmount), 0),
+              items: approvedOnly.map((i) => ({
+                itemName: i.item?.name ?? '—',
+              })),
+              financingTermId: a.financingTermId ?? null,
+              downPayment: a.downPayment != null ? Number(a.downPayment) : null,
+            }
+          })
+          .filter((a) => a.items.length > 0)
+
+        setApprovedCreditApplications(list)
+
+        // One approved application and one cart waiting for it: there is
+        // nothing to choose between, so choosing is just a step the cashier
+        // can forget. Picking it also fills the term and down payment in,
+        // which is the whole point of having approved them.
+        //
+        // Two or more is a real choice — which application this sale should
+        // consume changes what gets marked used — so that still asks.
+        if (list.length === 1) {
+          setCreditApplicationId(list[0].id)
+          applyCreditApplicationTerms(list[0].id, list)
+        }
       })
-      .finally(() => setCreditApplicationsLoading(false))
-  }, [installmentCartLines.length, selectedCustomer])
+      .finally(() => {
+        if (requestId !== creditAppsRequestIdRef.current) return
+        setCreditApplicationsLoading(false)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installmentCartLines.length, selectedCustomer, creditAppsRefreshNonce])
+
+  // applyCreditApplicationTerms() bails on an empty cart (`lines.length === 0`),
+  // and on the way BACK to this page the applications fetch above resolves
+  // before the cart has been restored. The auto-select still ran, so the
+  // application showed as chosen while its down payment was never apportioned
+  // — a cart that looks complete but collects nothing, which reaches the
+  // cashier as "Nothing to collect at checkout for this cart" and a payment
+  // box that will not take a number.
+  //
+  // Re-apply once the lines actually exist. Keyed on application + line count
+  // so it runs once per real change rather than on every render, and skipped
+  // when a down payment is already present so a figure the cashier typed is
+  // never overwritten.
+  const appliedTermsKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!creditApplicationId || inhouseInstallmentCartLines.length === 0) return
+    const key = `${creditApplicationId}:${inhouseInstallmentCartLines.length}`
+    if (appliedTermsKeyRef.current === key) return
+    const missingDownPayment = inhouseInstallmentCartLines.some(
+      (l) => !(parseFloat(l.downPaymentInput ?? '') > 0)
+    )
+    if (!missingDownPayment) {
+      appliedTermsKeyRef.current = key
+      return
+    }
+    appliedTermsKeyRef.current = key
+    applyCreditApplicationTerms(creditApplicationId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creditApplicationId, inhouseInstallmentCartLines.length, approvedCreditApplications])
 
   useEffect(() => {
     for (const line of installmentCartLines) {
@@ -1502,6 +1686,104 @@ export default function CheckoutPage() {
       if (programRes.success && programRes.data) setLoyaltyProgram(programRes.data)
     }
     if (histRes.success) setCustomerHistory((histRes.data ?? []).slice(0, 5))
+  }
+
+  // "New Customer" leaves checkout for POS's own create form
+  // (2026-09-18 client request) instead of the old in-page modal, so walk-ins
+  // and CRM-added customers go through one form and one endpoint. The cart is
+  // plain React state and this is a real route change, so it has to be stashed
+  // first or the in-progress sale is silently lost — reusing the same
+  // localStorage handoff the parked-sales page already resumes through
+  // (see the rehydrate effect above).
+  /**
+   * Creating a customer starts a new sale, so the till is left empty rather
+   * than carrying the old cart through the detour (client decision,
+   * 2026-09-19). Anything already rung up is PARKED first — cleared from
+   * the screen, never discarded — so it can be picked back up from Parked
+   * Sales by this cashier or anyone else at the branch.
+   *
+   * This deliberately replaces the old stash-and-restore handoff. That
+   * carried the cart and the customer across in localStorage, and the
+   * overlap between it, the ?customerId= return and the parked row is what
+   * produced three separate lost-customer bugs. One rule now: leave the
+   * till clean, put the sale somewhere durable, come back to a fresh
+   * screen.
+   */
+  async function goToCreateCustomer() {
+    // Any previous handoff is stale the moment we decide not to carry one.
+    clearCheckoutHandoff()
+
+    const session = openSessions.find((os) => os.id === sessionId)
+    if (cart.length > 0 && session) {
+      const res = await parkSale({
+        sessionId: session.id,
+        terminalId: session.terminalId,
+        label: `Held to add a customer — ${selectedCustomer?.name?.trim() || 'Walk-in'}`,
+        cartData: {
+          lines: cart,
+          customerId: selectedCustomer?.id,
+          promoCodeId: promoResult?.promoCode?.id,
+        },
+      })
+      if (!res.success) {
+        // Refuse to navigate rather than silently drop the sale: nothing
+        // else is holding it, so leaving would destroy it.
+        setError(
+          res.error ?? 'Could not hold this sale. Complete or park it before adding a customer.'
+        )
+        return
+      }
+      resetSale()
+    } else if (cart.length > 0 && !session) {
+      setError('Select a session before adding a customer, so the current sale can be held.')
+      return
+    }
+
+    router.push('/pos/customers/new?returnTo=/pos/checkout')
+  }
+
+  /**
+   * Raises a credit application for the cart that's already on screen.
+   *
+   * An installment sale needs an APPROVED application, and approval is
+   * Business Owner only — so this cannot make the sale completable in one
+   * visit. What it removes is the retyping: the cashier used to leave
+   * checkout, find the customer again, and re-enter every item by hand.
+   *
+   * Reuses the two handoffs that already exist rather than inventing a
+   * third: the cart goes through pos_resumed_cart (same as "New Customer"),
+   * and the application form's own draft key carries the customer and the
+   * installment lines across, labels included, so its item pickers render
+   * filled in rather than blank.
+   */
+  function goToRaiseCreditApplication() {
+    if (cart.length > 0) {
+      // Unlike "New Customer", this detour DOES carry the cart: the
+      // application is raised for these exact items, so leaving them behind
+      // would mean re-entering every one of them on the form. Stamped with
+      // the session so a later shift can't inherit it.
+      writeCheckoutHandoff({
+        lines: cart,
+        customerId: selectedCustomer?.id,
+        sessionId: sessionId || undefined,
+      })
+    }
+    localStorage.setItem(
+      'credit_application_draft',
+      JSON.stringify({
+        applicantCustomerId: selectedCustomer?.id,
+        items: inhouseInstallmentCartLines.map((l) => ({
+          itemId: l.itemId,
+          itemLabel: l.itemName,
+          estimatedPrice: l.unitPrice,
+        })),
+      })
+    )
+    const params = new URLSearchParams({
+      applicantCustomerId: selectedCustomer?.id ?? '',
+      applicantName: selectedCustomer?.name ?? '',
+    })
+    router.push(`/pos/credit-applications/new?${params.toString()}`)
   }
 
   function clearCustomer() {
@@ -1685,6 +1967,88 @@ export default function CheckoutPage() {
           installmentProvider: provider,
           financingTermId: undefined,
           downPaymentInput: l.downPaymentInput ?? Math.ceil(0.1 * lineAmount).toFixed(2),
+        }
+      })
+    )
+  }
+
+  /**
+   * Copies an approved application's agreed terms onto the cart.
+   *
+   * Without this the cashier re-keys the down payment and term at checkout,
+   * with the line defaulting to a generic 10% — so the figures actually
+   * charged could differ from the ones the customer agreed to and the owner
+   * approved, and nothing would object. The application is the record of
+   * that agreement, so selecting one should carry it.
+   *
+   * An application holds ONE term and ONE total down payment for the whole
+   * bundle, while the cart tracks them per line, so a multi-item bundle
+   * apportions the down payment pro-rata by line value — with any rounding
+   * remainder pushed onto the last line so the parts still sum to the
+   * approved total.
+   */
+  function applyCreditApplicationTerms(
+    applicationId: string,
+    /** The list to look the application up in. The auto-apply below calls
+     * this from inside the fetch that produced the list, before React has
+     * committed it to state, so it has to pass its own copy. */
+    from?: typeof approvedCreditApplications
+  ) {
+    const application = (from ?? approvedCreditApplications).find((a) => a.id === applicationId)
+    if (!application) return
+    const lines = inhouseInstallmentCartLines
+    if (lines.length === 0) return
+
+    // Apportion on the SAME amount the submit check measures against —
+    // effectiveUnitPrice × quantity, tax included. Splitting on the raw
+    // unitPrice instead left every share about 12% short under exclusive
+    // pricing, so a sale built from an approved application was refused
+    // with "down payment must be at least 10% of its sale amount".
+    const lineAmount = (l: CartLine) =>
+      effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
+    // Whole centavos, rounded UP, so a fractional 10% can't land a hair
+    // under the floor.
+    const lineFloor = (l: CartLine) => Math.ceil(lineAmount(l) * 0.1 * 100) / 100
+    const total = lines.reduce((sum, l) => sum + lineAmount(l), 0)
+    const approvedDp = application.downPayment ?? null
+
+    let allocated = 0
+    const dpByLine = new Map<string, string>()
+    if (approvedDp != null && total > 0) {
+      lines.forEach((l, idx) => {
+        const isLast = idx === lines.length - 1
+        const rawShare = isLast
+          ? approvedDp - allocated
+          : Math.round(approvedDp * (lineAmount(l) / total) * 100) / 100
+        allocated += rawShare
+        // The approved down payment is a MINIMUM for the application as a
+        // whole, not a per-line cap. A line whose share falls under its own
+        // floor is raised to it — collecting a little more up front always
+        // completes, collecting less cannot. This is also what absorbs the
+        // quantity gap: an application carries no quantity, so ringing two
+        // units doubles the line while the approved figure covered one.
+        const share = Math.max(rawShare, lineFloor(l))
+        dpByLine.set(l.lineId, share.toFixed(2))
+      })
+    }
+
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!dpByLine.has(l.lineId) && !application.financingTermId) return l
+        if (!lines.some((x) => x.lineId === l.lineId)) return l
+        // Never reduce a figure the cashier has already entered — they may
+        // have agreed a larger down payment at the counter, and silently
+        // replacing it with the apportioned share both loses that and can
+        // drop the line under its floor.
+        const typed = parseFloat(l.downPaymentInput ?? '') || 0
+        const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
+        const downPaymentInput = dpByLine.has(l.lineId)
+          ? Math.max(typed, apportioned).toFixed(2)
+          : l.downPaymentInput
+        return {
+          ...l,
+          financingTermId: application.financingTermId ?? l.financingTermId,
+          downPaymentInput,
         }
       })
     )
@@ -1961,6 +2325,10 @@ export default function CheckoutPage() {
   // ─── Confirm sale ──────────────────────────────────────────────────────────
 
   async function handleConfirm() {
+    // Survives a park/resume or any remount, unlike the override state set
+    // when the PIN was approved — see the payload below.
+    const restoredPriceOverrideBy =
+      cart.find((l) => l.priceOverrideBy)?.priceOverrideBy ?? undefined
     if (!sessionId) {
       setError('Select an open session first.')
       return
@@ -2240,9 +2608,26 @@ export default function CheckoutPage() {
           totalAmount,
           isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
-          managerOverride: managerOverrideApproved || undefined,
-          managerUserId: managerOverrideApproved ? overrideManagerId : undefined,
+          // The approving manager's id is read back off the cart when the
+          // component state that normally holds it is gone. A price override
+          // writes to both: priceOverrideBy on the line (which is part of
+          // cartData, so it survives a park) and managerOverrideApproved /
+          // overrideManagerId beside it (which are not, and reset on any
+          // remount). Without this fallback a resumed sale still sent
+          // priceOverride: true on the line with no sale-level pair, and the
+          // backend rejected it at Confirm — "A price override requires
+          // managerOverride: true and managerUserId" — after the cashier had
+          // already keyed in the payment. Nothing is taken on trust: the
+          // backend re-checks that this user really holds
+          // pos:transactions:price_override.
+          managerOverride: managerOverrideApproved || !!restoredPriceOverrideBy || undefined,
+          managerUserId:
+            (managerOverrideApproved ? overrideManagerId : restoredPriceOverrideBy) || undefined,
           allowNegativeStock: allowNegativeStock || undefined,
+          // Scenario 57 — restored. Undefined rather than '' when unset, so
+          // an agentless sale sends no agent at all instead of an empty
+          // string the DTO would have to special-case.
+          sellingAgentId: sellingAgentId || undefined,
           lines: cart.map((l) => ({
             itemId: l.itemId,
             itemName: l.itemName,
@@ -3223,7 +3608,7 @@ export default function CheckoutPage() {
                 )}
 
                 <button
-                  onClick={() => setShowNewCustomerModal(true)}
+                  onClick={goToCreateCustomer}
                   className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-purple-300 py-2 text-xs text-gray-700 transition-colors hover:border-purple-500 hover:bg-purple-50 hover:text-purple-600 active:scale-[0.98]"
                 >
                   <UserPlus size={12} /> New Customer
@@ -3231,6 +3616,30 @@ export default function CheckoutPage() {
               </>
             )}
           </div>
+
+          {/* Scenario 57 — who sold it. Optional: a walk-in has no agent
+              behind it, and forcing a choice would put a false name on the
+              commission trail. SearchableSelect rather than the hand-rolled
+              combobox this block used before 1b82138 — the type-ahead is the
+              current idiom and already handles reopen/Enter properly. */}
+          {saleMode === 'sale' && (
+            <div className="border-b border-purple-200 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                Selling Agent{' '}
+                <span className="font-normal normal-case tracking-normal text-gray-500">
+                  — optional
+                </span>
+              </p>
+              <SearchableSelect
+                value={sellingAgentId}
+                onChange={setSellingAgentId}
+                options={sellingAgents.map((a) => ({ value: a.id, label: a.name }))}
+                placeholder="No agent"
+                clearable
+                portal
+              />
+            </div>
+          )}
 
           {/* Required on every sale — the number off the physical sales
               invoice booklet. Deliberately never abbreviated "SI" here:
@@ -3709,7 +4118,10 @@ export default function CheckoutPage() {
                         <div className="relative">
                           <select
                             value={creditApplicationId}
-                            onChange={(e) => setCreditApplicationId(e.target.value)}
+                            onChange={(e) => {
+                              setCreditApplicationId(e.target.value)
+                              if (e.target.value) applyCreditApplicationTerms(e.target.value)
+                            }}
                             disabled={creditApplicationsLoading}
                             className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
                           >
@@ -3736,10 +4148,35 @@ export default function CheckoutPage() {
                           />
                         </div>
                         {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <p className="mt-1 text-[13px] text-amber-700">
-                            Every installment sale requires an approved credit application — open
-                            one in Credit Applications first.
-                          </p>
+                          <div className="mt-1">
+                            <p className="text-[13px] text-amber-700">
+                              Every installment sale requires an approved credit application.
+                            </p>
+                            {/* Approval happens in the Business Owner's own
+                                session, so the cashier is usually waiting on
+                                someone else. This list refreshes when the tab
+                                regains focus; saying so stops the wait looking
+                                like a dead screen. */}
+                            <p className="mt-1 text-[12px] text-amber-600">
+                              Waiting on an approval? This refreshes when you come back to this tab.
+                            </p>
+                            {/* Was a dead sentence telling the cashier to go
+                                do it themselves. Carries the customer and
+                                these installment lines straight into the
+                                form, and brings the cart back afterwards. */}
+                            <button
+                              type="button"
+                              onClick={goToRaiseCreditApplication}
+                              className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
+                            >
+                              <CreditCard size={12} />
+                              Raise one for this cart
+                            </button>
+                            <p className="mt-1 text-[11px] text-amber-600">
+                              Your cart is kept — it still needs the owner&apos;s approval before
+                              this sale can be completed.
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}
@@ -4714,14 +5151,6 @@ export default function CheckoutPage() {
             </button>
           </div>
         </Overlay>
-      )}
-
-      {/* New Customer Modal */}
-      {showNewCustomerModal && (
-        <NewCustomerModal
-          onClose={() => setShowNewCustomerModal(false)}
-          onCreated={selectCustomer}
-        />
       )}
 
       {/* Manager Override Dialog */}
@@ -6200,410 +6629,6 @@ function CatalogListRow({
         )}
       </div>
     </button>
-  )
-}
-
-// ─── New Customer Modal ───────────────────────────────────────────────────────
-
-function NewCustomerModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void
-  onCreated: (customer: PosCustomer) => void
-}) {
-  const [form, setForm] = useState({
-    firstName: '',
-    middleName: '',
-    lastName: '',
-    phone: '',
-    email: '',
-    customerType: 'individual' as CustomerExtraFieldsValues['customerType'],
-    companyName: '',
-    businessCategory: '',
-    employeeNumber: '',
-    birthday: '',
-    groupId: '',
-    taxId: '',
-    isTaxExempt: false,
-    taxExemptionRef: '',
-    address: '',
-    barangayCode: '',
-    notes: '',
-    coMakers: [] as CoMakerFormValues[],
-    idType: '',
-    idNumber: '',
-    idDocumentFileId: '',
-    consentGiven: false,
-  })
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-
-  // Same non-blocking, debounced check CRM's "Add Customer" form uses — never
-  // prevents submission, just warns so the cashier can double-check before
-  // creating a second profile for the same person.
-  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateCheckResult | null>(null)
-  const [duplicateDismissed, setDuplicateDismissed] = useState(false)
-  const duplicateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const [uploadingId, setUploadingId] = useState(false)
-  const [idDocumentName, setIdDocumentName] = useState<string | null>(null)
-
-  useEffect(() => {
-    const email = form.email.trim()
-    const phone = form.phone.trim()
-    if (!email && !phone) {
-      setDuplicateWarning(null)
-      return
-    }
-    if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
-    duplicateTimer.current = setTimeout(async () => {
-      const res = await customersApi.checkDuplicate({
-        email: email || undefined,
-        phone: phone || undefined,
-      })
-      if (res.success && res.data) {
-        setDuplicateWarning(res.data.duplicate ? res.data : null)
-        setDuplicateDismissed(false)
-      }
-    }, 300)
-    return () => {
-      if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
-    }
-  }, [form.email, form.phone])
-
-  async function handleIdFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setUploadingId(true)
-    const formData = new FormData()
-    formData.set('file', file)
-    const result = await uploadIdDocument(formData)
-    setUploadingId(false)
-
-    if (result.success && result.data) {
-      setForm((p) => ({ ...p, idDocumentFileId: result.data!.id }))
-      setIdDocumentName(result.data.originalName)
-    } else {
-      setError(result.message ?? 'ID document upload failed')
-      e.target.value = ''
-    }
-  }
-
-  async function handleSubmit() {
-    if (!form.firstName.trim()) {
-      setError('First name is required.')
-      return
-    }
-    if (!form.phone.trim()) {
-      setError('Phone number is required.')
-      return
-    }
-    setError('')
-    setSubmitting(true)
-    const res = await createWalkInCustomer({
-      firstName: form.firstName.trim(),
-      middleName: form.middleName.trim() || undefined,
-      lastName: form.lastName.trim(),
-      phoneNumber: form.phone.trim(),
-      email: form.email.trim() || undefined,
-      customerType: form.customerType,
-      companyName:
-        form.customerType === 'business' ? form.companyName.trim() || undefined : undefined,
-      businessCategory:
-        form.customerType === 'business' && form.businessCategory
-          ? (form.businessCategory as 'private' | 'government')
-          : undefined,
-      employeeNumber:
-        form.customerType === 'employee' ? form.employeeNumber.trim() || undefined : undefined,
-      birthday: form.birthday ? new Date(form.birthday) : undefined,
-      groupId: form.groupId.trim() || undefined,
-      taxId: form.taxId.trim() || undefined,
-      isTaxExempt: form.isTaxExempt,
-      taxExemptionRef: form.isTaxExempt ? form.taxExemptionRef.trim() || undefined : undefined,
-      address: form.address.trim() || undefined,
-      barangayCode: form.barangayCode || undefined,
-      // Fixed, not user-selectable — a walk-in customer always starts active.
-      status: 'active',
-      note: form.notes.trim() || undefined,
-      coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
-      idType: form.idType || undefined,
-      idNumber: form.idNumber || undefined,
-      idDocumentFileId: form.idDocumentFileId || undefined,
-      consentGiven: form.consentGiven,
-      consentGivenAt: form.consentGiven ? new Date() : undefined,
-    })
-    setSubmitting(false)
-    if (!res.success || !res.data) {
-      setError(res.error ?? 'Failed to create customer')
-      return
-    }
-    onCreated(res.data)
-    onClose()
-  }
-
-  return (
-    <Overlay onClose={onClose} width="2xl">
-      <h2 className="mb-4 text-lg font-bold text-gray-900">New Customer</h2>
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-      <div className="max-h-[78vh] space-y-3 overflow-y-auto pr-1">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">First Name *</label>
-            <input
-              autoFocus
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.firstName}
-              onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Last Name</label>
-            <input
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.lastName}
-              onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Middle Name</label>
-            <input
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.middleName}
-              onChange={(e) => setForm((p) => ({ ...p, middleName: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
-            <PhoneInput
-              value={form.phone}
-              defaultCountry="PH"
-              international
-              countryCallingCodeEditable={false}
-              onChange={(v) => setForm((p) => ({ ...p, phone: v ?? '' }))}
-              numberInputProps={{ className: 'phone-input-field' }}
-              className="ph-phone-input"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Email</label>
-            <input
-              type="email"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.email}
-              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-            />
-          </div>
-        </div>
-
-        {duplicateWarning?.duplicate && !duplicateDismissed && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] text-amber-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div className="flex-1">
-              A customer named{' '}
-              <span className="font-medium">{duplicateWarning.customer?.name}</span> already has
-              this {duplicateWarning.matchedField}. You can still create this profile if it&apos;s a
-              different person.
-            </div>
-            <button
-              type="button"
-              onClick={() => setDuplicateDismissed(true)}
-              className="shrink-0 text-amber-600 hover:text-amber-800"
-              aria-label="Dismiss duplicate warning"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        <CustomerExtraFields
-          values={form}
-          onChange={(patch) => setForm((p) => ({ ...p, ...patch }))}
-        />
-
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-semibold text-gray-600">
-              Co-maker (guarantor)
-            </label>
-            <button
-              type="button"
-              onClick={() =>
-                setForm((p) => ({
-                  ...p,
-                  coMakers: [
-                    ...p.coMakers,
-                    { name: '', relationship: '', contactNumber: '', email: '' },
-                  ],
-                }))
-              }
-              className="flex items-center gap-1 text-[12px] font-medium text-purple-700 hover:text-purple-800"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add co-maker
-            </button>
-          </div>
-          <div className="mt-2 space-y-3">
-            {form.coMakers.map((cm, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
-              >
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Name</label>
-                  <input
-                    value={cm.name}
-                    maxLength={255}
-                    placeholder="e.g. Juan Dela Cruz"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], name: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Relationship
-                  </label>
-                  <input
-                    value={cm.relationship}
-                    maxLength={100}
-                    placeholder="e.g. Spouse"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], relationship: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Contact number
-                  </label>
-                  <input
-                    value={cm.contactNumber}
-                    maxLength={50}
-                    placeholder="e.g. 0917 000 1111"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], contactNumber: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Email</label>
-                  <input
-                    value={cm.email ?? ''}
-                    maxLength={255}
-                    type="email"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], email: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((p) => ({
-                      ...p,
-                      coMakers: p.coMakers.filter((_, i) => i !== idx),
-                    }))
-                  }
-                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                  aria-label="Remove co-maker"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-gray-600">
-            ID & Consent <span className="font-normal text-gray-400">(optional)</span>
-          </label>
-          <div className="mt-2 grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[12px] font-medium text-gray-600">ID Type</label>
-              <select
-                value={form.idType}
-                onChange={(e) => setForm((p) => ({ ...p, idType: e.target.value }))}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-              >
-                <option value="">Select ID type</option>
-                {ID_TYPE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[12px] font-medium text-gray-600">ID Number</label>
-              <input
-                value={form.idNumber}
-                maxLength={100}
-                onChange={(e) => setForm((p) => ({ ...p, idNumber: e.target.value }))}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-              />
-            </div>
-          </div>
-          <div className="mt-3">
-            <label className="block text-[12px] font-medium text-gray-600">ID Document</label>
-            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-500">
-              <Paperclip className="h-4 w-4 shrink-0" />
-              <span className="truncate">
-                {uploadingId ? 'Uploading…' : (idDocumentName ?? 'Attach a scanned ID')}
-              </span>
-              <input
-                type="file"
-                className="hidden"
-                disabled={uploadingId}
-                onChange={handleIdFileChange}
-              />
-            </label>
-          </div>
-          <div className="mt-3 flex items-start gap-2">
-            <input
-              id="pos-new-customer-consent"
-              type="checkbox"
-              checked={form.consentGiven}
-              onChange={(e) => setForm((p) => ({ ...p, consentGiven: e.target.checked }))}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300"
-            />
-            <label htmlFor="pos-new-customer-consent" className="text-[13px] text-gray-700">
-              Customer has given consent to store their ID information on file.
-            </label>
-          </div>
-        </div>
-      </div>
-      <div className="mt-5 flex justify-end gap-3">
-        <button
-          onClick={onClose}
-          className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSubmit}
-          disabled={submitting || !form.firstName.trim() || !form.phone.trim()}
-          className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800 disabled:opacity-50"
-        >
-          {submitting ? 'Creating…' : 'Create Customer'}
-        </button>
-      </div>
-    </Overlay>
   )
 }
 

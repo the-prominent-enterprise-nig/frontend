@@ -830,6 +830,7 @@ function LineRowWide(p: RenderProps): React.ReactElement {
                 {p.isFreebie && <FreebieTag />}
               </div>
               <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{label?.sku ?? ''}</span>
+              <InternalNoteInput index={index} control={control} />
             </>
           ) : (
             // A line with no item yet (edit-mode leftovers) still needs a
@@ -969,6 +970,34 @@ function LineRowWide(p: RenderProps): React.ReactElement {
 
       {open && <DiscountStack {...p} />}
     </div>
+  )
+}
+
+/** The line's `description` — kept for the buyer's own reference (e.g. a
+ * pricing breakdown) and deliberately left off the printed PO and the
+ * supplier-facing sheet. */
+function InternalNoteInput({
+  index,
+  control,
+}: {
+  index: number
+  control: Control<CreatePoFormValues>
+}): React.ReactElement {
+  return (
+    <Controller
+      name={`lines.${index}.description`}
+      control={control}
+      render={({ field }) => (
+        <input
+          aria-label="Internal note (not printed)"
+          value={field.value ?? ''}
+          onChange={(e) => field.onChange(e.target.value || undefined)}
+          maxLength={500}
+          placeholder="Internal note (not printed)"
+          className="mt-1 w-full rounded-md border border-dashed border-[#e4e4e9] bg-transparent px-2 py-1 text-[11.5px] text-[#5b5b6b] outline-none placeholder:text-[#b4b4c0] focus:border-[#a78bfa]"
+        />
+      )}
+    />
   )
 }
 
@@ -1209,6 +1238,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
                   {p.isFreebie && <FreebieTag />}
                 </div>
                 <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{label?.sku ?? ''}</span>
+                <InternalNoteInput index={index} control={control} />
               </>
             ) : (
               <Controller

@@ -1,6 +1,7 @@
 'use client'
 
-import { Download, TrendingDown, BarChart2, AlertTriangle, X } from 'lucide-react'
+import ExportButton from '@/src/components/common/ExportButton'
+import { TrendingDown, BarChart2, AlertTriangle, X } from 'lucide-react'
 import type { TurnoverReportResponse, TurnoverReportItem } from '@/src/schema/inventory/reports'
 
 interface Props {
@@ -13,6 +14,9 @@ interface Props {
   setStatusFilter: (v: 'healthy' | 'slow_moving' | 'dead_stock' | undefined) => void
   page: number
   setPage: (page: number) => void
+  /** The filters this report was loaded with, minus paging — the Excel
+   * export returns every matching row, with pivot tables. */
+  exportParams: Record<string, string | number | undefined>
 }
 
 const STATUS_CONFIG = {
@@ -28,43 +32,6 @@ const AGING_COLORS: Record<string, string> = {
   '90+': 'bg-red-100 text-red-700',
 }
 
-function exportToCsv(data: TurnoverReportResponse) {
-  const headers = [
-    'Item Name',
-    'SKU',
-    'Category',
-    'On-Hand Qty',
-    'Qty Sold',
-    'Velocity (units/day)',
-    'Days of Stock',
-    'Last Sale',
-    'Aging Bucket',
-    'Status',
-  ]
-  const rows = data.data.map((item) => [
-    item.itemName,
-    item.sku,
-    item.category ?? '',
-    item.onHandQty,
-    item.qtySold,
-    item.salesVelocityPerDay.toFixed(2),
-    item.daysOfStock ?? 'N/A',
-    item.lastSaleDate ? new Date(item.lastSaleDate).toLocaleDateString('en-PH') : 'Never',
-    item.agingBucket ?? 'N/A',
-    item.status,
-  ])
-
-  const csv = [headers, ...rows].map((row) => row.map((v) => `"${v}"`).join(',')).join('\n')
-
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `stock-turnover-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 export default function TurnoverReport({
   data,
   isLoading,
@@ -75,6 +42,7 @@ export default function TurnoverReport({
   setStatusFilter,
   page,
   setPage,
+  exportParams,
 }: Props) {
   const summary = data?.summary
   const meta = data?.meta
@@ -181,16 +149,12 @@ export default function TurnoverReport({
         <p className="text-sm text-zinc-500">
           Turnover and aging calculated over the last {periodDays} days.
         </p>
-        {(data?.data?.length ?? 0) > 0 && (
-          <button
-            type="button"
-            onClick={() => data && exportToCsv(data)}
-            className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
-        )}
+        <ExportButton
+          endpoint="/inventory/reports/turnover/export"
+          params={exportParams}
+          fallbackFilename="inventory-turnover.xlsx"
+          disabled={!data?.data?.length}
+        />
       </div>
 
       {/* Table */}

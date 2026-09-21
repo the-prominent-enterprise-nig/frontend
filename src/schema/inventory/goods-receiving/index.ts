@@ -172,8 +172,8 @@ export const StockBalanceSchema = z.object({
   // Scenario 50 — all-time sold, scoped to the active filter.
   soldQty: z.coerce.number().default(0),
   // Scenario 50 — units on the road toward this location, summed from open
-  // transfer lines. Neither the balance rows nor the serials know about
-  // them: dispatch decrements the source and leaves the serial alone.
+  // transfer lines. The balance rows don't know about them (dispatch
+  // decrements the source); serials do since Scenario 56 (`in_transit`).
   inTransitQty: z.coerce.number().default(0),
   // Only present on a groupBy=item row: how many locations were rolled up.
   locationCount: z.number().optional(),
@@ -258,6 +258,8 @@ export const StockLedgerEntrySchema = z.object({
   goodsReceiptLineId: z.string().optional().nullable(),
   receivingReportId: z.string().optional().nullable(),
   receivingReportCode: z.string().optional().nullable(),
+  // Scenario 56 — the linked PO's id, so the ledger's PO link opens it.
+  purchaseOrderId: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
   supplierInvoiceNumber: z.string().optional().nullable(),
@@ -300,6 +302,8 @@ const DiscrepancySchema = z.object({
   purchaseOrderId: z.string(),
   qtyOrdered: z.number(),
   qtyReceived: z.number(),
+  // Across every receipt against the PO line, this one included.
+  qtyReceivedToDate: z.number().optional(),
   qtyVariance: z.number(),
   hasQtyDiscrepancy: z.boolean(),
   hasConditionIssue: z.boolean(),
@@ -416,6 +420,9 @@ export const ReceivingReportSchema = z.object({
   vatAmount: z.number().optional().nullable(),
   lines: z.array(ReceivingReportLineSchema),
   hasAnyDiscrepancy: z.boolean(),
+  // Scenario 56 — for a PO-linked receipt: does its order still expect more?
+  // Null when there's no PO (transfer, standalone). List response only.
+  deliveryStatus: z.enum(['partial', 'complete']).nullable().optional(),
   // Scenario 51 — the receipt-sourced invoice behind this receipt, if any.
   // Used to warn before a cost correction pushes an already-settled invoice
   // back to owing money.
@@ -425,6 +432,8 @@ export const ReceivingReportSchema = z.object({
       status: z.string(),
       totalAmount: z.number(),
       amountPaid: z.number(),
+      // Scenario 56 — the supplier's SI number, shown on the Reports list.
+      billNumber: z.string().nullable().optional(),
     })
     .optional()
     .nullable(),

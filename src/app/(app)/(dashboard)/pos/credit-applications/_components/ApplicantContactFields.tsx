@@ -11,7 +11,7 @@ type Props = {
   errors: FieldErrors<CreateCreditApplicationFormValues>
 }
 
-// Shown once an applicant is picked in CreateCreditApplicationModal —
+// Shown once an applicant is picked in NewCreditApplicationForm —
 // pre-filled from the customer's record and editable; saving persists any
 // change back to that same customer via customersApi.update() in the
 // modal's submit handler, not as part of the credit application payload.

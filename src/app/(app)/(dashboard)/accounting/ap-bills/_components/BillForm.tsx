@@ -407,8 +407,11 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
               >
                 3-way match:{' '}
                 <span className="font-semibold">{matchCheck.matched ? 'Matched' : 'Variance'}</span>
-                {' — '}PO {fmtMoney(matchCheck.poTotal ?? 0)} · RRs{' '}
-                {fmtMoney(matchCheck.rrTotal ?? 0)} · Bill {fmtMoney(matchCheck.invoiceTotal)}
+                {' — '}PO{' '}
+                {matchCheck.partial && matchCheck.poReceivedTotal != null
+                  ? `${fmtMoney(matchCheck.poReceivedTotal)} received of ${fmtMoney(matchCheck.poTotal ?? 0)}`
+                  : fmtMoney(matchCheck.poTotal ?? 0)}{' '}
+                · RRs {fmtMoney(matchCheck.rrTotal ?? 0)} · Bill {fmtMoney(matchCheck.invoiceTotal)}
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">

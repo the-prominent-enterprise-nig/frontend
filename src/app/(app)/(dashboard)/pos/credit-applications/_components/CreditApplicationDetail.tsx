@@ -7,6 +7,8 @@ import { ArrowLeft, FileText, Loader2, Pencil, Trash2, Upload, X } from 'lucide-
 import { useCreditApplication } from '../_hooks/useCreditApplication'
 import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
+import { CreditApplicationFinancingFields } from './CreditApplicationFinancingFields'
+import { Select } from '@/src/components/ui/Select'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -31,6 +33,29 @@ import {
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
+/**
+ * Walks a react-hook-form error tree and returns every leaf message with its
+ * dotted path.
+ *
+ * Nested errors are why the edit modal's Save button appeared dead: a
+ * failure on `items[0].estimatedPrice` lives two levels down, so anything
+ * that only reads top-level `.message` renders nothing and the submit is
+ * blocked with no explanation.
+ */
+function flattenFieldErrors(errors: unknown, prefix = ''): { path: string; message: string }[] {
+  if (!errors || typeof errors !== 'object') return []
+  const record = errors as Record<string, unknown>
+  const message = record.message
+  if (typeof message === 'string' && message) {
+    return [{ path: prefix || 'form', message }]
+  }
+  return Object.entries(record).flatMap(([key, value]) =>
+    key === 'ref' || key === 'type'
+      ? []
+      : flattenFieldErrors(value, prefix ? `${prefix}.${key}` : key)
+  )
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -48,7 +73,13 @@ export default function CreditApplicationDetail({
   const canCancel = hasPermission(session, CREDIT_PERMISSIONS.APPLICATION_CANCEL)
   const canStartInvestigation = hasPermission(session, CREDIT_PERMISSIONS.INVESTIGATION_START)
   const canRecordInvestigation = hasPermission(session, CREDIT_PERMISSIONS.INVESTIGATION_RECORD)
-  const canApprove = hasPermission(session, CREDIT_PERMISSIONS.APPLICATION_APPROVE)
+  // Business Owner only (2026-09-18 client decision), matching the backend
+  // gate in CreditApplicationController.decideItems(). Deliberately NOT a
+  // hasPermission() check: Branch Manager holds the wildcard 'pos:*:*',
+  // which satisfies any pos permission, so a permission check here would
+  // show Approve/Decline to them and then 403 on click.
+  const canApprove =
+    session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner')
 
   const {
     application,
@@ -112,6 +143,7 @@ export default function CreditApplicationDetail({
     control: editControl,
     handleSubmit: handleEditSubmit,
     setValue: editSetValue,
+    trigger: editTrigger,
     reset: resetEditForm,
     formState: { errors: editErrors },
   } = useForm<UpdateCreditApplicationFormValues>({
@@ -123,8 +155,18 @@ export default function CreditApplicationDetail({
     resetEditForm({
       items: application.items.map((i) => ({
         itemId: i.itemId,
+        // Seeds the financing preview's fallback total so it has a figure to
+        // work with before /resolve-prices comes back.
+        estimatedPrice: i.requestedAmount != null ? Number(i.requestedAmount) : undefined,
       })),
       itemDescription: application.itemDescription ?? '',
+      // Financing is editable after intake (2026-09-18) — a mistyped down
+      // payment or the wrong term previously meant cancelling the whole
+      // application and starting again. The backend's update() already
+      // recomputes the stored snapshot whenever any of these change.
+      priceUseTypeId: application.priceUseTypeId ?? '',
+      financingTermId: application.financingTermId ?? '',
+      downPayment: application.downPayment != null ? String(application.downPayment) : '',
     })
   }, [isEditOpen, application, resetEditForm])
 
@@ -135,7 +177,16 @@ export default function CreditApplicationDetail({
 
   async function handleEditFormSubmit(data: UpdateCreditApplicationFormValues) {
     setEditError(undefined)
-    const result = await update(data)
+    const result = await update({
+      ...data,
+      // Same empty-string-select normalization the create form does: the
+      // backend's @IsUUID() rejects '', and @IsOptional() only skips
+      // undefined/null. '' on downPayment would coerce to 0 via
+      // @Type(() => Number) rather than "not given".
+      priceUseTypeId: data.priceUseTypeId || undefined,
+      financingTermId: data.financingTermId || undefined,
+      downPayment: data.downPayment || undefined,
+    })
     if (result.success) {
       setIsEditOpen(false)
     } else {
@@ -434,6 +485,20 @@ export default function CreditApplicationDetail({
                 })}
               </dd>
             </div>
+            <div>
+              <dt className="text-zinc-500">Price Use</dt>
+              {/* Third home of this label, and the one the 2026-09-19
+                  rename missed: that pass fixed the picker's placeholder
+                  and its empty option, both in
+                  CreditApplicationFinancingFields, and never looked
+                  outside the control. An application submitted with no
+                  Price Use still read "Default (WIP)" here — WIP is the
+                  scheme's NAME, "default" only the note that it is
+                  preselected, which is the whole point of the rename. */}
+              <dd className="mt-0.5 text-zinc-900">
+                {application.priceUseType?.name ?? 'WIP (default)'}
+              </dd>
+            </div>
             {application.itemDescription && (
               <div className="sm:col-span-2">
                 <dt className="text-zinc-500">Notes</dt>
@@ -441,6 +506,76 @@ export default function CreditApplicationDetail({
               </div>
             )}
           </dl>
+
+          {/* Client request, 2026-09-18 — persists the same DP/monthly/
+              total-payable breakdown the intake modal previewed, so the
+              customer and whoever reviews this application later (credit
+              investigator, approver) both see the real numbers, not just
+              the raw item total. */}
+          {application.financingTerm ? (
+            <div className="mt-4 rounded-lg border border-zinc-100 bg-zinc-50 p-4">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Financing
+              </h3>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-5">
+                <div>
+                  <dt className="text-zinc-500">Term</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    {application.financingTerm.termMonths} mo.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Down Payment</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.downPayment ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Amount Financed</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.amountFinanced ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Monthly Installment</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.monthlyInstallment ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Total Payable</dt>
+                  <dd className="mt-0.5 font-semibold text-zinc-900">
+                    ₱
+                    {Number(application.totalPayable ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : (
+            /* A term is optional at intake, so this application has no
+               schedule to show. Say so plainly rather than rendering
+               nothing — otherwise the absence reads as a loading bug, and
+               whoever reviews this next can't tell whether terms were
+               declined or simply never captured. The appliance value
+               itself is the Requested Amount above. */
+            <div className="mt-4 rounded-lg border border-dashed border-zinc-200 p-4">
+              <p className="text-sm text-zinc-500">
+                No financing term was selected for this application — only the item value above
+                applies. Down payment and monthly installment are agreed at checkout.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
@@ -484,17 +619,16 @@ export default function CreditApplicationDetail({
                 <label className="mb-1 block text-xs font-medium text-zinc-700">
                   Document Type
                 </label>
-                <select
-                  value={documentType}
-                  onChange={(e) => setDocumentType(e.target.value)}
-                  className={`${fieldClass} bg-white`}
-                >
-                  {CreditApplicationDocumentTypeSchema.options.map((t) => (
-                    <option key={t} value={t}>
-                      {CREDIT_APPLICATION_DOCUMENT_TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
+                <div className="w-52">
+                  <Select
+                    value={documentType}
+                    onChange={setDocumentType}
+                    options={CreditApplicationDocumentTypeSchema.options.map((t) => ({
+                      value: t,
+                      label: CREDIT_APPLICATION_DOCUMENT_TYPE_LABELS[t],
+                    }))}
+                  />
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-700">File</label>
@@ -567,13 +701,14 @@ export default function CreditApplicationDetail({
                       name="affordabilityOutcome"
                       control={investigationControl}
                       render={({ field }) => (
-                        <select {...field} className={`${fieldClass} bg-white`}>
-                          {CreditInvestigationOutcomeSchema.options.map((o) => (
-                            <option key={o} value={o}>
-                              {CREDIT_INVESTIGATION_OUTCOME_LABELS[o]}
-                            </option>
-                          ))}
-                        </select>
+                        <Select
+                          value={field.value ?? ''}
+                          onChange={field.onChange}
+                          options={CreditInvestigationOutcomeSchema.options.map((o) => ({
+                            value: o,
+                            label: CREDIT_INVESTIGATION_OUTCOME_LABELS[o],
+                          }))}
+                        />
                       )}
                     />
                   </div>
@@ -647,7 +782,7 @@ export default function CreditApplicationDetail({
 
       {isCancelOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
+          <div className="flex max-h-[90vh] w-full max-w-sm flex-col overflow-y-auto rounded-2xl bg-white shadow-xl">
             <form onSubmit={handleCancelSubmit(handleCancelFormSubmit)} noValidate>
               <div className="space-y-3 px-6 py-5">
                 <h2 className="text-lg font-semibold text-zinc-900">Cancel Application</h2>
@@ -691,7 +826,7 @@ export default function CreditApplicationDetail({
 
       {isDecisionReasonOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
+          <div className="flex max-h-[90vh] w-full max-w-sm flex-col overflow-y-auto rounded-2xl bg-white shadow-xl">
             <div className="space-y-3 px-6 py-5">
               <h2 className="text-lg font-semibold text-zinc-900">Reason for Declined Item(s)</h2>
               <p className="text-xs text-zinc-500">
@@ -730,8 +865,14 @@ export default function CreditApplicationDetail({
 
       {isEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+          {/* max-w-3xl to match the New Credit Application page, which
+              renders the same CreditApplicationItemFields — at max-w-lg a
+              real item label ("3E FURNITURE AMBASSADOR — The classic sofa 3
+              seater W78"XD28"XH35"") overflowed the panel sideways. Height
+              is capped too, since "+ Add another item" grows the list
+              without bound; header and footer stay pinned, body scrolls. */}
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-x-hidden rounded-2xl bg-white shadow-xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
               <h2 className="text-lg font-semibold text-zinc-900">Edit Financing Request</h2>
               <button
                 type="button"
@@ -741,8 +882,12 @@ export default function CreditApplicationDetail({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <form onSubmit={handleEditSubmit(handleEditFormSubmit)} noValidate>
-              <div className="space-y-5 px-6 py-5">
+            <form
+              onSubmit={handleEditSubmit(handleEditFormSubmit)}
+              noValidate
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
                 <CreditApplicationItemFields
                   control={editControl}
                   setValue={editSetValue}
@@ -756,6 +901,15 @@ export default function CreditApplicationDetail({
                     },
                   }))}
                 />
+
+                <CreditApplicationFinancingFields
+                  control={editControl}
+                  setValue={editSetValue}
+                  trigger={editTrigger}
+                  errors={editErrors}
+                  branchId={application.branchId}
+                />
+
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
                     Notes (optional)
@@ -774,9 +928,26 @@ export default function CreditApplicationDetail({
                     )}
                   />
                 </div>
-                {editError && <p className="text-sm text-red-600">{editError}</p>}
               </div>
-              <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+
+              {/* Pinned above the footer, outside the scroll area, and
+                  catches EVERY key — not just the few with an inline
+                  message. A validation failure on any unrendered field
+                  otherwise made Save Changes look like a dead button: the
+                  submit never fires and nothing explains why. Same
+                  silent-failure shape as the co-maker one. */}
+              {(editError || Object.keys(editErrors).length > 0) && (
+                <div className="shrink-0 border-t border-red-100 bg-red-50 px-6 py-3">
+                  {editError && <p className="text-sm text-red-700">{editError}</p>}
+                  {flattenFieldErrors(editErrors).map(({ path, message }) => (
+                    <p key={path} className="text-sm text-red-700">
+                      {path}: {message}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
                 <button
                   type="button"
                   onClick={() => setIsEditOpen(false)}

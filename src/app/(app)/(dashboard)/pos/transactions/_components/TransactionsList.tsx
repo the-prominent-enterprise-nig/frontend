@@ -25,6 +25,8 @@ import { Skeleton } from '@/src/components/ui/Skeleton'
 import { type SessionUser, can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { TransactionDetail } from '../../_components/TransactionDetail'
+import Link from 'next/link'
+import { getOwnReleaseFormRequests } from '../../_actions/pos-actions'
 
 const typeColor: Record<string, string> = {
   sale: 'bg-blue-100 text-blue-700',
@@ -48,6 +50,35 @@ interface Props {
 }
 
 export default function TransactionsList({ session }: Props) {
+  // Scenario 59 — an installment sale held for manager release approval has
+  // no PosTransaction yet: createdTransactionId is set only once the request
+  // is approved. So it is correctly absent from the list below, and to the
+  // cashier who just rang it up it simply vanished — nothing on this page
+  // said it was waiting on anyone.
+  //
+  // A banner, not rows: a pending request has no transaction number and no
+  // settled total, so as a table row it reads like a broken transaction
+  // rather than a sale in flight. /pos/release-approvals already renders
+  // these properly for the cashier who raised them (its own /own endpoint is
+  // gated on pos:transactions:read, which Cashier holds) — this only tells
+  // them to look.
+  const [pendingReleaseCount, setPendingReleaseCount] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    getOwnReleaseFormRequests()
+      .then((res) => {
+        if (cancelled || !res.success || !res.data) return
+        setPendingReleaseCount(res.data.filter((r) => r.status === 'pending').length)
+      })
+      .catch(() => {
+        // Non-blocking: this is a pointer to another page, not the page's own
+        // data. A failure here must never take the transaction list with it.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const canVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_READ)
   const canDirectVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
   const canRefund = can(session, POS_PERMISSIONS.TRANSACTIONS_CREATE)
@@ -210,6 +241,24 @@ export default function TransactionsList({ session }: Props) {
             Refresh
           </button>
         </div>
+
+        {pendingReleaseCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm text-amber-800">
+              <span className="font-semibold">
+                {pendingReleaseCount} sale{pendingReleaseCount === 1 ? '' : 's'}
+              </span>{' '}
+              waiting on manager release approval.{' '}
+              {pendingReleaseCount === 1 ? 'It is' : 'They are'} not listed below until approved.
+            </p>
+            <Link
+              href="/pos/release-approvals"
+              className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              View
+            </Link>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

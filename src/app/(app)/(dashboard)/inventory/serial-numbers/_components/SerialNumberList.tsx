@@ -24,10 +24,12 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatShortDate } from '@/src/libs/format/date'
+import { SerialAges } from '@/src/components/inventory/SerialAges'
 import { originLabel } from '@/src/libs/format/serial-provenance'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
+import { LocationFilters } from '@/src/components/inventory/LocationFilters'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Matches Stock Balance's own #5b21b6 palette (same StockHub tab group), so
@@ -130,11 +132,10 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     statusFilter,
     categoryFilter: _categoryFilter,
     brandFilter,
-    warehouseFilter,
+    locationFilter,
     search,
     setStatusFilter,
     setBrandFilter,
-    setWarehouseFilter,
     setSearch,
     resetFilters,
     page,
@@ -182,7 +183,12 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
   // serial-level bulk actions and the serial table both stand down for it.
   const groupedCaravan = caravanView && caravanGrouping === 'item'
 
-  const hasFilters = statusFilter || warehouseFilter || search || brandFilter
+  const hasFilters =
+    statusFilter ||
+    locationFilter.locations.length > 0 ||
+    locationFilter.region ||
+    search ||
+    brandFilter
   const showSelection = canManageCaravan
 
   const handleReturnToOrigin = async () => {
@@ -256,11 +262,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               highlight
             />
             <MetricCell label="Reserved" value={statusCounts.held} sub="committed" />
-            <MetricCell
-              label="In Transit"
-              value={statusCounts.pulled_out}
-              sub="on stock transfer"
-            />
+            <MetricCell label="Pulled Out" value={statusCounts.pulled_out} sub="repossessed" />
             <MetricCell label="Sold / Returned" value={soldReturned} sub="out of stock" />
           </div>
         )}
@@ -324,7 +326,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
             <input
               value={search ?? ''}
               onChange={(e) => setSearch(e.target.value || undefined)}
-              placeholder="Search serial, model, RR, or supplier…"
+              placeholder="Search serial, brand, model, category, RR or supplier…"
               className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
             />
           </div>
@@ -352,15 +354,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               />
             )
           ) : (
-            <SearchableSelect
-              className="w-[190px]"
-              value={warehouseFilter ?? ''}
-              onChange={(v) => setWarehouseFilter(v || undefined)}
-              placeholder="All locations"
-              chrome={CONTROL_CHROME}
-              clearable
-              options={warehouseOptions.map((wh) => ({ value: wh.id, label: locationLabel(wh) }))}
-            />
+            <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
           )}
 
           {!caravanView && (
@@ -517,6 +511,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Receipt</th>
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Origin</th>
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">Date In</th>
+                        <th className="px-4 py-[9px] text-left hidden md:table-cell">Age</th>
                         {caravanView && <th className="px-4 py-[9px] text-left">Home Branch</th>}
                         {caravanView && <th className="px-4 py-[9px] text-left">Event</th>}
                         <th className="px-4 py-[9px] text-center">Status</th>
@@ -605,6 +600,12 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                             {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
                               ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
                               : '—'}
+                          </td>
+                          <td className="px-4 py-[11px] text-[13px] text-[#5b5b6b] hidden md:table-cell">
+                            <SerialAges
+                              firstReceivedAt={serial.firstReceivedAt}
+                              locationSince={serial.locationSince}
+                            />
                           </td>
                           {caravanView && (
                             <td className="px-4 py-[11px]">
