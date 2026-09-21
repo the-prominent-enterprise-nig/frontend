@@ -266,6 +266,9 @@ export function TransactionDetail({
                 )}
                 {customerName && <Row label="Customer" value={customerName} />}
                 {tx.sellingAgent && <Row label="Selling Agent" value={tx.sellingAgent.name} />}
+                {tx.rebateEligible != null && (
+                  <Row label="Eligible for Rebate" value={tx.rebateEligible ? 'Yes' : 'No'} />
+                )}
                 {tx.deliveryReceiptNumber && (
                   <Row label="Delivery Receipt No." value={tx.deliveryReceiptNumber} />
                 )}

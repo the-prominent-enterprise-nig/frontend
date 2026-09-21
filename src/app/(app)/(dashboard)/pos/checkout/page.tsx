@@ -519,6 +519,10 @@ export default function CheckoutPage() {
   const [installmentPaymentMethod, setInstallmentPaymentMethod] = useState<
     'cash' | 'credit_card' | undefined
   >()
+  // Scenario 57 — whether the in-house installment contract(s) this sale
+  // creates earn their Prompt Payment Discount. One choice per transaction,
+  // defaulting to eligible (today's behavior); the cashier opts a sale out.
+  const [rebateEligible, setRebateEligible] = useState(true)
   // Both providers' down payments are collected at this register and share
   // the one toggle above — the money crosses the counter identically
   // whether NIG or a financier carries the balance afterwards.
@@ -1387,6 +1391,12 @@ export default function CheckoutPage() {
     // keystroke — length-gated intentionally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saleMode, activeBranchId, installmentCartLines.length > 0])
+
+  // Scenario 57 — back to the default once no in-house installment line is
+  // left, so an opt-out can't silently carry into a later, unrelated sale.
+  useEffect(() => {
+    if (inhouseInstallmentCartLines.length === 0) setRebateEligible(true)
+  }, [inhouseInstallmentCartLines.length])
 
   useEffect(() => {
     if (saleMode !== 'sale' || tpfInstallmentCartLines.length === 0) {
@@ -2556,6 +2566,7 @@ export default function CheckoutPage() {
               ? creditApplicationId
               : undefined,
           salesInvoiceNumber: invoiceNumberInput.trim(),
+          rebateEligible: inhouseInstallmentCartLines.length > 0 ? rebateEligible : undefined,
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
           tpfApprovedAmount:
@@ -4504,6 +4515,41 @@ export default function CheckoutPage() {
                     {!installmentPaymentMethod && (
                       <p className="mt-1.5 text-[12px] text-amber-700">
                         Required before checkout can be completed.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {inhouseInstallmentCartLines.length > 0 && (
+                  <div
+                    data-testid="rebate-eligible-toggle"
+                    className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
+                  >
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">Eligible for rebate</p>
+                    <div
+                      className="flex gap-1.5"
+                      role="radiogroup"
+                      aria-label="Eligible for rebate"
+                    >
+                      {([true, false] as const).map((value) => (
+                        <button
+                          key={String(value)}
+                          type="button"
+                          role="radio"
+                          aria-checked={rebateEligible === value}
+                          onClick={() => setRebateEligible(value)}
+                          className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                            rebateEligible === value
+                              ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                          }`}
+                        >
+                          {value ? 'Yes' : 'No'}
+                        </button>
+                      ))}
+                    </div>
+                    {!rebateEligible && (
+                      <p className="mt-1.5 text-[12px] text-gray-500">
+                        This contract won&apos;t earn a prompt payment discount at collection.
                       </p>
                     )}
                   </div>

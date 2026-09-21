@@ -493,6 +493,9 @@ export interface ARInvoiceDue {
 export interface ARInvoiceInstallmentDetail {
   termMonths: number | null
   rebate: number | string | null
+  /** Scenario 57 — false when the linked contract earns no rebate; null
+   * with no linked contract. */
+  rebateEligible?: boolean | null
   items: ARInvoiceInstallmentItem[]
   /** Always null now: one installment sale is ONE receivable covering every
    * due, so no single due identifies the invoice. Kept so older callers

@@ -12,6 +12,7 @@ export default function RecordPaymentModal({
   accountId,
   suggestedAmount,
   suggestedRebate,
+  rebateEligible = true,
   monthlyInstallment,
   partialPaymentOnNextDue,
 }: {
@@ -22,6 +23,10 @@ export default function RecordPaymentModal({
   suggestedAmount: number
   /** This account's ppd (Prompt Payment Discount) — the cap for the rebate field below. */
   suggestedRebate?: number
+  /** Scenario 57 — false when the contract was marked not eligible for
+   * rebate; the Rebate field is then locked at 0 (the backend rejects any
+   * rebate on it with rebate_not_eligible). */
+  rebateEligible?: boolean
   /** Drives the "this covers N month(s)" preview below — no term picker, a
    * lump sum just settles as many months as it covers, in order. */
   monthlyInstallment: number
@@ -33,11 +38,14 @@ export default function RecordPaymentModal({
     // Nets out the suggested rebate so accepting both defaults as-is
     // settles the due exactly, rather than over-crediting the balance
     // (amount + rebate > what's actually due this month).
-    amount: Math.max(Math.round((suggestedAmount - (suggestedRebate ?? 0)) * 100) / 100, 0),
+    amount: Math.max(
+      Math.round((suggestedAmount - (rebateEligible ? (suggestedRebate ?? 0) : 0)) * 100) / 100,
+      0
+    ),
     dueDate: new Date().toISOString().slice(0, 10),
     paidAt: new Date().toISOString().slice(0, 10),
     orNumber: '',
-    rebateAmount: suggestedRebate ?? 0,
+    rebateAmount: rebateEligible ? (suggestedRebate ?? 0) : 0,
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -87,7 +95,11 @@ export default function RecordPaymentModal({
       setResult({ onTime: res.data.pointEarned, monthsCovered: res.data.monthsCovered })
       onRecorded?.()
     } else {
-      setServerError(res.error ?? 'Failed to record payment')
+      setServerError(
+        res.error === 'rebate_not_eligible'
+          ? 'This account is not eligible for rebate, so no rebate can be applied.'
+          : (res.error ?? 'Failed to record payment')
+      )
     }
   }
 
@@ -239,12 +251,15 @@ export default function RecordPaymentModal({
                 min="0"
                 value={form.rebateAmount ?? 0}
                 onChange={(e) => setField('rebateAmount', Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                disabled={!rebateEligible}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
               />
               <p className="mt-1 text-[12px] text-gray-400">
-                {suggestedRebate
-                  ? `Up to ₱${suggestedRebate.toLocaleString()} for this account.`
-                  : 'No rebate available for this account.'}
+                {!rebateEligible
+                  ? 'Not eligible for rebate — set at checkout.'
+                  : suggestedRebate
+                    ? `Up to ₱${suggestedRebate.toLocaleString()} for this account.`
+                    : 'No rebate available for this account.'}
               </p>
               {rebateExceedsCap && (
                 <p className="mt-1 text-[12px] font-medium text-red-600">

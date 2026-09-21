@@ -306,6 +306,9 @@ export interface PosTransaction {
   tpfProviderId?: string | null
   tpfReferenceNumber?: string | null
   tpfApprovedAmount?: number | null
+  /** Scenario 57 — the cashier's "Eligible for rebate" choice. Null when the
+   * sale had no in-house installment line. */
+  rebateEligible?: boolean | null
   /** Present on create()/findOne() — one per distinct financing term used in
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
@@ -457,6 +460,9 @@ export interface CreateTransactionInput {
    * refund submission with no reason. */
   reason?: string
   sellingAgentId?: string
+  /** Scenario 57 — in-house installment only; omitted → eligible. Copied onto
+   * every InstallmentAccount this sale creates. */
+  rebateEligible?: boolean
   lines: CreateTransactionLineInput[]
 }
 
@@ -1118,6 +1124,8 @@ export interface InstallmentSchedule {
   installmentAccount: {
     id: string
     ppd: number
+    /** Scenario 57 — false when marked not eligible at checkout. */
+    rebateEligible: boolean
     status: 'active' | 'closed' | 'early_closed' | 'written_off'
   } | null
 }

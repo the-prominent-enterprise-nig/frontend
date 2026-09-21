@@ -380,7 +380,11 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           </div>
           <p className="mt-3 text-right text-[13px] text-gray-600">
             Rebate on this due date:{' '}
-            <span className="font-semibold">{fmtMoney(Number(detail.rebate ?? 0))}</span>
+            <span className="font-semibold">
+              {detail.rebateEligible === false
+                ? 'Not eligible'
+                : fmtMoney(Number(detail.rebate ?? 0))}
+            </span>
           </p>
         </section>
       )}
