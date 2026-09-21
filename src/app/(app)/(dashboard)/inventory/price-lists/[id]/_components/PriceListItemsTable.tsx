@@ -22,13 +22,12 @@ function toText(value: string | number | null | undefined) {
   return value == null ? '' : String(value)
 }
 
-type FieldKey = 'price' | 'floorPrice' | 'downPayment' | 'minQty' | 'cmAmount' | 'creditAmount'
+type FieldKey = 'price' | 'downPayment' | 'minQty' | 'cmAmount' | 'creditAmount'
 
 type Draft = Record<FieldKey, string>
 
 const FIELDS: { key: FieldKey; label: string; required?: boolean }[] = [
   { key: 'price', label: 'Price', required: true },
-  { key: 'floorPrice', label: 'Floor Price' },
   { key: 'downPayment', label: 'Down Payment' },
   { key: 'minQty', label: 'Min Qty' },
   { key: 'cmAmount', label: 'CM' },
@@ -38,7 +37,6 @@ const FIELDS: { key: FieldKey; label: string; required?: boolean }[] = [
 function draftFromItem(item: PriceListItem): Draft {
   return {
     price: toText(item.price),
-    floorPrice: toText(item.floorPrice),
     downPayment: toText(item.downPayment),
     minQty: toText(item.minQty),
     cmAmount: toText(item.cmAmount),
@@ -157,7 +155,6 @@ export function PriceListItemsTable({
       return {
         itemId: item.itemId,
         price: Number(draft.price),
-        floorPrice: optionalNumber(draft.floorPrice),
         downPayment: optionalNumber(draft.downPayment),
         minQty: optionalNumber(draft.minQty),
         cmAmount: optionalNumber(draft.cmAmount),
