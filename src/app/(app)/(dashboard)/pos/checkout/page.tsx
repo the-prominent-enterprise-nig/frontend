@@ -1960,13 +1960,18 @@ export default function CheckoutPage() {
         // moment to hang the down-payment pre-fill off the way inhouse does
         // (see setLineFinancingTermId) — seed it here instead, so the panel
         // never opens on a blank field that reads as "nothing to collect".
+        // Same curated-over-floor priority as setLineFinancingTermId().
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
+        const fallbackDownPayment =
+          l.priceListDownPayment != null
+            ? Number(l.priceListDownPayment).toFixed(2)
+            : Math.ceil(lineAmount * 0.1).toFixed(2)
         return {
           ...l,
           installmentProvider: provider,
           financingTermId: undefined,
-          downPaymentInput: l.downPaymentInput ?? Math.ceil(0.1 * lineAmount).toFixed(2),
+          downPaymentInput: l.downPaymentInput ?? fallbackDownPayment,
         }
       })
     )
@@ -4235,9 +4240,20 @@ export default function CheckoutPage() {
                   // setLineFinancingTermId() so the displayed floor is never
                   // a centavo amount the field itself won't accept.
                   const minDownPaymentWhole = Math.ceil(minDownPayment)
+                  // Same priority as setLineFinancingTermId()'s auto-fill: a
+                  // curated per-SKU down payment from the real rate card wins
+                  // over the generic 10%-floor fallback when one exists — this
+                  // is just the DISPLAY-time version of that same rule, for
+                  // before a term has been picked yet (downPaymentInput still
+                  // unset) so the shown figure doesn't disagree with what
+                  // picking a term is about to fill in.
+                  const curatedDownPaymentWhole =
+                    line.priceListDownPayment != null
+                      ? Math.round(Number(line.priceListDownPayment))
+                      : null
                   const downPaymentValue = line.downPaymentInput
                     ? parseFloat(line.downPaymentInput) || 0
-                    : minDownPaymentWhole
+                    : (curatedDownPaymentWhole ?? minDownPaymentWhole)
                   const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
@@ -4336,7 +4352,7 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      10% min
+                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
@@ -4355,7 +4371,9 @@ export default function CheckoutPage() {
                               )}
                               <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                 <span className="text-prominent-purple-400">●</span>
-                                Fixed at 10% of the sale amount — the same for every term.
+                                {curatedDownPaymentWhole !== null
+                                  ? 'From the rate card for this term — the minimum accepted is still 10% of the sale amount.'
+                                  : 'Fixed at 10% of the sale amount — the same for every term.'}
                               </p>
                               {line.financingTermId && (
                                 <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
@@ -4426,7 +4444,7 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      10% min
+                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
