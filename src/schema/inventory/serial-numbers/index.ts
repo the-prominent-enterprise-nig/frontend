@@ -223,6 +223,9 @@ export const SerialNumberSummarySchema = z.object({
   caravanEventStartDate: z.string().optional().nullable(),
   caravanEventEndDate: z.string().optional().nullable(),
   goodsReceiptLine: SerialReceiptSchema,
+  // Set while an open transfer (requested through partially received)
+  // already claims this unit.
+  openTransfer: z.object({ transferNumber: z.string() }).nullable().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })

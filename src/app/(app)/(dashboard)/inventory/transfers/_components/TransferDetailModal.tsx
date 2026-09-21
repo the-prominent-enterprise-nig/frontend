@@ -203,7 +203,13 @@ function ItemSerialGroup({
   const serialsQuery = useQuery({
     queryKey: ['inventory-serials-in-stock', fromWarehouseId, itemId],
     queryFn: () =>
-      getSerialNumbers({ warehouseId: fromWarehouseId, itemId, status: 'in_stock', limit: 500 }),
+      getSerialNumbers({
+        warehouseId: fromWarehouseId,
+        itemId,
+        status: 'in_stock',
+        freeForTransfer: true,
+        limit: 500,
+      }),
     enabled: !widened && !!fromWarehouseId && !!itemId,
     staleTime: 30 * 1000,
   })

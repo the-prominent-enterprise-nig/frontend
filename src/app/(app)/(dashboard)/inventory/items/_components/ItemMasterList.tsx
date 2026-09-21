@@ -16,6 +16,7 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import CategorySelect from '@/src/components/ui/CategorySelect'
+import { useItemStockStatus } from '../_hooks/useItemStockStatus'
 
 export default function ItemMasterList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
@@ -93,6 +94,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     rejectItem,
     isRejectingItem,
   } = useItemMaster()
+  const stockByItem = useItemStockStatus(items)
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isBundleCreateOpen, setIsBundleCreateOpen] = useState(false)
@@ -297,6 +299,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           onRejectAccounting={(item) => setRejectingAccountingItem(item)}
           onApproveItem={(item) => setApprovingItem(item)}
           onRejectItem={(item) => setRejectingItem(item)}
+          stockByItem={stockByItem}
         />
 
         {/* Pagination */}

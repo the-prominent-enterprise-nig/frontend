@@ -132,8 +132,8 @@ export const StockBalanceSchema = z.object({
   // Scenario 50 — all-time sold, scoped to the active filter.
   soldQty: z.coerce.number().default(0),
   // Scenario 50 — units on the road toward this location, summed from open
-  // transfer lines. Neither the balance rows nor the serials know about
-  // them: dispatch decrements the source and leaves the serial alone.
+  // transfer lines. The balance rows don't know about them (dispatch
+  // decrements the source); serials do since Scenario 56 (`in_transit`).
   inTransitQty: z.coerce.number().default(0),
   // Only present on a groupBy=item row: how many locations were rolled up.
   locationCount: z.number().optional(),

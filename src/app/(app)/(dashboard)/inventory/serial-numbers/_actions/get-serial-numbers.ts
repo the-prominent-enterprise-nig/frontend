@@ -31,6 +31,9 @@ type Params = {
   // (including the caller's own branch) — requires itemId and the
   // inventory:transfers:serial-override permission server-side.
   scope?: 'company' | 'override'
+  // Scenario 56 — leave out units already claimed by an open transfer, so a
+  // transfer picker (or its availability count) never offers one.
+  freeForTransfer?: boolean
 }
 
 export async function getSerialNumbers(
@@ -49,6 +52,7 @@ export async function getSerialNumbers(
     search: params.search,
     consignedToBranchId: params.consignedToBranchId,
     scope: params.scope,
+    freeForTransfer: params.freeForTransfer ? 'true' : undefined,
   }
 
   const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)

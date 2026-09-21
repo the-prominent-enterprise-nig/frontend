@@ -222,6 +222,7 @@ function TransferLineRow({
         warehouseId: fromWarehouseId,
         itemId: selectedItemId,
         status: 'in_stock',
+        freeForTransfer: true,
         // A transfer only needs the number; a consignment has to list them,
         // since the user is picking the individual units.
         limit: consignMode ? 200 : 1,

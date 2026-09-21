@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, TrendingDown, Package, ChevronDown, Hash, Search } from 'lucide-react'
+import { Package, ChevronDown, Hash, Search } from 'lucide-react'
 import type { StockBalance } from '@/src/schema/inventory/goods-receiving'
 import {
   SERIAL_STATUS_LABELS,
@@ -12,21 +12,13 @@ import {
   PLEX,
   MONO,
 } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_components/procurementTokens'
+import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
+import { stockStatusOf } from '@/src/libs/inventory/stock-status'
 
-function getStockStatus(balance: StockBalance): 'out' | 'critical' | 'low' | 'healthy' {
-  const qty = Number(balance.onHandQty ?? 0)
-  const reorder = balance.reorderPoint != null ? Number(balance.reorderPoint) : null
-  if (qty <= 0) return 'out'
-  if (reorder !== null && qty <= reorder * 0.5) return 'critical'
-  if (reorder !== null && qty <= reorder) return 'low'
-  return 'healthy'
-}
-
-const STATUS_CONFIG = {
-  out: { label: 'Out', className: 'bg-[#fdeceb] text-[#b42318]', icon: AlertTriangle },
-  critical: { label: 'Critical', className: 'bg-[#fdeceb] text-[#b42318]', icon: AlertTriangle },
-  low: { label: 'Low', className: 'bg-[#fdf3e7] text-[#8a4b06]', icon: TrendingDown },
-  healthy: { label: 'Healthy', className: 'bg-[#e7f5ef] text-[#0b6644]', icon: Package },
+/** Only a unit on the shelf and not already claimed by an open transfer
+ * can be put on a new one (Scenario 56). */
+function isTransferable(serial: SerialNumberSummary): boolean {
+  return serial.status === 'in_stock' && !serial.openTransfer
 }
 
 function StockSkeleton() {
@@ -206,9 +198,7 @@ export default function StockTab({
         </div>
         <div className="divide-y divide-[#f4f4f6]">
           {stockedBalances.map((balance) => {
-            const status = getStockStatus(balance)
-            const cfg = STATUS_CONFIG[status]
-            const StatusIcon = cfg.icon
+            const status = stockStatusOf(balance)
             const canExpand = isSerialTracked && Number(balance.onHandQty ?? 0) > 0
             const isOpen = canExpand && expanded.has(balance.id)
             const locationSerials = serials.filter(
@@ -219,9 +209,7 @@ export default function StockTab({
               ? locationSerials.filter((s) => s.serialNumber.toLowerCase().includes(query))
               : locationSerials
             const selectedIds = selectedByLocation[balance.id] ?? new Set<string>()
-            const selectableIds = filteredSerials
-              .filter((s) => s.status === 'in_stock')
-              .map((s) => s.id)
+            const selectableIds = filteredSerials.filter(isTransferable).map((s) => s.id)
             const allSelectableSelected =
               selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id))
 
@@ -286,12 +274,12 @@ export default function StockTab({
                       </p>
                       <p className="text-[10px] text-[#8b8b9b]">available</p>
                     </div>
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-[5px] px-2 py-0.5 text-[11.5px] font-medium ${cfg.className}`}
-                    >
-                      <StatusIcon className="h-3 w-3" />
-                      {cfg.label}
-                    </span>
+                    <StockStatusBadge
+                      status={status}
+                      inTransitQty={balance.inTransitQty}
+                      size="sm"
+                      stacked
+                    />
                   </div>
                 </div>
 
@@ -360,7 +348,7 @@ export default function StockTab({
                         )}
                         <div className="flex flex-col gap-1.5">
                           {filteredSerials.map((serial) => {
-                            const selectable = serial.status === 'in_stock'
+                            const selectable = isTransferable(serial)
                             const isChecked = selectedIds.has(serial.id)
                             return (
                               <div
@@ -397,7 +385,9 @@ export default function StockTab({
                                   </span>
                                   {!selectable && (
                                     <span className="shrink-0 rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">
-                                      {SERIAL_STATUS_LABELS[serial.status]}
+                                      {serial.status === 'in_stock' && serial.openTransfer
+                                        ? `On ${serial.openTransfer.transferNumber}`
+                                        : SERIAL_STATUS_LABELS[serial.status]}
                                     </span>
                                   )}
                                 </button>
