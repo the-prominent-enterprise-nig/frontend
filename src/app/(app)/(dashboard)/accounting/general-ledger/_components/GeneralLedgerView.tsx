@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
+import ExportButton from '@/src/components/common/ExportButton'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -95,6 +96,13 @@ export default function GeneralLedgerView() {
         >
           {loading ? 'Loading...' : 'Run Report'}
         </button>
+        <div className="ml-auto">
+          <ExportButton
+            endpoint="/reports/general-ledger/export"
+            params={{ accountId: accountId || undefined, startDate, endDate }}
+            fallbackFilename={`general-ledger-${startDate}-to-${endDate}.xlsx`}
+          />
+        </div>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-4">
