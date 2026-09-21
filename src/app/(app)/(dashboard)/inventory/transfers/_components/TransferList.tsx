@@ -108,6 +108,44 @@ function TransferAge({ transfer }: { transfer: TransferSummary }) {
   )
 }
 
+/** Scenario 56 — the transfer as the viewer's own branch sees it: Incoming
+ * when it's the requesting (destination) branch, Outgoing when it's the one
+ * supplying. Null for a viewer with no branch (Business Owner) or a transfer
+ * between two other branches. */
+function directionFor(
+  transfer: TransferSummary,
+  viewerBranchId: string | null | undefined
+): 'incoming' | 'outgoing' | null {
+  if (!viewerBranchId) return null
+  const branchOf = (wh: TransferSummary['toWarehouse']): string | null | undefined =>
+    wh?.branch?.id ?? wh?.branchId
+  if (branchOf(transfer.toWarehouse) === viewerBranchId) return 'incoming'
+  if (branchOf(transfer.fromWarehouse) === viewerBranchId) return 'outgoing'
+  return null
+}
+
+function DirectionTag({
+  direction,
+}: {
+  direction: 'incoming' | 'outgoing' | null
+}): React.ReactElement | null {
+  if (!direction) return null
+  return (
+    <span
+      className={`shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10.5px] font-medium ${
+        direction === 'incoming' ? 'bg-[#e3f4f2] text-[#0f7566]' : 'bg-[#fdf3e7] text-[#8a4b06]'
+      }`}
+      title={
+        direction === 'incoming'
+          ? 'Your branch requested this stock'
+          : 'Your branch is supplying this stock'
+      }
+    >
+      {direction === 'incoming' ? 'Incoming' : 'Outgoing'}
+    </span>
+  )
+}
+
 export default function TransferList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
   const canAccept = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_ACCEPT)
@@ -579,7 +617,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                 <thead>
                   <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                     <th className={`${th} text-left`}>Transfer</th>
-                    <th className={`${th} text-left`}>Route</th>
+                    <th className={`${th} text-left`}>Supplying → Requesting</th>
                     <th className={`${th} text-right`}>Items</th>
                     <th className={`${th} hidden text-left md:table-cell`}>Progress</th>
                     <th className={`${th} text-left`}>Status</th>
@@ -627,6 +665,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             <span className="truncate text-[12.5px] font-semibold">
                               {branchLabel(tr.toWarehouse)}
                             </span>
+                            <DirectionTag direction={directionFor(tr, session.branchId)} />
                           </div>
                         </td>
                         <td className="px-[18px] py-[13px]">
