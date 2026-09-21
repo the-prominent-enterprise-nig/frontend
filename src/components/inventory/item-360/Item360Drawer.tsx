@@ -68,17 +68,19 @@ function Item360Content({
   itemId,
   context,
   locations,
+  region,
   onClose,
 }: {
   itemId: string
   context: DrawerContext
   locations?: string[]
+  region?: 'panay' | 'negros'
   onClose: () => void
 }) {
   const [activeTab, setActiveTab] = useState<Tab>(DEFAULT_TAB[context])
   const [selectedSerial, setSelectedSerial] = useState<SerialNumberSummary | null>(null)
   const visibleTabs = TABS.filter((tab) => tab.context === context)
-  const { item, stock, serials } = useItem360(itemId, activeTab, locations)
+  const { item, stock, serials } = useItem360(itemId, activeTab, locations, region)
 
   const itemData = item.data?.success ? item.data.data : null
   const stockBalances: StockBalance[] = stock.data?.success
@@ -239,7 +241,7 @@ function Item360Content({
             onSelectSerial={setSelectedSerial}
           />
         ) : activeTab === 'movements' ? (
-          <MovementsTab itemId={itemId} locations={locations} />
+          <MovementsTab itemId={itemId} locations={locations} region={region} />
         ) : null}
       </div>
     </>
@@ -261,6 +263,7 @@ export default function Item360Drawer() {
   // location" — the drawer's behaviour before Scenario 50, unchanged for
   // them.
   const locations = topPanel?.type === 'item360' ? topPanel.locations : undefined
+  const itemPanel = topPanel?.type === 'item360' ? topPanel : undefined
   const hasMultiple = panelStack.length > 1
 
   if (typeof window === 'undefined') return null
@@ -305,6 +308,7 @@ export default function Item360Drawer() {
             itemId={itemId}
             context={context}
             locations={locations}
+            region={itemPanel?.region}
             onClose={popPanel}
           />
         ) : (

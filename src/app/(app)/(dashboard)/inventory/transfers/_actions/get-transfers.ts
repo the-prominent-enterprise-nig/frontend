@@ -15,6 +15,8 @@ export async function getTransfers(params?: {
   toWarehouseId?: string
   branchId?: string
   search?: string
+  /** Scenario 56 — only transfers carrying this item (Item 360 Transfers tab). */
+  itemId?: string
 }): Promise<ApiResponse<TransferListResponse>> {
   try {
     const result = await api.get<TransferListResponse>(

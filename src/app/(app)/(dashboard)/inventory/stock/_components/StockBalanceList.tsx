@@ -144,6 +144,7 @@ export default function StockBalanceList({
       // The drawer is the per-location breakdown of this rolled-up row, so
       // it must break down the same locations the row was summed from.
       locations,
+      region,
     })
   }
 

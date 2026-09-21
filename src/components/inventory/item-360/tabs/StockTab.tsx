@@ -15,6 +15,8 @@ import {
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import { stockStatusOf } from '@/src/libs/inventory/stock-status'
 
+const GONE_STATUSES = new Set<SerialNumberSummary['status']>(['sold', 'scrapped', 'pulled_out'])
+
 /** Only a unit on the shelf and not already claimed by an open transfer
  * can be put on a new one (Scenario 56). */
 function isTransferable(serial: SerialNumberSummary): boolean {
@@ -63,10 +65,11 @@ export default function StockTab({
 }: Props) {
   const router = useRouter()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  // Both keyed by the StockBalance's own id — a location's search text and
-  // its picked serials are independent of every other location's, and reset
-  // implicitly (never populated) for one that's never been opened.
-  const [searchByLocation, setSearchByLocation] = useState<Record<string, string>>({})
+  // Scenario 56 — one search across every location rather than one box per
+  // location: a unit you're looking for could be at any of them.
+  const [serialQuery, setSerialQuery] = useState('')
+  // Keyed by the StockBalance's own id — a location's picked serials are
+  // independent of every other location's.
   const [selectedByLocation, setSelectedByLocation] = useState<Record<string, Set<string>>>({})
 
   if (isLoading) return <StockSkeleton />
@@ -89,6 +92,13 @@ export default function StockTab({
   // Whether this item is serial-tracked at all — decides if a location row
   // even offers to expand. A non-tracked item's rows stay flat.
   const isSerialTracked = serialsLoading || serials.length > 0
+  // Units no longer physically at a location (sold, scrapped, pulled out)
+  // don't belong in a per-location stock breakdown.
+  const onShelf = serials.filter((s) => !GONE_STATUSES.has(s.status))
+  const query = serialQuery.trim().toLowerCase()
+  const matchCount = query
+    ? onShelf.filter((s) => s.serialNumber.toLowerCase().includes(query)).length
+    : 0
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -194,20 +204,40 @@ export default function StockTab({
       <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
         <div className="flex items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
           <span className="text-[13px] font-semibold text-[#17171c]">Stock by location</span>
-          <span className="text-[11.5px] text-[#8b8b9b]">Click a location to see its serials</span>
+          {isSerialTracked ? (
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-[#a3a3b2]" />
+              <input
+                value={serialQuery}
+                onChange={(e) => setSerialQuery(e.target.value)}
+                type="text"
+                aria-label="Search serial across all locations"
+                placeholder="Search serial, all locations…"
+                className="w-56 rounded-[7px] border border-[#e4e4e9] bg-white py-1 pr-2 pl-6 text-[11.5px] text-[#17171c] outline-none focus:border-[#5b21b6]"
+              />
+            </div>
+          ) : (
+            <span className="text-[11.5px] text-[#8b8b9b]">On hand per location</span>
+          )}
         </div>
+        {query && matchCount === 0 && (
+          <p className="border-b border-[#eeeef1] px-4 py-2.5 text-[12px] text-[#8b8b9b]">
+            No serial at any location matches &ldquo;{serialQuery}&rdquo;.
+          </p>
+        )}
         <div className="divide-y divide-[#f4f4f6]">
           {stockedBalances.map((balance) => {
             const status = stockStatusOf(balance)
             const canExpand = isSerialTracked && Number(balance.onHandQty ?? 0) > 0
-            const isOpen = canExpand && expanded.has(balance.id)
-            const locationSerials = serials.filter(
+            const locationSerials = onShelf.filter(
               (s) => (s.warehouse ?? s.currentWarehouse)?.id === balance.warehouse?.id
             )
-            const query = (searchByLocation[balance.id] ?? '').trim().toLowerCase()
             const filteredSerials = query
               ? locationSerials.filter((s) => s.serialNumber.toLowerCase().includes(query))
               : locationSerials
+            // A search opens every location holding a match.
+            const isOpen =
+              canExpand && (expanded.has(balance.id) || (!!query && filteredSerials.length > 0))
             const selectedIds = selectedByLocation[balance.id] ?? new Set<string>()
             const selectableIds = filteredSerials.filter(isTransferable).map((s) => s.id)
             const allSelectableSelected =
@@ -294,23 +324,6 @@ export default function StockTab({
                       >
                         Serial numbers at this location
                       </p>
-                      {locationSerials.length > 0 && (
-                        <div className="relative">
-                          <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-[#a3a3b2]" />
-                          <input
-                            value={searchByLocation[balance.id] ?? ''}
-                            onChange={(e) =>
-                              setSearchByLocation((prev) => ({
-                                ...prev,
-                                [balance.id]: e.target.value,
-                              }))
-                            }
-                            type="text"
-                            placeholder="Search serial…"
-                            className="w-44 rounded-[7px] border border-[#e4e4e9] bg-white py-1 pr-2 pl-6 text-[11.5px] text-[#17171c] outline-none focus:border-[#5b21b6]"
-                          />
-                        </div>
-                      )}
                     </div>
 
                     {serialsLoading ? (
@@ -329,7 +342,7 @@ export default function StockTab({
                       </p>
                     ) : filteredSerials.length === 0 ? (
                       <p className="text-[12px] text-[#8b8b9b]">
-                        No serials match &ldquo;{searchByLocation[balance.id]}&rdquo;.
+                        No serials here match &ldquo;{serialQuery}&rdquo;.
                       </p>
                     ) : (
                       <>
