@@ -260,6 +260,8 @@ const DiscrepancySchema = z.object({
   purchaseOrderId: z.string(),
   qtyOrdered: z.number(),
   qtyReceived: z.number(),
+  // Across every receipt against the PO line, this one included.
+  qtyReceivedToDate: z.number().optional(),
   qtyVariance: z.number(),
   hasQtyDiscrepancy: z.boolean(),
   hasConditionIssue: z.boolean(),
@@ -376,6 +378,9 @@ export const ReceivingReportSchema = z.object({
   vatAmount: z.number().optional().nullable(),
   lines: z.array(ReceivingReportLineSchema),
   hasAnyDiscrepancy: z.boolean(),
+  // Scenario 56 — for a PO-linked receipt: does its order still expect more?
+  // Null when there's no PO (transfer, standalone). List response only.
+  deliveryStatus: z.enum(['partial', 'complete']).nullable().optional(),
   // Scenario 51 — the receipt-sourced invoice behind this receipt, if any.
   // Used to warn before a cost correction pushes an already-settled invoice
   // back to owing money.
@@ -385,6 +390,8 @@ export const ReceivingReportSchema = z.object({
       status: z.string(),
       totalAmount: z.number(),
       amountPaid: z.number(),
+      // Scenario 56 — the supplier's SI number, shown on the Reports list.
+      billNumber: z.string().nullable().optional(),
     })
     .optional()
     .nullable(),
