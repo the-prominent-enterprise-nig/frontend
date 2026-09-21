@@ -156,6 +156,31 @@ Parts 1, 8 and 10 are frontend-only and independent, so they can start before th
 
 ---
 
-## Implementation Log
+## Implementation Log — 2026-09-21
 
-_Empty. Filled in by `implement-scenario` as parts land._
+Branch `feat/scenario-56-inventory-po-uat-followup`, both repos (the developer committed parts as they landed). All 11 parts built one at a time, each confirmed by the developer before the next.
+
+**For this scenario, I have done:**
+
+- **Part 1 — Quick cleanups** (gaps 4, 14, 19; 6 left as-is per D2). Lines column removed from Receiving Reports (table, cards, CSV). PO line description is an internal note: off the printed PO and the supplier-facing sheet, labelled "Internal:" on the detail, and a new per-line "Internal note (not printed)" input on the create/edit PO form. Serials "In Transit" metric (which counted `pulled_out`) relabelled Pulled Out. `initial*` fields no longer sent in the create-item body.
+- **Part 2 — In Transit, backend** (gaps 1, 2). New `SerialNumberStatus.in_transit` + backfill migration. Dispatch sets it; receive already lands `in_stock`/`lost_in_transit`. Dispatch and create refuse a serial that is in transit or on another open transfer (not overridable). Manual status change to `in_transit` refused.
+- **Part 3 — In Transit, frontend** (gaps 3, 5). Transfer pickers use a new `freeForTransfer` serial filter; drawer marks claimed units "On TRF-…". One shared stock-state helper + `StockStatusBadge` (Stock Balance, drawer header, drawer locations) with an "In Transit · N" badge. Item Master Stock column via a new `itemIds` balance filter. Follow-up in the same part: Item Master's Status column removed (approval/lifecycle moved to a tag under the name; lifecycle changes to the row ⋯ menu).
+- **Part 4 — Drawer** (gaps 7, 8, 9). Drawer follows the Operations (region) filter — serial list and item ledger gained `region`. One serial search across every location; sold/scrapped/pulled-out units hidden. Transfer history: first built as a Transfers tab, then (developer) consolidated into Movements as an "Open transfers" section listing transfers not yet in the ledger; transfers list gained `itemId` and per-line item/serial.
+- **Part 5 — Serial age** (gap 10). `SerialNumber.firstReceivedAt` (RR age) + `locationSince` (branch age), set from the receipt's own date on create and reset on every move; backfilled. Age column on Serial Numbers and in the drawer.
+- **Part 6 — Ledger** (gaps 11, 13). "New adjustment" (full-page, searchable item, submitted for review via the existing adjustment action). Transfer-in ledger rows linked to their RR line (+ backfill), so the RR code shows and is searchable.
+- **Part 7 — Reports & partial invoicing** (gaps 16, 17). 3-way match compares the bill with the PO value of the received units (`poReceivedTotal`, prorated PO total). Reports list searchable by DR/SI; new Delivery / SI column (Partial delivery / PO complete, SI no. / Awaiting SI). RR detail shows Ordered · This delivery · Received to date · Outstanding.
+- **Part 8 — PO navigation** (gap 18). Every PO mutation clears the single-PO cache too; status pill kept in the URL; Inventory → PO links open the specific PO on the Orders tab (ledger now returns `purchaseOrderId`).
+- **Part 9 — Filters across lists** (gaps 21, 22). Shared `useLocationFilter` + `LocationFilters` (Operations + multi-select Branches) on Stock Balance, Ledger and Serial Numbers; Transfers From/To multi-select; brand/model/category search on Ledger, Serial Numbers and Item Master; Item Master Operations filter (items stocked there).
+- **Part 10 — Transfer direction** (gap 23). Detail reads Supplying / Requesting branch; list column "Supplying → Requesting" with Incoming/Outgoing tags for a branch-assigned viewer.
+- **Part 11 — Add Item** (gap 20). Item Type, Costing method and accounting overrides removed from create (Edit-only); form made full-page; Add Item button on Stock Balance.
+
+**Worth flagging:**
+
+- **Playwright specs not run.** One per part (`e2e/scenario-56-*.spec.ts`); the isolated e2e stack resets the test DB on start and that reset wasn't authorised this run. Backend e2e was run throughout: `stock-transfer-serial-in-transit` 11/11, `receiving-partial-invoicing` 4/4, `inventory-list-filters` 4/4, plus the transfer regressions (serial-request 16/16, partial-receipt 12/12, receipt-serial-correction 12/12, accept-reject 9/9, warehouse-leg 4/4).
+- **Test DB has no seeded suppliers**, so `repair-transfer`, `purchasing-ap` and `stock-receiving-gl-ap-posting` fail in `beforeAll` — pre-existing test-data drift, not these changes; the new specs create their own fixtures. A test-DB reseed should restore them.
+- **Imported catalog has no historical date-in.** ~17.6k dev serials have no receipt link, so both ages read from the import date ("< 1 Mo"). Real receiving and the serialized historical import carry proper dates. A one-off loader is possible if the source sheet has per-serial dates.
+- **In transit to a location with no stock row isn't counted** on that item's badge (pre-existing: in-transit qty is attached to existing balance rows). Offered during Part 3, not built.
+- **Decision changed mid-build:** D8 said "locationSince only"; RR age needed its own field too because a transfer receipt relinks `goodsReceiptLineId`. Both fields shipped.
+- **Deviations from plan:** transfer history ended as an Open transfers section in Movements (developer); Ledger and Supplier-column gaps (12, 15) accepted as-is (developer, before the run); Item Master Status column removed (developer, mid-run).
+- **Local `development` was behind `origin/development`** in both repos at the start (8 backend / 3 frontend commits); the feature branches were fast-forwarded before Part 2.
+- **Migrations to apply** (`prisma migrate deploy`, additive only): `20260921000000_scenario_56_serial_in_transit`, `20260921000100_scenario_56_backfill_serial_in_transit`, `20260921010000_scenario_56_serial_ages`, `20260921020000_scenario_56_transfer_in_ledger_receipt_link`.
