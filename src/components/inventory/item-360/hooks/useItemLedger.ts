@@ -11,7 +11,12 @@ import { splitLocationTokens } from '@/src/libs/inventory/location-tokens'
  * with (see useItem360). Scopes Movements to the same locations as the Stock
  * tab; empty/undefined means every location.
  */
-export function useItemLedger(itemId: string, locations?: string[]) {
+export function useItemLedger(
+  itemId: string,
+  locations?: string[],
+  opts: { region?: 'panay' | 'negros' } = {}
+) {
+  const { region } = opts
   const [page, setPage] = useState(1)
   const limit = 20
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined)
@@ -32,9 +37,10 @@ export function useItemLedger(itemId: string, locations?: string[]) {
       endDate,
       branchIds,
       warehouseIds,
+      region,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [page, limit, warehouseId, transactionType, startDate, endDate, scopeKey]
+    [page, limit, warehouseId, transactionType, startDate, endDate, scopeKey, region]
   )
 
   const ledgerQuery = useQuery({

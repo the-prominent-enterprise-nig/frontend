@@ -474,11 +474,11 @@ function ConvertPrToPoLineCard({ control, errors, index, prLine, setValue }: Lin
           )}
         </div>
 
-        {/* Description (pricing breakdown) */}
+        {/* Internal note — stored as the line's description, never printed */}
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-600">
-            Description
-            <span className="ml-1 font-normal text-zinc-400">(pricing breakdown)</span>
+            Internal note
+            <span className="ml-1 font-normal text-zinc-400">(not printed)</span>
           </label>
           <Controller
             name={`lines.${index}.description`}

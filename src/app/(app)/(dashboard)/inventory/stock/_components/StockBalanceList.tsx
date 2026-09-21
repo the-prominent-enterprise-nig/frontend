@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { RefreshCw, Search, AlertTriangle, Package, X } from 'lucide-react'
+import { RefreshCw, Search, Package, X } from 'lucide-react'
 import { useStockBalance } from '../_hooks/useStockBalance'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -10,7 +10,12 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { StockBalance, StockStateFilter } from '@/src/schema/inventory/goods-receiving'
 import type { SessionUser } from '@/src/libs/guards/permission'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { AddItemButton } from '../../items/_components/AddItemButton'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
+import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
+import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // This screen follows the Purchase Orders / Receiving Reports design's own
@@ -50,7 +55,8 @@ const REGION_OPTIONS = [
 //
 // Deliberately no In Transit column: rows roll up per item across locations, so
 // a single qty there would flatten "3 in transit to Bago, 2 to Ajuy" into an
-// unattributed 5.
+// unattributed 5. Scenario 56 shows it as a second "In Transit · N" badge
+// under the row's stock state instead; the drawer breaks it down per location.
 const STOCK_STATE_OPTIONS = [
   { value: 'in_stock', label: 'In Stock' },
   { value: 'low', label: 'Low Stock' },
@@ -62,30 +68,6 @@ const STOCK_STATE_OPTIONS = [
 const CONTROL_CHROME = {
   idle: 'border-[#d3d3db]',
   focused: 'border-[#5b21b6] shadow-[0_0_0_3px_#f0e9fc]',
-}
-
-type StockStatus = 'out' | 'fully_reserved' | 'low' | 'in_stock'
-
-const STOCK_STATUS_META: Record<StockStatus, { label: string; badge: string; dot: string }> = {
-  out: { label: 'Out of Stock', badge: 'bg-[#fdeceb] text-[#b42318]', dot: 'bg-[#d9544c]' },
-  fully_reserved: {
-    label: 'Fully Reserved',
-    badge: 'bg-[#eaf0fb] text-[#1f4b99]',
-    dot: 'bg-[#3b74cc]',
-  },
-  low: { label: 'Low Stock', badge: 'bg-[#fdf3e7] text-[#8a4b06]', dot: 'bg-[#d18b1d]' },
-  in_stock: { label: 'In Stock', badge: 'bg-[#e7f5ef] text-[#0b6644]', dot: 'bg-[#0f7b52]' },
-}
-
-/** Out of Stock (nothing physically on hand) and Fully Reserved (stock exists
- * but every unit is already committed) used to collapse into one red badge —
- * `availableQty <= 0` was true for both, so a row with 40 on hand and 40
- * reserved read identically to a genuinely empty shelf. */
-function stockStatusOf(bal: StockBalance): StockStatus {
-  if (bal.onHandQty <= 0) return 'out'
-  if (bal.availableQty <= 0) return 'fully_reserved'
-  if (bal.reorderPoint != null && bal.availableQty < bal.reorderPoint) return 'low'
-  return 'in_stock'
 }
 
 const AVAILABLE_TEXT: Record<StockStatus, string> = {
@@ -100,19 +82,6 @@ const AVAILABLE_TEXT: Record<StockStatus, string> = {
  * and this module's e2e specs both lean on the explicit table semantics. */
 const GRID = 'grid grid-cols-[minmax(0,1fr)_128px_84px_68px_84px_96px_118px] gap-x-3 items-center'
 
-function StockStatusBadge({ status }: { status: StockStatus }) {
-  const meta = STOCK_STATUS_META[status]
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[5px] px-[9px] py-[3px] text-[13.5px] font-medium ${meta.badge}`}
-    >
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dot}`} />
-      {status === 'low' && <AlertTriangle className="h-3 w-3" />}
-      {meta.label}
-    </span>
-  )
-}
-
 function SkeletonBar({ wide }: { wide?: boolean }) {
   return (
     <span
@@ -124,7 +93,7 @@ function SkeletonBar({ wide }: { wide?: boolean }) {
 }
 
 export default function StockBalanceList({
-  session: _session,
+  session,
   onLocationsChange,
 }: {
   session: SessionUser
@@ -178,6 +147,7 @@ export default function StockBalanceList({
       // The drawer is the per-location breakdown of this rolled-up row, so
       // it must break down the same locations the row was summed from.
       locations,
+      region,
     })
   }
 
@@ -196,15 +166,19 @@ export default function StockBalanceList({
               selected location.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Scenario 56 — add an item without leaving Stock. */}
+            {hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE) && <AddItemButton />}
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
         </div>
 
         {/* Error */}
@@ -446,7 +420,7 @@ export default function StockBalanceList({
                     </span>
 
                     <span role="cell" className="flex justify-center">
-                      <StockStatusBadge status={status} />
+                      <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
                     </span>
                   </div>
                 )
@@ -518,7 +492,7 @@ export default function StockBalanceList({
                           <span className="truncate text-[11.5px] text-[#8b8b9b]">{subline}</span>
                         )}
                       </div>
-                      <StockStatusBadge status={status} />
+                      <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
                     </div>
 
                     <div className="grid grid-cols-4 gap-[6px]">

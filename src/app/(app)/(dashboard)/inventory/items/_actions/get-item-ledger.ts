@@ -12,6 +12,8 @@ export async function getItemLedger(
     branchIds?: string[]
     warehouseIds?: string[]
     transactionType?: string
+    // Scenario 56 — the list's Operations filter, carried into Item 360.
+    region?: 'panay' | 'negros'
     startDate?: string
     endDate?: string
     page?: number

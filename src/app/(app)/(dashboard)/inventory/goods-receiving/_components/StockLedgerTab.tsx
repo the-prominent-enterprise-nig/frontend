@@ -2,9 +2,11 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Search, X, RefreshCw, BookOpen, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Search, X, RefreshCw, BookOpen, ArrowUpRight, ArrowDownRight, Plus } from 'lucide-react'
 import { useStockLedger } from '../_hooks/useStockLedger'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import NewAdjustmentModal from './NewAdjustmentModal'
+import { LocationFilters } from '@/src/components/inventory/LocationFilters'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
@@ -117,7 +119,11 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
         ))}
       {entry.purchaseOrderNumber && (
         <Link
-          href="/inventory/purchase-orders"
+          href={
+            entry.purchaseOrderId
+              ? `/inventory/purchase-orders?tab=orders&po=${entry.purchaseOrderId}`
+              : '/inventory/purchase-orders?tab=orders'
+          }
           className={`${MONO} truncate text-[13px] text-[#8b8b9b] hover:text-[#5b21b6] hover:underline`}
           title="Purchase order"
         >
@@ -158,13 +164,17 @@ function SkeletonBar({ wide }: { wide?: boolean }) {
 
 export default function StockLedgerTab({
   initialLocations,
+  canAdjust = false,
 }: {
   /** The Stock Balance tab's location filter at the moment this tab is
    * opened, so a branch picked there carries over here instead of Ledger
    * silently showing every branch. */
   initialLocations?: LocationToken[]
+  /** Scenario 56 — shows "New adjustment" (inventory:stock:adjust). */
+  canAdjust?: boolean
 } = {}) {
   const [searchFocus, setSearchFocus] = useState(false)
+  const [isAdjustOpen, setIsAdjustOpen] = useState(false)
   const {
     entries,
     total,
@@ -175,32 +185,27 @@ export default function StockLedgerTab({
     isFetching,
     error,
     refetch,
-    warehouseId,
+    locationFilter,
     transactionType,
     startDate,
     endDate,
     search,
     setSearch,
-    setWarehouseId,
     setTransactionType,
     setStartDate,
     setEndDate,
     resetFilters,
     setPage,
     setLimit,
-    warehouseOptions,
-    warehousesLoading,
   } = useStockLedger(initialLocations)
 
-  const activeFilterCount = [!!warehouseId, !!transactionType, !!startDate || !!endDate].filter(
-    Boolean
-  ).length
+  const activeFilterCount = [
+    !!locationFilter.region,
+    locationFilter.locations.length > 0,
+    !!transactionType,
+    !!startDate || !!endDate,
+  ].filter(Boolean).length
   const hasFilters = activeFilterCount > 0 || !!search
-
-  const locationOptions = warehouseOptions.map((wh) => ({
-    value: wh.id,
-    label: wh.branch?.name ?? wh.name,
-  }))
 
   const isNoResults = !isLoading && entries.length === 0
 
@@ -215,19 +220,33 @@ export default function StockLedgerTab({
             timeline.
           </p>
         </div>
-        <Tooltip label="Refresh">
-          <button
-            type="button"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            aria-label="Refresh"
-            className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-        </Tooltip>
+        <div className="flex items-center gap-2">
+          {canAdjust && (
+            <button
+              type="button"
+              onClick={() => setIsAdjustOpen(true)}
+              className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-3 py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New adjustment
+            </button>
+          )}
+          <Tooltip label="Refresh">
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              aria-label="Refresh"
+              className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </Tooltip>
+        </div>
       </div>
+
+      <NewAdjustmentModal open={isAdjustOpen} onClose={() => setIsAdjustOpen(false)} />
 
       {/* Error */}
       {!!error && (
@@ -254,7 +273,7 @@ export default function StockLedgerTab({
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => setSearchFocus(true)}
             onBlur={() => setSearchFocus(false)}
-            placeholder="Search unit, model, RR, ST, SI, or DR no.…"
+            placeholder="Search unit, brand, model, category, RR, ST, SI or DR…"
             className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
           />
           {search !== '' && (
@@ -271,16 +290,7 @@ export default function StockLedgerTab({
           )}
         </div>
 
-        <SearchableSelect
-          className="w-[190px]"
-          value={warehouseId ?? ''}
-          onChange={(v) => setWarehouseId(v || undefined)}
-          placeholder="All Locations"
-          loading={warehousesLoading}
-          chrome={CONTROL_CHROME}
-          clearable
-          options={locationOptions}
-        />
+        <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
 
         <SearchableSelect
           className="w-[190px]"

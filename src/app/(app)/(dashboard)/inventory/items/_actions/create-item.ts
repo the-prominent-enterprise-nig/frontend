@@ -7,6 +7,15 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
+const INITIAL_STOCK_KEYS = [
+  'initialWarehouseId',
+  'initialDateIn',
+  'initialRr',
+  'initialOrigin',
+  'initialPrice',
+  'initialSerialNumber',
+] as const
+
 export async function createItem(input: unknown): Promise<ApiResponse<{ id: string }>> {
   const session = await getSessionOrNull()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
@@ -27,9 +36,10 @@ export async function createItem(input: unknown): Promise<ApiResponse<{ id: stri
     }
   }
 
-  const data: CreateItemFormValues = {
-    ...parsed.data,
-  }
+  // The initial* fields belong to the separate receive-initial call made
+  // after the item exists — they're not part of the item's own body.
+  const data: CreateItemFormValues = { ...parsed.data }
+  for (const key of INITIAL_STOCK_KEYS) delete data[key]
 
   const result = await api.post<{ id: string }>('/inventory/items', data)
 

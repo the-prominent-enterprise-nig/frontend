@@ -10,7 +10,8 @@ import NegativeStockPageView from '../../negative-stock/_components/NegativeStoc
 import StockLedgerTab from '../../goods-receiving/_components/StockLedgerTab'
 import ReceivingReportsTab from '../../goods-receiving/_components/ReceivingReportsTab'
 import { SerialNumberList } from '../../serial-numbers/_components'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { can, type SessionUser } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 
 // Serial Numbers moved back here from Catalog — it's operational stock data
@@ -42,7 +43,10 @@ export function StockHub({ session }: { session: SessionUser }) {
         <SerialNumberList session={session} />
       ) : tab === 'ledger' ? (
         <div className="mx-auto w-full max-w-[1560px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-          <StockLedgerTab initialLocations={sharedLocations} />
+          <StockLedgerTab
+            initialLocations={sharedLocations}
+            canAdjust={can(session, INVENTORY_PERMISSIONS.STOCK_ADJUST)}
+          />
         </div>
       ) : tab === 'reports' ? (
         <div className="mx-auto w-full max-w-[1560px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
