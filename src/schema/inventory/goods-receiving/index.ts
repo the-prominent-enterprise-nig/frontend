@@ -283,8 +283,11 @@ const ReceivingReportLineItemSchema = StockBalanceItemSchema.extend({
 
 const ReceivingReportLineSchema = z.object({
   id: z.string(),
-  goodsReceiptId: z.string(),
-  itemId: z.string(),
+  // Optional: a merged-in Manual Receiving Report row (see sourceType below)
+  // has no goodsReceiptId/itemId of its own — it's a different Prisma model
+  // entirely, normalized just enough to render in this same list/row shape.
+  goodsReceiptId: z.string().optional(),
+  itemId: z.string().optional(),
   item: ReceivingReportLineItemSchema.optional().nullable(),
   purchaseOrderLineId: z.string().optional().nullable(),
   purchaseOrderLine: ReceivingReportPoLineSchema.optional().nullable(),
@@ -308,10 +311,10 @@ const ReceivingReportLineSchema = z.object({
   discountedCost: z.number().optional().nullable(),
   taxCode: z.string().optional().nullable(),
   taxAmount: z.number().optional().nullable(),
-  qualityHold: z.boolean(),
+  qualityHold: z.boolean().optional(),
   isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),
-  discrepancy: DiscrepancySchema.nullable(),
+  discrepancy: DiscrepancySchema.nullable().optional(),
 })
 
 const ReceivingReportWarehouseSchema = z.object({
@@ -332,7 +335,11 @@ export const ReceivingReportSchema = z.object({
   id: z.string(),
   code: z.string(),
   status: z.string(),
-  applicationType: z.string(),
+  // Present on every row from getReceivingReports() (see stock.service.ts) —
+  // optional here only so this schema still fits the single-receipt detail
+  // response, which never sets it since a merged list is meaningless there.
+  sourceType: z.enum(['goods_receipt', 'manual_rr']).optional(),
+  applicationType: z.string().optional(),
   modeOfTransfer: z.string().optional().nullable(),
   receivedAt: z.string(),
   notes: z.string().optional().nullable(),

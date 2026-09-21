@@ -8,11 +8,13 @@ import {
   Expenses,
   APBillSuppliers,
   APBills,
+  ARInvoices,
   AccountMappings,
   BankAccounts,
   type BusinessExpense,
   type APBillSupplierOption,
   type APBill,
+  type ARInvoice,
   type AccountMapping,
   type PayeeType,
   type ClearedType,
@@ -400,6 +402,8 @@ function ExpenseFormFields({
     voucherNumber: initial?.voucherNumber ?? '',
     customerId: initial?.customerId ?? '',
     customerLabel: initial?.customer?.name ?? '',
+    arInvoiceId: initial?.arInvoiceId ?? '',
+    salesInvoiceNumber: initial?.salesInvoiceNumber ?? '',
     employeeId: initial?.employeeId ?? '',
     employeeLabel: initial?.employee
       ? [initial.employee.firstName, initial.employee.lastName].filter(Boolean).join(' ')
@@ -444,6 +448,28 @@ function ExpenseFormFields({
       : [emptyLine()]
   )
   const [siCandidates, setSiCandidates] = useState<Record<number, APBill[]>>({})
+  // Sales Invoice (ARInvoice) suggestions for the header field below —
+  // scoped to the header's customer. A resolver effect re-runs whenever the
+  // customer changes, and backfills the display text when the form already
+  // holds a linked arInvoiceId (e.g. an edit-mode draft loading) — same "no
+  // joined label yet" gap apBillId has, for the same cross-module-id reason.
+  const [arInvoiceCandidates, setArInvoiceCandidates] = useState<ARInvoice[]>([])
+  useEffect(() => {
+    const customerId = form.customerId
+    if (!customerId) {
+      setArInvoiceCandidates([])
+      return
+    }
+    ARInvoices.list({ customerId }).then((res) => {
+      const candidates = res.data?.items ?? []
+      setArInvoiceCandidates(candidates)
+      setForm((f) => {
+        if (f.customerId !== customerId || !f.arInvoiceId || f.salesInvoiceNumber) return f
+        const picked = candidates.find((c) => c.id === f.arInvoiceId)
+        return picked ? { ...f, salesInvoiceNumber: picked.invoiceNumber } : f
+      })
+    })
+  }, [form.customerId])
   // A line's Division is one pick from the tenant's branches and departments
   // listed together — "dropdown came from branches and departments". Loaded
   // once here and shared by every line.
@@ -512,31 +538,23 @@ function ExpenseFormFields({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // An ordinary expense line posts to an expense account, which is all this
-  // picker ever offered. Payroll is the one exception below.
-  const expenseAccounts = useMemo(
-    () => postableAccounts.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE'),
-    [postableAccounts]
-  )
-  const categoryOptions = useMemo(
-    () => accountsToCategoryOptions(expenseAccounts),
-    [expenseAccounts]
-  )
-  // Payee → Other only. These entries credit assets and liabilities as well
-  // as debiting expense — a payroll run touches the receivable and both
-  // statutory payables — so they need the full postable list. Widening it
-  // for every expense made the picker unusable.
-  const ledgerCategoryOptions = useMemo(
-    () => accountsToCategoryOptions(postableAccounts),
-    [postableAccounts]
-  )
-  // Supplier lines can be a real inventory purchase — offer the Inventory
-  // Asset accounts there too, on top of the usual Expense ones. Every other
-  // payee type stays Expense-only (categoryOptions above).
-  const supplierCategoryOptions = useMemo(
-    () => accountsToCategoryOptions([...expenseAccounts, ...inventoryAccounts]),
-    [expenseAccounts, inventoryAccounts]
-  )
+  // The Account picker offers the full Chart of Accounts for every payee
+  // type — postableAccounts already covers assets/liabilities/expense/income
+  // (headers and Equity stay excluded, see the fetch effect above), unioned
+  // with inventoryAccounts since that set also carries the Inventory header
+  // row (1-04-000) itself, which the "-000 = header" heuristic would
+  // otherwise drop.
+  const accountCategoryOptions = useMemo(() => {
+    const merged = [...postableAccounts]
+    const seen = new Set(merged.map((a) => a.id))
+    for (const a of inventoryAccounts) {
+      if (!seen.has(a.id)) {
+        merged.push(a)
+        seen.add(a.id)
+      }
+    }
+    return accountsToCategoryOptions(merged)
+  }, [postableAccounts, inventoryAccounts])
   // Reuses CategorySelect (flat, depth 0) rather than the plain Select —
   // suppliers grew past a comfortable scroll-and-eyeball list, same reason
   // Category itself is a search box instead of a native <select>.
@@ -829,6 +847,8 @@ function ExpenseFormFields({
     payload.voucherNumber = form.voucherNumber || undefined
     if (form.payeeType === 'CUSTOMER') {
       payload.customerId = form.customerId
+      payload.arInvoiceId = form.arInvoiceId || undefined
+      payload.salesInvoiceNumber = form.salesInvoiceNumber || undefined
     } else if (form.payeeType === 'EMPLOYEE') {
       payload.employeeId = form.employeeId
     } else if (form.payeeType === 'SUPPLIER') {
@@ -1135,6 +1155,8 @@ function ExpenseFormFields({
                   payeeType: value as PayeeType,
                   customerId: '',
                   customerLabel: '',
+                  arInvoiceId: '',
+                  salesInvoiceNumber: '',
                   supplierId: '',
                   employeeId: '',
                   employeeLabel: '',
@@ -1187,16 +1209,49 @@ function ExpenseFormFields({
         </div>
 
         {form.payeeType === 'CUSTOMER' && (
-          <div className="max-w-md">
+          <div className="max-w-md space-y-3">
             <Field label="Customer *">
               <CustomerPicker
                 compact
                 value={form.customerId}
                 selectedLabel={form.customerLabel}
                 onChange={(customerId, label) =>
-                  setForm({ ...form, customerId, customerLabel: label })
+                  // A customer switch invalidates the old Sales Invoice pick
+                  // — it belonged to the previous customer's account, and
+                  // the suggestion list is scoped by customer.
+                  setForm({
+                    ...form,
+                    customerId,
+                    customerLabel: label,
+                    arInvoiceId: '',
+                    salesInvoiceNumber: '',
+                  })
                 }
               />
+            </Field>
+            <Field label="Sales Invoice">
+              <input
+                list="ar-invoice-suggestions"
+                value={form.salesInvoiceNumber}
+                onChange={(e) => {
+                  const text = e.target.value
+                  const matched = arInvoiceCandidates.find(
+                    (c) => c.invoiceNumber.toLowerCase() === text.trim().toLowerCase()
+                  )
+                  setForm({
+                    ...form,
+                    salesInvoiceNumber: text,
+                    arInvoiceId: matched?.id ?? '',
+                  })
+                }}
+                placeholder="Sales Invoice #"
+                className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              />
+              <datalist id="ar-invoice-suggestions">
+                {arInvoiceCandidates.map((c) => (
+                  <option key={c.id} value={c.invoiceNumber} />
+                ))}
+              </datalist>
             </Field>
           </div>
         )}
@@ -1349,13 +1404,7 @@ function ExpenseFormFields({
                       noun="accounts"
                       value={line.categoryAccountId}
                       onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
-                      options={
-                        isItemMode
-                          ? supplierCategoryOptions
-                          : isOtherMode
-                            ? ledgerCategoryOptions
-                            : categoryOptions
-                      }
+                      options={accountCategoryOptions}
                       placeholder="— Select —"
                     />
                     {/* Which named balance the line belongs to, under whichever

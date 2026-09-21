@@ -180,6 +180,17 @@ export default function SearchableSelect(props: Props) {
   }, [portal, open, updatePosition])
 
   const filtered = useMemo(() => {
+    // A freshly-reopened field re-seeds `query` with the current selection's
+    // own label (see the input's onFocus below) so the box doesn't look
+    // cleared — filtering on that exact seed before the user has typed
+    // anything would hide every OTHER option, which is wrong for a field
+    // with just a couple of options that don't share substrings (e.g.
+    // "VAT inclusive" / "VAT exclusive": reopening on "inclusive" hid
+    // "exclusive" entirely). `querySeeded` records that the text was seeded
+    // rather than typed, so the list stays complete until a real keystroke
+    // clears the flag — which also keeps filtering working when someone
+    // deliberately types a label matching the current selection, where
+    // comparing the query against that label alone would not.
     if (querySeeded) return options
     const q = query.trim().toLowerCase()
     if (!q) return options

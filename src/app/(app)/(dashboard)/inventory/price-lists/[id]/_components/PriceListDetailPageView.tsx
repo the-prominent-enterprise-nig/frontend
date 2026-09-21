@@ -118,7 +118,6 @@ export function PriceListDetailPageView({
   // Everything counted per-field is scoped to the loaded page on purpose —
   // only this page's rows are in memory, and quoting a whole-list figure the
   // server never sent would be a guess. The labels say so.
-  const missingFloor = items.filter((i: PriceListItem) => isBlank(i.floorPrice)).length
   const missingDownPayment = items.filter((i: PriceListItem) => isBlank(i.downPayment)).length
 
   const stats = [
@@ -127,12 +126,6 @@ export function PriceListDetailPageView({
       value: total.toLocaleString(),
       note: 'across the whole list',
       tone: total === 0 ? 'text-[#c9c9d3]' : 'text-[#17171c]',
-    },
-    {
-      label: 'No floor price',
-      value: missingFloor.toLocaleString(),
-      note: missingFloor ? 'on this page — discounting is unbounded' : 'none on this page',
-      tone: missingFloor ? 'text-[#d18b1d]' : 'text-[#17171c]',
     },
     {
       label: 'No down payment',

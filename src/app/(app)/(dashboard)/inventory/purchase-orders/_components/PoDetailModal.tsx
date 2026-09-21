@@ -10,7 +10,7 @@ import {
   Archive,
   Pencil,
   Download,
-  Receipt,
+  Eye,
   FileText,
   Loader2,
 } from 'lucide-react'
@@ -45,7 +45,6 @@ type Props = {
   canReceive?: boolean
   canClose?: boolean
   canEdit?: boolean
-  canViewApBill?: boolean
   onApprove?: (po: PurchaseOrderSummary) => void
   onCancel?: (po: PurchaseOrderSummary) => void
   onSend?: (po: PurchaseOrderSummary) => void
@@ -54,8 +53,8 @@ type Props = {
    * closes the purchase order itself, settling it. */
   onCloseOrder?: (po: PurchaseOrderSummary) => void
   onEdit?: (po: PurchaseOrderSummary) => void
-  onViewInvoice?: (po: PurchaseOrderSummary) => void
   onViewReceipts?: (po: PurchaseOrderSummary) => void
+  onViewPo?: (po: PurchaseOrderSummary) => void
   onDownload?: (po: PurchaseOrderSummary) => void
   isDownloading?: boolean
 }
@@ -179,15 +178,14 @@ export function PoDetailModal({
   canReceive,
   canClose,
   canEdit,
-  canViewApBill,
   onApprove,
   onCancel,
   onSend,
   onReceive,
   onCloseOrder,
   onEdit,
-  onViewInvoice,
   onViewReceipts,
+  onViewPo,
   onDownload,
   isDownloading,
 }: Props) {
@@ -590,19 +588,17 @@ export function PoDetailModal({
           />
         )}
 
+        <OutlineBtn
+          icon={<Eye className={icon} />}
+          label="View PO"
+          onClick={() => onViewPo?.(po)}
+        />
+
         {receipted.includes(po.status) && (
           <OutlineBtn
             icon={<FileText className={icon} />}
             label="View Receipts"
             onClick={() => onViewReceipts?.(po)}
-          />
-        )}
-
-        {canViewApBill && po.apBills.length > 0 && (
-          <OutlineBtn
-            icon={<Receipt className={icon} />}
-            label="View Invoice"
-            onClick={() => onViewInvoice?.(po)}
           />
         )}
 
