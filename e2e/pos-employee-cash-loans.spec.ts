@@ -60,6 +60,15 @@ test.describe('POS — Employee Cash Loans (amortizing)', () => {
     const dateInputs = page.locator('input[type="date"]')
     await dateInputs.nth(1).fill('2026-10-17') // First Deduction Date
 
+    // Scenario 56 — Bank / Cash Account is now required for every
+    // disbursement method (default here is Cash), not just Bank Transfer.
+    const bankAccountTrigger = page.getByRole('button', { name: 'Select bank account' })
+    const bankAccountInput = page.getByPlaceholder('Search bank accounts…')
+    await clickStable(bankAccountTrigger, bankAccountInput)
+    const bankAccountDropdown = page.locator('div.fixed.z-100')
+    await expect(bankAccountDropdown).toBeVisible({ timeout: 10_000 })
+    await bankAccountDropdown.locator('button').nth(1).click() // first real option, after the "— Select —" clear row
+
     // Live computed preview, mirroring the backend formula.
     await expect(page.getByText('₱6,000.00')).toBeVisible() // Total Interest
     await expect(page.getByText('₱56,000.00')).toBeVisible() // Total Amount Receivable
@@ -72,6 +81,24 @@ test.describe('POS — Employee Cash Loans (amortizing)', () => {
     await expect(page.getByText(employeeName, { exact: false }).first()).toBeVisible()
     await expect(page.getByText('ACTIVE')).toBeVisible()
     // 12-row schedule rendered.
+    await expect(page.locator('tbody tr')).toHaveCount(12)
+
+    // Scenario 56, Part 2 — every field stays editable after submission.
+    // A Reference/Voucher No.-only edit exercises the non-financial patch
+    // path (no reverse-and-repost) — the financially-relevant path itself
+    // is covered thoroughly by the backend e2e suite, not re-proven here.
+    await clickStable(
+      page.getByRole('link', { name: 'Edit' }),
+      page.getByRole('heading', { name: 'Edit Employee Cash Loan' })
+    )
+    await expect(page.getByLabel('Loan Number *')).not.toHaveValue('')
+    await fillStable(page.getByLabel('Reference / Voucher No.'), 'E2E-EDITED-REF')
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Save Changes' }).click()
+      await expect(page).toHaveURL(/\/pos\/employee-cash-loans\/[a-f0-9-]+$/, { timeout: 3_000 })
+    }).toPass({ timeout: 15_000 })
+    await expect(page.getByText('E2E-EDITED-REF')).toBeVisible()
+    // Editing didn't touch financing — still the same schedule.
     await expect(page.locator('tbody tr')).toHaveCount(12)
 
     await page.getByRole('link', { name: 'Back to Employee Cash Loans' }).click()

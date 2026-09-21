@@ -10,7 +10,12 @@ const LineDiscountSchema = z.object({
 
 const ReceiveStockLineSchema = z
   .object({
-    itemId: z.string().min(1, 'Item is required'),
+    itemId: z.string().optional(),
+    // Scenario 55 (Stock-side Manual RR parity) — mirrors
+    // ManualReceivingReportLineFormSchema's own itemId/newItemName either-or:
+    // a line whose item genuinely has no catalog row yet is named here
+    // instead, resolved into a real Item at receiving time server-side.
+    newItemName: z.string().max(255).optional(),
     purchaseOrderLineId: z.string().optional(),
     quantityReceived: z.number().positive('Quantity must be greater than 0'),
     unitCost: z.number().min(0).optional(),
@@ -27,6 +32,12 @@ const ReceiveStockLineSchema = z
     discounts: z.array(LineDiscountSchema).optional(),
     taxCode: z.string().optional(),
     taxAmount: z.number().min(0).optional(),
+    // Scenario 55 (Stock-side Manual RR parity) — mirrors
+    // ManualReceivingReportLineFormSchema's own withholdingClass: 'goods'
+    // withholds 1% of this line's net cost, 'services' 2%. Read server-side
+    // only when the receipt carries no header vatTreatment (see
+    // receiveStock()'s perLineTax branch).
+    withholdingClass: z.string().optional(),
     // Promotional/free item included in the delivery — server forces
     // unitCost to 0 for these regardless of what's submitted (Scenario 05
     // followup, "freebies" gap).
@@ -34,7 +45,18 @@ const ReceiveStockLineSchema = z
     batchNumber: z.string().optional(),
     qualityHold: z.boolean().optional(),
     serialNumbers: z.array(z.string().min(1)).optional(),
+    // Scenario 55 Part 4 — IDs of already-registered, already-sold serials
+    // being repossessed on this line, picked from a real sale rather than
+    // typed as new. Mutually exclusive with serialNumbers in practice — a
+    // repossession picks existing units, never types brand-new ones.
+    existingSerialNumberIds: z.array(z.string().min(1)).optional(),
     notes: z.string().optional(),
+    // Scenario 55 Part 4 — which InstallmentAccount this unit was
+    // repossessed from. Only meaningful when the header's `reason` is
+    // `repossession`; the picker only renders for that reason. Auto-filled
+    // from the picked serial's sale when it resolves to exactly one account,
+    // editable/overridable either way.
+    installmentAccountId: z.string().optional(),
   })
   .refine(
     (line) =>
@@ -46,55 +68,73 @@ const ReceiveStockLineSchema = z
       path: ['serialNumbers'],
     }
   )
+  .refine(
+    (line) =>
+      !line.existingSerialNumberIds ||
+      line.existingSerialNumberIds.length === 0 ||
+      line.existingSerialNumberIds.length === line.quantityReceived,
+    {
+      message: 'Serial count must match quantity received',
+      path: ['existingSerialNumberIds'],
+    }
+  )
+  .refine((line) => !!line.itemId || !!line.newItemName?.trim(), {
+    message: 'Pick a catalog item or mark it "Something else".',
+    path: ['itemId'],
+  })
 
 export const ReceiveStockFormSchema = z
   .object({
-    code: z.string().optional(),
     purchaseOrderNumber: z.string().optional(),
-    purchaseOrderDate: z.string().optional(),
     supplierId: z.string().optional(),
-    // Tax as printed on the supplier's invoice. `withholding` is the rate
-    // rule (the supplier's default when omitted); `withheldAmount` is the
-    // amount actually withheld and overrides it. `vatTreatment` says how the
-    // entered unit costs relate to VAT — `inclusive` (what PH invoices
-    // normally quote) has the server back the VAT out of the cost rather
-    // than add it on top — and `vatAmount` overrides the derived figure.
-    withholding: z.enum(['none', 'pct_1']).optional(),
-    withheldAmount: z.number().min(0).optional(),
-    vatTreatment: z.enum(['inclusive', 'exclusive', 'exempt']).optional(),
-    vatAmount: z.number().min(0).optional(),
+    // Scenario 55 (Stock-side Manual RR parity) — mirrors
+    // CreateManualReceivingReportFormSchema's own supplierId/newSourceName
+    // either-or: an unregistered source is named here instead of picked.
+    newSourceName: z.string().max(255).optional(),
     warehouseId: z.string().min(1, 'Destination warehouse is required'),
-    applicationType: z.enum(['new_stock', 'revert']),
+    // Scenario 55 (Stock-side Manual RR parity, follow-up) — applicationType
+    // (new_stock/revert) is gone from the form: 'revert' was never reachable
+    // anywhere else in the app (receive-against-PO always hardcodes
+    // new_stock too) and existed here only to waive the DR# requirement
+    // below, which this screen no longer offers a way to do. The backend
+    // DTO still requires the field, so receive-stock.ts sends 'new_stock'
+    // directly rather than carrying a fixed value through form state.
     modeOfTransfer: z.string().optional(),
-    nndpCost: z.number().positive().optional(),
     receivedAt: z.string().optional(),
     notes: z.string().max(1000).optional(),
     // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier
     // -> this Receiving Report. Both are the supplier's own paperwork,
     // typed in by whoever is physically receiving the delivery.
-    // Scenario 46 — the DR is required at receiving, the SI is not. The
-    // delivery receipt comes in the driver's hand with the goods, so it always
-    // exists at this moment; the supplier's invoice often follows days later
-    // and the client wants it filled in (and editable) when it does. See the
-    // refine below — this used to be the other way round.
+    // Scenario 46 — originally required at receiving, unlike the SI. Scenario
+    // 55 (Stock-side Manual RR parity, follow-up) dropped that requirement
+    // for this screen specifically, to mirror ManualReceivingReportDto's own
+    // deliveryReceiptNumber, which was never required either — a receiver
+    // here may not have the DR in hand yet. Still required server-side for
+    // every other caller (see receiveStock()'s perLineTax-gated ValidateIf).
     deliveryReceiptNumber: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
-    // Who physically brought the delivery — the Receiving Report's
-    // "Driver/Helper" line. Free text, not the Vehicle roster: that roster is
-    // our own fleet, for branch-to-branch transfers, and a supplier's crew
-    // will never be on it.
-    driverName: z.string().max(150).optional(),
-    helperName: z.string().max(150).optional(),
+    // Scenario 55 — why this is a no-PO receipt with no registered supplier:
+    // getting your own stock back (a repair return, a repossession) rather
+    // than a purchase. Mirrors StockReceiptReason server-side. When set,
+    // `supplierId` is no longer required (see the refine below) and a
+    // branch's own warehouse becomes a valid destination. '' is the
+    // picker's "unset" state (SearchableSelect has no undefined value of
+    // its own) — accepted here so the resolver doesn't reject an untouched
+    // form, normalized to undefined only when building the submit payload.
+    reason: z.union([z.enum(['repair_return', 'repossession', 'other']), z.literal('')]).optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
   })
-  .refine((data) => !!data.supplierId || data.lines.some((line) => !!line.purchaseOrderLineId), {
-    message: 'Supplier is required when this receipt is not linked to a PO',
-    path: ['supplierId'],
-  })
-  .refine((data) => data.applicationType !== 'new_stock' || !!data.deliveryReceiptNumber?.trim(), {
-    message: "Delivery receipt number is required — it's on the paper that came with the goods",
-    path: ['deliveryReceiptNumber'],
-  })
+  .refine(
+    (data) =>
+      !!data.supplierId ||
+      !!data.newSourceName?.trim() ||
+      data.lines.some((line) => !!line.purchaseOrderLineId) ||
+      !!data.reason,
+    {
+      message: 'Source is required when this receipt is not linked to a PO',
+      path: ['supplierId'],
+    }
+  )
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 

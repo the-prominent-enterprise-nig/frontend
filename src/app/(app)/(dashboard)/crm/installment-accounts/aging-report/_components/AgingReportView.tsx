@@ -7,6 +7,7 @@ import { getBranches } from '../../_actions/get-branches'
 import { printAgingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import ExportButton from '@/src/components/common/ExportButton'
 import TablePagination from '@/src/components/common/TablePagination'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import {
   AGING_BUCKETS,
   AGING_BUCKET_LABELS,
@@ -149,18 +150,15 @@ export default function AgingReportView() {
             </option>
           ))}
         </select>
-        <select
+        <SearchableSelect
           value={collectorFilter}
-          onChange={(e) => setCollectorFilter(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All collectors</option>
-          {collectors.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.stubNumber} — {c.name}
-            </option>
-          ))}
-        </select>
+          onChange={setCollectorFilter}
+          options={collectors.map((c) => ({ value: c.id, label: `${c.stubNumber} — ${c.name}` }))}
+          placeholder="All collectors"
+          clearable
+          portal
+          className="w-56"
+        />
       </div>
 
       {error && (
@@ -251,6 +249,11 @@ export default function AgingReportView() {
                   <div className="flex items-center justify-between bg-gray-50 px-4 py-1.5">
                     <span className="text-xs font-medium text-gray-600">
                       Collector: {collector.collectorLabel}
+                      {collector.area && (
+                        <span className="ml-2 font-normal text-gray-400">
+                          Area: {collector.area}
+                        </span>
+                      )}
                     </span>
                     <span className="text-xs text-gray-500">
                       {collector.subtotal.count} · TOTAL PAY&apos;T{' '}
@@ -289,73 +292,95 @@ export default function AgingReportView() {
                           <th className="px-1.5 py-1.5 whitespace-nowrap">Last CR Date</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {collector.rows.map((row) => (
-                          <tr key={row.accountId} className="border-b border-gray-100">
-                            <td className="px-1.5 py-1.5 font-mono">{row.accountNumber}</td>
-                            <td className="px-1.5 py-1.5">{row.customerName}</td>
-                            <td className="px-1.5 py-1.5 text-gray-500">
-                              {row.source === 'installment' ? 'Installment' : 'Invoice'}
-                            </td>
-                            <td className="px-1.5 py-1.5 whitespace-nowrap">
-                              {row.bucket ? (
-                                <>
-                                  <span
-                                    className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${BUCKET_STYLES[row.bucket]}`}
-                                  >
-                                    {AGING_BUCKET_LABELS[row.bucket]}
-                                  </span>
-                                  {row.daysOverdue !== null && row.daysOverdue > 0 && (
-                                    <span className="ml-1.5 text-gray-500">{row.daysOverdue}d</span>
-                                  )}
-                                </>
-                              ) : (
-                                // No due date on record — shown as unknown rather
-                                // than quietly rendered as current.
-                                <span className="text-gray-400">Unknown</span>
-                              )}
-                            </td>
-                            {hasInstallmentRows && (
-                              <>
-                                <td className="px-1.5 py-1.5">{row.type ?? '—'}</td>
-                                <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                  {row.term ?? '—'}
-                                </td>
-                                <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                  {fmt(row.mi)}
-                                </td>
-                                <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                  {fmt(row.dpBal)}
-                                </td>
-                              </>
-                            )}
-                            <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                              {fmt(row.ob)}
-                            </td>
-                            {hasInstallmentRows && (
-                              <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {fmt(row.miDue)}
+                      {collector.categories.map((catGroup) => (
+                        <tbody key={catGroup.category ?? 'uncategorized'}>
+                          {/* Matches the legacy sheet's "CATEGORY A" banner —
+                            only shown when a collector actually spans more
+                            than one category, so a single-category
+                            collector's table isn't cluttered with a
+                            redundant one-row banner. */}
+                          {collector.categories.length > 1 && (
+                            <tr className="bg-prominent-purple-50">
+                              <td
+                                colSpan={hasInstallmentRows ? 16 : 11}
+                                className="px-1.5 py-1 text-[11px] font-semibold uppercase text-prominent-purple-900"
+                              >
+                                Category {catGroup.category ?? 'Uncategorized'} ·{' '}
+                                {catGroup.subtotal.count} account
+                                {catGroup.subtotal.count !== 1 ? 's' : ''} · OB{' '}
+                                {fmt(catGroup.subtotal.ob)}
                               </td>
-                            )}
-                            <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                              {row.noArs === null ? '—' : row.noArs}
-                            </td>
-                            <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                              {row.mosRun}
-                            </td>
-                            <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                              {row.notMvg}
-                            </td>
-                            <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                              {fmt(row.totalPayt)}
-                            </td>
-                            <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                              {fmt(row.totalPrice)}
-                            </td>
-                            <td className="px-1.5 py-1.5">{row.lastOrDate ?? '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
+                            </tr>
+                          )}
+                          {catGroup.rows.map((row) => (
+                            <tr key={row.accountId} className="border-b border-gray-100">
+                              <td className="px-1.5 py-1.5 font-mono">{row.accountNumber}</td>
+                              <td className="px-1.5 py-1.5">{row.customerName}</td>
+                              <td className="px-1.5 py-1.5 text-gray-500">
+                                {row.source === 'installment' ? 'Installment' : 'Invoice'}
+                              </td>
+                              <td className="px-1.5 py-1.5 whitespace-nowrap">
+                                {row.bucket ? (
+                                  <>
+                                    <span
+                                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${BUCKET_STYLES[row.bucket]}`}
+                                    >
+                                      {AGING_BUCKET_LABELS[row.bucket]}
+                                    </span>
+                                    {row.daysOverdue !== null && row.daysOverdue > 0 && (
+                                      <span className="ml-1.5 text-gray-500">
+                                        {row.daysOverdue}d
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  // No due date on record — shown as unknown rather
+                                  // than quietly rendered as current.
+                                  <span className="text-gray-400">Unknown</span>
+                                )}
+                              </td>
+                              {hasInstallmentRows && (
+                                <>
+                                  <td className="px-1.5 py-1.5">{row.type ?? '—'}</td>
+                                  <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                    {row.term ?? '—'}
+                                  </td>
+                                  <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                    {fmt(row.mi)}
+                                  </td>
+                                  <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                    {fmt(row.dpBal)}
+                                  </td>
+                                </>
+                              )}
+                              <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {fmt(row.ob)}
+                              </td>
+                              {hasInstallmentRows && (
+                                <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {fmt(row.miDue)}
+                                </td>
+                              )}
+                              <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {row.noArs === null ? '—' : row.noArs}
+                              </td>
+                              <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {row.mosRun}
+                              </td>
+                              <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {row.notMvg}
+                              </td>
+                              <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {fmt(row.totalPayt)}
+                              </td>
+                              <td className="px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {fmt(row.totalPrice)}
+                              </td>
+                              <td className="px-1.5 py-1.5">{row.lastOrDate ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      ))}
                     </table>
                   </div>
                 </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { PackagePlus, Plus, X } from 'lucide-react'
@@ -8,16 +8,21 @@ import {
   ReceiveStockFormSchema,
   type ReceiveStockFormValues,
 } from '@/src/schema/inventory/goods-receiving'
+import {
+  MANUAL_RR_TAX_CODES,
+  MANUAL_RR_WITHHOLDING_CLASSES,
+} from '@/src/schema/inventory/manual-receiving-reports'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { showToast } from '@/src/components/ui/toast'
-import {
-  ItemSearchCombobox,
-  type ItemSearchMeta,
-} from '../../purchase-requests/_components/ItemSearchCombobox'
+import type { RepossessedSerialMeta } from '@/src/components/inventory/RepossessedSerialSearchCombobox'
+import type { InstallmentAccountMeta } from '@/src/components/inventory/InstallmentAccountSearchCombobox'
+import { getInstallmentAccounts } from '../_actions/get-installment-accounts'
+import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import type { ItemSearchMeta } from '../../purchase-requests/_components/ItemSearchCombobox'
 import { MONO, PLEX, fmtPeso } from '../../purchase-orders/_components/procurementTokens'
 import { ReceiveActionBar } from '../../purchase-orders/_components/receive-po/ReceiveActionBar'
 import { itemTitle } from '../../purchase-orders/_components/receive-po/itemTitle'
@@ -25,7 +30,6 @@ import {
   isDuplicateSerial,
   type IssueFix,
 } from '../../purchase-orders/_components/receive-po/receiveIssues'
-import type { LineDrawer } from '../../purchase-orders/_components/receive-po/receiveSchema'
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
 import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPanel'
 import { RrLineRow } from './create-rr/RrLineRow'
@@ -69,22 +73,22 @@ type ItemMeta = {
 }
 
 const defaultValues: ReceiveStockFormValues = {
-  code: '',
   purchaseOrderNumber: '',
-  purchaseOrderDate: '',
   supplierId: '',
-  withholding: 'none',
-  vatTreatment: 'inclusive',
+  newSourceName: '',
   warehouseId: '',
-  applicationType: 'new_stock',
   modeOfTransfer: '',
   receivedAt: '',
   notes: '',
   deliveryReceiptNumber: '',
   supplierInvoiceNumber: '',
-  driverName: '',
-  helperName: '',
-  lines: [],
+  reason: '',
+  // Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+  // own defaultValues.lines exactly: one line ready for input on open, not
+  // an empty list waiting on "+ Add Line". Goods + VAT is the common case
+  // (same reasoning as Manual RR's own comment) — a receiver overrides per
+  // line only for the exception.
+  lines: [{ quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }],
 }
 
 const emptyLine = (itemId: string): RrLine => ({
@@ -95,11 +99,6 @@ const emptyLine = (itemId: string): RrLine => ({
   batchNumber: '',
   notes: '',
 })
-
-/** A line's stable identity for UI state that must survive re-ordering: the PO
- * line it answers to, or the item itself (the form keeps one manual line per
- * item — adding the same item again adds to the line already there). */
-const lineKey = (line: RrLine): string => line.purchaseOrderLineId ?? line.itemId
 
 /**
  * Create Receiving Report — the standalone half of receiving, for a delivery
@@ -141,28 +140,58 @@ export default function ReceiveStockModal({
     defaultValues,
   })
 
-  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
 
   const [submitted, setSubmitted] = useState(false)
-  const [drawers, setDrawers] = useState<Record<string, LineDrawer>>({})
+  // Scenario 55 (Stock-side Manual RR parity) — this and the maps below are
+  // all keyed by field.id (useFieldArray's own stable per-row identity),
+  // mirroring ManualRrForm.tsx exactly: a line is added blank now, so two
+  // simultaneously-blank rows would otherwise collide on any key derived
+  // from their (empty) data instead.
   const [pickedItems, setPickedItems] = useState<Record<string, ItemMeta>>({})
+  const [lineModes, setLineModes] = useState<Record<string, 'catalog' | 'other'>>({})
+  // Scenario 55 (Stock-side Manual RR parity, follow-up) — a "Something
+  // else" line has no catalog isSerialTracked flag to read, so whether it's
+  // tracked is its own explicit toggle instead, mirroring ManualRrForm.tsx's
+  // own lineTrackSerial exactly.
+  const [otherLineTrackSerial, setOtherLineTrackSerial] = useState<Record<string, boolean>>({})
+  const [installmentAccountLabels, setInstallmentAccountLabels] = useState<Record<string, string>>(
+    {}
+  )
+  // Scenario 55 Part 4 — one level deeper than the above: a repossession
+  // line can pick more than one existing serial (one per unit), each with
+  // its own label.
+  const [existingSerialLabels, setExistingSerialLabels] = useState<
+    Record<string, Record<number, string>>
+  >({})
   const [linkedPo, setLinkedPo] = useState<PurchaseOrderSummary | null>(null)
   const [poPickerOpen, setPoPickerOpen] = useState(false)
   const [supplierName, setSupplierName] = useState<string | undefined>(undefined)
-  // Remounts the catalogue search after each pick so it resets to empty, ready
-  // for the next item — it has no clear-on-select of its own.
-  const [searchNonce, setSearchNonce] = useState(0)
-  const searchRef = useRef<HTMLDivElement | null>(null)
+  // Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+  // own sourceMode: which of Source's two inputs is live. Decides what
+  // post() below actually sends.
+  const [sourceMode, setSourceMode] = useState<'registered' | 'new'>('registered')
+  // Applied to every NEW line going forward, not retroactively to existing
+  // ones — same convention and reasoning as ManualRrForm.tsx's own Defaults
+  // bar, including the starting value: Goods + VAT is the common case.
+  const [defaultTaxCode, setDefaultTaxCode] = useState('VAT')
+  const [defaultWithholdingClass, setDefaultWithholdingClass] = useState('goods')
 
   useEffect(() => {
     if (isOpen) return
     reset(defaultValues)
     setSubmitted(false)
-    setDrawers({})
     setPickedItems({})
+    setLineModes({})
+    setOtherLineTrackSerial({})
+    setInstallmentAccountLabels({})
+    setExistingSerialLabels({})
     setLinkedPo(null)
     setPoPickerOpen(false)
     setSupplierName(undefined)
+    setSourceMode('registered')
+    setDefaultTaxCode('VAT')
+    setDefaultWithholdingClass('goods')
   }, [isOpen, reset])
 
   const watched = watch()
@@ -174,7 +203,8 @@ export default function ReceiveStockModal({
   // Every derivation below is a plain expression over a handful of rows.
   const lines = (watched.lines ?? []) as RrLine[]
 
-  const metaFor = (itemId: string): ItemMeta | undefined => {
+  const metaFor = (itemId?: string): ItemMeta | undefined => {
+    if (!itemId) return undefined
     if (pickedItems[itemId]) return pickedItems[itemId]
     const item = items.find((candidate) => candidate.id === itemId)
     if (!item) return undefined
@@ -197,8 +227,20 @@ export default function ReceiveStockModal({
   const contextFor = (index: number) => {
     const line = lines[index]
     const poLine = line ? poLineOf(line) : undefined
+    const fieldId = fields[index]?.id ?? ''
+    const mode = lineModeFor(fieldId, line)
     return {
-      isSerialTracked: line ? (metaFor(line.itemId)?.isSerialTracked ?? false) : false,
+      // Scenario 55 (Stock-side Manual RR parity, follow-up) — a "Something
+      // else" line has no catalog meta to read isSerialTracked from; its own
+      // "Track by serial number" toggle decides instead, same as
+      // ManualRrForm.tsx's own isLineSerialTracked() — including that
+      // function's own fallback: a field.id with no explicit toggle state
+      // yet (a just-duplicated line) reads its copied serialNumbers instead,
+      // so a duplicated tracked line doesn't silently lose tracking.
+      isSerialTracked:
+        !line || mode !== 'catalog'
+          ? (otherLineTrackSerial[fieldId] ?? (line?.serialNumbers?.length ?? 0) > 0)
+          : (metaFor(line.itemId)?.isSerialTracked ?? false),
       outstanding: poLine
         ? Math.max(Number(poLine.quantity) - Number(poLine.receivedQuantity ?? 0), 0)
         : null,
@@ -209,28 +251,42 @@ export default function ReceiveStockModal({
   const labelFor = (index: number): string => {
     const line = lines[index]
     if (!line) return 'Line'
+    // Scenario 55 (Stock-side Manual RR parity) — a "Something else" line
+    // has no catalog meta to read a title from; its typed name is the title.
+    if (!line.itemId && line.newItemName) return line.newItemName
     const meta = metaFor(line.itemId)
     return itemTitle(meta) || meta?.name || 'Line'
   }
 
-  const issueLines = toIssueLines(lines, contextFor)
+  /** Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+   * own lineModeFor(): falls back to whichever of itemId/newItemName is
+   * actually populated, so a PO-pulled line (always a real itemId) reads as
+   * 'catalog' with zero extra bookkeeping. */
+  function lineModeFor(fieldId: string, line?: RrLine): 'catalog' | 'other' {
+    if (fieldId in lineModes) return lineModes[fieldId]
+    return line?.newItemName ? 'other' : 'catalog'
+  }
+
+  const issueLines = toIssueLines(lines, contextFor, watched.reason)
   const totals = rrTotals(watched)
   // ReceiveActionBar speaks the PO screen's totals shape; the two extra flags
-  // there are "does this supplier charge/withhold", which on this screen is a
-  // choice on the form rather than a fact about the supplier.
+  // there are "does this delivery charge/withhold at all", read off the
+  // already-derived per-line totals now that there's no header treatment to
+  // ask instead (Scenario 55, Stock-side Manual RR parity).
   const barTotals = {
     ...totals,
-    chargesInputVat: (watched.vatTreatment ?? 'inclusive') !== 'exempt',
+    chargesInputVat: totals.vat > 0,
     withholdsTax: totals.withheld > 0,
   }
 
   const blockers = collectRrBlockers(
     {
       supplierId: watched.supplierId,
+      newSourceName: watched.newSourceName,
       warehouseId: watched.warehouseId,
       deliveryReceiptNumber: watched.deliveryReceiptNumber,
-      applicationType: watched.applicationType ?? 'new_stock',
       hasPoLink: lines.some((line) => !!line.purchaseOrderLineId),
+      reason: watched.reason,
     },
     issueLines,
     labelFor
@@ -252,6 +308,23 @@ export default function ReceiveStockModal({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pricingKey])
+
+  // Scenario 55 — PO Number/Supplier Invoice No. disappear once a reason is
+  // picked (a reasoned receipt isn't fulfilling a PO or reconciling against a
+  // supplier invoice), so a stale value entered before switching Reason on
+  // would otherwise ride along invisibly instead of being what the
+  // now-hidden field last showed. Source is deliberately NOT cleared here
+  // (Scenario 55, Stock-side Manual RR parity) — it stays visible and
+  // optional once reasoned, same as ManualRrForm.tsx's own Source field, so
+  // a receiver who knows where a repair return or repossession actually came
+  // from can still say so.
+  useEffect(() => {
+    if (!watched.reason) return
+    if (watched.purchaseOrderNumber) setValue('purchaseOrderNumber', '', { shouldValidate: false })
+    if (watched.supplierInvoiceNumber)
+      setValue('supplierInvoiceNumber', '', { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watched.reason])
 
   const outstandingNotPulled = useMemo(() => {
     if (!linkedPo) return []
@@ -280,6 +353,12 @@ export default function ReceiveStockModal({
     const serials = (line.serialNumbers ?? []).slice(0, qty)
     while (serials.length < qty) serials.push('')
     setValue(`lines.${index}.serialNumbers`, serials, { shouldValidate: showErrors })
+    // Scenario 55 Part 4 — same resize, for a repossession line's picked ids.
+    const existingSerials = (line.existingSerialNumberIds ?? []).slice(0, qty)
+    while (existingSerials.length < qty) existingSerials.push('')
+    setValue(`lines.${index}.existingSerialNumberIds`, existingSerials, {
+      shouldValidate: showErrors,
+    })
   }
 
   function setSerial(index: number, unitIndex: number, value: string): void {
@@ -287,6 +366,80 @@ export default function ReceiveStockModal({
     while (next.length <= unitIndex) next.push('')
     next[unitIndex] = value
     setValue(`lines.${index}.serialNumbers`, next, { shouldValidate: showErrors })
+  }
+
+  /** Scenario 55 Part 4 — picking a repossessed unit also tries to resolve
+   * its InstallmentAccount from the sale it came off (meta.soldToCustomerId),
+   * so the receiver isn't left to separately search for what the serial
+   * pick already implies. Left for manual search when it doesn't resolve to
+   * exactly one account — a customer can hold more than one, or none at all
+   * (a legacy/imported sale). */
+  function setExistingSerial(
+    index: number,
+    unitIndex: number,
+    id: string,
+    meta?: RepossessedSerialMeta,
+    label?: string
+  ): void {
+    const key = fields[index]?.id ?? ''
+    const next = (lines[index]?.existingSerialNumberIds ?? []).slice()
+    while (next.length <= unitIndex) next.push('')
+    next[unitIndex] = id
+    setValue(`lines.${index}.existingSerialNumberIds`, next, { shouldValidate: showErrors })
+    if (label) {
+      setExistingSerialLabels((prev) => ({
+        ...prev,
+        [key]: { ...prev[key], [unitIndex]: label },
+      }))
+    }
+
+    const customerId = meta?.soldToCustomerId
+    if (!id || !customerId) return
+    void (async () => {
+      const res = await getInstallmentAccounts({ customerId, limit: 5 })
+      const matches = res.data?.data ?? []
+      if (matches.length !== 1) return
+      setValue(`lines.${index}.installmentAccountId`, matches[0].id, { shouldValidate: false })
+      setInstallmentAccountLabels((prev) => ({ ...prev, [key]: matches[0].accountNumber }))
+    })()
+  }
+
+  /** Scenario 55 Part 4 — the other direction of the same resolution:
+   * picking the account first tries to find the one sold serial of this
+   * line's item that belongs to that customer, so the receiver who already
+   * knows WHO they're repossessing from isn't then made to separately hunt
+   * down which unit. Only auto-fills the first unit slot — a line with
+   * quantity > 1 still needs the rest picked manually, same as any other
+   * partial match. */
+  function setInstallmentAccount(
+    index: number,
+    id: string,
+    meta?: InstallmentAccountMeta,
+    label?: string
+  ): void {
+    const key = fields[index]?.id ?? ''
+    setValue(`lines.${index}.installmentAccountId`, id || undefined, { shouldValidate: false })
+    setInstallmentAccountLabels((prev) => ({ ...prev, [key]: label ?? '' }))
+
+    const customerId = meta?.customerId
+    const itemId = lines[index]?.itemId
+    if (!id || !customerId || !itemId) return
+    void (async () => {
+      const res = await getSerialNumbers({
+        itemId,
+        status: 'sold',
+        soldToCustomerId: customerId,
+        limit: 5,
+      })
+      const matches = res.data?.data ?? []
+      if (matches.length !== 1) return
+      const serial = matches[0]
+      setValue(`lines.${index}.existingSerialNumberIds`, [serial.id], { shouldValidate: false })
+      setExistingSerialLabels((prev) => ({
+        ...prev,
+        [key]: { 0: serial.serialNumber },
+      }))
+    })()
   }
 
   function toggleFreebie(index: number): void {
@@ -305,21 +458,67 @@ export default function ReceiveStockModal({
     if (!next) setValue(`lines.${index}.notes`, '', { shouldValidate: false })
   }
 
-  /** Opens the catalogue picker — SearchCombobox's closed state is a button,
-   * so clicking it is what puts the caret in the search. */
-  function openItemSearch(): void {
-    searchRef.current?.querySelector('button')?.click()
-  }
-
-  function openDrawer(key: string, drawer: LineDrawer): void {
-    setDrawers((prev) => ({ ...prev, [key]: drawer }))
-  }
-
   function rememberItem(itemId: string, meta: ItemMeta): void {
     setPickedItems((prev) => ({ ...prev, [itemId]: meta }))
   }
 
-  function addFromCatalog(option: SearchComboboxOption): void {
+  /** Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+   * own addLine(): a blank row, priced and taxed with whatever the Defaults
+   * bar currently says. The receiver picks or types the item inside the row
+   * itself afterward — this screen no longer adds a line by scanning
+   * straight into a header search box. */
+  function addLine(): void {
+    append({
+      quantityReceived: 1,
+      isFreebie: false,
+      qualityHold: false,
+      batchNumber: '',
+      notes: '',
+      taxCode: defaultTaxCode || undefined,
+      withholdingClass: defaultWithholdingClass || undefined,
+    })
+  }
+
+  /** Scenario 55 (Stock-side Manual RR parity, follow-up) — mirrors
+   * ManualRrForm.tsx's own duplicateLine() exactly. The copy's own
+   * mode/serial-tracked-ness needs no explicit bookkeeping — lineModeFor()/
+   * contextFor() already fall back to reading it off the copied itemId/
+   * newItemName/serialNumbers for a field.id that has no map entry yet. */
+  function duplicateLine(index: number): void {
+    const line = lines[index]
+    if (!line) return
+    insert(index + 1, { ...line, discounts: line.discounts ? [...line.discounts] : undefined })
+  }
+
+  function setLineMode(index: number, fieldId: string, mode: 'catalog' | 'other'): void {
+    setLineModes((prev) => ({ ...prev, [fieldId]: mode }))
+    setValue(`lines.${index}.itemId`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.newItemName`, '', { shouldValidate: false })
+    setValue(`lines.${index}.serialNumbers`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.existingSerialNumberIds`, undefined, { shouldValidate: false })
+    setOtherLineTrackSerial((prev) => ({ ...prev, [fieldId]: false }))
+  }
+
+  /** Scenario 55 (Stock-side Manual RR parity, follow-up) — mirrors
+   * ManualRrForm.tsx's own toggleLineTrackSerial() exactly. */
+  function toggleOtherLineTrackSerial(index: number, fieldId: string): void {
+    const next = !(otherLineTrackSerial[fieldId] ?? false)
+    setOtherLineTrackSerial((prev) => ({ ...prev, [fieldId]: next }))
+    const qty = Number(lines[index]?.quantityReceived) || 0
+    setValue(
+      `lines.${index}.serialNumbers`,
+      next ? Array.from({ length: qty }, () => '') : undefined,
+      { shouldValidate: showErrors }
+    )
+  }
+
+  /** Scenario 55 (Stock-side Manual RR parity) — picking a catalog item now
+   * happens inside an already-added row (mirrors
+   * ManualRrForm.tsx's own onSelectCatalogItem), not at an add step that
+   * merges into an existing line — two rows can end up pointing at the same
+   * item with nothing reconciling them, same accepted tradeoff Manual RR
+   * already ships with. */
+  function onSelectCatalogItem(index: number, option: SearchComboboxOption): void {
     const meta = option.meta as ItemSearchMeta | undefined
     const isSerialTracked = meta?.isSerialTracked ?? false
     rememberItem(option.id, {
@@ -328,28 +527,20 @@ export default function ReceiveStockModal({
       isSerialTracked,
       costPrice: meta?.costPrice ?? null,
     })
-    setSearchNonce((n) => n + 1)
-
-    // One manual line per item: scanning the same box twice means two units,
-    // not two lines that later disagree about cost.
-    const existing = lines.findIndex(
-      (line) => line.itemId === option.id && !line.purchaseOrderLineId
-    )
-    if (existing >= 0) {
-      setQuantity(existing, (lines[existing]?.quantityReceived ?? 0) + 1)
-      showToast({ title: 'Quantity increased', description: option.primary, status: 'success' })
-      return
+    if (meta?.costPrice != null) {
+      setValue(`lines.${index}.unitCost`, meta.costPrice, { shouldValidate: false })
     }
-
-    append({
-      ...emptyLine(option.id),
-      unitCost: meta?.costPrice ?? undefined,
-      ...(isSerialTracked && { serialNumbers: [''] }),
-    })
-    // Serial-tracked lines open their capture drawer straight away rather than
-    // making the receiver hunt for it — it is the one thing that will block the
-    // post, and the units are in their hands right now.
-    if (isSerialTracked) openDrawer(option.id, 'serials')
+    if (isSerialTracked) {
+      const qty = Number(lines[index]?.quantityReceived) || 1
+      const isRepossession = watched.reason === 'repossession'
+      setValue(
+        isRepossession ? `lines.${index}.existingSerialNumberIds` : `lines.${index}.serialNumbers`,
+        Array.from({ length: qty }, () => ''),
+        { shouldValidate: false }
+      )
+      // Serial inputs render inline as soon as isSerialTracked is true (see
+      // RrLineRow.tsx) — nothing left to open.
+    }
   }
 
   function pullPoLines(): void {
@@ -382,7 +573,6 @@ export default function ReceiveStockModal({
         isFreebie: poLine.isFreebie ?? false,
         ...(isSerialTracked && { serialNumbers: Array.from({ length: outstanding }, () => '') }),
       })
-      if (isSerialTracked) openDrawer(poLine.id, 'serials')
       pulled += 1
     })
     if (pulled > 0) {
@@ -397,9 +587,6 @@ export default function ReceiveStockModal({
     setLinkedPo(po)
     setPoPickerOpen(false)
     setValue('purchaseOrderNumber', po.code, { shouldValidate: false })
-    if (po.orderDate) {
-      setValue('purchaseOrderDate', po.orderDate.slice(0, 10), { shouldValidate: false })
-    }
     setValue('supplierId', po.supplierId, { shouldValidate: showErrors })
     setSupplierName(po.supplier.name)
     // Only adopt the PO's destination when it is one this form can actually
@@ -413,7 +600,6 @@ export default function ReceiveStockModal({
   function unlinkPo(): void {
     setLinkedPo(null)
     setValue('purchaseOrderNumber', '', { shouldValidate: false })
-    setValue('purchaseOrderDate', '', { shouldValidate: false })
     // The goods stay on the receipt — only what they answer to is dropped.
     lines.forEach((line, index) => {
       if (!line.purchaseOrderLineId) return
@@ -424,7 +610,6 @@ export default function ReceiveStockModal({
   function applyLineFix(index: number, fix?: IssueFix): void {
     const line = lines[index]
     if (!line) return
-    if (fix === 'serials') openDrawer(lineKey(line), 'serials')
     if (fix === 'qty') setQuantity(index, Math.max(1, line.quantityReceived || 0))
   }
 
@@ -458,16 +643,45 @@ export default function ReceiveStockModal({
   }
 
   async function post(data: ReceiveStockFormValues): Promise<void> {
+    const reason = data.reason || undefined
     const result = await onSubmit({
       ...data,
+      reason,
+      // Scenario 55 (Stock-side Manual RR parity) — mirrors
+      // ManualRrForm.tsx's own handleSubmit: sourceMode decides which of the
+      // two ever actually goes out, whatever the other field is still
+      // holding from before a toggle. A PO link always wins regardless of
+      // mode — its supplierId is the one already set by linkPo().
+      supplierId:
+        linkedPo || sourceMode === 'registered' ? data.supplierId || undefined : undefined,
+      newSourceName:
+        !linkedPo && sourceMode === 'new' ? data.newSourceName?.trim() || undefined : undefined,
       lines: data.lines.map((line) => ({
         ...line,
+        // Same either-or as the header Source field, per line: a catalog
+        // pick wins outright, otherwise the typed name goes out.
+        newItemName: line.itemId ? undefined : line.newItemName?.trim() || undefined,
         batchNumber: line.batchNumber?.trim() || undefined,
         notes: line.notes?.trim() || undefined,
         taxCode: line.taxCode || undefined,
         discounts: line.discounts && line.discounts.length > 0 ? line.discounts : undefined,
+        // Mutually exclusive on the wire (receiveStock() rejects a line that
+        // sets both) — only one of these two is ever real per line, gated on
+        // the same reason check.
         serialNumbers:
-          line.serialNumbers && line.serialNumbers.length > 0 ? line.serialNumbers : undefined,
+          reason !== 'repossession' && line.serialNumbers && line.serialNumbers.length > 0
+            ? line.serialNumbers
+            : undefined,
+        existingSerialNumberIds:
+          reason === 'repossession' &&
+          line.existingSerialNumberIds &&
+          line.existingSerialNumberIds.length > 0
+            ? line.existingSerialNumberIds
+            : undefined,
+        // Only meaningful for a repossession line — dropped otherwise so a
+        // stale pick from switching reasons mid-form can't ride along.
+        installmentAccountId:
+          reason === 'repossession' ? line.installmentAccountId || undefined : undefined,
       })),
     })
     if (result.success) onClose()
@@ -524,12 +738,13 @@ export default function ReceiveStockModal({
           control={control}
           errors={errors}
           warehouses={warehouses}
-          canViewCost={canViewCost}
           showErrors={showErrors}
           supplierId={watched.supplierId ?? ''}
           supplierName={supplierName}
           linkedPo={linkedPo}
-          totals={totals}
+          reason={watched.reason || undefined}
+          sourceMode={sourceMode}
+          onSourceModeChange={setSourceMode}
           onSupplierChange={(id, name) => {
             setValue('supplierId', id, { shouldValidate: showErrors })
             setSupplierName(name)
@@ -550,32 +765,12 @@ export default function ReceiveStockModal({
                 </span>
               </div>
               <span className="text-[11.5px] text-[#8b8b9b]">
-                Search by name or SKU. Scanning the same item again adds a unit.
+                Pick a catalog item, or mark it &ldquo;Something else&rdquo; for anything not in the
+                catalog.
               </span>
             </div>
 
-            <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-              <div ref={searchRef} className="min-w-[240px] max-w-[480px] flex-1">
-                <ItemSearchCombobox
-                  key={searchNonce}
-                  value=""
-                  onChange={() => {}}
-                  onSelect={addFromCatalog}
-                  compact
-                  placeholder="Scan or search an item to add a line…"
-                />
-              </div>
-              {/* The search is the whole interaction, but a bare box doesn't
-                  read as "this is how a line gets added" — the button says so,
-                  and opens the very same picker. */}
-              <button
-                type="button"
-                onClick={openItemSearch}
-                className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Item
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
               {outstandingNotPulled.length > 0 && (
                 <button
                   type="button"
@@ -586,36 +781,77 @@ export default function ReceiveStockModal({
                   {outstandingNotPulled.length === 1 ? 'line' : 'lines'}
                 </button>
               )}
+              <button
+                type="button"
+                onClick={addLine}
+                className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Line
+              </button>
             </div>
           </div>
 
+          {/* Scenario 55 (Stock-side Manual RR parity) — mirrors
+              ManualRrForm.tsx's own Defaults bar exactly: applied to every
+              new line going forward, not retroactively. */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
+            <span className="text-[11px] text-[#8b8b9b]">Defaults</span>
+            <select
+              value={defaultTaxCode}
+              onChange={(e) => setDefaultTaxCode(e.target.value)}
+              aria-label="Default tax code"
+              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+            >
+              {MANUAL_RR_TAX_CODES.map((code) => (
+                <option key={code.value} value={code.value}>
+                  {code.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={defaultWithholdingClass}
+              onChange={(e) => setDefaultWithholdingClass(e.target.value)}
+              aria-label="Default withholding"
+              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+            >
+              {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
+                <option key={cls.value} value={cls.value}>
+                  {cls.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {!hasLines ? (
-            <div className="flex flex-col items-center gap-2 px-[22px] py-10 text-center">
+            <div className="flex flex-col items-center gap-2 px-5.5 py-10 text-center">
               <PackagePlus className="h-7 w-7 text-[#d3d3db]" />
               <span className="text-[13.5px] font-semibold">No items added yet.</span>
               <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#5b5b6b]">
                 {linkedPo
-                  ? `Search above, or pull the lines ${linkedPo.code} is still waiting on.`
-                  : 'Search the catalogue above, or scan a barcode straight into the field.'}
+                  ? `Add a line, or pull the lines ${linkedPo.code} is still waiting on.`
+                  : 'Add a line, then pick a catalog item or name what arrived.'}
               </span>
               <button
                 type="button"
-                onClick={openItemSearch}
-                className="mt-2 rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
+                onClick={addLine}
+                className="mt-2 rounded-lg bg-[#5b21b6] px-3.75 py-2.25 text-[13px] font-medium text-white hover:bg-[#4a189b]"
               >
-                Search items
+                Add a line
               </button>
             </div>
           ) : (
             <>
               <div
-                className={`${MONO} ${RR_LINE_GRID} hidden items-end border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+                className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
               >
                 <span>Item / SKU</span>
-                <span className="text-center">Qty received</span>
-                <span>Serials</span>
-                <span>Details</span>
-                <span className="text-right">Line total</span>
+                <span className="text-right">Qty</span>
+                <span className="text-right">SRP</span>
+                <span>Discounts</span>
+                <span className="text-right">Unit Price</span>
+                <span className="text-right">Line Total</span>
+                <span className="text-center">Free</span>
                 <span />
               </div>
 
@@ -623,15 +859,16 @@ export default function ReceiveStockModal({
                 const line = lines[index]
                 if (!line) return null
                 const context = contextFor(index)
-                const key = lineKey(line)
+                const mode = lineModeFor(field.id, line)
                 return (
                   <RrLineRow
                     key={field.id}
                     control={control}
                     lineIndex={index}
                     line={line}
-                    title={labelFor(index)}
-                    sku={metaFor(line.itemId)?.sku}
+                    mode={mode}
+                    onSetMode={(m) => setLineMode(index, field.id, m)}
+                    itemName={line.itemId ? metaFor(line.itemId)?.name : undefined}
                     isSerialTracked={context.isSerialTracked}
                     poChip={
                       context.outstanding != null && linkedPo
@@ -640,13 +877,13 @@ export default function ReceiveStockModal({
                     }
                     canViewCost={canViewCost}
                     showErrors={showErrors}
+                    itemError={errors.lines?.[index]?.itemId?.message}
                     issues={rrLineIssues(issueLines, index, context, line).filter(
                       (issue) => showErrors || issue.kind === 'warn'
                     )}
-                    drawer={drawers[key] ?? null}
                     isDuplicateSerial={(unit) => isDuplicateSerial(issueLines, index, unit)}
+                    onSelectCatalogItem={(option) => onSelectCatalogItem(index, option)}
                     onQtyChange={(raw) => setQuantity(index, raw)}
-                    onOpenDrawer={(drawer) => openDrawer(key, drawer)}
                     onSerialChange={(unit, value) => setSerial(index, unit, value)}
                     onClearSerials={() =>
                       setValue(
@@ -655,11 +892,22 @@ export default function ReceiveStockModal({
                         { shouldValidate: showErrors }
                       )
                     }
+                    onToggleTrackSerial={() => toggleOtherLineTrackSerial(index, field.id)}
                     onToggleFreebie={() => toggleFreebie(index)}
                     onToggleQualityHold={() => toggleQualityHold(index)}
                     onQcReasonChange={(value) =>
                       setValue(`lines.${index}.notes`, value, { shouldValidate: false })
                     }
+                    showInstallmentAccountPicker={watched.reason === 'repossession'}
+                    installmentAccountLabel={installmentAccountLabels[field.id]}
+                    onInstallmentAccountChange={(id, meta, label) =>
+                      setInstallmentAccount(index, id, meta, label)
+                    }
+                    existingSerialLabels={existingSerialLabels[field.id]}
+                    onExistingSerialChange={(unitIndex, id, meta, label) =>
+                      setExistingSerial(index, unitIndex, id, meta, label)
+                    }
+                    onDuplicate={() => duplicateLine(index)}
                     onRemove={() => remove(index)}
                     onFixIssue={(fix) => applyLineFix(index, fix)}
                   />

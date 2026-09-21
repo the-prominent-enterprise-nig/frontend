@@ -189,7 +189,7 @@ export function buildReceivingReportHtml(
     <div class="info">
       <div class="party">
         <p class="party-name">${esc(sourceName) || '—'}</p>
-        <p class="party-address">Driver/Helper: ${esc(driverHelper) || '—'}</p>
+        ${driverHelper ? `<p class="party-address">Driver/Helper: ${esc(driverHelper)}</p>` : ''}
       </div>
       <div class="meta">
         <p class="meta-label">No.</p>
@@ -2267,3 +2267,11 @@ export function printCollectionReceiptDocument(data: unknown): void {
   win.document.write(buildCollectionReceiptHtml(data))
   win.document.close()
 }
+
+// Scenario 57 — Acknowledgement Receipt has no HTML print builder here.
+// AcknowledgementReceiptDetail.tsx renders the letterhead sheet directly
+// (twice — Acknowledgement Receipt and, per developer decision 2026-09-21,
+// a second "Collection Receipt"-titled copy of the same data below it) and
+// downloads each with downloadElementAsPdf() (src/libs/print/htmlToPdf.ts)
+// for a real .pdf file, rather than the window.open()+window.print() "Save
+// as PDF" pattern every other document builder in this file uses.

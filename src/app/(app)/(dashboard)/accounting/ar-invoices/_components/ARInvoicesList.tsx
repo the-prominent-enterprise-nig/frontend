@@ -1204,7 +1204,7 @@ function PaymentDialog({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (requiresBankAccount && !form.bankAccountId) {
-      setError(`Source of Fund is required for ${form.method.replace('_', ' ')} payments.`)
+      setError(`Deposited To is required for ${form.method.replace('_', ' ')} payments.`)
       return
     }
     setSaving(true)
@@ -1359,7 +1359,7 @@ function PaymentDialog({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label={requiresBankAccount ? 'Source of Fund *' : 'Source of Fund'}>
+          <Field label={requiresBankAccount ? 'Deposited To *' : 'Deposited To'}>
             <select
               required={requiresBankAccount}
               value={form.bankAccountId}

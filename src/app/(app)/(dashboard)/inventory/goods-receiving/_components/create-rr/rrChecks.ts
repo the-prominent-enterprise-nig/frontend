@@ -21,16 +21,26 @@ export type LineContext = {
 
 /** The form's lines in the shape the shared serial rules read. `selected` is
  * always "has a quantity" here: unlike the PO screen, a line only exists on
- * this receipt because someone added it. */
+ * this receipt because someone added it.
+ *
+ * Scenario 55 Part 4 — a repossession line's real "serial" values live in
+ * existingSerialNumberIds, not serialNumbers (picked IDs, not typed
+ * numbers). Feeding those into the shared serialNumbers slot rather than
+ * teaching the shared receiveIssues.ts (also used by the PO receive screen,
+ * which has no concept of a repossession) about a second field — the shared
+ * completeness/duplicate checks only care about "is this slot filled" and
+ * "does this value repeat", both of which work identically on an id string.
+ */
 export function toIssueLines(
   lines: RrLine[],
-  context: (index: number) => LineContext
+  context: (index: number) => LineContext,
+  reason?: string
 ): IssueLine[] {
   return lines.map((line, index) => ({
     selected: (line.quantityReceived || 0) > 0,
     quantityReceived: line.quantityReceived || 0,
     isSerialTracked: context(index).isSerialTracked,
-    serialNumbers: line.serialNumbers,
+    serialNumbers: reason === 'repossession' ? line.existingSerialNumberIds : line.serialNumbers,
     qualityHold: line.qualityHold ?? false,
     notes: line.notes,
   }))
@@ -61,9 +71,11 @@ export function rrLineIssues(
     const slots = (line.serialNumbers ?? []).slice(0, line.quantityReceived)
     const filled = slots.filter((serial) => norm(serial ?? '')).length
     if (filled < line.quantityReceived) {
+      // Scenario 55 (Stock-side Manual RR parity, follow-up) — no `fix`
+      // here: the serial inputs are always visible inline once a line is
+      // serial-tracked (RrLineRow.tsx), never behind a button to open.
       out.push({
         kind: 'error',
-        fix: 'serials',
         code: 'serials-missing',
         text: `${line.quantityReceived - filled} of ${line.quantityReceived} serial numbers still missing.`,
       })
@@ -80,7 +92,6 @@ export function rrLineIssues(
     if (duplicates.length > 0) {
       out.push({
         kind: 'error',
-        fix: 'serials',
         text: `Duplicate serial ${duplicates.join(', ')}. Each unit needs a unique number.`,
       })
     }
@@ -116,12 +127,19 @@ export function rrLineIssues(
 
 export type HeaderState = {
   supplierId?: string
+  /** Scenario 55 (Stock-side Manual RR parity) — the other half of Source's
+   * either-or, same as supplierId above. */
+  newSourceName?: string
   warehouseId?: string
   deliveryReceiptNumber?: string
-  applicationType: 'new_stock' | 'revert'
   /** True when at least one line is linked to a purchase order line, which is
    * the other way the server can resolve a supplier. */
   hasPoLink: boolean
+  /** Scenario 55 — the third way: getting your own stock back (a repair
+   * return, a repossession) isn't a purchase, so there's no supplier to
+   * name. '' is the picker's unset state, same falsy treatment as
+   * undefined. */
+  reason?: 'repair_return' | 'repossession' | 'other' | ''
 }
 
 /** Everything standing between the receiver and a posted receipt. */
@@ -132,11 +150,11 @@ export function collectRrBlockers(
 ): Blocker[] {
   const out: Blocker[] = []
 
-  if (!header.supplierId && !header.hasPoLink) {
+  if (!header.supplierId && !header.newSourceName?.trim() && !header.hasPoLink && !header.reason) {
     out.push({
       key: 'supplier',
       kind: 'error',
-      text: 'Supplier is required, or link this receipt to a purchase order.',
+      text: 'Source is required, or link this receipt to a purchase order.',
     })
   }
 
@@ -148,16 +166,9 @@ export function collectRrBlockers(
     })
   }
 
-  // Only new stock needs the supplier's delivery receipt: a revert is our own
-  // paperwork coming back, and there is no driver handing anything over.
-  if (header.applicationType === 'new_stock' && !(header.deliveryReceiptNumber ?? '').trim()) {
-    out.push({
-      key: 'dr',
-      kind: 'error',
-      fix: 'dr',
-      text: "Delivery receipt number is required. It's on the paper that came with the goods.",
-    })
-  }
+  // Scenario 55 (Stock-side Manual RR parity, follow-up) — no longer a
+  // blocker: this screen now mirrors ManualReceivingReportDto's own
+  // deliveryReceiptNumber, which was never required either.
 
   if (lines.length === 0) {
     out.push({ key: 'lines', kind: 'error', text: 'Add at least one item that arrived.' })

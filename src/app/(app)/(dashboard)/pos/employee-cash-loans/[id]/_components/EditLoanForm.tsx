@@ -7,7 +7,8 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import CategorySelect from '@/src/components/ui/CategorySelect'
 import EmployeeSearchCombobox from '../../_components/EmployeeSearchCombobox'
-import { issueEmployeeCashLoan } from '../../_actions/issue-cash-loan'
+import { getEmployeeCashLoan } from '../../_actions/get-loan'
+import { updateEmployeeCashLoan } from '../../_actions/update-cash-loan'
 import {
   listEmployeeCashLoanBankAccounts,
   type EmployeeCashLoanBankAccount,
@@ -31,8 +32,6 @@ function addCalendarMonths(dateStr: string, months: number): Date | null {
 
 // Mirrors EmployeeCashLoansService.computeFinancing (backend) — a live
 // preview only; the server recomputes and is the source of truth.
-// interestRate is a flat MONTHLY add-on rate — interest accrues across the
-// whole term, not a one-time charge.
 function computeFinancing(principal: number, termMonths: number, interestRate: number) {
   const totalInterest = round2(principal * interestRate * termMonths)
   const totalReceivable = round2(principal + totalInterest)
@@ -47,24 +46,28 @@ function computeFinancing(principal: number, termMonths: number, interestRate: n
   }
 }
 
-export default function NewLoanForm() {
+type FormState = {
+  loanNumber: string
+  employeeId: string
+  employeeLabel: string
+  principal: string
+  termMonths: string
+  interestRate: string
+  loanDate: string
+  firstDeductionDate: string
+  disbursementMethod: 'CASH' | 'BANK_TRANSFER' | 'CHECK'
+  bankAccountId: string
+  referenceNumber: string
+  note: string
+}
+
+export default function EditLoanForm({ id }: { id: string }) {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({
-    employeeId: '',
-    employeeLabel: '',
-    principal: '',
-    termMonths: '12',
-    // Scenario 56 — default monthly add-on rate is 3%, still editable.
-    interestRate: '0.03',
-    loanDate: new Date().toISOString().slice(0, 10),
-    firstDeductionDate: '',
-    disbursementMethod: 'CASH' as 'CASH' | 'BANK_TRANSFER' | 'CHECK',
-    bankAccountId: '',
-    referenceNumber: '',
-    note: '',
-  })
+  const [form, setForm] = useState<FormState | null>(null)
   const [bankAccounts, setBankAccounts] = useState<EmployeeCashLoanBankAccount[]>([])
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -72,14 +75,39 @@ export default function NewLoanForm() {
     listEmployeeCashLoanBankAccounts().then((res) => {
       if (res.success && res.data) setBankAccounts(res.data)
     })
-  }, [])
+    getEmployeeCashLoan(id).then((res) => {
+      if (res.success && res.data) {
+        const loan = res.data
+        setForm({
+          loanNumber: loan.loanNumber,
+          employeeId: loan.employeeId,
+          employeeLabel: loan.employee
+            ? [loan.employee.firstName, loan.employee.lastName].filter(Boolean).join(' ')
+            : '',
+          principal: String(loan.principal),
+          termMonths: String(loan.termMonths),
+          interestRate: String(loan.interestRate),
+          loanDate: loan.loanDate.slice(0, 10),
+          firstDeductionDate: loan.firstDeductionDate.slice(0, 10),
+          disbursementMethod: loan.disbursementMethod,
+          bankAccountId: loan.bankAccountId ?? '',
+          referenceNumber: loan.referenceNumber ?? '',
+          note: loan.note ?? '',
+        })
+      } else {
+        setNotFound(true)
+      }
+      setLoading(false)
+    })
+  }, [id])
 
-  const principal = Number(form.principal) || 0
-  const term = Number(form.termMonths) || 0
-  const rate = Number(form.interestRate) || 0
+  const principal = Number(form?.principal) || 0
+  const term = Number(form?.termMonths) || 0
+  const rate = Number(form?.interestRate) || 0
   const preview = principal > 0 && term > 0 ? computeFinancing(principal, term, rate) : null
-  const firstDueDate = form.firstDeductionDate ? new Date(form.firstDeductionDate) : null
-  const finalDueDate = term > 0 ? addCalendarMonths(form.firstDeductionDate, term - 1) : null
+  const firstDueDate = form?.firstDeductionDate ? new Date(form.firstDeductionDate) : null
+  const finalDueDate =
+    term > 0 && form ? addCalendarMonths(form.firstDeductionDate, term - 1) : null
 
   const bankAccountOptions = bankAccounts.map((a) => ({
     id: a.id,
@@ -90,25 +118,28 @@ export default function NewLoanForm() {
     depth: 0,
   }))
 
-  const validate = (): string | null => {
-    if (!form.employeeId) return 'Pick the employee.'
+  const validate = (f: FormState): string | null => {
+    if (!f.loanNumber.trim()) return 'Enter the Loan Number.'
+    if (!f.employeeId) return 'Pick the employee.'
     if (principal <= 0) return 'Enter the Loan Principal.'
     if (term <= 0) return 'Enter the term in months.'
-    if (!form.firstDeductionDate) return 'Enter the First Deduction Date.'
-    if (!form.bankAccountId) return 'Pick a Bank / Cash Account.'
+    if (!f.firstDeductionDate) return 'Enter the First Deduction Date.'
+    if (!f.bankAccountId) return 'Pick a Bank / Cash Account.'
     return null
   }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const validationError = validate()
+    if (!form) return
+    const validationError = validate(form)
     if (validationError) {
       setError(validationError)
       return
     }
     setSaving(true)
     setError(null)
-    const res = await issueEmployeeCashLoan({
+    const res = await updateEmployeeCashLoan(id, {
+      loanNumber: form.loanNumber,
       employeeId: form.employeeId,
       principal,
       termMonths: term,
@@ -122,19 +153,19 @@ export default function NewLoanForm() {
     })
     setSaving(false)
     if (!res.success || !res.data) {
-      setError(res.message || res.error || 'Failed to create loan')
+      setError(res.message || res.error || 'Failed to save changes')
       return
     }
-    // The list page's own useQuery cache (a different page/mount, so
-    // revalidatePath in the server action doesn't reach it) would otherwise
-    // still show its pre-issuance snapshot for up to staleTime on return.
     queryClient.invalidateQueries({ queryKey: ['pos-employee-cash-loans'] })
-    router.push(`/pos/employee-cash-loans/${res.data.id}`)
+    router.push(`/pos/employee-cash-loans/${id}`)
   }
 
-  return (
-    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
-      <div className="mx-auto max-w-5xl">
+  if (loading) {
+    return <div className="px-6 py-8 text-sm text-zinc-400 lg:px-10">Loading…</div>
+  }
+  if (notFound || !form) {
+    return (
+      <div className="px-6 py-8 lg:px-10">
         <Link
           href="/pos/employee-cash-loans"
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800"
@@ -142,21 +173,48 @@ export default function NewLoanForm() {
           <ArrowLeft className="h-4 w-4" />
           Back to Employee Cash Loans
         </Link>
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          Loan not found.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
+      <div className="mx-auto max-w-5xl">
+        <Link
+          href={`/pos/employee-cash-loans/${id}`}
+          className="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Loan
+        </Link>
 
         <h1 className="text-2xl font-bold text-prominent-purple-900 md:text-3xl">
-          New Employee Cash Loan
+          Edit Employee Cash Loan
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          No approval step — posts immediately. Repayment isn&apos;t automatic yet; it&apos;s
-          recovered later via payroll/Accounting.
+          Changing Principal, Term, Interest Rate, Loan Date, First Deduction Date, Disbursement
+          Method, or Bank / Cash Account reverses the original journal entry and posts a new one.
+          Editing only the Reference/Voucher No. or Note doesn&apos;t touch the GL.
         </p>
 
         <form onSubmit={submit} className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <Field label="Loan Number *">
+              <input
+                value={form.loanNumber}
+                onChange={(e) => setForm({ ...form, loanNumber: e.target.value })}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+              />
+            </Field>
+
             <Field label="Employee *">
               <EmployeeSearchCombobox
                 value={form.employeeId}
                 onChange={(employeeId) => setForm({ ...form, employeeId })}
+                initialLabel={form.employeeLabel}
                 error={undefined}
               />
             </Field>
@@ -220,7 +278,7 @@ export default function NewLoanForm() {
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    disbursementMethod: e.target.value as typeof form.disbursementMethod,
+                    disbursementMethod: e.target.value as FormState['disbursementMethod'],
                   })
                 }
                 className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm"
@@ -246,7 +304,6 @@ export default function NewLoanForm() {
               <input
                 value={form.referenceNumber}
                 onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })}
-                placeholder="Auto-generated if left blank"
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
               />
             </Field>
@@ -268,7 +325,7 @@ export default function NewLoanForm() {
 
             <div className="flex justify-end gap-2 border-t border-zinc-200 pt-3">
               <Link
-                href="/pos/employee-cash-loans"
+                href={`/pos/employee-cash-loans/${id}`}
                 className="rounded-lg px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
               >
                 Cancel
@@ -278,7 +335,7 @@ export default function NewLoanForm() {
                 disabled={saving}
                 className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-50"
               >
-                {saving ? 'Creating…' : 'Create Cash Loan'}
+                {saving ? 'Saving…' : 'Save Changes'}
               </button>
             </div>
           </div>

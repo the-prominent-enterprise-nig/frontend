@@ -541,6 +541,13 @@ export interface AgingReportRow {
   branchName: string
   collectorId: string | null
   collectorLabel: string
+  /** The collector's own coverage area — same value the legacy sheet
+   * labels "AREA:". One per collector, so it's a display label on the
+   * collector group, not a separate nesting level. */
+  area: string | null
+  /** Null for a standalone-invoice row (no installment account to read a
+   * category from) or a not-yet-categorized account. */
+  category: InstallmentAccountCategory | null
   siNo: string
   siDate: string
   customerName: string
@@ -600,10 +607,22 @@ export interface AgingReportSubtotal {
   buckets: AgingBucketTotals
 }
 
+/** A collector group's rows, split by InstallmentAccountCategory — mirrors
+ * the legacy sheet's "CATEGORY A" banner under each collector. Additive
+ * alongside AgingReportCollectorGroup.rows (the flat list), not a
+ * replacement — anything reading `rows` directly still works. */
+export interface AgingReportCategoryGroup {
+  category: InstallmentAccountCategory | null
+  rows: AgingReportRow[]
+  subtotal: AgingReportSubtotal
+}
+
 export interface AgingReportCollectorGroup {
   collectorId: string | null
   collectorLabel: string
+  area: string | null
   rows: AgingReportRow[]
+  categories: AgingReportCategoryGroup[]
   subtotal: AgingReportSubtotal
 }
 

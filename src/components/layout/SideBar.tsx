@@ -441,6 +441,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:collections:manage',
       },
       {
+        // Scenario 57 — money received with no customer/invoice behind it
+        // (a walk-in payment, a refund). Its own sidebar item rather than
+        // buttons on the Collections page (developer decision, 2026-09-21),
+        // same permission as Collections since it's the same "money
+        // received at the counter" capability.
+        label: 'Acknowledgement Receipts',
+        href: '/pos/collections/acknowledgement',
+        icon: ReceiptText,
+        requiredPermission: 'pos:collections:manage',
+        usePrefix: true,
+      },
+      {
         // Scenario 47 — sidebar gate matches the page's own guard
         // (POS_PERMISSIONS.REPORTS_READ). Deliberately not
         // 'pos:transactions:read': these reports expose unit cost and

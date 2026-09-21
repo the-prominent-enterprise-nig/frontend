@@ -736,6 +736,61 @@ export const ARInvoices = {
     ),
 }
 
+// ============ Acknowledgement Receipts (Scenario 57) ============
+// The non-customer sibling of Collection Receipt — money received with no
+// Customer/ARInvoice behind it (e.g. a walk-in miscellaneous payment or a
+// refund). payerName is free text by developer decision: no search/link to
+// an existing Customer/Supplier/Employee record.
+export interface AcknowledgementReceipt {
+  id: string
+  /** System-generated ACK-YYYYMMDD-NNNN, set once at creation. */
+  number: string | null
+  payerName: string
+  /** Real GL account this receipt credits — a Chart of Accounts pick,
+   * matching the client's own reference tool. Null means it fell back to
+   * the MISC_COLLECTIONS mapping. */
+  accountId: string | null
+  account?: { id: string; name: string; number: string | null } | null
+  reason: string | null
+  amount: number
+  paymentDate: string
+  method: PaymentMethod | null
+  /** Which of the tenant's own bank/cash accounts this landed in — matches
+   * "Received in" on the client's reference tool. Informational only. */
+  bankAccountId: string | null
+  reference: string | null
+  notes: string | null
+  branchId: string | null
+  branch?: { id: string; name: string; code: string } | null
+  collectorId: string | null
+  collector?: { id: string; name: string; stubNumber: string } | null
+  journalEntryId: string | null
+  createdAt: string
+  /** Letterhead info for the printed document — only present on get(id), not list(). */
+  enterprise?: { companyLegalName?: string | null; address?: string | null } | null
+}
+export interface CreateAcknowledgementReceiptInput {
+  payerName: string
+  accountId?: string
+  reason?: string
+  amount: number
+  paymentDate: string
+  method?: PaymentMethod
+  bankAccountId?: string
+  reference?: string
+  notes?: string
+  branchId?: string
+  collectorId?: string
+}
+export const AcknowledgementReceipts = {
+  list: (params?: { branchId?: string }) =>
+    api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
+  get: (id: string) =>
+    api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
+  create: (body: CreateAcknowledgementReceiptInput) =>
+    api.post<AcknowledgementReceipt>('/accounting/acknowledgement-receipts', body),
+}
+
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
 export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill'

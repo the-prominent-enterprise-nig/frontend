@@ -2,10 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import {
-  ReceiveStockFormSchema,
-  type ReceiveStockFormValues,
-} from '@/src/schema/inventory/goods-receiving'
+import { ReceiveStockFormSchema } from '@/src/schema/inventory/goods-receiving'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -46,32 +43,24 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<Received
     }
   }
 
-  const {
-    purchaseOrderNumber,
-    purchaseOrderDate,
-    code,
-    receivedAt,
-    modeOfTransfer,
-    driverName,
-    helperName,
-    lines,
-    ...rest
-  } = parsed.data
+  const { purchaseOrderNumber, receivedAt, modeOfTransfer, lines, ...rest } = parsed.data
 
   const backendPayload = {
     ...rest,
-    ...(code && code.trim() ? { code: code.trim() } : {}),
+    // Scenario 55 (Stock-side Manual RR parity) — this screen no longer
+    // collects Application Type or a header VAT/withholding treatment at
+    // all (see ReceiveStockFormSchema's own comment). applicationType is
+    // still required by the DTO, so it's sent as a fixed value rather than
+    // carried through form state; perLineTax switches receiveStock() onto
+    // the per-line taxCode/withholdingClass model Manual RR uses instead of
+    // the header-driven one every other caller still gets.
+    applicationType: 'new_stock' as const,
+    perLineTax: true,
     ...(receivedAt && receivedAt.trim() ? { receivedAt: receivedAt.trim() } : {}),
     ...(modeOfTransfer && modeOfTransfer.trim() ? { modeOfTransfer: modeOfTransfer.trim() } : {}),
     ...(purchaseOrderNumber && purchaseOrderNumber.trim()
       ? { purchaseOrderNumber: purchaseOrderNumber.trim() }
       : {}),
-    ...(purchaseOrderDate && purchaseOrderDate.trim() ? { poDate: purchaseOrderDate.trim() } : {}),
-    // Omitted rather than sent as '' so an unfilled box stores null and the
-    // printed Driver/Helper line falls back to its blank, not to an empty
-    // string that reads as a recorded answer.
-    ...(driverName && driverName.trim() ? { driverName: driverName.trim() } : {}),
-    ...(helperName && helperName.trim() ? { helperName: helperName.trim() } : {}),
     lines: lines.map(({ itemId, batchNumber, serialNumbers, ...lineRest }) => ({
       ...lineRest,
       itemId,

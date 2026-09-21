@@ -20,6 +20,11 @@ type Params = {
   warehouseIds?: string[]
   status?: string
   search?: string
+  // Scenario 55 Part 4 — auto-resolving which of this item's sold serials
+  // belongs to a picked InstallmentAccount's customer, so a repossession
+  // line's serial can be found from the account rather than the other way
+  // around.
+  soldToCustomerId?: string
   // Scenario 08 (Caravan) Part 2 — "Caravan" view. Any value here
   // signals "show what's consigned to my branch" — the backend always
   // resolves the real branch server-side for a branch-restricted caller, so
@@ -52,6 +57,7 @@ export async function getSerialNumbers(
     warehouseIds: params.warehouseIds?.length ? params.warehouseIds.join(',') : undefined,
     status: params.status,
     search: params.search,
+    soldToCustomerId: params.soldToCustomerId,
     consignedToBranchId: params.consignedToBranchId,
     scope: params.scope,
     freeForTransfer: params.freeForTransfer ? 'true' : undefined,
