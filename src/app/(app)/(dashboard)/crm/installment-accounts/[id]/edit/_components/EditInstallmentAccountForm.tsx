@@ -22,6 +22,7 @@ type FormState = {
   arrears: string
   penalty: string
   insuranceCharge: string
+  rebateEligible: boolean
 }
 
 const empty: FormState = {
@@ -33,6 +34,7 @@ const empty: FormState = {
   arrears: '',
   penalty: '',
   insuranceCharge: '',
+  rebateEligible: true,
 }
 
 type AccountSummary = {
@@ -112,6 +114,7 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
           arrears: String(a.arrears ?? 0),
           penalty: String(a.penalty ?? 0),
           insuranceCharge: a.insuranceCharge != null ? String(a.insuranceCharge) : '',
+          rebateEligible: a.rebateEligible ?? true,
         })
 
         const suggestion = await installmentAccountsApi.suggestCollector(a.customerId)
@@ -147,6 +150,7 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
       arrears: form.arrears === '' ? undefined : Number(form.arrears),
       penalty: form.penalty === '' ? undefined : Number(form.penalty),
       insuranceCharge: form.insuranceCharge === '' ? undefined : Number(form.insuranceCharge),
+      rebateEligible: form.rebateEligible,
     }
 
     const parsed = updateInstallmentAccountSchema.safeParse(payload)
@@ -373,6 +377,21 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
             {errors.insuranceCharge && (
               <p className="mt-1 text-[12px] text-red-600">{errors.insuranceCharge}</p>
             )}
+          </div>
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-2 text-[13px] font-medium text-gray-700">
+              <input
+                id="rebateEligible"
+                type="checkbox"
+                checked={form.rebateEligible}
+                onChange={(e) => setField('rebateEligible', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-prominent-purple-600 focus:ring-prominent-purple-500"
+              />
+              Eligible for rebate (PPD)
+            </label>
+            <p className="mt-1 text-[12px] text-gray-400">
+              Unchecked, no rebate can be applied to this account at collection.
+            </p>
           </div>
         </div>
 

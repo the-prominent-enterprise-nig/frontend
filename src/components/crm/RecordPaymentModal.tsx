@@ -256,7 +256,7 @@ export default function RecordPaymentModal({
               />
               <p className="mt-1 text-[12px] text-gray-400">
                 {!rebateEligible
-                  ? 'Not eligible for rebate — set at checkout.'
+                  ? 'Not eligible for rebate on this plan.'
                   : suggestedRebate
                     ? `Up to ₱${suggestedRebate.toLocaleString()} for this account.`
                     : 'No rebate available for this account.'}

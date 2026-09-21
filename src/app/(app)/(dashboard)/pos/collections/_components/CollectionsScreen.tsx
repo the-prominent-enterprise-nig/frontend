@@ -206,7 +206,7 @@ const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
   rebate_exceeds_ppd:
     'The rebate is more than the prompt payment discount these dues have earned. A due only earns its PPD once the payment covers it in full.',
   rebate_not_eligible:
-    'This installment plan was marked not eligible for rebate at checkout, so no rebate can be applied.',
+    'This installment plan is not eligible for rebate, so no rebate can be applied.',
   rebate_requires_installment_account:
     'A rebate can only be given on an installment plan. This invoice has no linked installment account.',
   penalty_exceeds_assessed:
@@ -1163,7 +1163,7 @@ function PaymentPanel({
               </div>
               {single.rebateNotEligible ? (
                 <p className="mt-1.5 text-[12px] text-zinc-500">
-                  Not eligible for rebate — set at checkout.
+                  Not eligible for rebate on this plan.
                 </p>
               ) : single.isLate ? (
                 <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-red-700">

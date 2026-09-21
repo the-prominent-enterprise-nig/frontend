@@ -80,5 +80,44 @@ test('CRM account detail and Record payment lock the rebate for a not-eligible a
   const rebateInput = page.locator('#payment-rebateAmount')
   await expect(rebateInput).toBeDisabled()
   await expect(rebateInput).toHaveValue('0')
-  await expect(page.getByText('Not eligible for rebate — set at checkout.')).toBeVisible()
+  await expect(page.getByText('Not eligible for rebate on this plan.')).toBeVisible()
+})
+
+// Scenario 57 Part 4 — eligibility is changeable after the sale from the
+// account's Edit form, and the New form defaults it to eligible.
+test('Edit form revokes eligibility after the fact; New form defaults to eligible', async ({
+  page,
+}) => {
+  const name = `E2E Rebate Edit ${Date.now()}`
+  const customer = await createCustomer(page, name, '09170005703')
+
+  const accountRes = await page.request.post('/api/crm/installment-accounts', {
+    data: {
+      accountNumber: `S57E-${String(Date.now()).slice(-8)}`,
+      customerId: customer.id,
+      listedCashPrice: 20000,
+      downPayment: 2000,
+      termMonths: 12,
+      miFactor: 0.0954,
+    },
+  })
+  expect(accountRes.ok(), await accountRes.text()).toBeTruthy()
+  const account = await accountRes.json()
+  createdAccountId = account.id
+  expect(account.rebateEligible).toBe(true)
+
+  await gotoReady(page, `/crm/installment-accounts/${account.id}/edit`)
+  const checkbox = page.getByLabel('Eligible for rebate (PPD)')
+  await expect(checkbox).toBeChecked()
+  await checkbox.uncheck()
+  await page.locator('button[type="submit"]').click()
+
+  await expect(page).toHaveURL(new RegExp(`/crm/installment-accounts/${account.id}$`), {
+    timeout: 15_000,
+  })
+  const ppdRow = page.getByText('PPD', { exact: true }).locator('..')
+  await expect(ppdRow).toContainText('Not eligible')
+
+  await gotoReady(page, '/crm/installment-accounts/new')
+  await expect(page.getByLabel('Eligible for rebate (PPD)')).toBeChecked()
 })
