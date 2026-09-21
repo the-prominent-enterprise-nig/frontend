@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { z } from 'zod'
-import { X, Loader2, Check, Wrench, Ban, AlertTriangle } from 'lucide-react'
+import { X, Loader2, Check, Wrench, Ban } from 'lucide-react'
 import {
   AssessUdsFormSchema,
   type AssessUdsFormValues,
@@ -12,6 +12,7 @@ import {
   type Uds,
 } from '@/src/schema/inventory/uds'
 import type { ApiResponse } from '@/src/libs/api/client'
+import type { SupplierOption } from './SetRepairProviderModal'
 
 type AssessUdsFormInput = z.input<typeof AssessUdsFormSchema>
 
@@ -36,6 +37,7 @@ const ASSESSMENT_META = {
 const defaultValues: AssessUdsFormInput = {
   assessment: 'repairable',
   estimatedCost: undefined,
+  repairProviderId: '',
   notes: '',
 }
 
@@ -45,9 +47,17 @@ type Props = {
   onClose: () => void
   onSubmit: (data: AssessUdsFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
+  supplierOptions: SupplierOption[]
 }
 
-export default function AssessUdsModal({ uds, isOpen, onClose, onSubmit, isSubmitting }: Props) {
+export default function AssessUdsModal({
+  uds,
+  isOpen,
+  onClose,
+  onSubmit,
+  isSubmitting,
+  supplierOptions,
+}: Props) {
   const {
     control,
     handleSubmit,
@@ -72,11 +82,13 @@ export default function AssessUdsModal({ uds, isOpen, onClose, onSubmit, isSubmi
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Assess Repair Transfer</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
+              Assess Repair Transfer
+            </h2>
             <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
           </div>
           <button
@@ -88,8 +100,12 @@ export default function AssessUdsModal({ uds, isOpen, onClose, onSubmit, isSubmi
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="space-y-4 px-6 py-5">
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          noValidate
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div>
               <label className="mb-2 block text-sm font-medium text-zinc-700">
                 Verdict <span className="text-red-500">*</span>
@@ -163,14 +179,40 @@ export default function AssessUdsModal({ uds, isOpen, onClose, onSubmit, isSubmi
                 {errors.estimatedCost && (
                   <p className="mt-1 text-xs text-red-600">{errors.estimatedCost.message}</p>
                 )}
-                {!uds.repairProvider && (
-                  <div className="mt-2 flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 p-2.5">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-600" />
-                    <p className="text-xs text-yellow-700">
-                      No repair provider is on file for this UDS — the assessment will be rejected
-                      until one is set.
-                    </p>
-                  </div>
+              </div>
+            )}
+
+            {/* A sheet raised from a customer return has no provider — the
+                intake form never asks. This used to be a warning saying the
+                assessment would be rejected, which left the assessor to go
+                find another form, set the provider, and start again. Asking
+                for it here records the verdict and its consequence together. */}
+            {assessment === 'repairable' && !uds.repairProvider && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Repair Provider <span className="text-red-500">*</span>
+                </label>
+                <Controller
+                  name="repairProviderId"
+                  control={control}
+                  rules={{ validate: (v) => !!v || 'Choose who will repair the unit' }}
+                  render={({ field }) => (
+                    <select {...field} className={fieldClass}>
+                      <option value="">— Select —</option>
+                      {supplierOptions.map((sup) => (
+                        <option key={sup.id} value={sup.id}>
+                          {sup.code} — {sup.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                />
+                {errors.repairProviderId ? (
+                  <p className="mt-1 text-xs text-red-600">{errors.repairProviderId.message}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-zinc-400">
+                    The estimate above is posted against this provider.
+                  </p>
                 )}
               </div>
             )}
@@ -195,7 +237,7 @@ export default function AssessUdsModal({ uds, isOpen, onClose, onSubmit, isSubmi
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
@@ -207,9 +249,9 @@ export default function AssessUdsModal({ uds, isOpen, onClose, onSubmit, isSubmi
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              className="flex items-center gap-[7px] rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
             >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {isSubmitting ? 'Submitting…' : 'Confirm Assessment'}
             </button>
           </div>

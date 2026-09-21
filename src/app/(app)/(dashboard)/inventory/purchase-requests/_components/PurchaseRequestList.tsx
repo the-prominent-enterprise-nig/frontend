@@ -19,7 +19,7 @@ import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-req
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
-// Same IBM Plex + #5b21b6 palette as procurementTokens/PurchaseOrderList —
+// Same #5b21b6 palette as procurementTokens/PurchaseOrderList —
 // this is the other tab in the same hub, so it has to read as one screen
 // rather than an older design a reader happens to land on partway through.
 

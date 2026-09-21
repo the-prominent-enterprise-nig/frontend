@@ -9,7 +9,8 @@ import { getReceivingReportsSummary } from '../_actions/get-receiving-reports-su
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 
-export function useReceivingReports() {
+export function useReceivingReports(options: { includeManual?: boolean } = {}) {
+  const { includeManual = false } = options
   const [page, setPage] = useState(1)
   const limit = 20
 
@@ -33,8 +34,20 @@ export function useReceivingReports() {
       hasDiscrepancy,
       startDate,
       endDate,
+      includeManual,
     }),
-    [page, limit, warehouseId, supplierId, status, search, hasDiscrepancy, startDate, endDate]
+    [
+      page,
+      limit,
+      warehouseId,
+      supplierId,
+      status,
+      search,
+      hasDiscrepancy,
+      startDate,
+      endDate,
+      includeManual,
+    ]
   )
 
   const listQuery = useQuery({

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
+import { udsErrorMessage } from '../_lib/uds-errors'
 import { SetRepairProviderFormSchema } from '@/src/schema/inventory/uds'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -44,7 +45,7 @@ export async function setRepairProvider(
     return {
       success: false,
       error: errStr || 'Failed to set repair provider',
-      message: msg || errStr || 'Failed to set repair provider',
+      message: udsErrorMessage(msg || errStr, 'Failed to set repair provider'),
     }
   }
 

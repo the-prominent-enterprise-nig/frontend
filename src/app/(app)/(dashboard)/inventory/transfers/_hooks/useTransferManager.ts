@@ -17,6 +17,7 @@ import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-nu
 import { dispatchTransfer } from '../_actions/dispatch-transfer'
 import { receiveTransfer } from '../_actions/receive-transfer'
 import { cancelTransfer } from '../_actions/cancel-transfer'
+import { updateTransfer } from '../_actions/update-transfer'
 import { approveHqTransfer } from '../_actions/approve-hq-transfer'
 import { rejectHqTransfer } from '../_actions/reject-hq-transfer'
 import { acceptTransfer } from '../_actions/accept-transfer'
@@ -162,6 +163,38 @@ export function useTransferManager() {
       } else {
         showToast({
           title: 'Failed to create transfer',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  // An edit is a resubmission: the backend re-runs approval routing from the
+  // start, so the status that comes back is where the request now sits, not
+  // where it was. The toast reports that rather than a flat "saved" — a
+  // requester who edited something already at 'requested' needs to know it
+  // has gone back for approval.
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CreateTransferFormValues }) =>
+      updateTransfer(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Transfer request updated',
+          description: result.data?.status
+            ? `${result.message} It is now ${result.data.status.replace(/_/g, ' ')}.`
+            : result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
+        queryClient.invalidateQueries({
+          queryKey: ['inventory-transfer', selectedTransfer?.id],
+        })
+      } else {
+        showToast({
+          title: 'Failed to update transfer',
           description: result.message,
           status: 'error',
         })
@@ -460,6 +493,10 @@ export function useTransferManager() {
 
     createTransfer: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+
+    updateTransfer: (id: string, data: CreateTransferFormValues) =>
+      updateMutation.mutateAsync({ id, data }),
+    isUpdating: updateMutation.isPending,
 
     consignUnits: (serialNumberIds: string[], data: ConsignToBranchFormValues) =>
       consignMutation.mutateAsync({ serialNumberIds, data }),

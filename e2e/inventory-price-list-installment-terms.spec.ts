@@ -5,7 +5,9 @@ import {
   fillStable,
   findPriceListIdByName,
   sweepE2EPriceLists,
-  pickFromCustomSelect,
+  pickPriceUseType,
+  submitPriceListForm,
+  openAddItemsPanel,
 } from './utils'
 
 // Scenario 15, Part 5 — a curated per-SKU down payment (from the admin's
@@ -60,9 +62,9 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
     )
-    await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
-    await pickFromCustomSelect(page, 'Select price use type…', 'CREDIT CARD')
-    await page.getByRole('button', { name: 'Create Price List' }).click()
+    await fillStable(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'), name)
+    await pickPriceUseType(page, 'CREDIT CARD')
+    await submitPriceListForm(page, 'Create Price List')
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
     })
@@ -74,6 +76,7 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await expect(page).toHaveURL(/\/inventory\/price-lists\/[^/]+$/, { timeout: 10_000 })
     await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 10_000 })
 
+    await openAddItemsPanel(page)
     await fillStable(page.getByLabel('Search items to add'), ITEM_NAME)
     await page
       .getByRole('button', { name: new RegExp(ITEM_NAME) })
@@ -91,9 +94,11 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await page.getByRole('button', { name: /^Add 1 Item$/ }).click()
 
     const itemRow = page.locator('tbody tr').filter({ hasText: ITEM_NAME })
-    await expect(itemRow).toContainText(CURATED_DOWN_PAYMENT.replace('.00', ''), {
-      timeout: 10_000,
-    })
+    // Inline-editable table: the saved down payment is an input value now.
+    await expect(itemRow.getByLabel(/^Down Payment for .* in this list$/)).toHaveValue(
+      new RegExp(`^${CURATED_DOWN_PAYMENT.replace('.00', '')}(\\.0+)?$`),
+      { timeout: 10_000 }
+    )
 
     // Approve directly from the item-management page's own header — a price
     // list only applies at checkout once active.

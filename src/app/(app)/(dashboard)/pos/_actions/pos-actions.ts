@@ -1904,7 +1904,6 @@ export interface ResolvedPosPrice {
   priceListItemId: string
   priceListName: string
   price: number
-  floorPrice: number | null
   minQty: number | null
   /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
    * rate card, when one exists for this item's price list. */

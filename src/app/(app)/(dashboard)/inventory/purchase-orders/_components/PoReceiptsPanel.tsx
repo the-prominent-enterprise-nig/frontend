@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   X,
   PackageCheck,
@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Printer,
   Download,
+  Loader2,
   Pencil,
 } from 'lucide-react'
 import { getPurchaseOrderReceipts, type PoReceipt } from '../_actions/get-purchase-order-receipts'
@@ -18,10 +19,8 @@ import ReceivingReportSheet, {
   type ReceivingReportDocument,
 } from '../../../accounting/receiving-reports/_components/ReceivingReportSheet'
 import ReceivingReportEditForm from '../../../accounting/receiving-reports/_components/ReceivingReportEditForm'
-import {
-  printReceivingReportDocument,
-  downloadReceivingReportDocument,
-} from '@/src/libs/print/printInventoryDocument'
+import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
+import { downloadElementAsPdf } from '@/src/libs/print/htmlToPdf'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { locationLabel } from '@/src/libs/format/locationLabel'
@@ -33,7 +32,7 @@ type Props = {
 }
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
-// Same IBM Plex + #5b21b6 palette as procurementTokens/PoDetailModal — this
+// Same #5b21b6 palette as procurementTokens/PoDetailModal — this
 // drawer is opened from that panel's "View Receipts" button, so it has to
 // read as the same screen rather than a visually separate one.
 
@@ -237,12 +236,16 @@ function DocumentToolbar({
   doc,
   editing,
   onEdit,
+  onDownload,
+  downloadingPdf,
 }: {
   grn: PoReceipt
   receivedByName?: string | null
   doc: ReceivingReportDocument | null
   editing: boolean
   onEdit: () => void
+  onDownload: () => void
+  downloadingPdf: boolean
 }) {
   const { received, ordered } = lineTotals(grn.lines)
 
@@ -268,11 +271,15 @@ function DocumentToolbar({
         )}
         <button
           type="button"
-          disabled={!doc}
-          onClick={() => doc && downloadReceivingReportDocument(doc, grn.code)}
+          disabled={!doc || downloadingPdf}
+          onClick={onDownload}
           className="flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#17171c] transition-colors hover:border-[#a3a3b2] hover:bg-[#f6f6f8] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Download className="h-3.5 w-3.5" />
+          {downloadingPdf ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5" />
+          )}
           Download
         </button>
         <button
@@ -296,6 +303,8 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
   const [doc, setDoc] = useState<ReceivingReportDocument | null>(null)
   const [record, setRecord] = useState<ReceivingReport | null>(null)
   const [docLoading, setDocLoading] = useState(false)
@@ -347,6 +356,16 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
 
   const { received: totalReceived, ordered: totalOrdered } = receiptTotals(po.lines)
   const selectedGrn = receipts.find((r) => r.id === selectedId) ?? null
+
+  const handleDownloadPdf = async () => {
+    if (!sheetRef.current || !selectedGrn) return
+    setDownloadingPdf(true)
+    try {
+      await downloadElementAsPdf(sheetRef.current, selectedGrn.code)
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
 
   // Re-fetch after a correction: the sheet renders the document, which the
   // edit changed too, and the record backs the form should it reopen.
@@ -475,6 +494,8 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
                   doc={doc}
                   editing={editing}
                   onEdit={() => setEditing(true)}
+                  onDownload={() => void handleDownloadPdf()}
+                  downloadingPdf={downloadingPdf}
                 />
               )}
 
@@ -499,7 +520,9 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
                     )}
                     {doc && (
                       <div className="rounded-lg border border-[#e4e4e9] bg-white shadow-sm">
-                        <ReceivingReportSheet doc={doc} />
+                        <div ref={sheetRef}>
+                          <ReceivingReportSheet doc={doc} />
+                        </div>
                       </div>
                     )}
                   </div>

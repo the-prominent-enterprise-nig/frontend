@@ -53,11 +53,13 @@ export default function WriteOffUdsModal({ uds, isOpen, onClose, onSubmit, isSub
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Write Off Unit</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
+              Write Off Unit
+            </h2>
             <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
           </div>
           <button
@@ -69,8 +71,12 @@ export default function WriteOffUdsModal({ uds, isOpen, onClose, onSubmit, isSub
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="space-y-4 px-6 py-5">
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          noValidate
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
               <p className="text-xs text-red-700">
@@ -123,7 +129,7 @@ export default function WriteOffUdsModal({ uds, isOpen, onClose, onSubmit, isSub
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
@@ -135,9 +141,9 @@ export default function WriteOffUdsModal({ uds, isOpen, onClose, onSubmit, isSub
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              className="flex items-center gap-[7px] rounded-lg bg-red-600 px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-red-700 disabled:opacity-60"
             >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {isSubmitting ? 'Writing off…' : 'Confirm Write Off'}
             </button>
           </div>

@@ -912,7 +912,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Customer transaction history merged with installment-due payments collected via POS Collections (last 20 across both) */
+    /** Customer transaction history merged with installment-due payments collected via POS Collections, paginated */
     get: operations['TransactionsController_getCustomerHistoryWithPayments']
     put?: never
     post?: never
@@ -3621,6 +3621,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/stock/receiving-reports/summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Tenant-wide receiving KPIs (last 30 days receipt count, total units/lines received, short-delivery count) for the Receiving Reports header — independent of the list filters. */
+    get: operations['StockController_getReceivingReportsSummary']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/stock/receiving-reports/{id}': {
     parameters: {
       query?: never
@@ -4238,6 +4255,23 @@ export interface paths {
      * @description Required columns: dateIn, rr, brand, type, group, subgroup, model, serialNumber, price. Optional: origin, description. Column headers are matched case-insensitively, and "serial" is accepted as an alias for serialNumber. Rows sharing an rr are grouped into one historical GoodsReceipt; unknown brand/type/group/subgroup/supplier names are created on the fly; price is recorded as the created item's cost price. Set dryRun=true to preview counts without writing anything.
      */
     post: operations['SerialNumbersController_bulkImport']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/serial-numbers/consigned-summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Item-level rollup of what is consigned for a caravan event */
+    get: operations['SerialNumbersController_consignedSummary']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -5908,6 +5942,76 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ap-bills/disbursements': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Every payment transaction — one row per cheque/voucher, listing the invoices it settled */
+    get: operations['APBillsController_listDisbursements']
+    put?: never
+    /** Record one payment across one or more bills — posts a single journal entry and produces one voucher */
+    post: operations['APBillsController_createDisbursement']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/disbursements/{id}/settle': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Settle an unpaid voucher — posts the journal entry */
+    post: operations['APBillsController_settleDisbursement']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/disbursements/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Cancel an unpaid voucher */
+    delete: operations['APBillsController_cancelDisbursement']
+    options?: never
+    head?: never
+    /** Change what an unpaid voucher covers */
+    patch: operations['APBillsController_updateDisbursement']
+    trace?: never
+  }
+  '/ap-bills/disbursements/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Print-ready payment voucher for a disbursement */
+    get: operations['APBillsController_getDisbursementDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ap-bills/{id}': {
     parameters: {
       query?: never
@@ -5989,23 +6093,6 @@ export interface paths {
     put?: never
     /** Post a DRAFT bill to the GL */
     post: operations['APBillsController_receive']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/disbursements': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Record one payment across one or more bills — posts a single journal entry and produces one voucher */
-    post: operations['APBillsController_createDisbursement']
     delete?: never
     options?: never
     head?: never
@@ -6887,7 +6974,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Unified customer ledger — chronological debit/credit rows merging installment, charge, and cash sales */
+    /** Unified customer ledger — chronological debit/credit rows merging installment, charge, cash and TPF-financed sales. ?scope=installments narrows it to the financed purchases only (in-house plans + TPF). */
     get: operations['CustomerController_getCustomerLedger']
     put?: never
     post?: never
@@ -7067,7 +7154,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List all accounts */
+    /** List accounts, optionally filtered */
     get: operations['AccountsController_findAll']
     put?: never
     /** Create a chart-of-accounts entry */
@@ -8069,6 +8156,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/expenses/special-accounts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Special Accounts register — every named person a balance is carried against */
+    get: operations['ExpensesController_specialAccounts']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/expenses/special-account-balance': {
     parameters: {
       query?: never
@@ -8337,6 +8441,22 @@ export interface paths {
     options?: never
     head?: never
     patch: operations['BankAccountsController_updateRec']
+    trace?: never
+  }
+  '/bank-accounts/reconciliations/{id}/transactions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['BankAccountsController_getRecTransactions']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/bank-accounts/reconciliations/{id}/lines/{lineId}': {
@@ -9514,6 +9634,42 @@ export interface paths {
     head?: never
     /** Reactivate a branch */
     patch: operations['BranchesController_reactivate']
+    trace?: never
+  }
+  '/departments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List departments, optionally for one branch */
+    get: operations['DepartmentsController_findAll']
+    put?: never
+    /** Create a department under a branch */
+    post: operations['DepartmentsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/departments/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Retire a department and its divisions */
+    delete: operations['DepartmentsController_remove']
+    options?: never
+    head?: never
+    /** Update a department */
+    patch: operations['DepartmentsController_update']
     trace?: never
   }
   '/enterprise/branches': {
@@ -11826,6 +11982,14 @@ export interface components {
        */
       conversionFactor?: number
     }
+    LineDiscountInputDto: {
+      /** @description Free-text label describing what the discount is for, e.g. "Loyalty discount" */
+      name?: string
+      /** @enum {string} */
+      type: 'percentage' | 'amount'
+      /** @description Interpreted per type — a percent (0-100) or a flat amount off the running price */
+      value: number
+    }
     ReceiveStockLineDto: {
       /** @description Item ID being received */
       itemId: string
@@ -11858,7 +12022,7 @@ export interface components {
        */
       srp?: number
       /** @description Ordered discounts applied sequentially to srp — [{ name?, type: "percentage"|"amount", value }]. Same shape as PurchaseOrderLine.discounts. */
-      discounts?: string[]
+      discounts?: components['schemas']['LineDiscountInputDto'][]
       /** @description Scenario 46 — per-line tax code. VAT was header-only on a receipt, which made a line-by-line 3-way match on tax impossible. */
       taxCode?: string
       /** @description Scenario 46 — per-line tax amount. */
@@ -11985,8 +12149,8 @@ export interface components {
       customerId?: string
       /** @description The open AR invoice this return is against. Optional: without it the return still records stock and posts its Dr Inventory / Cr COGS entry, it just never reaches AR. With it, a sales-return Credit Memo is raised against the invoice as well. */
       arInvoiceId?: string
-      /** @description RR number issued to the customer on intake, when flagging for repair */
-      intakeReceivingReportNumber?: string
+      /** @description Customer's proof-of-purchase SI number, recorded at intake when flagging for repair. Free text — not a link to an ArInvoice. */
+      intakeSalesInvoiceNumber?: string
     }
     UpdateReceivingReportLineDto: {
       id: string
@@ -11995,7 +12159,7 @@ export interface components {
       /** @description Supplier SRP the discount chain applies off. */
       srp?: number
       /** @description Ordered discount chain applied off srp. */
-      discounts?: string[]
+      discounts?: components['schemas']['LineDiscountInputDto'][]
       taxCode?: string
       taxAmount?: number
     }
@@ -12043,6 +12207,11 @@ export interface components {
       expectedArrival?: string
       /** @description Reason for the transfer */
       reason?: string
+      /**
+       * @description Skip the destination branch's manager-approval step. Requires inventory:transfers:direct.
+       * @default false
+       */
+      skipDestinationApproval: boolean
       /** @description Transfer line items (at least 1 required) */
       lines: components['schemas']['CreateTransferLineDto'][]
     }
@@ -12085,7 +12254,7 @@ export interface components {
        * @description Expected arrival date (ISO 8601)
        * @example 2026-05-15
        */
-      expectedArrival: string
+      expectedArrival?: string
       /** @description Dispatch notes */
       notes?: string
       /** @description One entry per serial-tracked line being dispatched, assigning the specific physical unit sent. Required for any serial-tracked line that doesn't already carry a serialNumberId (i.e. every normal human-requested line — the requester never picks the serial themselves). */
@@ -12330,10 +12499,15 @@ export interface components {
        */
       serialNumberIds: string[]
       /**
-       * @description Host branch the serials are being consigned to for the event
+       * @description Host branch the serials are being consigned to for the event. Exactly one of hostBranchId or venue must be given.
        * @example branch-uuid
        */
-      hostBranchId: string
+      hostBranchId?: string
+      /**
+       * @description A place that is not one of our branches — a fair, a dealer's floor, a town with no branch. Exactly one of hostBranchId or venue must be given. Ownership never moves for a venue consignment: the owning branch keeps selling the units while they are out.
+       * @example Lemery Town Fair
+       */
+      venue?: string
       /**
        * @description Optional name for the caravan event these serials are being consigned for
        * @example Summer Caravan 2026 — SM Cebu
@@ -12360,10 +12534,15 @@ export interface components {
        */
       serialNumberIds: string[]
       /**
-       * @description Branch to move the consignment onward to. Omit to return to origin (clears the consignment entirely).
+       * @description Branch to move the consignment onward to. Omit (and omit targetVenue) to return to origin, clearing the consignment entirely.
        * @example branch-uuid
        */
       targetBranchId?: string
+      /**
+       * @description Venue to move the consignment onward to, for a caravan going straight from one place to the next. Mutually exclusive with targetBranchId.
+       * @example Lemery Town Fair
+       */
+      targetVenue?: string
     }
     UpsertCostingConfigDto: {
       /**
@@ -12459,6 +12638,12 @@ export interface components {
       allowedBranchIds?: string[]
       /** @description ID of the prior PriceList version this one replaces */
       supersedesId?: string
+      /**
+       * @description Whether prices on this list already include VAT
+       * @default inclusive
+       * @enum {string}
+       */
+      pricingMode: 'inclusive' | 'exclusive'
     }
     UpdatePriceListDto: {
       name?: string
@@ -12472,6 +12657,11 @@ export interface components {
       segmentIds?: string[]
       customerIds?: string[]
       allowedBranchIds?: string[]
+      /**
+       * @description Whether prices on this list already include VAT
+       * @enum {string}
+       */
+      pricingMode?: 'inclusive' | 'exclusive'
     }
     ActOnPriceListDto: {
       /** @description Approval/rejection remarks */
@@ -12487,11 +12677,6 @@ export interface components {
        * @example 10
        */
       minQty?: number
-      /**
-       * @description Minimum allowed price for this SKU, checked when the list is approved
-       * @example 150
-       */
-      floorPrice?: number
       /**
        * @description Scenario 15, Part 5 — one down payment value per SKU+price-use-type (not per financing term).
        * @example 2000
@@ -12727,14 +12912,6 @@ export interface components {
        *     }
        */
       attributes: Record<string, never>
-    }
-    LineDiscountInputDto: {
-      /** @description Free-text label describing what the discount is for, e.g. "Loyalty discount" */
-      name?: string
-      /** @enum {string} */
-      type: 'percentage' | 'amount'
-      /** @description Interpreted per type — a percent (0-100) or a flat amount off the running price */
-      value: number
     }
     CreatePurchaseRequestLineDto: {
       itemId: string
@@ -13006,6 +13183,53 @@ export interface components {
       /** @description Why this is being refunded — the JE description/reference. */
       reason?: string
     }
+    APDisbursementSourceDto: {
+      /** @description cash | check | bank_transfer */
+      method: string
+      /** @description Required for any non-cash method — a bank reconciliation worksheet is only as good as this being filled in. */
+      bankAccountId?: string
+      chequeNumber?: string
+      /** @description The cheque/transfer reference. Record Payment types the cheque number here — it and chequeNumber were two boxes for one number — and the voucher series falls back to it. */
+      reference?: string
+      /** @description What this source was for, so the halves of a split payment can be told apart. */
+      description?: string
+      /** @description How much of the payment this source funds */
+      amount: number
+    }
+    SettleAPDisbursementDto: {
+      paymentDate: string
+      bankAccountId?: string
+      chequeNumber?: string
+      method?: string
+      reference?: string
+      /** @description SAME_DATE (default) or LATER_DATE */
+      clearedType?: string
+      clearedDate?: string
+      notes?: string
+      sources?: components['schemas']['APDisbursementSourceDto'][]
+    }
+    APDisbursementAllocationDto: {
+      apBillId: string
+      amount: number
+      /**
+       * @description How much of this invoice's withholding this voucher claims. The withheld slice was already posted Dr AP / Cr WHT Payable at receipt, so this posts nothing — it decides which payment the withholding rides with, and so which BIR 2307 the supplier is given. Summed across an invoice's vouchers it can never exceed the invoice's own withholdingAmount. Defaults to 0, which is what every caller written before per-voucher withholding existed sends.
+       * @default 0
+       */
+      withholdingAmount: number
+    }
+    UpdateAPDisbursementDto: {
+      /** @description Replaces the whole set of invoices this voucher covers. */
+      allocations?: components['schemas']['APDisbursementAllocationDto'][]
+      notes?: string
+      /** @description Replaces how the voucher is to be funded. A voucher IS the instruction to cut a cheque from a named account, so the bank or the cheque number being wrong is one of the likelier reasons to amend one — leaving it uneditable meant cancelling the voucher and raising a new number. Their amounts must add up to the allocated total, the same rule creation applies. Omit to leave the funding untouched. */
+      sources?: components['schemas']['APDisbursementSourceDto'][]
+      /** @description SAME_DATE or LATER_DATE — whether the cheque clears the bank on payment. */
+      clearedType?: string
+      /** @description Required when clearedType is LATER_DATE. */
+      clearedDate?: string
+      /** @description When the voucher was raised. */
+      voucherDate?: string
+    }
     APBillLineDto: {
       itemId?: string
       description?: string
@@ -13056,6 +13280,11 @@ export interface components {
       lines?: components['schemas']['APBillLineDto'][]
       /** @description Scenario 46 — net-of-discount delivered cost, mirroring GoodsReceipt.nndpCost so a bill can carry the same figure the receipt does. */
       nndpCost?: number
+      /**
+       * @description Save even though this supplier already has a bill under the same SI. One supplier invoice can legitimately cover several POs, each received into its own bill, so a repeated number is only sometimes a mistake — the request is refused once with the clashing bill attached, and re-sent with this set after the person has looked at it.
+       * @default false
+       */
+      confirmDuplicateBillNumber: boolean
     }
     UpdateAPBillDto: {
       /** @description The supplier's own invoice number, as printed on their invoice. Never generated by this system — required before a DRAFT bill auto-generated off a receipt (no invoice number yet) can leave DRAFT. */
@@ -13084,13 +13313,14 @@ export interface components {
       lines?: components['schemas']['APBillLineDto'][]
       /** @description Scenario 46 — net-of-discount delivered cost, mirroring GoodsReceipt.nndpCost so a bill can carry the same figure the receipt does. */
       nndpCost?: number
+      /**
+       * @description Save even though this supplier already has a bill under the same SI. One supplier invoice can legitimately cover several POs, each received into its own bill, so a repeated number is only sometimes a mistake — the request is refused once with the clashing bill attached, and re-sent with this set after the person has looked at it.
+       * @default false
+       */
+      confirmDuplicateBillNumber: boolean
     }
     ReceiveManyAPBillsDto: {
       ids: string[]
-    }
-    APDisbursementAllocationDto: {
-      apBillId: string
-      amount: number
     }
     CreateAPDisbursementDto: {
       /** @description The payee. One cheque is payable to one entity — every allocated bill must belong to this supplier. Derived from the bills when omitted. */
@@ -13101,13 +13331,23 @@ export interface components {
       chequeNumber?: string
       method?: string
       reference?: string
-      paymentDate: string
+      /** @description Required when payNow is true (the default). A voucher raised before payment has no payment date yet. */
+      paymentDate?: string
       /** @description SAME_DATE (default) or LATER_DATE — whether the cheque clears the bank on paymentDate or later. */
       clearedType?: string
       /** @description Required when clearedType=LATER_DATE — the date it clears. */
       clearedDate?: string
       notes?: string
       allocations: components['schemas']['APDisbursementAllocationDto'][]
+      /** @description Where the money comes from, one entry per method. Their amounts must add up to the allocated total. Omit to fund the whole payment from the single bankAccountId/chequeNumber/method above — the shape every disbursement used before split funding, still accepted unchanged. */
+      sources?: components['schemas']['APDisbursementSourceDto'][]
+      /**
+       * @description Whether this voucher is being paid now. false raises an UNPAID voucher: the invoices it covers are recorded and the number is issued, but no cheque is cut, nothing posts to the GL and the bills stay unpaid. Settle it later via POST /ap-bills/disbursements/:id/settle. Defaults to true, so every existing caller keeps paying immediately as before.
+       * @default true
+       */
+      payNow: boolean
+      /** @description When the voucher was raised. Defaults to now. Distinct from paymentDate, which is when the cheque was actually cut — a voucher raised on the 7th and paid on the 15th has both. */
+      voucherDate?: string
     }
     RecordAPPaymentDto: {
       amount: number
@@ -13527,6 +13767,10 @@ export interface components {
       /** @enum {string} */
       status: 'active' | 'inactive' | 'blocked'
       groupId?: string
+      branchId?: string
+      branch?: Record<string, never>
+      /** @enum {string} */
+      accountType: 'cash' | 'charge'
       createdAt: string
       companyName?: string
       /** @enum {string} */
@@ -13566,6 +13810,10 @@ export interface components {
       /** @enum {string} */
       status: 'active' | 'inactive' | 'blocked'
       groupId?: string
+      branchId?: string
+      branch?: Record<string, never>
+      /** @enum {string} */
+      accountType: 'cash' | 'charge'
       createdAt: string
     }
     PaginationMetaDto: {
@@ -14397,8 +14645,10 @@ export interface components {
       voidReason?: string
     }
     CreateExpenseLineDto: {
-      /** @description Required for a CUSTOMER/SUPPLIER header, or OTHER with otherCategory=UTILITIES/SALARIES_WAGES (this line's category — omit to fall back to that category's mapped default). Ignored for OTHER with otherCategory=SPECIAL_ACCOUNTS — resolved server-side from the header's specialAccountType/liquidatesType instead. */
+      /** @description Required for a CUSTOMER/SUPPLIER header, or OTHER with otherCategory=UTILITIES/SALARIES_WAGES (this line's category — omit to fall back to that category's mapped default), unless the line carries its own specialAccountType. Ignored for OTHER with otherCategory=SPECIAL_ACCOUNTS — resolved server-side from the header's specialAccountType/liquidatesType instead. */
       categoryAccountId?: string
+      /** @description Whether this line is carried against a named person — an advance, a loan, a receivable. Which account it sits under comes from categoryAccountId, that account being the person's control account, so this is a yes/no rather than a list of types. Requires a payee. */
+      isSpecialAccount?: boolean
       /** @description This line's recipient — OTHER/SPECIAL_ACCOUNTS header, Employee Cash Advance/Loan (or a CA_LIQUIDATION line closing one out). */
       employeeId?: string
       /** @description This line's free-text recipient — OTHER/SPECIAL_ACCOUNTS header, Cash Loan – Others (or a CA_LIQUIDATION line closing one out). */
@@ -14418,11 +14668,26 @@ export interface components {
        */
       unitPrice?: number
       description?: string
-      /** @example 1000 */
+      /**
+       * @description Positive adds to the entry, negative deducts from it (the payroll disbursement sheet's Debit and Credit columns respectively). Zero is rejected — a line that changes nothing is a mis-key. A negative line posts as a credit to its own account and is always non-taxable.
+       * @example 1000
+       */
       amount: number
-      /** @description VAT, NON_VAT, EXEMPT */
-      taxCode?: string
-      /** @example 120 */
+      /**
+       * @description This line's VAT treatment. NON_TAXABLE posts no VAT; INPUT_VAT computes it at 12% of amount. Legacy VAT/NON_VAT/EXEMPT spellings are still accepted and normalised. Defaults to NON_TAXABLE when omitted.
+       * @enum {string}
+       */
+      taxCode?: 'NON_TAXABLE' | 'INPUT_VAT'
+      /** @description Marks this line as a payroll deduction of that customer's monthly instalment. Recording the expense settles their instalment dues oldest-first — subsidiary ledger only, since the line already credits the receivable in the GL. */
+      customerId?: string
+      /** @description This line's Division, when the option picked was a branch. The Division picker lists branches and departments together, so exactly one of divisionBranchId / divisionDepartmentId may be set. */
+      divisionBranchId?: string
+      /** @description This line's Division, when the option picked was a department. */
+      divisionDepartmentId?: string
+      /**
+       * @deprecated
+       * @description Ignored. VAT is derived from taxCode server-side now that the form collects a treatment rather than a typed figure — a supplied amount could disagree with the line it sits on.
+       */
       taxAmount?: number
     }
     CreateExpensePaymentDto: {
@@ -14448,11 +14713,11 @@ export interface components {
       clearedDate?: string
       /** @description CUSTOMER | SUPPLIER | EMPLOYEE | OTHER. OTHER without otherCategory behaves like SUPPLIER (each line picks its own category, payee is a free-text label). */
       payeeType?: string
-      /** @description UTILITIES | SALARIES_WAGES | SPECIAL_ACCOUNTS — optional, payeeType=OTHER only. Omit for the plain free-text Other path. UTILITIES/SALARIES_WAGES behave like SUPPLIER (each line picks its own categoryAccountId, prefilled from the matching mapping key); SPECIAL_ACCOUNTS is the Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow driven by specialAccountType below. */
+      /** @description UTILITIES | SALARIES_WAGES | SPECIAL_ACCOUNTS | PAYROLL — optional, payeeType=OTHER only. Omit for the plain free-text Other path. UTILITIES/SALARIES_WAGES behave like SUPPLIER (each line picks its own categoryAccountId, prefilled from the matching mapping key); SPECIAL_ACCOUNTS is the Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow driven by specialAccountType below. */
       otherCategory?: string
       /** @description Fixed for the whole entry — payeeType=SUPPLIER, or payeeType=OTHER with otherCategory=UTILITIES */
       supplierId?: string
-      /** @description SUPPLIER-only — the disbursement voucher number, distinct from each payment's reference (OR/receipt/check number). */
+      /** @description Optional, any payeeType — the one disbursement voucher number for the entry, distinct from each payment's own reference (OR/receipt/check number). */
       voucherNumber?: string
       /** @description Fixed for the whole entry — payeeType=CUSTOMER */
       customerId?: string
@@ -14487,11 +14752,11 @@ export interface components {
       clearedDate?: string
       /** @description CUSTOMER | SUPPLIER | EMPLOYEE | OTHER. OTHER without otherCategory behaves like SUPPLIER (each line picks its own category, payee is a free-text label). */
       payeeType?: string
-      /** @description UTILITIES | SALARIES_WAGES | SPECIAL_ACCOUNTS — optional, payeeType=OTHER only. Omit for the plain free-text Other path. UTILITIES/SALARIES_WAGES behave like SUPPLIER (each line picks its own categoryAccountId, prefilled from the matching mapping key); SPECIAL_ACCOUNTS is the Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow driven by specialAccountType below. */
+      /** @description UTILITIES | SALARIES_WAGES | SPECIAL_ACCOUNTS | PAYROLL — optional, payeeType=OTHER only. Omit for the plain free-text Other path. UTILITIES/SALARIES_WAGES behave like SUPPLIER (each line picks its own categoryAccountId, prefilled from the matching mapping key); SPECIAL_ACCOUNTS is the Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow driven by specialAccountType below. */
       otherCategory?: string
       /** @description Fixed for the whole entry — payeeType=SUPPLIER, or payeeType=OTHER with otherCategory=UTILITIES */
       supplierId?: string
-      /** @description SUPPLIER-only — the disbursement voucher number, distinct from each payment's reference (OR/receipt/check number). */
+      /** @description Optional, any payeeType — the one disbursement voucher number for the entry, distinct from each payment's own reference (OR/receipt/check number). */
       voucherNumber?: string
       /** @description Fixed for the whole entry — payeeType=CUSTOMER */
       customerId?: string
@@ -15145,6 +15410,26 @@ export interface components {
       type: 'retail' | 'warehouse' | 'office' | 'mixed'
       /** @example 123 Main St, Manila */
       address?: string
+    }
+    CreateDepartmentDto: {
+      /** @description The branch this department sits under. Omit for a company-wide department — the client's own Division list is region-free. */
+      branchId?: string
+      /** @example Sales */
+      name: string
+      /** @example SLS */
+      code?: string
+      /** @default true */
+      isActive: boolean
+    }
+    UpdateDepartmentDto: {
+      /** @description The branch this department sits under. Omit for a company-wide department — the client's own Division list is region-free. */
+      branchId?: string
+      /** @example Sales */
+      name?: string
+      /** @example SLS */
+      code?: string
+      /** @default true */
+      isActive: boolean
     }
     UpdateBusinessProfileDto: Record<string, never>
     CreateEnterpriseDto: Record<string, never>
@@ -16784,7 +17069,10 @@ export interface operations {
   }
   TransactionsController_getCustomerHistoryWithPayments: {
     parameters: {
-      query?: never
+      query: {
+        page: string
+        limit: string
+      }
       header?: never
       path: {
         /** @description Customer ID */
@@ -16794,7 +17082,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Merged sale + payment history (last 20) */
+      /** @description Paginated merged sale + payment history: { items, meta } */
       200: {
         headers: {
           [name: string]: unknown
@@ -20669,6 +20957,10 @@ export interface operations {
       query?: {
         /** @description Scope ledger to a specific warehouse */
         warehouseId?: string
+        /** @description Filter to one or more branches (consolidates each branch's warehouses) */
+        branchIds?: string[]
+        /** @description Filter to one or more warehouses, by warehouse id */
+        warehouseIds?: string[]
         /** @description Filter by transaction type */
         transactionType?:
           | 'receipt'
@@ -21164,6 +21456,18 @@ export interface operations {
       query?: {
         /** @description Filter to a specific warehouse */
         warehouseId?: string
+        /** @description Filter to a specific item */
+        itemId?: string
+        /** @description Filter to one or more branches (consolidates each branch's warehouses) */
+        branchIds?: string[]
+        /** @description Filter to one or more warehouses, by warehouse id */
+        warehouseIds?: string[]
+        /** @description Filter to a region/operation (panay, negros) */
+        region?: 'panay' | 'negros'
+        /** @description When "item", rolls rows up to one per item, summing quantities across locations */
+        groupBy?: 'item'
+        /** @description Filter by stock state. Four of these mirror the badge the Stock Balance list derives per row (out / fully_reserved / low / in_stock) and are applied AFTER the item roll-up so the filter and the visible badge always agree; in_transit is the separate open-transfer axis. */
+        stockStatus?: 'in_stock' | 'in_transit' | 'out' | 'fully_reserved' | 'low'
         /** @description Filter by item category ID */
         categoryId?: string
         /** @description Search by item name or SKU */
@@ -21257,6 +21561,8 @@ export interface operations {
   StockController_getLedger: {
     parameters: {
       query?: {
+        /** @description Search serial number, receiving report code, or invoice number */
+        search?: string
         /** @description Filter to a specific item */
         itemId?: string
         /** @description Filter to a specific warehouse */
@@ -21304,6 +21610,10 @@ export interface operations {
         warehouseId?: string
         /** @description Filter to a specific branch (across all its warehouses) */
         branchId?: string
+        /** @description Filter to a specific supplier */
+        supplierId?: string
+        /** @description Free-text search across RR number, PO number, and supplier name */
+        search?: string
         /** @description Filter by receipt status */
         status?: 'draft' | 'received' | 'quality_hold' | 'rejected'
         /** @description Start of date range */
@@ -21324,6 +21634,24 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Paginated list of GRNs with per-line discrepancy detail and a top-level hasAnyDiscrepancy flag */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  StockController_getReceivingReportsSummary: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Receiving report summary KPIs */
       200: {
         headers: {
           [name: string]: unknown
@@ -22284,9 +22612,14 @@ export interface operations {
       query?: {
         itemId?: string
         categoryId?: string
+        brandId?: string
         warehouseId?: string
         /** @description Resolves to the branch's warehouse and scopes results to it. Ignored if warehouseId is also given. */
         branchId?: string
+        /** @description Scope to one or more branches (all of their warehouses) */
+        branchIds?: string[]
+        /** @description Scope to one or more warehouses — the standalone warehouses belong to no branch, so branchIds alone cannot reach them */
+        warehouseIds?: string[]
         status?:
           | 'in_stock'
           | 'held'
@@ -22361,6 +22694,52 @@ export interface operations {
     }
     responses: {
       /** @description { created, skipped, dryRun, errors: [...] } */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SerialNumbersController_consignedSummary: {
+    parameters: {
+      query?: {
+        itemId?: string
+        categoryId?: string
+        brandId?: string
+        warehouseId?: string
+        /** @description Resolves to the branch's warehouse and scopes results to it. Ignored if warehouseId is also given. */
+        branchId?: string
+        /** @description Scope to one or more branches (all of their warehouses) */
+        branchIds?: string[]
+        /** @description Scope to one or more warehouses — the standalone warehouses belong to no branch, so branchIds alone cannot reach them */
+        warehouseIds?: string[]
+        status?:
+          | 'in_stock'
+          | 'held'
+          | 'sold'
+          | 'returned'
+          | 'defective'
+          | 'scrapped'
+          | 'in_repair'
+          | 'pulled_out'
+          | 'lost_in_transit'
+        /** @description Read-only visibility scope. "company" returns matching serials across every branch (each with its warehouse) instead of forcing the caller's own branch — used only to show cross-branch availability in the POS serial picker, never to populate the sellable list. "override" (Scenario 29 SN-01) bypasses branch scoping entirely, including the caller's own branch — requires itemId and inventory:transfers:serial-override; used by the transfer-dispatch serial picker so a supervisor can find a unit whose system-recorded location is stale. Requires itemId for both. Defaults to "branch" (the existing, sellable, caller-branch-forced behavior). */
+        scope?: 'branch' | 'company' | 'override'
+        /** @description Case-insensitive substring match against the serial number. */
+        search?: string
+        /** @description Scenario 08 (Caravan) Part 2 — "Caravan" view. Filters to serials currently consigned to this branch (physically here for an event, still owned elsewhere). A branch-restricted caller is always forced to their own branch, regardless of what is submitted. */
+        consignedToBranchId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
       200: {
         headers: {
           [name: string]: unknown
@@ -23859,6 +24238,8 @@ export interface operations {
       query?: {
         status?: 'draft' | 'submitted' | 'converted' | 'cancelled'
         branchId?: string
+        /** @description Search by PR number, reason, notes, supplier name, or item name/SKU */
+        search?: string
         page?: number
         limit?: number
       }
@@ -23989,6 +24370,7 @@ export interface operations {
           | 'closed'
           | 'cancelled'
         supplierId?: string
+        /** @description Filter to POs whose destination warehouse belongs to this branch (the 'All locations' filter) — not the branch that requested the PO. */
         branchId?: string
         /** @description Filter to POs with at least one line for this item */
         itemId?: string
@@ -24000,6 +24382,8 @@ export interface operations {
         dateTo?: string
         page?: number
         limit?: number
+        /** @description Sort by creation date: newest first (desc) or oldest first (asc) */
+        sortDir?: 'asc' | 'desc'
       }
       header?: never
       path?: never
@@ -25056,11 +25440,14 @@ export interface operations {
     parameters: {
       query?: {
         search?: string
+        /** @description One status, or several comma-separated (e.g. DRAFT,RECEIVED,PARTIAL,OVERDUE for open items). Ignored when `search` is given, so a known bill number always finds its bill whatever its status. */
         status?: string
         /** @description Filter to bills against this supplier */
         supplierId?: string
         /** @description Filter to bills covering this item. AP Bills have no line items of their own, so this matches through whichever PO the bill was raised against, or the goods receipts it's matched to — a manually-entered bill with neither link can never match. */
         itemId?: string
+        /** @description Include what each bill is billing for: its expense account, and the goods-receipt lines behind it (item, quantity, cost, tax) for bills scaffolded from receiving, which carry no APBillLine rows of their own. Off by default — the plain list view renders none of it. */
+        withDetail?: string
       }
       header?: never
       path?: never
@@ -25107,6 +25494,131 @@ export interface operations {
       }
       header?: never
       path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_listDisbursements: {
+    parameters: {
+      query?: {
+        search?: string
+        supplierId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_createDisbursement: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAPDisbursementDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_settleDisbursement: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SettleAPDisbursementDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_cancelDisbursement: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_updateDisbursement: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAPDisbursementDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_getDisbursementDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
       cookie?: never
     }
     requestBody?: never
@@ -25249,27 +25761,6 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_createDisbursement: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateAPDisbursementDto']
-      }
-    }
     responses: {
       201: {
         headers: {
@@ -26563,6 +27054,10 @@ export interface operations {
         sourceChannel?: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
         /** @description Filter to customers sharing this Group ID */
         groupId?: string
+        /** @description Filter to one branch */
+        branchId?: string
+        /** @description Cash or charge customers */
+        accountType?: 'cash' | 'charge'
         page?: number
         limit?: number
       }
@@ -26816,7 +27311,12 @@ export interface operations {
   }
   CustomerController_getCustomerLedger: {
     parameters: {
-      query?: never
+      query?: {
+        /** @description Defaults to 'all'. Anything unrecognised is treated as 'all'. */
+        scope?: 'all' | 'installments'
+        /** @description Narrows to one contract: 'acct:<installmentAccountId>' or 'tpf:<posTransactionId>', as returned in the response's `plans`. Only honoured with scope=installments. */
+        planId?: string
+      }
       header?: never
       path: {
         id: string
@@ -27308,7 +27808,12 @@ export interface operations {
   }
   AccountsController_findAll: {
     parameters: {
-      query?: never
+      query?: {
+        /** @description Matches number, name or type */
+        search?: string
+        type?: string
+        limit?: string
+      }
       header?: never
       path?: never
       cookie?: never
@@ -28851,6 +29356,10 @@ export interface operations {
         supplierId?: string
         startDate?: string
         endDate?: string
+        /** @description Entries with at least one line whose Division is this branch */
+        divisionBranchId?: string
+        /** @description Entries with at least one line whose Division is this department */
+        divisionDepartmentId?: string
       }
       header?: never
       path?: never
@@ -28880,6 +29389,26 @@ export interface operations {
     }
     responses: {
       201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ExpensesController_specialAccounts: {
+    parameters: {
+      query: {
+        search: string
+        accountId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -29425,6 +29954,28 @@ export interface operations {
         'application/json': components['schemas']['UpdateReconciliationDto']
       }
     }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BankAccountsController_getRecTransactions: {
+    parameters: {
+      query: {
+        startDate: string
+        endDate: string
+      }
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
     responses: {
       200: {
         headers: {
@@ -31663,6 +32214,89 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DepartmentsController_findAll: {
+    parameters: {
+      query: {
+        branchId: string
+        includeInactive: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DepartmentsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateDepartmentDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DepartmentsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DepartmentsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateDepartmentDto']
+      }
+    }
     responses: {
       200: {
         headers: {

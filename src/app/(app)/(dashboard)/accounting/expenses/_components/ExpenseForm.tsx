@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Plus, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, Check, Copy, Loader2, Plus, Trash2, Upload } from 'lucide-react'
 import {
   Expenses,
   APBillSuppliers,
@@ -40,8 +40,6 @@ import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './Expense
 import { importSpreadsheetLines, type ImportResult } from './importSpreadsheetLines'
 import { SpecialAccountPicker } from './SpecialAccountPicker'
 import { downloadCsv } from '@/src/libs/format/csv-export'
-import { showToast } from '@/src/components/ui/toast'
-import ExpenseAttachmentsPanel, { uploadStagedExpenseAttachments } from './ExpenseAttachmentsPanel'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
 // Ties the sticky header's Save to the <form> further down, which it sits
@@ -126,18 +124,31 @@ function taxCodeFor(stored?: string | null): string {
   return TAX_CODE_ALIASES[stored.toUpperCase()] ?? stored
 }
 
-/** VAT a line attracts, derived from its code rather than typed. The server
- * computes the same figure from the same code and ignores any amount sent
- * with it, so a hand-typed VAT could only ever disagree with what actually
- * posts. A deduction (negative amount) is not a purchase and never carries
- * input VAT. */
+const round2 = (n: number): number => Math.round(n * 100) / 100
+
+/** What the typed Amount is worth net of VAT — the figure sent to the API
+ * as the line amount, and what posts to the expense account.
+ *
+ * An Input VAT line is quoted VAT-inclusive: the supplier's invoice total is
+ * what the clerk has in front of them and what actually leaves the bank, so
+ * that is what the Amount box takes. The 12% inside it is split back out
+ * here rather than added on top. Every other tax code carries no VAT, so the
+ * typed figure already is the net. A deduction (negative amount) is not a
+ * purchase and never carries input VAT. */
+function netFor(line: { taxCode: string; amount: string }): number {
+  const amount = Number(line.amount) || 0
+  if (line.taxCode !== TAXABLE_CODE || amount < 0) return amount
+  return round2(amount / (1 + VAT_RATE_PERCENT / 100))
+}
+
+/** Input VAT contained in the typed Amount. Computed as 12% of the net
+ * rather than as (typed − net) so it matches the figure the server derives
+ * from the net it is sent — rounding each half of the split independently
+ * is what the server does, and the two must not disagree. */
 function vatFor(line: { taxCode: string; amount: string }): number {
   const amount = Number(line.amount) || 0
   if (line.taxCode !== TAXABLE_CODE || amount < 0) return 0
-  // The amount is VAT-inclusive — the Tax Code says what is already in it,
-  // never that anything should be added — so the VAT is 12/112 of the gross.
-  // Mirrors computeExpenseTaxAmount server-side.
-  return Math.round(amount * (VAT_RATE_PERCENT / (100 + VAT_RATE_PERCENT)) * 100) / 100
+  return round2(netFor(line) * (VAT_RATE_PERCENT / 100))
 }
 
 interface LineState {
@@ -193,15 +204,14 @@ function emptyLine(): LineState {
 
 // One entry can be paid through several methods at once (e.g. part Cash,
 // part Bank Transfer) — rows must sum to the entry's total.
-// One expense, one payment method — a second method is a second expense.
-// No `amount`: it is always the lines' total, derived at save.
 interface PaymentState {
   paymentMethod: string
   bankAccountId: string
   reference: string
+  amount: string
 }
 function emptyPayment(): PaymentState {
-  return { paymentMethod: 'CASH', bankAccountId: '', reference: '' }
+  return { paymentMethod: 'CASH', bankAccountId: '', reference: '', amount: '' }
 }
 
 // Line-item table's column templates — one source of truth so the header row
@@ -213,13 +223,13 @@ function emptyPayment(): PaymentState {
 // the floor at 0 forces columns to actually hold the fr ratio and lets the
 // (already-truncating) cell content ellipsize instead.
 const ITEM_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_auto]'
+  'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
 const GENERIC_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,2fr)_minmax(0,2.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+  'grid-cols-[minmax(0,2fr)_minmax(0,2.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
 // Payee → Other's shape: the generic one plus Special Account and Division.
 // A Customer, Supplier or Employee expense has no use for either.
 const OTHER_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -402,19 +412,16 @@ function ExpenseFormFields({
     otherCategory: initial?.otherCategory ?? '',
     description: initial?.description ?? '',
   })
-  const [payment, updatePayment] = useState<PaymentState>(
-    initial?.payments?.[0]
-      ? {
-          paymentMethod: initial.payments[0].paymentMethod,
-          bankAccountId: initial.payments[0].bankAccountId ?? '',
-          reference: initial.payments[0].reference ?? '',
-        }
-      : emptyPayment()
+  const [payments, setPayments] = useState<PaymentState[]>(
+    initial?.payments && initial.payments.length > 0
+      ? initial.payments.map((p) => ({
+          paymentMethod: p.paymentMethod,
+          bankAccountId: p.bankAccountId ?? '',
+          reference: p.reference ?? '',
+          amount: String(p.amount ?? ''),
+        }))
+      : [emptyPayment()]
   )
-  // A draft saved before the one-method rule. Only DRAFT expenses are
-  // editable so nothing posted is at stake, but saying so out loud beats
-  // quietly collapsing someone's split on save.
-  const replacedSplit = (initial?.payments?.length ?? 0) > 1
   const [lines, setLines] = useState<LineState[]>(
     initial?.lines && initial.lines.length > 0
       ? initial.lines.map((l) => ({
@@ -424,11 +431,10 @@ function ExpenseFormFields({
           collectFromId: (l as any).customerId ?? '',
           collectFromLabel: (l as any).customer?.name ?? '',
           description: l.description ?? '',
-          // Stored gross — the tax sits inside it — so it reopens as typed.
-          amount: String(l.amount ?? ''),
-          // ...but through the alias map, so a record saved under the older
-          // INPUT_VAT/NON_TAXABLE spellings reopens on its real treatment
-          // rather than an empty Select.
+          // Stored net of VAT; the Amount box holds the VAT-inclusive
+          // figure, so put the tax back before showing it. A non-taxable
+          // line has no tax to add and reopens unchanged.
+          amount: String(round2((l.amount ?? 0) + (l.taxAmount ?? 0))),
           taxCode: taxCodeFor(l.taxCode),
           itemId: l.itemId ?? '',
           itemLabel: '',
@@ -483,24 +489,6 @@ function ExpenseFormFields({
     () => divisionOptions(branches, departments),
     [branches, departments]
   )
-  // The same list in CategorySelect's shape. A payroll run spans well over a
-  // hundred divisions — the client's own sheet matched 134 the import
-  // couldn't place — so this is the searchable picker the Account column
-  // already uses, not a dropdown nobody can scroll.
-  //
-  // Depth nests a branch's own departments under it; a department with no
-  // branch is company-wide and stays at the top level. CategorySelect
-  // flattens the indent while a search is typed, so the tree never gets in
-  // the way of finding one by name.
-  const divisionPickerOptions: CategorySelectOption[] = useMemo(
-    () =>
-      divisionChoices.map((d) => ({
-        id: d.value,
-        name: d.label,
-        depth: d.kind === 'department' && d.branchName ? 1 : 0,
-      })),
-    [divisionChoices]
-  )
 
   // Spreadsheet import. The payroll disbursement sheet runs to hundreds of
   // rows, so it is read in the browser and dropped straight into the line
@@ -550,30 +538,22 @@ function ExpenseFormFields({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Only used while creating — an attachment needs the expense's id, which
-  // doesn't exist until the first save. When editing, the panel uploads
-  // straight away and this stays empty.
-  const [stagedAttachments, setStagedAttachments] = useState<File[]>([])
-  // One list for every payee type: the whole chart of accounts (client
-  // decision, 2026-09-11). It used to narrow to Expense accounts for
-  // Customer/Employee, Expense + Inventory for Supplier, and the full ledger
-  // only for Other — so the account someone needed could be hidden behind
-  // which payee they happened to pick first, and the same real account was
-  // offered or not depending on an unrelated field.
-  //
-  // The old objection, that the full list "made the picker unusable", is
-  // answered by the picker itself: CategorySelect is a search box, not a
-  // scroll.
-  //
-  // postableAccounts already drops header rows (nothing posts to a `-000`)
-  // and Equity (no expense entry belongs there). inventoryAccounts is unioned
-  // in rather than dropped because it deliberately carried 1-04-000, the one
-  // header the Supplier list offered on purpose — deduped by id, since its
-  // children appear in both lists.
-  const categoryOptions = useMemo(() => {
-    const byId = new Map<string, Account>()
-    for (const a of [...postableAccounts, ...inventoryAccounts]) byId.set(a.id, a)
-    return accountsToCategoryOptions([...byId.values()])
+  // The Account picker offers the full Chart of Accounts for every payee
+  // type — postableAccounts already covers assets/liabilities/expense/income
+  // (headers and Equity stay excluded, see the fetch effect above), unioned
+  // with inventoryAccounts since that set also carries the Inventory header
+  // row (1-04-000) itself, which the "-000 = header" heuristic would
+  // otherwise drop.
+  const accountCategoryOptions = useMemo(() => {
+    const merged = [...postableAccounts]
+    const seen = new Set(merged.map((a) => a.id))
+    for (const a of inventoryAccounts) {
+      if (!seen.has(a.id)) {
+        merged.push(a)
+        seen.add(a.id)
+      }
+    }
+    return accountsToCategoryOptions(merged)
   }, [postableAccounts, inventoryAccounts])
   // Reuses CategorySelect (flat, depth 0) rather than the plain Select —
   // suppliers grew past a comfortable scroll-and-eyeball list, same reason
@@ -638,12 +618,11 @@ function ExpenseFormFields({
     (m) => m.key === 'EXPENSE_SUPPLIER_INVENTORY'
   )?.accountId
 
-  // Line amounts are VAT-inclusive, so the lines alone are the total —
-  // nothing is added on top of what was typed.
-  const total = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
-  // The VAT sitting inside that total. Shown because it is what posts to
-  // Input VAT, never because it moves the figure anyone has to pay.
+  const subtotal = lines.reduce((sum, l) => sum + netFor(l), 0)
   const vatTotal = lines.reduce((sum, l) => sum + vatFor(l), 0)
+  // Equals what was typed into the Amount boxes — on an Input VAT line the
+  // VAT is taken out of that figure, not added to it.
+  const total = subtotal + vatTotal
 
   // Item mode computes Amount from Qty * Unit Price. Applied to every line
   // change, not just setLine's — the SI resolver writes a line's price
@@ -778,21 +757,42 @@ function ExpenseFormFields({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines])
 
-  const setPayment = (patch: Partial<PaymentState>) => {
-    updatePayment((prev) => ({ ...prev, ...patch }))
+  const setPayment = (index: number, patch: Partial<PaymentState>) => {
+    setPayments((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)))
+  }
+  const addPayment = () => setPayments((prev) => [...prev, emptyPayment()])
+  const removePayment = (index: number) => setPayments((prev) => prev.filter((_, i) => i !== index))
+  const paymentsTotal = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+  // The figure every payment has to add up to, repeated beside the payment
+  // rows because that is where it gets typed — the totals block sits below
+  // hundreds of imported lines, well off screen by then. Rendered unformatted
+  // so it pastes straight into the Amount box, and `select-all` makes one
+  // click take the whole number.
+  const [copiedTotal, setCopiedTotal] = useState(false)
+  const copyTotal = async () => {
+    try {
+      await navigator.clipboard.writeText(total.toFixed(2))
+      setCopiedTotal(true)
+      setTimeout(() => setCopiedTotal(false), 1500)
+    } catch {
+      // Clipboard can be blocked; the number is selectable either way.
+    }
   }
 
   // Lets the sticky header's Save submit a form it sits outside of.
   const formRef = useRef<HTMLFormElement>(null)
 
   const validate = (): string | null => {
-    if (payment.paymentMethod === 'BANK_TRANSFER' && !payment.bankAccountId)
-      return 'Pick which bank account this is paid from.'
-    // The payment is the lines' total, so it can no longer disagree with
-    // them — it can only be nothing to pay. Two Other-payee lines that
-    // cancel out reach here with real lines and a zero total, which the
-    // backend would reject with a vaguer message about the payment.
-    if (total <= 0) return 'The expense total has to be more than 0.'
+    if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
+      return 'Pick the date this payment is expected to clear.'
+    for (const p of payments) {
+      if (!p.amount || Number(p.amount) <= 0)
+        return 'Every payment method needs an amount greater than 0.'
+      if (p.paymentMethod === 'BANK_TRANSFER' && !p.bankAccountId)
+        return 'Pick which bank account each Bank Transfer payment is paid from.'
+    }
+    if (Math.abs(paymentsTotal - total) > 0.01)
+      return `Payments total (${fmtMoney(paymentsTotal)}) must equal the expense total (${fmtMoney(total)}).`
     if (!form.payeeType) return 'Choose who this is for (Customer, Supplier, Employee, or Other).'
     if (form.payeeType === 'CUSTOMER' && !form.customerId) return 'Pick a customer.'
     if (form.payeeType === 'EMPLOYEE' && !form.employeeId) return 'Pick an employee.'
@@ -833,23 +833,16 @@ function ExpenseFormFields({
     const payload: Record<string, unknown> = {
       expenseDate: form.expenseDate,
       clearedType: form.clearedType,
-      clearedDate: form.clearedType === 'LATER_DATE' ? form.clearedDate || null : null,
+      clearedDate: form.clearedType === 'LATER_DATE' ? form.clearedDate : undefined,
       payeeType: form.payeeType,
       description: form.description || undefined,
     }
-    // Still an array on the wire — the API takes many and checks they sum to
-    // the total. We only ever send the one, for exactly the total.
-    payload.payments = [
-      {
-        paymentMethod: payment.paymentMethod,
-        bankAccountId:
-          payment.paymentMethod === 'BANK_TRANSFER'
-            ? payment.bankAccountId || undefined
-            : undefined,
-        reference: payment.reference || undefined,
-        amount: Number(total.toFixed(2)),
-      },
-    ]
+    payload.payments = payments.map((p) => ({
+      paymentMethod: p.paymentMethod,
+      bankAccountId: p.paymentMethod === 'BANK_TRANSFER' ? p.bankAccountId || undefined : undefined,
+      reference: p.reference || undefined,
+      amount: Number(p.amount),
+    }))
     // The one document number for the whole entry, whoever it was paid to.
     payload.voucherNumber = form.voucherNumber || undefined
     if (form.payeeType === 'CUSTOMER') {
@@ -868,10 +861,9 @@ function ExpenseFormFields({
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
-        // Sent gross. The Amount box is VAT-inclusive and the server
-        // splits the 12/112 out of it (computeExpenseTaxAmount), so
-        // pre-netting here would net the figure twice.
-        amount: Number(l.amount),
+        // The API takes the net amount and derives the 12% itself; the
+        // Amount box is VAT-inclusive, so hand it the net.
+        amount: netFor(l),
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
       }
@@ -907,26 +899,11 @@ function ExpenseFormFields({
     const res = initial
       ? await Expenses.update(initial.id, payload)
       : await Expenses.create(payload)
+    setSaving(false)
     if (!res.success) {
-      setSaving(false)
       setError(res.message || res.error || 'Save failed')
       return
     }
-    // Receipts picked before the expense existed only have somewhere to
-    // attach to now. A failure here is reported but doesn't undo the save —
-    // losing a recorded expense over a failed upload would be the worse of
-    // the two outcomes, and the file can be re-attached from the expense.
-    if (!initial && stagedAttachments.length > 0 && res.data?.id) {
-      const failed = await uploadStagedExpenseAttachments(res.data.id, stagedAttachments)
-      if (failed > 0) {
-        showToast({
-          title: `${failed} attachment${failed === 1 ? '' : 's'} failed to upload`,
-          description: 'The expense saved. Attach the file again from the expense itself.',
-          status: 'error',
-        })
-      }
-    }
-    setSaving(false)
     onSaved()
   }
 
@@ -1021,8 +998,9 @@ function ExpenseFormFields({
             />
           </Field>
           {form.clearedType === 'LATER_DATE' && (
-            <Field label="Cleared Date">
+            <Field label="Cleared Date *">
               <input
+                required
                 type="date"
                 value={form.clearedDate}
                 onChange={(e) => setForm({ ...form, clearedDate: e.target.value })}
@@ -1032,74 +1010,129 @@ function ExpenseFormFields({
           )}
         </div>
 
-        {/* Paid through exactly one method. A second method means a second
-            expense entry, not a second row here — so the split-payment list
-            this block used to render is gone. The Amount isn't typed either:
-            the lines already say what the expense comes to, and retyping it
-            was only ever a chance to disagree with them. */}
+        {/* Payment Methods — one entry can be paid through several methods at
+            once (e.g. part Cash, part Bank Transfer); rows must sum to the
+            expense total. */}
         <div className="space-y-2">
-          {replacedSplit && (
-            <p className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
-              This draft was saved with {initial?.payments?.length} payment methods. Saving replaces
-              them with the single method below — record the other as its own expense if it was
-              really paid separately.
-            </p>
-          )}
-          <div
-            className={`grid gap-3 ${
-              payment.paymentMethod === 'BANK_TRANSFER' ? 'grid-cols-4' : 'grid-cols-3'
-            }`}
-          >
-            <Field label="Paid from">
-              <Select
-                compact
-                aria-label="Paid from"
-                value={payment.paymentMethod}
-                onChange={(paymentMethod) =>
-                  setPayment({
-                    paymentMethod,
-                    bankAccountId: paymentMethod === 'BANK_TRANSFER' ? payment.bankAccountId : '',
-                  })
-                }
-                options={PAYMENT_METHODS.map((m) => ({
-                  value: m,
-                  label: m.replace('_', ' '),
-                }))}
-              />
-            </Field>
-            {payment.paymentMethod === 'BANK_TRANSFER' && (
-              <Field label="Bank Account *">
-                <CategorySelect
-                  compact
-                  aria-label="Select bank account"
-                  noun="bank accounts"
-                  value={payment.bankAccountId}
-                  onChange={(id) => setPayment({ bankAccountId: id ?? '' })}
-                  options={bankAccountOptions}
-                  placeholder="— Select —"
-                />
-              </Field>
-            )}
-            <Field label="Reference Number">
-              <input
-                value={payment.reference}
-                onChange={(e) => setPayment({ reference: e.target.value })}
-                className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-              />
-            </Field>
-            {/* Displayed rather than typed — the same treatment the per-line
-                Tax amount gets. The aria-label is deliberately not "Amount":
-                that name belongs to the per-line input, and two controls
-                answering to it would make every by-label selector ambiguous. */}
-            <Field label="Amount">
+          {payments.map((p, i) => (
+            <div key={i} className="flex items-end gap-3">
               <div
-                aria-label="Amount paid"
-                title="The lines' total — one payment method per expense, so it is the whole amount"
-                className="min-w-0 truncate rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-[13px] font-medium tabular-nums text-zinc-600"
+                className={`grid flex-1 gap-3 ${p.paymentMethod === 'BANK_TRANSFER' ? 'grid-cols-4' : 'grid-cols-3'}`}
               >
-                {fmtMoney(total)}
+                <div>
+                  {/* Titles the column on the first row only, so a split
+                      payment reads as one source list rather than repeating
+                      the heading down every row. Later rows keep an
+                      invisible copy of it so their dropdown stays on the
+                      same baseline as the Reference/Amount fields beside
+                      them. */}
+                  <span
+                    className={`mb-1 block text-xs font-medium ${i === 0 ? 'text-gray-600' : 'text-transparent select-none'}`}
+                    aria-hidden={i > 0}
+                  >
+                    Paid from
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-[13px] font-medium text-zinc-500">{i + 1}.</span>
+                    <div className="flex-1">
+                      <Select
+                        compact
+                        value={p.paymentMethod}
+                        onChange={(paymentMethod) =>
+                          setPayment(i, {
+                            paymentMethod,
+                            bankAccountId: paymentMethod === 'BANK_TRANSFER' ? p.bankAccountId : '',
+                          })
+                        }
+                        options={PAYMENT_METHODS.map((m) => ({
+                          value: m,
+                          label: m.replace('_', ' '),
+                        }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+                {p.paymentMethod === 'BANK_TRANSFER' && (
+                  <Field label="Bank Account *">
+                    <CategorySelect
+                      compact
+                      aria-label="Select bank account"
+                      noun="bank accounts"
+                      value={p.bankAccountId}
+                      onChange={(id) => setPayment(i, { bankAccountId: id ?? '' })}
+                      options={bankAccountOptions}
+                      placeholder="— Select —"
+                    />
+                  </Field>
+                )}
+                <Field label="Reference Number">
+                  <input
+                    value={p.reference}
+                    onChange={(e) => setPayment(i, { reference: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                </Field>
+                <Field label="Amount">
+                  <input
+                    required
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={p.amount}
+                    onChange={(e) => setPayment(i, { amount: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                </Field>
               </div>
-            </Field>
+              {payments.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removePayment(i)}
+                  className="mb-0.5 p-1.5 text-red-500 hover:bg-red-50 rounded"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <button
+              type="button"
+              onClick={addPayment}
+              className="flex items-center gap-1.5 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 rounded-lg px-2 py-1"
+            >
+              <Plus className="w-4 h-4" /> Add payment method
+            </button>
+            <div className="flex items-center gap-3">
+              {payments.length > 1 && (
+                <span
+                  className={`text-xs ${Math.abs(paymentsTotal - total) > 0.01 ? 'text-amber-600' : 'text-zinc-400'}`}
+                >
+                  Payments total: {fmtMoney(paymentsTotal)} / {fmtMoney(total)}
+                </span>
+              )}
+              {total > 0 && (
+                <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  Amount total
+                  <span className="select-all font-medium tabular-nums text-zinc-700">
+                    {total.toFixed(2)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copyTotal}
+                    aria-label="Copy amount total"
+                    title="Copy — paste into Amount"
+                    className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+                  >
+                    {copiedTotal ? (
+                      <Check className="h-3.5 w-3.5 text-green-600" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1262,19 +1295,6 @@ function ExpenseFormFields({
           />
         </Field>
 
-        {/* Supporting documents, kept with the header fields rather than at
-            the foot of the form — a payroll entry runs to hundreds of lines,
-            and anything below them is off screen by the time it matters.
-            While creating there is no expense id yet, so the panel stages the
-            files and the submit uploads them once the expense has one. */}
-        <div className="pt-1">
-          <ExpenseAttachmentsPanel
-            expenseId={initial?.id}
-            staged={stagedAttachments}
-            onStagedChange={setStagedAttachments}
-          />
-        </div>
-
         {/* Line items — Scenario 40 Part 6. Supplier is the only payee type
             that can be a real inventory purchase, so it's the only one that
             gets the Item/Qty/Unit Price columns; every other type just
@@ -1307,10 +1327,9 @@ function ExpenseFormFields({
                 <div>Description</div>
               )}
               <div>Amount</div>
-              {/* A marker for what the Amount already contains, not a rate
-                  applied to it — so there is no Tax Amount to show, and the
-                  Total would only repeat the Amount beside it. */}
               <div>Tax Code</div>
+              <div>Tax Amount</div>
+              <div>Total</div>
               {/* One pick from the branches and departments list — per line,
                   because a payroll run spans every department it pays. */}
               {isOtherMode && <div>Division</div>}
@@ -1318,6 +1337,7 @@ function ExpenseFormFields({
             </div>
             <div className="divide-y divide-zinc-100">
               {lines.map((line, i) => {
+                const lineTotal = netFor(line) + vatFor(line)
                 return (
                   <div
                     key={i}
@@ -1384,7 +1404,7 @@ function ExpenseFormFields({
                       noun="accounts"
                       value={line.categoryAccountId}
                       onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
-                      options={categoryOptions}
+                      options={accountCategoryOptions}
                       placeholder="— Select —"
                     />
                     {/* Which named balance the line belongs to, under whichever
@@ -1467,14 +1487,35 @@ function ExpenseFormFields({
                       onChange={(taxCode) => setLine(i, { taxCode })}
                       options={TAX_CODE_OPTIONS}
                     />
+                    {/* Only an Input VAT line can carry a tax amount —
+                          the others have no VAT by definition, so the field
+                          is locked rather than left open to an entry the
+                          backend will reject on save. */}
+                    <div
+                      aria-label="Tax amount"
+                      title={
+                        line.taxCode === TAXABLE_CODE
+                          ? `The ${VAT_RATE_PERCENT}% Input VAT already inside the amount, split out on save`
+                          : 'No VAT on this tax code'
+                      }
+                      className={`min-w-0 truncate px-2.5 py-1.5 text-[13px] ${
+                        vatFor(line) > 0 ? 'text-zinc-600' : 'text-zinc-400'
+                      }`}
+                    >
+                      {vatFor(line) > 0 ? fmtMoney(vatFor(line)) : '—'}
+                    </div>
+                    <div className="min-w-0 truncate px-2.5 py-1.5 text-[13px] text-zinc-600">
+                      {fmtMoney(lineTotal)}
+                    </div>
                     {isOtherMode && (
-                      <CategorySelect
+                      <Select
                         compact
-                        aria-label="Division"
-                        noun="divisions"
                         value={line.division}
-                        onChange={(division) => setLine(i, { division: division ?? '' })}
-                        options={divisionPickerOptions}
+                        onChange={(division) => setLine(i, { division })}
+                        options={divisionChoices.map((d) => ({
+                          value: d.value,
+                          label: d.label,
+                        }))}
                         placeholder="— None —"
                       />
                     )}
@@ -1607,16 +1648,20 @@ function ExpenseFormFields({
         )}
 
         <div className="space-y-0.5 text-right text-sm text-gray-600">
+          {vatTotal > 0 && (
+            <>
+              <div>
+                Subtotal (net of VAT): <span className="font-medium">{fmtMoney(subtotal)}</span>
+              </div>
+              <div>
+                Input VAT ({VAT_RATE_PERCENT}%, included):{' '}
+                <span className="font-medium">{fmtMoney(vatTotal)}</span>
+              </div>
+            </>
+          )}
           <div>
             Total: <span className="font-semibold">{fmtMoney(total)}</span>
           </div>
-          {/* Inside the total, not added to it — this is the slice that
-              posts to Input VAT, and the rest goes to the expense account. */}
-          {vatTotal > 0 && (
-            <div className="text-xs text-gray-500">
-              incl. Input VAT: <span className="font-medium">{fmtMoney(vatTotal)}</span>
-            </div>
-          )}
         </div>
       </form>
     </div>

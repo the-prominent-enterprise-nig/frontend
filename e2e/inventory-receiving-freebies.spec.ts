@@ -1,5 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { gotoReady } from './utils'
+
+// Receiving moved to the Stock hub: /inventory/operations?tab=receiving is
+// gone and the entry point is the Receiving Reports tab's "New Receipt"
+// button, which opens the same ReceiveStockModal (heading: "Receive Stock").
 
 // Scenario 05 (Receiving) followup — a promotional/free item included in a
 // delivery gets its own "Freebie" flag per line, zero-cost but still
@@ -11,38 +15,51 @@ import { gotoReady } from './utils'
 // Uses the shared Business Owner storageState (default project behavior) —
 // this isn't a role-boundary test, just a form-behavior one.
 
-test.describe('Inventory — Receiving freebies (Scenario 05 followup)', () => {
-  test('marking a line as a freebie replaces the Unit Cost input with "Free"', async ({ page }) => {
-    await gotoReady(page, '/inventory/operations?tab=receiving')
+const ITEM_SEARCH_PLACEHOLDER = 'Scan or search an item to add a line…'
 
-    await page.getByRole('button', { name: 'Receive Stock' }).click()
+// Lines are added by picking from the catalogue search rather than by an
+// "Add Item" button that drops an empty row — SearchCombobox
+// (src/components/ui/SearchCombobox.tsx) renders a <button> while closed and
+// portals its dropdown to document.body as a `fixed z-100` panel, so the pick
+// is: click the button, type, choose from the portal.
+async function addFirstItem(page: Page): Promise<void> {
+  await page.getByRole('button', { name: ITEM_SEARCH_PLACEHOLDER }).click()
+  await page.getByPlaceholder(ITEM_SEARCH_PLACEHOLDER).fill('a')
+  const dropdown = page.locator('div.fixed.z-100')
+  await expect(dropdown).toBeVisible({ timeout: 10_000 })
+  const option = dropdown.locator('button').first()
+  await expect(option).toBeVisible({ timeout: 10_000 })
+  await option.click()
+}
+
+test.describe('Inventory — Receiving freebies (Scenario 05 followup)', () => {
+  test('marking a line as a freebie zeroes and locks its unit cost', async ({ page }) => {
+    await gotoReady(page, '/inventory/stock?tab=reports')
+
+    await page.getByRole('button', { name: 'New Receipt' }).click()
     await expect(page.getByRole('heading', { name: 'Receive Stock' })).toBeVisible({
       timeout: 10_000,
     })
 
-    await page.getByRole('button', { name: 'Add Item' }).click()
+    await addFirstItem(page)
 
-    const unitCostInput = page.getByRole('columnheader', { name: 'Unit Cost' })
-    await expect(unitCostInput).toBeVisible()
+    // Pricing lives in the line's details drawer, one click off the row: the
+    // receiver's job at the bay is counting units, not re-pricing them.
+    await page.getByRole('button', { name: 'Details' }).first().click()
 
-    // The Stock Balances table sits behind the modal and stays in the DOM,
-    // so a bare `tbody tr` matches its rows first — scope to the modal's
-    // own line-items table, which is the last <table> in DOM order (it's
-    // rendered after the page content, not portaled).
-    const lineItemsTable = page.locator('table').last()
-    const row = lineItemsTable.locator('tbody tr').first()
-    const costCell = row.locator('td').nth(2) // Item, Qty, Unit Cost
-    await expect(costCell.locator('input[type="number"]')).toBeVisible()
+    const unitCost = page.getByLabel('Unit cost')
+    await expect(unitCost).toBeVisible()
+    await expect(unitCost).not.toHaveAttribute('readonly', '')
 
-    const freebieCheckbox = row.locator('td').nth(3).locator('input[type="checkbox"]')
-    await freebieCheckbox.check()
+    await page.getByRole('checkbox', { name: 'Mark as freebie' }).click()
 
-    await expect(costCell.getByText('Free')).toBeVisible()
-    await expect(costCell.locator('input[type="number"]')).toHaveCount(0)
+    await expect(unitCost).toHaveValue('0')
+    await expect(unitCost).toHaveAttribute('readonly', '')
+    await expect(page.getByText('Zero, billed as a freebie')).toBeVisible()
 
-    // Unchecking brings the editable cost input back.
-    await freebieCheckbox.uncheck()
-    await expect(costCell.locator('input[type="number"]')).toBeVisible()
-    await expect(costCell.getByText('Free')).toHaveCount(0)
+    // Unticking hands the cost back.
+    await page.getByRole('checkbox', { name: 'Freebie, no cost' }).click()
+    await expect(unitCost).not.toHaveAttribute('readonly', '')
+    await expect(page.getByText('Zero, billed as a freebie')).toHaveCount(0)
   })
 })

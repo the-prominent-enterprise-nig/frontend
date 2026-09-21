@@ -151,6 +151,7 @@ export interface CollectionReceiptDocument {
     amountReceived: number
     withholdingAmount?: number
     rebateAmount?: number
+    penaltyAmount?: number
     amountInWords?: string | null
     description?: string | null
     invoiceNumber?: string
@@ -232,13 +233,16 @@ export function CollectionReceiptDocumentSheet({ doc }: { doc: CollectionReceipt
           <Row label="Amount Received" value={money(r.amountReceived)} />
           <Row label="Payment Method" value={r.method ?? '—'} />
           <Row label="Reference No." value={r.reference || r.receiptNumber || '—'} />
-          {/* Shown only when they exist: both reduce the balance without
-              being money received, so a zero line would invite the reader to
-              reconcile a figure that isn't part of this collection. */}
+          {/* Shown only when they exist. Withholding and rebate both reduce
+              the balance without being money received; penalty is the
+              opposite — real extra cash on top of Amount Received above —
+              but is still itemized rather than folded into that figure, so
+              the reader can see it's a late charge, not the due itself. */}
           {!!r.withholdingAmount && (
             <Row label="Withholding (2307)" value={money(r.withholdingAmount)} />
           )}
           {!!r.rebateAmount && <Row label="Rebate applied" value={money(r.rebateAmount)} />}
+          {!!r.penaltyAmount && <Row label="Late Payment" value={money(r.penaltyAmount)} />}
         </Section>
 
         <Section title="Applied to">

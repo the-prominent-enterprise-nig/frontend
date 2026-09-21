@@ -1,7 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check, X } from 'lucide-react'
+
+/** Matches the in-flow dropdown's max-h-56; the portalled one shrinks below
+ * this when the chosen side has less room. */
+const DROPDOWN_MAX_HEIGHT = 224
+const MIN_DROPDOWN_HEIGHT = 120
 
 export type SearchableSelectOption = { value: string; label: string }
 
@@ -23,6 +29,14 @@ type BaseProps = {
    * `value` ever changes). Off by default since not every consumer wants a
    * "no selection" state to be reachable (e.g. a required field). */
   clearable?: boolean
+  /** Renders the option list into <body> at the trigger's coordinates,
+   * flipping above when there's no room below, instead of as an absolutely
+   * positioned child. Opt-in because it only matters inside a clipping
+   * ancestor: in a scrollable container (a modal body, a table) the in-flow
+   * list is clipped and grows the container's scroll height rather than
+   * floating over it. Same technique SearchCombobox and CategorySelect use.
+   * Off by default so the 20-odd existing usages are untouched. */
+  portal?: boolean
 }
 
 type SingleProps = BaseProps & {
@@ -57,6 +71,7 @@ export default function SearchableSelect(props: Props) {
     disabled = false,
     className = '',
     clearable = false,
+    portal = false,
     chrome = {
       idle: 'border-gray-200',
       focused: 'border-prominent-purple-500 ring-1 ring-prominent-purple-500',
@@ -67,7 +82,15 @@ export default function SearchableSelect(props: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [position, setPosition] = useState<{
+    top?: number
+    bottom?: number
+    left: number
+    width: number
+    maxHeight: number
+  } | null>(null)
 
   // Both modes are driven off one array internally so the option list, the
   // filter and the keyboard/mouse behaviour stay identical between them.
@@ -104,7 +127,11 @@ export default function SearchableSelect(props: Props) {
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) {
+      const target = e.target as Node
+      // dropdownRef too, not just containerRef: when portalled, the list is
+      // no longer a descendant of the trigger, so checking only the trigger
+      // would close it on its own options.
+      if (!containerRef.current?.contains(target) && !dropdownRef.current?.contains(target)) {
         setOpen(false)
         setQuery('')
       }
@@ -113,11 +140,50 @@ export default function SearchableSelect(props: Props) {
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [])
 
+  const updatePosition = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const spaceBelow = window.innerHeight - rect.bottom - 12
+    const spaceAbove = rect.top - 12
+    const flip = spaceBelow < DROPDOWN_MAX_HEIGHT && spaceAbove > spaceBelow
+    setPosition({
+      top: flip ? undefined : rect.bottom + 4,
+      bottom: flip ? window.innerHeight - rect.top + 4 : undefined,
+      left: rect.left,
+      width: rect.width,
+      maxHeight: Math.max(
+        MIN_DROPDOWN_HEIGHT,
+        Math.min(DROPDOWN_MAX_HEIGHT, flip ? spaceAbove : spaceBelow)
+      ),
+    })
+  }, [])
+
+  // Follow the trigger while open — the capture-phase scroll listener catches
+  // the modal body scrolling under a dropdown that floats above it.
+  useEffect(() => {
+    if (!portal || !open) return
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    document.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      document.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [portal, open, updatePosition])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return options
+    // A freshly-reopened field re-seeds `query` with the current selection's
+    // own label (see the input's onFocus below) so the box doesn't look
+    // cleared — filtering on that exact seed before the user has typed
+    // anything would hide every OTHER option, which is wrong for a field
+    // with just a couple of options that don't share substrings (e.g.
+    // "VAT inclusive" / "VAT exclusive": reopening on "inclusive" hid
+    // "exclusive" entirely). Show everything until the query actually
+    // diverges from the seed.
+    if (!q || q === (selected?.label ?? '').trim().toLowerCase()) return options
     return options.filter((o) => o.label.toLowerCase().includes(q))
-  }, [options, query])
+  }, [options, query, selected])
 
   // With several picked there is no single label to show, so summarise.
   const summaryLabel =
@@ -172,35 +238,62 @@ export default function SearchableSelect(props: Props) {
         />
       </div>
 
-      {open && !disabled && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-          {loading ? (
-            <p className="px-3 py-2 text-sm text-gray-400">{loadingLabel}</p>
-          ) : filtered.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-gray-400">No matches</p>
-          ) : (
-            filtered.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                data-testid="searchable-select-option"
-                role={multiple ? 'checkbox' : undefined}
-                aria-checked={multiple ? isSelected(opt.value) : undefined}
-                onMouseDown={(e) => multiple && e.preventDefault()}
-                onClick={() => toggle(opt.value)}
-                className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
-                  isSelected(opt.value)
-                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
-                    : 'text-gray-800'
-                }`}
-              >
-                {opt.label}
-                {isSelected(opt.value) && <Check className="h-3.5 w-3.5 shrink-0" />}
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      {open && !disabled && renderList()}
     </div>
   )
+
+  function renderList() {
+    const list = (
+      <div
+        ref={dropdownRef}
+        style={
+          portal && position
+            ? {
+                top: position.top,
+                bottom: position.bottom,
+                left: position.left,
+                width: position.width,
+                maxHeight: position.maxHeight,
+              }
+            : undefined
+        }
+        className={
+          portal
+            ? 'fixed z-100 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
+            : 'absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
+        }
+      >
+        {loading ? (
+          <p className="px-3 py-2 text-sm text-gray-400">{loadingLabel}</p>
+        ) : filtered.length === 0 ? (
+          <p className="px-3 py-2 text-sm text-gray-400">No matches</p>
+        ) : (
+          filtered.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              data-testid="searchable-select-option"
+              role={multiple ? 'checkbox' : undefined}
+              aria-checked={multiple ? isSelected(opt.value) : undefined}
+              onMouseDown={(e) => multiple && e.preventDefault()}
+              onClick={() => toggle(opt.value)}
+              className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
+                isSelected(opt.value)
+                  ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                  : 'text-gray-800'
+              }`}
+            >
+              {opt.label}
+              {isSelected(opt.value) && <Check className="h-3.5 w-3.5 shrink-0" />}
+            </button>
+          ))
+        )}
+      </div>
+    )
+
+    if (!portal) return list
+    // Nothing to place the list against until the first measurement lands.
+    if (!position) return null
+    return createPortal(list, document.body)
+  }
 }

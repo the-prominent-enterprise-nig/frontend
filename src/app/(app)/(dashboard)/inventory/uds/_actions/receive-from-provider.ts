@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
+import { udsErrorMessage } from '../_lib/uds-errors'
 import { ReceiveFromProviderFormSchema } from '@/src/schema/inventory/uds'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -44,7 +45,7 @@ export async function receiveFromProvider(
     return {
       success: false,
       error: errStr || 'Failed to receive the unit back',
-      message: msg || errStr || 'Failed to receive the unit back',
+      message: udsErrorMessage(msg || errStr, 'Failed to receive the unit back'),
     }
   }
 

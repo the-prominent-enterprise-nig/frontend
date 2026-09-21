@@ -187,7 +187,7 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
   return (
     <ListShell
       title="Debit Memos"
-      description="Everything that raises what a customer owes us, or lowers what we owe a supplier."
+      description="Additional charges raised after an invoice has already been issued."
       search={search}
       onSearchChange={setSearch}
       searchPlaceholder="Search memo no. or reason…"
