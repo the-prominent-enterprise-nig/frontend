@@ -70,9 +70,11 @@ The 5,000.00 gap is the down payment. Remaining already agreed — the down paym
 
 **Fix**: the modal now speaks in contract terms, the same basis as the ledger and as the plan's single `ARInvoice` (`contractAmount` = down payment + total payable): Total price (contract), Down payment received, Installment payments made, Total payments received, Remaining balance.
 
-**Also fixed, same class of defect**: the ledger credited a collection's cash and its PPD rebate but silently dropped its **creditable withholding tax**, while `ARInvoicesService` counts all three into the invoice's `amountPaid`. On any sale with WHT the ledger's Outstanding sat permanently above what the invoice said was owed. A "Withholding tax" credit row now posts alongside the rebate row.
+~~**Also fixed, same class of defect**: the ledger credited a collection's cash and its PPD rebate but silently dropped its **creditable withholding tax**, while `ARInvoicesService` counts all three into the invoice's `amountPaid`. On any sale with WHT the ledger's Outstanding sat permanently above what the invoice said was owed. A "Withholding tax" credit row now posts alongside the rebate row.\*\*~~
 
-**Status**: done.
+**Retracted — this premise was wrong.** `ARInvoicesService.recordArPaymentCore()` computes `totalApplied = amount + rebate` explicitly excluding withholding, with its own comment: _"Withholding is deliberately absent: the customer has handed over cash and a promise of a certificate, and only the cash settles anything today."_ The withheld amount only ever relieves the invoice later, as its own separate journal entry, once `markCertificateReceived()` confirms the 2307 certificate — never at collection time. Crediting it in the ledger immediately, as this pass did, made Outstanding read **lower** than the real invoice, the opposite of the bug being chased. Reverted in the reconciliation below; a customer ledger row for a _confirmed_ withholding certificate is a real gap but a separate, unscoped piece of work.
+
+**Status**: done (down payment vs. plan-modal totals only; the withholding-credit portion above is reverted).
 
 ### 6. Add "Bill" then payment
 
@@ -94,7 +96,7 @@ Date   Ref           Inst  Description    Debit      Credit    Due       Outstan
 
 The rejected alternative — Bill carries the debit, Sale becomes an information-only header — reads closer to a hand-kept paper ledger but stops agreeing with the AR invoice, which books the whole contract on day one.
 
-**Status**: done.
+**Status**: superseded — see "Reconciled with `development`" below. This design (a `1st Bill`/`2nd Bill` memo row, unconditionally, for every due regardless of whether it's actually arrived) shipped without the client seeing it, and turned out to be wrong on two counts once compared against the client-validated design `development` had already landed one day later: it would show every future due's Bill row from day one (a 24-month plan reading as 24 Bill rows immediately after the Sale row), and it never accounted for a late-payment penalty at all.
 
 ## Verification
 

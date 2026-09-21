@@ -4,9 +4,12 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react'
-import { customersApi } from '@/src/libs/api/crm'
+import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
-import { printUnifiedCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
+import {
+  buildCustomerLedgerHtml,
+  buildUnifiedCustomerLedgerHtml,
+} from '@/src/libs/print/printInventoryDocument'
 import type {
   Customer,
   CustomerLedger,
@@ -18,9 +21,12 @@ import type {
 // -financed sales, charge sales and cash sales, merged into one chronological
 // Date/Ref/Inst./Description/Debit/Credit/Due/Outstanding table (same row
 // shape as InstallmentLedgerView.tsx's per-account ledger). Unlike that view
-// this can span several separate purchases, so there's no single sale/item/
-// agent/financing-scheme to head it with — just customer info + totals across
-// them all, not the paper-form field grid.
+// this can span several separate purchases, so the on-screen layout is just
+// customer info + totals across them all, not the paper-form field grid —
+// there's no single sale/item/agent/financing-scheme to head it with when
+// more than one purchase is in view. Printing (see handlePrint below) still
+// reproduces the client's original paper ledger card when the ledger
+// narrows to one in-house plan, which is the common case.
 export default function CustomerLedgerView({
   customerId,
   backHref,
@@ -131,6 +137,44 @@ export default function CustomerLedgerView({
     setEditingTax(false)
   }
 
+  // A ledger narrowed to exactly one in-house plan — either the plan picker
+  // has one selected, or the customer only has the one plan — prints as the
+  // client's original paper ledger card (Lastname/Firstname/SI No./Brand/
+  // Type/Model/Serial/Agent/Collector/LCP/Down/etc., same as
+  // InstallmentLedgerView's print) instead of the generic multi-plan layout,
+  // which has no single contract's terms to show. The window opens before
+  // the fetch, on the click, so a popup blocker doesn't eat it once the
+  // await lands (same pattern as printCustomerCopy.ts).
+  async function handlePrint() {
+    if (!ledger) return
+    const win = window.open('', '_blank', 'width=950,height=750')
+    if (!win) return
+    win.document.write(
+      '<p style="font-family:Arial,sans-serif;padding:32px;color:#555">Preparing the ledger…</p>'
+    )
+
+    const singlePlan = transactionId
+      ? ledger.transactions.find((t) => t.id === transactionId)
+      : ledger.transactions.length === 1
+        ? ledger.transactions[0]
+        : undefined
+
+    let html: string | null = null
+    if (singlePlan?.kind === 'inhouse') {
+      try {
+        const res = await installmentAccountsApi.getLedger(singlePlan.id.slice('acct:'.length))
+        if (res.success && res.data) html = buildCustomerLedgerHtml(res.data)
+      } catch {
+        // Fall through to the unified layout below.
+      }
+    }
+    if (!html) html = buildUnifiedCustomerLedgerHtml(ledger)
+
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
+  }
+
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
       <div>
@@ -190,7 +234,7 @@ export default function CustomerLedgerView({
               </div>
               <button
                 type="button"
-                onClick={() => printUnifiedCustomerLedgerDocument(ledger)}
+                onClick={handlePrint}
                 className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 <Printer className="h-3.5 w-3.5" /> Print
@@ -400,10 +444,18 @@ export default function CustomerLedgerView({
                           Total
                         </td>
                         <td className="border-r border-gray-100 px-4 py-1.5 text-right">
-                          {fmtMoney(ledger.rows.reduce((sum, r) => sum + r.debit, 0))}
+                          {fmtMoney(
+                            ledger.rows
+                              .filter((r) => !r.displayOnly)
+                              .reduce((sum, r) => sum + r.debit, 0)
+                          )}
                         </td>
                         <td className="border-r border-gray-100 px-4 py-1.5 text-right">
-                          {fmtMoney(ledger.rows.reduce((sum, r) => sum + r.credit, 0))}
+                          {fmtMoney(
+                            ledger.rows
+                              .filter((r) => !r.displayOnly)
+                              .reduce((sum, r) => sum + r.credit, 0)
+                          )}
                         </td>
                         <td className="border-r border-gray-100 px-4 py-1.5" />
                         <td className="px-4 py-1.5" />

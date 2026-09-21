@@ -453,6 +453,12 @@ export interface InstallmentLedgerRow {
   /** This row's own net effect (debit − credit). */
   due: number
   outstanding: number
+  /** True for a due's own "Bill" marker row — its debit is shown for
+   * legibility but was never added into `outstanding`, since that amount is
+   * already recognized via the schedule's upfront lump Sale debit. Any
+   * footer/summary that sums `debit`/`credit` across rows must skip these,
+   * or it double-counts. Omitted (falsy) for every real money-moving row. */
+  displayOnly?: boolean
 }
 
 export interface InstallmentLedger {

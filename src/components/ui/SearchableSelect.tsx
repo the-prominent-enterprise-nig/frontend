@@ -173,9 +173,17 @@ export default function SearchableSelect(props: Props) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return options
+    // A freshly-reopened field re-seeds `query` with the current selection's
+    // own label (see the input's onFocus below) so the box doesn't look
+    // cleared — filtering on that exact seed before the user has typed
+    // anything would hide every OTHER option, which is wrong for a field
+    // with just a couple of options that don't share substrings (e.g.
+    // "VAT inclusive" / "VAT exclusive": reopening on "inclusive" hid
+    // "exclusive" entirely). Show everything until the query actually
+    // diverges from the seed.
+    if (!q || q === (selected?.label ?? '').trim().toLowerCase()) return options
     return options.filter((o) => o.label.toLowerCase().includes(q))
-  }, [options, query])
+  }, [options, query, selected])
 
   // With several picked there is no single label to show, so summarise.
   const summaryLabel =

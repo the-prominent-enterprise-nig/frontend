@@ -12678,11 +12678,6 @@ export interface components {
        */
       minQty?: number
       /**
-       * @description Minimum allowed price for this SKU, checked when the list is approved
-       * @example 150
-       */
-      floorPrice?: number
-      /**
        * @description Scenario 15, Part 5 — one down payment value per SKU+price-use-type (not per financing term).
        * @example 2000
        */

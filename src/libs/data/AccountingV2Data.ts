@@ -369,6 +369,7 @@ export interface ARPayment {
   withholdingVarianceNote?: string | null
   withholdingReviewerId?: string | null
   rebateAmount: number
+  penaltyAmount: number
   paymentDate: string
   method?: PaymentMethod | null
   reference?: string | null
@@ -443,6 +444,7 @@ export interface RecordArPaymentInput {
   withholdingCertificateNo?: string
   withholdingCertificateStatus?: WithholdingCertificateStatus
   rebateAmount?: number
+  penaltyAmount?: number
   bankAccountId?: string
   branchId?: string
   collectorId?: string
@@ -561,6 +563,7 @@ export interface BulkPayInstallmentLineInput {
   invoiceId: string
   amount: number
   rebateAmount?: number
+  penaltyAmount?: number
 }
 
 export interface BulkRecordArPaymentInput {

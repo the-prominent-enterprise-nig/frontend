@@ -36,7 +36,11 @@ const STATUS_STYLES: Record<string, string> = {
 // OTHER/Special Accounts (each line has its own recipient).
 function payeeLabel(x: BusinessExpense): string {
   if (x.supplier?.name) return x.supplier.name
-  if (x.customer?.name) return x.customer.name
+  if (x.customer?.name) {
+    // Only append the Sales Invoice # when one was actually picked — most
+    // Customer-payee entries have no AR invoice linked at all.
+    return x.salesInvoiceNumber ? `${x.customer.name} — ${x.salesInvoiceNumber}` : x.customer.name
+  }
   if (x.employee) return `${x.employee.firstName} ${x.employee.lastName}`
   if (x.payee) return x.payee
   if (x.payeeType === 'OTHER' && x.otherCategory === 'SPECIAL_ACCOUNTS' && x.lines.length > 0) {
