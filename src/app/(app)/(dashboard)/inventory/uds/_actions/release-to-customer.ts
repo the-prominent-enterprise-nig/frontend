@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
+import { udsErrorMessage } from '../_lib/uds-errors'
 import { ReleaseToCustomerFormSchema } from '@/src/schema/inventory/uds'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -32,7 +33,7 @@ export async function releaseToCustomer(
     }
   }
 
-  const result = await api.patch<{ id: string }>(
+  const result = await api.patch<{ id: string; releaseDeliveryReceiptNumber?: string | null }>(
     `/inventory/uds/${id}/release-to-customer`,
     parsed.data
   )
@@ -44,10 +45,21 @@ export async function releaseToCustomer(
     return {
       success: false,
       error: errStr || 'Failed to release the unit to the customer',
-      message: msg || errStr || 'Failed to release the unit to the customer',
+      message: udsErrorMessage(msg || errStr, 'Failed to release the unit to the customer'),
     }
   }
 
   revalidatePath('/inventory/uds')
-  return { success: true, data: result.data, message: 'Unit released to the customer' }
+
+  // The DR is issued server-side, and the customer is standing there waiting
+  // to sign for it — it has to come back out to be read aloud, the same way
+  // the intake RR does.
+  const drNumber = result.data?.releaseDeliveryReceiptNumber
+  return {
+    success: true,
+    data: result.data,
+    message: drNumber
+      ? `DR ${drNumber} issued — write this on the customer's copy.`
+      : 'Unit released to the customer',
+  }
 }

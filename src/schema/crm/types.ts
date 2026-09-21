@@ -453,6 +453,12 @@ export interface InstallmentLedgerRow {
   /** This row's own net effect (debit − credit). */
   due: number
   outstanding: number
+  /** True for a due's own "Bill" marker row — its debit is shown for
+   * legibility but was never added into `outstanding`, since that amount is
+   * already recognized via the schedule's upfront lump Sale debit. Any
+   * footer/summary that sums `debit`/`credit` across rows must skip these,
+   * or it double-counts. Omitted (falsy) for every real money-moving row. */
+  displayOnly?: boolean
 }
 
 export interface InstallmentLedger {
@@ -472,17 +478,20 @@ export interface InstallmentLedger {
  * pays monthly) — and drops charge invoices and cash sales. */
 export type CustomerLedgerScope = 'all' | 'installments'
 
-/** One selectable contract under the 'installments' scope. `id` is prefixed by
- * kind ('acct:' / 'tpf:') because the two come from different tables: an
- * in-house plan is an InstallmentAccount, while a TPF plan has no account and
- * is identified by its PosTransaction. */
-export interface CustomerLedgerPlan {
+/** One selectable purchase in the ledger's transaction picker — every kind of
+ * sale the customer has made, not only the financed ones. `id` is prefixed by
+ * kind because the four come from different tables: an in-house plan is an
+ * InstallmentAccount, a TPF plan has no account and is identified by its
+ * PosTransaction, a cash sale produces no invoice and is likewise its
+ * PosTransaction, and a charge sale is its ARInvoice. */
+export interface CustomerLedgerTransaction {
   id: string
-  kind: 'inhouse' | 'tpf'
+  kind: 'inhouse' | 'tpf' | 'cash' | 'charge'
   ref: string
   label: string
   termMonths: number | null
   status: string | null
+  date: string
 }
 
 export interface CustomerLedger {
@@ -497,8 +506,10 @@ export interface CustomerLedger {
   // paper form's own Brand/Type/Model/Serial box), one entry per Sale-type
   // row rather than folded into that row's description text.
   items: { date: string; ref: string; itemLabel: string }[]
-  /** Populated only under the 'installments' scope — the plan picker's options. */
-  plans: CustomerLedgerPlan[]
+  /** Every purchase this ledger can be narrowed to — the picker's options.
+   * Always the full list, even when the rows themselves are narrowed to one
+   * of them, so the picker can switch between purchases. */
+  transactions: CustomerLedgerTransaction[]
   rows: InstallmentLedgerRow[]
   totals: {
     totalBilled: number
@@ -530,6 +541,13 @@ export interface AgingReportRow {
   branchName: string
   collectorId: string | null
   collectorLabel: string
+  /** The collector's own coverage area — same value the legacy sheet
+   * labels "AREA:". One per collector, so it's a display label on the
+   * collector group, not a separate nesting level. */
+  area: string | null
+  /** Null for a standalone-invoice row (no installment account to read a
+   * category from) or a not-yet-categorized account. */
+  category: InstallmentAccountCategory | null
   siNo: string
   siDate: string
   customerName: string
@@ -589,10 +607,22 @@ export interface AgingReportSubtotal {
   buckets: AgingBucketTotals
 }
 
+/** A collector group's rows, split by InstallmentAccountCategory — mirrors
+ * the legacy sheet's "CATEGORY A" banner under each collector. Additive
+ * alongside AgingReportCollectorGroup.rows (the flat list), not a
+ * replacement — anything reading `rows` directly still works. */
+export interface AgingReportCategoryGroup {
+  category: InstallmentAccountCategory | null
+  rows: AgingReportRow[]
+  subtotal: AgingReportSubtotal
+}
+
 export interface AgingReportCollectorGroup {
   collectorId: string | null
   collectorLabel: string
+  area: string | null
   rows: AgingReportRow[]
+  categories: AgingReportCategoryGroup[]
   subtotal: AgingReportSubtotal
 }
 

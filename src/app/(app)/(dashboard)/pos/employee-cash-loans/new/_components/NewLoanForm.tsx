@@ -55,10 +55,8 @@ export default function NewLoanForm() {
     employeeLabel: '',
     principal: '',
     termMonths: '12',
-    // Deliberately blank, not a default rate — a monthly add-on rate is
-    // financial and should always be a conscious entry, not an
-    // accidentally-submitted placeholder.
-    interestRate: '',
+    // Scenario 56 — default monthly add-on rate is 3%, still editable.
+    interestRate: '0.03',
     loanDate: new Date().toISOString().slice(0, 10),
     firstDeductionDate: '',
     disbursementMethod: 'CASH' as 'CASH' | 'BANK_TRANSFER' | 'CHECK',
@@ -97,9 +95,7 @@ export default function NewLoanForm() {
     if (principal <= 0) return 'Enter the Loan Principal.'
     if (term <= 0) return 'Enter the term in months.'
     if (!form.firstDeductionDate) return 'Enter the First Deduction Date.'
-    if (form.disbursementMethod === 'BANK_TRANSFER' && !form.bankAccountId) {
-      return 'Pick a Bank / Cash Account for a bank transfer.'
-    }
+    if (!form.bankAccountId) return 'Pick a Bank / Cash Account.'
     return null
   }
 
@@ -120,7 +116,7 @@ export default function NewLoanForm() {
       loanDate: form.loanDate,
       firstDeductionDate: form.firstDeductionDate,
       disbursementMethod: form.disbursementMethod,
-      bankAccountId: form.disbursementMethod === 'BANK_TRANSFER' ? form.bankAccountId : undefined,
+      bankAccountId: form.bankAccountId,
       referenceNumber: form.referenceNumber || undefined,
       note: form.note || undefined,
     })
@@ -225,7 +221,6 @@ export default function NewLoanForm() {
                   setForm({
                     ...form,
                     disbursementMethod: e.target.value as typeof form.disbursementMethod,
-                    bankAccountId: e.target.value === 'BANK_TRANSFER' ? form.bankAccountId : '',
                   })
                 }
                 className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm"
@@ -236,18 +231,16 @@ export default function NewLoanForm() {
               </select>
             </Field>
 
-            {form.disbursementMethod === 'BANK_TRANSFER' && (
-              <Field label="Bank / Cash Account *">
-                <CategorySelect
-                  aria-label="Select bank account"
-                  noun="bank accounts"
-                  value={form.bankAccountId}
-                  onChange={(id) => setForm({ ...form, bankAccountId: id ?? '' })}
-                  options={bankAccountOptions}
-                  placeholder="— Select —"
-                />
-              </Field>
-            )}
+            <Field label="Bank / Cash Account *">
+              <CategorySelect
+                aria-label="Select bank account"
+                noun="bank accounts"
+                value={form.bankAccountId}
+                onChange={(id) => setForm({ ...form, bankAccountId: id ?? '' })}
+                options={bankAccountOptions}
+                placeholder="— Select —"
+              />
+            </Field>
 
             <Field label="Reference / Voucher No.">
               <input

@@ -383,6 +383,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Wallet,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
       },
+      {
+        // Scenario 53 — the same screen POS shows read-only, but this is the
+        // one where the cash actually gets banked.
+        label: 'Cash-in-Transit',
+        href: '/accounting/cash-in-transit',
+        icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ,
+      },
       // Its own entry, not a button on Bank Reconciliation: moving money
       // between two fund accounts is a disbursement, not part of agreeing a
       // statement to the books.
@@ -415,10 +423,34 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
       },
       {
+        // POS's own customers screen, over the same Customer records CRM
+        // lists — same table, same CustomerService, different permission
+        // (2026-09-19 review request). It exists so a cashier can create
+        // and correct customer profiles for a sale or a credit application
+        // while holding no crm:* permission at all.
+        label: 'Customers',
+        href: '/pos/customers',
+        icon: Users,
+        requiredPermission: 'pos:customers:read',
+        activeWhen: ['/pos/customers'],
+      },
+      {
         label: 'Collections',
         href: '/pos/collections',
         icon: Coins,
         requiredPermission: 'pos:collections:manage',
+      },
+      {
+        // Scenario 57 — money received with no customer/invoice behind it
+        // (a walk-in payment, a refund). Its own sidebar item rather than
+        // buttons on the Collections page (developer decision, 2026-09-21),
+        // same permission as Collections since it's the same "money
+        // received at the counter" capability.
+        label: 'Acknowledgement Receipts',
+        href: '/pos/collections/acknowledgement',
+        icon: ReceiptText,
+        requiredPermission: 'pos:collections:manage',
+        usePrefix: true,
       },
       {
         // Scenario 47 — sidebar gate matches the page's own guard
@@ -457,10 +489,23 @@ const navItemsBySegment: Record<string, NavConfig> = {
         usePrefix: true,
       },
       {
-        label: 'Cash-in-Transit',
-        href: '/pos/cash-in-transit',
+        // Scenario 53 — the client's own end-of-day document. Its own
+        // permission, so the cashier who closes the shift can print and sign
+        // it without the Branch-Manager-tier sales reports coming with it.
+        // Clipboard, not Wallet — it is a sheet to fill and sign, and the
+        // wallet belongs to the cash balance below it.
+        label: 'Daily Collection',
+        href: '/pos/daily-collection',
+        icon: ClipboardList,
+        requiredPermission: POS_PERMISSIONS.DAILY_COLLECTION_READ,
+      },
+      {
+        // Scenario 53 — POS speaks in Undeposited Funds now; Accounting keeps
+        // the Cash-in-Transit name for the GL account it reconciles against.
+        label: 'Undeposited Funds',
+        href: '/pos/undeposited-funds',
         icon: Wallet,
-        requiredPermission: 'pos:cash-in-transit:read',
+        requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },
       {
         label: 'Void Requests',
@@ -604,6 +649,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Settings',
         href: '/crm/settings',
         icon: Settings,
+        // Matches the permission /crm/settings itself redirects on — without
+        // this the item showed to anyone who could reach the crm module at
+        // all (e.g. Cashier, added 2026-09-18 for Customers) and 403'd on
+        // click.
+        requiredPermission: CRM_PERMISSIONS.PIPELINE_MANAGE,
       },
     ],
     bottom: [],

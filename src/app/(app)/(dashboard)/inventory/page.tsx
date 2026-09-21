@@ -559,7 +559,7 @@ export default function InventoryPage() {
                   { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
                   {
                     label: 'Goods Receiving',
-                    href: '/inventory/operations?tab=receiving',
+                    href: '/inventory/stock?tab=reports',
                     icon: Package,
                   },
                   { label: 'Stock Counts', href: '/inventory/counting', icon: Layers },
@@ -836,7 +836,7 @@ export default function InventoryPage() {
                             </span>
                             <p className="text-[10px] text-gray-400">{alert.currentQty} on hand</p>
                             <Link
-                              href="/inventory/operations?tab=receiving"
+                              href="/inventory/stock?tab=reports&new=1"
                               className="inline-flex items-center gap-0.5 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-800 hover:bg-red-200"
                             >
                               Receive
@@ -1091,7 +1091,7 @@ export default function InventoryPage() {
                   {loading ? '—' : s.openPrCount} Open PR{s.openPrCount === 1 ? '' : 's'}
                 </Link>
                 <Link
-                  href="/inventory/purchase-orders"
+                  href="/inventory/purchase-orders?tab=orders"
                   className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
                 >
                   {loading ? '—' : s.openPoCount} Open PO{s.openPoCount === 1 ? '' : 's'}
@@ -1113,7 +1113,7 @@ export default function InventoryPage() {
                       href={
                         p.type === 'PR'
                           ? '/inventory/purchase-requests'
-                          : '/inventory/purchase-orders'
+                          : `/inventory/purchase-orders?tab=orders&po=${p.id}`
                       }
                       className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
                     >

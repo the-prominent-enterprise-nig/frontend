@@ -50,6 +50,14 @@ export interface PosSession {
   declaredClosingCash?: number | null
   expectedClosingCash?: number | null
   cashVariance?: number | null
+  /**
+   * Scenario 53 Part 1 — the closing record. Null on every session closed
+   * before that migration, and on any still open, so the detail view must
+   * treat absence as "not recorded" rather than zero.
+   */
+  denominationBreakdown?: Record<string, number> | null
+  closingNotes?: string | null
+  tenderBreakdown?: Record<string, number> | null
   handedOverTo?: string | null
   status: PosSessionStatus
   createdAt: string
@@ -76,6 +84,26 @@ export interface CloseSessionInput {
   managerUserId?: string
 }
 
+/**
+ * Scenario 53 Part 3 — cash taken this shift, for the close screen's
+ * read-only panel. Sales cash only: the opening float, cash drops and petty
+ * cash are excluded, so this is what the shift rang up, not what the drawer
+ * should hold.
+ */
+export interface SessionTenderSummary {
+  sessionId: string
+  status: PosSessionStatus
+  totalCash: number
+  /**
+   * Per-tender non-cash totals, keyed by PosPaymentMethod. The client's own
+   * requirement: "the online payment (gcash, bank, etc.) should be displayed
+   * and cannot be edited".
+   */
+  nonCash: Record<string, number>
+  totalNonCash: number
+  totalTaken: number
+}
+
 export interface SessionReconciliation {
   sessionId: string
   openingCash: number
@@ -83,6 +111,24 @@ export interface SessionReconciliation {
   declaredClosingCash: number
   cashVariance: number
   paymentBreakdown: Record<string, number>
+  /**
+   * Scenario 53 Part 2 — these were always returned by the backend but never
+   * declared here, so the close screen couldn't show the sales context behind
+   * a variance even though it had it in hand.
+   */
+  totalSales: number
+  totalRefunds: number
+  netSales: number
+  transactionCount: number
+  totalCashDrops: number
+  totalPettyCashIn: number
+  totalPettyCashOut: number
+  /**
+   * Scenario 53 Part 5b — installment collections taken over the counter on
+   * this session. Part of the drawer, and part of why expected cash can
+   * exceed the shift's own sales.
+   */
+  totalCollectionsCash: number
 }
 
 export interface SalesSummary {
@@ -511,6 +557,8 @@ export interface PosCustomer {
   lastName?: string
   phone?: string
   email?: string
+  customerType?: 'individual' | 'business' | 'employee'
+  businessCategory?: 'private' | 'government'
 }
 
 // POS Collections — one row per customer with at least one outstanding
@@ -1035,7 +1083,18 @@ export interface InstallmentSchedule {
   monthlyInstallment: number
   totalPayable: number
   createdAt: string
-  posTransaction?: { transactionNumber: string; occurredAt: string }
+  /** The sale this plan came from. Present on every POS-originated schedule;
+   * it is what a caller holding only the plan can narrow a customer ledger
+   * by (`txn:<id>`). */
+  posTransactionId?: string | null
+  posTransaction?: {
+    transactionNumber: string
+    /** NIG's own Sales Invoice No. — the document the customer holds, and
+     * what every Ref on this plan's ledger prints. Null only for a sale
+     * booked before it became required at checkout. */
+    salesInvoiceNumber: string | null
+    occurredAt: string
+  }
   financingTerm?: { termMonths: number; factorRate: number }
   lines: InstallmentScheduleLineWithInvoice[]
   // Scenario 23 Gap 2 — plural since Gap 5's term-grouping means a schedule

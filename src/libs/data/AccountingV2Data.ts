@@ -369,6 +369,7 @@ export interface ARPayment {
   withholdingVarianceNote?: string | null
   withholdingReviewerId?: string | null
   rebateAmount: number
+  penaltyAmount: number
   paymentDate: string
   method?: PaymentMethod | null
   reference?: string | null
@@ -443,9 +444,17 @@ export interface RecordArPaymentInput {
   withholdingCertificateNo?: string
   withholdingCertificateStatus?: WithholdingCertificateStatus
   rebateAmount?: number
+  penaltyAmount?: number
   bankAccountId?: string
   branchId?: string
   collectorId?: string
+  /**
+   * Scenario 53 Part 5b — the open POS session, when this collection is taken
+   * over the counter. Cash then counts toward that session's expected drawer
+   * total and posts to Undeposited Funds instead of Cash in Bank. Omitted for
+   * field collections and Accounting-side entries.
+   */
+  posSessionId?: string
 }
 
 export interface ARInvoiceSerialGoodsReceipt {
@@ -561,6 +570,7 @@ export interface BulkPayInstallmentLineInput {
   invoiceId: string
   amount: number
   rebateAmount?: number
+  penaltyAmount?: number
 }
 
 export interface BulkRecordArPaymentInput {
@@ -575,6 +585,13 @@ export interface BulkRecordArPaymentInput {
   notes?: string
   branchId?: string
   collectorId?: string
+  /**
+   * Scenario 53 Part 5b — the open POS session, when this collection is taken
+   * over the counter. Cash then counts toward that session's expected drawer
+   * total and posts to Undeposited Funds instead of Cash in Bank. Omitted for
+   * field collections and Accounting-side entries.
+   */
+  posSessionId?: string
 }
 
 export interface BulkRecordPaymentResult {
@@ -717,6 +734,61 @@ export const ARInvoices = {
       `/ar-invoices/${invoiceId}/payments/${paymentId}/certificate/resolve-variance`,
       body
     ),
+}
+
+// ============ Acknowledgement Receipts (Scenario 57) ============
+// The non-customer sibling of Collection Receipt — money received with no
+// Customer/ARInvoice behind it (e.g. a walk-in miscellaneous payment or a
+// refund). payerName is free text by developer decision: no search/link to
+// an existing Customer/Supplier/Employee record.
+export interface AcknowledgementReceipt {
+  id: string
+  /** System-generated ACK-YYYYMMDD-NNNN, set once at creation. */
+  number: string | null
+  payerName: string
+  /** Real GL account this receipt credits — a Chart of Accounts pick,
+   * matching the client's own reference tool. Null means it fell back to
+   * the MISC_COLLECTIONS mapping. */
+  accountId: string | null
+  account?: { id: string; name: string; number: string | null } | null
+  reason: string | null
+  amount: number
+  paymentDate: string
+  method: PaymentMethod | null
+  /** Which of the tenant's own bank/cash accounts this landed in — matches
+   * "Received in" on the client's reference tool. Informational only. */
+  bankAccountId: string | null
+  reference: string | null
+  notes: string | null
+  branchId: string | null
+  branch?: { id: string; name: string; code: string } | null
+  collectorId: string | null
+  collector?: { id: string; name: string; stubNumber: string } | null
+  journalEntryId: string | null
+  createdAt: string
+  /** Letterhead info for the printed document — only present on get(id), not list(). */
+  enterprise?: { companyLegalName?: string | null; address?: string | null } | null
+}
+export interface CreateAcknowledgementReceiptInput {
+  payerName: string
+  accountId?: string
+  reason?: string
+  amount: number
+  paymentDate: string
+  method?: PaymentMethod
+  bankAccountId?: string
+  reference?: string
+  notes?: string
+  branchId?: string
+  collectorId?: string
+}
+export const AcknowledgementReceipts = {
+  list: (params?: { branchId?: string }) =>
+    api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
+  get: (id: string) =>
+    api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
+  create: (body: CreateAcknowledgementReceiptInput) =>
+    api.post<AcknowledgementReceipt>('/accounting/acknowledgement-receipts', body),
 }
 
 // ============ Credit Memos ============
@@ -1355,6 +1427,11 @@ export interface APBillGoodsReceiptOption {
 export interface APBillMatchCheck {
   applicable: boolean
   poTotal: number | null
+  /** Scenario 56 — the PO's value of just the received units; the match
+   * compares against this, so a bill for a partial delivery can match. */
+  poReceivedTotal?: number | null
+  /** True when the matched receipts cover only part of the order. */
+  partial?: boolean
   rrTotal: number | null
   invoiceTotal: number
   matched: boolean
@@ -1477,6 +1554,13 @@ export const SupplierDebitMemos = {
   update: (id: string, body: Partial<SupplierDebitMemoInput>) =>
     api.patch<SupplierDebitMemo>(`/supplier-debit-memos/${id}`, body),
   approve: (id: string) => api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/approve`, {}),
+  /** The inventory account each item currently resolves to (item → category →
+   * tenant mapping) — what the form prefills a goods line with, so what is on
+   * screen is what would post if nobody changes it. */
+  inventoryAccounts: (itemIds: string[]) =>
+    api.get<Record<string, string>>('/supplier-debit-memos/inventory-accounts', {
+      itemIds: itemIds.join(','),
+    }),
   void: (id: string, voidReason?: string) =>
     api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/void`, { voidReason }),
 }

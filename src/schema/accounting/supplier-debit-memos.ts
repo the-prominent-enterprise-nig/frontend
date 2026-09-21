@@ -3,6 +3,11 @@ import { z } from 'zod'
 export const SupplierDebitMemoStatusSchema = z.enum(['DRAFT', 'APPROVED', 'FINAL', 'VOID'])
 
 export const SupplierDebitMemoLineSchema = z.object({
+  // Which of the form's two tables this line belongs in, so an item line
+  // whose item is not picked yet still sits among the goods rather than
+  // dropping into the charges below them. Client-only — stripped before the
+  // payload is sent, since the server infers the same thing from `itemId`.
+  kind: z.enum(['goods', 'charge']).optional(),
   // Optional: a line with no item is a non-inventory deduction — a freight
   // recharge or negotiated allowance riding along on the same memo. Only
   // lines with an item move stock.

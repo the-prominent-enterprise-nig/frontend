@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, X, RefreshCw, ClipboardList, Download, Copy, Check, Plus } from 'lucide-react'
 import { useReceivingReports } from '../_hooks/useReceivingReports'
@@ -23,11 +23,11 @@ import type {
   ReceiveStockFormValues,
   ReceivingReport,
 } from '@/src/schema/inventory/goods-receiving'
-import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
+import { receivingReportSourceRef } from '@/src/libs/format/receiving-report'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
-// Same IBM Plex + #5b21b6 palette as the sibling Stock Ledger/Stock Balance
+// Same #5b21b6 palette as the sibling Stock Ledger/Stock Balance
 // tabs, and the same CSS-grid "table" (role="table"/"row"/"cell" instead of
 // a real <table>) so columns line up the same way Stock Balance's do.
 
@@ -58,9 +58,9 @@ const STATUS_OPTIONS = Object.entries(STATUS_META).map(([value, meta]) => ({
 // The column track the header, rows and skeletons all share — same
 // CSS-grid approach as Stock Balance, since a plain <table> couldn't keep
 // numeric columns aligned once the Amount column is conditionally present.
-const GRID = 'grid grid-cols-[196px_minmax(0,1fr)_140px_64px_80px_120px] gap-x-3 items-center'
+const GRID = 'grid grid-cols-[196px_minmax(0,1fr)_140px_80px_150px_120px] gap-x-3 items-center'
 const GRID_WITH_AMOUNT =
-  'grid grid-cols-[196px_minmax(0,1fr)_140px_64px_80px_110px_120px] gap-x-3 items-center'
+  'grid grid-cols-[196px_minmax(0,1fr)_140px_80px_110px_150px_120px] gap-x-3 items-center'
 
 function fmtMoney(n: number): string {
   return n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
@@ -77,6 +77,47 @@ function lineAmount(line: ReceivingReport['lines'][number]): number | null {
 function reportAmount(report: ReceivingReport): number | null {
   const amounts = report.lines.map(lineAmount).filter((a): a is number => a != null)
   return amounts.length > 0 ? amounts.reduce((sum, a) => sum + a, 0) : null
+}
+
+const DELIVERY_LABEL = { partial: 'Partial delivery', complete: 'PO complete' } as const
+
+/** The supplier invoice (SI) behind a receipt, from the AP bill it feeds or
+ * the SI typed on the RR itself. Every supplier receipt gets a draft bill
+ * straight away, so "has a bill" says nothing; "has an SI" is what tells
+ * you the supplier has actually invoiced this delivery. */
+function invoiceNumberOf(report: ReceivingReport): string | null {
+  return report.apBill?.billNumber || report.supplierInvoiceNumber || null
+}
+
+/** Scenario 56 — where this receipt leaves its PO (more coming, or done) and
+ * whether the supplier has invoiced it. A transfer receipt has no PO and no
+ * supplier invoice, so it shows neither. */
+function DeliveryBillCell({ report }: { report: ReceivingReport }): React.ReactElement {
+  const delivery = report.deliveryStatus
+  const si = invoiceNumberOf(report)
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {delivery && (
+        <span
+          className={`rounded-[5px] px-1.5 py-0.5 text-[11px] font-medium ${
+            delivery === 'partial' ? 'bg-[#fdf3e7] text-[#8a4b06]' : 'bg-[#e7f5ef] text-[#0b6644]'
+          }`}
+        >
+          {DELIVERY_LABEL[delivery]}
+        </span>
+      )}
+      {!report.stockTransfer &&
+        (si ? (
+          <span className="rounded-[5px] bg-[#eaf0fb] px-1.5 py-0.5 text-[11px] font-medium text-[#1f4b99]">
+            SI {si}
+          </span>
+        ) : (
+          <span className="rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[11px] font-medium text-[#5b5b6b]">
+            Awaiting SI
+          </span>
+        ))}
+    </span>
+  )
 }
 
 function reportUnits(report: ReceivingReport): number {
@@ -180,12 +221,45 @@ function CopyCodeButton({ code }: { code: string }) {
   )
 }
 
+/** Who the goods came from — the "Source / Ref." column's first line.
+ *
+ * A transfer-sourced receipt has no supplier at all: the stock came from
+ * another branch, so the counterpart is the branch that sent it. This column
+ * read a bare "—" on every such row, which said nothing about where a
+ * delivery had actually come from. */
+function sourceName(report: ReceivingReport): string {
+  if (report.supplier?.name) return report.supplier.name
+  const from = report.stockTransfer?.fromWarehouse
+  // Every branch's warehouse is named "<Branch> Warehouse", so the branch is
+  // the name staff actually use for the place.
+  if (from) return from.branch?.name ?? from.name
+  return '—'
+}
+
+/** The reference under the source name — a PO code for a supplier receipt,
+ * the transfer number for a branch-to-branch one. `receivingReportSourceRef`
+ * is the same resolver the printed sheet and the on-screen RR sheet use, so
+ * all three name the same document; this column used to call
+ * `receivingReportPoCode` directly, which returns null for a transfer and
+ * left the row with no reference at all. */
 function PoLink({ report }: { report: ReceivingReport }) {
   const router = useRouter()
-  const code = receivingReportPoNumber(report)
-  const poId = receivingReportPoId(report)
+  const { code } = receivingReportSourceRef(report)
   if (!code) return null
-  if (!poId) {
+
+  // Both references are deep-linkable, to different screens. A PO opens by
+  // id; a transfer has no per-transfer route (its detail is a modal over the
+  // transfers list), so it travels by number and the list resolves it.
+  const poId = report.stockTransfer ? null : receivingReportPoId(report)
+  const href = report.stockTransfer
+    ? `/inventory/transfers?transfer=${encodeURIComponent(code)}`
+    : poId
+      ? `/inventory/purchase-orders?tab=orders&po=${poId}`
+      : null
+
+  // A typed-in (unlinked) PO number names a document the system doesn't
+  // hold, so there is nothing to open — it stays plain text.
+  if (!href) {
     return <p className={`${MONO} truncate text-[11px] text-[#8b8b9b]`}>{code}</p>
   }
   return (
@@ -193,9 +267,9 @@ function PoLink({ report }: { report: ReceivingReport }) {
       type="button"
       onClick={(e) => {
         e.stopPropagation()
-        router.push(`/inventory/purchase-orders?po=${poId}`)
+        router.push(href)
       }}
-      className={`${MONO} truncate text-left text-[11px] text-[#5b21b6] hover:underline`}
+      className={`${MONO} cursor-pointer truncate text-left text-[11px] text-[#5b21b6] hover:underline`}
     >
       {code}
     </button>
@@ -211,10 +285,10 @@ type Props = {
    * Accounting; a click should keep you inside whichever module you came from,
    * rather than flinging an Accounting user into Inventory. */
   detailBasePath?: string
-  /** The Goods Receiving hub's own Reports tab already has a "Receive Stock"
-   * button in its page header — showing this one too would just duplicate it.
-   * Every other call site (Inventory Stock hub, Accounting) has no creation
-   * entry point at all, so they keep the default. */
+  /** Turned off for Accounting, which reviews receipts rather than creating
+   * them. On by default: since Receiving moved here from the Operations hub,
+   * this button is the only entry point to the receive form, so the Inventory
+   * call site must keep it. */
   showCreateButton?: boolean
 }
 
@@ -224,6 +298,8 @@ export default function ReceivingReportsTab({
   showCreateButton = true,
 }: Props) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [searchFocus, setSearchFocus] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const {
@@ -259,12 +335,52 @@ export default function ReceivingReportsTab({
   const canCreate = !!me && hasPermission(me, INVENTORY_PERMISSIONS.RECEIVE_CREATE)
   const canViewCost = !!me && hasPermission(me, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
 
-  // Fetched lazily, only once the create modal is actually opened — a
-  // manual receipt's destination is always one of the 2 real warehouses
-  // (Scenario 27), and the item picker needs the full active catalogue.
+  // `?new=1` opens the receive form on arrival. The links that carry it are
+  // labelled with the verb — "Receive Stock" on the Item 360 drawer and the
+  // dashboard's quick actions, "Receive" on a low-stock alert — and used to
+  // land on the old Operations receiving tab. Dropping someone on a list of
+  // past receipts and asking them to find "New Receipt" makes a button that
+  // says Receive Stock not receive stock.
+  //
+  // Deliberately an effect rather than a useState initializer: `canCreate`
+  // resolves from useMe(), so it is false on the first render and the modal
+  // would never open. `autoOpened` makes it fire once — without it, closing
+  // the modal while ?new=1 is still in the URL would immediately reopen it.
+  const wantsNew = searchParams.get('new') === '1'
+  const [autoOpened, setAutoOpened] = useState(false)
+
+  useEffect(() => {
+    if (!wantsNew || autoOpened) return
+    // Same three conditions that decide whether the button itself renders —
+    // a link should never open a form the page would not offer.
+    if (!showCreateButton || showAmounts || !canCreate) return
+    setAutoOpened(true)
+    setIsCreateOpen(true)
+  }, [wantsNew, autoOpened, showCreateButton, showAmounts, canCreate])
+
+  // Strip ?new=1 on close so a refresh, or Back into this entry, lands on the
+  // list rather than reopening the form.
+  const closeCreate = useCallback(() => {
+    setIsCreateOpen(false)
+    if (!wantsNew) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.delete('new')
+    const qs = next.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }, [wantsNew, searchParams, router, pathname])
+
+  // Fetched lazily, only once the create modal is actually opened — the
+  // destination picker offers both the real warehouses and the branches' own
+  // stock locations (the form lists the warehouses first and marks each branch
+  // as one), and the item picker needs the full active catalogue.
+  //
+  // Scenario 27 restricted this list to the 2 standalone warehouses. The server
+  // still enforces the rule that matters — a branch location is only accepted
+  // when the receipt is linked to a PO raised for that branch
+  // (stock.service.ts) — but the picker no longer hides the branches outright.
   const destinationWarehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup', 'standalone'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
+    queryKey: ['inventory-warehouses-lookup'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
     staleTime: STALE.LOOKUP,
     enabled: isCreateOpen,
   })
@@ -328,11 +444,14 @@ export default function ReceivingReportsTab({
       const rows = result.data.data.map((r) => [
         r.code,
         fmtDate(r.receivedAt),
-        r.supplier?.name ?? '',
-        receivingReportPoNumber(r) ?? '',
+        // Same two values the on-screen column shows, so an exported row and
+        // the row it came from can't disagree about where stock came from.
+        sourceName(r) === '—' ? '' : sourceName(r),
+        receivingReportSourceRef(r).code ?? '',
         r.warehouse?.branch?.name ?? r.warehouse?.name ?? '',
-        r.lines.length,
         reportUnits(r),
+        r.deliveryStatus ? DELIVERY_LABEL[r.deliveryStatus] : '',
+        r.stockTransfer ? '' : (invoiceNumberOf(r) ?? 'Awaiting SI'),
         STATUS_META[r.status]?.label ?? r.status,
         ...(showAmounts ? [reportAmount(r) ?? ''] : []),
       ])
@@ -341,11 +460,14 @@ export default function ReceivingReportsTab({
         [
           'Receipt No.',
           'Date',
-          'Supplier',
-          'PO Reference',
+          // "Source" rather than "Supplier": a transfer-sourced receipt has
+          // no supplier, and this column carries its origin branch instead.
+          'Source',
+          'PO / Transfer Reference',
           'Location',
-          'Lines',
           'Units',
+          'Delivery',
+          'Supplier Invoice',
           'Status',
           ...(showAmounts ? ['Amount'] : []),
         ],
@@ -443,7 +565,7 @@ export default function ReceivingReportsTab({
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => setSearchFocus(true)}
             onBlur={() => setSearchFocus(false)}
-            placeholder="Search RR no., PO no., or supplier…"
+            placeholder="Search RR no., PO / transfer no., or source…"
             className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
           />
           {search !== '' && (
@@ -516,11 +638,11 @@ export default function ReceivingReportsTab({
               className={`${grid} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1080px]:grid`}
             >
               <span>Receipt No.</span>
-              <span>Supplier / PO</span>
+              <span>Source / Ref.</span>
               <span>Location</span>
-              <span className="text-right">Lines</span>
               <span className="text-right">Units</span>
               {showAmounts && <span className="text-right">Amount</span>}
+              <span>Delivery / SI</span>
               <span className="text-center">Status</span>
             </div>
             {Array.from({ length: 6 }).map((_, i) => (
@@ -574,16 +696,13 @@ export default function ReceivingReportsTab({
             >
               <div
                 role="row"
-                className={`${grid} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                className={`${grid} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
               >
                 <span role="columnheader">Receipt No.</span>
                 <span role="columnheader" className="pl-6">
-                  Supplier / PO
+                  Source / Ref.
                 </span>
                 <span role="columnheader">Location</span>
-                <span role="columnheader" className="text-right">
-                  Lines
-                </span>
                 <span role="columnheader" className="text-right">
                   Units
                 </span>
@@ -592,6 +711,7 @@ export default function ReceivingReportsTab({
                     Amount
                   </span>
                 )}
+                <span role="columnheader">Delivery / SI</span>
                 <span role="columnheader" className="text-center">
                   Status
                 </span>
@@ -618,33 +738,29 @@ export default function ReceivingReportsTab({
                         </p>
                         <CopyCodeButton code={report.code} />
                       </div>
-                      <p className="text-[11px] text-[#a3a3b2]">{fmtDate(report.receivedAt)}</p>
+                      <p className="text-[13px] text-[#a3a3b2]">{fmtDate(report.receivedAt)}</p>
                     </div>
 
                     <div role="cell" className="flex min-w-0 flex-col gap-0.5 pl-6">
-                      <p className="truncate text-[12.5px] font-medium text-[#17171c]">
-                        {report.supplier?.name ?? '—'}
+                      <p className="truncate text-[14.5px] font-medium text-[#17171c]">
+                        {sourceName(report)}
                       </p>
                       <PoLink report={report} />
                     </div>
 
-                    <span role="cell" className="truncate text-[12.5px] text-[#5b5b6b]">
+                    <span role="cell" className="truncate text-[14.5px] text-[#5b5b6b]">
                       {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
-                    </span>
-
-                    <span role="cell" className={`${MONO} text-right text-[12.5px] text-[#8b8b9b]`}>
-                      {report.lines.length}
                     </span>
 
                     <span
                       role="cell"
-                      className={`${MONO} text-right text-[13px] font-semibold text-[#17171c]`}
+                      className={`${MONO} text-right text-[15px] font-semibold text-[#17171c]`}
                     >
                       {reportUnits(report)}
                     </span>
 
                     {showAmounts && (
-                      <span role="cell" className="text-right text-[12.5px] text-[#17171c]">
+                      <span role="cell" className="text-right text-[14.5px] text-[#17171c]">
                         {amount != null ? (
                           fmtMoney(amount)
                         ) : (
@@ -652,6 +768,10 @@ export default function ReceivingReportsTab({
                         )}
                       </span>
                     )}
+
+                    <span role="cell">
+                      <DeliveryBillCell report={report} />
+                    </span>
 
                     <span role="cell" className="flex justify-center">
                       <StatusBadge
@@ -689,7 +809,7 @@ export default function ReceivingReportsTab({
                           <CopyCodeButton code={report.code} />
                         </div>
                         <span className="truncate text-[11.5px] text-[#8b8b9b]">
-                          {fmtDate(report.receivedAt)} · {report.supplier?.name ?? '—'}
+                          {fmtDate(report.receivedAt)} · {sourceName(report)}
                         </span>
                         <PoLink report={report} />
                       </div>
@@ -701,18 +821,8 @@ export default function ReceivingReportsTab({
                     </div>
 
                     <div
-                      className={`grid gap-[6px] ${showAmounts ? 'grid-cols-3' : 'grid-cols-2'}`}
+                      className={`grid gap-[6px] ${showAmounts ? 'grid-cols-2' : 'grid-cols-1'}`}
                     >
-                      <div className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]">
-                        <span
-                          className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
-                        >
-                          Lines
-                        </span>
-                        <span className={`${MONO} text-[14px] font-semibold text-[#17171c]`}>
-                          {report.lines.length}
-                        </span>
-                      </div>
                       <div className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]">
                         <span
                           className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
@@ -736,6 +846,8 @@ export default function ReceivingReportsTab({
                         </div>
                       )}
                     </div>
+
+                    <DeliveryBillCell report={report} />
 
                     <div className="text-[12px] text-[#5b5b6b]">
                       {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
@@ -782,7 +894,7 @@ export default function ReceivingReportsTab({
       {canCreate && (
         <ReceiveStockModal
           isOpen={isCreateOpen}
-          onClose={() => setIsCreateOpen(false)}
+          onClose={closeCreate}
           onSubmit={receiveMutation.mutateAsync}
           isSubmitting={receiveMutation.isPending}
           warehouses={destinationWarehousesQuery.data?.data?.data ?? []}

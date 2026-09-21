@@ -25,6 +25,7 @@ import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModa
 import { CreatePoModal } from './CreatePoModal'
 import { PoDetailModal } from './PoDetailModal'
 import { PoReceiptsPanel } from './PoReceiptsPanel'
+import { PoViewPanel } from './PoViewPanel'
 import { ReceiveAgainstPoModal } from './ReceiveAgainstPoModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -33,8 +34,8 @@ import { getSuppliers } from '../_actions/get-suppliers'
 import { getBranches } from '../../price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
-import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
-import { printPurchaseOrderDocument } from '@/src/libs/print/printInventoryDocument'
+import { downloadReactNodeAsPdf } from '@/src/libs/print/htmlToPdf'
+import PurchaseOrderSheet, { type PurchaseOrderPrintDocument } from './PurchaseOrderSheet'
 import { showToast } from '@/src/components/ui/toast'
 import {
   PLEX,
@@ -67,14 +68,14 @@ const STATUS_FILTERS: { label: string; value: PoStatus | undefined }[] = [
   { label: 'Cancelled', value: 'cancelled' },
 ]
 
-/** The eight-column track the header, rows and skeletons all share. The last
+/** The seven-column track the header, rows and skeletons all share. The last
  * track holds the row's action buttons and is sized for the widest run of
  * them — a partially-received order with an invoice: Download · Receive ·
  * Close · Receipts · Invoice, ~208px — so they never wrap to a second line.
  * The data columns were trimmed to pay for it rather than letting the grid
  * overflow its card at the 1080px breakpoint. */
 const GRID =
-  'grid grid-cols-[154px_minmax(0,1fr)_98px_106px_114px_132px_78px_216px] gap-x-3 items-center'
+  'grid grid-cols-[154px_minmax(0,1fr)_98px_106px_114px_132px_216px] gap-x-3 items-center'
 
 const SORT_SELECT_CLASS =
   'h-[38px] cursor-pointer appearance-none rounded-lg border border-[#d3d3db] bg-white pl-[11px] pr-[30px] text-[12.5px] text-[#3d3d4a] transition-colors focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc] focus:outline-none'
@@ -317,6 +318,7 @@ export function PurchaseOrderList({
   const [sendTarget, setSendTarget] = useState<PurchaseOrderSummary | null>(null)
   const [closeTarget, setCloseTarget] = useState<PurchaseOrderSummary | null>(null)
   const [receiptsTarget, setReceiptsTarget] = useState<PurchaseOrderSummary | null>(null)
+  const [poViewTarget, setPoViewTarget] = useState<PurchaseOrderSummary | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<PurchaseOrderSummary | null>(null)
   const [detailsTarget, setDetailsTarget] = useState<PurchaseOrderSummary | null>(null)
 
@@ -337,6 +339,24 @@ export function PurchaseOrderList({
     if (!linkedPoId) return
     const rest = new URLSearchParams(searchParams.toString())
     rest.delete('po')
+    const query = rest.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname)
+  }
+
+  // Deep link from a supplier's own screen (?newFor=<supplierId>): open the
+  // create form with them already picked. The name rides along purely as the
+  // picker's display label — the id is what is submitted — so this needs no
+  // second round trip to name a supplier the caller was just looking at.
+  const newForSupplierId = searchParams.get('newFor')
+  const deepLinkSupplier =
+    canCreate && newForSupplierId
+      ? { id: newForSupplierId, name: searchParams.get('supplierName') ?? '' }
+      : null
+  const clearDeepLinkSupplier = (): void => {
+    if (!newForSupplierId) return
+    const rest = new URLSearchParams(searchParams.toString())
+    rest.delete('newFor')
+    rest.delete('supplierName')
     const query = rest.toString()
     router.replace(query ? `${pathname}?${query}` : pathname)
   }
@@ -392,35 +412,21 @@ export function PurchaseOrderList({
   }
 
   const downloadPdf = async (po: PurchaseOrderSummary): Promise<void> => {
-    // Serial numbers only exist to show once a PO is closed — receiving
-    // is done at that point, so there's a final per-line list, not a
-    // partial/in-progress one worth printing.
     setDownloadingId(po.id)
     try {
-      await buildAndPrintPdf(po)
+      await buildAndDownloadPdf(po)
     } finally {
       setDownloadingId(null)
     }
   }
 
-  const buildAndPrintPdf = async (po: PurchaseOrderSummary): Promise<void> => {
-    const [docRes, receiptsRes] = await Promise.all([
-      getPurchaseOrderDocument(po.id),
-      po.status === 'closed' ? getPurchaseOrderReceipts(po.id) : Promise.resolve(null),
-    ])
+  const buildAndDownloadPdf = async (po: PurchaseOrderSummary): Promise<void> => {
+    const docRes = await getPurchaseOrderDocument(po.id)
     if (!docRes.success || !docRes.data) return
-
-    const serialsByLineId: Record<string, string[]> = {}
-    for (const receipt of receiptsRes?.success ? (receiptsRes.data?.data ?? []) : []) {
-      for (const line of receipt.lines) {
-        if (!line.purchaseOrderLineId || !line.serialNumbers?.length) continue
-        serialsByLineId[line.purchaseOrderLineId] = [
-          ...(serialsByLineId[line.purchaseOrderLineId] ?? []),
-          ...line.serialNumbers,
-        ]
-      }
-    }
-    printPurchaseOrderDocument(docRes.data, serialsByLineId)
+    await downloadReactNodeAsPdf(
+      <PurchaseOrderSheet doc={docRes.data as PurchaseOrderPrintDocument} />,
+      po.code
+    )
   }
 
   /** The per-status action set the list carried before the row overflow menu.
@@ -464,7 +470,7 @@ export function PurchaseOrderList({
         ? [
             {
               key: 'receive',
-              label: po.status === 'partially_received' ? 'Receive' : 'Receive stock',
+              label: 'Receive',
               icon: <PackagePlus className={icon} />,
               tone: 'purple' as const,
               // Both statuses left in `receivable` (sent, partially_received)
@@ -670,6 +676,7 @@ export function PurchaseOrderList({
                 <button
                   key={f.label}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => setStatusFilter(f.value)}
                   className={`rounded-[20px] border px-3 py-[6px] text-[12.5px] transition-colors ${
                     on
@@ -740,7 +747,6 @@ export function PurchaseOrderList({
                 </span>
                 <span role="columnheader">Source</span>
                 <span role="columnheader">Receiving</span>
-                <span role="columnheader">Expected</span>
                 <span role="columnheader" className="text-right">
                   Actions
                 </span>
@@ -818,13 +824,6 @@ export function PurchaseOrderList({
 
                       <span role="cell" className="min-w-0">
                         <ReceivingCell po={po} />
-                      </span>
-
-                      <span
-                        role="cell"
-                        className={`text-[11.5px] ${late > 0 ? 'font-medium text-[#b25e09]' : 'text-[#5b5b6b]'}`}
-                      >
-                        {fmtDate(po.expectedDeliveryDate)}
                       </span>
 
                       <span role="cell">
@@ -992,7 +991,6 @@ export function PurchaseOrderList({
                 <span className="text-right">Total</span>
                 <span>Source</span>
                 <span>Receiving</span>
-                <span>Expected</span>
                 <span className="text-right">Actions</span>
               </div>
               {Array.from({ length: 6 }).map((_, i) => (
@@ -1000,7 +998,6 @@ export function PurchaseOrderList({
                   <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar wide />
-                  <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar />
@@ -1059,11 +1056,13 @@ export function PurchaseOrderList({
       {/* ── Modals & panels ────────────────────────────────────────────────── */}
 
       <CreatePoModal
-        open={showCreatePo || editingPo !== null}
+        open={showCreatePo || editingPo !== null || deepLinkSupplier !== null}
         onClose={() => {
           setShowCreatePo(false)
           setEditingPo(null)
+          clearDeepLinkSupplier()
         }}
+        initialSupplier={editingPo ? null : deepLinkSupplier}
         onCreate={async (data) => {
           await createPR(data)
           // Creating here always drafts a Purchase Request, not a Purchase
@@ -1152,7 +1151,6 @@ export function PurchaseOrderList({
         canReceive={canReceive}
         canClose={canClose}
         canEdit={canEdit}
-        canViewApBill={canViewApBill}
         isDownloading={
           effectiveDetailsTarget != null && downloadingId === effectiveDetailsTarget.id
         }
@@ -1180,19 +1178,19 @@ export function PurchaseOrderList({
           closeDetailsTarget()
           setEditingPo(po)
         }}
-        onViewInvoice={(po) => {
-          if (!po.apBills[0]) return
-          closeDetailsTarget()
-          router.push(`/accounting/ap-bills/${po.apBills[0].id}?from=purchase-orders`)
-        }}
         onViewReceipts={(po) => {
           closeDetailsTarget()
           setReceiptsTarget(po)
+        }}
+        onViewPo={(po) => {
+          closeDetailsTarget()
+          setPoViewTarget(po)
         }}
         onDownload={(po) => void downloadPdf(po)}
       />
 
       <PoReceiptsPanel po={receiptsTarget} onClose={() => setReceiptsTarget(null)} />
+      <PoViewPanel po={poViewTarget} onClose={() => setPoViewTarget(null)} />
 
       {/* The receive screen stays open after posting to show the receipt it
           created (its RR number, what was posted, whether the PO is closed),

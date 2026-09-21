@@ -20,6 +20,11 @@ type Params = {
   warehouseIds?: string[]
   status?: string
   search?: string
+  // Scenario 55 Part 4 — auto-resolving which of this item's sold serials
+  // belongs to a picked InstallmentAccount's customer, so a repossession
+  // line's serial can be found from the account rather than the other way
+  // around.
+  soldToCustomerId?: string
   // Scenario 08 (Caravan) Part 2 — "Caravan" view. Any value here
   // signals "show what's consigned to my branch" — the backend always
   // resolves the real branch server-side for a branch-restricted caller, so
@@ -31,6 +36,11 @@ type Params = {
   // (including the caller's own branch) — requires itemId and the
   // inventory:transfers:serial-override permission server-side.
   scope?: 'company' | 'override'
+  // Scenario 56 — leave out units already claimed by an open transfer, so a
+  // transfer picker (or its availability count) never offers one.
+  freeForTransfer?: boolean
+  // Scenario 56 — the Stock Balance Operations filter, carried into Item 360.
+  region?: 'panay' | 'negros'
 }
 
 export async function getSerialNumbers(
@@ -47,8 +57,11 @@ export async function getSerialNumbers(
     warehouseIds: params.warehouseIds?.length ? params.warehouseIds.join(',') : undefined,
     status: params.status,
     search: params.search,
+    soldToCustomerId: params.soldToCustomerId,
     consignedToBranchId: params.consignedToBranchId,
     scope: params.scope,
+    freeForTransfer: params.freeForTransfer ? 'true' : undefined,
+    region: params.region,
   }
 
   const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)

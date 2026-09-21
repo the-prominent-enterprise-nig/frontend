@@ -19,7 +19,7 @@ export async function createCreditApplication(
     return {
       success: false,
       error: 'Forbidden',
-      message: 'You do not have permission to open a credit application',
+      message: 'You do not have permission to submit a credit application',
     }
   }
 
@@ -46,5 +46,5 @@ export async function createCreditApplication(
 
   revalidatePath('/pos/credit-applications')
 
-  return { success: true, data: result.data, message: 'Credit application opened as draft' }
+  return { success: true, data: result.data, message: 'Credit application saved as draft' }
 }

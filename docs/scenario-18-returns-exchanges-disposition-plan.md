@@ -67,3 +67,34 @@ Ordered by risk/value.
 ## Dead code / unused-feature flags
 
 - **`PosTransactionType.exchange`** — see Closing Gap 4 (build out vs remove), not touched by this doc.
+
+## Implementation Log
+
+### 2026-09-15 — The counter return rebuilt as a document: Gaps 1, 3, 4, 6 closed, Gap 5 closed on the new path only, Gap 2 deliberately not built
+
+**For this scenario, I have done:**
+
+- **The return became a document.** A counter return had no header of its own — the whole trail hung off the `StockLedger` row, so one customer handing back three items produced three unrelated rows, three RR numbers and three credit memos for a single visit. New `customer_returns` + `customer_return_lines` tables (migration `20260915100000_customer_return_documents`) give one visit one RR number, one consolidated credit memo and as many lines as were handed back. `POST /inventory/stock/customer-returns` posts it.
+- **Gap 1 (Quarantine)** — closed as a **disposition**, not as a workflow. `ReturnDisposition` is now `restock | quarantine | scrap | repair | exchange`; a quarantine line lands in `onHand` but not `available`, so the unit is physically back and commercially held. There is no separate inspection _record_ and no second actor — see the flag below.
+- **Gap 3 (scrap)** — closed. A scrap line is written off on arrival: no stock movement and no cost reversal, but the customer is still credited.
+- **Gap 4 (exchange)** — closed by building it out, not by deleting it. An exchange quarantines what came back, issues the replacement, and credits nothing. `exchange_out` is its own `StockTransactionType` rather than a `sale`, because Stock Balance sums `sale` rows as its sold quantity and booking the replacement as a sale would report units sold twice that were only ever sold once — the same reasoning that made `supplier_return` its own value. Enforced as an even swap against the price the unit sold at.
+- **Gap 6 (CreditMemo disconnect)** — closed on this path. A return naming an AR invoice raises one consolidated credit memo against it, sized from `unitPrice` (what the customer was charged) and not from cost — crediting cost would leave the invoice stuck `PARTIAL` forever.
+- **Gap 5 (AR-side reversal)** — closed **on the new document path only**. A return against an AR invoice now reaches AR through the credit memo above; a cash return, or one against an already-settled invoice, posts correctly with `creditMemoId: null` and explains itself in `accountingNote`. The POS void/refund path's own `DEFAULT_CASH` JE is untouched.
+- **The `condition` × `repairDecision` matrix is gone from the return screen.** That pair had six combinations of which three meant anything, could express "damaged + flag_for_repair" and "sellable + flag_for_repair" identically, had no way to say "we swapped it" or "we scrapped it" at all, and its undefined `repairDecision` rendered as though "restock" were chosen while sending nothing. One question, one consequence each, replaces it.
+- **Free-text reasons became a fixed list.** "d", "defective" and "DEFECTIVE UNIT!!" are the same fact spelled three ways and nobody could ever count them. Six codes now; the label is what gets written to the document, since the detail panel and the customer's copy are read by people, not by a report.
+- **The frontend is a screen, not a modal.** The 769-line `CreateReturnModal.tsx` and its `PurchasePicker.tsx` are deleted, replaced by a three-section screen (`_components/create-return/`, 13 files, largest 387 lines) — who brought it back, what they bought, what happens to it — where sales are picked from the customer's own purchase history rather than an invoice picker that overwrote the customer field and then froze it read-only.
+- **The quantity cap is keyed on the sold line**, not the ledger row: `sourceLedgerId` is null for every weighted-average item, so a cap keyed on it would silently not apply to most of the catalogue. Earlier returns against the same sold line count against it.
+- **A repair line raises a UDS carrying the document's RR number**, moves no stock, and requires a serial at quantity 1 — a UDS line is one named unit and has no quantity column at all.
+
+**Verified:**
+
+- Backend: **41/41 passing** across `inventory-customer-returns-document.e2e-spec.ts` and `inventory-customer-returns-characterization.e2e-spec.ts` — multi-line posting, the quantity cap and its rejection messages, scrap, repair-and-UDS, the full exchange even-swap set, cross-tenant invoice refusal, and that a rejected return leaves nothing behind.
+- Frontend: **8/8 passing** in `e2e/inventory-customer-returns.spec.ts` against the isolated e2e stack, including a real end-to-end post. Needs `e2e/fixtures/customer-return.sql` loaded first — the seed creates no customer with a completed sale, and the screen is built around picking from purchase history, so without one the happy path cannot be exercised at all.
+- `pnpm type-check` and `pnpm lint` clean in both repos (frontend lint: 0 errors, 351 pre-existing warnings).
+
+**Worth flagging:**
+
+- **Gap 2 (tiered custodian-then-approver) was not built, on purpose.** Closing Gap 1 of this plan asked to confirm process weight with the business before building a multi-actor workflow on spec, and that confirmation has not happened. Quarantine exists as a state a clerk can put a unit into; nobody is _required_ to inspect it, no inspection record exists, and no Stock Custodian persona was introduced. If the business does want the formality, the hold state it would hang off is now real — but this should not be read as "quarantine is done".
+- **History was deliberately not backfilled, and the list unions two shapes.** Old rows cannot be grouped into documents — the RR number was generated per ledger row, so three rows from one visit share no key — and they carry no `unitPrice`, no `createdById` and no real disposition. Minting `RTN-` numbers for paper that was never issued would be worse than recording nothing. `getCustomerReturns` therefore returns documents alongside legacy headerless rows, and a document's own ledger rows are suppressed so it appears exactly once.
+- **New headerless rows keep arriving.** The POS void/refund path still calls the single-item `processReturn`. The union ends only when POS moves onto this document too — that is a real, unscheduled follow-up, not a transitional state that expires on its own.
+- **The e2e fixture is consumed by its own test.** Each run of the posting spec returns units off the fixture's sale and they do not come back; the spec failing with "only 0 of N left to return" is the server's cap working, and the fix is to re-run the fixture. The sale quantity is deliberately 200 to make that rare.

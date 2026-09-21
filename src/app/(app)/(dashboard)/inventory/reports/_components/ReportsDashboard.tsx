@@ -66,6 +66,13 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
   } = useInventoryReports()
 
   const hasFilters = !!warehouseFilter || !!categoryFilter || !!search
+  // What each report's Excel export is asked for: the on-screen filters,
+  // without page/limit — the file carries every matching row.
+  const sharedExportParams = {
+    warehouseId: warehouseFilter || undefined,
+    categoryId: categoryFilter || undefined,
+    search: search || undefined,
+  }
   const isFetching =
     activeTab === 'valuation'
       ? isValuationFetching
@@ -252,6 +259,7 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             isFetching={isValuationFetching}
             page={page}
             setPage={setPage}
+            exportParams={sharedExportParams}
           />
         )}
 
@@ -266,6 +274,7 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             setStatusFilter={setStatusFilter}
             page={page}
             setPage={setPage}
+            exportParams={{ ...sharedExportParams, periodDays, status: statusFilter }}
           />
         )}
 
@@ -278,6 +287,7 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             setBucketFilter={setAgingBucketFilter}
             page={page}
             setPage={setPage}
+            exportParams={{ ...sharedExportParams, bucket: agingBucketFilter }}
           />
         )}
 

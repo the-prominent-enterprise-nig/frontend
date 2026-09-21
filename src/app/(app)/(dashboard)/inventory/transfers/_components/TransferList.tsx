@@ -1,23 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import {
-  Plus,
-  RefreshCw,
-  X,
-  ArrowRight,
-  Truck,
-  CheckCircle,
-  Clock,
-  XCircle,
-  Inbox,
-  Hourglass,
-  Ban,
-  UserCheck,
-  Search,
-  AlertTriangle,
-} from 'lucide-react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Plus, RefreshCw, X, ArrowRight, Search } from 'lucide-react'
 import { useTransferManager } from '../_hooks/useTransferManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -27,73 +12,7 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
-
-// This screen follows the Stock Transfers design's own IBM Plex + #5b21b6
-// palette — the same system the Purchase Orders screens use, which is why the
-// badge spec and colour values come from procurementTokens rather than the
-// app-wide Poppins brand tokens.
-// `tone` is the saturated per-status colour the design uses for the KPI tile
-// and pill icons — deliberately stronger than the badge's text colour, which
-// has to stay readable on its own tinted background.
-const STATUS_CONFIG: Record<
-  TransferStatus,
-  { label: string; badge: string; tone: string; icon: React.ElementType }
-> = {
-  requested: {
-    label: 'Requested',
-    badge: 'bg-[#f1ebfb] text-[#3f1490]',
-    tone: 'text-[#7c4fd1]',
-    icon: Inbox,
-  },
-  draft: {
-    label: 'Accepted',
-    badge: 'bg-[#eaf0fb] text-[#1f4b99]',
-    tone: 'text-[#3b74cc]',
-    icon: Clock,
-  },
-  in_transit: {
-    label: 'In Transit',
-    badge: 'bg-[#fdf3e7] text-[#8a4b06]',
-    tone: 'text-[#d18b1d]',
-    icon: Truck,
-  },
-  received: {
-    label: 'Received',
-    badge: 'bg-[#e7f5ef] text-[#0b6644]',
-    tone: 'text-[#0f7b52]',
-    icon: CheckCircle,
-  },
-  rejected: {
-    label: 'Rejected',
-    badge: 'bg-[#fdeceb] text-[#b42318]',
-    tone: 'text-[#d9544c]',
-    icon: Ban,
-  },
-  pending_manager_approval: {
-    label: 'Pending',
-    badge: 'bg-[#f1f1f4] text-[#3d3d4a]',
-    tone: 'text-[#5b5b6b]',
-    icon: UserCheck,
-  },
-  pending_hq_approval: {
-    label: 'Pending HQ Approval',
-    badge: 'bg-[#fdf3e7] text-[#8a4b06]',
-    tone: 'text-[#d18b1d]',
-    icon: Hourglass,
-  },
-  partially_received: {
-    label: 'Partially Received',
-    badge: 'bg-[#fdf3e7] text-[#8a4b06]',
-    tone: 'text-[#d18b1d]',
-    icon: AlertTriangle,
-  },
-  cancelled: {
-    label: 'Cancelled',
-    badge: 'bg-[#f6f6f8] text-[#5b5b6b]',
-    tone: 'text-[#8b8b9b]',
-    icon: XCircle,
-  },
-}
+import { STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
 
 // The five stages the design tracks: the three live ones plus both terminal
 // outcomes, so the band reads as the whole life of a transfer rather than
@@ -125,34 +44,12 @@ const SECONDARY_PILL_STATUSES: TransferStatus[] = [
   'cancelled',
 ]
 
-// Each branch has exactly one warehouse, so a transfer's fromWarehouse/
-// toWarehouse is really a branch — display the branch's own name rather than
-// the warehouse's auto-generated "{branch} Warehouse" name.
-function branchLabel(
-  wh: { name: string; branch?: { name: string } | null } | null | undefined
-): string {
-  return wh?.branch?.name ?? wh?.name ?? '—'
-}
-
 function lineTotals(lines: TransferSummary['lines']): { total: number; received: number } {
   if (!lines || !lines.length) return { total: 0, received: 0 }
   return {
     total: lines.reduce((sum, l) => sum + Number(l.quantity), 0),
     received: lines.reduce((sum, l) => sum + Number(l.receivedQuantity ?? 0), 0),
   }
-}
-
-function StatusChip({ status }: { status: TransferStatus }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.draft
-  const Icon = cfg.icon
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[5px] px-[9px] py-[3px] text-[11.5px] font-medium ${cfg.badge}`}
-    >
-      <Icon className="h-3 w-3 shrink-0" />
-      {cfg.label}
-    </span>
-  )
 }
 
 function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
@@ -211,6 +108,44 @@ function TransferAge({ transfer }: { transfer: TransferSummary }) {
   )
 }
 
+/** Scenario 56 — the transfer as the viewer's own branch sees it: Incoming
+ * when it's the requesting (destination) branch, Outgoing when it's the one
+ * supplying. Null for a viewer with no branch (Business Owner) or a transfer
+ * between two other branches. */
+function directionFor(
+  transfer: TransferSummary,
+  viewerBranchId: string | null | undefined
+): 'incoming' | 'outgoing' | null {
+  if (!viewerBranchId) return null
+  const branchOf = (wh: TransferSummary['toWarehouse']): string | null | undefined =>
+    wh?.branch?.id ?? wh?.branchId
+  if (branchOf(transfer.toWarehouse) === viewerBranchId) return 'incoming'
+  if (branchOf(transfer.fromWarehouse) === viewerBranchId) return 'outgoing'
+  return null
+}
+
+function DirectionTag({
+  direction,
+}: {
+  direction: 'incoming' | 'outgoing' | null
+}): React.ReactElement | null {
+  if (!direction) return null
+  return (
+    <span
+      className={`shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10.5px] font-medium ${
+        direction === 'incoming' ? 'bg-[#e3f4f2] text-[#0f7566]' : 'bg-[#fdf3e7] text-[#8a4b06]'
+      }`}
+      title={
+        direction === 'incoming'
+          ? 'Your branch requested this stock'
+          : 'Your branch is supplying this stock'
+      }
+    >
+      {direction === 'incoming' ? 'Incoming' : 'Outgoing'}
+    </span>
+  )
+}
+
 export default function TransferList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
   const canAccept = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_ACCEPT)
@@ -223,6 +158,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const canManagerApprove = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_APPROVE)
   const canManagerReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_REJECT)
   const canSkipApproval = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DIRECT)
+  const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_UPDATE)
 
   const {
     transfers,
@@ -250,6 +186,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     statusCounts,
     totalCount,
     createTransfer,
+    updateTransfer,
+    isUpdating,
     consignUnits,
     isConsigning,
     isCreating,
@@ -312,6 +250,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
   }
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  // The transfer being edited. Non-null turns the same create screen into an
+  // edit of this request — the two build the identical payload, so they share
+  // one form rather than keeping a near-duplicate of a 1300-line component.
+  const [editingTransfer, setEditingTransfer] = useState<TransferSummary | null>(null)
   const [searchFocused, setSearchFocused] = useState(false)
   const [createDraft, setCreateDraft] = useState<{
     fromWarehouseId: string
@@ -326,6 +268,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // doesn't silently reopen it. Which physical units ship is decided by the
   // source at dispatch, so only a count travels, never serial ids.
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   useEffect(() => {
     const fromWarehouseId = searchParams.get('prefillFromWarehouseId')
@@ -340,12 +283,55 @@ export default function TransferList({ session }: { session: SessionUser }) {
       })
       setIsCreateOpen(true)
       router.replace('/inventory/transfers')
+      return
+    }
+
+    // `?new=1` — the same "open straight into the create form" idea without a
+    // prefill, for links whose label is the verb: Item 360's "Transfer"
+    // button. Landing someone on a list of past transfers and asking them to
+    // find "New transfer" makes a button that says Transfer not transfer.
+    //
+    // Stripped relative to the current path rather than to
+    // /inventory/transfers like the prefill branch above, because this list is
+    // mounted at two routes — its own, and /inventory/operations?tab=transfers
+    // — and a hardcoded replace would move the user off whichever one they
+    // came in on.
+    if (searchParams.get('new') === '1' && canCreate) {
+      setIsCreateOpen(true)
+      const next = new URLSearchParams(searchParams.toString())
+      next.delete('new')
+      const qs = next.toString()
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
     }
     // Deliberately mount-only — the params are consumed once, then stripped;
     // re-running on every searchParams/router identity change would refight
     // that strip and never let the modal close normally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Deep link into one transfer — `?transfer=TRF-…`, as the receiving report
+  // that arrived on it links here. Transfers have no per-transfer route (the
+  // detail is a modal over this list), so the number is resolved in two
+  // steps: seed the search box on mount so the list actually contains the
+  // row, then open it once the matching row has loaded.
+  const deepLinkNumber = searchParams.get('transfer')
+  const [deepLinkOpened, setDeepLinkOpened] = useState(false)
+  useEffect(() => {
+    if (deepLinkNumber) setSearch(deepLinkNumber)
+    // Mount-only, for the same reason the prefill effect above is: the param
+    // is consumed once and then stripped.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (!deepLinkNumber || deepLinkOpened) return
+    const match = transfers.find((t) => t.transferNumber === deepLinkNumber)
+    if (!match) return
+    setSelectedTransfer(match)
+    setDeepLinkOpened(true)
+    // Stripped so a refresh or Back doesn't silently reopen the modal, same
+    // as the create-prefill params.
+    router.replace('/inventory/transfers')
+  }, [deepLinkNumber, deepLinkOpened, transfers, setSelectedTransfer, router])
 
   function openDetail(transfer: TransferSummary) {
     setSelectedTransfer(transfer)
@@ -355,7 +341,12 @@ export default function TransferList({ session }: { session: SessionUser }) {
     setStatusFilter(statusFilter === status ? undefined : status)
   }
 
-  const hasFilters = !!(statusFilter || fromWarehouseFilter || toWarehouseFilter || search)
+  const hasFilters = !!(
+    statusFilter ||
+    fromWarehouseFilter.length ||
+    toWarehouseFilter.length ||
+    search
+  )
   const pillStatuses = [
     ...PRIMARY_PILL_STATUSES,
     ...SECONDARY_PILL_STATUSES.filter((st) => (statusCounts[st] ?? 0) > 0),
@@ -472,20 +463,24 @@ export default function TransferList({ session }: { session: SessionUser }) {
               branches, and scrolling a native list is the slow way to a known
               name. */}
           <SearchableSelect
+            multiple
             className="w-[190px]"
-            value={fromWarehouseFilter ?? ''}
-            onChange={(v) => setFromWarehouseFilter(v || undefined)}
+            value={fromWarehouseFilter}
+            onChange={setFromWarehouseFilter}
             placeholder="All sources"
+            summaryNoun="sources"
             chrome={CONTROL_CHROME}
             clearable
             options={locationOptions}
           />
 
           <SearchableSelect
+            multiple
             className="w-[190px]"
-            value={toWarehouseFilter ?? ''}
-            onChange={(v) => setToWarehouseFilter(v || undefined)}
+            value={toWarehouseFilter}
+            onChange={setToWarehouseFilter}
             placeholder="All destinations"
+            summaryNoun="destinations"
             chrome={CONTROL_CHROME}
             clearable
             options={locationOptions}
@@ -622,7 +617,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                 <thead>
                   <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                     <th className={`${th} text-left`}>Transfer</th>
-                    <th className={`${th} text-left`}>Route</th>
+                    <th className={`${th} text-left`}>Supplying → Requesting</th>
                     <th className={`${th} text-right`}>Items</th>
                     <th className={`${th} hidden text-left md:table-cell`}>Progress</th>
                     <th className={`${th} text-left`}>Status</th>
@@ -670,6 +665,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             <span className="truncate text-[12.5px] font-semibold">
                               {branchLabel(tr.toWarehouse)}
                             </span>
+                            <DirectionTag direction={directionFor(tr, session.branchId)} />
                           </div>
                         </td>
                         <td className="px-[18px] py-[13px]">
@@ -751,13 +747,20 @@ export default function TransferList({ session }: { session: SessionUser }) {
       </div>
 
       <CreateTransferModal
-        isOpen={isCreateOpen}
+        isOpen={isCreateOpen || !!editingTransfer}
         onClose={() => {
           setIsCreateOpen(false)
           setCreateDraft(null)
+          setEditingTransfer(null)
         }}
-        onSubmit={createTransfer}
-        isSubmitting={isCreating}
+        // One screen, two destinations: the form produces the same complete
+        // request either way, so which endpoint it goes to is the only thing
+        // that changes. The modal itself stays unaware of the difference.
+        onSubmit={
+          editingTransfer ? (data) => updateTransfer(editingTransfer.id, data) : createTransfer
+        }
+        isSubmitting={editingTransfer ? isUpdating : isCreating}
+        editing={editingTransfer}
         onConsign={consignUnits}
         isConsigning={isConsigning}
         warehouses={warehouseOptions}
@@ -787,6 +790,14 @@ export default function TransferList({ session }: { session: SessionUser }) {
         onDispatch={dispatchTransfer}
         onReceive={receiveTransfer}
         onCancel={cancelTransfer}
+        canEdit={canUpdate}
+        onEdit={(tr) => {
+          // Close the detail panel first — the edit form is the same
+          // full-content sheet, and leaving both mounted would stack two of
+          // them over the page area.
+          setSelectedTransfer(null)
+          setEditingTransfer(tr)
+        }}
         onApproveHq={approveHqTransfer}
         onRejectHq={rejectHqTransfer}
         onApproveManager={approveManagerTransfer}

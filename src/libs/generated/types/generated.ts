@@ -543,6 +543,92 @@ export interface paths {
     patch: operations['PermissionsController_update']
     trace?: never
   }
+  '/pos/employee-cash-loans/employees': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Search employees to issue a cash loan against */
+    get: operations['EmployeeCashLoansController_searchEmployees']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/employee-cash-loans/bank-accounts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Active bank accounts for the Bank / Cash Account field */
+    get: operations['EmployeeCashLoansController_listBankAccounts']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/employee-cash-loans/preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Live financing-terms preview for the New Loan form — same formula create() posts */
+    get: operations['EmployeeCashLoansController_preview']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/employee-cash-loans': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List employee cash loans, company-wide */
+    get: operations['EmployeeCashLoansController_findAll']
+    put?: never
+    /** Issue an employee cash loan — computes financing terms and posts to the GL. No approval step. */
+    post: operations['EmployeeCashLoansController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/employee-cash-loans/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get an employee cash loan by id, with its schedule */
+    get: operations['EmployeeCashLoansController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/terminals': {
     parameters: {
       query?: never
@@ -785,6 +871,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/sessions/{id}/tender-summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Everything this session has taken, for the close screen to show read-only (Scenario 53): sales cash, plus each non-cash tender. Cash is sales cash only — opening float, cash drops and petty cash are excluded. */
+    get: operations['SessionsController_getTenderSummary']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/sessions/{id}/reconciliation': {
     parameters: {
       query?: never
@@ -829,7 +932,7 @@ export interface paths {
     /** List transactions with optional filters (POS-09) */
     get: operations['TransactionsController_findAll']
     put?: never
-    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge/installment (credit) sale are submitted as a pending release form request (an "Application Form" for credit sales), UNLESS the submitter already holds pos:transaction:override (e.g. a Branch Manager ringing up their own sale), in which case it posts directly — they already have the authority they would otherwise be asking themselves for. Refunds are always submitted as a pending return/refund request requiring manager approval. */
+    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Any sale with an installment line (in-house or TPF) is submitted as a pending release form request (an "Application Form" for credit sales); a cash sale — serialized or not — posts directly. The hold is skipped when the submitter already holds pos:transaction:override (e.g. a Branch Manager ringing up their own sale), in which case it posts directly — they already have the authority they would otherwise be asking themselves for. Refunds are always submitted as a pending return/refund request requiring manager approval. */
     post: operations['TransactionsController_create']
     delete?: never
     options?: never
@@ -912,7 +1015,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Customer transaction history merged with installment-due payments collected via POS Collections (last 20 across both) */
+    /** Customer transaction history merged with installment-due payments collected via POS Collections, paginated */
     get: operations['TransactionsController_getCustomerHistoryWithPayments']
     put?: never
     post?: never
@@ -2876,6 +2979,74 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/reports/daily-collection': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** A branch's collections for one business day as a running ledger: POS tenders and installment collections, with DESC-type subtotals, the denomination count and the day's bank deposits. */
+    get: operations['DailyCollectionController_dailyCollection']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/reports/daily-collection/branches': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Every branch's collections for one business day, one row each: what it took, what its drawer counted, and whether the form has been filed. The owner's way into the per-branch report. */
+    get: operations['DailyCollectionController_dailyCollectionRollup']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/reports/daily-collection/sheet': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    /** The form's handwritten half: signatories, remarks, and a corrected denomination count. A PUT, not a PATCH — a branch saves the form as one document, and an omitted field is a cleared field. */
+    put: operations['DailyCollectionController_saveSheet']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/reports/daily-collection/export': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Daily Collection Report as an .xlsx workbook. */
+    get: operations['DailyCollectionController_exportDailyCollection']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/items/images/bulk-import': {
     parameters: {
       query?: never
@@ -3560,7 +3731,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** A customer's own purchase history, for picking the unit being returned */
+    /** The sale being returned against — by customer, or by the document number a walk-in brought back */
     get: operations['StockController_getCustomerPurchases']
     put?: never
     post?: never
@@ -3604,6 +3775,58 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/stock/customer-returns': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Everything a customer handed back, whichever way it went: restocked returns from the stock ledger, and repair intakes from their UDS. */
+    get: operations['StockController_getCustomerReturns']
+    put?: never
+    /** Record a whole customer return as one document: one RR number, one consolidated credit memo, however many items they handed over. */
+    post: operations['StockController_createCustomerReturn']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock/customer-returns/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** One customer return document, with its lines. */
+    get: operations['StockController_getCustomerReturn']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock/customer-returns/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a print-ready document envelope for the customer copy of a return, including enterprise info. */
+    get: operations['StockController_getCustomerReturnDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/stock/receiving-reports': {
     parameters: {
       query?: never
@@ -3613,6 +3836,23 @@ export interface paths {
     }
     /** List Goods Receipt Notes with quantity and condition discrepancy flags. Use hasDiscrepancy=true to surface only receipts where delivery did not match the PO. */
     get: operations['StockController_getReceivingReports']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock/receiving-reports/summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Tenant-wide receiving KPIs (last 30 days receipt count, total units/lines received, short-delivery count) for the Receiving Reports header — independent of the list filters. */
+    get: operations['StockController_getReceivingReportsSummary']
     put?: never
     post?: never
     delete?: never
@@ -3722,7 +3962,8 @@ export interface paths {
     delete?: never
     options?: never
     head?: never
-    patch?: never
+    /** Edit a transfer request that has not been dispatched yet — re-runs approval routing from the start, so the request returns to pending_manager_approval/pending_hq_approval/requested exactly as if newly created */
+    patch: operations['TransfersController_update']
     trace?: never
   }
   '/inventory/transfers/{id}/document': {
@@ -4238,6 +4479,23 @@ export interface paths {
      * @description Required columns: dateIn, rr, brand, type, group, subgroup, model, serialNumber, price. Optional: origin, description. Column headers are matched case-insensitively, and "serial" is accepted as an alias for serialNumber. Rows sharing an rr are grouped into one historical GoodsReceipt; unknown brand/type/group/subgroup/supplier names are created on the fly; price is recorded as the created item's cost price. Set dryRun=true to preview counts without writing anything.
      */
     post: operations['SerialNumbersController_bulkImport']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/serial-numbers/consigned-summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Item-level rollup of what is consigned for a caravan event */
+    get: operations['SerialNumbersController_consignedSummary']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -5908,6 +6166,76 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ap-bills/disbursements': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Every payment transaction — one row per cheque/voucher, listing the invoices it settled */
+    get: operations['APBillsController_listDisbursements']
+    put?: never
+    /** Record one payment across one or more bills — posts a single journal entry and produces one voucher */
+    post: operations['APBillsController_createDisbursement']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/disbursements/{id}/settle': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Settle an unpaid voucher — posts the journal entry */
+    post: operations['APBillsController_settleDisbursement']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/disbursements/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Cancel an unpaid voucher */
+    delete: operations['APBillsController_cancelDisbursement']
+    options?: never
+    head?: never
+    /** Change what an unpaid voucher covers */
+    patch: operations['APBillsController_updateDisbursement']
+    trace?: never
+  }
+  '/ap-bills/disbursements/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Print-ready payment voucher for a disbursement */
+    get: operations['APBillsController_getDisbursementDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ap-bills/{id}': {
     parameters: {
       query?: never
@@ -5938,6 +6266,57 @@ export interface paths {
     get: operations['APBillsController_getDocument']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/receipt-changes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Corrections made to this invoice's receiving report since the invoice last agreed with it */
+    get: operations['APBillsController_receiptChanges']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/receipt-changes/apply': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Restate this invoice from its receiving report and clear the notice */
+    post: operations['APBillsController_applyReceiptChanges']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/receipt-changes/supersede': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Raise a fresh invoice from the corrected receiving report and cancel this one */
+    post: operations['APBillsController_supersedeFromReceipt']
     delete?: never
     options?: never
     head?: never
@@ -5989,23 +6368,6 @@ export interface paths {
     put?: never
     /** Post a DRAFT bill to the GL */
     post: operations['APBillsController_receive']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/disbursements': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Record one payment across one or more bills — posts a single journal entry and produces one voucher */
-    post: operations['APBillsController_createDisbursement']
     delete?: never
     options?: never
     head?: never
@@ -6887,7 +7249,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Unified customer ledger — chronological debit/credit rows merging installment, charge, and cash sales */
+    /** Unified customer ledger — chronological debit/credit rows merging installment, charge, cash and TPF-financed sales. ?scope=installments narrows it to the financed purchases only (in-house plans + TPF). */
     get: operations['CustomerController_getCustomerLedger']
     put?: never
     post?: never
@@ -6942,6 +7304,23 @@ export interface paths {
     put?: never
     /** Merge a duplicate customer into this one (the survivor) — reassigns all related records, applies reviewer field overrides, soft-deletes the duplicate */
     post: operations['CustomerController_merge']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/employees': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Search active employees (e.g. to pick an expense payee) */
+    get: operations['EmployeesController_search']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -7042,6 +7421,46 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/suppliers/{id}/items/suggestions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Suggest items this supplier likely carries
+     * @description Unlinked items derived from purchase history (proven, with the last price paid) and from brand-name overlap (a guess). Read-only — nothing is linked until the caller posts them back to /items/bulk.
+     */
+    get: operations['SupplierController_suggestItemMappings']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/suppliers/{id}/items/bulk': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Link several items to this supplier at once
+     * @description Pairs that already exist are skipped rather than erroring, so the call is safe to repeat.
+     */
+    post: operations['SupplierController_bulkAddItemMappings']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/suppliers/{id}/items/{itemId}': {
     parameters: {
       query?: never
@@ -7067,7 +7486,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List all accounts */
+    /** List accounts, optionally filtered */
     get: operations['AccountsController_findAll']
     put?: never
     /** Create a chart-of-accounts entry */
@@ -7999,6 +8418,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/supplier-debit-memos/inventory-accounts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * The inventory account each item resolves to (item → category → mapping)
+     * @description What the memo form prefills a goods line with, so the account shown before saving is the one that would post if nobody changes it.
+     */
+    get: operations['SupplierDebitMemosController_resolveInventoryAccounts']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/supplier-debit-memos/{id}': {
     parameters: {
       query?: never
@@ -8063,6 +8502,41 @@ export interface paths {
     put?: never
     /** Create a draft business expense */
     post: operations['ExpensesController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/expenses/special-accounts/ledger': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** One Special Account's ledger — every debit and credit posted under that name, with a running balance */
+    get: operations['ExpensesController_specialAccountLedger']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/expenses/special-accounts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Special Accounts register — every named person a balance is carried against */
+    get: operations['ExpensesController_specialAccounts']
+    put?: never
+    /** Open a Special Account — a named balance under a control account, before anything is posted to it */
+    post: operations['ExpensesController_createSpecialAccount']
     delete?: never
     options?: never
     head?: never
@@ -8150,75 +8624,6 @@ export interface paths {
     put?: never
     /** Void a recorded expense — reverses its journal entry */
     post: operations['ExpensesController_void']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/accounting/employees': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Search active employees (e.g. to pick an expense payee) */
-    get: operations['EmployeesController_search']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/employee-appliance-loans': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List employee appliance loans */
-    get: operations['EmployeeApplianceLoansController_findAll']
-    put?: never
-    /** Create an employee appliance loan — computes financing terms and posts to the GL */
-    post: operations['EmployeeApplianceLoansController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/employee-appliance-loans/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get an employee appliance loan by id */
-    get: operations['EmployeeApplianceLoansController_findOne']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/employee-appliance-loans/{id}/payments': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Record a payment against an employee appliance loan */
-    post: operations['EmployeeApplianceLoansController_recordPayment']
     delete?: never
     options?: never
     head?: never
@@ -8337,6 +8742,22 @@ export interface paths {
     options?: never
     head?: never
     patch: operations['BankAccountsController_updateRec']
+    trace?: never
+  }
+  '/bank-accounts/reconciliations/{id}/transactions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['BankAccountsController_getRecTransactions']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/bank-accounts/reconciliations/{id}/lines/{lineId}': {
@@ -9516,6 +9937,42 @@ export interface paths {
     patch: operations['BranchesController_reactivate']
     trace?: never
   }
+  '/departments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List departments, optionally for one branch */
+    get: operations['DepartmentsController_findAll']
+    put?: never
+    /** Create a department under a branch */
+    post: operations['DepartmentsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/departments/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Retire a department and its divisions */
+    delete: operations['DepartmentsController_remove']
+    options?: never
+    head?: never
+    /** Update a department */
+    patch: operations['DepartmentsController_update']
+    trace?: never
+  }
   '/enterprise/branches': {
     parameters: {
       query?: never
@@ -10270,6 +10727,37 @@ export interface components {
     }
     CreatePermissionDto: Record<string, never>
     UpdatePermissionDto: Record<string, never>
+    CreateEmployeeCashLoanDto: {
+      /** @description Auto-generated when omitted */
+      loanNumber?: string
+      /** @description The real Employee (HR) record being loaned to */
+      employeeId: string
+      /**
+       * @description Loan Principal
+       * @example 50000
+       */
+      principal: number
+      /** @example 12 */
+      termMonths: number
+      /**
+       * @description Interest Rate / Loan Factor — flat monthly add-on rate (totalInterest = principal * interestRate * termMonths)
+       * @example 0.01
+       */
+      interestRate: number
+      /**
+       * @description Defaults to today
+       * @example 2026-09-17
+       */
+      loanDate?: string
+      /** @example 2026-10-17 */
+      firstDeductionDate: string
+      /** @enum {string} */
+      disbursementMethod: 'CASH' | 'BANK_TRANSFER' | 'CHECK'
+      /** @description Required when disbursementMethod=BANK_TRANSFER */
+      bankAccountId?: string
+      referenceNumber?: string
+      note?: string
+    }
     CreateTerminalDto: {
       /** @example TERM-001 */
       terminalCode: string
@@ -11264,6 +11752,33 @@ export interface components {
       name?: string
       isActive?: boolean
     }
+    SaveDailyCollectionSheetDto: {
+      /**
+       * @description Business date the form covers (YYYY-MM-DD).
+       * @example 2026-09-08
+       */
+      date: string
+      /** @description Branch the form belongs to. A branch-assigned caller's own branch always wins, whatever is submitted. Required for everyone else — the 'All branches' roll-up has no form to save. */
+      branchId?: string
+      /** @description CHECKED BY on the printed form. */
+      checkedBy?: Record<string, never>
+      /** @description CERTIFIED CORRECT BY on the printed form. */
+      certifiedCorrectBy?: Record<string, never>
+      /** @description Free-text note printed under the grid. */
+      remarks?: Record<string, never>
+      /**
+       * @description The branch's own denomination count, replacing the one summed from the day's session closings. Keys are face values plus `coins`, which carries an amount rather than a piece count — the same shape as PosSession.denominationBreakdown. Null restores the counted figures.
+       * @example {
+       *       "100": 4,
+       *       "500": 1,
+       *       "1000": 20,
+       *       "coins": 60.5
+       *     }
+       */
+      denominationOverride?: Record<string, never>
+      /** @description Why the count was corrected. Required whenever denominationOverride is set. */
+      denominationOverrideReason?: Record<string, never>
+    }
     BulkImageMappingDto: {
       /** @description Item SKU to match */
       sku: string
@@ -11668,6 +12183,8 @@ export interface components {
       status: 'active' | 'inactive'
       /** @description UUID of an already-uploaded File to use as category cover image (INV-30) */
       coverImageFileId?: string
+      /** @description UUID of the GL account stock in this category belongs in (e.g. "1-04-020 Inventory - Furniture"). Inherited by child categories that name none of their own, and overridden by an item's own inventoryAccountId. Send "" to clear it and fall back to the tenant-wide INVENTORY_ASSET mapping. */
+      defaultGlAccountId?: string
     }
     UpdateCategoryDto: {
       /**
@@ -11708,6 +12225,8 @@ export interface components {
       status: 'active' | 'inactive'
       /** @description UUID of an already-uploaded File to use as category cover image (INV-30) */
       coverImageFileId?: string
+      /** @description UUID of the GL account stock in this category belongs in (e.g. "1-04-020 Inventory - Furniture"). Inherited by child categories that name none of their own, and overridden by an item's own inventoryAccountId. Send "" to clear it and fall back to the tenant-wide INVENTORY_ASSET mapping. */
+      defaultGlAccountId?: string
     }
     SetCoverImageDto: {
       /** @description UUID of an already-uploaded File record */
@@ -11826,6 +12345,14 @@ export interface components {
        */
       conversionFactor?: number
     }
+    LineDiscountInputDto: {
+      /** @description Free-text label describing what the discount is for, e.g. "Loyalty discount" */
+      name?: string
+      /** @enum {string} */
+      type: 'percentage' | 'amount'
+      /** @description Interpreted per type — a percent (0-100) or a flat amount off the running price */
+      value: number
+    }
     ReceiveStockLineDto: {
       /** @description Item ID being received */
       itemId: string
@@ -11858,7 +12385,7 @@ export interface components {
        */
       srp?: number
       /** @description Ordered discounts applied sequentially to srp — [{ name?, type: "percentage"|"amount", value }]. Same shape as PurchaseOrderLine.discounts. */
-      discounts?: string[]
+      discounts?: components['schemas']['LineDiscountInputDto'][]
       /** @description Scenario 46 — per-line tax code. VAT was header-only on a receipt, which made a line-by-line 3-way match on tax impossible. */
       taxCode?: string
       /** @description Scenario 46 — per-line tax amount. */
@@ -11921,6 +12448,16 @@ export interface components {
        * @example PO-20260701-0001
        */
       purchaseOrderNumber?: string
+      /**
+       * @description Who physically delivered the goods — printed on the Receiving Report's Driver/Helper line. Free text: a supplier's delivery crew are not on our own Vehicle roster.
+       * @example Juan dela Cruz
+       */
+      driverName?: string
+      /**
+       * @description Delivery helper, alongside driverName on the same line.
+       * @example Pedro Santos
+       */
+      helperName?: string
       /** @description Supplier's own delivery receipt (DR) number, as written on the physical delivery paperwork */
       deliveryReceiptNumber?: string
       /** @description Supplier's own sales invoice (SI) number for this delivery — optional, since the invoice commonly arrives after the goods do. Fill it in later via the AP bill. */
@@ -11985,8 +12522,54 @@ export interface components {
       customerId?: string
       /** @description The open AR invoice this return is against. Optional: without it the return still records stock and posts its Dr Inventory / Cr COGS entry, it just never reaches AR. With it, a sales-return Credit Memo is raised against the invoice as well. */
       arInvoiceId?: string
-      /** @description RR number issued to the customer on intake, when flagging for repair */
-      intakeReceivingReportNumber?: string
+      /** @description The cashier-entered SI off the original sale — the paper the customer brings back with the goods. Distinct from arInvoiceId, which drives the credit memo; this is recorded on the ledger row so the return can be read back against what the customer actually presented. */
+      salesInvoiceNumber?: string
+      /** @description Customer's proof-of-purchase SI number, recorded at intake when flagging for repair. Free text — not a link to an ArInvoice. */
+      intakeSalesInvoiceNumber?: string
+    }
+    CustomerReturnLineDto: {
+      /** @description Item being returned */
+      itemId: string
+      /**
+       * @description Quantity coming back
+       * @example 1
+       */
+      quantity: number
+      /**
+       * @description What the customer was charged per unit — what the credit memo is sized from. Not the cost: crediting cost would leave the invoice stuck PARTIAL forever.
+       * @example 400
+       */
+      unitPrice: number
+      /**
+       * @description What happens to this unit. restock -> onHand + available; quarantine -> onHand only; scrap -> written off on arrival, no stock and no cost reversal; repair -> no stock movement, raises a UDS (serial required, quantity 1); exchange -> replacement issued out.
+       * @enum {string}
+       */
+      disposition: 'restock' | 'quarantine' | 'scrap' | 'repair' | 'exchange'
+      /** @description The specific unit coming back. Required on a repair line — a UDS line is one named unit and has no quantity column at all. */
+      serialNumberId?: string
+      /** @description The sold line this return is drawn against. The only reliable anchor for "you cannot return more than you bought": sourceLedgerId is null for every weighted-average item, so a cap keyed on it would silently not apply to most of the catalogue. */
+      sourcePosTransactionLineId?: string
+      /** @description The sale's own stock ledger row, so the FIFO/LIFO cost layer is restored at the cost this exact unit left on. */
+      sourceLedgerId?: string
+      /** @description The replacement unit handed over on an exchange line. */
+      replacementSerialNumberId?: string
+      /** @description Why this unit came back */
+      reason?: string
+    }
+    CreateCustomerReturnDto: {
+      /** @description Warehouse the goods are coming back into */
+      warehouseId: string
+      /** @description Who returned the goods. Required when any line is a repair: a UDS is a custody record for somebody's property, and without a name it records custody for no one. */
+      customerId?: string
+      /** @description The POS sale being returned against */
+      originalSaleId?: string
+      /** @description The open invoice the consolidated credit memo is raised against. Without it the return still records stock and posts its cost reversal, it just never reaches AR. */
+      arInvoiceId?: string
+      /** @description The cashier-entered SI off the original sale — the paper the customer brings back with the goods. */
+      salesInvoiceNumber?: string
+      notes?: string
+      /** @description At most 50 — the whole document posts in one interactive transaction, and each line resolves a cost and an account mapping. */
+      lines: components['schemas']['CustomerReturnLineDto'][]
     }
     UpdateReceivingReportLineDto: {
       id: string
@@ -11995,17 +12578,25 @@ export interface components {
       /** @description Supplier SRP the discount chain applies off. */
       srp?: number
       /** @description Ordered discount chain applied off srp. */
-      discounts?: string[]
+      discounts?: components['schemas']['LineDiscountInputDto'][]
       taxCode?: string
       taxAmount?: number
+      /** @description Scenario 51 — the corrected unit cost. Unlike every other field here, this one reaches the ledger: it revalues the cost layers this line created and posts an adjusting journal entry splitting the difference between inventory still on hand and COGS for units already sold. Requires costCorrectionReason on the parent payload. Quantity remains uneditable — a wrong quantity is a stock count, not a document edit. */
+      unitCost?: number
     }
     UpdateReceivingReportDto: {
+      /** @description Scenario 51 — why a unit cost was corrected. Required whenever any line's unitCost actually changes, and rejected when none does, so a reason always describes a real ledger event. Shown on the receipt and carried onto the adjusting journal entry, which is the only place a reader a year from now can find out why the books moved. */
+      costCorrectionReason?: string
       /** @description Supplier's own sales invoice number, once it arrives. */
       supplierInvoiceNumber?: string
       /** @description Supplier's own delivery receipt number. */
       deliveryReceiptNumber?: string
       /** @description Delivery notes. */
       notes?: string
+      /** @description Who drove the delivery in, on the report's "Driver/Helper" line. Correctable after the fact for the same reason the SI number is: receipts posted before the field existed have nothing on that line. */
+      driverName?: string
+      /** @description Delivery helper, alongside driverName on the same line. */
+      helperName?: string
       /** @description Input VAT as printed on the SI. Does NOT re-post the journal entry — see the class note. */
       vatAmount?: number
       /** @description Withholding withheld. Does NOT re-post the journal entry. */
@@ -12043,6 +12634,11 @@ export interface components {
       expectedArrival?: string
       /** @description Reason for the transfer */
       reason?: string
+      /**
+       * @description Skip the destination branch's manager-approval step. Requires inventory:transfers:direct.
+       * @default false
+       */
+      skipDestinationApproval: boolean
       /** @description Transfer line items (at least 1 required) */
       lines: components['schemas']['CreateTransferLineDto'][]
     }
@@ -12085,7 +12681,7 @@ export interface components {
        * @description Expected arrival date (ISO 8601)
        * @example 2026-05-15
        */
-      expectedArrival: string
+      expectedArrival?: string
       /** @description Dispatch notes */
       notes?: string
       /** @description One entry per serial-tracked line being dispatched, assigning the specific physical unit sent. Required for any serial-tracked line that doesn't already carry a serialNumberId (i.e. every normal human-requested line — the requester never picks the serial themselves). */
@@ -12141,6 +12737,31 @@ export interface components {
       lines: components['schemas']['ReceiveTransferLineDto'][]
       /** @description Items physically received that were never part of the dispatched lines above — recorded as their own receipt lines, distinct from the reconciled ones, so an overage never masquerades as a bigger match against a dispatched line. */
       extraLines?: components['schemas']['ReceiveTransferExtraLineDto'][]
+    }
+    UpdateTransferDto: {
+      /** @description Source warehouse UUID */
+      fromWarehouseId: string
+      /** @description Destination warehouse UUID */
+      toWarehouseId: string
+      /**
+       * @description Transfer date (ISO 8601)
+       * @example 2026-05-13
+       */
+      transferDate: string
+      /**
+       * @description Expected arrival date (ISO 8601)
+       * @example 2026-05-15
+       */
+      expectedArrival?: string
+      /** @description Reason for the transfer */
+      reason?: string
+      /**
+       * @description Skip the destination branch's manager-approval step. Requires inventory:transfers:direct.
+       * @default false
+       */
+      skipDestinationApproval: boolean
+      /** @description Transfer line items (at least 1 required) */
+      lines: components['schemas']['CreateTransferLineDto'][]
     }
     AdjustmentLineDto: {
       /** @description Item UUID */
@@ -12330,10 +12951,15 @@ export interface components {
        */
       serialNumberIds: string[]
       /**
-       * @description Host branch the serials are being consigned to for the event
+       * @description Host branch the serials are being consigned to for the event. Exactly one of hostBranchId or venue must be given.
        * @example branch-uuid
        */
-      hostBranchId: string
+      hostBranchId?: string
+      /**
+       * @description A place that is not one of our branches — a fair, a dealer's floor, a town with no branch. Exactly one of hostBranchId or venue must be given. Ownership never moves for a venue consignment: the owning branch keeps selling the units while they are out.
+       * @example Lemery Town Fair
+       */
+      venue?: string
       /**
        * @description Optional name for the caravan event these serials are being consigned for
        * @example Summer Caravan 2026 — SM Cebu
@@ -12360,10 +12986,15 @@ export interface components {
        */
       serialNumberIds: string[]
       /**
-       * @description Branch to move the consignment onward to. Omit to return to origin (clears the consignment entirely).
+       * @description Branch to move the consignment onward to. Omit (and omit targetVenue) to return to origin, clearing the consignment entirely.
        * @example branch-uuid
        */
       targetBranchId?: string
+      /**
+       * @description Venue to move the consignment onward to, for a caravan going straight from one place to the next. Mutually exclusive with targetBranchId.
+       * @example Lemery Town Fair
+       */
+      targetVenue?: string
     }
     UpsertCostingConfigDto: {
       /**
@@ -12459,6 +13090,12 @@ export interface components {
       allowedBranchIds?: string[]
       /** @description ID of the prior PriceList version this one replaces */
       supersedesId?: string
+      /**
+       * @description Whether prices on this list already include VAT
+       * @default inclusive
+       * @enum {string}
+       */
+      pricingMode: 'inclusive' | 'exclusive'
     }
     UpdatePriceListDto: {
       name?: string
@@ -12472,6 +13109,11 @@ export interface components {
       segmentIds?: string[]
       customerIds?: string[]
       allowedBranchIds?: string[]
+      /**
+       * @description Whether prices on this list already include VAT
+       * @enum {string}
+       */
+      pricingMode?: 'inclusive' | 'exclusive'
     }
     ActOnPriceListDto: {
       /** @description Approval/rejection remarks */
@@ -12728,14 +13370,6 @@ export interface components {
        */
       attributes: Record<string, never>
     }
-    LineDiscountInputDto: {
-      /** @description Free-text label describing what the discount is for, e.g. "Loyalty discount" */
-      name?: string
-      /** @enum {string} */
-      type: 'percentage' | 'amount'
-      /** @description Interpreted per type — a percent (0-100) or a flat amount off the running price */
-      value: number
-    }
     CreatePurchaseRequestLineDto: {
       itemId: string
       quantity: number
@@ -12868,12 +13502,16 @@ export interface components {
         | 'completed'
         | 'cancelled'
       notes?: string
+      /** @description The SI raised for the branch <-> main leg. Recorded against the outbound column when moving to in_transit and the return column when closing to completed, since those are the two transitions where the unit actually makes that trip. Ignored on any other transition. */
+      salesInvoiceNumber?: string
     }
     AssessUdsDto: {
       /** @enum {string} */
       assessment: 'repairable' | 'unrepairable'
       /** @description Estimated repair cost — required when assessment is "repairable"; posts a debit to REPAIR_EXPENSE / REPAIR_PROVIDER_PAYABLE */
       estimatedCost?: number
+      /** @description Repair provider to bind the unit to, set as part of the assessment. A repairable verdict requires one, and a sheet raised from a customer return has none — the intake form never asks. Accepting it here means the verdict and its consequence are recorded in one step instead of failing and sending the assessor off to a separate form. */
+      repairProviderId?: string
       notes?: string
     }
     DispatchToProviderDto: {
@@ -12889,8 +13527,8 @@ export interface components {
       notes?: string
     }
     ReleaseToCustomerDto: {
-      /** @description The DR issued to the customer when their unit is handed back — the document that closes the journey */
-      deliveryReceiptNumber: string
+      /** @description The SI raised for the return leg back to the branch. Captured here rather than on a status change: a customer-owned sheet can only be closed by releasing it, so this is the transition that leg happens on. */
+      salesInvoiceNumber?: string
       notes?: string
     }
     SetRepairProviderDto: {
@@ -13006,6 +13644,53 @@ export interface components {
       /** @description Why this is being refunded — the JE description/reference. */
       reason?: string
     }
+    APDisbursementSourceDto: {
+      /** @description cash | check | bank_transfer */
+      method: string
+      /** @description Required for any non-cash method — a bank reconciliation worksheet is only as good as this being filled in. */
+      bankAccountId?: string
+      chequeNumber?: string
+      /** @description The cheque/transfer reference. Record Payment types the cheque number here — it and chequeNumber were two boxes for one number — and the voucher series falls back to it. */
+      reference?: string
+      /** @description What this source was for, so the halves of a split payment can be told apart. */
+      description?: string
+      /** @description How much of the payment this source funds */
+      amount: number
+    }
+    SettleAPDisbursementDto: {
+      paymentDate: string
+      bankAccountId?: string
+      chequeNumber?: string
+      method?: string
+      reference?: string
+      /** @description SAME_DATE (default) or LATER_DATE */
+      clearedType?: string
+      clearedDate?: string
+      notes?: string
+      sources?: components['schemas']['APDisbursementSourceDto'][]
+    }
+    APDisbursementAllocationDto: {
+      apBillId: string
+      amount: number
+      /**
+       * @description How much of this invoice's withholding this voucher claims. The withheld slice was already posted Dr AP / Cr WHT Payable at receipt, so this posts nothing — it decides which payment the withholding rides with, and so which BIR 2307 the supplier is given. Summed across an invoice's vouchers it can never exceed the invoice's own withholdingAmount. Defaults to 0, which is what every caller written before per-voucher withholding existed sends.
+       * @default 0
+       */
+      withholdingAmount: number
+    }
+    UpdateAPDisbursementDto: {
+      /** @description Replaces the whole set of invoices this voucher covers. */
+      allocations?: components['schemas']['APDisbursementAllocationDto'][]
+      notes?: string
+      /** @description Replaces how the voucher is to be funded. A voucher IS the instruction to cut a cheque from a named account, so the bank or the cheque number being wrong is one of the likelier reasons to amend one — leaving it uneditable meant cancelling the voucher and raising a new number. Their amounts must add up to the allocated total, the same rule creation applies. Omit to leave the funding untouched. */
+      sources?: components['schemas']['APDisbursementSourceDto'][]
+      /** @description SAME_DATE or LATER_DATE — whether the cheque clears the bank on payment. */
+      clearedType?: string
+      /** @description Required when clearedType is LATER_DATE. */
+      clearedDate?: string
+      /** @description When the voucher was raised. */
+      voucherDate?: string
+    }
     APBillLineDto: {
       itemId?: string
       description?: string
@@ -13056,6 +13741,11 @@ export interface components {
       lines?: components['schemas']['APBillLineDto'][]
       /** @description Scenario 46 — net-of-discount delivered cost, mirroring GoodsReceipt.nndpCost so a bill can carry the same figure the receipt does. */
       nndpCost?: number
+      /**
+       * @description Save even though this supplier already has a bill under the same SI. One supplier invoice can legitimately cover several POs, each received into its own bill, so a repeated number is only sometimes a mistake — the request is refused once with the clashing bill attached, and re-sent with this set after the person has looked at it.
+       * @default false
+       */
+      confirmDuplicateBillNumber: boolean
     }
     UpdateAPBillDto: {
       /** @description The supplier's own invoice number, as printed on their invoice. Never generated by this system — required before a DRAFT bill auto-generated off a receipt (no invoice number yet) can leave DRAFT. */
@@ -13084,13 +13774,14 @@ export interface components {
       lines?: components['schemas']['APBillLineDto'][]
       /** @description Scenario 46 — net-of-discount delivered cost, mirroring GoodsReceipt.nndpCost so a bill can carry the same figure the receipt does. */
       nndpCost?: number
+      /**
+       * @description Save even though this supplier already has a bill under the same SI. One supplier invoice can legitimately cover several POs, each received into its own bill, so a repeated number is only sometimes a mistake — the request is refused once with the clashing bill attached, and re-sent with this set after the person has looked at it.
+       * @default false
+       */
+      confirmDuplicateBillNumber: boolean
     }
     ReceiveManyAPBillsDto: {
       ids: string[]
-    }
-    APDisbursementAllocationDto: {
-      apBillId: string
-      amount: number
     }
     CreateAPDisbursementDto: {
       /** @description The payee. One cheque is payable to one entity — every allocated bill must belong to this supplier. Derived from the bills when omitted. */
@@ -13108,6 +13799,10 @@ export interface components {
       clearedDate?: string
       notes?: string
       allocations: components['schemas']['APDisbursementAllocationDto'][]
+      /** @description Where the money comes from, one entry per method. Their amounts must add up to the allocated total. Omit to fund the whole payment from the single bankAccountId/chequeNumber/method above — the shape every disbursement used before split funding, still accepted unchanged. */
+      sources?: components['schemas']['APDisbursementSourceDto'][]
+      /** @description When the voucher was raised. Defaults to now. Distinct from paymentDate, which is when the cheque was actually cut — a voucher raised on the 7th and paid on the 15th has both. */
+      voucherDate?: string
     }
     RecordAPPaymentDto: {
       amount: number
@@ -13527,6 +14222,10 @@ export interface components {
       /** @enum {string} */
       status: 'active' | 'inactive' | 'blocked'
       groupId?: string
+      branchId?: string
+      branch?: Record<string, never>
+      /** @enum {string} */
+      accountType: 'cash' | 'charge'
       createdAt: string
       companyName?: string
       /** @enum {string} */
@@ -13566,6 +14265,10 @@ export interface components {
       /** @enum {string} */
       status: 'active' | 'inactive' | 'blocked'
       groupId?: string
+      branchId?: string
+      branch?: Record<string, never>
+      /** @enum {string} */
+      accountType: 'cash' | 'charge'
       createdAt: string
     }
     PaginationMetaDto: {
@@ -14025,6 +14728,31 @@ export interface components {
       /** @description Notes about this supplier-item relationship */
       notes?: string
     }
+    ItemSupplierSuggestionDto: {
+      itemId: string
+      sku: string
+      name: string
+      brandName?: Record<string, never> | null
+      /**
+       * @description purchase_history — this supplier has actually been ordered from for this item. brand — the item brand and the supplier name overlap.
+       * @enum {string}
+       */
+      source: 'purchase_history' | 'brand'
+      /** @description Last price paid to this supplier, when purchase history exists */
+      suggestedUnitPrice?: Record<string, never> | null
+      /** @description Human-readable reason for the suggestion */
+      reason: string
+    }
+    BulkCreateItemSupplierDto: {
+      /** @description Item links to create in one go — typically the suggestions a user ticked. Pairs already linked are skipped, not rejected. */
+      items: components['schemas']['CreateItemSupplierDto'][]
+    }
+    BulkItemSupplierResultDto: {
+      /** @description Links actually created */
+      created: number
+      /** @description Requested pairs that were already linked */
+      skipped: number
+    }
     UpdateItemSupplierDto: {
       /** @description Supplier's own SKU for this item */
       supplierSku?: string
@@ -14193,6 +14921,8 @@ export interface components {
       branchId?: string
     }
     RecordArPaymentDto: {
+      /** @description Scenario 53 Part 5b — the open POS session, when this collection is taken over the counter. Cash then counts toward that session's expected drawer total and posts to Undeposited Funds instead of Cash in Bank. Omit for field collections and Accounting-side entries. */
+      posSessionId?: string
       /** @description Amount received */
       amount?: number
       /** @description Withholding tax amount, if any */
@@ -14396,9 +15126,26 @@ export interface components {
     VoidSupplierDebitMemoDto: {
       voidReason?: string
     }
+    CreateSpecialAccountDto: {
+      /**
+       * @description Who or what the balance is carried against — "Juan Dela Cruz", or a project name for a capital-expenditure control account. This is the identity of the account: expense lines are matched to it by name, case-insensitively, and it must be unique under its control account.
+       * @example Juan Dela Cruz
+       */
+      name: string
+      /** @description The control account carrying the balance. Must be an account flagged isSpecialAccountControl — only those keep a subsidiary ledger. */
+      controlAccountId: string
+      /** @description The employee this name is, when they are on file. Descriptive only — the ledger is still assembled by name, so an account can be opened for someone with no employee record. */
+      employeeId?: string
+      /** @description The customer this name is, when they are on file. */
+      customerId?: string
+      /** @description Why the account was opened — terms, an agreement reference. */
+      notes?: string
+    }
     CreateExpenseLineDto: {
-      /** @description Required for a CUSTOMER/SUPPLIER header, or OTHER with otherCategory=UTILITIES/SALARIES_WAGES (this line's category — omit to fall back to that category's mapped default). Ignored for OTHER with otherCategory=SPECIAL_ACCOUNTS — resolved server-side from the header's specialAccountType/liquidatesType instead. */
+      /** @description Required for a CUSTOMER/SUPPLIER header, or OTHER with otherCategory=UTILITIES/SALARIES_WAGES (this line's category — omit to fall back to that category's mapped default), unless the line carries its own specialAccountType. Ignored for OTHER with otherCategory=SPECIAL_ACCOUNTS — resolved server-side from the header's specialAccountType/liquidatesType instead. */
       categoryAccountId?: string
+      /** @description Whether this line is carried against a named person — an advance, a loan, a receivable. Which account it sits under comes from categoryAccountId, that account being the person's control account, so this is a yes/no rather than a list of types. Requires a payee. */
+      isSpecialAccount?: boolean
       /** @description This line's recipient — OTHER/SPECIAL_ACCOUNTS header, Employee Cash Advance/Loan (or a CA_LIQUIDATION line closing one out). */
       employeeId?: string
       /** @description This line's free-text recipient — OTHER/SPECIAL_ACCOUNTS header, Cash Loan – Others (or a CA_LIQUIDATION line closing one out). */
@@ -14418,11 +15165,26 @@ export interface components {
        */
       unitPrice?: number
       description?: string
-      /** @example 1000 */
+      /**
+       * @description Positive adds to the entry, negative deducts from it (the payroll disbursement sheet's Debit and Credit columns respectively). Zero is rejected — a line that changes nothing is a mis-key. A negative line posts as a credit to its own account and is always non-taxable.
+       * @example 1000
+       */
       amount: number
-      /** @description VAT, NON_VAT, EXEMPT */
-      taxCode?: string
-      /** @example 120 */
+      /**
+       * @description This line's VAT treatment. NON_TAXABLE posts no VAT; INPUT_VAT computes it at 12% of amount. Legacy VAT/NON_VAT/EXEMPT spellings are still accepted and normalised. Defaults to NON_TAXABLE when omitted.
+       * @enum {string}
+       */
+      taxCode?: 'NON_TAXABLE' | 'INPUT_VAT'
+      /** @description Marks this line as a payroll deduction of that customer's monthly instalment. Recording the expense settles their instalment dues oldest-first — subsidiary ledger only, since the line already credits the receivable in the GL. */
+      customerId?: string
+      /** @description This line's Division, when the option picked was a branch. The Division picker lists branches and departments together, so exactly one of divisionBranchId / divisionDepartmentId may be set. */
+      divisionBranchId?: string
+      /** @description This line's Division, when the option picked was a department. */
+      divisionDepartmentId?: string
+      /**
+       * @deprecated
+       * @description Ignored. VAT is derived from taxCode server-side now that the form collects a treatment rather than a typed figure — a supplied amount could disagree with the line it sits on.
+       */
       taxAmount?: number
     }
     CreateExpensePaymentDto: {
@@ -14442,20 +15204,24 @@ export interface components {
       /** @description SAME_DATE | LATER_DATE — whether the payment clears the bank on expenseDate itself or on a later date (e.g. an uncashed check). Informational only; doesn't affect GL posting. */
       clearedType?: string
       /**
-       * @description Required when clearedType=LATER_DATE — the date the payment clears.
+       * @description The date the payment clears. Optional even when clearedType=LATER_DATE — a later-clearing payment can be recorded before the clearing date is known.
        * @example 2026-07-20
        */
       clearedDate?: string
       /** @description CUSTOMER | SUPPLIER | EMPLOYEE | OTHER. OTHER without otherCategory behaves like SUPPLIER (each line picks its own category, payee is a free-text label). */
       payeeType?: string
-      /** @description UTILITIES | SALARIES_WAGES | SPECIAL_ACCOUNTS — optional, payeeType=OTHER only. Omit for the plain free-text Other path. UTILITIES/SALARIES_WAGES behave like SUPPLIER (each line picks its own categoryAccountId, prefilled from the matching mapping key); SPECIAL_ACCOUNTS is the Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow driven by specialAccountType below. */
+      /** @description UTILITIES | SALARIES_WAGES | SPECIAL_ACCOUNTS | PAYROLL — optional, payeeType=OTHER only. Omit for the plain free-text Other path. UTILITIES/SALARIES_WAGES behave like SUPPLIER (each line picks its own categoryAccountId, prefilled from the matching mapping key); SPECIAL_ACCOUNTS is the Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow driven by specialAccountType below. */
       otherCategory?: string
       /** @description Fixed for the whole entry — payeeType=SUPPLIER, or payeeType=OTHER with otherCategory=UTILITIES */
       supplierId?: string
-      /** @description SUPPLIER-only — the disbursement voucher number, distinct from each payment's reference (OR/receipt/check number). */
+      /** @description Optional, any payeeType — the one disbursement voucher number for the entry, distinct from each payment's own reference (OR/receipt/check number). */
       voucherNumber?: string
       /** @description Fixed for the whole entry — payeeType=CUSTOMER */
       customerId?: string
+      /** @description payeeType=CUSTOMER only — optional Sales Invoice reference for this entry, when it matches an existing ARInvoice on file. */
+      arInvoiceId?: string
+      /** @description payeeType=CUSTOMER only — the Sales Invoice number, free text, for when there's no matching ARInvoice on file to link via arInvoiceId. */
+      salesInvoiceNumber?: string
       /** @description Fixed for the whole entry — payeeType=EMPLOYEE */
       employeeId?: string
       /** @description EMPLOYEE_CASH_ADVANCE | EMPLOYEE_CASH_LOAN | CASH_LOAN_OTHERS | CA_LIQUIDATION — required when otherCategory=SPECIAL_ACCOUNTS. Fixed for every line in the entry; determines each line's categoryAccountId server-side via the matching Special Account mapping key (CA_LIQUIDATION resolves to whichever account liquidatesType points at, not its own account — see Scenario 40 Part 2). */
@@ -14481,20 +15247,24 @@ export interface components {
       /** @description SAME_DATE | LATER_DATE — whether the payment clears the bank on expenseDate itself or on a later date (e.g. an uncashed check). Informational only; doesn't affect GL posting. */
       clearedType?: string
       /**
-       * @description Required when clearedType=LATER_DATE — the date the payment clears.
+       * @description The date the payment clears. Optional even when clearedType=LATER_DATE — a later-clearing payment can be recorded before the clearing date is known.
        * @example 2026-07-20
        */
       clearedDate?: string
       /** @description CUSTOMER | SUPPLIER | EMPLOYEE | OTHER. OTHER without otherCategory behaves like SUPPLIER (each line picks its own category, payee is a free-text label). */
       payeeType?: string
-      /** @description UTILITIES | SALARIES_WAGES | SPECIAL_ACCOUNTS — optional, payeeType=OTHER only. Omit for the plain free-text Other path. UTILITIES/SALARIES_WAGES behave like SUPPLIER (each line picks its own categoryAccountId, prefilled from the matching mapping key); SPECIAL_ACCOUNTS is the Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow driven by specialAccountType below. */
+      /** @description UTILITIES | SALARIES_WAGES | SPECIAL_ACCOUNTS | PAYROLL — optional, payeeType=OTHER only. Omit for the plain free-text Other path. UTILITIES/SALARIES_WAGES behave like SUPPLIER (each line picks its own categoryAccountId, prefilled from the matching mapping key); SPECIAL_ACCOUNTS is the Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow driven by specialAccountType below. */
       otherCategory?: string
       /** @description Fixed for the whole entry — payeeType=SUPPLIER, or payeeType=OTHER with otherCategory=UTILITIES */
       supplierId?: string
-      /** @description SUPPLIER-only — the disbursement voucher number, distinct from each payment's reference (OR/receipt/check number). */
+      /** @description Optional, any payeeType — the one disbursement voucher number for the entry, distinct from each payment's own reference (OR/receipt/check number). */
       voucherNumber?: string
       /** @description Fixed for the whole entry — payeeType=CUSTOMER */
       customerId?: string
+      /** @description payeeType=CUSTOMER only — optional Sales Invoice reference for this entry, when it matches an existing ARInvoice on file. */
+      arInvoiceId?: string
+      /** @description payeeType=CUSTOMER only — the Sales Invoice number, free text, for when there's no matching ARInvoice on file to link via arInvoiceId. */
+      salesInvoiceNumber?: string
       /** @description Fixed for the whole entry — payeeType=EMPLOYEE */
       employeeId?: string
       /** @description EMPLOYEE_CASH_ADVANCE | EMPLOYEE_CASH_LOAN | CASH_LOAN_OTHERS | CA_LIQUIDATION — required when otherCategory=SPECIAL_ACCOUNTS. Fixed for every line in the entry; determines each line's categoryAccountId server-side via the matching Special Account mapping key (CA_LIQUIDATION resolves to whichever account liquidatesType points at, not its own account — see Scenario 40 Part 2). */
@@ -14511,36 +15281,6 @@ export interface components {
       costCenter?: string
       /** @description Branch this expense belongs to. Ignored for branch-scoped users - their own branch is forced server-side. */
       branchId?: string
-    }
-    CreateEmployeeApplianceLoanDto: {
-      /** @description Auto-generated when omitted */
-      loanNumber?: string
-      employeeId: string
-      /** @example Samsung 55" Smart TV */
-      itemDescription: string
-      /**
-       * @description Listed Cash Price
-       * @example 25000
-       */
-      listedCashPrice: number
-      /** @example 5000 */
-      downPayment: number
-      /** @example 12 */
-      termMonths: number
-      /**
-       * @description Monthly installment factor
-       * @example 0.0954
-       */
-      miFactor: number
-      /** @example 2026-08-31 */
-      startDate?: string
-    }
-    RecordEmployeeApplianceLoanPaymentDto: {
-      /** @example 1500 */
-      amount: number
-      /** @example 2026-08-31 */
-      paymentDate: string
-      note?: string
     }
     CreateBankAccountDto: {
       name: string
@@ -15145,6 +15885,26 @@ export interface components {
       type: 'retail' | 'warehouse' | 'office' | 'mixed'
       /** @example 123 Main St, Manila */
       address?: string
+    }
+    CreateDepartmentDto: {
+      /** @description The branch this department sits under. Omit for a company-wide department — the client's own Division list is region-free. */
+      branchId?: string
+      /** @example Sales */
+      name: string
+      /** @example SLS */
+      code?: string
+      /** @default true */
+      isActive: boolean
+    }
+    UpdateDepartmentDto: {
+      /** @description The branch this department sits under. Omit for a company-wide department — the client's own Division list is region-free. */
+      branchId?: string
+      /** @example Sales */
+      name?: string
+      /** @example SLS */
+      code?: string
+      /** @default true */
+      isActive: boolean
     }
     UpdateBusinessProfileDto: Record<string, never>
     CreateEnterpriseDto: Record<string, never>
@@ -16200,6 +16960,127 @@ export interface operations {
       }
     }
   }
+  EmployeeCashLoansController_searchEmployees: {
+    parameters: {
+      query?: {
+        /** @description Search by name or employee code */
+        search?: string
+        /** @description Max records to return (defaults to a safe cap) */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeCashLoansController_listBankAccounts: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeCashLoansController_preview: {
+    parameters: {
+      query: {
+        principal: string
+        termMonths: string
+        interestRate: string
+        firstDeductionDate: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeCashLoansController_findAll: {
+    parameters: {
+      query?: {
+        search?: string
+        status?: 'ACTIVE' | 'PAID_OFF' | 'CANCELLED'
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeCashLoansController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateEmployeeCashLoanDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeCashLoansController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   TerminalsController_findAll: {
     parameters: {
       query?: {
@@ -16605,6 +17486,27 @@ export interface operations {
       }
     }
   }
+  SessionsController_getTenderSummary: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Session UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cash taken, plus per-tender non-cash totals */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   SessionsController_getReconciliation: {
     parameters: {
       query?: never
@@ -16784,7 +17686,10 @@ export interface operations {
   }
   TransactionsController_getCustomerHistoryWithPayments: {
     parameters: {
-      query?: never
+      query: {
+        page: string
+        limit: string
+      }
       header?: never
       path: {
         /** @description Customer ID */
@@ -16794,7 +17699,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Merged sale + payment history (last 20) */
+      /** @description Paginated merged sale + payment history: { items, meta } */
       200: {
         headers: {
           [name: string]: unknown
@@ -19757,6 +20662,96 @@ export interface operations {
       }
     }
   }
+  DailyCollectionController_dailyCollection: {
+    parameters: {
+      query: {
+        /** @description Business date to report on (YYYY-MM-DD). */
+        date: string
+        /** @description Branch to report on. A branch-assigned caller's own branch always wins, whatever is submitted. */
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Ledger rows, subtotals and denominations */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DailyCollectionController_dailyCollectionRollup: {
+    parameters: {
+      query: {
+        /** @description Business date to report on (YYYY-MM-DD). */
+        date: string
+        /** @description Branch to report on. A branch-assigned caller's own branch always wins, whatever is submitted. */
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Per-branch summaries and network totals */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DailyCollectionController_saveSheet: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SaveDailyCollectionSheetDto']
+      }
+    }
+    responses: {
+      /** @description The saved sheet */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DailyCollectionController_exportDailyCollection: {
+    parameters: {
+      query: {
+        /** @description Business date to report on (YYYY-MM-DD). */
+        date: string
+        /** @description Branch to report on. A branch-assigned caller's own branch always wins, whatever is submitted. */
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemImagesController_bulkImport: {
     parameters: {
       query?: never
@@ -20669,6 +21664,10 @@ export interface operations {
       query?: {
         /** @description Scope ledger to a specific warehouse */
         warehouseId?: string
+        /** @description Filter to one or more branches (consolidates each branch's warehouses) */
+        branchIds?: string[]
+        /** @description Filter to one or more warehouses, by warehouse id */
+        warehouseIds?: string[]
         /** @description Filter by transaction type */
         transactionType?:
           | 'receipt'
@@ -20679,6 +21678,7 @@ export interface operations {
           | 'return'
           | 'write_off'
           | 'supplier_return'
+          | 'exchange_out'
         /** @description Start of date range (inclusive) */
         startDate?: string
         /** @description End of date range (inclusive) */
@@ -21164,6 +22164,18 @@ export interface operations {
       query?: {
         /** @description Filter to a specific warehouse */
         warehouseId?: string
+        /** @description Filter to a specific item */
+        itemId?: string
+        /** @description Filter to one or more branches (consolidates each branch's warehouses) */
+        branchIds?: string[]
+        /** @description Filter to one or more warehouses, by warehouse id */
+        warehouseIds?: string[]
+        /** @description Filter to a region/operation (panay, negros) */
+        region?: 'panay' | 'negros'
+        /** @description When "item", rolls rows up to one per item, summing quantities across locations */
+        groupBy?: 'item'
+        /** @description Filter by stock state. Four of these mirror the badge the Stock Balance list derives per row (out / fully_reserved / low / in_stock) and are applied AFTER the item roll-up so the filter and the visible badge always agree; in_transit is the separate open-transfer axis. */
+        stockStatus?: 'in_stock' | 'in_transit' | 'out' | 'fully_reserved' | 'low'
         /** @description Filter by item category ID */
         categoryId?: string
         /** @description Search by item name or SKU */
@@ -21214,8 +22226,11 @@ export interface operations {
   }
   StockController_getCustomerPurchases: {
     parameters: {
-      query: {
-        customerId: string
+      query?: {
+        /** @description The named account whose purchases to list. */
+        customerId?: string
+        /** @description A document number off the original sale — the cashier-entered SI, the POS transaction number, or the AR invoice number. For a walk-in with no account, this is the only way back to what they bought. */
+        invoiceNumber?: string
       }
       header?: never
       path?: never
@@ -21223,7 +22238,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Completed sale lines for this customer — item, serial, price, and the invoice behind each — excluding voided sales and sales already returned through POS. */
+      /** @description Completed sale lines — item, serial, whether the item is serial-tracked, price, the sale ledger row its cost layer came from, and the invoice behind each — excluding voided sales and sales already returned through POS. Pass customerId for a named account, or invoiceNumber (SI, POS transaction or AR invoice) for a walk-in who has no account to look up. */
       200: {
         headers: {
           [name: string]: unknown
@@ -21257,6 +22272,8 @@ export interface operations {
   StockController_getLedger: {
     parameters: {
       query?: {
+        /** @description Search serial number, receiving report code, or invoice number */
+        search?: string
         /** @description Filter to a specific item */
         itemId?: string
         /** @description Filter to a specific warehouse */
@@ -21273,6 +22290,7 @@ export interface operations {
           | 'return'
           | 'write_off'
           | 'supplier_return'
+          | 'exchange_out'
         /** @description Start of date range (inclusive) */
         startDate?: string
         /** @description End of date range (inclusive) */
@@ -21297,6 +22315,116 @@ export interface operations {
       }
     }
   }
+  StockController_getCustomerReturns: {
+    parameters: {
+      query?: {
+        /** @description Search serial number, receiving report code, or invoice number */
+        search?: string
+        /** @description Filter to a specific item */
+        itemId?: string
+        /** @description Filter to a specific warehouse */
+        warehouseId?: string
+        /** @description Filter to a specific branch (consolidates all its warehouses) */
+        branchId?: string
+        /** @description Filter by transaction type */
+        transactionType?:
+          | 'receipt'
+          | 'sale'
+          | 'transfer_out'
+          | 'transfer_in'
+          | 'adjustment'
+          | 'return'
+          | 'write_off'
+          | 'supplier_return'
+          | 'exchange_out'
+        /** @description Start of date range (inclusive) */
+        startDate?: string
+        /** @description End of date range (inclusive) */
+        endDate?: string
+        /** @description Page number */
+        page?: number
+        /** @description Items per page */
+        limit?: number
+        /** @description Restrict to one shape of record: a legacy restock, a repair intake, or a return document. */
+        outcome?: 'restocked' | 'in_repair' | 'document'
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Paginated, newest first. Each row carries an `outcome` of restocked or in_repair, and a `uds` link on the latter. A repair intake has no ledger row by design — the unit is the customer's property — so it cannot be found through /ledger at all. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  StockController_createCustomerReturn: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCustomerReturnDto']
+      }
+    }
+    responses: {
+      /** @description The posted document with its lines. A null creditMemo is NOT a failure — a cash return, or one against a settled invoice, posts correctly and explains itself in accountingNote. */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  StockController_getCustomerReturn: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The header flattened onto the same field names the list emits, plus the per-line disposition, serial and repair sheet. Only reaches returns raised as a document — a legacy single-item return has no header to fetch and is read off the list row itself. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  StockController_getCustomerReturnDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Customer return document envelope */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   StockController_getReceivingReports: {
     parameters: {
       query?: {
@@ -21304,6 +22432,10 @@ export interface operations {
         warehouseId?: string
         /** @description Filter to a specific branch (across all its warehouses) */
         branchId?: string
+        /** @description Filter to a specific supplier */
+        supplierId?: string
+        /** @description Free-text search across RR number, PO number, and supplier name */
+        search?: string
         /** @description Filter by receipt status */
         status?: 'draft' | 'received' | 'quality_hold' | 'rejected'
         /** @description Start of date range */
@@ -21324,6 +22456,24 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Paginated list of GRNs with per-line discrepancy detail and a top-level hasAnyDiscrepancy flag */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  StockController_getReceivingReportsSummary: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Receiving report summary KPIs */
       200: {
         headers: {
           [name: string]: unknown
@@ -21523,6 +22673,31 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Stock transfer detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransfersController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock transfer UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateTransferDto']
+      }
+    }
+    responses: {
+      /** @description Transfer request updated and resubmitted */
       200: {
         headers: {
           [name: string]: unknown
@@ -22284,9 +23459,14 @@ export interface operations {
       query?: {
         itemId?: string
         categoryId?: string
+        brandId?: string
         warehouseId?: string
         /** @description Resolves to the branch's warehouse and scopes results to it. Ignored if warehouseId is also given. */
         branchId?: string
+        /** @description Scope to one or more branches (all of their warehouses) */
+        branchIds?: string[]
+        /** @description Scope to one or more warehouses — the standalone warehouses belong to no branch, so branchIds alone cannot reach them */
+        warehouseIds?: string[]
         status?:
           | 'in_stock'
           | 'held'
@@ -22361,6 +23541,52 @@ export interface operations {
     }
     responses: {
       /** @description { created, skipped, dryRun, errors: [...] } */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SerialNumbersController_consignedSummary: {
+    parameters: {
+      query?: {
+        itemId?: string
+        categoryId?: string
+        brandId?: string
+        warehouseId?: string
+        /** @description Resolves to the branch's warehouse and scopes results to it. Ignored if warehouseId is also given. */
+        branchId?: string
+        /** @description Scope to one or more branches (all of their warehouses) */
+        branchIds?: string[]
+        /** @description Scope to one or more warehouses — the standalone warehouses belong to no branch, so branchIds alone cannot reach them */
+        warehouseIds?: string[]
+        status?:
+          | 'in_stock'
+          | 'held'
+          | 'sold'
+          | 'returned'
+          | 'defective'
+          | 'scrapped'
+          | 'in_repair'
+          | 'pulled_out'
+          | 'lost_in_transit'
+        /** @description Read-only visibility scope. "company" returns matching serials across every branch (each with its warehouse) instead of forcing the caller's own branch — used only to show cross-branch availability in the POS serial picker, never to populate the sellable list. "override" (Scenario 29 SN-01) bypasses branch scoping entirely, including the caller's own branch — requires itemId and inventory:transfers:serial-override; used by the transfer-dispatch serial picker so a supervisor can find a unit whose system-recorded location is stale. Requires itemId for both. Defaults to "branch" (the existing, sellable, caller-branch-forced behavior). */
+        scope?: 'branch' | 'company' | 'override'
+        /** @description Case-insensitive substring match against the serial number. */
+        search?: string
+        /** @description Scenario 08 (Caravan) Part 2 — "Caravan" view. Filters to serials currently consigned to this branch (physically here for an event, still owned elsewhere). A branch-restricted caller is always forced to their own branch, regardless of what is submitted. */
+        consignedToBranchId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
       200: {
         headers: {
           [name: string]: unknown
@@ -23859,6 +25085,8 @@ export interface operations {
       query?: {
         status?: 'draft' | 'submitted' | 'converted' | 'cancelled'
         branchId?: string
+        /** @description Search by PR number, reason, notes, supplier name, or item name/SKU */
+        search?: string
         page?: number
         limit?: number
       }
@@ -23989,6 +25217,7 @@ export interface operations {
           | 'closed'
           | 'cancelled'
         supplierId?: string
+        /** @description Filter to POs whose destination warehouse belongs to this branch (the 'All locations' filter) — not the branch that requested the PO. */
         branchId?: string
         /** @description Filter to POs with at least one line for this item */
         itemId?: string
@@ -24000,6 +25229,8 @@ export interface operations {
         dateTo?: string
         page?: number
         limit?: number
+        /** @description Sort by creation date: newest first (desc) or oldest first (asc) */
+        sortDir?: 'asc' | 'desc'
       }
       header?: never
       path?: never
@@ -25056,11 +26287,14 @@ export interface operations {
     parameters: {
       query?: {
         search?: string
+        /** @description One status, or several comma-separated (e.g. DRAFT,RECEIVED,PARTIAL,OVERDUE for open items). Ignored when `search` is given, so a known bill number always finds its bill whatever its status. */
         status?: string
         /** @description Filter to bills against this supplier */
         supplierId?: string
         /** @description Filter to bills covering this item. AP Bills have no line items of their own, so this matches through whichever PO the bill was raised against, or the goods receipts it's matched to — a manually-entered bill with neither link can never match. */
         itemId?: string
+        /** @description Include what each bill is billing for: its expense account, and the goods-receipt lines behind it (item, quantity, cost, tax) for bills scaffolded from receiving, which carry no APBillLine rows of their own. Off by default — the plain list view renders none of it. */
+        withDetail?: string
       }
       header?: never
       path?: never
@@ -25107,6 +26341,131 @@ export interface operations {
       }
       header?: never
       path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_listDisbursements: {
+    parameters: {
+      query?: {
+        search?: string
+        supplierId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_createDisbursement: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAPDisbursementDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_settleDisbursement: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SettleAPDisbursementDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_cancelDisbursement: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_updateDisbursement: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAPDisbursementDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_getDisbursementDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
       cookie?: never
     }
     requestBody?: never
@@ -25199,6 +26558,63 @@ export interface operations {
       }
     }
   }
+  APBillsController_receiptChanges: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_applyReceiptChanges: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_supersedeFromReceipt: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   APBillsController_matchCheck: {
     parameters: {
       query?: never
@@ -25249,27 +26665,6 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_createDisbursement: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateAPDisbursementDto']
-      }
-    }
     responses: {
       201: {
         headers: {
@@ -26563,6 +27958,10 @@ export interface operations {
         sourceChannel?: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
         /** @description Filter to customers sharing this Group ID */
         groupId?: string
+        /** @description Filter to one branch */
+        branchId?: string
+        /** @description Cash or charge customers */
+        accountType?: 'cash' | 'charge'
         page?: number
         limit?: number
       }
@@ -26816,7 +28215,12 @@ export interface operations {
   }
   CustomerController_getCustomerLedger: {
     parameters: {
-      query?: never
+      query?: {
+        /** @description Defaults to 'all'. Anything unrecognised is treated as 'all'. */
+        scope?: 'all' | 'installments'
+        /** @description Narrows to one contract: 'acct:<installmentAccountId>' or 'tpf:<posTransactionId>', as returned in the response's `plans`. Only honoured with scope=installments. */
+        planId?: string
+      }
       header?: never
       path: {
         id: string
@@ -26927,6 +28331,29 @@ export interface operations {
         }
       }
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeesController_search: {
+    parameters: {
+      query?: {
+        /** @description Search by name or employee code */
+        search?: string
+        /** @description Max records to return (defaults to a safe cap) */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of matching employees */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -27242,6 +28669,68 @@ export interface operations {
       }
     }
   }
+  SupplierController_suggestItemMappings: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Supplier UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ItemSupplierSuggestionDto'][]
+        }
+      }
+      /** @description Supplier not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SupplierController_bulkAddItemMappings: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Supplier UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BulkCreateItemSupplierDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BulkItemSupplierResultDto']
+        }
+      }
+      /** @description Supplier not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   SupplierController_removeItemMapping: {
     parameters: {
       query?: never
@@ -27308,7 +28797,12 @@ export interface operations {
   }
   AccountsController_findAll: {
     parameters: {
-      query?: never
+      query?: {
+        /** @description Matches number, name or type */
+        search?: string
+        type?: string
+        limit?: string
+      }
       header?: never
       path?: never
       cookie?: never
@@ -28757,6 +30251,26 @@ export interface operations {
       }
     }
   }
+  SupplierDebitMemosController_resolveInventoryAccounts: {
+    parameters: {
+      query: {
+        /** @description Comma-separated item ids */
+        itemIds: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   SupplierDebitMemosController_findOne: {
     parameters: {
       query?: never
@@ -28851,6 +30365,10 @@ export interface operations {
         supplierId?: string
         startDate?: string
         endDate?: string
+        /** @description Entries with at least one line whose Division is this branch */
+        divisionBranchId?: string
+        /** @description Entries with at least one line whose Division is this department */
+        divisionDepartmentId?: string
       }
       header?: never
       path?: never
@@ -28876,6 +30394,69 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['CreateExpenseDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ExpensesController_specialAccountLedger: {
+    parameters: {
+      query: {
+        /** @description The control account carrying the balance */
+        accountId: string
+        /** @description The name the balance is carried against. Matched case-insensitively against the expense lines, so the spelling need not be exact. */
+        name: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ExpensesController_specialAccounts: {
+    parameters: {
+      query: {
+        search: string
+        accountId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ExpensesController_createSpecialAccount: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateSpecialAccountDto']
       }
     }
     responses: {
@@ -29020,113 +30601,6 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  EmployeesController_search: {
-    parameters: {
-      query?: {
-        /** @description Search by name or employee code */
-        search?: string
-        /** @description Max records to return (defaults to a safe cap) */
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List of matching employees */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  EmployeeApplianceLoansController_findAll: {
-    parameters: {
-      query?: {
-        search?: string
-        status?: 'ACTIVE' | 'PAID_OFF' | 'CANCELLED'
-        employeeId?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  EmployeeApplianceLoansController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateEmployeeApplianceLoanDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  EmployeeApplianceLoansController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  EmployeeApplianceLoansController_recordPayment: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RecordEmployeeApplianceLoanPaymentDto']
-      }
-    }
     responses: {
       201: {
         headers: {
@@ -29425,6 +30899,28 @@ export interface operations {
         'application/json': components['schemas']['UpdateReconciliationDto']
       }
     }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BankAccountsController_getRecTransactions: {
+    parameters: {
+      query: {
+        startDate: string
+        endDate: string
+      }
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
     responses: {
       200: {
         headers: {
@@ -31663,6 +33159,89 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DepartmentsController_findAll: {
+    parameters: {
+      query: {
+        branchId: string
+        includeInactive: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DepartmentsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateDepartmentDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DepartmentsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  DepartmentsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateDepartmentDto']
+      }
+    }
     responses: {
       200: {
         headers: {

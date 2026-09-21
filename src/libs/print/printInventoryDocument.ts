@@ -1,6 +1,10 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
-import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import {
+  receivingReportSourceName,
+  receivingReportSourceRef,
+} from '@/src/libs/format/receiving-report'
+import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -81,7 +85,6 @@ export function buildReceivingReportHtml(
   const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
-  const supplier = rr.supplier as { name?: string; address?: string } | undefined
   const warehouse = rr.warehouse as { name?: string; branch?: { name?: string } | null } | undefined
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
@@ -93,10 +96,27 @@ export function buildReceivingReportHtml(
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
-  // Either the linked PO's real code or the free-text number typed on a
-  // standalone receipt — same rule, and so the same answer, as the
-  // Receiving Reports list column and the on-screen sheet.
-  const poNumber = receivingReportPoNumber(rr as Parameters<typeof receivingReportPoNumber>[0])
+  // `Ref` is the supplier-document number (their DR, or the SI when no DR was
+  // given). The source document is a separate reference and gets its own
+  // slot, paired with its own date in `Dated` — both were reachable from the
+  // record all along but never printed, and `Dated` sat hardcoded as an
+  // em-dash with nothing to fill it.
+  //
+  // Which source that is depends on where the stock came from: "P.O. No."
+  // dated by `poDate` on a supplier receipt, "Transfer No." dated by the
+  // dispatch date on one that arrived from another branch. The on-screen
+  // sheet makes the same swap through this same formatter.
+  const sourceRef = receivingReportSourceRef(rr as Parameters<typeof receivingReportSourceRef>[0])
+  // The supplier on a bought-in delivery, the sending branch on one that came
+  // from another branch — a transfer receipt has no supplier to name.
+  const sourceName = receivingReportSourceName(
+    rr as Parameters<typeof receivingReportSourceName>[0]
+  )
+  // The same formatter the on-screen sheet uses, so the printout and the
+  // preview never disagree on how the crew is written.
+  const driverHelper = receivingReportDriverHelper(
+    rr as Parameters<typeof receivingReportDriverHelper>[0]
+  )
 
   let totalQty = 0
   let totalAmount = 0
@@ -168,18 +188,20 @@ export function buildReceivingReportHtml(
 
     <div class="info">
       <div class="party">
-        <p class="party-name">${esc(supplier?.name) || '—'}</p>
-        <p class="party-address">${esc(supplier?.address) || '—'}</p>
+        <p class="party-name">${esc(sourceName) || '—'}</p>
+        ${driverHelper ? `<p class="party-address">Driver/Helper: ${esc(driverHelper)}</p>` : ''}
       </div>
       <div class="meta">
         <p class="meta-label">No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
         <p class="meta-label">Date</p>
         <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
-        <p class="meta-label">PO No.</p>
-        <p class="meta-value">${esc(poNumber) || '—'}</p>
-        <p class="meta-label">Reference</p>
+        <p class="meta-label">Ref</p>
         <p class="meta-value">${esc(ref) || '—'}</p>
+        <p class="meta-label">${esc(sourceRef.label)}</p>
+        <p class="meta-value">${esc(sourceRef.code) || '—'}</p>
+        <p class="meta-label">Dated</p>
+        <p class="meta-value">${sourceRef.dated ? fmtDate(sourceRef.dated) : '—'}</p>
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
@@ -241,25 +263,194 @@ export function printReceivingReportDocument(
   win.document.close()
 }
 
+/** One line of a customer return, as the document endpoint emits it. */
+type CustomerReturnDocLine = {
+  item?: { sku?: string | null; name?: string | null } | null
+  quantity?: number | string
+  unitPrice?: number | string | null
+  disposition?: string | null
+  reason?: string | null
+  serialNumber?: string | null
+  replacementSerialNumber?: string | null
+}
+
+/** How each disposition reads on the customer's copy. Spelled out rather than
+ *  printed as the stored enum: "quarantine" is a warehouse word, and the
+ *  person holding this paper wants to know what happens to their unit. */
+const RETURN_OUTCOME_LABEL: Record<string, string> = {
+  restock: 'Returned to stock',
+  quarantine: 'Held for inspection',
+  repair: 'Taken in for repair',
+  exchange: 'Exchanged',
+  scrap: 'Written off',
+}
+
 /**
- * Saves the same markup printReceivingReportDocument() opens as a file the
- * browser downloads directly — for a reader who wants the receipt on disk
- * (attaching it to an email, archiving it) rather than a print dialog. It's
- * the identical HTML, so it opens showing the same paper and can still be
- * printed to PDF from there.
+ * The customer's copy of a return — the paper they walk out holding.
+ *
+ * Same typographic system as buildReceivingReportHtml() and the stock
+ * transfer (title left / logo right, three-column info row, light
+ * #ccc-bordered table, signature blocks), because this IS a receiving report:
+ * the RRC series it is numbered from is the customer-side counterpart of the
+ * supplier-side RR05, and the two are handed across the same counter. It
+ * previously printed to a shape of its own and read as though it came from a
+ * different company.
+ *
+ * What differs from the supplier RR is only what the document is about: the
+ * party is the customer rather than a supplier, each line carries why it came
+ * back and what was decided about it, and the money column states value
+ * returned rather than cost received. An exchange line names the unit that
+ * went out, since that is the half of the swap the customer cannot see on
+ * their own receipt.
  */
-export function downloadReceivingReportDocument(
-  data: unknown,
-  filename: string,
-  opts: { showAmounts?: boolean } = {}
-): void {
-  const blob = new Blob([buildReceivingReportHtml(data, opts)], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename.endsWith('.html') ? filename : `${filename}.html`
-  link.click()
-  URL.revokeObjectURL(url)
+export function buildCustomerReturnReceiptHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const ret = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+  const customer = ret.customer as { name?: string; customerCode?: string } | null | undefined
+  const warehouse = ret.warehouse as
+    | { name?: string; branch?: { name?: string } | null }
+    | undefined
+  const lines = Array.isArray(ret.lines) ? (ret.lines as CustomerReturnDocLine[]) : []
+
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtMoney = (n: number) =>
+    n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  let totalQty = 0
+  let totalValue = 0
+
+  const rows = lines
+    .map((l) => {
+      const qty = Number(l.quantity ?? 0)
+      const unitPrice = Number(l.unitPrice ?? 0)
+      totalQty += qty
+      totalValue += qty * unitPrice
+      const outcome = l.disposition ? (RETURN_OUTCOME_LABEL[l.disposition] ?? l.disposition) : '—'
+      return `<tr>
+        <td class="mono">${esc(l.item?.sku) || '—'}${
+          l.serialNumber ? `<div class="sub">${esc(l.serialNumber)}</div>` : ''
+        }</td>
+        <td>${esc(l.item?.name) || '—'}</td>
+        <td>${esc(l.reason) || '—'}</td>
+        <td>${esc(outcome)}${
+          l.replacementSerialNumber
+            ? `<div class="sub">Replaced with ${esc(l.replacementSerialNumber)}</div>`
+            : ''
+        }</td>
+        <td class="right">${qty}</td>
+        <td class="right">${fmtMoney(qty * unitPrice)}</td>
+      </tr>`
+    })
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; vertical-align: top; }
+    thead th { background: #f5f5f5; text-align: center; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    .sub { color: #555; font-size: 11px; margin-top: 3px; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; }
+    .total-wrap td { font-weight: 700; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 120px; }
+    .note { margin-top: 16px; font-size: 12px; color: #333; }
+    .note .meta-label { margin-bottom: 4px; }
+    .signatures { margin-top: 40px; display: flex; gap: 56px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .sig-name { margin: 4px 0 0; font-size: 12px; color: #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Receiving Report</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(customer?.name) || 'Walk-in customer'}</p>
+        <p class="party-address">${esc(customer?.customerCode) || 'No account'}</p>
+        <p class="party-address">Goods received from customer</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">No.</p>
+        <p class="meta-value">${esc(doc.documentNumber)}</p>
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(ret.occurredAt ?? doc.generatedAt)}</p>
+        <p class="meta-label">Return No.</p>
+        <p class="meta-value">${esc(ret.returnNumber) || '—'}</p>
+        <p class="meta-label">Against Invoice</p>
+        <p class="meta-value">${esc(ret.salesInvoiceNumber) || '—'}</p>
+        <p class="meta-label">Credit Memo</p>
+        <p class="meta-value">${esc(ret.creditMemoNumber) || '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName) || '—'}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+        <p class="party-address">Branch: ${esc(warehouse?.branch?.name ?? warehouse?.name) || '—'}</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:16%">Part No. / Serial No.</th>
+          <th>Description</th>
+          <th style="width:18%">Reason</th>
+          <th style="width:18%">Outcome</th>
+          <th class="right" style="width:8%">Qty</th>
+          <th class="right" style="width:14%">Value</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+
+    <div class="total-wrap">
+      <table>
+        <tr>
+          <td class="label">Total</td>
+          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'} — ${fmtMoney(totalValue)}</td>
+        </tr>
+      </table>
+    </div>
+
+    ${
+      ret.notes
+        ? `<div class="note"><p class="meta-label">Notes</p><p>${esc(ret.notes)}</p></div>`
+        : ''
+    }
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Received by:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Customer:</p>
+        <div class="sig-line"></div>
+        ${customer?.name ? `<p class="sig-name">${esc(customer.name)}</p>` : ''}
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
 }
 
 /** A transfer's From/To party. Every branch owns exactly one shadow
@@ -449,15 +640,18 @@ export function printStockTransferDocument(data: unknown): void {
  * doesn't reuse printInventoryDocument()'s generic "Enterprise" meta-grid
  * shell, since a PO needs its own two-party (supplier + enterprise) header,
  * a delivery note, and signature blocks that don't fit that shared shape.
+ *
+ * Split out into its own function purely so printPurchaseOrderDocument()
+ * doesn't have to inline this much markup — it's the only caller.
  */
-export function printPurchaseOrderDocument(
+function buildPurchaseOrderHtml(
   data: unknown,
   // Purchase order lines don't carry their received serial numbers
   // themselves (those live on the goods receipt) — pass in a
   // purchaseOrderLineId -> serials map (see get-purchase-order-receipts.ts)
   // once the PO is closed, so a fully-received PO's printout can show them.
   serialsByLineId?: Record<string, string[]>
-): void {
+): string {
   const doc = data as PrintDocumentEnvelope
   const po = doc.document as Record<string, unknown>
   const supplier = po.supplier as { name?: string; address?: string; taxId?: string } | undefined
@@ -527,7 +721,6 @@ export function printPurchaseOrderDocument(
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(name)}${discountNote}</td>
-        <td>${esc(l.description) || '—'}</td>
         <td class="right">${qty}</td>
         <td class="right">${fmt(unitPrice)}</td>
         <td class="right">${fmt(lineTotal)}</td>
@@ -562,10 +755,7 @@ export function printPurchaseOrderDocument(
     })
     .join('')
 
-  const win = window.open('', '_blank', 'width=950,height=750')
-  if (!win) return
-
-  win.document.write(`<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
@@ -643,7 +833,6 @@ export function printPurchaseOrderDocument(
         <tr>
           <th class="num">#</th>
           <th>Item</th>
-          <th>Description</th>
           <th class="right">Qty</th>
           <th class="right">Unit price</th>
           <th class="right">Total</th>
@@ -690,7 +879,16 @@ export function printPurchaseOrderDocument(
     }
 
     <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
-  </body></html>`)
+  </body></html>`
+}
+
+export function printPurchaseOrderDocument(
+  data: unknown,
+  serialsByLineId?: Record<string, string[]>
+): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildPurchaseOrderHtml(data, serialsByLineId))
   win.document.close()
 }
 
@@ -773,12 +971,17 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
       </tr>`
     )
     .join('')
+  // A "Bill" row's debit is shown for legibility but never added into
+  // outstanding (see InstallmentLedgerRow.displayOnly) — the amount is
+  // already recognized via the upfront lump Sale debit, so this footer must
+  // skip it too, or it double-counts against the on-screen ledger's own Total.
+  const billableRows = rows.filter((r) => !r.displayOnly)
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
         <td colspan="4"><strong>Total</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
         <td></td>
       </tr>`
@@ -949,12 +1152,17 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       </tr>`
     )
     .join('')
+  // A "Bill" row's debit is shown for legibility but never added into
+  // outstanding (see InstallmentLedgerRow.displayOnly) — the amount is
+  // already recognized via the upfront lump Sale debit, so this footer must
+  // skip it too, or it double-counts against the on-screen ledger's own Total.
+  const billableRows = rows.filter((r) => !r.displayOnly)
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
         <td colspan="4"><strong>Total</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
         <td></td>
       </tr>`
@@ -1556,9 +1764,31 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     description?: string | null
     amount?: number
   }[]
+  const account = p.account as { number?: string; name?: string } | null
+  const accountName =
+    [account?.number, account?.name].filter(Boolean).join(' — ') ||
+    effectiveExpenseAccount?.name ||
+    '—'
+
+  // Tax excluded: the total is the money that actually left the bank, and
+  // withholding never does — it is credited against the invoice and remitted
+  // to the BIR. It is disclosed under the table instead of inflating the
+  // figure the payee acknowledges receiving.
+  const withholdingAmount = Number(p.withholdingAmount ?? 0)
   const amount = invoices.length
     ? Number(p.totalAmount ?? invoices.reduce((sum, i) => sum + Number(i.amount ?? 0), 0))
     : Number(p.amount ?? 0)
+
+  // One row per invoice the cheque settled; a legacy per-bill payment has no
+  // invoice list, so it keeps its single account line.
+  const accountRows = invoices.length
+    ? invoices
+        .map(
+          (i) =>
+            `<tr><td>${esc(accountName)}${i.billNumber ? ` — ${esc(i.billNumber)}` : ''}</td><td class="right">${fmt(Number(i.amount ?? 0))}</td></tr>`
+        )
+        .join('')
+    : `<tr><td>${esc(accountName)}</td><td class="right">${fmt(amount)}</td></tr>`
 
   const reference = p.chequeNumber
     ? `CK#${esc(p.chequeNumber)}`
@@ -1592,50 +1822,17 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   const rawInvoices = Array.isArray(p.invoices)
     ? (p.invoices as Record<string, unknown>[])
     : [{ billNumber: p.billNumber, description: p.description, amount }]
-  // The SI now prints in the header block beside the voucher number, the way
-  // the Purchase Invoice does it. It comes back as a table column only when
-  // one cheque settled several invoices — there the header can say which
-  // numbers were paid, but not how much each one got.
-  const siNumbers = Array.from(new Set(rawInvoices.map((inv) => inv.billNumber).filter(Boolean)))
-  const showInvoiceSi = rawInvoices.length > 1
-  // The voucher's OWN description — what the payment form labels Description
-  // and stores as notes. The per-invoice column carries each bill's text,
-  // which is not the same thing and is usually empty; it earns its place only
-  // when one cheque settled several bills and they differ.
-  const voucherDescription = p.notes ? String(p.notes) : null
-  const showInvoiceDescription = rawInvoices.length > 1
   const invoiceRows = rawInvoices
     .map(
       (inv) => `<tr>
           <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
-          ${showInvoiceSi ? `<td>${inv.billNumber ? esc(inv.billNumber) : '—'}</td>` : ''}
-          ${showInvoiceDescription ? `<td>${inv.description ? esc(inv.description) : '—'}</td>` : ''}
+          <td>${inv.billNumber ? esc(inv.billNumber) : '—'}</td>
           <td class="right">${fmt(Number(inv.amount ?? 0))}</td>
         </tr>`
     )
     .join('')
 
-  // The rows carry the cash each invoice got; withholding is settled but never
-  // disbursed. Printing them as one figure made a voucher whose rows summed to
-  // 35,678.57 announce a 36,000.00 total with nothing to explain the gap — so
-  // they now reconcile top to bottom, the way the invoice's own block does.
-  const withholding = Number(p.withholdingAmount ?? 0)
-  const netPaid = amount - withholding
-
-  // A four-column table for what is, in practice, one funding source spent
-  // most of its width on dashes — a Reference repeating the header's own, and
-  // a Description nobody fills. Printed as labelled rows instead, and a row
-  // with no value simply isn't printed.
-  //
-  // The reference is never one of those rows: the voucher states it once, in
-  // the header block, and repeating it beside the method invited the reader to
-  // check two printings of the same cheque number against each other.
-  //
-  // Still a loop, because the backend can split a cheque across methods — and
-  // a source's share of the total is the one thing the header cannot already
-  // say, so that row appears only then.
-  const isSplitFunding = rawSources.length > 1
-  const sourceBlocks = rawSources
+  const sourceRows = rawSources
     .map((src) => {
       const bank = src.bankAccount as { name?: string; accountNumber?: string } | null
       const bankLabel = bank?.name
@@ -1643,16 +1840,12 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
           ? `${bank.name} — ${bank.accountNumber}`
           : bank.name
         : null
-      const rows: [string, string][] = [['Method', prettyMethod(src.method)]]
-      if (bankLabel) rows.push(['Bank Account', bankLabel])
-      if (src.description) rows.push(['Description', String(src.description)])
-      if (isSplitFunding) rows.push(['Amount', fmt(Number(src.amount ?? 0))])
-      return `<div class="fund">${rows
-        .map(
-          ([label, value]) =>
-            `<div class="fund-row"><span class="fund-label">${esc(label)}</span><span class="fund-value">${esc(value)}</span></div>`
-        )
-        .join('')}</div>`
+      return `<tr>
+          <td>${esc(prettyMethod(src.method))}</td>
+          <td>${bankLabel ? esc(bankLabel) : '—'}</td>
+          <td>${src.reference ? esc(src.reference) : '—'}</td>
+          <td>${src.description ? esc(src.description) : '—'}</td>
+        </tr>`
     })
     .join('')
 
@@ -1666,26 +1859,15 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
-    .info .meta { text-align: right; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
-    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
-    .total-wrap table { width: auto; border: none; }
-    .total-wrap td { padding: 5px 10px; border: none; border-bottom: 1px solid #eee; }
-    .total-wrap td.label { text-align: right; }
-    .total-wrap td.value { text-align: right; min-width: 140px; }
-    .total-wrap tr.strong td { font-weight: 700; border-top: 1px solid #999; border-bottom: none; }
-    .section-label { font-weight: 700; margin: 20px 0 6px; font-size: 13px; }
-    .fund + .fund { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
-    .doc-note { display: flex; gap: 16px; margin: 20px 0 12px; }
-    .doc-note-label { width: 130px; flex-shrink: 0; font-weight: 700; }
-    .fund-row { display: flex; gap: 16px; padding: 2px 0; }
-    .fund-label { width: 130px; flex-shrink: 0; font-weight: 700; }
-    .fund-value { color: #222; }
+    tr.total-row td { font-weight: 700; }
+    .wht-note { margin: 8px 0 0; font-size: 11px; color: #666; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -1704,7 +1886,6 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     <div class="info">
       <div class="party">
         <p class="party-name">${esc(p.payee) || '—'}</p>
-        ${p.payeeAddress ? `<p class="party-address">${esc(p.payeeAddress)}</p>` : ''}
       </div>
       <div class="meta">
         <p class="meta-label">Date</p>
@@ -1713,9 +1894,6 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         <p class="meta-value">${reference}</p>
         <p class="meta-label">VOUCHER #</p>
         <p class="meta-value">${p.voucherNumber ? esc(p.voucherNumber) : '—'}</p>
-        <p class="meta-label">Supplier Invoice</p>
-        <p class="meta-value">${siNumbers.length ? siNumbers.map(esc).join(', ') : 'Pending Supplier Invoice'}</p>
-        ${p.payeeTin ? `<p class="meta-label">PAYEE'S TIN:</p><p class="meta-value">${esc(p.payeeTin)}</p>` : ''}
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
@@ -1723,38 +1901,34 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       </div>
     </div>
 
-    <!-- Where the money came from leads, and what it was spent on follows:
-         a reader checks the funding first and the account breakdown answers
-         against it. The two used to sit side by side below the table, which
-         put the answer before the question. -->
-    ${
-      sourceBlocks
-        ? `<p class="section-label">Source of Funds</p>
-    ${sourceBlocks}`
-        : ''
-    }
+    ${p.description ? `<p class="description">${esc(p.description)}</p>` : ''}
 
-    ${
-      voucherDescription
-        ? `<p class="doc-note"><span class="doc-note-label">Description</span><span>${esc(voucherDescription)}</span></p>`
-        : ''
-    }
-
-    <p class="section-label">Account Details</p>
     <table>
       <thead>
-        <tr><th>Account</th>${showInvoiceSi ? '<th>Supplier Invoice</th>' : ''}${showInvoiceDescription ? '<th>Description</th>' : ''}<th class="right">Total</th></tr>
+        <tr><th>Account</th><th>SI</th><th class="right">Total</th></tr>
       </thead>
-      <tbody>${invoiceRows}</tbody>
+      <tbody>
+        ${accountRows}
+        <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
+      </tbody>
     </table>
+    ${
+      withholdingAmount > 0
+        ? `<p class="wht-note">Net of withholding tax of ${fmt(withholdingAmount)}, credited against the invoice${invoices.length > 1 ? 's' : ''} above and remitted to the BIR.</p>`
+        : ''
+    }
 
-    <div class="total-wrap">
-      <table>
-        <tr><td class="label">Amount paid</td><td class="value">${fmt(netPaid)}</td></tr>
-        ${withholding > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">${fmt(withholding)}</td></tr>` : ''}
-        <tr class="strong"><td class="label">Total</td><td class="value">${fmt(amount)}</td></tr>
-      </table>
-    </div>
+    ${
+      sourceRows
+        ? `<p class="section-label">Source of Funds</p>
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Bank Account</th><th>Reference</th><th>Description</th></tr>
+      </thead>
+      <tbody>${sourceRows}</tbody>
+    </table>`
+        : ''
+    }
 
     <div class="signatures">
       <div class="sig-block">
@@ -2014,6 +2188,7 @@ export function buildCollectionReceiptHtml(data: unknown): string {
       ? row('Withholding (2307)', fmt(Number(r.withholdingAmount)))
       : '',
     Number(r.rebateAmount ?? 0) > 0 ? row('Rebate applied', fmt(Number(r.rebateAmount))) : '',
+    Number(r.penaltyAmount ?? 0) > 0 ? row('Late Payment', fmt(Number(r.penaltyAmount))) : '',
   ].join('')
 
   const appliedTo = grouped
@@ -2092,3 +2267,11 @@ export function printCollectionReceiptDocument(data: unknown): void {
   win.document.write(buildCollectionReceiptHtml(data))
   win.document.close()
 }
+
+// Scenario 57 — Acknowledgement Receipt has no HTML print builder here.
+// AcknowledgementReceiptDetail.tsx renders the letterhead sheet directly
+// (twice — Acknowledgement Receipt and, per developer decision 2026-09-21,
+// a second "Collection Receipt"-titled copy of the same data below it) and
+// downloads each with downloadElementAsPdf() (src/libs/print/htmlToPdf.ts)
+// for a real .pdf file, rather than the window.open()+window.print() "Save
+// as PDF" pattern every other document builder in this file uses.

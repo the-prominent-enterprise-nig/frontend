@@ -1,6 +1,7 @@
 'use client'
 
-import { Download, AlertTriangle, PackageX, X } from 'lucide-react'
+import ExportButton from '@/src/components/common/ExportButton'
+import { AlertTriangle, PackageX, X } from 'lucide-react'
 import {
   SERIAL_AGING_BUCKET_LABELS,
   SerialAgingBucketSchema,
@@ -17,6 +18,9 @@ interface Props {
   setBucketFilter: (v: SerialAgingBucket | undefined) => void
   page: number
   setPage: (page: number) => void
+  /** The filters this report was loaded with, minus paging — the Excel
+   * export returns every matching row, with pivot tables. */
+  exportParams: Record<string, string | number | undefined>
 }
 
 const BUCKET_COLORS: Record<SerialAgingBucket, string> = {
@@ -27,43 +31,6 @@ const BUCKET_COLORS: Record<SerialAgingBucket, string> = {
   '180_plus': 'bg-red-200 text-red-800',
 }
 
-function exportToCsv(data: AgingReportResponse) {
-  const headers = [
-    'Serial Number',
-    'Item Name',
-    'SKU',
-    'Location',
-    'Received',
-    'Days Since Receipt',
-    'Unit Cost',
-    'Bucket',
-    'Slow Moving',
-    'Should Be Out',
-  ]
-  const rows = data.data.map((row) => [
-    row.serialNumber,
-    row.name,
-    row.sku,
-    row.warehouseName ?? '',
-    new Date(row.receivedAt).toLocaleDateString('en-PH'),
-    row.daysSinceReceipt,
-    row.unitCost.toFixed(2),
-    SERIAL_AGING_BUCKET_LABELS[row.bucket],
-    row.slowMoving ? 'Yes' : 'No',
-    row.shouldBeOut ? 'Yes' : 'No',
-  ])
-
-  const csv = [headers, ...rows].map((row) => row.map((v) => `"${v}"`).join(',')).join('\n')
-
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `inventory-aging-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 export default function AgingReport({
   data,
   isLoading,
@@ -72,6 +39,7 @@ export default function AgingReport({
   setBucketFilter,
   page,
   setPage,
+  exportParams,
 }: Props) {
   const summary = data?.summary
   const meta = data?.meta
@@ -165,16 +133,12 @@ export default function AgingReport({
         <p className="text-sm text-zinc-500">
           Each row is one physical in-stock serial, aged from its goods-receipt date.
         </p>
-        {(data?.data?.length ?? 0) > 0 && (
-          <button
-            type="button"
-            onClick={() => data && exportToCsv(data)}
-            className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
-        )}
+        <ExportButton
+          endpoint="/inventory/reports/aging/export"
+          params={exportParams}
+          fallbackFilename="inventory-aging.xlsx"
+          disabled={!data?.data?.length}
+        />
       </div>
 
       {/* Table */}

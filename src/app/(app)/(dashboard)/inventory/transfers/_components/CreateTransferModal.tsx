@@ -24,6 +24,8 @@ import {
 import {
   CreateTransferFormSchema,
   CreateTransferFormValues,
+  type CreateTransferLineValues,
+  type TransferSummary,
 } from '@/src/schema/inventory/transfers'
 import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import type { ApiResponse } from '@/src/libs/api/client'
@@ -73,6 +75,55 @@ type Props = {
     data: ConsignToBranchFormValues
   ) => Promise<ApiResponse<unknown>>
   isConsigning?: boolean
+  // Set to turn this screen into an edit of an existing, undispatched
+  // request instead of a new one. The whole form is reused rather than given
+  // a second copy: an edit submits the same complete request shape a create
+  // does (the backend replaces the request wholesale and re-routes it), so
+  // the two differ only in where the initial values come from and where the
+  // submit goes. Consignment is hidden entirely while editing — a caravan
+  // was never a transfer, so an existing transfer can't become one.
+  editing?: TransferSummary | null
+}
+
+/**
+ * Undoes what handleFormSubmit's split did on the way out. A serial-tracked
+ * line asking for N units is sent as N single-unit lines (the backend allows
+ * exactly 1 unit per serial-tracked line so each can take its own serial at
+ * dispatch), so a saved request reads back as those N rows. Showing them as N
+ * separate rows would misrepresent what the requester typed — and editing one
+ * of them would be meaningless — so they fold back into one row of quantity N.
+ *
+ * Grouped by item rather than by adjacency: the backend preserves no line
+ * order the client can rely on, and two rows for the same item in one request
+ * are indistinguishable from a split anyway.
+ *
+ * Lines pinned to a specific serial need no special case here — the backend
+ * refuses to edit a transfer that has any (see TransfersService.update), so
+ * such a transfer never reaches this form.
+ */
+function collapseLinesForEdit(
+  lines: NonNullable<TransferSummary['lines']>
+): CreateTransferLineValues[] {
+  const byItem = new Map<string, CreateTransferLineValues>()
+
+  for (const line of lines) {
+    const itemId = line.itemId ?? line.item?.id ?? ''
+    if (!itemId) continue
+    const existing = byItem.get(itemId)
+    if (existing) {
+      existing.quantity += Number(line.quantity) || 0
+      continue
+    }
+    byItem.set(itemId, {
+      itemId,
+      quantity: Number(line.quantity) || 0,
+      isSerialTracked: line.item?.isSerialTracked ?? false,
+      itemLabel: line.item?.name,
+      itemSku: line.item?.sku,
+    })
+  }
+
+  return [...byItem.values()]
 }
 
 // Each branch has exactly one warehouse, so this picker is really choosing a
@@ -171,6 +222,7 @@ function TransferLineRow({
         warehouseId: fromWarehouseId,
         itemId: selectedItemId,
         status: 'in_stock',
+        freeForTransfer: true,
         // A transfer only needs the number; a consignment has to list them,
         // since the user is picking the individual units.
         limit: consignMode ? 200 : 1,
@@ -476,8 +528,10 @@ export default function CreateTransferModal({
   initialDraft = null,
   onConsign,
   isConsigning = false,
+  editing = null,
 }: Props) {
   const today = new Date().toISOString().split('T')[0]
+  const isEditing = !!editing
 
   const ownBranchWarehouses = currentUserBranchId
     ? warehouses.filter((wh) => wh.branchId === currentUserBranchId)
@@ -547,22 +601,40 @@ export default function CreateTransferModal({
     if (isOpen) {
       // Re-applied on every open (not just mount) since `warehouses` loads
       // asynchronously and may not have resolved the lock yet at mount time.
-      reset({
-        fromWarehouseId: initialDraft?.fromWarehouseId ?? '',
-        toWarehouseId: lockedToWarehouseId ?? '',
-        transferDate: today,
-        expectedArrival: '',
-        reason: '',
-        lines: initialDraft
-          ? [
-              {
-                itemId: initialDraft.itemId,
-                quantity: initialDraft.quantity,
-                itemLabel: initialDraft.itemLabel,
-              },
-            ]
-          : [],
-      })
+      reset(
+        editing
+          ? {
+              fromWarehouseId: editing.fromWarehouse?.id ?? '',
+              // The saved destination wins over lockedToWarehouseId: the
+              // lock exists to stop a Branch Manager requesting stock TO
+              // somewhere that isn't theirs, and an existing request has
+              // already cleared that. Overriding it here would silently
+              // redirect the request being edited.
+              toWarehouseId: editing.toWarehouse?.id ?? lockedToWarehouseId ?? '',
+              // Date inputs need YYYY-MM-DD; the API sends full ISO stamps.
+              transferDate: (editing.transferDate ?? '').slice(0, 10) || today,
+              expectedArrival: (editing.expectedArrival ?? '').slice(0, 10),
+              reason: editing.reason ?? '',
+              skipDestinationApproval: false,
+              lines: collapseLinesForEdit(editing.lines ?? []),
+            }
+          : {
+              fromWarehouseId: initialDraft?.fromWarehouseId ?? '',
+              toWarehouseId: lockedToWarehouseId ?? '',
+              transferDate: today,
+              expectedArrival: '',
+              reason: '',
+              lines: initialDraft
+                ? [
+                    {
+                      itemId: initialDraft.itemId,
+                      quantity: initialDraft.quantity,
+                      itemLabel: initialDraft.itemLabel,
+                    },
+                  ]
+                : [],
+            }
+      )
       setAddItemKey((k) => k + 1)
       setIsConsignment(false)
       setDestKind('venue')
@@ -587,7 +659,7 @@ export default function CreateTransferModal({
     // the open/close transition, not on every render while the modal stays
     // open (which would wipe in-progress edits if `warehouses` re-fetches).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, reset, today, initialDraft])
+  }, [isOpen, reset, today, initialDraft, editing])
 
   // `warehouses` (and therefore lockedToWarehouseId) resolves asynchronously
   // and can still be empty at the moment the effect above runs on open, so
@@ -595,11 +667,16 @@ export default function CreateTransferModal({
   // open/close cycle. This narrowly re-syncs just that one field — safe to
   // depend on lockedToWarehouseId directly since a locked field is never
   // something the user is actively editing.
+  //
+  // Skipped while editing: an existing request already has a destination,
+  // and it cleared this very check when it was raised. Letting the lock
+  // re-apply here would quietly redirect the request being corrected to the
+  // editor's own branch the moment `warehouses` resolved.
   useEffect(() => {
-    if (isOpen && lockedToWarehouseId) {
+    if (isOpen && !isEditing && lockedToWarehouseId) {
       setValue('toWarehouseId', lockedToWarehouseId, { shouldValidate: true })
     }
-  }, [isOpen, lockedToWarehouseId, setValue])
+  }, [isOpen, isEditing, lockedToWarehouseId, setValue])
 
   // In consignment mode a line's "how many" is however many units are
   // ticked on it, not the quantity box (which isn't shown).
@@ -738,15 +815,22 @@ export default function CreateTransferModal({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-[#a3a3b2]`}>
-              Inventory &rsaquo; Stock transfers &rsaquo; New
+              Inventory &rsaquo; Stock transfers &rsaquo;{' '}
+              {isEditing ? (editing?.transferNumber ?? 'Edit') : 'New'}
             </p>
             <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-[#17171c]">
-              {isConsignment ? 'Send Stock Out on Caravan' : 'New Stock Transfer'}
+              {isEditing
+                ? `Edit Request ${editing?.transferNumber ?? ''}`.trim()
+                : isConsignment
+                  ? 'Send Stock Out on Caravan'
+                  : 'New Stock Transfer'}
             </h2>
             <p className="mt-1 text-[13px] text-[#5b5b6b]">
-              {isConsignment
-                ? 'Takes effect immediately — no approval, no dispatch. The units stay on your books and stay sellable here.'
-                : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
+              {isEditing
+                ? 'Saving resubmits this request for approval from the start — any sign-off it already has is cleared.'
+                : isConsignment
+                  ? 'Takes effect immediately — no approval, no dispatch. The units stay on your books and stay sellable here.'
+                  : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
             </p>
           </div>
           <button
@@ -776,19 +860,25 @@ export default function CreateTransferModal({
                   </span>
                   {/* Two different operations sharing one screen, so the
                       switch sits at the top of the card rather than inside
-                      the route: everything below it changes meaning. */}
-                  <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-[#3d3d4a]">
-                    <input
-                      type="checkbox"
-                      checked={isConsignment}
-                      onChange={(e) => setIsConsignment(e.target.checked)}
-                      className="h-3.5 w-3.5 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
-                    />
-                    <span className="font-medium">This is a consignment</span>
-                    <span className="text-[#8b8b9b]">
-                      — a caravan: stock goes out, stays on your books
-                    </span>
-                  </label>
+                      the route: everything below it changes meaning.
+                      Absent while editing — a consignment is not a transfer
+                      (ownership never moves, there is no dispatch and no
+                      receipt), so an existing transfer cannot be turned into
+                      one, and the endpoint behind it takes no transfer id. */}
+                  {!isEditing && (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-[#3d3d4a]">
+                      <input
+                        type="checkbox"
+                        checked={isConsignment}
+                        onChange={(e) => setIsConsignment(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
+                      />
+                      <span className="font-medium">This is a consignment</span>
+                      <span className="text-[#8b8b9b]">
+                        — a caravan: stock goes out, stays on your books
+                      </span>
+                    </label>
+                  )}
                 </div>
                 <div className="flex flex-col gap-4 px-[18px] py-4">
                   <div>
@@ -1107,6 +1197,18 @@ export default function CreateTransferModal({
                             Skips the receiving branch manager&apos;s sign-off. The stock request
                             flow is unaffected; this only applies to this transfer.
                           </span>
+                          {/* A transfer doesn't record whether it was raised
+                              directly, so an edit can't restore the choice —
+                              it starts unticked, which routes through the
+                              approval rather than around it. Said plainly
+                              here because the safe default is also the
+                              surprising one for whoever raised it directly. */}
+                          {isEditing && (
+                            <span className="mt-1 block text-[11.5px] text-[#8a4b06]">
+                              If this request was raised directly, re-tick this — saving otherwise
+                              sends it through the destination manager&apos;s approval.
+                            </span>
+                          )}
                         </span>
                       </label>
                     </div>
@@ -1286,7 +1388,13 @@ export default function CreateTransferModal({
                 className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
               >
                 {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isSubmitting ? 'Submitting…' : 'Submit Request'}
+                {isSubmitting
+                  ? isEditing
+                    ? 'Saving…'
+                    : 'Submitting…'
+                  : isEditing
+                    ? 'Save & Resubmit'
+                    : 'Submit Request'}
               </button>
             )}
           </div>

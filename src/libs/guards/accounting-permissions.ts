@@ -56,6 +56,12 @@ export const ACCOUNTING_PERMISSIONS = {
 
   FINANCIAL_REPORT_READ: 'accounting:financial_report:read',
 
+  // Scenario 53 — same manual RR capability as
+  // INVENTORY_PERMISSIONS.MANUAL_RR_CREATE, via Accounting's own namespace.
+  // Backend's RequirePermissions is OR, so a caller needs only one of the
+  // two; check both here too (canAny) rather than only this one.
+  MANUAL_RR_CREATE: 'accounting:manual-rr:create',
+
   AP_BILLS_READ: 'accounting:ap-bills:read',
   AP_BILLS_CREATE: 'accounting:ap-bills:create',
   AP_BILLS_UPDATE: 'accounting:ap-bills:update',
@@ -84,6 +90,13 @@ export const ACCOUNTING_PERMISSIONS = {
   BANK_ACCOUNTS_RECONCILE: 'accounting:bank-accounts:reconcile',
   BANK_ACCOUNTS_ADJUST: 'accounting:bank-accounts:adjust',
   BANK_ACCOUNTS_TRANSFER: 'accounting:bank-accounts:transfer',
+
+  // Scenario 53 — banking the branches' cash is an Accounting job. The deposit
+  // endpoint always lived in the accounting module but was gated on
+  // pos:cash-in-transit:manage, which would have forced POS permissions onto
+  // the Accountant. These keep the Accountant accounting-only.
+  CASH_IN_TRANSIT_READ: 'accounting:cash-in-transit:read',
+  CASH_IN_TRANSIT_MANAGE: 'accounting:cash-in-transit:manage',
 
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
@@ -189,6 +202,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:bir_export:generate': 'Generate BIR forms',
   'accounting:financial_report:read':
     'View financial reports (Balance Sheet, Income Statement, Trial Balance, Cash Flow)',
+  'accounting:manual-rr:create':
+    'Submit or approve a manual receiving report with no PO/transfer/count context, from Accounting',
   'accounting:ap-bills:read': 'View AP bills, match-check results, and payment documents',
   'accounting:ap-bills:create': 'Create an AP bill (vendor invoice)',
   'accounting:ap-bills:update': 'Edit a DRAFT AP bill',
@@ -213,6 +228,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:bank-accounts:update': 'Edit a bank account',
   'accounting:bank-accounts:delete': 'Deactivate a bank account',
   'accounting:bank-accounts:reconcile': 'Create and complete a bank reconciliation',
+  'accounting:cash-in-transit:read': 'View outstanding Cash-in-Transit from Accounting',
+  'accounting:cash-in-transit:manage': 'Deposit Cash-in-Transit into a bank account',
   'accounting:bank-accounts:adjust':
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
   'accounting:bank-accounts:transfer':

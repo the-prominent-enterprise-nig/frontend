@@ -28,7 +28,7 @@ export default async function EmployeeCashLoanDetailPage({
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <LoanDetail id={id} />
+      <LoanDetail id={id} session={session} />
     </div>
   )
 }

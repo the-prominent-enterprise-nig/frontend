@@ -13,6 +13,16 @@ export const POS_PERMISSIONS = {
   // rather than riding on TRANSACTIONS_READ: these expose unit cost and
   // margin, so they're Branch-Manager tier and withheld from Cashier.
   REPORTS_READ: 'pos:reports:read',
+  // Scenario 53 — its own permission, not pos:reports:read. The sales reports
+  // expose unit cost and margin (Branch-Manager tier, withheld from Cashier);
+  // this one exposes neither, and the cashier closing the shift is the person
+  // who prints and signs it.
+  DAILY_COLLECTION_READ: 'pos:daily-collection:read',
+  // Same tier as the read, for the same reason: the cashier who closes the
+  // shift fills in the form's handwritten half. A corrected denomination count
+  // is gated here too — it never rewrites the session's own closing count,
+  // only what this form prints beside it.
+  DAILY_COLLECTION_UPDATE: 'pos:daily-collection:update',
   TRANSACTIONS_OVERRIDE: 'pos:transaction:override',
   TRANSACTIONS_PRICE_OVERRIDE: 'pos:transactions:price_override',
   PROMO_CODES_READ: 'pos:promo-codes:read',
@@ -31,6 +41,7 @@ export const POS_PERMISSIONS = {
   CONFIG_MANAGE: 'pos:config:manage',
   CUSTOMERS_READ: 'pos:customers:read',
   CUSTOMERS_CREATE: 'pos:customers:create',
+  CUSTOMERS_UPDATE: 'pos:customers:update',
   BRANCH_PRICING_READ: 'pos:branch-pricing:read',
   BRANCH_PRICING_MANAGE: 'pos:branch-pricing:manage',
   FINANCING_TERMS_READ: 'pos:financing-terms:read',
@@ -38,6 +49,13 @@ export const POS_PERMISSIONS = {
   TPF_PROVIDERS_READ: 'pos:tpf-providers:read',
   TPF_PROVIDERS_MANAGE: 'pos:tpf-providers:manage',
   CASH_IN_TRANSIT_READ: 'pos:cash-in-transit:read',
+  /**
+   * Scenario 53 — retired. The deposit is now gated on
+   * ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_MANAGE, because banking the
+   * branches' cash is an Accounting job and that is what enforces "POS cannot
+   * deposit, only accountant". Kept as a constant only so nothing silently
+   * resurrects the string; it is checked nowhere and reaches no endpoint.
+   */
   CASH_IN_TRANSIT_MANAGE: 'pos:cash-in-transit:manage',
   // No matching Permission row currently seeded in the live DB — flagged as
   // a backend seed-data gap, not a frontend bug. Kept as-is (matches the
@@ -70,6 +88,9 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:sessions:close': 'Close a POS session',
   'pos:transactions:read': 'View POS transactions',
   'pos:reports:read': 'View and export POS sales reports (Branch Manager tier)',
+  'pos:daily-collection:read': "View and export a branch's Daily Collection Report",
+  'pos:daily-collection:update':
+    "Fill in a Daily Collection Report's signatories, remarks and corrected denomination count",
   'pos:transactions:create': 'Process POS sales',
   'pos:transactions:void': 'Void a transaction',
   'pos:transactions:refund': 'Process refunds',
@@ -95,6 +116,7 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:config:manage': 'Manage POS configuration',
   'pos:customers:read': 'Search POS customers by phone',
   'pos:customers:create': 'Create a walk-in customer from the POS terminal',
+  'pos:customers:update': "Correct a customer's details or co-makers from POS",
   'pos:branch-pricing:read': 'View branch price overrides',
   'pos:branch-pricing:manage': 'Create and edit branch price overrides',
   'pos:financing-terms:read': 'View installment financing terms',
@@ -102,7 +124,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:tpf-providers:read': 'View TPF (third-party financing) providers',
   'pos:tpf-providers:manage': 'Create and edit TPF (third-party financing) providers',
   'pos:cash-in-transit:read': 'View outstanding Cash-in-Transit sessions',
-  'pos:cash-in-transit:manage': 'Clear Cash-in-Transit sessions into a bank deposit',
+  'pos:cash-in-transit:manage':
+    'Retired (Scenario 53) — the deposit is now accounting:cash-in-transit:manage',
   'pos:collections:manage':
     "Collect payments against a customer's existing installment dues at POS",
   'pos:service-drafts:create': 'Open a new service job / materials estimate',

@@ -268,6 +268,11 @@ input[type='number'] {
   border-radius: 0.5rem;
   background: #fff;
   padding: 0.5rem 0.75rem;
+  /* Grid/flex items default to min-width:auto, so this refused to shrink
+     below the inner input's intrinsic width and blew its column wider than
+     the container — clipping the surrounding form. Seen once this input was
+     used inside the narrower credit-application co-maker grid. */
+  min-width: 0;
 }
 
 .ph-phone-input.PhoneInput--focus {
@@ -284,4 +289,61 @@ input[type='number'] {
   font-size: 0.875rem;
   width: 100%;
   background: transparent;
+}
+
+/* ── Printed report forms ────────────────────────────────────────────────────
+   A page marks its one printable region with `.print-sheet`; everything else
+   in the app chrome (sidebar, top bar, toolbars) drops out, rather than each
+   layout having to opt out of printing.
+
+   The app shell is a fixed-height, overflow-hidden flex frame with its own
+   scroll container (see `(app)/layout.tsx`), which on its own prints a blank
+   page: the sheet sits inside a clipped, scrolled box that the printed page
+   never reaches. So every ancestor of the sheet is unclipped back to a plain
+   block, and everything that is neither an ancestor nor part of the sheet is
+   removed outright — display:none rather than visibility:hidden, or the
+   hidden chrome still reserves its full height and trails a blank page. */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  html:has(.print-sheet),
+  body:has(.print-sheet) {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #fff;
+  }
+
+  body:has(.print-sheet) :has(.print-sheet) {
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body:has(.print-sheet) *:not(:has(.print-sheet), .print-sheet, .print-sheet *) {
+    display: none !important;
+  }
+
+  .print-sheet {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* Borders and shaded header cells survive the browser's default
+     "don't waste ink" behaviour — this form is unreadable without its grid. */
+  .print-sheet * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

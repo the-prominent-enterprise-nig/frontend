@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
+import { udsErrorMessage } from '../_lib/uds-errors'
 import { UpdateUdsStatusFormSchema } from '@/src/schema/inventory/uds'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -41,7 +42,7 @@ export async function updateUdsStatus(
     return {
       success: false,
       error: errStr || 'Failed to update UDS',
-      message: msg || errStr || 'Failed to update UDS',
+      message: udsErrorMessage(msg || errStr, 'Failed to update UDS'),
     }
   }
 

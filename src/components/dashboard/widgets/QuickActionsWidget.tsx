@@ -37,7 +37,7 @@ export const QUICK_ACTIONS = [
     id: 'stock-receive',
     label: 'Receive Stock',
     icon: Package,
-    href: '/inventory/operations?tab=receiving',
+    href: '/inventory/stock?tab=reports&new=1',
     color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
   },
   {

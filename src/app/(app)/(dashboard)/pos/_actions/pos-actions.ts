@@ -18,6 +18,7 @@ import type {
   OpenSessionInput,
   CloseSessionInput,
   SessionReconciliation,
+  SessionTenderSummary,
   SalesSummary,
   PosTransaction,
   CustomerHistoryItem,
@@ -255,6 +256,20 @@ export async function closeSession(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to close session' }
+  }
+}
+
+export async function getSessionTenderSummary(
+  id: string
+): Promise<ApiResponse<SessionTenderSummary>> {
+  try {
+    const result = await api.get<SessionTenderSummary>(`/pos/sessions/${id}/tender-summary`)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to load tender summary' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to load tender summary' }
   }
 }
 
@@ -1487,7 +1502,10 @@ export async function searchCustomers(q: string): Promise<ApiResponse<PosCustome
 
 export async function getCustomerById(id: string): Promise<ApiResponse<PosCustomer>> {
   try {
-    const result = await api.get<PosCustomer>(`/crm/customers/${id}`)
+    // POS's own route, not /crm/customers/:id — a cashier holds no crm:*
+    // permission, so the CRM path 403s for them. Same record either way:
+    // both resolve through CustomerService against the one Customer table.
+    const result = await api.get<PosCustomer>(`/pos/customers/${id}`)
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Not found' }
     }
@@ -1760,8 +1778,12 @@ export async function getSellingAgents(): Promise<
 > {
   try {
     type AgentRow = { id: string; name: string; phone?: string | null; email?: string | null }
-    const result = await api.get<{ data: AgentRow[] }>('/crm/agents', {
-      status: 'active',
+    // POS's own door onto the same AgentService (pos-agents.controller.ts).
+    // The CRM route needs crm:agents:read, which only Business Owner holds —
+    // pointing checkout at it rendered an empty picker for every cashier,
+    // which is why the agent field was dropped in 1b82138 rather than fixed.
+    // Status is forced to active server-side, so it is not sent here.
+    const result = await api.get<{ data: AgentRow[] }>('/pos/agents', {
       limit: 100,
     })
     if (!result.success || !result.data) {
@@ -1889,7 +1911,6 @@ export interface ResolvedPosPrice {
   priceListItemId: string
   priceListName: string
   price: number
-  floorPrice: number | null
   minQty: number | null
   /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
    * rate card, when one exists for this item's price list. */

@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Printer } from 'lucide-react'
+import { ArrowLeft, Pencil, Printer } from 'lucide-react'
 import { getEmployeeCashLoan } from '../../_actions/get-loan'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import type { SessionUser } from '@/src/libs/guards/permission'
 import type { EmployeeCashLoan } from '@/src/schema/pos/employee-cash-loans'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -83,7 +86,8 @@ ${loan.note ? `<hr><p>Note: ${loan.note}</p>` : ''}
   }
 }
 
-export default function LoanDetail({ id }: { id: string }) {
+export default function LoanDetail({ id, session }: { id: string; session: SessionUser }) {
+  const canEdit = hasPermission(session, POS_PERMISSIONS.EMPLOYEE_CASH_LOAN_CREATE)
   const [loan, setLoan] = useState<EmployeeCashLoan | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -156,6 +160,14 @@ export default function LoanDetail({ id }: { id: string }) {
             >
               <Printer className="h-4 w-4" /> Print Voucher
             </button>
+            {canEdit && (
+              <Link
+                href={`/pos/employee-cash-loans/${id}/edit`}
+                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-3 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
+              >
+                <Pencil className="h-4 w-4" /> Edit
+              </Link>
+            )}
           </div>
         </div>
 
