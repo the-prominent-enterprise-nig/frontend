@@ -173,11 +173,14 @@ export const customersApi = {
   // scope 'installments' narrows the ledger to financed purchases (in-house
   // plans + TPF); planId narrows further to one contract. Both omitted from
   // the query when unset so 'all' stays the plain URL.
-  getLedger: (id: string, scope: CustomerLedgerScope = 'all', planId?: string) =>
-    api.get<CustomerLedger>(
-      `/crm/customers/${id}/ledger`,
-      scope === 'all' ? undefined : { scope, ...(planId ? { planId } : {}) }
-    ),
+  /** `transactionId` narrows the ledger to one purchase — an id from the
+   * response's own `transactions`, or `txn:<posTransactionId>` for a caller
+   * (the POS receipt modal) that holds a sale but not the shape it became. */
+  getLedger: (id: string, scope: CustomerLedgerScope = 'all', transactionId?: string) =>
+    api.get<CustomerLedger>(`/crm/customers/${id}/ledger`, {
+      ...(scope === 'all' ? {} : { scope }),
+      ...(transactionId ? { transactionId } : {}),
+    }),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),

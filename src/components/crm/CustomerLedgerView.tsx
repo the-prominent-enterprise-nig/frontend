@@ -10,18 +10,23 @@ import {
   buildCustomerLedgerHtml,
   buildUnifiedCustomerLedgerHtml,
 } from '@/src/libs/print/printInventoryDocument'
-import type { Customer, CustomerLedger, CustomerLedgerScope } from '@/src/schema/crm/types'
+import type {
+  Customer,
+  CustomerLedger,
+  CustomerLedgerScope,
+  CustomerLedgerTransaction,
+} from '@/src/schema/crm/types'
 
-// Per-customer ledger of FINANCED purchases — every in-house installment
-// plan and TPF-financed sale, merged into one chronological Date/Ref/Inst./
-// Description/Debit/Credit/Due/Outstanding table (same row shape as
-// InstallmentLedgerView.tsx's per-account ledger). Unlike that view this can
-// span several separate contracts, so the on-screen layout is just customer
-// info + totals across every plan, not the paper-form field grid — there's
-// no single sale/item/agent/financing-scheme to head it with when more than
-// one contract is in view. Printing (see handlePrint below) still reproduces
-// the client's original paper ledger card when the ledger narrows to one
-// in-house plan, which is the common case.
+// Per-customer ledger of every purchase — in-house installment plans, TPF
+// -financed sales, charge sales and cash sales, merged into one chronological
+// Date/Ref/Inst./Description/Debit/Credit/Due/Outstanding table (same row
+// shape as InstallmentLedgerView.tsx's per-account ledger). Unlike that view
+// this can span several separate purchases, so the on-screen layout is just
+// customer info + totals across them all, not the paper-form field grid —
+// there's no single sale/item/agent/financing-scheme to head it with when
+// more than one purchase is in view. Printing (see handlePrint below) still
+// reproduces the client's original paper ledger card when the ledger
+// narrows to one in-house plan, which is the common case.
 export default function CustomerLedgerView({
   customerId,
   backHref,
@@ -33,29 +38,29 @@ export default function CustomerLedgerView({
   backLabel: string
   canEdit?: boolean
 }) {
-  // This ledger is the customer's financed purchases, and only those. It used
-  // to offer an "All spending" scope that also folded in charge invoices and
-  // cash sales, but a cash sale is settled at the counter and owes nothing —
-  // it contributed a Debit and an equal Credit, adding rows that always
-  // netted to zero and never moved Outstanding. What this page is opened to
-  // answer is "what does this customer still owe on their plans", so the
-  // scope is now fixed at 'installments' (in-house plans plus TPF-financed
-  // ones). The server still accepts ?scope=all for any other caller.
+  // Every purchase, not only the financed ones. This was briefly narrowed to
+  // installments on the reasoning that a cash sale is settled at the counter
+  // and so contributes a Debit and an equal Credit that never move
+  // Outstanding — but that left a cash customer with no ledger at all, which
+  // the client asked for by name: every transaction gets a ledger. The
+  // transaction picker below is what makes the merged table readable, by
+  // narrowing it to one purchase at a time.
   const router = useRouter()
   const searchParams = useSearchParams()
-  const scope: CustomerLedgerScope = 'installments'
-  // Which single contract to narrow to, kept in the URL so a narrowed ledger
-  // stays linkable/bookmarkable and survives a refresh.
-  const planId = searchParams.get('planId') ?? ''
+  const scope: CustomerLedgerScope = 'all'
+  // Which single purchase to narrow to, kept in the URL so a narrowed ledger
+  // stays linkable/bookmarkable and survives a refresh. `txn:<id>` is also
+  // accepted here — that's the form the POS receipt modal links with.
+  const transactionId = searchParams.get('transactionId') ?? ''
 
   const [ledger, setLedger] = useState<CustomerLedger | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  function setPlan(next: string) {
+  function setTransaction(next: string) {
     const params = new URLSearchParams(searchParams.toString())
-    if (next) params.set('planId', next)
-    else params.delete('planId')
+    if (next) params.set('transactionId', next)
+    else params.delete('transactionId')
     const qs = params.toString()
     router.replace(qs ? `?${qs}` : '?', { scroll: false })
   }
@@ -68,11 +73,11 @@ export default function CustomerLedgerView({
 
   useEffect(() => {
     let cancelled = false
-    // No synchronous setLoading(true) here: when the plan picker changes the
+    // No synchronous setLoading(true) here: when the picker changes the
     // existing rows stay on screen until the new ones land, instead of
     // flashing "Loading…" — the picker's own selected value is the feedback.
     // Both branches reset error so a recovered fetch clears a stale one.
-    customersApi.getLedger(customerId, scope, planId || undefined).then((res) => {
+    customersApi.getLedger(customerId, scope, transactionId || undefined).then((res) => {
       if (cancelled) return
       if (res.success && res.data) {
         setLedger(res.data)
@@ -85,10 +90,10 @@ export default function CustomerLedgerView({
     return () => {
       cancelled = true
     }
-  }, [customerId, scope, planId])
+  }, [customerId, scope, transactionId])
 
-  // Customer/tax info doesn't vary with the plan filter — kept in its own
-  // effect so narrowing the ledger doesn't refetch it (and blow away an
+  // Customer/tax info doesn't vary with the transaction filter — kept in its
+  // own effect so narrowing the ledger doesn't refetch it (and blow away an
   // in-progress tax edit).
   useEffect(() => {
     customersApi.get(customerId).then((res) => {
@@ -148,10 +153,10 @@ export default function CustomerLedgerView({
       '<p style="font-family:Arial,sans-serif;padding:32px;color:#555">Preparing the ledger…</p>'
     )
 
-    const singlePlan = planId
-      ? ledger.plans.find((p) => p.id === planId)
-      : ledger.plans.length === 1
-        ? ledger.plans[0]
+    const singlePlan = transactionId
+      ? ledger.transactions.find((t) => t.id === transactionId)
+      : ledger.transactions.length === 1
+        ? ledger.transactions[0]
         : undefined
 
     let html: string | null = null
@@ -185,25 +190,29 @@ export default function CustomerLedgerView({
             as siblings let them collide on one line. Kept outside the loading
             branch so the filters stay visible and clickable while refetching. */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          {/* Plan picker — shown once there's a contract to choose between.
-              The scope toggle that used to sit beside it is gone; this
-              ledger is always the installments one now. */}
-          {(ledger?.plans.length ?? 0) > 0 && (
+          {/* Transaction picker — shown once there's a purchase to choose
+              between. Every kind of sale is listed, not just the financed
+              ones, so any one transaction can be read as its own ledger.
+              A `txn:` id arriving from the POS receipt modal won't match an
+              option (those are keyed by what the sale became), so it shows
+              as its own entry rather than silently reading "All". */}
+          {(ledger?.transactions.length ?? 0) > 0 && (
             <label className="inline-flex items-center gap-2 text-sm text-gray-600">
-              Plan
+              Transaction
               <select
-                value={planId}
-                onChange={(e) => setPlan(e.target.value)}
+                value={transactionId}
+                onChange={(e) => setTransaction(e.target.value)}
                 className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800"
               >
-                <option value="">All plans</option>
-                {ledger?.plans.map((pl) => (
-                  <option key={pl.id} value={pl.id}>
-                    {pl.ref} — {pl.label}
-                    {pl.termMonths ? ` · ${pl.termMonths}mo` : ''}
-                    {pl.status ? ` · ${pl.status}` : ''}
+                <option value="">All transactions</option>
+                {ledger?.transactions.map((tx) => (
+                  <option key={tx.id} value={tx.id}>
+                    {transactionOptionLabel(tx)}
                   </option>
                 ))}
+                {transactionId && !ledger?.transactions.some((tx) => tx.id === transactionId) && (
+                  <option value={transactionId}>This transaction</option>
+                )}
               </select>
             </label>
           )}
@@ -461,6 +470,23 @@ export default function CustomerLedgerView({
       </div>
     </div>
   )
+}
+
+/** Sales Invoice No. first — that's what someone picking a transaction is
+ * holding — then what was bought, then how it was sold. */
+function transactionOptionLabel(tx: CustomerLedgerTransaction): string {
+  const parts = [`${tx.ref} — ${tx.label}`]
+  if (tx.termMonths) parts.push(`${tx.termMonths}mo`)
+  if (tx.status) parts.push(tx.status)
+  parts.push(TRANSACTION_KIND_LABELS[tx.kind])
+  return parts.join(' · ')
+}
+
+const TRANSACTION_KIND_LABELS: Record<CustomerLedgerTransaction['kind'], string> = {
+  inhouse: 'installment',
+  tpf: 'TPF',
+  cash: 'cash',
+  charge: 'charge',
 }
 
 function TotalStat({ label, value, bold }: { label: string; value: string; bold?: boolean }) {

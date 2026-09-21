@@ -1083,7 +1083,18 @@ export interface InstallmentSchedule {
   monthlyInstallment: number
   totalPayable: number
   createdAt: string
-  posTransaction?: { transactionNumber: string; occurredAt: string }
+  /** The sale this plan came from. Present on every POS-originated schedule;
+   * it is what a caller holding only the plan can narrow a customer ledger
+   * by (`txn:<id>`). */
+  posTransactionId?: string | null
+  posTransaction?: {
+    transactionNumber: string
+    /** NIG's own Sales Invoice No. — the document the customer holds, and
+     * what every Ref on this plan's ledger prints. Null only for a sale
+     * booked before it became required at checkout. */
+    salesInvoiceNumber: string | null
+    occurredAt: string
+  }
   financingTerm?: { termMonths: number; factorRate: number }
   lines: InstallmentScheduleLineWithInvoice[]
   // Scenario 23 Gap 2 — plural since Gap 5's term-grouping means a schedule
