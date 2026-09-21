@@ -61,6 +61,7 @@ import {
   getCustomerTransactions,
   getActiveLoyaltyProgram,
   getActivePosConfig,
+  getSellingAgents,
   validateManagerByPin,
   syncTransactions,
   updateSessionDisplay,
@@ -84,6 +85,7 @@ import {
   type PosPriceUseType,
 } from '../_actions/pos-actions'
 import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
@@ -358,6 +360,13 @@ export default function CheckoutPage() {
   // Auth session branchId — Branch Managers are scoped to their assigned branch,
   // which is the same branch they can configure via "My Branch" settings.
   const [authBranchId, setAuthBranchId] = useState<string | null>(null)
+  // Scenario 57 — the selling agent tagged on this sale. Restored after
+  // 1b82138 removed it: PosTransaction.sellingAgentId still drives
+  // commission and the Salesperson row on an installment ledger, so the
+  // field was the only part that had gone. Optional, as it was before —
+  // a walk-in sale need not have an agent behind it.
+  const [sellingAgentId, setSellingAgentId] = useState('')
+  const [sellingAgents, setSellingAgents] = useState<{ id: string; name: string }[]>([])
   const [isBranchManager, setIsBranchManager] = useState(false)
   // Whether this login already holds the approval authority an installment
   // sale would otherwise need to ask someone else for (Business Owner or
@@ -398,6 +407,14 @@ export default function CheckoutPage() {
   }, [openSessions, sessionId, isBranchManager, authBranchId])
 
   // Cart
+  useEffect(() => {
+    getSellingAgents().then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setSellingAgents(res.data.map((a) => ({ id: a.id, name: a.name })))
+      }
+    })
+  }, [])
+
   const [cart, setCart] = useState<CartLine[]>([])
 
   // Item search
@@ -2607,6 +2624,10 @@ export default function CheckoutPage() {
           managerUserId:
             (managerOverrideApproved ? overrideManagerId : restoredPriceOverrideBy) || undefined,
           allowNegativeStock: allowNegativeStock || undefined,
+          // Scenario 57 — restored. Undefined rather than '' when unset, so
+          // an agentless sale sends no agent at all instead of an empty
+          // string the DTO would have to special-case.
+          sellingAgentId: sellingAgentId || undefined,
           lines: cart.map((l) => ({
             itemId: l.itemId,
             itemName: l.itemName,
@@ -3595,6 +3616,30 @@ export default function CheckoutPage() {
               </>
             )}
           </div>
+
+          {/* Scenario 57 — who sold it. Optional: a walk-in has no agent
+              behind it, and forcing a choice would put a false name on the
+              commission trail. SearchableSelect rather than the hand-rolled
+              combobox this block used before 1b82138 — the type-ahead is the
+              current idiom and already handles reopen/Enter properly. */}
+          {saleMode === 'sale' && (
+            <div className="border-b border-purple-200 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                Selling Agent{' '}
+                <span className="font-normal normal-case tracking-normal text-gray-500">
+                  — optional
+                </span>
+              </p>
+              <SearchableSelect
+                value={sellingAgentId}
+                onChange={setSellingAgentId}
+                options={sellingAgents.map((a) => ({ value: a.id, label: a.name }))}
+                placeholder="No agent"
+                clearable
+                portal
+              />
+            </div>
+          )}
 
           {/* Required on every sale — the number off the physical sales
               invoice booklet. Deliberately never abbreviated "SI" here:

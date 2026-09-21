@@ -1778,8 +1778,12 @@ export async function getSellingAgents(): Promise<
 > {
   try {
     type AgentRow = { id: string; name: string; phone?: string | null; email?: string | null }
-    const result = await api.get<{ data: AgentRow[] }>('/crm/agents', {
-      status: 'active',
+    // POS's own door onto the same AgentService (pos-agents.controller.ts).
+    // The CRM route needs crm:agents:read, which only Business Owner holds —
+    // pointing checkout at it rendered an empty picker for every cashier,
+    // which is why the agent field was dropped in 1b82138 rather than fixed.
+    // Status is forced to active server-side, so it is not sent here.
+    const result = await api.get<{ data: AgentRow[] }>('/pos/agents', {
       limit: 100,
     })
     if (!result.success || !result.data) {

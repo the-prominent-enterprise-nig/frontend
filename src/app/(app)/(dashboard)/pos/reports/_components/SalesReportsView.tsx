@@ -6,6 +6,7 @@ import {
   type BranchDetail,
 } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
 import { getBrands } from '@/src/app/(app)/(dashboard)/inventory/brands/_actions/get-brands'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { ItemClassification } from '@/src/schema/inventory/classification'
 import ExportButton from '@/src/components/common/ExportButton'
 import ReportDateRange from '@/src/components/common/ReportDateRange'
@@ -80,38 +81,36 @@ export default function SalesReportsView(): React.JSX.Element {
       <div className="mb-4 flex flex-wrap items-end gap-4 rounded-xl border border-gray-200 bg-white px-4 py-3">
         <ReportDateRange value={report.range} onChange={report.setRange} />
 
-        <label className="flex flex-col gap-1 text-xs text-gray-600">
+        {/* Scenario 57 — both were native <select>s, which is unusable at
+            this catalogue's size: 41 branches and 127 brands, scrolled
+            blind with no way to type. SearchableSelect gives type-ahead and
+            a styleable popup, and is what the rest of the app already uses.
+            Clearable so "All branches"/"All brands" is reachable from a
+            chosen value without hunting for it at the top of the list.
+            Portalled because this filter bar is a bordered box that would
+            otherwise clip the popup. */}
+        <label className="flex w-48 flex-col gap-1 text-xs text-gray-600">
           Branch
-          <select
-            aria-label="Branch"
+          <SearchableSelect
             value={report.branchId}
-            onChange={(e) => report.setBranchId(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
-          >
-            <option value="">All branches</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+            onChange={report.setBranchId}
+            options={branches.map((b) => ({ value: b.id, label: b.name }))}
+            placeholder="All branches"
+            clearable
+            portal
+          />
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-gray-600">
+        <label className="flex w-48 flex-col gap-1 text-xs text-gray-600">
           Brand
-          <select
-            aria-label="Brand"
+          <SearchableSelect
             value={report.brandId}
-            onChange={(e) => report.setBrandId(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
-          >
-            <option value="">All brands</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+            onChange={report.setBrandId}
+            options={brands.map((b) => ({ value: b.id, label: b.name }))}
+            placeholder="All brands"
+            clearable
+            portal
+          />
         </label>
       </div>
 
@@ -139,21 +138,26 @@ export default function SalesReportsView(): React.JSX.Element {
               <th className="px-4 py-3 text-right font-semibold">Gross</th>
               <th className="px-4 py-3 text-right font-semibold">Discount</th>
               <th className="px-4 py-3 text-right font-semibold">Net Sales</th>
-              <th className="px-4 py-3 text-right font-semibold">Margin</th>
+              {/* Scenario 57 — no per-sale Margin column (client request,
+                  2026-09-21). The Margin TOTAL stays in the stat row above:
+                  the ask was "margin per sale removed", and the summary
+                  figure is what a Branch Manager actually reads the report
+                  for. Unit cost never reaches the row either way, so this
+                  removes the only place a single sale's profit was legible. */}
               <th className="px-4 py-3 text-right font-semibold">Refunds</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {report.isLoading && (
               <tr>
-                <td colSpan={keyHeaders.length + 6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={keyHeaders.length + 5} className="px-4 py-8 text-center text-gray-500">
                   Loading…
                 </td>
               </tr>
             )}
             {!report.isLoading && report.totalRows === 0 && (
               <tr>
-                <td colSpan={keyHeaders.length + 6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={keyHeaders.length + 5} className="px-4 py-8 text-center text-gray-500">
                   No sales in this date range.
                 </td>
               </tr>
@@ -171,7 +175,6 @@ export default function SalesReportsView(): React.JSX.Element {
                 <td className="px-4 py-3 text-right font-semibold tabular-nums">
                   {money(row.net)}
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums">{money(row.margin)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{money(row.refunds)}</td>
               </tr>
             ))}
