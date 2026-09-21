@@ -83,6 +83,7 @@ import {
   type SerialNumberRecord,
   type PosPriceUseType,
 } from '../_actions/pos-actions'
+import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
@@ -1413,18 +1414,75 @@ export default function CheckoutPage() {
     )
     .join('|')
 
+  // Approval happens in someone ELSE's session — only Business Owner holds
+  // pos:application:approve — so "approve in another tab, come back to the
+  // till" is the normal path, not an edge case. Neither dependency below
+  // changes on that return trip, so the cart kept showing the pre-approval
+  // (empty) list: no application to apply, no down payment on the line, and
+  // therefore nothing to collect, which reaches the cashier as a payment
+  // box that will not accept a number. The only way out was re-entering the
+  // whole cart, which changed the deps and refetched by accident.
+  //
+  // Bumping this on focus/visibility re-runs the fetch below with the same
+  // context, so a freshly-approved application is picked up on return.
+  const [creditAppsRefreshNonce, setCreditAppsRefreshNonce] = useState(0)
+
+  // Focus alone only covers a cashier who LEAVES and returns. One who stays
+  // on this screen while the owner approves from another machine never fires
+  // a focus event, so the list would sit stale indefinitely.
+  //
+  // CreditApplicationService.notifyResolved() already pushes
+  // 'credit_application_resolved' to the user who submitted the application
+  // — i.e. this cashier — so the event needed is already on the wire. Listen
+  // for it rather than polling: the refresh lands the moment the decision is
+  // made, and a till that is simply waiting makes no requests at all.
+  useNotificationsSocket(true, {
+    onNotificationCreated: (payload) => {
+      if (payload.eventType === 'credit_application_resolved') {
+        setCreditAppsRefreshNonce((v) => v + 1)
+      }
+    },
+  })
+
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState === 'visible') setCreditAppsRefreshNonce((v) => v + 1)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [])
+
+  // Tells a real context change (different customer, different line count)
+  // from a plain refresh. Only the former may clear the cashier's choice —
+  // wiping it on every tab-focus would be its own bug.
+  const creditAppsContextKey = `${selectedCustomer?.id ?? ''}:${installmentCartLines.length}`
+  const lastCreditAppsContextRef = useRef<string | null>(null)
+  // This fetch now fires on focus and on a socket event, not just on a cart
+  // change, so two can genuinely be in flight at once — alt-tab twice and
+  // the first response can land after the second and overwrite it, leaving a
+  // stale list that may auto-select an application already consumed
+  // elsewhere. Same requestIdRef guard usePriceResolution.ts uses.
+  const creditAppsRequestIdRef = useRef(0)
+
   // Scenario 17 Part 6 — reload this customer's approved, unused credit
   // applications whenever the customer or cart's installment-line count
   // changes; a stale selection from a previously-selected customer must
   // never carry over. One credit application covers every installment line
   // in the cart (the backend gate runs once per transaction, not per line).
   useEffect(() => {
-    setCreditApplicationId('')
+    const contextChanged = lastCreditAppsContextRef.current !== creditAppsContextKey
+    lastCreditAppsContextRef.current = creditAppsContextKey
+    if (contextChanged) setCreditApplicationId('')
     if (installmentCartLines.length === 0 || !selectedCustomer) {
       setApprovedCreditApplications([])
       return
     }
     setCreditApplicationsLoading(true)
+    const requestId = ++creditAppsRequestIdRef.current
     getCreditApplications({
       checkoutEligible: true, // Scenario 29 POS-02 — approved or partially_approved
       applicantCustomerId: selectedCustomer.id,
@@ -1432,6 +1490,8 @@ export default function CheckoutPage() {
       limit: 50,
     })
       .then((res) => {
+        // A newer request superseded this one — drop the stale response.
+        if (requestId !== creditAppsRequestIdRef.current) return
         const list = (res.data?.data ?? [])
           .map((a) => {
             // Only the approved items are ever usable — a
@@ -1470,8 +1530,41 @@ export default function CheckoutPage() {
           applyCreditApplicationTerms(list[0].id, list)
         }
       })
-      .finally(() => setCreditApplicationsLoading(false))
-  }, [installmentCartLines.length, selectedCustomer])
+      .finally(() => {
+        if (requestId !== creditAppsRequestIdRef.current) return
+        setCreditApplicationsLoading(false)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installmentCartLines.length, selectedCustomer, creditAppsRefreshNonce])
+
+  // applyCreditApplicationTerms() bails on an empty cart (`lines.length === 0`),
+  // and on the way BACK to this page the applications fetch above resolves
+  // before the cart has been restored. The auto-select still ran, so the
+  // application showed as chosen while its down payment was never apportioned
+  // — a cart that looks complete but collects nothing, which reaches the
+  // cashier as "Nothing to collect at checkout for this cart" and a payment
+  // box that will not take a number.
+  //
+  // Re-apply once the lines actually exist. Keyed on application + line count
+  // so it runs once per real change rather than on every render, and skipped
+  // when a down payment is already present so a figure the cashier typed is
+  // never overwritten.
+  const appliedTermsKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!creditApplicationId || inhouseInstallmentCartLines.length === 0) return
+    const key = `${creditApplicationId}:${inhouseInstallmentCartLines.length}`
+    if (appliedTermsKeyRef.current === key) return
+    const missingDownPayment = inhouseInstallmentCartLines.some(
+      (l) => !(parseFloat(l.downPaymentInput ?? '') > 0)
+    )
+    if (!missingDownPayment) {
+      appliedTermsKeyRef.current = key
+      return
+    }
+    appliedTermsKeyRef.current = key
+    applyCreditApplicationTerms(creditApplicationId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creditApplicationId, inhouseInstallmentCartLines.length, approvedCreditApplications])
 
   useEffect(() => {
     for (const line of installmentCartLines) {
@@ -4013,6 +4106,14 @@ export default function CheckoutPage() {
                           <div className="mt-1">
                             <p className="text-[13px] text-amber-700">
                               Every installment sale requires an approved credit application.
+                            </p>
+                            {/* Approval happens in the Business Owner's own
+                                session, so the cashier is usually waiting on
+                                someone else. This list refreshes when the tab
+                                regains focus; saying so stops the wait looking
+                                like a dead screen. */}
+                            <p className="mt-1 text-[12px] text-amber-600">
+                              Waiting on an approval? This refreshes when you come back to this tab.
                             </p>
                             {/* Was a dead sentence telling the cashier to go
                                 do it themselves. Carries the customer and
