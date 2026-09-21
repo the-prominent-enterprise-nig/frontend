@@ -942,6 +942,21 @@ function InstallmentStatusBadge({ status }: { status: string }) {
   )
 }
 
+/** Where this plan sits in the customer ledger. Keyed by its InstallmentAccount
+ * when there is one (the ledger draws in-house plans from the account), and
+ * otherwise by the POS sale, which the server resolves to whatever shape that
+ * sale became. */
+function customerLedgerHref(customerId: string, schedule: InstallmentSchedule): string {
+  const key = schedule.installmentAccount
+    ? `acct:${schedule.installmentAccount.id}`
+    : schedule.posTransactionId
+      ? `txn:${schedule.posTransactionId}`
+      : null
+  const base = `/crm/customers/${customerId}/ledger`
+  // No key to narrow by — the whole ledger is still the right destination.
+  return key ? `${base}?transactionId=${encodeURIComponent(key)}` : base
+}
+
 /** Scenario 23 Gap 2 (developer-requested redesign) — the full breakdown
  * behind an Installment Plans row's click: invoice numbers, per-due-date
  * status, and the rebate, all previously shown inline. Same modal chrome
@@ -966,8 +981,22 @@ function InstallmentScheduleDetailModal({
   // per-month figure, and it nets against totalPayable because both exclude
   // the down payment — which settles no due and is reported on its own row
   // above.
-  const totalPayments = sumDuesPaid(schedule.lines)
-  const remainingBalance = Math.max(0, Number(schedule.totalPayable) - totalPayments)
+  const duesPaid = sumDuesPaid(schedule.lines)
+  // Scenario 54 — this modal used to report the plan WITHOUT its down
+  // payment (Total price = totalPayable, payments = dues only) while the
+  // customer ledger it links to counts it, so the same plan read as two
+  // different sets of numbers depending on which screen you were on. Both
+  // now speak in contract terms: the contract is the down payment plus
+  // everything the dues bill, which is also exactly what the plan's single
+  // ARInvoice was opened at (see transactions.service.ts's `contractAmount`).
+  const contractTotal =
+    Math.round((Number(schedule.downPayment) + Number(schedule.totalPayable)) * 100) / 100
+  // That same invoice's amountPaid is the whole contract's collected-to-date
+  // — cash, withholding and rebate alike — so it already includes the down
+  // payment, which settles no due and so never reaches `duesPaid`.
+  const contractPaid = Number(schedule.lines[0]?.arInvoice.amountPaid ?? 0)
+  const downPaymentPaid = Math.max(0, Math.round((contractPaid - duesPaid) * 100) / 100)
+  const remainingBalance = Math.max(0, Math.round((contractTotal - contractPaid) * 100) / 100)
   const hasUnpaidLine = schedule.lines.some(isDueOpen)
 
   function goToCollections() {
@@ -994,17 +1023,36 @@ function InstallmentScheduleDetailModal({
             {productLabel(schedule.posTransactionLines)}
           </h2>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            {/* The complete Sales Invoice No. — the document the customer
+                holds and the Ref every row of this plan's ledger prints.
+                Falls back to the internal transaction number only for a
+                sale booked before it became required at checkout. */}
             <p className="text-sm text-gray-500">
-              {schedule.posTransaction?.transactionNumber ?? schedule.id}
+              {schedule.posTransaction?.salesInvoiceNumber ??
+                schedule.posTransaction?.transactionNumber ??
+                schedule.id}
             </p>
-            {schedule.installmentAccount && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {/* This used to be the ONLY link out, and despite its label it
+                  went to the contract's own per-account ledger, not the
+                  customer ledger — and vanished entirely on a plan with no
+                  linked account. Both are offered now, and the customer
+                  ledger opens narrowed to this plan. */}
               <Link
-                href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
+                href={customerLedgerHref(customerId, schedule)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
               >
                 View customer ledger →
               </Link>
-            )}
+              {schedule.installmentAccount && (
+                <Link
+                  href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Contract ledger →
+                </Link>
+              )}
+            </div>
           </div>
 
           {/* Developer-requested (2026-08-09): the header's "+1 more" hides
@@ -1050,8 +1098,10 @@ function InstallmentScheduleDetailModal({
               <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd)} />
             )}
             <div className="border-t border-gray-200 pt-2">
-              <Row label="Total price" value={formatPeso(schedule.totalPayable)} bold />
-              <Row label="Installment payments made" value={formatPeso(totalPayments)} />
+              <Row label="Total price (contract)" value={formatPeso(contractTotal)} bold />
+              <Row label="Down payment received" value={formatPeso(downPaymentPaid)} />
+              <Row label="Installment payments made" value={formatPeso(duesPaid)} />
+              <Row label="Total payments received" value={formatPeso(contractPaid)} />
               <Row label="Remaining balance" value={formatPeso(remainingBalance)} bold />
             </div>
           </div>
