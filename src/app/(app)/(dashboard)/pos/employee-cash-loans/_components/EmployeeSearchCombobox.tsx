@@ -13,6 +13,9 @@ type Props = {
   onChange: (employeeId: string) => void
   onSelectEmployee?: (employee: EmployeeCashLoanEmployee) => void
   error?: string
+  /** Shows a prefilled value's name before any search happens — e.g. the
+   * Edit Loan form, which arrives with a real employeeId already set. */
+  initialLabel?: string
 }
 
 export default function EmployeeSearchCombobox({
@@ -20,6 +23,7 @@ export default function EmployeeSearchCombobox({
   onChange,
   onSelectEmployee,
   error,
+  initialLabel,
 }: Props) {
   async function search(query: string): Promise<SearchComboboxOption[]> {
     const res = await searchEmployeesForCashLoan(query)
@@ -42,6 +46,7 @@ export default function EmployeeSearchCombobox({
       placeholder="Search employee by name or code…"
       emptyMessage="No employees found"
       error={error}
+      initialLabel={initialLabel}
     />
   )
 }
