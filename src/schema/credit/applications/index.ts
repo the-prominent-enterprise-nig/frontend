@@ -262,10 +262,18 @@ export function refineDownPayment(
   // or prices still resolving).
   const floor = data.downPaymentFloor ?? total * 0.1
   if (downPayment < floor - 0.005) {
+    // Name the basis the figure was actually worked out on. The panel below
+    // this field shows the ex-tax item total, so "10% of the item total"
+    // against a VAT-inclusive floor reads as plain bad arithmetic on screen
+    // — ~11.2% of the number the collector can see. Only the fallback
+    // branch really is 10% of that total.
     ctx.addIssue({
       code: 'custom',
       path: ['downPayment'],
-      message: `Down payment must be at least ${pesos(floor)} (10% of the item total)`,
+      message:
+        data.downPaymentFloor != null
+          ? `Down payment must be at least ${pesos(floor)} — 10% of the sale amount incl. VAT, which is what the till will require`
+          : `Down payment must be at least ${pesos(floor)} (10% of the item total)`,
     })
     return
   }
