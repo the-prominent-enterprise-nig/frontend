@@ -134,9 +134,15 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
           <p className="font-bold text-prominent-purple-900">
             {receivingReportSourceName(rr) ?? '—'}
           </p>
-          <p className="mt-1 text-gray-700">
-            Driver/Helper: {receivingReportDriverHelper(rr) ?? '—'}
-          </p>
+          {/* Scenario 55 (Stock-side Manual RR parity, follow-up) — omitted
+              rather than printed as "Driver/Helper: —": the standalone
+              Create RR screen no longer collects either name at all, so
+              every receipt from it would otherwise always print this empty.
+              Receive-against-PO still collects both and still prints them
+              here when present. */}
+          {receivingReportDriverHelper(rr) && (
+            <p className="mt-1 text-gray-700">Driver/Helper: {receivingReportDriverHelper(rr)}</p>
+          )}
         </div>
         <div className="text-right">
           <MetaPair label="No." value={doc.documentNumber ?? rr.code} />

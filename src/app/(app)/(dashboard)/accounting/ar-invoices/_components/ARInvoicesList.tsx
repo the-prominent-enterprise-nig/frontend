@@ -301,31 +301,12 @@ export default function ARInvoicesList({
               </button>
             </>
           ) : (
-            <>
-              {/* Scenario 57 — the non-customer sibling of New Receipt: money
-                  received with no customer/invoice behind it. A second
-                  button here rather than a new sidebar item (developer
-                  decision, 2026-09-21) — its own list lives one click away
-                  via the link below. */}
-              <Link
-                href="/accounting/ar-invoices/receipts/acknowledgement"
-                className="flex items-center gap-1.5 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-              >
-                <ReceiptText className="w-4 h-4" /> Acknowledgement Receipts
-              </Link>
-              <button
-                onClick={() => router.push('/accounting/ar-invoices/receipts/acknowledgement/new')}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-purple-700 text-purple-700 rounded-lg hover:bg-purple-50"
-              >
-                <Plus className="w-4 h-4" /> New Acknowledgement Receipt
-              </button>
-              <button
-                onClick={() => router.push('/accounting/ar-invoices/receipts/new')}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
-              >
-                <Plus className="w-4 h-4" /> New Receipt
-              </button>
-            </>
+            <button
+              onClick={() => router.push('/accounting/ar-invoices/receipts/new')}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+            >
+              <Plus className="w-4 h-4" /> New Receipt
+            </button>
           )}
         </div>
       </div>
@@ -1223,7 +1204,7 @@ function PaymentDialog({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (requiresBankAccount && !form.bankAccountId) {
-      setError(`Source of Fund is required for ${form.method.replace('_', ' ')} payments.`)
+      setError(`Deposited To is required for ${form.method.replace('_', ' ')} payments.`)
       return
     }
     setSaving(true)
@@ -1378,7 +1359,7 @@ function PaymentDialog({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label={requiresBankAccount ? 'Source of Fund *' : 'Source of Fund'}>
+          <Field label={requiresBankAccount ? 'Deposited To *' : 'Deposited To'}>
             <select
               required={requiresBankAccount}
               value={form.bankAccountId}

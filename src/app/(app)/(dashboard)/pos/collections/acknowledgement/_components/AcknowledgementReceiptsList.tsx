@@ -11,12 +11,16 @@ import {
   type AcknowledgementReceipt,
 } from '@/src/libs/data/AccountingV2Data'
 
+function accountLabel(account: AcknowledgementReceipt['account']): string {
+  if (!account) return '—'
+  return account.number ? `${account.number} — ${account.name}` : account.name
+}
+
 /** Scenario 57 — the plain chronological register for Acknowledgement
- * Receipts, reached from AR Invoices' own "View Acknowledgement Receipts"
- * link rather than its own sidebar item (developer decision, 2026-09-21:
- * the create entry point is a second button on the existing Collection
- * Receipt page, not a new nav item). No search/filter yet, matching
- * Collection Receipt's own initial scope. */
+ * Receipts, reached from POS Collections' own "Acknowledgement Receipts"
+ * link (developer correction, 2026-09-21 — moved off Accounting's AR
+ * Invoices page onto POS Collections, matching the client's own notes). No
+ * search/filter yet, matching Collection Receipt's own initial scope. */
 export default function AcknowledgementReceiptsList() {
   const router = useRouter()
   const [receipts, setReceipts] = useState<AcknowledgementReceipt[]>([])
@@ -34,10 +38,10 @@ export default function AcknowledgementReceiptsList() {
   return (
     <div className="px-4 py-4 sm:px-6 lg:px-8">
       <Link
-        href="/accounting/ar-invoices"
+        href="/pos/collections"
         className="mb-3 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
-        <ArrowLeft className="h-4 w-4" /> Back to AR Invoices
+        <ArrowLeft className="h-4 w-4" /> Back to Collections
       </Link>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -55,7 +59,7 @@ export default function AcknowledgementReceiptsList() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
           <button
-            onClick={() => router.push('/accounting/ar-invoices/receipts/acknowledgement/new')}
+            onClick={() => router.push('/pos/collections/acknowledgement/new')}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
           >
             <Plus className="w-4 h-4" /> New Acknowledgement Receipt
@@ -70,7 +74,8 @@ export default function AcknowledgementReceiptsList() {
               <th className="px-4 py-2.5">Receipt No.</th>
               <th className="px-4 py-2.5">Date</th>
               <th className="px-4 py-2.5">Received From</th>
-              <th className="px-4 py-2.5">Reason</th>
+              <th className="px-4 py-2.5">Account</th>
+              <th className="px-4 py-2.5">Description</th>
               <th className="px-4 py-2.5">Branch</th>
               <th className="px-4 py-2.5 text-right">Amount</th>
             </tr>
@@ -78,13 +83,13 @@ export default function AcknowledgementReceiptsList() {
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                   <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                 </td>
               </tr>
             ) : receipts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                   No acknowledgement receipts yet.
                 </td>
               </tr>
@@ -92,14 +97,13 @@ export default function AcknowledgementReceiptsList() {
               receipts.map((r) => (
                 <tr
                   key={r.id}
-                  onClick={() =>
-                    router.push(`/accounting/ar-invoices/receipts/acknowledgement/view?id=${r.id}`)
-                  }
+                  onClick={() => router.push(`/pos/collections/acknowledgement/view?id=${r.id}`)}
                   className="cursor-pointer hover:bg-gray-50"
                 >
                   <td className="px-4 py-2.5 font-medium text-gray-900">{r.number ?? '—'}</td>
                   <td className="px-4 py-2.5 text-gray-600">{fmtDate(r.paymentDate)}</td>
                   <td className="px-4 py-2.5 text-gray-900">{r.payerName}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{accountLabel(r.account)}</td>
                   <td className="px-4 py-2.5 text-gray-600">{r.reason ?? '—'}</td>
                   <td className="px-4 py-2.5 text-gray-600">{r.branch?.name ?? '—'}</td>
                   <td className="px-4 py-2.5 text-right font-medium tabular-nums text-gray-900">

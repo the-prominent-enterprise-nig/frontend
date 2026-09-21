@@ -1,7 +1,7 @@
 'use client'
 
 import { Controller, type Control, type FieldErrors } from 'react-hook-form'
-import { Link2, Link2Off, Search } from 'lucide-react'
+import { Info, Link2, Link2Off, Search } from 'lucide-react'
 import Tooltip from '@/src/components/ui/Tooltip'
 import SearchableSelect, { type SearchableSelectOption } from '@/src/components/ui/SearchableSelect'
 import { locationLabel } from '@/src/libs/format/locationLabel'
@@ -10,7 +10,6 @@ import type { ReceiveStockFormValues } from '@/src/schema/inventory/goods-receiv
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { CONTROL_CHROME, MONO } from '../../../purchase-orders/_components/procurementTokens'
 import { INPUT, INPUT_BAD, PANEL } from './rrTokens'
-import type { RrTotals } from './rrTotals'
 
 export type WarehouseOption = {
   id: string
@@ -27,34 +26,47 @@ export type WarehouseOption = {
  * so the invalid case has to be expressed the same way. */
 const INVALID_CHROME = { idle: 'border-[#b42318]', focused: 'border-[#b42318]' }
 
-const APPLICATION_TYPES: SearchableSelectOption[] = [
-  { value: 'new_stock', label: 'New Stock' },
-  { value: 'revert', label: 'Revert' },
-]
+// Scenario 55 (Stock-side Manual RR parity) — same toggle chrome as
+// ManualRrForm.tsx's own Source/Catalog-item toggles, copied rather than
+// shared since the two live in separate route trees with their own token
+// modules.
+const toggleBtnClass = (active: boolean) =>
+  `shrink-0 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors ${
+    active
+      ? 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490]'
+      : 'border-[#d3d3db] text-[#5b5b6b] hover:border-[#a3a3b2]'
+  }`
 
-const WITHHOLDING_OPTIONS: SearchableSelectOption[] = [
-  { value: 'none', label: 'None' },
-  { value: 'pct_1', label: '1% (BIR 2307)' },
-]
-
-const VAT_TREATMENTS: SearchableSelectOption[] = [
-  { value: 'inclusive', label: 'VAT inclusive' },
-  { value: 'exclusive', label: 'VAT exclusive' },
-  { value: 'exempt', label: 'Exempt / zero-rated' },
+// Scenario 55 — why this is a no-PO receipt with no registered supplier.
+// '' reads as "None" — an ordinary supplier/PO-linked delivery, the
+// existing default this form has always had.
+const REASON_OPTIONS: SearchableSelectOption[] = [
+  { value: '', label: 'None — ordinary supplier delivery' },
+  { value: 'repair_return', label: 'Repair return' },
+  { value: 'repossession', label: 'Repossession' },
+  { value: 'other', label: 'Other' },
 ]
 
 type Props = {
   control: Control<ReceiveStockFormValues>
   errors: FieldErrors<ReceiveStockFormValues>
   warehouses: WarehouseOption[]
-  canViewCost: boolean
   /** Validation messages are held back until the receiver has tried to post,
    * so an untouched form isn't red on open. */
   showErrors: boolean
   supplierId: string
   supplierName?: string
   linkedPo: PurchaseOrderSummary | null
-  totals: RrTotals
+  /** Scenario 55 — the currently-picked reason, read here only to soften the
+   * Source field's "required" treatment; the field itself lives on
+   * `control` like everything else on this panel. */
+  reason?: string
+  /** Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+   * own sourceMode: which of supplierId / newSourceName is live. Lifted to
+   * the parent (like supplierId itself) so post() there can decide which one
+   * to actually submit. */
+  sourceMode: 'registered' | 'new'
+  onSourceModeChange: (mode: 'registered' | 'new') => void
   onSupplierChange: (id: string, name?: string) => void
   onBrowsePo: () => void
   onUnlinkPo: () => void
@@ -66,12 +78,13 @@ export function RrDeliveryPanel({
   control,
   errors,
   warehouses,
-  canViewCost,
   showErrors,
   supplierId,
   supplierName,
   linkedPo,
-  totals,
+  reason,
+  sourceMode,
+  onSourceModeChange,
   onSupplierChange,
   onBrowsePo,
   onUnlinkPo,
@@ -111,23 +124,112 @@ export function RrDeliveryPanel({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 px-4.5 pb-4 pt-3.5 sm:grid-cols-2 xl:grid-cols-3">
-        <Field label="Supplier" required>
-          <div>
+      <div className="grid grid-cols-1 items-stretch gap-x-4 gap-y-3.5 px-4.5 pb-4 pt-3.5 sm:grid-cols-2 xl:grid-cols-3">
+        {/* Its own row, nothing beside it — Reason changes what several other
+            fields on this panel mean (Source becomes optional, PO/Supplier
+            Invoice disappear), so it reads as the one decision that comes
+            before the rest rather than competing for space with them. */}
+        {!linkedPo && (
+          <div className="sm:col-span-2 xl:col-span-3">
+            <Field
+              label="Reason"
+              hint="optional"
+              footer={
+                <Hint>
+                  Getting your own stock back — a repair return, a repossession — rather than a
+                  purchase. Drops the supplier requirement below.
+                </Hint>
+              }
+            >
+              <Controller
+                name="reason"
+                control={control}
+                render={({ field }) => (
+                  <SearchableSelect
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    chrome={CONTROL_CHROME}
+                    options={REASON_OPTIONS}
+                  />
+                )}
+              />
+            </Field>
+          </div>
+        )}
+
+        {/* Scenario 55 (Stock-side Manual RR parity) — always visible now,
+            mirroring ManualRrForm.tsx's own "Source" field exactly: a
+            Registered/Other toggle rather than a single Supplier combobox,
+            so a delivery from an unregistered source can be named instead of
+            forced through the catalog. Optional once a reason is picked or a
+            PO is linked — getting your own stock back, or fulfilling a PO
+            that already names its supplier, genuinely has no separate source
+            to require. */}
+        <Field
+          label="Source"
+          required={!linkedPo && !reason}
+          tooltip={
+            linkedPo
+              ? `From ${linkedPo.code}`
+              : reason
+                ? 'Optional — name it if known.'
+                : 'Required unless this receipt is linked to a PO.'
+          }
+        >
+          {!linkedPo && (
+            <div className="mb-1 flex gap-1.5">
+              <button
+                type="button"
+                className={toggleBtnClass(sourceMode === 'registered')}
+                onClick={() => onSourceModeChange('registered')}
+              >
+                Registered
+              </button>
+              <button
+                type="button"
+                className={toggleBtnClass(sourceMode === 'new')}
+                onClick={() => onSourceModeChange('new')}
+              >
+                Other
+              </button>
+            </div>
+          )}
+          {linkedPo || sourceMode === 'registered' ? (
             <SupplierSearchCombobox
               value={supplierId}
               onChange={(id) => onSupplierChange(id)}
               onSelect={(option) => onSupplierChange(option.id, option.primary)}
               initialLabel={supplierName}
-              error={showErrors && !supplierId && !linkedPo ? 'Supplier is required' : undefined}
+              error={
+                showErrors && !linkedPo && !reason && !supplierId ? 'Source is required' : undefined
+              }
             />
-          </div>
-          <Hint>
-            {linkedPo ? `From ${linkedPo.code}` : 'Required unless this receipt is linked to a PO.'}
-          </Hint>
+          ) : (
+            <Controller
+              name="newSourceName"
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  value={field.value ?? ''}
+                  type="text"
+                  placeholder="Who or what this came from"
+                  className={INPUT}
+                />
+              )}
+            />
+          )}
         </Field>
 
-        <Field label="Destination Location" required>
+        <Field
+          label="Location"
+          required
+          footer={
+            showErrors && errors.warehouseId ? (
+              <FieldError text={errors.warehouseId.message} />
+            ) : undefined
+          }
+        >
           <Controller
             name="warehouseId"
             control={control}
@@ -143,14 +245,13 @@ export function RrDeliveryPanel({
               />
             )}
           />
-          {showErrors && errors.warehouseId ? (
-            <FieldError text={errors.warehouseId.message} />
-          ) : (
-            <></>
-          )}
         </Field>
 
-        <Field label="Date Received">
+        {/* Scenario 55 (Stock-side Manual RR parity, follow-up) — date only,
+            matching ManualRrForm.tsx's own Date Received field exactly; the
+            time-of-day this form previously also collected was never
+            something Manual RR asked for. */}
+        <Field label="Date Received" tooltip="Leave blank to stamp it as posted.">
           <Controller
             name="receivedAt"
             control={control}
@@ -158,15 +259,24 @@ export function RrDeliveryPanel({
               <input
                 {...field}
                 value={field.value ?? ''}
-                type="datetime-local"
+                type="date"
                 className={`${INPUT} text-[#3d3d4a]`}
               />
             )}
           />
-          <Hint>Leave blank to stamp it as posted.</Hint>
         </Field>
 
-        <Field label="Delivery Receipt No." required>
+        <Field
+          label="Delivery Receipt No."
+          hint="optional"
+          footer={
+            showErrors && errors.deliveryReceiptNumber ? (
+              <FieldError text={errors.deliveryReceiptNumber.message} />
+            ) : (
+              <Hint>The supplier&rsquo;s own DR, as it came with the goods.</Hint>
+            )
+          }
+        >
           <Controller
             name="deliveryReceiptNumber"
             control={control}
@@ -180,259 +290,87 @@ export function RrDeliveryPanel({
               />
             )}
           />
-          {showErrors && errors.deliveryReceiptNumber ? (
-            <FieldError text={errors.deliveryReceiptNumber.message} />
-          ) : (
-            <Hint>The supplier&rsquo;s own DR, as it came with the goods.</Hint>
-          )}
         </Field>
 
-        <Field label="Supplier Invoice No." hint="optional">
-          <Controller
-            name="supplierInvoiceNumber"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="text"
-                placeholder="e.g. SI-00456"
-                className={INPUT}
-              />
-            )}
-          />
-          <Hint>Fill it in later if the invoice follows on.</Hint>
-        </Field>
-
-        {/* The Receiving Report's "Driver/Helper" line — who physically
-            brought the delivery. Free text on purpose: the Vehicle roster is
-            our own fleet, for branch-to-branch transfers, and a supplier's
-            crew will never be on it. A delivery often arrives with a driver
-            and no helper, so neither is required. */}
-        <Field label="Driver" hint="optional">
-          <Controller
-            name="driverName"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="text"
-                placeholder="Name of whoever drove it in"
-                className={INPUT}
-              />
-            )}
-          />
-          <Hint>Prints on the report&rsquo;s Driver/Helper line.</Hint>
-        </Field>
-
-        <Field label="Helper" hint="optional">
-          <Controller
-            name="helperName"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="text"
-                placeholder="Name of the helper, if any"
-                className={INPUT}
-              />
-            )}
-          />
-          <Hint>Leave blank if the driver came alone.</Hint>
-        </Field>
-
-        <Field label="PO Number" hint="optional">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+        {/* No supplier, no invoice — same reasoning as PO Number/Date and
+            the whole Withholding/VAT/NNDP row below. */}
+        {!reason && (
+          <Field
+            label="Supplier Invoice No."
+            hint="optional"
+            footer={<Hint>Fill it in later if the invoice follows on.</Hint>}
+          >
             <Controller
-              name="purchaseOrderNumber"
+              name="supplierInvoiceNumber"
               control={control}
               render={({ field }) => (
                 <input
                   {...field}
                   value={field.value ?? ''}
-                  readOnly={!!linkedPo}
                   type="text"
-                  placeholder="e.g. PO-20260910-0001"
-                  aria-label="PO number"
-                  className={`${INPUT} ${MONO} text-[12.5px] ${
-                    linkedPo ? 'border-[#ddd0f7] bg-[#faf7ff] font-medium' : ''
-                  }`}
+                  placeholder="e.g. SI-00456"
+                  className={INPUT}
                 />
               )}
             />
-            {linkedPo ? (
-              <Tooltip label="Unlink this purchase order" side="bottom" align="end">
+          </Field>
+        )}
+
+        {/* Mutually exclusive with Reason above, same as the panel's own
+            supplier-vs-reason split — a reasoned receipt isn't fulfilling a
+            PO. */}
+        {!reason && (
+          <Field
+            label="PO Number"
+            hint="optional"
+            footer={
+              <Hint>
+                {linkedPo
+                  ? 'Posting moves the received quantities on this PO.'
+                  : 'Type a reference, or browse the open orders to link one.'}
+              </Hint>
+            }
+          >
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <Controller
+                name="purchaseOrderNumber"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    readOnly={!!linkedPo}
+                    type="text"
+                    placeholder="e.g. PO-20260910-0001"
+                    aria-label="PO number"
+                    className={`${INPUT} ${MONO} text-[12.5px] ${
+                      linkedPo ? 'border-[#ddd0f7] bg-[#faf7ff] font-medium' : ''
+                    }`}
+                  />
+                )}
+              />
+              {linkedPo ? (
+                <Tooltip label="Unlink this purchase order" side="bottom" align="end">
+                  <button
+                    type="button"
+                    onClick={onUnlinkPo}
+                    className="flex h-9.5 items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+                  >
+                    <Link2Off className="h-3.5 w-3.5" />
+                    Unlink
+                  </button>
+                </Tooltip>
+              ) : (
                 <button
                   type="button"
-                  onClick={onUnlinkPo}
-                  className="flex h-[38px] items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+                  onClick={onBrowsePo}
+                  className="flex h-9.5 items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-[#f1ebfb] px-3 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
                 >
-                  <Link2Off className="h-3.5 w-3.5" />
-                  Unlink
+                  <Search className="h-3.5 w-3.5" />
+                  Browse
                 </button>
-              </Tooltip>
-            ) : (
-              <button
-                type="button"
-                onClick={onBrowsePo}
-                className="flex h-[38px] items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-[#f1ebfb] px-3 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
-              >
-                <Search className="h-3.5 w-3.5" />
-                Browse
-              </button>
-            )}
-          </div>
-          <Hint>
-            {linkedPo
-              ? 'Posting moves the received quantities on this PO.'
-              : 'Type a reference, or browse the open orders to link one.'}
-          </Hint>
-        </Field>
-      </div>
-
-      <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 border-t border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-3.5 sm:grid-cols-2 xl:grid-cols-4">
-        <Field label="Application Type" required>
-          <Controller
-            name="applicationType"
-            control={control}
-            render={({ field }) => (
-              <SearchableSelect
-                value={field.value ?? 'new_stock'}
-                onChange={field.onChange}
-                chrome={CONTROL_CHROME}
-                options={APPLICATION_TYPES}
-              />
-            )}
-          />
-        </Field>
-
-        <Field label="Purchase Order Date">
-          <Controller
-            name="purchaseOrderDate"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="date"
-                className={`${INPUT} text-[#3d3d4a]`}
-              />
-            )}
-          />
-        </Field>
-
-        <Field label="Reference Number">
-          <Controller
-            name="code"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="text"
-                placeholder="Auto-generated if blank"
-                className={`${INPUT} ${MONO} text-[12.5px]`}
-              />
-            )}
-          />
-          <Hint>Leave blank for RR-YYYYMMDD-NNNN.</Hint>
-        </Field>
-
-        <Field label="Withholding">
-          <Controller
-            name="withholding"
-            control={control}
-            render={({ field }) => (
-              <SearchableSelect
-                value={field.value ?? 'none'}
-                onChange={(value) => field.onChange(value as 'none' | 'pct_1')}
-                chrome={CONTROL_CHROME}
-                options={WITHHOLDING_OPTIONS}
-              />
-            )}
-          />
-        </Field>
-
-        {canViewCost && (
-          <Field label="Withheld Amount">
-            <Controller
-              name="withheldAmount"
-              control={control}
-              render={({ field }) => (
-                <input
-                  value={field.value ?? ''}
-                  onChange={(e) =>
-                    field.onChange(e.target.value === '' ? undefined : e.target.valueAsNumber)
-                  }
-                  onBlur={field.onBlur}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder={totals.withheld.toFixed(2)}
-                  className={`${INPUT} text-right ${MONO} text-[12.5px]`}
-                />
               )}
-            />
-            <Hint>
-              {totals.withheldIsDerived
-                ? 'Computed from the lines. Type to override.'
-                : 'Overridden from the supplier’s paperwork.'}
-            </Hint>
-          </Field>
-        )}
-
-        {canViewCost && (
-          <Field label="VAT Treatment">
-            <Controller
-              name="vatTreatment"
-              control={control}
-              render={({ field }) => (
-                <SearchableSelect
-                  value={field.value ?? 'inclusive'}
-                  onChange={(value) =>
-                    field.onChange(value as 'inclusive' | 'exclusive' | 'exempt')
-                  }
-                  chrome={CONTROL_CHROME}
-                  options={VAT_TREATMENTS}
-                />
-              )}
-            />
-            <Hint>How the unit costs entered relate to VAT.</Hint>
-          </Field>
-        )}
-
-        {/* `nndpCost` on the wire, and the acronym is what the client's own
-            paperwork calls it — but nobody arriving at this form cold reads it
-            as a cost, so the field says what it holds and keeps the acronym in
-            the hint. */}
-        {canViewCost && (
-          <Field label="Net Delivered Cost">
-            <Controller
-              name="nndpCost"
-              control={control}
-              render={({ field }) => (
-                <input
-                  value={field.value ?? ''}
-                  onChange={(e) =>
-                    field.onChange(e.target.value === '' ? undefined : e.target.valueAsNumber)
-                  }
-                  onBlur={field.onBlur}
-                  onFocus={(e) => e.target.select()}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  className={`${INPUT} text-right ${MONO} text-[12.5px]`}
-                />
-              )}
-            />
-            {errors.nndpCost ? (
-              <FieldError text={errors.nndpCost.message} />
-            ) : (
-              <Hint>NNDP: the delivery&rsquo;s cost, net of discounts.</Hint>
-            )}
+            </div>
           </Field>
         )}
       </div>
@@ -444,21 +382,49 @@ function Field({
   label,
   required,
   hint,
+  tooltip,
+  footer,
   children,
 }: {
   label: string
   required?: boolean
   hint?: string
+  /** Explanatory text that would otherwise sit as a line below the control —
+   * an info icon + hover tooltip instead, so it never affects this field's
+   * height (and so never disagrees with a sibling field whose own control
+   * needs to line up with this one across the row). Mirrors
+   * ManualRrForm.tsx's own Field component exactly — this is specifically
+   * why Manual RR's own Source/Location/Date Received row lines up and an
+   * earlier version of this one, which used a permanent Hint here instead,
+   * didn't: every field in that row has to carry the SAME (zero) footer
+   * weight under normal conditions for stretch+justify-end to land them on
+   * the same line — a footer that's sometimes a real hint and sometimes
+   * nothing breaks that, no matter how the empty case is padded. */
+  tooltip?: string
+  /** Rare, transient content below the control (e.g. a validation
+   * FieldError) — normally absent, same as Manual RR's own footer prop. */
+  footer?: React.ReactNode
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-[12px] font-medium text-[#3d3d4a]">
+    <label className="flex min-w-0 flex-col gap-1.5 self-stretch">
+      <span className="flex items-center gap-1 text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
         {hint && <span className="ml-1 font-normal text-[#8b8b9b]">{hint}</span>}
+        {tooltip && (
+          <Tooltip label={tooltip}>
+            <Info className="h-3 w-3 text-[#a3a3b2]" />
+          </Tooltip>
+        )}
       </span>
-      {children}
+      {/* flex-1 + justify-end: when a sibling field (Source, which has a
+       * toggle row above its own control) stretches this row taller than
+       * this field's own content needs, the control still bottom-aligns
+       * with everyone else's instead of floating at the top of the extra
+       * space. */}
+      <div className="flex flex-1 flex-col justify-end gap-1.5">{children}</div>
+      {footer}
     </label>
   )
 }

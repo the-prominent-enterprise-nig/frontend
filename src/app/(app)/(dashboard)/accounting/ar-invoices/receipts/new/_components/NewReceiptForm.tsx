@@ -120,7 +120,7 @@ export default function NewReceiptForm() {
       return
     }
     if (requiresBankAccount && !form.bankAccountId) {
-      setError(`Source of Fund is required for ${form.method.replace('_', ' ')} payments.`)
+      setError(`Deposited To is required for ${form.method.replace('_', ' ')} payments.`)
       return
     }
     setSaving(true)
@@ -386,7 +386,7 @@ export default function NewReceiptForm() {
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400"
             />
           </Field>
-          <Field label={requiresBankAccount ? 'Source of Fund *' : 'Source of Fund'}>
+          <Field label={requiresBankAccount ? 'Deposited To *' : 'Deposited To'}>
             <select
               required={requiresBankAccount}
               disabled={!invoice}

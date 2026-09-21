@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle, Pencil, Trash2, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Download, Eye, Loader2, Pencil, Trash2, X } from 'lucide-react'
 import {
   BankAccounts,
   fmtMoney,
@@ -13,6 +13,7 @@ import {
   type BankReconciliationLineSourceType,
   type BankLedgerWindow,
 } from '@/src/libs/data/AccountingV2Data'
+import { downloadElementAsPdf } from '@/src/libs/print/htmlToPdf'
 
 const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
   AR_PAYMENT: 'AR Collection',
@@ -39,6 +40,13 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   })
   const [savingEdit, setSavingEdit] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  // The PDF preview. Rendering the Sheet only while this is open (rather
+  // than always off-screen) means the Download button inside it can capture
+  // an already-on-screen node with downloadElementAsPdf() instead of the
+  // off-screen mount-and-wait dance downloadReactNodeAsPdf() needs.
+  const [showPdfPreview, setShowPdfPreview] = useState(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
   // The Discrepancy drill-down. Opening it is what triggers the first fetch,
   // so an untouched worksheet never pays for a ledger it isn't showing.
   const [showLedger, setShowLedger] = useState(false)
@@ -139,6 +147,24 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
     load()
   }
 
+  // A real .pdf file on disk, not the window.print() "Save as PDF" pattern
+  // most other documents in this app use — same ref-based
+  // downloadElementAsPdf() capture AcknowledgementReceiptDetail.tsx uses,
+  // since the Sheet is already on screen inside the preview modal by the
+  // time this can be clicked.
+  const downloadPdf = async () => {
+    if (!rec || !sheetRef.current) return
+    setDownloadingPdf(true)
+    try {
+      await downloadElementAsPdf(
+        sheetRef.current,
+        `bank-reconciliation-${rec.bankAccount?.name ?? 'account'}-${String(rec.statementDate).slice(0, 10)}`
+      )
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
   if (loading) {
     return <div className="p-6 text-sm text-gray-400">Loading worksheet...</div>
   }
@@ -195,6 +221,12 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
               Pending
             </span>
           )}
+          <button
+            onClick={() => setShowPdfPreview(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
+          >
+            <Eye className="w-4 h-4" /> Preview
+          </button>
           {/* Editing is open-only: a completed worksheet's lines are locked
               and its clearings are already written, so the way back from a
               wrong Complete is Delete, which un-clears them. */}
@@ -303,6 +335,48 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
           statementDate={rec.statementDate}
           onClose={() => setShowLedger(false)}
         />
+      )}
+
+      {showPdfPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+              <h2 className="text-sm font-semibold text-gray-900">Bank Reconciliation — Preview</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => void downloadPdf()}
+                  disabled={downloadingPdf}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {downloadingPdf ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  {downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}
+                </button>
+                <button
+                  onClick={() => setShowPdfPreview(false)}
+                  aria-label="Close"
+                  className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[calc(90vh-56px)] overflow-y-auto bg-gray-100 p-5">
+              <div ref={sheetRef}>
+                <BankReconciliationSheet rec={rec} />
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {error && (
@@ -625,6 +699,147 @@ function LineSection({
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The letterhead sheet captured by downloadPdf() above — plain Tailwind
+ * JSX, not an HTML string, since html2canvas-pro needs actual rendered DOM
+ * to rasterize. Format-matched against the client's own reference "Bank
+ * Reconciliation" workbook (Description/Amount table running from the
+ * statement's closing balance to an adjusted balance, a Discrepancy line,
+ * and a RECONCILED/NOT RECONCILED stamp). "NIG MARKETING CORPORATION"
+ * hardcoded as the letterhead the same way the Customer Ledger print does —
+ * there's no server-side document envelope for this view.
+ *
+ * Every pending item is itemized regardless of its checked state, matching
+ * that reference workbook (it has no "confirmed cleared" checkbox concept).
+ * That means Adjusted Balance/Discrepancy here can differ from the
+ * worksheet's own tiles above while items are still unchecked — a non-issue
+ * once reconciled, since markReconciled() guarantees the persisted
+ * discrepancy is genuinely zero.
+ */
+function BankReconciliationSheet({ rec }: { rec: BankReconciliation }) {
+  const pendingDeposits = rec.pendingDeposits ?? rec.lines.filter((l) => l.direction === 'DEPOSIT')
+  const pendingWithdrawals =
+    rec.pendingWithdrawals ?? rec.lines.filter((l) => l.direction === 'WITHDRAWAL')
+  const depositsTotal = pendingDeposits.reduce((s, l) => s + l.amount, 0)
+  const withdrawalsTotal = pendingWithdrawals.reduce((s, l) => s + l.amount, 0)
+  const adjustedBalance = rec.statementBalance + depositsTotal - withdrawalsTotal
+  const discrepancy = rec.discrepancy ?? adjustedBalance - rec.systemBalance
+
+  const bankLabel = rec.bankAccount
+    ? `${
+        rec.bankAccount.accountNumber && rec.bankAccount.accountNumber !== 'N/A'
+          ? `${rec.bankAccount.accountNumber} - `
+          : ''
+      }${rec.bankAccount.name}`
+    : 'Bank Account'
+
+  const itemLabel = (l: BankReconciliationLine) =>
+    `${fmtDate(l.date)} — ${l.reference || SOURCE_LABELS[l.sourceType]} — ${SOURCE_LABELS[l.sourceType]}`
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-8 py-8 text-[13px] text-gray-900">
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="text-2xl font-bold uppercase text-prominent-purple-900">
+          Bank Reconciliation
+        </h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/nig-logo.png" alt="NIG Marketing" className="h-20 w-auto object-contain" />
+      </div>
+
+      <div className="mt-6 flex items-start justify-between gap-4">
+        <div>
+          <p className="font-bold text-prominent-purple-900">Date</p>
+          <p className="text-gray-700">{fmtDate(rec.statementDate)}</p>
+        </div>
+        <div className="text-right">
+          <p className="font-bold text-prominent-purple-900">NIG MARKETING CORPORATION</p>
+          <p className="text-gray-700">#32 NIG BLDG. MABINI ST.</p>
+          <p className="text-gray-700">ILOILO CITY</p>
+        </div>
+      </div>
+
+      <p className="mt-4 font-bold">{bankLabel}</p>
+
+      <table className="mt-3 w-full border-collapse text-[12.5px]">
+        <thead>
+          <tr>
+            <th className="border border-gray-300 bg-gray-100 px-2.5 py-[7px] text-left font-bold">
+              Description
+            </th>
+            <th className="w-36 border border-gray-300 bg-gray-100 px-2.5 py-[7px] text-right font-bold">
+              Amount
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="border border-gray-300 px-2.5 py-[7px]">
+              Closing balance as per bank statement
+            </td>
+            <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+              {fmtMoney(rec.statementBalance)}
+            </td>
+          </tr>
+          {pendingDeposits.map((l) => (
+            <tr key={l.id}>
+              <td className="border border-gray-300 px-2.5 py-[7px]">
+                Pending deposit — {itemLabel(l)}
+              </td>
+              <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+                {fmtMoney(l.amount)}
+              </td>
+            </tr>
+          ))}
+          {pendingWithdrawals.map((l) => (
+            <tr key={l.id}>
+              <td className="border border-gray-300 px-2.5 py-[7px]">
+                Pending withdrawal — {itemLabel(l)}
+              </td>
+              <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+                - {fmtMoney(l.amount)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 font-bold">
+            <td className="border border-gray-300 px-2.5 py-[7px]">
+              Adjusted closing balance as per bank statement
+            </td>
+            <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+              {fmtMoney(adjustedBalance)}
+            </td>
+          </tr>
+          <tr className="bg-gray-50 font-bold">
+            <td className="border border-gray-300 px-2.5 py-[7px]">
+              Closing balance as per balance sheet
+            </td>
+            <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+              {fmtMoney(rec.systemBalance)}
+            </td>
+          </tr>
+          <tr className="bg-gray-50 font-bold">
+            <td className="border border-gray-300 px-2.5 py-[7px]">Discrepancy</td>
+            <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+              {fmtMoney(discrepancy)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div className="mt-6 flex justify-center">
+        <span
+          className={`rounded-md border-2 px-7 py-2 font-bold tracking-wide ${
+            rec.reconciled ? 'border-emerald-700 text-emerald-700' : 'border-red-700 text-red-700'
+          }`}
+        >
+          {rec.reconciled ? 'RECONCILED' : 'NOT RECONCILED'}
+        </span>
       </div>
     </div>
   )

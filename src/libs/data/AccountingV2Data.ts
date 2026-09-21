@@ -746,10 +746,17 @@ export interface AcknowledgementReceipt {
   /** System-generated ACK-YYYYMMDD-NNNN, set once at creation. */
   number: string | null
   payerName: string
+  /** Real GL account this receipt credits — a Chart of Accounts pick,
+   * matching the client's own reference tool. Null means it fell back to
+   * the MISC_COLLECTIONS mapping. */
+  accountId: string | null
+  account?: { id: string; name: string; number: string | null } | null
   reason: string | null
   amount: number
   paymentDate: string
   method: PaymentMethod | null
+  /** Which of the tenant's own bank/cash accounts this landed in — matches
+   * "Received in" on the client's reference tool. Informational only. */
   bankAccountId: string | null
   reference: string | null
   notes: string | null
@@ -759,9 +766,12 @@ export interface AcknowledgementReceipt {
   collector?: { id: string; name: string; stubNumber: string } | null
   journalEntryId: string | null
   createdAt: string
+  /** Letterhead info for the printed document — only present on get(id), not list(). */
+  enterprise?: { companyLegalName?: string | null; address?: string | null } | null
 }
 export interface CreateAcknowledgementReceiptInput {
   payerName: string
+  accountId?: string
   reason?: string
   amount: number
   paymentDate: string

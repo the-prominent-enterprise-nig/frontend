@@ -189,7 +189,7 @@ export function buildReceivingReportHtml(
     <div class="info">
       <div class="party">
         <p class="party-name">${esc(sourceName) || '—'}</p>
-        <p class="party-address">Driver/Helper: ${esc(driverHelper) || '—'}</p>
+        ${driverHelper ? `<p class="party-address">Driver/Helper: ${esc(driverHelper)}</p>` : ''}
       </div>
       <div class="meta">
         <p class="meta-label">No.</p>
@@ -2270,86 +2270,10 @@ export function printCollectionReceiptDocument(data: unknown): void {
   win.document.close()
 }
 
-/**
- * Scenario 57 — Acknowledgement Receipt: money received with no
- * Customer/ARInvoice behind it. Deliberately does NOT reuse the "Acknowledged
- * receipt of payment from {enterprise}" wording buildAPPaymentVoucherHtml()/
- * buildExpenseVoucherHtml() print — that line is the *supplier*
- * acknowledging *NIG's* outbound payment, the opposite direction from this
- * document (NIG acknowledging money it received). A visually and verbally
- * distinct document, not a variant of the AP/Expense voucher.
- */
-export function buildAcknowledgementReceiptHtml(data: unknown): string {
-  const r = data as Record<string, unknown>
-
-  const fmt = (n: number) =>
-    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2 })
-  const longDate = (v: unknown) =>
-    v
-      ? new Date(v as string).toLocaleDateString('en-PH', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })
-      : '—'
-  const esc = (v: unknown) =>
-    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
-
-  const amount = Number(r.amount ?? 0)
-  const branch = r.branch as { name?: string } | null | undefined
-
-  const row = (label: string, value: string) =>
-    `<div class="row"><span class="label">${esc(label)}</span><span class="value">${value}</span></div>`
-
-  const details = [
-    row('Received From', esc(r.payerName) || '—'),
-    r.reason ? row('Reason', esc(r.reason)) : '',
-    row('Payment Method', esc(r.method) || '—'),
-    row('Reference No.', esc(r.reference) || '—'),
-    branch?.name ? row('Branch', esc(branch.name)) : '',
-  ].join('')
-
-  return `<!DOCTYPE html><html><head><title>${esc(r.number)}</title><style>
-    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    h1 { font-size: 26px; margin: 0; text-transform: uppercase; }
-    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-    .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .row { display: flex; justify-content: space-between; gap: 24px; padding: 3px 0; }
-    .label { color: #444; }
-    .value { text-align: right; font-weight: 600; }
-    .section { border-top: 1px solid #ccc; margin-top: 14px; padding-top: 10px; }
-    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
-    .received { border-top: 1px solid #ccc; margin-top: 14px; padding-top: 10px; display: flex; justify-content: space-between; gap: 24px; font-weight: 700; }
-    .received .amount { font-size: 15px; }
-    .notes { margin: 12px 0 0; color: #444; font-size: 12px; }
-    @media print { body { padding: 0; } button { display: none; } }
-  </style></head><body>
-    <div class="top">
-      <h1>Acknowledgement Receipt</h1>
-      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
-    </div>
-
-    ${row('Receipt No.', esc(r.number) || '—')}
-    ${row('Date', longDate(r.paymentDate))}
-
-    <div class="section">
-      <p class="section-title">Details</p>
-      ${details}
-    </div>
-
-    <div class="received">
-      <span>Amount Received</span>
-      <span class="value amount">${fmt(amount)}</span>
-    </div>
-    ${r.notes ? `<p class="notes">${esc(r.notes)}</p>` : ''}
-
-    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
-  </body></html>`
-}
-
-export function printAcknowledgementReceiptDocument(data: unknown): void {
-  const win = window.open('', '_blank', 'width=950,height=750')
-  if (!win) return
-  win.document.write(buildAcknowledgementReceiptHtml(data))
-  win.document.close()
-}
+// Scenario 57 — Acknowledgement Receipt has no HTML print builder here.
+// AcknowledgementReceiptDetail.tsx renders the letterhead sheet directly
+// (twice — Acknowledgement Receipt and, per developer decision 2026-09-21,
+// a second "Collection Receipt"-titled copy of the same data below it) and
+// downloads each with downloadElementAsPdf() (src/libs/print/htmlToPdf.ts)
+// for a real .pdf file, rather than the window.open()+window.print() "Save
+// as PDF" pattern every other document builder in this file uses.

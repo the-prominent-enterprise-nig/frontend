@@ -302,8 +302,7 @@ export default function ManualRrForm() {
           </div>
           <h2 className="text-[21px] font-semibold tracking-[-.02em]">Create Receiving Report</h2>
           <p className="text-[12.5px] text-[#5b5b6b]">
-            No PO/transfer/count context. Saves as a draft — you post it yourself when ready, no
-            second approver needed.
+            Saves as a draft — you post it yourself when ready, no second approver needed.
           </p>
         </div>
       </div>
@@ -312,7 +311,6 @@ export default function ManualRrForm() {
         <div className={`${PANEL} flex flex-col overflow-hidden`}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-2.5">
             <span className="text-[13.5px] font-semibold">Delivery details</span>
-            <span className="text-[11.5px] text-[#8b8b9b]">No PO/transfer/count context</span>
           </div>
 
           <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 px-4.5 pb-4 pt-3.5 sm:grid-cols-2 xl:grid-cols-3">
