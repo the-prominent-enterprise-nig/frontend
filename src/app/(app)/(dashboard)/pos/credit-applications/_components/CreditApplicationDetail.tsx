@@ -487,8 +487,16 @@ export default function CreditApplicationDetail({
             </div>
             <div>
               <dt className="text-zinc-500">Price Use</dt>
+              {/* Third home of this label, and the one the 2026-09-19
+                  rename missed: that pass fixed the picker's placeholder
+                  and its empty option, both in
+                  CreditApplicationFinancingFields, and never looked
+                  outside the control. An application submitted with no
+                  Price Use still read "Default (WIP)" here — WIP is the
+                  scheme's NAME, "default" only the note that it is
+                  preselected, which is the whole point of the rename. */}
               <dd className="mt-0.5 text-zinc-900">
-                {application.priceUseType?.name ?? 'Default (WIP)'}
+                {application.priceUseType?.name ?? 'WIP (default)'}
               </dd>
             </div>
             {application.itemDescription && (

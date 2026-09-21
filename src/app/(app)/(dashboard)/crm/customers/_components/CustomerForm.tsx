@@ -526,35 +526,51 @@ export default function CustomerForm({
 
         {/* Both drive the CRM customer list's filters. accountType is stored
             rather than derived from whether an installment account exists,
-            so it stays correctable by hand. */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
-            <select
-              value={form.branchId}
-              onChange={(e) => setField('branchId', e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">— None —</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+            so it stays correctable by hand.
+
+            Edit-only since 2026-09-21 (review request: "For Customer
+            Creation, can we remove these"). Neither is known at the counter
+            when someone is first being written down — Branch defaults to
+            "— None —" and Cash-or-charge to Cash, so both were just noise
+            on the create screen, and Cash-or-charge in particular implied a
+            decision the till has not made yet. They stay on Edit because
+            that is exactly where correcting them is the point; the same
+            treatment Source channel already gets below.
+
+            The submitted values are unchanged: a new customer still posts
+            branchId undefined (the "— None —" option's own value) and
+            accountType 'cash', which is what picking the defaults by hand
+            did anyway. */}
+        {isEdit && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+              <select
+                value={form.branchId}
+                onChange={(e) => setField('branchId', e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">— None —</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[13px] font-medium text-gray-700">Cash or charge</label>
+              <select
+                value={form.accountType}
+                onChange={(e) => setField('accountType', e.target.value as CustomerAccountType)}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              >
+                <option value="cash">Cash</option>
+                <option value="charge">Charge</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Cash or charge</label>
-            <select
-              value={form.accountType}
-              onChange={(e) => setField('accountType', e.target.value as CustomerAccountType)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="cash">Cash</option>
-              <option value="charge">Charge</option>
-            </select>
-          </div>
-        </div>
+        )}
 
         {isEdit && (
           <div>
