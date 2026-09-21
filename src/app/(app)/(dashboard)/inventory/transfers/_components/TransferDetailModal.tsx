@@ -203,7 +203,13 @@ function ItemSerialGroup({
   const serialsQuery = useQuery({
     queryKey: ['inventory-serials-in-stock', fromWarehouseId, itemId],
     queryFn: () =>
-      getSerialNumbers({ warehouseId: fromWarehouseId, itemId, status: 'in_stock', limit: 500 }),
+      getSerialNumbers({
+        warehouseId: fromWarehouseId,
+        itemId,
+        status: 'in_stock',
+        freeForTransfer: true,
+        limit: 500,
+      }),
     enabled: !widened && !!fromWarehouseId && !!itemId,
     staleTime: 30 * 1000,
   })
@@ -1125,14 +1131,16 @@ export default function TransferDetailModal({
             <div className="rounded-xl border border-[#e4e4e9] bg-white p-3">
               <div className="flex items-center gap-3 rounded-lg border border-[#eeeef1] bg-[#fbfbfc] px-4 py-3">
                 <div className="min-w-0 flex-1">
+                  {/* Scenario 56 — who asks whom: the destination requests,
+                      the source supplies. */}
                   <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
-                    From
+                    From · Supplying branch
                   </p>
                   <p className="mt-1 truncate text-[16px] font-semibold">
                     {branchLabel(transfer.fromWarehouse)}
                   </p>
                   <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
-                    Source branch · stock deducted on dispatch
+                    Sends the stock · deducted on dispatch
                   </p>
                 </div>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ddd0f7] bg-white text-[#5b21b6]">
@@ -1140,13 +1148,13 @@ export default function TransferDetailModal({
                 </span>
                 <div className="min-w-0 flex-1 text-right">
                   <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
-                    To
+                    To · Requesting branch
                   </p>
                   <p className="mt-1 truncate text-[16px] font-semibold">
                     {branchLabel(transfer.toWarehouse)}
                   </p>
                   <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
-                    Destination · stock added on receipt
+                    Asked for the stock · added on receipt
                   </p>
                 </div>
               </div>
@@ -1160,7 +1168,14 @@ export default function TransferDetailModal({
                 label="Expected Arrival"
                 value={transfer.expectedArrival ? formatDateOnly(transfer.expectedArrival) : null}
               />
-              <Fact label="Requested By" value={transfer.requestedByName} />
+              <Fact
+                label="Requested By"
+                value={
+                  transfer.requestedByName
+                    ? `${transfer.requestedByName} · ${branchLabel(transfer.toWarehouse)}`
+                    : null
+                }
+              />
               {transfer.reason && (
                 <div className="col-span-2 sm:col-span-4">
                   <Fact label="Reason" value={transfer.reason} />

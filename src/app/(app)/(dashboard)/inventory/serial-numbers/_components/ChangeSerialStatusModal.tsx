@@ -124,12 +124,15 @@ export default function ChangeSerialStatusModal({
                 control={control}
                 render={({ field }) => (
                   <select {...field} className={fieldClass}>
-                    {SerialStatusSchema.options.map((s) => (
-                      <option key={s} value={s}>
-                        {SERIAL_STATUS_LABELS[s]}
-                        {s === serial.status ? ' (current)' : ''}
-                      </option>
-                    ))}
+                    {/* In Transit only comes from dispatching a transfer */}
+                    {SerialStatusSchema.options
+                      .filter((s) => s !== 'in_transit' || s === serial.status)
+                      .map((s) => (
+                        <option key={s} value={s}>
+                          {SERIAL_STATUS_LABELS[s]}
+                          {s === serial.status ? ' (current)' : ''}
+                        </option>
+                      ))}
                   </select>
                 )}
               />

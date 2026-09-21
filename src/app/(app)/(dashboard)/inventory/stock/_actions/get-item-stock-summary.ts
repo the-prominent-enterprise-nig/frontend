@@ -7,7 +7,7 @@ export async function getItemStockSummary(
   itemId: string,
   // Scenario 50 — scopes the Item 360 Stock tab to the locations the list it
   // was opened from had filtered to. Omitted means every location.
-  scope?: { branchIds?: string[]; warehouseIds?: string[] }
+  scope?: { branchIds?: string[]; warehouseIds?: string[]; region?: 'panay' | 'negros' }
 ) {
   return api.get<StockBalanceListResponse>('/inventory/stock/balances', {
     itemId,
@@ -15,5 +15,6 @@ export async function getItemStockSummary(
     includeReorderPoints: true,
     branchIds: scope?.branchIds?.length ? scope.branchIds.join(',') : undefined,
     warehouseIds: scope?.warehouseIds?.length ? scope.warehouseIds.join(',') : undefined,
+    region: scope?.region,
   })
 }

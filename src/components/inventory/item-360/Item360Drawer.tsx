@@ -15,6 +15,8 @@ import {
   PLEX,
   MONO,
 } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_components/procurementTokens'
+import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
+import { inTransitQtyOf, stockStatusOf } from '@/src/libs/inventory/stock-status'
 
 type DrawerContext = 'catalog' | 'stock'
 
@@ -43,31 +45,6 @@ const LIFECYCLE_META: Record<string, string> = {
   archived: 'bg-[#f1f1f4] text-[#5b5b6b]',
 }
 
-// Same four states Stock Balance's own row badges use — the header repeats
-// them at the item level so the drawer and the row it was opened from read
-// as one status, not two different vocabularies.
-type StockStatus = 'out' | 'fully_reserved' | 'low' | 'in_stock'
-
-const STOCK_STATUS_META: Record<StockStatus, { label: string; badge: string }> = {
-  out: { label: 'Out of Stock', badge: 'bg-[#fdeceb] text-[#b42318]' },
-  fully_reserved: { label: 'Fully Reserved', badge: 'bg-[#eaf0fb] text-[#1f4b99]' },
-  low: { label: 'Low Stock', badge: 'bg-[#fdf3e7] text-[#8a4b06]' },
-  in_stock: { label: 'In Stock', badge: 'bg-[#e7f5ef] text-[#0b6644]' },
-}
-
-function stockStatusOf(balances: StockBalance[]): StockStatus {
-  const onHand = balances.reduce((s, b) => s + Number(b.onHandQty ?? 0), 0)
-  const available = balances.reduce((s, b) => s + Number(b.availableQty ?? 0), 0)
-  if (onHand <= 0) return 'out'
-  if (available <= 0) return 'fully_reserved'
-  const anyBelowReorder = balances.some((b) => {
-    const qty = Number(b.onHandQty ?? 0)
-    const reorder = b.reorderPoint != null ? Number(b.reorderPoint) : null
-    return reorder !== null && qty <= reorder
-  })
-  return anyBelowReorder ? 'low' : 'in_stock'
-}
-
 const TRACKING_META = {
   serial: { label: 'Serial-tracked', badge: 'bg-[#eaf0fb] text-[#1f4b99]' },
   none: { label: 'Non-tracked', badge: 'bg-[#f1f1f4] text-[#5b5b6b]' },
@@ -91,17 +68,19 @@ function Item360Content({
   itemId,
   context,
   locations,
+  region,
   onClose,
 }: {
   itemId: string
   context: DrawerContext
   locations?: string[]
+  region?: 'panay' | 'negros'
   onClose: () => void
 }) {
   const [activeTab, setActiveTab] = useState<Tab>(DEFAULT_TAB[context])
   const [selectedSerial, setSelectedSerial] = useState<SerialNumberSummary | null>(null)
   const visibleTabs = TABS.filter((tab) => tab.context === context)
-  const { item, stock, serials } = useItem360(itemId, activeTab, locations)
+  const { item, stock, serials } = useItem360(itemId, activeTab, locations, region)
 
   const itemData = item.data?.success ? item.data.data : null
   const stockBalances: StockBalance[] = stock.data?.success
@@ -141,12 +120,14 @@ function Item360Content({
                     {itemData.name}
                   </h2>
                   {context === 'stock' ? (
+                    // Same shared vocabulary as the Stock Balance row it was
+                    // opened from, so the two never read as different statuses.
                     stockStatus && (
-                      <span
-                        className={`inline-flex shrink-0 items-center rounded-[5px] px-2 py-0.5 text-[11px] font-medium ${STOCK_STATUS_META[stockStatus].badge}`}
-                      >
-                        {STOCK_STATUS_META[stockStatus].label}
-                      </span>
+                      <StockStatusBadge
+                        status={stockStatus}
+                        inTransitQty={inTransitQtyOf(stockBalances)}
+                        size="sm"
+                      />
                     )
                   ) : (
                     <span
@@ -260,7 +241,7 @@ function Item360Content({
             onSelectSerial={setSelectedSerial}
           />
         ) : activeTab === 'movements' ? (
-          <MovementsTab itemId={itemId} locations={locations} />
+          <MovementsTab itemId={itemId} locations={locations} region={region} />
         ) : null}
       </div>
     </>
@@ -282,6 +263,7 @@ export default function Item360Drawer() {
   // location" — the drawer's behaviour before Scenario 50, unchanged for
   // them.
   const locations = topPanel?.type === 'item360' ? topPanel.locations : undefined
+  const itemPanel = topPanel?.type === 'item360' ? topPanel : undefined
   const hasMultiple = panelStack.length > 1
 
   if (typeof window === 'undefined') return null
@@ -326,6 +308,7 @@ export default function Item360Drawer() {
             itemId={itemId}
             context={context}
             locations={locations}
+            region={itemPanel?.region}
             onClose={popPanel}
           />
         ) : (

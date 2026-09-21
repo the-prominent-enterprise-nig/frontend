@@ -7,17 +7,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Upload, ImageOff, Images, PackagePlus } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
 import type { ItemTagLabel, ClassificationOption } from '@/src/schema/inventory/items'
-import {
-  ALL_TAGS,
-  DIMENSION_FIELDS,
-  NumericInput,
-  FormSection,
-  AccountField,
-} from './item-form-shared'
-import { formatClassificationLabel } from '@/src/libs/format/text'
+import { ALL_TAGS, DIMENSION_FIELDS, NumericInput, FormSection } from './item-form-shared'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { showToast } from '@/src/components/ui/toast'
 import { uploadItemFile, addItemImage } from '../_actions/item-images'
 import { addItemTag } from '../_actions/item-tags'
@@ -49,7 +41,6 @@ type Props = {
   categories: CategorySelectOption[]
   uomOptions: UomOption[]
   brandOptions: ClassificationOption[]
-  typeOptions: ClassificationOption[]
 }
 
 export default function CreateItemModal({
@@ -60,7 +51,6 @@ export default function CreateItemModal({
   categories,
   uomOptions,
   brandOptions,
-  typeOptions,
 }: Props) {
   const {
     control,
@@ -209,16 +199,6 @@ export default function CreateItemModal({
     })
   }
 
-  // ACC-21: lazy-load accounts when modal opens
-  const [accounts, setAccounts] = useState<Account[]>([])
-  useEffect(() => {
-    if (!isOpen) return
-    getAccounts({ limit: 500 }).then((a) => {
-      const aData = a.data as any
-      setAccounts((aData?.items ?? aData ?? []) as Account[])
-    })
-  }, [isOpen])
-
   if (!isOpen) return null
 
   async function handleFormSubmit(data: CreateItemFormValues) {
@@ -275,12 +255,11 @@ export default function CreateItemModal({
       role="dialog"
       aria-modal="true"
       aria-label="Add New Item"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      // Scenario 56 — full-content page (the CreatePoModal shape): fills the
+      // area beside the sidebar, which stays visible and usable.
+      className="absolute inset-0 z-50 flex flex-col bg-zinc-50"
     >
-      <div
-        ref={scrollRef}
-        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
-      >
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white">
           <div className="flex items-center justify-between px-6 py-4">
@@ -331,7 +310,11 @@ export default function CreateItemModal({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          noValidate
+          className="mx-auto my-5 max-w-4xl rounded-xl border border-zinc-200 bg-white"
+        >
           {/* Basic Info */}
           <FormSection
             title="Basic Info"
@@ -489,32 +472,9 @@ export default function CreateItemModal({
               />
             </div>
 
-            {/* Item Type */}
+            {/* Model Number — shares a row with Brand; Item Type is Edit-only
+                since Scenario 56. */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Item Type</label>
-              <Controller
-                name="typeId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {typeOptions.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {formatClassificationLabel(t.name)}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
-            </div>
-
-            {/* Model Number */}
-            <div className="sm:col-span-2">
               <label className="mb-1 block text-sm font-medium text-zinc-700">Model Number</label>
               <Controller
                 name="modelNumber"
@@ -560,25 +520,6 @@ export default function CreateItemModal({
               {errors.costPrice && (
                 <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
               )}
-            </div>
-
-            {/* Costing Method */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Costing Method</label>
-              <Controller
-                name="costingMethod"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="weighted_average">Weighted Average</option>
-                    <option value="fifo">FIFO</option>
-                    <option value="lifo">LIFO</option>
-                  </select>
-                )}
-              />
             </div>
           </FormSection>
 
@@ -885,43 +826,8 @@ export default function CreateItemModal({
             </div>
           </FormSection>
 
-          {/* ACC-21: Accounting overrides (optional) — outside sections, inside form */}
-          <div className="px-6 pb-4 pt-2">
-            <details className="rounded-lg border border-zinc-200 bg-zinc-50/40">
-              <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
-                Accounting (optional)
-                <span className="ml-2 text-xs font-normal text-zinc-500">
-                  — override default revenue/COGS/inventory accounts + tax rate
-                </span>
-              </summary>
-              <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2">
-                <AccountField
-                  label="Revenue Account"
-                  name="revenueAccountId"
-                  control={control}
-                  accounts={accounts}
-                  filter="REVENUE"
-                />
-                <AccountField
-                  label="COGS Account"
-                  name="cogsAccountId"
-                  control={control}
-                  accounts={accounts}
-                  filter="EXPENSE"
-                />
-                <AccountField
-                  label="Inventory Account"
-                  name="inventoryAccountId"
-                  control={control}
-                  accounts={accounts}
-                  filter="ASSET"
-                />
-              </div>
-            </details>
-          </div>
-
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <div className="sticky bottom-0 flex items-center justify-end gap-3 rounded-b-xl border-t border-zinc-200 bg-white px-6 py-4">
             <button
               type="button"
               onClick={handleRequestClose}

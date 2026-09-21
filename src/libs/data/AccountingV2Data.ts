@@ -1375,6 +1375,11 @@ export interface APBillGoodsReceiptOption {
 export interface APBillMatchCheck {
   applicable: boolean
   poTotal: number | null
+  /** Scenario 56 — the PO's value of just the received units; the match
+   * compares against this, so a bill for a partial delivery can match. */
+  poReceivedTotal?: number | null
+  /** True when the matched receipts cover only part of the order. */
+  partial?: boolean
   rrTotal: number | null
   invoiceTotal: number
   matched: boolean

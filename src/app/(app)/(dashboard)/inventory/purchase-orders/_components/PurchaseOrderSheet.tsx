@@ -36,7 +36,6 @@ export interface PurchaseOrderPrintDocument {
       unitPrice: number | string
       lineTotal?: number | string | null
       isFreebie?: boolean | null
-      description?: string | null
       srp?: number | string | null
       discounts?: { name?: string | null; type: string; value: number }[] | null
       discountedCost?: number | string | null
@@ -134,7 +133,6 @@ export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDoc
             <tr>
               <th className={`${TH} w-[32px]`}>#</th>
               <th className={TH}>Item</th>
-              <th className={TH}>Description</th>
               <th className={`${TH} w-[8%]`}>Qty</th>
               <th className={`${TH} w-[13%]`}>Unit price</th>
               <th className={`${TH} w-[14%]`}>Total</th>
@@ -156,7 +154,6 @@ export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDoc
                       <p className="mt-0.5 text-[11px] text-gray-600">{discountNote}</p>
                     )}
                   </td>
-                  <td className={TD}>{l.description || '—'}</td>
                   <td className={`${TD} text-right tabular-nums`}>{qty}</td>
                   <td className={`${TD} text-right tabular-nums`}>{fmtPeso(unitPrice)}</td>
                   <td className={`${TD} text-right tabular-nums`}>{fmtPeso(lineTotal)}</td>

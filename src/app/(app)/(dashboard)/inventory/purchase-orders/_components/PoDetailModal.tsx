@@ -477,7 +477,10 @@ export function PoDetailModal({
                         </div>
                         <p className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{line.item.sku}</p>
                         {line.description && (
-                          <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">{line.description}</p>
+                          <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">
+                            <span className="mr-1 text-[#a3a3b2]">Internal:</span>
+                            {line.description}
+                          </p>
                         )}
                         {/* This wording is the one the Receiving Report, the AP
                               bill and the printed Purchase Invoice all follow —

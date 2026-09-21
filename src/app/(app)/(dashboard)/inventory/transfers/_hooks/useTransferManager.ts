@@ -59,8 +59,9 @@ export function useTransferManager() {
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<TransferStatus | undefined>(undefined)
-  const [fromWarehouseFilter, setFromWarehouseFilter] = useState<string | undefined>(undefined)
-  const [toWarehouseFilter, setToWarehouseFilter] = useState<string | undefined>(undefined)
+  // Scenario 56 — multi-select; each OR's within itself.
+  const [fromWarehouseFilter, setFromWarehouseFilter] = useState<string[]>([])
+  const [toWarehouseFilter, setToWarehouseFilter] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [selectedTransfer, setSelectedTransfer] = useState<TransferSummary | null>(null)
 
@@ -69,8 +70,8 @@ export function useTransferManager() {
       page,
       limit,
       status: statusFilter,
-      fromWarehouseId: fromWarehouseFilter,
-      toWarehouseId: toWarehouseFilter,
+      fromWarehouseIds: fromWarehouseFilter,
+      toWarehouseIds: toWarehouseFilter,
       search: search || undefined,
     }),
     [page, limit, statusFilter, fromWarehouseFilter, toWarehouseFilter, search]
@@ -101,8 +102,8 @@ export function useTransferManager() {
           page: 1,
           limit: 1,
           status,
-          fromWarehouseId: fromWarehouseFilter,
-          toWarehouseId: toWarehouseFilter,
+          fromWarehouseIds: fromWarehouseFilter,
+          toWarehouseIds: toWarehouseFilter,
           search: search || undefined,
         }),
       placeholderData: keepPreviousData,
@@ -455,11 +456,11 @@ export function useTransferManager() {
       setStatusFilter(v)
       setPage(1)
     },
-    setFromWarehouseFilter: (v: string | undefined) => {
+    setFromWarehouseFilter: (v: string[]) => {
       setFromWarehouseFilter(v)
       setPage(1)
     },
-    setToWarehouseFilter: (v: string | undefined) => {
+    setToWarehouseFilter: (v: string[]) => {
       setToWarehouseFilter(v)
       setPage(1)
     },
@@ -470,8 +471,8 @@ export function useTransferManager() {
     },
     resetFilters: () => {
       setStatusFilter(undefined)
-      setFromWarehouseFilter(undefined)
-      setToWarehouseFilter(undefined)
+      setFromWarehouseFilter([])
+      setToWarehouseFilter([])
       setSearch('')
       setPage(1)
     },
