@@ -198,9 +198,7 @@ export function useSerialNumbers() {
   // Metric band on the All Serials tab — counts across every matching
   // record, not just the current page, so each bucket is its own limit:1
   // request (only `meta.total` is read from it). "Reserved" reads the
-  // `held` status and "In Transit" reads `pulled_out` — the closest real
-  // statuses to those two labels; the schema has no literal enum value for
-  // either concept.
+  // `held` status (the schema has no literal "reserved" value).
   const STATUS_COUNT_BUCKETS = ['in_stock', 'held', 'sold', 'returned', 'pulled_out'] as const
   const statusCountQueries = useQueries({
     queries: STATUS_COUNT_BUCKETS.map((status) => ({

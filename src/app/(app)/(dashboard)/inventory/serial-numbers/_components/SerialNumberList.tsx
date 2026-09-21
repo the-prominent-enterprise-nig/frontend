@@ -256,11 +256,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               highlight
             />
             <MetricCell label="Reserved" value={statusCounts.held} sub="committed" />
-            <MetricCell
-              label="In Transit"
-              value={statusCounts.pulled_out}
-              sub="on stock transfer"
-            />
+            <MetricCell label="Pulled Out" value={statusCounts.pulled_out} sub="repossessed" />
             <MetricCell label="Sold / Returned" value={soldReturned} sub="out of stock" />
           </div>
         )}

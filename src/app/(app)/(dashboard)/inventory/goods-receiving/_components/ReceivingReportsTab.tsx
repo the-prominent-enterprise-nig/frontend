@@ -58,9 +58,9 @@ const STATUS_OPTIONS = Object.entries(STATUS_META).map(([value, meta]) => ({
 // The column track the header, rows and skeletons all share — same
 // CSS-grid approach as Stock Balance, since a plain <table> couldn't keep
 // numeric columns aligned once the Amount column is conditionally present.
-const GRID = 'grid grid-cols-[196px_minmax(0,1fr)_140px_64px_80px_120px] gap-x-3 items-center'
+const GRID = 'grid grid-cols-[196px_minmax(0,1fr)_140px_80px_120px] gap-x-3 items-center'
 const GRID_WITH_AMOUNT =
-  'grid grid-cols-[196px_minmax(0,1fr)_140px_64px_80px_110px_120px] gap-x-3 items-center'
+  'grid grid-cols-[196px_minmax(0,1fr)_140px_80px_110px_120px] gap-x-3 items-center'
 
 function fmtMoney(n: number): string {
   return n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
@@ -408,7 +408,6 @@ export default function ReceivingReportsTab({
         sourceName(r) === '—' ? '' : sourceName(r),
         receivingReportSourceRef(r).code ?? '',
         r.warehouse?.branch?.name ?? r.warehouse?.name ?? '',
-        r.lines.length,
         reportUnits(r),
         STATUS_META[r.status]?.label ?? r.status,
         ...(showAmounts ? [reportAmount(r) ?? ''] : []),
@@ -423,7 +422,6 @@ export default function ReceivingReportsTab({
           'Source',
           'PO / Transfer Reference',
           'Location',
-          'Lines',
           'Units',
           'Status',
           ...(showAmounts ? ['Amount'] : []),
@@ -597,7 +595,6 @@ export default function ReceivingReportsTab({
               <span>Receipt No.</span>
               <span>Source / Ref.</span>
               <span>Location</span>
-              <span className="text-right">Lines</span>
               <span className="text-right">Units</span>
               {showAmounts && <span className="text-right">Amount</span>}
               <span className="text-center">Status</span>
@@ -661,9 +658,6 @@ export default function ReceivingReportsTab({
                 </span>
                 <span role="columnheader">Location</span>
                 <span role="columnheader" className="text-right">
-                  Lines
-                </span>
-                <span role="columnheader" className="text-right">
                   Units
                 </span>
                 {showAmounts && (
@@ -709,10 +703,6 @@ export default function ReceivingReportsTab({
 
                     <span role="cell" className="truncate text-[14.5px] text-[#5b5b6b]">
                       {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
-                    </span>
-
-                    <span role="cell" className={`${MONO} text-right text-[14.5px] text-[#8b8b9b]`}>
-                      {report.lines.length}
                     </span>
 
                     <span
@@ -780,18 +770,8 @@ export default function ReceivingReportsTab({
                     </div>
 
                     <div
-                      className={`grid gap-[6px] ${showAmounts ? 'grid-cols-3' : 'grid-cols-2'}`}
+                      className={`grid gap-[6px] ${showAmounts ? 'grid-cols-2' : 'grid-cols-1'}`}
                     >
-                      <div className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]">
-                        <span
-                          className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
-                        >
-                          Lines
-                        </span>
-                        <span className={`${MONO} text-[14px] font-semibold text-[#17171c]`}>
-                          {report.lines.length}
-                        </span>
-                      </div>
                       <div className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]">
                         <span
                           className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
