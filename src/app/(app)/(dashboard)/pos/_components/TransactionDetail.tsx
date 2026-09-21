@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVoidRequests, useSubmitVoidRequest, useSessions } from '../_hooks/usePos'
-import { X, Loader2, FileText, Clock, CheckCircle, XCircle, Undo2 } from 'lucide-react'
+import Link from 'next/link'
+import { X, Loader2, FileText, Clock, CheckCircle, XCircle, Undo2, Receipt } from 'lucide-react'
 import { getTransaction, getCustomerById, createTransaction } from '../_actions/pos-actions'
 import type { PosTransaction, PosTransactionInvoice, PosVoidRequest } from '@/src/schema/pos'
 import { isRefundPendingApproval } from '@/src/schema/pos'
@@ -114,9 +115,27 @@ export function TransactionDetail({
           <h2 className="mb-1 text-lg font-bold text-gray-900">
             {tx.salesInvoiceNumber ?? tx.transactionNumber}
           </h2>
-          <p className="mb-4 text-sm text-gray-500 capitalize">
-            {tx.transactionType} · {tx.status}
-          </p>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-gray-500 capitalize">
+              {tx.transactionType} · {tx.status}
+            </p>
+            {/* Client-requested: the receipt is where someone notices a
+                figure they want to trace, and until now there was no way
+                through to the customer's ledger from here at all — for a
+                cash sale or an installment one. Narrowed to this sale by
+                `txn:`, the one key a receipt can produce: this screen knows
+                the transaction but not whether it became an installment
+                account, a charge invoice or neither. */}
+            {tx.customerId && (
+              <Link
+                href={`/crm/customers/${tx.customerId}/ledger?transactionId=txn:${tx.id}`}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
+              >
+                <Receipt size={13} />
+                View customer ledger →
+              </Link>
+            )}
+          </div>
 
           {/* Tab switcher */}
           <div className="mb-4 flex gap-1 rounded-lg bg-gray-100 p-1">

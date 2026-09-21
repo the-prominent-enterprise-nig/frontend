@@ -18,6 +18,7 @@ import type {
   OpenSessionInput,
   CloseSessionInput,
   SessionReconciliation,
+  SessionTenderSummary,
   SalesSummary,
   PosTransaction,
   CustomerHistoryItem,
@@ -255,6 +256,20 @@ export async function closeSession(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to close session' }
+  }
+}
+
+export async function getSessionTenderSummary(
+  id: string
+): Promise<ApiResponse<SessionTenderSummary>> {
+  try {
+    const result = await api.get<SessionTenderSummary>(`/pos/sessions/${id}/tender-summary`)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to load tender summary' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to load tender summary' }
   }
 }
 

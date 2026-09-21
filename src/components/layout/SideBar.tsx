@@ -383,6 +383,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Wallet,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
       },
+      {
+        // Scenario 53 — the same screen POS shows read-only, but this is the
+        // one where the cash actually gets banked.
+        label: 'Cash-in-Transit',
+        href: '/accounting/cash-in-transit',
+        icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ,
+      },
       // Its own entry, not a button on Bank Reconciliation: moving money
       // between two fund accounts is a disbursement, not part of agreeing a
       // statement to the books.
@@ -469,10 +477,23 @@ const navItemsBySegment: Record<string, NavConfig> = {
         usePrefix: true,
       },
       {
-        label: 'Cash-in-Transit',
-        href: '/pos/cash-in-transit',
+        // Scenario 53 — the client's own end-of-day document. Its own
+        // permission, so the cashier who closes the shift can print and sign
+        // it without the Branch-Manager-tier sales reports coming with it.
+        // Clipboard, not Wallet — it is a sheet to fill and sign, and the
+        // wallet belongs to the cash balance below it.
+        label: 'Daily Collection',
+        href: '/pos/daily-collection',
+        icon: ClipboardList,
+        requiredPermission: POS_PERMISSIONS.DAILY_COLLECTION_READ,
+      },
+      {
+        // Scenario 53 — POS speaks in Undeposited Funds now; Accounting keeps
+        // the Cash-in-Transit name for the GL account it reconciles against.
+        label: 'Undeposited Funds',
+        href: '/pos/undeposited-funds',
         icon: Wallet,
-        requiredPermission: 'pos:cash-in-transit:read',
+        requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },
       {
         label: 'Void Requests',
