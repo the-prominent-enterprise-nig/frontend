@@ -303,7 +303,12 @@ export default function TransferList({ session }: { session: SessionUser }) {
     setStatusFilter(statusFilter === status ? undefined : status)
   }
 
-  const hasFilters = !!(statusFilter || fromWarehouseFilter || toWarehouseFilter || search)
+  const hasFilters = !!(
+    statusFilter ||
+    fromWarehouseFilter.length ||
+    toWarehouseFilter.length ||
+    search
+  )
   const pillStatuses = [
     ...PRIMARY_PILL_STATUSES,
     ...SECONDARY_PILL_STATUSES.filter((st) => (statusCounts[st] ?? 0) > 0),
@@ -420,20 +425,24 @@ export default function TransferList({ session }: { session: SessionUser }) {
               branches, and scrolling a native list is the slow way to a known
               name. */}
           <SearchableSelect
+            multiple
             className="w-[190px]"
-            value={fromWarehouseFilter ?? ''}
-            onChange={(v) => setFromWarehouseFilter(v || undefined)}
+            value={fromWarehouseFilter}
+            onChange={setFromWarehouseFilter}
             placeholder="All sources"
+            summaryNoun="sources"
             chrome={CONTROL_CHROME}
             clearable
             options={locationOptions}
           />
 
           <SearchableSelect
+            multiple
             className="w-[190px]"
-            value={toWarehouseFilter ?? ''}
-            onChange={(v) => setToWarehouseFilter(v || undefined)}
+            value={toWarehouseFilter}
+            onChange={setToWarehouseFilter}
             placeholder="All destinations"
+            summaryNoun="destinations"
             chrome={CONTROL_CHROME}
             clearable
             options={locationOptions}

@@ -53,6 +53,8 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     setApprovalStatus,
     primaryCategoryId,
     setPrimaryCategoryId,
+    region,
+    setRegion,
     resetFilters,
     sortBy,
     sortOrder,
@@ -180,7 +182,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or serial number…"
+              placeholder="Search by name, brand, model, category or serial number…"
               className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
             {search && (
@@ -204,6 +206,17 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               <option value="active">Active</option>
               <option value="discontinued">Discontinued</option>
               <option value="archived">Archived</option>
+            </select>
+            {/* Scenario 56 — Operations: items with units on hand there. */}
+            <select
+              value={region ?? ''}
+              onChange={(e) => setRegion((e.target.value || undefined) as typeof region)}
+              aria-label="Operations"
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            >
+              <option value="">All Operations</option>
+              <option value="panay">Panay (in stock)</option>
+              <option value="negros">Negros (in stock)</option>
             </select>
             {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
               <select
@@ -256,6 +269,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               lifecycle ||
               approvalStatus ||
               primaryCategoryId ||
+              region ||
               sortBy !== 'name' ||
               sortOrder !== 'asc') && (
               <button

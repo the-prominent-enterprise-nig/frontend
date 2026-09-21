@@ -6,6 +6,7 @@ import { Search, X, RefreshCw, BookOpen, ArrowUpRight, ArrowDownRight, Plus } fr
 import { useStockLedger } from '../_hooks/useStockLedger'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import NewAdjustmentModal from './NewAdjustmentModal'
+import { LocationFilters } from '@/src/components/inventory/LocationFilters'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
@@ -184,32 +185,27 @@ export default function StockLedgerTab({
     isFetching,
     error,
     refetch,
-    warehouseId,
+    locationFilter,
     transactionType,
     startDate,
     endDate,
     search,
     setSearch,
-    setWarehouseId,
     setTransactionType,
     setStartDate,
     setEndDate,
     resetFilters,
     setPage,
     setLimit,
-    warehouseOptions,
-    warehousesLoading,
   } = useStockLedger(initialLocations)
 
-  const activeFilterCount = [!!warehouseId, !!transactionType, !!startDate || !!endDate].filter(
-    Boolean
-  ).length
+  const activeFilterCount = [
+    !!locationFilter.region,
+    locationFilter.locations.length > 0,
+    !!transactionType,
+    !!startDate || !!endDate,
+  ].filter(Boolean).length
   const hasFilters = activeFilterCount > 0 || !!search
-
-  const locationOptions = warehouseOptions.map((wh) => ({
-    value: wh.id,
-    label: wh.branch?.name ?? wh.name,
-  }))
 
   const isNoResults = !isLoading && entries.length === 0
 
@@ -277,7 +273,7 @@ export default function StockLedgerTab({
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => setSearchFocus(true)}
             onBlur={() => setSearchFocus(false)}
-            placeholder="Search unit, model, RR, ST, SI, or DR no.…"
+            placeholder="Search unit, brand, model, category, RR, ST, SI or DR…"
             className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
           />
           {search !== '' && (
@@ -294,16 +290,7 @@ export default function StockLedgerTab({
           )}
         </div>
 
-        <SearchableSelect
-          className="w-[190px]"
-          value={warehouseId ?? ''}
-          onChange={(v) => setWarehouseId(v || undefined)}
-          placeholder="All Locations"
-          loading={warehousesLoading}
-          chrome={CONTROL_CHROME}
-          clearable
-          options={locationOptions}
-        />
+        <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
 
         <SearchableSelect
           className="w-[190px]"

@@ -29,6 +29,7 @@ import { originLabel } from '@/src/libs/format/serial-provenance'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
+import { LocationFilters } from '@/src/components/inventory/LocationFilters'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Matches Stock Balance's own #5b21b6 palette (same StockHub tab group), so
@@ -131,11 +132,10 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     statusFilter,
     categoryFilter: _categoryFilter,
     brandFilter,
-    warehouseFilter,
+    locationFilter,
     search,
     setStatusFilter,
     setBrandFilter,
-    setWarehouseFilter,
     setSearch,
     resetFilters,
     page,
@@ -183,7 +183,12 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
   // serial-level bulk actions and the serial table both stand down for it.
   const groupedCaravan = caravanView && caravanGrouping === 'item'
 
-  const hasFilters = statusFilter || warehouseFilter || search || brandFilter
+  const hasFilters =
+    statusFilter ||
+    locationFilter.locations.length > 0 ||
+    locationFilter.region ||
+    search ||
+    brandFilter
   const showSelection = canManageCaravan
 
   const handleReturnToOrigin = async () => {
@@ -321,7 +326,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
             <input
               value={search ?? ''}
               onChange={(e) => setSearch(e.target.value || undefined)}
-              placeholder="Search serial, model, RR, or supplier…"
+              placeholder="Search serial, brand, model, category, RR or supplier…"
               className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
             />
           </div>
@@ -349,15 +354,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               />
             )
           ) : (
-            <SearchableSelect
-              className="w-[190px]"
-              value={warehouseFilter ?? ''}
-              onChange={(v) => setWarehouseFilter(v || undefined)}
-              placeholder="All locations"
-              chrome={CONTROL_CHROME}
-              clearable
-              options={warehouseOptions.map((wh) => ({ value: wh.id, label: locationLabel(wh) }))}
-            />
+            <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
           )}
 
           {!caravanView && (

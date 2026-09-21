@@ -15,7 +15,10 @@ export async function getTransfers(params?: {
   toWarehouseId?: string
   branchId?: string
   search?: string
-  /** Scenario 56 — only transfers carrying this item (Item 360 Transfers tab). */
+  /** Scenario 56 — multi-select From / To (warehouse ids). */
+  fromWarehouseIds?: string[]
+  toWarehouseIds?: string[]
+  /** Scenario 56 — only transfers carrying this item (Item 360 Movements' Open transfers). */
   itemId?: string
 }): Promise<ApiResponse<TransferListResponse>> {
   try {
@@ -23,6 +26,12 @@ export async function getTransfers(params?: {
       '/inventory/transfers',
       {
         ...params,
+        fromWarehouseIds: params?.fromWarehouseIds?.length
+          ? params.fromWarehouseIds.join(',')
+          : undefined,
+        toWarehouseIds: params?.toWarehouseIds?.length
+          ? params.toWarehouseIds.join(',')
+          : undefined,
       },
       { tags: ['inventory-transfers'] }
     )
