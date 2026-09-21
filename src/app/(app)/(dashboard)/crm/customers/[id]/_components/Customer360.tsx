@@ -137,6 +137,7 @@ export default function Customer360({
   canApplyForCredit,
   currentUserId,
   tenantId,
+  scope = 'crm',
 }: {
   id: string
   canEdit: boolean
@@ -145,8 +146,30 @@ export default function Customer360({
   canApplyForCredit: boolean
   currentUserId: string
   tenantId: string
+  /** Which module this view is mounted under. POS reuses this exact
+   * component (client request, 2026-09-21: "POS customer view should match
+   * CRM customer view") rather than keeping a narrower parallel screen, the
+   * same one-component-two-doors treatment `CustomerForm` already gets.
+   *
+   * Every endpoint behind this view is reachable by a Cashier — `/crm/
+   * customers/:id/360` needs only `crm:customers:read`, the installment
+   * schedules and transaction history are POS routes — so the sections
+   * themselves need no gating. Only the LINKS differ: a Cashier is confined
+   * to the `pos` module by ROLE_MODULE_ACCESS, so a `/crm/...` href would
+   * bounce off /403 even though the underlying data loaded fine. Under
+   * `pos`, links to CRM-only destinations (leads, installment account
+   * detail) render as plain text instead of being followed. The customer
+   * ledger is NOT one of them any more — POS got its own read-only
+   * /pos/customers/:id/ledger page (2026-09-21), so that link simply
+   * follows `base`. */
+  scope?: 'crm' | 'pos'
 }) {
   const router = useRouter()
+  // Where this view's own routes live. The Delete/Edit/back links have to
+  // return to the module the user came in through, not always CRM.
+  const base = scope === 'pos' ? '/pos/customers' : '/crm/customers'
+  // CRM-module destinations a POS user cannot open (see `scope` above).
+  const isCrm = scope === 'crm'
   const [data, setData] = useState<CustomerView | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -204,7 +227,7 @@ export default function Customer360({
     const res = await customersApi.remove(id)
     setDeleting(false)
     if (res.success) {
-      router.push('/crm/customers')
+      router.push(base)
       router.refresh()
     } else {
       setDeleteError(res.error ?? 'Failed to delete customer')
@@ -250,10 +273,7 @@ export default function Customer360({
   if (error || !data) {
     return (
       <div className="px-6 py-8 lg:px-10">
-        <Link
-          href="/crm/customers"
-          className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500"
-        >
+        <Link href={base} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500">
           <ArrowLeft className="h-4 w-4" /> Back to customers
         </Link>
         <p className="text-red-600">{error ?? 'Not found'}</p>
@@ -264,7 +284,7 @@ export default function Customer360({
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href="/crm/customers"
+        href={base}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" /> Back to customers
@@ -314,7 +334,7 @@ export default function Customer360({
               the raw AR invoice list — the AR invoices list itself stays
               reachable from Accounting → AR Invoices. */}
           <Link
-            href={`/crm/customers/${id}/ledger`}
+            href={`${base}/${id}/ledger`}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
             <Receipt className="h-4 w-4" />
@@ -346,7 +366,7 @@ export default function Customer360({
           )}
           {canEdit && (
             <Link
-              href={`/crm/customers/${id}/edit`}
+              href={`${base}/${id}/edit`}
               className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
             >
               <Pencil className="h-4 w-4" />
@@ -408,7 +428,7 @@ export default function Customer360({
             <h2 className="text-[14px] font-semibold text-gray-900">Transaction History</h2>
             <p className="text-[11px] text-gray-400">
               Items bought — click for the sales invoice · payments are in the{' '}
-              <Link href={`/crm/customers/${id}/ledger`} className="underline hover:text-gray-600">
+              <Link href={`${base}/${id}/ledger`} className="underline hover:text-gray-600">
                 Customer Ledger
               </Link>
             </p>
@@ -552,12 +572,18 @@ export default function Customer360({
           <ul className="divide-y divide-gray-100">
             {data.leads.map((l) => (
               <li key={l.id} className="py-2.5 text-[13px]">
-                <Link
-                  href={`/crm/leads/${l.id}`}
-                  className="font-medium text-prominent-orange-700 hover:underline"
-                >
-                  {[l.firstName, l.lastName].filter(Boolean).join(' ')}
-                </Link>
+                {isCrm ? (
+                  <Link
+                    href={`/crm/leads/${l.id}`}
+                    className="font-medium text-prominent-orange-700 hover:underline"
+                  >
+                    {[l.firstName, l.lastName].filter(Boolean).join(' ')}
+                  </Link>
+                ) : (
+                  <span className="font-medium text-gray-800">
+                    {[l.firstName, l.lastName].filter(Boolean).join(' ')}
+                  </span>
+                )}
                 <span className="ml-2 text-[12px] text-gray-500">{l.status}</span>
               </li>
             ))}
@@ -627,7 +653,7 @@ export default function Customer360({
               </ul>
               {upcomingPayables.length > 10 && (
                 <Link
-                  href={`/crm/customers/${id}/ledger`}
+                  href={`${base}/${id}/ledger`}
                   className="mt-3 inline-block text-[12px] text-prominent-orange-700 hover:underline"
                 >
                   +{upcomingPayables.length - 10} more — View full customer ledger →
@@ -643,6 +669,7 @@ export default function Customer360({
           schedule={scheduleDetailTarget}
           customerId={id}
           customerName={data.name}
+          isCrm={isCrm}
           onClose={() => setScheduleDetailTarget(null)}
         />
       )}
@@ -969,11 +996,15 @@ function InstallmentScheduleDetailModal({
   schedule,
   customerId,
   customerName,
+  isCrm,
   onClose,
 }: {
   schedule: InstallmentSchedule
   customerId: string
   customerName: string
+  /** False when this view is mounted under POS — the installment account
+   * detail it links to is a CRM route a Cashier cannot open. */
+  isCrm: boolean
   onClose: () => void
 }) {
   const router = useRouter()
@@ -1015,7 +1046,7 @@ function InstallmentScheduleDetailModal({
             <p className="text-sm text-gray-500">
               {schedule.posTransaction?.transactionNumber ?? schedule.id}
             </p>
-            {schedule.installmentAccount && (
+            {isCrm && schedule.installmentAccount && (
               <Link
                 href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
