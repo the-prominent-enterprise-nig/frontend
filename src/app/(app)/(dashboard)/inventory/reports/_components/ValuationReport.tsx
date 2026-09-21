@@ -1,6 +1,7 @@
 'use client'
 
-import { Download, TrendingUp, Package, DollarSign } from 'lucide-react'
+import ExportButton from '@/src/components/common/ExportButton'
+import { TrendingUp, Package, DollarSign } from 'lucide-react'
 import type { ValuationReportResponse } from '@/src/schema/inventory/reports'
 
 interface Props {
@@ -9,44 +10,23 @@ interface Props {
   isFetching: boolean
   page: number
   setPage: (page: number) => void
+  /** The filters this report was loaded with, minus paging — the Excel
+   * export returns every matching row, with pivot tables. */
+  exportParams: Record<string, string | number | undefined>
 }
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value)
 }
 
-function exportToCsv(data: ValuationReportResponse) {
-  const headers = [
-    'Item Name',
-    'SKU',
-    'Category',
-    'Location',
-    'On-Hand Qty',
-    'Cost Price',
-    'Total Value',
-  ]
-  const rows = data.data.map((item) => [
-    item.itemName,
-    item.sku,
-    item.category ?? '',
-    item.warehouseName ?? '',
-    item.onHandQty,
-    item.costPrice,
-    item.totalValue,
-  ])
-
-  const csv = [headers, ...rows].map((row) => row.map((v) => `"${v}"`).join(',')).join('\n')
-
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `stock-valuation-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-export default function ValuationReport({ data, isLoading, isFetching, page, setPage }: Props) {
+export default function ValuationReport({
+  data,
+  isLoading,
+  isFetching,
+  page,
+  setPage,
+  exportParams,
+}: Props) {
   const summary = data?.summary
   const meta = data?.meta
   const totalPages = meta?.lastPage ?? 1
@@ -105,16 +85,12 @@ export default function ValuationReport({ data, isLoading, isFetching, page, set
         <p className="text-sm text-zinc-500">
           Valuation based on item cost price or weighted average if configured.
         </p>
-        {(data?.data?.length ?? 0) > 0 && (
-          <button
-            type="button"
-            onClick={() => data && exportToCsv(data)}
-            className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
-        )}
+        <ExportButton
+          endpoint="/inventory/reports/valuation/export"
+          params={exportParams}
+          fallbackFilename="inventory-valuation.xlsx"
+          disabled={!data?.data?.length}
+        />
       </div>
 
       {/* Table */}
