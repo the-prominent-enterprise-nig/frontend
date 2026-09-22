@@ -5110,7 +5110,7 @@ export default function CheckoutPage() {
                                           : needsManagerOverride && !managerOverrideApproved
                                             ? 'Manager override required'
                                             : cart.some((l) => l.isSerialTracked)
-                                              ? 'Submit for Approval'
+                                              ? 'Checkout'
                                               : saleMode === 'reserve'
                                                 ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
                                                 : allCharge
