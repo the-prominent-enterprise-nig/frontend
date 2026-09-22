@@ -1469,7 +1469,7 @@ export default function CheckoutPage() {
   const installmentLinesDepKey = installmentCartLines
     .map(
       (l) =>
-        `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}`
+        `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}`
     )
     .join('|')
 
@@ -1649,6 +1649,15 @@ export default function CheckoutPage() {
           totalAmount: lineAmount,
           downPayment,
           financingTermId,
+          // Curated PriceListItemTerm (the real rate card) wins over the
+          // generic factorRate calculation when one exists for this SKU +
+          // term — matches the down-payment badge above, which already
+          // sources from this same line.priceListItemId. Previously omitted
+          // here, so the preview silently fell back to the generic formula
+          // even for a rate-card SKU (found 2026-09-22: DP badge showed the
+          // curated ₱3,590 but the monthly installment showed the generic
+          // ₱4,575.60 instead of the rate card's ₱5,130).
+          priceListItemId: line.priceListItemId ?? undefined,
         })
         setInstallmentPreviews((prev) => ({
           ...prev,
