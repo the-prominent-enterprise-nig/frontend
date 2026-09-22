@@ -1043,6 +1043,10 @@ export interface ComputeInstallmentPreviewInput {
   totalAmount: number
   downPayment?: number
   financingTermId: string
+  /** When given, a curated PriceListItemTerm (the real rate card) for this
+   * SKU + term wins over the generic factorRate calculation, if one exists
+   * — see FinancingTermsService.preview(). */
+  priceListItemId?: string
 }
 
 export interface InstallmentScheduleLineWithInvoice {

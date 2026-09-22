@@ -19,6 +19,7 @@ import {
   resolvePosPrices,
   getActivePosConfig,
   type PosPriceUseType,
+  type ResolvedPosPrice,
 } from '../../_actions/pos-actions'
 import { DEFAULT_VAT_RATE } from '../../_actions/pos-constants'
 import { Select } from '@/src/components/ui/Select'
@@ -114,12 +115,17 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   const wipTypeId = priceUseTypes.find((t) => t.name === 'WIP')?.id
   const effectivePriceUseTypeId = priceUseTypeId || wipTypeId
 
-  const [resolvedPrices, setResolvedPrices] = useState<Record<string, number | null>>({})
+  // Keeps the full resolved record (not just price) — priceListItemId and
+  // downPayment are the curated rate-card fields (Scenario 15, Part 5),
+  // needed below to seed Down Payment from the real rate card instead of a
+  // generic 10% floor, and to source the monthly installment/total payable
+  // preview from the rate card instead of the generic factorRate formula.
+  const [resolvedItems, setResolvedItems] = useState<Record<string, ResolvedPosPrice | null>>({})
   const [isResolvingPrices, setIsResolvingPrices] = useState(false)
 
   useEffect(() => {
     if (!effectivePriceUseTypeId || itemIds.length === 0) {
-      setResolvedPrices({})
+      setResolvedItems({})
       return
     }
     let cancelled = false
@@ -127,11 +133,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     resolvePosPrices(effectivePriceUseTypeId, itemIds, branchId ?? undefined).then((res) => {
       if (cancelled) return
       setIsResolvingPrices(false)
-      const next: Record<string, number | null> = {}
-      for (const [id, resolved] of Object.entries(res.data ?? {})) {
-        next[id] = resolved ? Number(resolved.price) : null
-      }
-      setResolvedPrices(next)
+      setResolvedItems(res.data ?? {})
     })
     return () => {
       cancelled = true
@@ -142,9 +144,33 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   }, [effectivePriceUseTypeId, itemIdsKey, branchId])
 
   const estimatedTotal = (items ?? []).reduce((sum, i) => {
-    const resolved = i.itemId ? resolvedPrices[i.itemId] : undefined
-    return sum + (resolved ?? i.estimatedPrice ?? 0)
+    const resolved = i.itemId ? resolvedItems[i.itemId] : undefined
+    return sum + (resolved ? Number(resolved.price) : (i.estimatedPrice ?? 0))
   }, 0)
+
+  // Only meaningful when every item in the bundle resolved to a real
+  // PriceListItem with a curated down payment — a partial mix (some items
+  // curated, some not) falls back to the generic 10% floor below, same as
+  // the backend's own all-or-nothing rule for the monthly-installment
+  // preview (CreditApplicationService.resolveFinancing()).
+  const resolvedItemsList = itemIds.map((id) => resolvedItems[id])
+  const allItemsCurated =
+    resolvedItemsList.length > 0 &&
+    resolvedItemsList.every((r) => r && r.priceListItemId && r.downPayment != null)
+  const curatedDownPaymentSum = allItemsCurated
+    ? resolvedItemsList.reduce((sum, r) => sum + Number(r!.downPayment), 0)
+    : null
+  // The live preview's single previewInstallment() call only takes one
+  // priceListItemId, so curation there is scoped to the common single-item
+  // application — a multi-item bundle keeps the generic preview on screen,
+  // same as before. (The final numbers actually saved on submit ARE
+  // curated for a fully-curated multi-item bundle too — that's done
+  // server-side in resolveFinancing(), which sums each item's own curated
+  // term instead of needing one shared priceListItemId.)
+  const soloPriceListItemId =
+    resolvedItemsList.length === 1
+      ? (resolvedItemsList[0]?.priceListItemId ?? undefined)
+      : undefined
 
   // Checkout measures its own 10% against the TAX-EFFECTIVE line amount,
   // while these prices come straight off the price list. Under exclusive
@@ -170,13 +196,17 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     setValue('downPaymentFloor' as Path<T>, downPaymentFloor as never, { shouldDirty: false })
   }, [estimatedTotal, downPaymentFloor, setValue])
 
-  // Seed Down Payment with the 10% floor as a real value rather than a
-  // greyed-out hint (review feedback, 2026-09-19). The hint vanished the
-  // moment anything was typed, so nothing on screen held the collector to
-  // the minimum and the first genuine check was a generic banner after
-  // submit. Re-seeds when the term or the total changes, since the floor
-  // moves with them, but never overwrites a figure already entered — the
-  // collector is free to take more up front, and the schema refuses less.
+  // Seed Down Payment with the curated rate-card down payment when the
+  // whole bundle resolved to one (real NIG rate card figure, e.g. ₱3,590 —
+  // not necessarily 10%), falling back to the 10% floor as a real value
+  // rather than a greyed-out hint (review feedback, 2026-09-19) when no
+  // curated figure applies. The hint vanished the moment anything was
+  // typed, so nothing on screen held the collector to the minimum and the
+  // first genuine check was a generic banner after submit. Re-seeds when
+  // the term or the seed value changes, but never overwrites a figure
+  // already entered — the collector is free to take more up front, and the
+  // schema refuses less.
+  const seedDownPayment = curatedDownPaymentSum ?? downPaymentFloor
   const seededForRef = useRef<string | null>(null)
   // The exact string this component last wrote. Changing the Price Use moves
   // the item total, and therefore the floor — a figure we seeded should
@@ -184,8 +214,8 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // two cases are told apart by value rather than by guessing.
   const lastSeededValueRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!financingTermId || downPaymentFloor <= 0) return
-    const key = `${financingTermId}:${downPaymentFloor.toFixed(2)}`
+    if (!financingTermId || seedDownPayment <= 0) return
+    const key = `${financingTermId}:${seedDownPayment.toFixed(2)}`
     if (seededForRef.current === key) return
     seededForRef.current = key
 
@@ -193,10 +223,10 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     const isOurs = !current || current === lastSeededValueRef.current
     if (!isOurs) return
 
-    const seeded = downPaymentFloor.toFixed(2)
+    const seeded = seedDownPayment.toFixed(2)
     lastSeededValueRef.current = seeded
     setValue('downPayment' as Path<T>, seeded as never, { shouldValidate: true })
-  }, [financingTermId, downPaymentFloor, downPaymentInput, setValue])
+  }, [financingTermId, seedDownPayment, downPaymentInput, setValue])
 
   // Validate this one field as it is typed. The form's default mode only
   // validates on submit, so a too-low figure sat there looking accepted
@@ -242,24 +272,27 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     // Debounced — a keystroke-per-request preview would hammer the backend
     // on every digit typed into Down Payment.
     const timer = setTimeout(() => {
-      previewInstallment({ totalAmount: estimatedTotal, downPayment, financingTermId }).then(
-        (res) => {
-          if (cancelled) return
-          setPreviewLoading(false)
-          if (res.success && res.data) {
-            setPreview(res.data)
-          } else {
-            setPreview(null)
-            setPreviewError(res.error ?? 'Could not compute the installment preview')
-          }
+      previewInstallment({
+        totalAmount: estimatedTotal,
+        downPayment,
+        financingTermId,
+        priceListItemId: soloPriceListItemId,
+      }).then((res) => {
+        if (cancelled) return
+        setPreviewLoading(false)
+        if (res.success && res.data) {
+          setPreview(res.data)
+        } else {
+          setPreview(null)
+          setPreviewError(res.error ?? 'Could not compute the installment preview')
         }
-      )
+      })
     }, 400)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [estimatedTotal, financingTermId, downPaymentInput])
+  }, [estimatedTotal, financingTermId, downPaymentInput, soloPriceListItemId])
 
   const selectedTerm = financingTerms.find((t) => t.id === financingTermId)
   // Labels the total with whichever Price Use it was actually priced under,
