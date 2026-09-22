@@ -1,4 +1,5 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
+import { AGING_BUCKET_LABELS } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   receivingReportSourceName,
@@ -1440,6 +1441,124 @@ export function printAgingReportDocument(report: AgingReportResponse): void {
   const win = window.open('', '_blank', 'width=1400,height=850')
   if (!win) return
   win.document.write(buildAgingReportHtml(report))
+  win.document.close()
+}
+
+/**
+ * "Print raw data" — the flat, one-row-per-account counterpart to
+ * buildAgingReportHtml's grouped legacy form. Same row set as the export's
+ * Detail sheet (aging-report.workbook.ts), just rendered for the browser:
+ * no branch/collector banners or subtotals, so it pastes cleanly into a
+ * spreadsheet instead of reproducing the client's paper form.
+ */
+export function buildAgingRawDataHtml(report: AgingReportResponse): string {
+  const fmt = (n: number | string | null) =>
+    n === null
+      ? '—'
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmtDate = (v: string | null | undefined) =>
+    v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const columns = [
+    'Branch',
+    'Collector',
+    'Source',
+    'Account/Invoice No.',
+    'Customer',
+    'SI No.',
+    'SI Date',
+    'Term',
+    'MI',
+    'DP',
+    'DP Balance',
+    'Outstanding',
+    'MI Due',
+    'Penalty',
+    'Days Overdue',
+    'Bucket',
+    'Total Paid',
+    'Total Price',
+    'Last OR Date',
+    'Last OR Amt',
+  ]
+  const rightAlignedColumns = new Set([
+    'Term',
+    'MI',
+    'DP',
+    'DP Balance',
+    'Outstanding',
+    'MI Due',
+    'Penalty',
+    'Days Overdue',
+    'Total Paid',
+    'Total Price',
+    'Last OR Amt',
+  ])
+
+  const rows = report.branches.flatMap((branch) =>
+    branch.collectors.flatMap((collector) =>
+      collector.rows.map(
+        (r) => `<tr>
+    <td>${esc(branch.branchName)}</td>
+    <td>${esc(collector.collectorLabel)}</td>
+    <td>${r.source === 'installment' ? 'Installment' : 'Invoice'}</td>
+    <td class="mono">${esc(r.accountNumber)}</td>
+    <td>${esc(r.customerName)}</td>
+    <td class="mono">${esc(r.siNo)}</td>
+    <td>${fmtDate(r.siDate)}</td>
+    <td class="right">${r.term ?? '—'}</td>
+    <td class="right">${fmt(r.mi)}</td>
+    <td class="right">${fmt(r.dp)}</td>
+    <td class="right">${fmt(r.dpBal)}</td>
+    <td class="right">${fmt(r.ob)}</td>
+    <td class="right">${fmt(r.miDue)}</td>
+    <td class="right">${fmt(r.pnlty)}</td>
+    <td class="right">${r.daysOverdue ?? '—'}</td>
+    <td>${r.bucket ? esc(AGING_BUCKET_LABELS[r.bucket]) : 'Unknown'}</td>
+    <td class="right">${fmt(r.totalPayt)}</td>
+    <td class="right">${fmt(r.totalPrice)}</td>
+    <td>${fmtDate(r.lastOrDate)}</td>
+    <td class="right">${fmt(r.lastOrAmt)}</td>
+  </tr>`
+      )
+    )
+  )
+
+  return `<!DOCTYPE html><html><head><title>AR Aging — Raw Data</title><style>
+    body { font-family: Arial, sans-serif; padding: 14px; color: #111; font-size: 9.5px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .letterhead h1 { font-size: 15px; margin: 0; text-decoration: underline; }
+    .letterhead .doc-label { font-size: 11px; font-weight: 700; }
+    table.aging { width: 100%; border-collapse: collapse; }
+    table.aging th, table.aging td { border: 1px solid #ccc; padding: 2px 4px; line-height: 1.2; white-space: nowrap; }
+    table.aging th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 8px; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    .grand-total { margin-top: 8px; font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } @page { size: landscape; } }
+  </style></head><body>
+    <div class="letterhead">
+      <h1>NIG Marketing Corporation</h1>
+      <span class="doc-label">AR AGING — RAW DATA — As of ${fmtDate(report.asOf)}</span>
+    </div>
+
+    <table class="aging">
+      <thead><tr>${columns.map((c) => `<th${rightAlignedColumns.has(c) ? ' class="right"' : ''}>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.join('') || `<tr><td colspan="${columns.length}" style="text-align:center;color:#999">No active accounts.</td></tr>`}</tbody>
+    </table>
+
+    <p class="grand-total">Grand Total (${report.grandTotal.count} accounts): TOTAL PAY'T ${fmt(report.grandTotal.totalPayt)} · TOTAL PRICE ${fmt(report.grandTotal.totalPrice)} · OB ${fmt(report.grandTotal.ob)}</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printAgingRawDataDocument(report: AgingReportResponse): void {
+  const win = window.open('', '_blank', 'width=1400,height=850')
+  if (!win) return
+  win.document.write(buildAgingRawDataHtml(report))
   win.document.close()
 }
 
