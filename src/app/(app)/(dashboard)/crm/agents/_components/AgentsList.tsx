@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
 import type { Agent, AgentCommission } from '@/src/schema/crm/types'
 import type { CreateAgentInput } from '@/src/schema/crm/agent'
+import { getBranches } from '../_actions/get-branches'
 
 const FIELD_LIMITS = { name: 255, phone: 50, email: 255 } as const
 
@@ -19,16 +20,26 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [branchFilter, setBranchFilter] = useState('')
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Agent | null>(null)
   const [commissionsTarget, setCommissionsTarget] = useState<Agent | null>(null)
 
+  const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name
+
+  useEffect(() => {
+    getBranches().then((res) => {
+      if (res.success && res.data) setBranches(res.data.data)
+    })
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await agentsApi.list({ search })
+    const res = await agentsApi.list({ search, branchId: branchFilter || undefined })
     if (res.success && res.data) setAgents(res.data.data)
     setLoading(false)
-  }, [search])
+  }, [search, branchFilter])
 
   useEffect(() => {
     load()
@@ -91,14 +102,28 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
           </div>
         </div>
 
-        <div className="mb-4 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search agents..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-          />
+        <div className="mb-4 flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search agents..."
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <select
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+          >
+            <option value="">All branches</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden">
@@ -116,6 +141,9 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                     Email
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                    Branch
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                     Status
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
@@ -129,13 +157,13 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
               <tbody className="divide-y divide-zinc-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
                       Loading...
                     </td>
                   </tr>
                 ) : agents.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
                       No sales agents yet
                     </td>
                   </tr>
@@ -145,6 +173,11 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.name}</td>
                       <td className="px-4 py-3 text-sm text-zinc-700">{a.phone || '-'}</td>
                       <td className="px-4 py-3 text-sm text-zinc-700">{a.email || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-zinc-700">
+                        {branchName(a.branchId) ?? (
+                          <span className="text-zinc-400">All branches</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
@@ -203,6 +236,7 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
       {dialogOpen && (
         <AgentFormDialog
           agent={editing}
+          branches={branches}
           onClose={() => {
             setDialogOpen(false)
             setEditing(null)
@@ -223,10 +257,12 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
 
 function AgentFormDialog({
   agent,
+  branches,
   onClose,
   onSave,
 }: {
   agent: Agent | null
+  branches: { id: string; name: string }[]
   onClose: () => void
   onSave: (data: Partial<CreateAgentInput>) => Promise<void> | void
 }) {
@@ -235,6 +271,7 @@ function AgentFormDialog({
     phone: agent?.phone ?? '',
     email: agent?.email ?? '',
     commissionRate: agent?.commissionRate ?? null,
+    branchId: agent?.branchId ?? null,
   })
   const [saving, setSaving] = useState(false)
   const set = <K extends keyof CreateAgentInput>(k: K, v: CreateAgentInput[K]) =>
@@ -287,6 +324,20 @@ function AgentFormDialog({
               onChange={(e) => set('email', e.target.value)}
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
             />
+          </Field>
+          <Field label="Branch">
+            <select
+              value={form.branchId ?? ''}
+              onChange={(e) => set('branchId', e.target.value || null)}
+              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+            >
+              <option value="">All branches (tenant-wide)</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Commission Rate (%)">
             <input
