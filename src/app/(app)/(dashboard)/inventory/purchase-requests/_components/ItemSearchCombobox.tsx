@@ -22,6 +22,13 @@ type Props = {
   /** Greys the box out — for a picker whose surrounding context (supplier,
    * invoice, warehouse) has to be settled before an item can mean anything. */
   disabled?: boolean
+  /** Drops serial-tracked items from the results — for a picker whose flow
+   * has no way to capture the arriving unit's actual serial (e.g. a
+   * transfer's unlisted-item receipt line, which only records a bare
+   * quantity). Without this, a serial-tracked pick either silently
+   * fabricates stock with no addressable serial, or gets rejected by the
+   * backend after the rest of the form is filled in. */
+  excludeSerialTracked?: boolean
 }
 
 export function ItemSearchCombobox({
@@ -33,6 +40,7 @@ export function ItemSearchCombobox({
   compact,
   placeholder = 'Search item by name or SKU…',
   disabled,
+  excludeSerialTracked,
 }: Props) {
   return (
     <SearchCombobox
@@ -49,16 +57,19 @@ export function ItemSearchCombobox({
       emptyMessage="No items found"
       search={async (query) => {
         const res = await getItems({ search: query || undefined, limit: 20, lifecycle: 'active' })
-        return (res.data?.data ?? []).map((item) => ({
-          id: item.id,
-          primary: item.name,
-          secondary: item.sku,
-          meta: {
-            costPrice: item.costPrice ?? null,
-            isSerialTracked: item.isSerialTracked ?? false,
-            isBatchTracked: item.isBatchTracked ?? false,
-          } satisfies ItemSearchMeta,
-        }))
+        const items = res.data?.data ?? []
+        return items
+          .filter((item) => !excludeSerialTracked || !item.isSerialTracked)
+          .map((item) => ({
+            id: item.id,
+            primary: item.name,
+            secondary: item.sku,
+            meta: {
+              costPrice: item.costPrice ?? null,
+              isSerialTracked: item.isSerialTracked ?? false,
+              isBatchTracked: item.isBatchTracked ?? false,
+            } satisfies ItemSearchMeta,
+          }))
       }}
     />
   )
