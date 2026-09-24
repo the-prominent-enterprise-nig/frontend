@@ -430,7 +430,13 @@ function SerialReceiveCorrection({
   })
   const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
 
+  // Hidden for now (2026-09-22) — "Wrong serial received?" correction entry
+  // point disabled at the developer's request, unconditionally, regardless
+  // of canOverrideSerial. Backend correction logic (typo-fix / unit-swap in
+  // transfers.service.ts's receive()) is untouched, just unreachable from
+  // this screen.
   if (!canOverrideSerial) return null
+  return null
 
   const activeMode: 'typo' | 'swap' | null = correctedSerialNumber
     ? 'typo'
@@ -1852,6 +1858,8 @@ export default function TransferDetailModal({
                                   error={
                                     receiveForm.formState.errors.extraLines?.[idx]?.itemId?.message
                                   }
+                                  excludeSerialTracked
+                                  placeholder="Search item by name or SKU… (non-serialized only)"
                                 />
                               )}
                             />
@@ -1890,8 +1898,8 @@ export default function TransferDetailModal({
                     </div>
                   )}
                   <p className="mt-1 text-xs text-zinc-400">
-                    Serial-tracked items can&apos;t be added here — route those through the serial
-                    numbers module.
+                    Serial-tracked items aren&apos;t shown here — register those through the serial
+                    numbers module instead.
                   </p>
                 </div>
 

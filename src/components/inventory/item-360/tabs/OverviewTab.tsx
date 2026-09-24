@@ -42,10 +42,6 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function OverviewTab({ item }: { item: ItemSummary }) {
-  const costPrice =
-    item.costPrice != null
-      ? `₱${Number(item.costPrice).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
-      : '—'
   const sellingPrice =
     item.sellingPrice != null
       ? `₱${Number(item.sellingPrice).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
@@ -116,7 +112,6 @@ export default function OverviewTab({ item }: { item: ItemSummary }) {
       <div>
         <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Pricing</p>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Cost Price" value={costPrice} />
           <Field label="Selling Price" value={sellingPrice} />
         </div>
       </div>

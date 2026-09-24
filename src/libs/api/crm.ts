@@ -408,6 +408,7 @@ export const segmentsApi = {
 export type AgentFilters = {
   search?: string
   status?: string
+  branchId?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>

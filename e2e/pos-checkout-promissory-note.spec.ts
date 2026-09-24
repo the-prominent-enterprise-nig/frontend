@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs, clickStable, fillStable } from './utils'
+import { gotoReady, loginAs, clickStable, fillStable, openCustomSelect } from './utils'
 
 // Scenario 17, Part 7 — Promissory Note generation + signature gate.
 // Backend generation/gate enforcement is covered by
@@ -137,15 +137,20 @@ async function submitInstallmentSale(
   await page.getByRole('button', { name: new RegExp(applicantName) }).click()
 
   // Select the approved application and a financing term.
-  const applicationSelect = page.locator('select').filter({ hasText: applicationNumber })
+  // Scenario 60 — shared Select: named by what it shows (the placeholder
+  // while unselected), options live in a popup, not as <option> children.
+  const applicationSelect = page.getByRole('combobox', {
+    name: 'Select an approved application…',
+  })
   await expect(applicationSelect).toBeVisible({ timeout: 10_000 })
-  const applicationOptionValue = await applicationSelect
-    .locator('option', { hasText: applicationNumber })
-    .getAttribute('value')
-  await applicationSelect.selectOption(applicationOptionValue!)
-  const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
+  await openCustomSelect(applicationSelect)
+  await page.getByRole('option').filter({ hasText: applicationNumber }).click()
+  const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
   await expect(termSelect).toBeVisible({ timeout: 10_000 })
-  await termSelect.selectOption({ index: 1 })
+  // Scenario 60 — shared Select, not a native <select>: no placeholder
+  // <option>, so the old selectOption({index:1}) is the first real option.
+  await openCustomSelect(termSelect)
+  await page.getByRole('option').first().click()
 
   // Scenario 01 Gap 4 — installment sales now require a down payment of at
   // least 10% of the line's sale amount, collected via a matching payment

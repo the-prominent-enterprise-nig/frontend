@@ -8,6 +8,7 @@ import {
   pickPriceUseType,
   submitPriceListForm,
   openAddItemsPanel,
+  openCustomSelect,
 } from './utils'
 
 // Scenario 15, Part 5 — a curated per-SKU down payment (from the admin's
@@ -134,9 +135,12 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await remoteCard.first().click()
     await page.getByLabel('Price Use').selectOption({ label: 'CREDIT CARD' })
 
-    const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
+    const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await clickStable(page.getByRole('button', { name: 'Installment', exact: true }), termSelect)
-    await termSelect.selectOption({ index: 1 })
+    // Scenario 60 — shared Select, not a native <select>: no placeholder
+    // <option>, so the old selectOption({index:1}) is the first real option.
+    await openCustomSelect(termSelect)
+    await page.getByRole('option').first().click()
 
     // The down payment starts collapsed behind a static "10% min" badge —
     // reveal the editable input (pre-filled with the current value) to read it.

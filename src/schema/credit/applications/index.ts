@@ -158,11 +158,14 @@ const CreateCreditApplicationBaseSchema = z.object({
   newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   // An application can cover a bundle of models (2026-08-15, second pass) —
   // checkout enforces an exact match against the sale's installment lines.
-  // estimatedPrice is client-side only (never sent past whitelist-stripping
-  // on the way in) — the flat catalog price the item combobox's search
-  // result carries, kept in form state (not component state) purely so the
+  // estimatedPrice is the flat catalog price the item combobox's search
+  // result carries, kept in form state (not component state) so the
   // financing preview below can sum it reactively via watch('items') and
-  // stay index-safe across add/remove.
+  // stay index-safe across add/remove. Also sent to the backend (mapped to
+  // the DTO's unitPrice in create-application.ts/update-application.ts) —
+  // the backend now trusts this client-supplied price over its own Price
+  // List resolution, so the down payment matches the price actually shown
+  // here instead of a possibly-divergent Price Use lookup.
   items: z
     .array(
       z.object({
@@ -293,8 +296,12 @@ function pesos(n: number): string {
 export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.superRefine(
   (data, ctx) => {
     // A co-maker on a credit application is identified by first name, last
-    // name and relationship — contact details stay capturable but optional,
-    // since the branch often has only the name and relationship at intake.
+    // name and relationship, plus a contact number (client request,
+    // 2026-09-24 — Scenario 60). The number is not a nicety: a co-maker
+    // exists to be reachable when the account goes bad, and CoMaker
+    // .contactNumber is NOT NULL in the schema, so leaving it blank was
+    // writing an empty string into a required column rather than failing.
+    // Email stays optional.
     if (data.coMakerId === NEW_CO_MAKER_VALUE) {
       if (!data.newCoMakerFirstName?.trim()) {
         ctx.addIssue({
@@ -315,6 +322,28 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
           code: 'custom',
           path: ['newCoMakerRelationship'],
           message: 'Relationship is required',
+        })
+      }
+      if (!data.newCoMakerContactNumber?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['newCoMakerContactNumber'],
+          message: 'Contact number is required',
+        })
+      }
+    } else if (data.coMakerId) {
+      // Editing an already-saved co-maker inline. Only the number is checked
+      // here: this branch submits each field as `value || undefined`, so a
+      // blank leaves the stored value untouched rather than overwriting it —
+      // except that a co-maker saved before this rule can legitimately hold a
+      // blank number, and this is what surfaces it for fixing instead of
+      // letting it ride. Name/relationship are deliberately left unchecked,
+      // matching what this branch already did.
+      if (!data.coMakerContactNumber?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['coMakerContactNumber'],
+          message: 'Contact number is required',
         })
       }
     }

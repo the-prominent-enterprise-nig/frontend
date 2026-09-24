@@ -45,7 +45,7 @@ test.describe('Credit Applications — Cashier intake', () => {
 
     await gotoReady(page, '/pos/credit-applications')
     await clickStable(
-      page.getByRole('button', { name: 'New Application' }),
+      page.getByRole('link', { name: 'New Application' }),
       page.getByRole('heading', { name: 'New Credit Application' })
     )
 

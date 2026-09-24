@@ -177,18 +177,17 @@ export default function NewAcknowledgementReceiptForm() {
         </Section>
 
         <Section label="Received in">
-          <select
-            value={form.bankAccountId}
-            onChange={(e) => setForm({ ...form, bankAccountId: e.target.value })}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-          >
-            <option value="">— Not tracked —</option>
-            {bankAccounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {acc.name} — {acc.bankName} ({acc.accountNumber})
-              </option>
-            ))}
-          </select>
+          <CategorySelect
+            value={form.bankAccountId || undefined}
+            onChange={(id) => setForm({ ...form, bankAccountId: id ?? '' })}
+            options={bankAccounts.map((acc) => ({
+              id: acc.id,
+              name: `${acc.name} — ${acc.bankName} (${acc.accountNumber})`,
+              depth: 0,
+            }))}
+            placeholder="— Not tracked —"
+            noun="bank accounts"
+          />
         </Section>
 
         <Field label="Account">

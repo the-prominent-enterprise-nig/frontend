@@ -205,6 +205,7 @@ export interface Agent {
   email?: string | null
   status: AgentStatus
   commissionRate?: number | null
+  branchId?: string | null
   createdAt: string
   updatedAt: string
 }

@@ -12,6 +12,7 @@ import {
   type PhProvince,
   type PhCity,
   type PhBarangay,
+  PH_DEFAULT_REGION_CODE,
 } from '@/src/libs/data/ph-address'
 
 /** Cash-register-style Philippine address picker — Region → Province →
@@ -26,6 +27,7 @@ export default function PhilippineAddressPicker({
   onChange,
   initialBarangayCode,
   initialAddress,
+  defaultRegionCode = PH_DEFAULT_REGION_CODE,
 }: {
   onChange: (value: { address: string; barangayCode: string }) => void
   /** Edit-only: the customer's already-saved barangay code. Resolved once
@@ -41,13 +43,25 @@ export default function PhilippineAddressPicker({
    * predates barangayCode, or was hand-edited), whatever's left over is
    * used as-is rather than guessed at further. */
   initialAddress?: string
+  /** Region pre-selected on a fresh (non-edit) form, so the cashier isn't
+   * searching for the same region on every new customer. Defaults to Region
+   * VI, where the business operates (client request, 2026-09-24). Ignored
+   * entirely when `initialBarangayCode` is set — an existing record's own
+   * region always wins. Pass `''` to opt out and start blank. */
+  defaultRegionCode?: string
 }) {
   const [regionList, setRegionList] = useState<PhRegion[]>([])
   const [provinceList, setProvinceList] = useState<PhProvince[]>([])
   const [cityList, setCityList] = useState<PhCity[]>([])
   const [barangayList, setBarangayList] = useState<PhBarangay[]>([])
 
-  const [regionCode, setRegionCode] = useState('')
+  // Seeded from defaultRegionCode only on a fresh form. With an
+  // initialBarangayCode present this must start blank: the hydration effect
+  // below resolves that record's real region and sets it, and seeding a
+  // different one here would show the wrong region for the moment before
+  // the datasets load — and, worse, is what the cascading reset below keys
+  // off, so it would clear the province/city it is meant to be restoring.
+  const [regionCode, setRegionCode] = useState(initialBarangayCode ? '' : defaultRegionCode)
   const [provinceCode, setProvinceCode] = useState('')
   const [cityCode, setCityCode] = useState('')
   // Tracks the barangay's brgy_code, not its name — within one already
@@ -189,9 +203,16 @@ export default function PhilippineAddressPicker({
     const province = provinceList.find((p) => p.province_code === provinceCode)?.province_name
     const city = cityList.find((c) => c.city_code === cityCode)?.city_name
     const barangayName = barangayList.find((b) => b.brgy_code === barangayCode)?.brgy_name
+    // Emptiness is judged on everything EXCEPT the region, because the region
+    // is pre-seeded (see defaultRegionCode) and so is not evidence the user
+    // entered anything. Counting it would make a fresh, untouched form emit
+    // "Region VI (Western Visayas), Philippines" as the customer's address.
+    // A region on its own isn't an address either way, so this is the right
+    // test even when the user picked that region by hand.
+    const enteredParts = [street, barangayName, city, province].filter(Boolean)
     const realParts = [street, barangayName, city, province, region].filter(Boolean)
     onChange({
-      address: realParts.length === 0 ? '' : [...realParts, 'Philippines'].join(', '),
+      address: enteredParts.length === 0 ? '' : [...realParts, 'Philippines'].join(', '),
       barangayCode,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
