@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Package, ChevronDown, Hash, Search } from 'lucide-react'
 import type { StockBalance } from '@/src/schema/inventory/goods-receiving'
@@ -72,6 +72,24 @@ export default function StockTab({
   // Keyed by the StockBalance's own id — a location's picked serials are
   // independent of every other location's.
   const [selectedByLocation, setSelectedByLocation] = useState<Record<string, Set<string>>>({})
+  // Client report: a location further down the list that matched the search
+  // was easy to miss without scrolling down to notice it had opened at all
+  // — scroll the match into view instead of just expanding it in place.
+  // Self-contained (reads refs, not the derived consts below) so it can be
+  // called unconditionally, above the isLoading/no-stock early returns —
+  // Rules of Hooks forbids a hook call after a conditional return, which is
+  // exactly where this lived on the first pass and broke on every render
+  // that hit either early return.
+  const goneMatchesRef = useRef<HTMLDivElement | null>(null)
+  const firstLocationMatchRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!serialQuery.trim()) return
+    if (goneMatchesRef.current) {
+      goneMatchesRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    } else if (firstLocationMatchRef.current) {
+      firstLocationMatchRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [serialQuery, serials, balances])
 
   if (isLoading) return <StockSkeleton />
 
@@ -94,12 +112,30 @@ export default function StockTab({
   // even offers to expand. A non-tracked item's rows stay flat.
   const isSerialTracked = serialsLoading || serials.length > 0
   // Units no longer physically at a location (sold, scrapped, pulled out)
-  // don't belong in a per-location stock breakdown.
+  // don't belong in a per-location stock breakdown — but a search still
+  // needs to be able to find one and open its movement history (Scenario
+  // 60 Part 4: a sold serial couldn't be searched for at all before this).
   const onShelf = serials.filter((s) => !GONE_STATUSES.has(s.status))
   const query = serialQuery.trim().toLowerCase()
-  const matchCount = query
-    ? onShelf.filter((s) => s.serialNumber.toLowerCase().includes(query)).length
-    : 0
+  const goneMatches = query
+    ? serials.filter(
+        (s) => GONE_STATUSES.has(s.status) && s.serialNumber.toLowerCase().includes(query)
+      )
+    : []
+  const matchCount =
+    (query ? onShelf.filter((s) => s.serialNumber.toLowerCase().includes(query)).length : 0) +
+    goneMatches.length
+  // Which row the scroll effect above should target — the gone-matches
+  // block (rendered first) wins when both kinds of match exist.
+  const firstMatchLocationId = query
+    ? stockedBalances.find((b) =>
+        onShelf.some(
+          (s) =>
+            (s.warehouse ?? s.currentWarehouse)?.id === b.warehouse?.id &&
+            s.serialNumber.toLowerCase().includes(query)
+        )
+      )?.id
+    : undefined
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -223,9 +259,51 @@ export default function StockTab({
         </div>
         {query && matchCount === 0 && (
           <p className="border-b border-[#eeeef1] px-4 py-2.5 text-[12px] text-[#8b8b9b]">
-            No serial at any location matches &ldquo;{serialQuery}&rdquo;.
+            No serial matches &ldquo;{serialQuery}&rdquo;.
           </p>
         )}
+        {/* Confirms a match exists even before anything scrolls into view or
+            visibly expands — otherwise a match further down the list (or
+            one that's already on screen) can look identical to no match at
+            all. */}
+        {query && matchCount > 0 && (
+          <p className="border-b border-[#eeeef1] bg-[#f4fbf7] px-4 py-2.5 text-[12px] font-medium text-[#0b6644]">
+            {matchCount} {matchCount === 1 ? 'match' : 'matches'} found for &ldquo;{serialQuery}
+            &rdquo;.
+          </p>
+        )}
+
+        {/* Surfaced above the per-location breakdown, not below it — a
+            search is most often looking for exactly this (a unit that's
+            gone), and burying it under every location made it easy to miss. */}
+        {goneMatches.length > 0 && (
+          <div ref={goneMatchesRef} className="border-b border-[#eeeef1] bg-[#fbfaff] px-4 py-3">
+            <p
+              className={`${MONO} mb-2 text-[9.5px] font-semibold tracking-[.08em] text-[#8b8b9b] uppercase`}
+            >
+              Sold / removed — no longer on the shelf
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {goneMatches.map((serial) => (
+                <button
+                  key={serial.id}
+                  type="button"
+                  data-testid="serial-chip"
+                  onClick={() => onSelectSerial(serial)}
+                  className="flex items-center justify-between gap-2 rounded-[8px] border border-[#e4e4e9] bg-white px-2.5 py-2 text-left hover:border-[#5b21b6]"
+                >
+                  <span className={`${MONO} truncate text-[11.5px] font-medium text-[#3d3d4a]`}>
+                    {serial.serialNumber}
+                  </span>
+                  <span className="shrink-0 rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">
+                    {SERIAL_STATUS_LABELS[serial.status]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="divide-y divide-[#f4f4f6]">
           {stockedBalances.map((balance) => {
             const status = stockStatusOf(balance)
@@ -245,7 +323,11 @@ export default function StockTab({
               selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id))
 
             return (
-              <div key={balance.id} data-testid="stock-location-row">
+              <div
+                key={balance.id}
+                data-testid="stock-location-row"
+                ref={balance.id === firstMatchLocationId ? firstLocationMatchRef : undefined}
+              >
                 <div
                   role={canExpand ? 'button' : undefined}
                   tabIndex={canExpand ? 0 : undefined}

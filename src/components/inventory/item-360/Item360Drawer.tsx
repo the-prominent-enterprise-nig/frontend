@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, PackageCheck, ArrowLeftRight, ChevronLeft } from 'lucide-react'
 import { useItem360 } from './hooks/useItem360'
 import OverviewTab from './tabs/OverviewTab'
@@ -69,12 +69,14 @@ function Item360Content({
   context,
   locations,
   region,
+  focusSerialId,
   onClose,
 }: {
   itemId: string
   context: DrawerContext
   locations?: string[]
   region?: 'panay' | 'negros'
+  focusSerialId?: string
   onClose: () => void
 }) {
   const [activeTab, setActiveTab] = useState<Tab>(DEFAULT_TAB[context])
@@ -89,6 +91,23 @@ function Item360Content({
   const serialsData: SerialNumberSummary[] = serials.data?.success
     ? (serials.data.data?.data ?? [])
     : []
+
+  // Opened from a serial search (Stock Balance) rather than an item row —
+  // jump straight to that one serial's movement history once its data
+  // arrives, instead of landing on the Stock tab and making the searcher
+  // find it again themselves. Gated on `hasAppliedFocus`, not on
+  // `selectedSerial` being empty — this only fires once. Gating on
+  // `selectedSerial` instead re-triggered on every "Back to Stock" click
+  // (which clears it), snapping the drawer straight back to the same
+  // serial and making Back look like it did nothing.
+  const [hasAppliedFocus, setHasAppliedFocus] = useState(false)
+  useEffect(() => {
+    if (!focusSerialId || hasAppliedFocus || serials.isLoading) return
+    const match = serialsData.find((s) => s.id === focusSerialId)
+    if (match) setSelectedSerial(match)
+    setHasAppliedFocus(true)
+  }, [focusSerialId, serialsData, serials.isLoading, hasAppliedFocus])
+  const awaitingFocusSerial = !!focusSerialId && !hasAppliedFocus
 
   const lifecycle = (itemData as { lifecycle?: string } | null)?.lifecycle ?? 'active'
   // Both only mean something once the Stock tab's own queries have actually
@@ -192,7 +211,7 @@ function Item360Content({
       {/* Tab nav — hidden when there's only one tab to switch between (the
           Items catalog's Overview-only case), or while drilled into a single
           serial's own movement timeline */}
-      {visibleTabs.length > 1 && !selectedSerial && (
+      {visibleTabs.length > 1 && !selectedSerial && !awaitingFocusSerial && (
         <div className={`${PLEX} shrink-0 border-b border-[#e4e4e9] bg-white`}>
           <nav className="flex overflow-x-auto px-5" aria-label="Item 360 tabs">
             {visibleTabs.map((tab) => (
@@ -224,7 +243,7 @@ function Item360Content({
       <div className="flex-1 overflow-y-auto">
         {selectedSerial ? (
           <SerialMovementsTab serial={selectedSerial} onBack={() => setSelectedSerial(null)} />
-        ) : item.isLoading ? (
+        ) : item.isLoading || awaitingFocusSerial ? (
           <DrawerSkeleton />
         ) : !itemData ? (
           <div className="p-5 text-[13px] text-[#8b8b9b]">Failed to load item details.</div>
@@ -309,6 +328,7 @@ export default function Item360Drawer() {
             context={context}
             locations={locations}
             region={itemPanel?.region}
+            focusSerialId={itemPanel?.focusSerialId}
             onClose={popPanel}
           />
         ) : (
