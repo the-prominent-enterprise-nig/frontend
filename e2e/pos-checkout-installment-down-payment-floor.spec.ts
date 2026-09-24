@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable, fillStable } from './utils'
+import { gotoReady, clickStable, fillStable, openCustomSelect } from './utils'
 
 // Scenario 01 Gap 4 — installment sales now require a down payment of at
 // least 10% of the line's sale amount (backend enforcement + IF-01..IF-14
@@ -139,16 +139,20 @@ test.describe('POS Checkout — installment down payment floor', () => {
     await fillStable(customerInput, applicantName)
     await page.getByRole('button', { name: new RegExp(applicantName) }).click()
 
-    const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
+    const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await expect(termSelect).toBeVisible({ timeout: 10_000 })
-    await termSelect.selectOption({ index: 1 })
+    // Scenario 60 — the term dropdown is the shared Select now, not a native
+    // <select>: no placeholder <option>, so the old selectOption({index:1})
+    // (index 0 being the placeholder) is simply the first real option.
+    await openCustomSelect(termSelect)
+    await page.getByRole('option').first().click()
 
-    const picker = page.locator('select').filter({ hasText: applicationNumber })
+    // Scenario 60 — shared Select: named by what it shows (the placeholder
+    // while unselected), options live in a popup, not as <option> children.
+    const picker = page.getByRole('combobox', { name: 'Select an approved application…' })
     await expect(picker).toBeVisible({ timeout: 10_000 })
-    const optionValue = await picker
-      .locator('option', { hasText: applicationNumber })
-      .getAttribute('value')
-    await picker.selectOption(optionValue!)
+    await openCustomSelect(picker)
+    await page.getByRole('option').filter({ hasText: applicationNumber }).click()
 
     // The static hint shows the floor, and picking a term auto-fills the
     // down payment input at that same floor — leaving it blank/0 used to
@@ -206,16 +210,20 @@ test.describe('POS Checkout — installment down payment floor', () => {
     await fillStable(customerInput, applicantName)
     await page.getByRole('button', { name: new RegExp(applicantName) }).click()
 
-    const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
+    const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await expect(termSelect).toBeVisible({ timeout: 10_000 })
-    await termSelect.selectOption({ index: 1 })
+    // Scenario 60 — the term dropdown is the shared Select now, not a native
+    // <select>: no placeholder <option>, so the old selectOption({index:1})
+    // (index 0 being the placeholder) is simply the first real option.
+    await openCustomSelect(termSelect)
+    await page.getByRole('option').first().click()
 
-    const picker = page.locator('select').filter({ hasText: applicationNumber })
+    // Scenario 60 — shared Select: named by what it shows (the placeholder
+    // while unselected), options live in a popup, not as <option> children.
+    const picker = page.getByRole('combobox', { name: 'Select an approved application…' })
     await expect(picker).toBeVisible({ timeout: 10_000 })
-    const optionValue = await picker
-      .locator('option', { hasText: applicationNumber })
-      .getAttribute('value')
-    await picker.selectOption(optionValue!)
+    await openCustomSelect(picker)
+    await page.getByRole('option').filter({ hasText: applicationNumber }).click()
 
     // A down payment well above the item's price used to render a bare,
     // unexplained "Preview unavailable." — the backend's own preview

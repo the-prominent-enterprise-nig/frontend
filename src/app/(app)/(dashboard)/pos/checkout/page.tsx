@@ -86,6 +86,7 @@ import {
 } from '../_actions/pos-actions'
 import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
@@ -570,7 +571,6 @@ export default function CheckoutPage() {
   const [tpfProviders, setTpfProviders] = useState<TpfProvider[]>([])
   const [tpfProviderId, setTpfProviderId] = useState('')
   const [tpfReferenceNumber, setTpfReferenceNumber] = useState('')
-  const [tpfApprovedAmount, setTpfApprovedAmount] = useState('')
   const [installmentPreviews, setInstallmentPreviews] = useState<
     Record<string, InstallmentPreview | null>
   >({})
@@ -1257,7 +1257,7 @@ export default function CheckoutPage() {
   // Scenario 37 — whether the cash bucket's one tender method (paymentMode,
   // set via the transaction-wide Payment Mode toggle — there's no per-item
   // choice anymore) is Credit Card. One card swipe covers whatever's being
-  // paid by card in this sale, so the POS Terminal/Straight-Installment/Term
+  // paid by card in this sale, so the Card Acquirer/Straight-Installment/Term
   // fields render once, not per line.
   const hasCreditCardLine =
     (cashCartLines.length > 0 && paymentMode === 'credit_card') ||
@@ -1453,7 +1453,6 @@ export default function CheckoutPage() {
       // so it can't silently carry over into a later, unrelated TPF line.
       setTpfProviderId('')
       setTpfReferenceNumber('')
-      setTpfApprovedAmount('')
       return
     }
     getActiveTpfProviders().then((res) => {
@@ -2654,10 +2653,11 @@ export default function CheckoutPage() {
           salesInvoiceNumber: invoiceNumberInput.trim(),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
-          tpfApprovedAmount:
-            tpfInstallmentCartLines.length > 0 && tpfApprovedAmount
-              ? parseFloat(tpfApprovedAmount)
-              : undefined,
+          // tpfApprovedAmount is deliberately not sent (client request,
+          // 2026-09-24 — Scenario 60). The column stays and stays null: it is
+          // optional in the DTO and nullable in the schema, and nothing reads
+          // it back, so the financier's reference number is the only TPF
+          // detail the cashier is asked for.
           // Which register account the TPF down payment debits — the same
           // Cash/Debit-Credit choice (and Cash's own sub-mode) the cashier
           // made for the down payment above, not a separate control.
@@ -3055,7 +3055,6 @@ export default function CheckoutPage() {
     setSaleMode('sale')
     setTpfProviderId('')
     setTpfReferenceNumber('')
-    setTpfApprovedAmount('')
     setInstallmentPreviews({})
     setInstallmentPreviewErrors({})
     setInstallmentPreviewLoading({})
@@ -4194,38 +4193,36 @@ export default function CheckoutPage() {
                         <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           Approved Credit Application
                         </label>
-                        <div className="relative">
-                          <select
-                            value={creditApplicationId}
-                            onChange={(e) => {
-                              setCreditApplicationId(e.target.value)
-                              if (e.target.value) applyCreditApplicationTerms(e.target.value)
-                            }}
-                            disabled={creditApplicationsLoading}
-                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
-                          >
-                            <option value="">
-                              {creditApplicationsLoading
-                                ? 'Loading…'
-                                : approvedCreditApplications.length === 0
-                                  ? 'No approved application on file'
-                                  : 'Select an approved application…'}
-                            </option>
-                            {approvedCreditApplications.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.applicationNumber} · {a.items.map((i) => i.itemName).join(', ')}{' '}
-                                · ₱
-                                {a.requestedAmount.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                })}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={12}
-                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
-                          />
-                        </div>
+                        {/* Disabled while loading and when there's nothing to
+                            pick — the empty case is explained by the amber
+                            note below, so an openable dropdown onto one dead
+                            row added nothing. */}
+                        <Select
+                          value={creditApplicationId}
+                          onChange={(v) => {
+                            setCreditApplicationId(v)
+                            if (v) applyCreditApplicationTerms(v)
+                          }}
+                          options={approvedCreditApplications.map((a) => ({
+                            value: a.id,
+                            label: `${a.applicationNumber} · ${a.items
+                              .map((i) => i.itemName)
+                              .join(', ')} · ₱${a.requestedAmount.toLocaleString('en-PH', {
+                              minimumFractionDigits: 2,
+                            })}`,
+                          }))}
+                          placeholder={
+                            creditApplicationsLoading
+                              ? 'Loading…'
+                              : approvedCreditApplications.length === 0
+                                ? 'No approved application on file'
+                                : 'Select an approved application…'
+                          }
+                          disabled={
+                            creditApplicationsLoading || approvedCreditApplications.length === 0
+                          }
+                          compact
+                        />
                         {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
                           <div className="mt-1">
                             <p className="text-[13px] text-amber-700">
@@ -4249,7 +4246,7 @@ export default function CheckoutPage() {
                               className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
                             >
                               <CreditCard size={12} />
-                              Raise one for this cart
+                              New Credit Application Form
                             </button>
                             <p className="mt-1 text-[11px] text-amber-600">
                               Your cart is kept — it still needs the owner&apos;s approval before
@@ -4361,26 +4358,16 @@ export default function CheckoutPage() {
                           </div>
                           {groupProvider === 'inhouse' && (
                             <>
-                              <div className="relative">
-                                <select
-                                  value={line.financingTermId ?? ''}
-                                  onChange={(e) =>
-                                    setLineFinancingTermId(groupLineIds, e.target.value)
-                                  }
-                                  className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                >
-                                  <option value="">Select a term…</option>
-                                  {financingTerms.map((t) => (
-                                    <option key={t.id} value={t.id}>
-                                      {t.termMonths} months
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown
-                                  size={11}
-                                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                                />
-                              </div>
+                              <Select
+                                value={line.financingTermId ?? ''}
+                                onChange={(v) => setLineFinancingTermId(groupLineIds, v)}
+                                options={financingTerms.map((t) => ({
+                                  value: t.id,
+                                  label: `${t.termMonths} months`,
+                                }))}
+                                placeholder="Select a term…"
+                                compact
+                              />
                               {downPaymentEditingThisLine ? (
                                 <>
                                   <input
@@ -4564,28 +4551,23 @@ export default function CheckoutPage() {
                         <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           TPF Provider *
                         </label>
-                        <div className="relative">
-                          <select
-                            value={tpfProviderId}
-                            onChange={(e) => setTpfProviderId(e.target.value)}
-                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                          >
-                            <option value="">
-                              {tpfProviders.length === 0
-                                ? 'No TPF providers on file'
-                                : 'Select a TPF provider…'}
-                            </option>
-                            {tpfProviders.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={12}
-                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
-                          />
-                        </div>
+                        {/* The shared Select rather than a native <select> +
+                            hand-placed chevron: the open list is styleable,
+                            which the native popup never is, and it matches
+                            the Selling Agent picker above. `compact` keeps
+                            the dense sizing this panel already had. */}
+                        <Select
+                          value={tpfProviderId}
+                          onChange={setTpfProviderId}
+                          options={tpfProviders.map((p) => ({ value: p.id, label: p.name }))}
+                          placeholder={
+                            tpfProviders.length === 0
+                              ? 'No TPF providers on file'
+                              : 'Select a TPF provider…'
+                          }
+                          disabled={tpfProviders.length === 0}
+                          compact
+                        />
                         {tpfProviders.length === 0 && (
                           <p className="mt-1 text-[13px] text-amber-700">
                             Add a TPF provider under POS Settings first.
@@ -4597,15 +4579,6 @@ export default function CheckoutPage() {
                         placeholder="Financier's reference number *"
                         value={tpfReferenceNumber}
                         onChange={(e) => setTpfReferenceNumber(e.target.value)}
-                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        placeholder="Approved amount (optional)"
-                        value={tpfApprovedAmount}
-                        onChange={(e) => setTpfApprovedAmount(e.target.value)}
                         className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                       />
                     </div>
@@ -4716,26 +4689,35 @@ export default function CheckoutPage() {
                     data-testid="card-txn-mode-toggle"
                     className="rounded-lg border border-purple-100 p-2.5"
                   >
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select POS Terminal</p>
+                    {/* "Card Acquirer", not "POS Terminal" (2026-09-24):
+                        these options — BDO/BPI/Metrobank/Maya — are the
+                        institutions that provide the terminal and settle the
+                        money, not the terminal itself. "Acquirer" rather
+                        than "bank" deliberately: Maya is a non-bank acquirer,
+                        so any bank-flavoured label is wrong for it. Not to be
+                        confused with the ISSUING bank (the customer's own
+                        card) or the network (Visa/Mastercard) — neither is
+                        what's picked here. bank_transfer keeps its own plain
+                        "Bank" label; both can be on screen at once. */}
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select Card Acquirer</p>
                     {(() => {
                       const cardConfig = configuredMethods.find((m) => m.key === 'card')
                       const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
                       return (
                         <>
                           {terminalOptions.length > 0 && (
-                            <select
-                              aria-label="POS Terminal"
-                              className="mb-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                              value={cardTerminalOptionId ?? ''}
-                              onChange={(e) => setCardTerminalOptionId(e.target.value || undefined)}
-                            >
-                              <option value="">Select pos terminal…</option>
-                              {terminalOptions.map((o) => (
-                                <option key={o.id} value={o.id}>
-                                  {o.name}
-                                </option>
-                              ))}
-                            </select>
+                            <div className="mb-1.5">
+                              <Select
+                                value={cardTerminalOptionId ?? ''}
+                                onChange={(v) => setCardTerminalOptionId(v || undefined)}
+                                options={terminalOptions.map((o) => ({
+                                  value: o.id,
+                                  label: o.name,
+                                }))}
+                                placeholder="Select card acquirer…"
+                                compact
+                              />
+                            </div>
                           )}
                           <div className="flex gap-1.5">
                             {(['straight', 'installment'] as const).map((mode) => (
@@ -4982,7 +4964,7 @@ export default function CheckoutPage() {
                       // here, just a pointer back so it doesn't read as missing.
                       const optionPointer =
                         p.method === 'card'
-                          ? 'Terminal/Straight-Installment/Term'
+                          ? 'Card Acquirer/Straight-Installment/Term'
                           : p.method === 'bank_transfer'
                             ? 'Bank'
                             : p.method === 'qr'

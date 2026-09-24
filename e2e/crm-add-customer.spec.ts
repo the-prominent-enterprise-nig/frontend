@@ -63,6 +63,16 @@ test.describe('CRM — Add Customer', () => {
 
     await gotoReady(page, '/crm/customers/new')
 
+    // Scenario 60 Part 3 — a fresh form opens on Region VI, where the
+    // business operates, instead of a blank region the cashier re-picks
+    // every time. The rest of this test then overrides it with the NCR
+    // chain below, which is the point: the default is a starting value, not
+    // a constraint.
+    await expect(page.getByPlaceholder(/Type to search region/i)).toHaveValue(
+      'Region VI (Western Visayas)',
+      { timeout: 15_000 }
+    )
+
     await fillAllStable([
       { locator: page.getByLabel('First name *'), value: firstName },
       { locator: page.getByLabel('Last name *'), value: lastName },

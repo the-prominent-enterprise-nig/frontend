@@ -204,7 +204,7 @@ export function CoMakerFields({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="min-w-0">
               <label className="mb-1 block text-xs font-medium text-zinc-600">
-                Phone <span className="text-zinc-400">(optional)</span>
+                Phone <span className="text-red-500">*</span>
               </label>
               <Controller
                 name="coMakerContactNumber"
@@ -299,7 +299,7 @@ export function CoMakerFields({
           </div>
           <div className="min-w-0">
             <label className="mb-1 block text-xs font-medium text-zinc-600">
-              Phone <span className="text-zinc-400">(optional)</span>
+              Phone <span className="text-red-500">*</span>
             </label>
             <Controller
               name="newCoMakerContactNumber"

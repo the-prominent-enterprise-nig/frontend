@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable, fillStable } from './utils'
+import { gotoReady, clickStable, fillStable, openCustomSelect } from './utils'
 
 // Scenario 17, Part 6 — POS installment checkout now requires the customer's
 // approved, unused CreditApplication. This spec sticks to UI-surface checks
@@ -58,17 +58,25 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     await expect(page.getByText('Approved Credit Application', { exact: true })).toBeVisible({
       timeout: 10_000,
     })
+    // Scenario 60 Part 1 — this copy lost its "— open one in Credit
+    // Applications first." tail when the panel gained a button that raises
+    // the application inline, but this assertion kept the old sentence and
+    // had been failing ever since. Asserted against the live copy now, plus
+    // the button itself, whose label the client renamed in the same pass.
     await expect(
-      page.getByText(
-        'Every installment sale requires an approved credit application — open one in Credit Applications first.'
-      )
+      page.getByText('Every installment sale requires an approved credit application.')
     ).toBeVisible()
+    await expect(page.getByRole('button', { name: 'New Credit Application Form' })).toBeVisible()
 
     // The empty picker (still "") keeps submit disabled via
     // installmentMissingCreditApplication, even once a term is picked.
-    const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
+    const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await expect(termSelect).toBeVisible({ timeout: 10_000 })
-    await termSelect.selectOption({ index: 1 })
+    // Scenario 60 — the term dropdown is the shared Select now, not a native
+    // <select>: no placeholder <option>, so the old selectOption({index:1})
+    // (index 0 being the placeholder) is simply the first real option.
+    await openCustomSelect(termSelect)
+    await page.getByRole('option').first().click()
     await expect(
       page.getByRole('button', { name: 'Select an approved credit application' })
     ).toBeVisible()
@@ -135,19 +143,24 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     await fillStable(customerInput, applicantName)
     await page.getByRole('button', { name: new RegExp(applicantName) }).click()
 
-    const picker = page.locator('select').filter({ hasText: application.applicationNumber })
+    // Scenario 60 — the application picker is the shared Select now. Its
+    // accessible name is whatever it currently shows, so while unselected
+    // that's the placeholder; the application itself is an option in the
+    // popup rather than an <option> child.
+    const picker = page.getByRole('combobox', { name: 'Select an approved application…' })
     await expect(picker).toBeVisible({ timeout: 10_000 })
+    // Same stale sentence as above, and here it made the assertion vacuous:
+    // a string that matches nothing always has count 0, so this proved
+    // nothing. Against the live copy it actually tests what it claims —
+    // that the "no approved application" panel is gone once one exists.
     await expect(
-      page.getByText(
-        'Every installment sale requires an approved credit application — open one in Credit Applications first.'
-      )
+      page.getByText('Every installment sale requires an approved credit application.')
     ).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'New Credit Application Form' })).toHaveCount(0)
 
     // Selecting it clears the submit-blocking label.
-    const optionValue = await picker
-      .locator('option', { hasText: application.applicationNumber })
-      .getAttribute('value')
-    await picker.selectOption(optionValue!)
+    await openCustomSelect(picker)
+    await page.getByRole('option').filter({ hasText: application.applicationNumber }).click()
     await expect(
       page.getByRole('button', { name: 'Select an approved credit application' })
     ).toHaveCount(0)

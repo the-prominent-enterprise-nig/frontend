@@ -296,8 +296,12 @@ function pesos(n: number): string {
 export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.superRefine(
   (data, ctx) => {
     // A co-maker on a credit application is identified by first name, last
-    // name and relationship — contact details stay capturable but optional,
-    // since the branch often has only the name and relationship at intake.
+    // name and relationship, plus a contact number (client request,
+    // 2026-09-24 — Scenario 60). The number is not a nicety: a co-maker
+    // exists to be reachable when the account goes bad, and CoMaker
+    // .contactNumber is NOT NULL in the schema, so leaving it blank was
+    // writing an empty string into a required column rather than failing.
+    // Email stays optional.
     if (data.coMakerId === NEW_CO_MAKER_VALUE) {
       if (!data.newCoMakerFirstName?.trim()) {
         ctx.addIssue({
@@ -318,6 +322,28 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
           code: 'custom',
           path: ['newCoMakerRelationship'],
           message: 'Relationship is required',
+        })
+      }
+      if (!data.newCoMakerContactNumber?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['newCoMakerContactNumber'],
+          message: 'Contact number is required',
+        })
+      }
+    } else if (data.coMakerId) {
+      // Editing an already-saved co-maker inline. Only the number is checked
+      // here: this branch submits each field as `value || undefined`, so a
+      // blank leaves the stored value untouched rather than overwriting it —
+      // except that a co-maker saved before this rule can legitimately hold a
+      // blank number, and this is what surfaces it for fixing instead of
+      // letting it ride. Name/relationship are deliberately left unchecked,
+      // matching what this branch already did.
+      if (!data.coMakerContactNumber?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['coMakerContactNumber'],
+          message: 'Contact number is required',
         })
       }
     }
