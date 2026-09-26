@@ -46,7 +46,7 @@ export default function AcknowledgementReceiptsList() {
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-2xl font-bold text-prominent-purple-900">Acknowledgement Receipts</h2>
+          <h2 className="text-2xl font-bold text-prominent-purple-900">New Receipts</h2>
           <p className="text-sm text-gray-500">
             Money received with no customer or invoice behind it.
           </p>
@@ -62,7 +62,7 @@ export default function AcknowledgementReceiptsList() {
             onClick={() => router.push('/pos/collections/acknowledgement/new')}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
           >
-            <Plus className="w-4 h-4" /> New Acknowledgement Receipt
+            <Plus className="w-4 h-4" /> New Receipts
           </button>
         </div>
       </div>

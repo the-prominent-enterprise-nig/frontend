@@ -610,6 +610,14 @@ export default function CheckoutPage() {
   const [creditApplicationId, setCreditApplicationId] = useState('')
   const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
 
+  // Scenario 60 — Employee Appliance Loan: waives the down-payment floor
+  // and the credit-application requirement for an employee-tagged customer.
+  // Gated on the tag (only rendered when isEmployeeCustomer), but still a
+  // real checked/unchecked toggle rather than a fully automatic behavior —
+  // the cashier confirms it, same spirit as a manager override.
+  const [employeeApplianceLoanChecked, setEmployeeApplianceLoanChecked] = useState(false)
+  const [hrApplianceLoanApplicationNumber, setHrApplianceLoanApplicationNumber] = useState('')
+
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
   const [parkLabel, setParkLabel] = useState('')
@@ -1206,6 +1214,13 @@ export default function CheckoutPage() {
   const isGovernmentInstitutionalCustomer =
     selectedCustomer?.customerType === 'business' &&
     selectedCustomer?.businessCategory === 'government'
+  // Scenario 60 — an employee-tagged customer can waive the down-payment
+  // floor and the credit-application requirement the same way a government
+  // institutional customer already does, but only once the cashier
+  // explicitly checks the box below (employeeApplianceLoanChecked) rather
+  // than automatically on every sale to that customer.
+  const isEmployeeCustomer = selectedCustomer?.customerType === 'employee'
+  const employeeApplianceLoanActive = isEmployeeCustomer && employeeApplianceLoanChecked
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -1258,20 +1273,25 @@ export default function CheckoutPage() {
     ) / 100
   const tpfShareOfPromo = subtotal > 0 ? Math.min(1, tpfLinesGross / subtotal) * promoDiscount : 0
   const tpfLinesTotal = Math.max(0, Math.round((tpfLinesGross - tpfShareOfPromo) * 100) / 100)
-  const installmentDownPaymentsTotal =
-    Math.round(
-      inhouseInstallmentCartLines.reduce(
-        (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
-        0
-      ) * 100
-    ) / 100
-  const tpfDownPaymentsTotal =
-    Math.round(
-      tpfInstallmentCartLines.reduce(
-        (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
-        0
-      ) * 100
-    ) / 100
+  // Scenario 60 — both totals collapse to 0 for an Employee Appliance
+  // Loan, overriding whatever's left in downPaymentInput from before the
+  // checkbox was checked; nothing is collected at the register for it.
+  const installmentDownPaymentsTotal = employeeApplianceLoanActive
+    ? 0
+    : Math.round(
+        inhouseInstallmentCartLines.reduce(
+          (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
+          0
+        ) * 100
+      ) / 100
+  const tpfDownPaymentsTotal = employeeApplianceLoanActive
+    ? 0
+    : Math.round(
+        tpfInstallmentCartLines.reduce(
+          (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
+          0
+        ) * 100
+      ) / 100
   // Every down payment being collected at this register, whoever carries the
   // balance afterwards — inhouse and TPF share one tender method and one
   // pool, so the toggle labels itself with the combined figure.
@@ -1424,12 +1444,13 @@ export default function CheckoutPage() {
   // has its own amount/term/down-payment, so each gets its own preview call
   // (POST /pos/financing-terms/preview is already single-amount-scoped, no
   // backend change needed to call it once per line instead of once per cart).
-  const installmentLinesDepKey = installmentCartLines
-    .map(
-      (l) =>
-        `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}`
-    )
-    .join('|')
+  const installmentLinesDepKey =
+    installmentCartLines
+      .map(
+        (l) =>
+          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}`
+      )
+      .join('|') + `|employeeLoan:${employeeApplianceLoanActive}`
 
   // Approval happens in someone ELSE's session — only Business Owner holds
   // pos:application:approve — so "approve in another tab, come back to the
@@ -1484,6 +1505,20 @@ export default function CheckoutPage() {
   // stale list that may auto-select an application already consumed
   // elsewhere. Same requestIdRef guard usePriceResolution.ts uses.
   const creditAppsRequestIdRef = useRef(0)
+
+  // Scenario 60 — resets the Employee Appliance Loan checkbox + HR
+  // reference whenever the selected customer actually changes (not on
+  // every re-render): auto-checks for a newly-selected employee-tagged
+  // customer, clears for anyone else, so a previous customer's choice
+  // never silently carries over onto a new one.
+  const lastEmployeeLoanCustomerIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const customerId = selectedCustomer?.id ?? null
+    if (lastEmployeeLoanCustomerIdRef.current === customerId) return
+    lastEmployeeLoanCustomerIdRef.current = customerId
+    setEmployeeApplianceLoanChecked(isEmployeeCustomer)
+    setHrApplianceLoanApplicationNumber('')
+  }, [selectedCustomer?.id, isEmployeeCustomer])
 
   // Scenario 17 Part 6 — reload this customer's approved, unused credit
   // applications whenever the customer or cart's installment-line count
@@ -1602,7 +1637,9 @@ export default function CheckoutPage() {
       }
       installmentPreviewTimers.current[line.lineId] = setTimeout(async () => {
         setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: true }))
-        const downPayment = parseFloat(line.downPaymentInput ?? '0') || 0
+        const downPayment = employeeApplianceLoanActive
+          ? 0
+          : parseFloat(line.downPaymentInput ?? '0') || 0
         const res = await previewInstallment({
           totalAmount: lineAmount,
           downPayment,
@@ -2392,6 +2429,11 @@ export default function CheckoutPage() {
       return
     }
 
+    if (employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()) {
+      setError('Enter the HR appliance loan application number.')
+      return
+    }
+
     const lineMissingTerm = inhouseInstallmentCartLines.find((l) => !l.financingTermId)
     if (lineMissingTerm) {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
@@ -2400,7 +2442,8 @@ export default function CheckoutPage() {
     if (
       inhouseInstallmentCartLines.length > 0 &&
       !creditApplicationId &&
-      !isGovernmentInstitutionalCustomer
+      !isGovernmentInstitutionalCustomer &&
+      !employeeApplianceLoanActive
     ) {
       setError(
         'Select the approved credit application for this customer — every installment sale requires one.'
@@ -2421,8 +2464,12 @@ export default function CheckoutPage() {
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-        const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
-        if (downPayment <= 0) {
+        const downPayment = employeeApplianceLoanActive
+          ? 0
+          : parseFloat(l.downPaymentInput ?? '0') || 0
+        // Scenario 60 — an Employee Appliance Loan waives the down payment
+        // (and the ">0" / 10%-floor checks below) entirely.
+        if (!employeeApplianceLoanActive && downPayment <= 0) {
           setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
           return
         }
@@ -2430,7 +2477,7 @@ export default function CheckoutPage() {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
-        if (downPayment < 0.1 * lineAmount - 0.005) {
+        if (!employeeApplianceLoanActive && downPayment < 0.1 * lineAmount - 0.005) {
           setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
           return
         }
@@ -2439,7 +2486,9 @@ export default function CheckoutPage() {
     for (const l of inhouseInstallmentCartLines) {
       const lineAmount =
         effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-      const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
+      const downPayment = employeeApplianceLoanActive
+        ? 0
+        : parseFloat(l.downPaymentInput ?? '0') || 0
       if (downPayment < 0 || downPayment > lineAmount) {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
         return
@@ -2448,7 +2497,8 @@ export default function CheckoutPage() {
       // tax-inclusive/exclusive price conversion above — without it, typing
       // the exact rounded-to-centavo value shown by the "Min" hint below
       // can land a hair under the true unrounded floor and be rejected.
-      if (downPayment < 0.1 * lineAmount - 0.005) {
+      // Waived entirely for an Employee Appliance Loan (Scenario 60).
+      if (!employeeApplianceLoanActive && downPayment < 0.1 * lineAmount - 0.005) {
         setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
         return
       }
@@ -2608,6 +2658,10 @@ export default function CheckoutPage() {
           totalAmount,
           isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
+          isEmployeeApplianceLoan: employeeApplianceLoanActive || undefined,
+          hrApplianceLoanApplicationNumber: employeeApplianceLoanActive
+            ? hrApplianceLoanApplicationNumber.trim()
+            : undefined,
           // The approving manager's id is read back off the cart when the
           // component state that normally holds it is gone. A price override
           // writes to both: priceOverrideBy on the line (which is part of
@@ -2651,10 +2705,14 @@ export default function CheckoutPage() {
                 ? l.financingTermId
                 : undefined,
             // Both providers collect one — inhouse's funds its schedule,
-            // TPF's is simply the slice the financier doesn't fund.
+            // TPF's is simply the slice the financier doesn't fund. Waived
+            // to 0 for an Employee Appliance Loan (Scenario 60), overriding
+            // whatever was typed/defaulted before the checkbox was checked.
             downPayment:
               l.invoiceType === 'installment'
-                ? parseFloat(l.downPaymentInput ?? '0') || 0
+                ? employeeApplianceLoanActive
+                  ? 0
+                  : parseFloat(l.downPaymentInput ?? '0') || 0
                 : undefined,
           })),
         })
@@ -3497,8 +3555,13 @@ export default function CheckoutPage() {
                       <User size={13} className="text-purple-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
                         {customerDisplayName(selectedCustomer)}
+                        {isEmployeeCustomer && (
+                          <span className="rounded-full bg-prominent-purple-200 px-1.5 py-0.5 text-[10px] font-medium text-prominent-purple-900">
+                            Employee
+                          </span>
+                        )}
                       </p>
                       <div className="flex items-center gap-2">
                         {selectedCustomer.phone && (
@@ -3614,6 +3677,39 @@ export default function CheckoutPage() {
                   <UserPlus size={12} /> New Customer
                 </button>
               </>
+            )}
+
+            {/* Scenario 60 — only shown for a customer already tagged as an
+                employee; the cashier still explicitly confirms it rather
+                than this being fully automatic like the government
+                institutional skip below. */}
+            {selectedCustomer && isEmployeeCustomer && (
+              <div className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5">
+                <label className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={employeeApplianceLoanChecked}
+                    onChange={(e) => setEmployeeApplianceLoanChecked(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-prominent-purple-900">
+                      Employee Appliance Loan
+                    </span>
+                    <span className="block text-gray-700">
+                      No down payment, no credit application required
+                    </span>
+                  </span>
+                </label>
+                {employeeApplianceLoanChecked && (
+                  <input
+                    className="mt-2 w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                    placeholder="HR Appliance Loan Application Number *"
+                    value={hrApplianceLoanApplicationNumber}
+                    onChange={(e) => setHrApplianceLoanApplicationNumber(e.target.value)}
+                  />
+                )}
+              </div>
             )}
           </div>
 
@@ -4110,76 +4206,85 @@ export default function CheckoutPage() {
                         Government institutional customer — no credit application required.
                       </p>
                     )}
-                    {selectedCustomer && !isGovernmentInstitutionalCustomer && (
-                      <div className="mt-2.5">
-                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
-                          Approved Credit Application
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={creditApplicationId}
-                            onChange={(e) => {
-                              setCreditApplicationId(e.target.value)
-                              if (e.target.value) applyCreditApplicationTerms(e.target.value)
-                            }}
-                            disabled={creditApplicationsLoading}
-                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
-                          >
-                            <option value="">
-                              {creditApplicationsLoading
-                                ? 'Loading…'
-                                : approvedCreditApplications.length === 0
-                                  ? 'No approved application on file'
-                                  : 'Select an approved application…'}
-                            </option>
-                            {approvedCreditApplications.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.applicationNumber} · {a.items.map((i) => i.itemName).join(', ')}{' '}
-                                · ₱
-                                {a.requestedAmount.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                })}
+                    {selectedCustomer && employeeApplianceLoanActive && (
+                      <p className="mt-2.5 text-[13px] text-prominent-purple-500">
+                        Employee Appliance Loan — no credit application required.
+                      </p>
+                    )}
+                    {selectedCustomer &&
+                      !isGovernmentInstitutionalCustomer &&
+                      !employeeApplianceLoanActive && (
+                        <div className="mt-2.5">
+                          <label className="mb-1 block text-[13px] text-prominent-purple-700">
+                            Approved Credit Application
+                          </label>
+                          <div className="relative">
+                            <select
+                              value={creditApplicationId}
+                              onChange={(e) => {
+                                setCreditApplicationId(e.target.value)
+                                if (e.target.value) applyCreditApplicationTerms(e.target.value)
+                              }}
+                              disabled={creditApplicationsLoading}
+                              className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
+                            >
+                              <option value="">
+                                {creditApplicationsLoading
+                                  ? 'Loading…'
+                                  : approvedCreditApplications.length === 0
+                                    ? 'No approved application on file'
+                                    : 'Select an approved application…'}
                               </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={12}
-                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
-                          />
-                        </div>
-                        {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <div className="mt-1">
-                            <p className="text-[13px] text-amber-700">
-                              Every installment sale requires an approved credit application.
-                            </p>
-                            {/* Approval happens in the Business Owner's own
+                              {approvedCreditApplications.map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.applicationNumber} ·{' '}
+                                  {a.items.map((i) => i.itemName).join(', ')} · ₱
+                                  {a.requestedAmount.toLocaleString('en-PH', {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown
+                              size={12}
+                              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
+                            />
+                          </div>
+                          {!creditApplicationsLoading &&
+                            approvedCreditApplications.length === 0 && (
+                              <div className="mt-1">
+                                <p className="text-[13px] text-amber-700">
+                                  Every installment sale requires an approved credit application.
+                                </p>
+                                {/* Approval happens in the Business Owner's own
                                 session, so the cashier is usually waiting on
                                 someone else. This list refreshes when the tab
                                 regains focus; saying so stops the wait looking
                                 like a dead screen. */}
-                            <p className="mt-1 text-[12px] text-amber-600">
-                              Waiting on an approval? This refreshes when you come back to this tab.
-                            </p>
-                            {/* Was a dead sentence telling the cashier to go
+                                <p className="mt-1 text-[12px] text-amber-600">
+                                  Waiting on an approval? This refreshes when you come back to this
+                                  tab.
+                                </p>
+                                {/* Was a dead sentence telling the cashier to go
                                 do it themselves. Carries the customer and
                                 these installment lines straight into the
                                 form, and brings the cart back afterwards. */}
-                            <button
-                              type="button"
-                              onClick={goToRaiseCreditApplication}
-                              className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
-                            >
-                              <CreditCard size={12} />
-                              Raise one for this cart
-                            </button>
-                            <p className="mt-1 text-[11px] text-amber-600">
-                              Your cart is kept — it still needs the owner&apos;s approval before
-                              this sale can be completed.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                                <button
+                                  type="button"
+                                  onClick={goToRaiseCreditApplication}
+                                  className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
+                                >
+                                  <CreditCard size={12} />
+                                  Raise one for this cart
+                                </button>
+                                <p className="mt-1 text-[11px] text-amber-600">
+                                  Your cart is kept — it still needs the owner&apos;s approval
+                                  before this sale can be completed.
+                                </p>
+                              </div>
+                            )}
+                        </div>
+                      )}
                   </div>
                 )}
               </div>
@@ -4235,9 +4340,15 @@ export default function CheckoutPage() {
                   // setLineFinancingTermId() so the displayed floor is never
                   // a centavo amount the field itself won't accept.
                   const minDownPaymentWhole = Math.ceil(minDownPayment)
-                  const downPaymentValue = line.downPaymentInput
-                    ? parseFloat(line.downPaymentInput) || 0
-                    : minDownPaymentWhole
+                  // Scenario 60 — an Employee Appliance Loan waives the down
+                  // payment entirely, overriding whatever was typed/defaulted
+                  // before the checkbox was checked, both for display here
+                  // and for what actually gets submitted (see handleConfirm).
+                  const downPaymentValue = employeeApplianceLoanActive
+                    ? 0
+                    : line.downPaymentInput
+                      ? parseFloat(line.downPaymentInput) || 0
+                      : minDownPaymentWhole
                   const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
@@ -4291,7 +4402,26 @@ export default function CheckoutPage() {
                                   className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
                                 />
                               </div>
-                              {downPaymentEditingThisLine ? (
+                              {employeeApplianceLoanActive ? (
+                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Down payment
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      Waived
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 pl-4">
+                                    <span className="text-[15px] font-bold text-prominent-purple-800">
+                                      {fmt(0)}
+                                    </span>
+                                    <span className="ml-2 text-xs text-prominent-purple-500">
+                                      Employee Appliance Loan
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : downPaymentEditingThisLine ? (
                                 <>
                                   <input
                                     type="number"
@@ -4353,10 +4483,12 @@ export default function CheckoutPage() {
                                   </div>
                                 </div>
                               )}
-                              <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
-                                <span className="text-prominent-purple-400">●</span>
-                                Fixed at 10% of the sale amount — the same for every term.
-                              </p>
+                              {!employeeApplianceLoanActive && (
+                                <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
+                                  <span className="text-prominent-purple-400">●</span>
+                                  Fixed at 10% of the sale amount — the same for every term.
+                                </p>
+                              )}
                               {line.financingTermId && (
                                 <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
                                   {installmentPreviewLoading[line.lineId] ? (
@@ -4385,7 +4517,26 @@ export default function CheckoutPage() {
                           )}
                           {groupProvider === 'tpf' && (
                             <>
-                              {downPaymentEditingThisLine ? (
+                              {employeeApplianceLoanActive ? (
+                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Down payment
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      Waived
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 pl-4">
+                                    <span className="text-[15px] font-bold text-prominent-purple-800">
+                                      {fmt(0)}
+                                    </span>
+                                    <span className="ml-2 text-xs text-prominent-purple-500">
+                                      Employee Appliance Loan
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : downPaymentEditingThisLine ? (
                                 <>
                                   <input
                                     type="number"
@@ -4976,12 +5127,15 @@ export default function CheckoutPage() {
               const installmentMissingCreditApplication =
                 inhouseInstallmentCartLines.length > 0 &&
                 !creditApplicationId &&
-                !isGovernmentInstitutionalCustomer
+                !isGovernmentInstitutionalCustomer &&
+                !employeeApplianceLoanActive
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
-              const tpfMissingDownPayment = tpfInstallmentCartLines.some(
-                (l) => !(parseFloat(l.downPaymentInput ?? '0') > 0)
-              )
+              const tpfMissingDownPayment =
+                !employeeApplianceLoanActive &&
+                tpfInstallmentCartLines.some((l) => !(parseFloat(l.downPaymentInput ?? '0') > 0))
+              const missingHrLoanNumber =
+                employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
 
@@ -5016,25 +5170,27 @@ export default function CheckoutPage() {
                                   ? 'Select a TPF provider and enter a reference number'
                                   : saleMode === 'sale' && tpfMissingDownPayment
                                     ? 'Enter the down payment for the TPF-financed item(s)'
-                                    : saleMode === 'sale' &&
-                                        !hasChargeOrInstallmentLine &&
-                                        !selectedCustomer
-                                      ? 'Select a customer'
-                                      : saleMode === 'sale' && balance > 0.009
-                                        ? `Underpaid by ${fmt(balance)}`
-                                        : saleMode === 'sale' && loyaltyOverBalance
-                                          ? 'Insufficient loyalty points'
-                                          : needsManagerOverride && !managerOverrideApproved
-                                            ? 'Manager override required'
-                                            : cart.some((l) => l.isSerialTracked)
-                                              ? 'Submit for Approval'
-                                              : saleMode === 'reserve'
-                                                ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                : allCharge
-                                                  ? 'Issue Charge Invoice'
-                                                  : allInstallment
-                                                    ? 'Create Installment Plan'
-                                                    : 'Confirm Sale'
+                                    : saleMode === 'sale' && missingHrLoanNumber
+                                      ? 'Enter the HR appliance loan application number'
+                                      : saleMode === 'sale' &&
+                                          !hasChargeOrInstallmentLine &&
+                                          !selectedCustomer
+                                        ? 'Select a customer'
+                                        : saleMode === 'sale' && balance > 0.009
+                                          ? `Underpaid by ${fmt(balance)}`
+                                          : saleMode === 'sale' && loyaltyOverBalance
+                                            ? 'Insufficient loyalty points'
+                                            : needsManagerOverride && !managerOverrideApproved
+                                              ? 'Manager override required'
+                                              : cart.some((l) => l.isSerialTracked)
+                                                ? 'Submit for Approval'
+                                                : saleMode === 'reserve'
+                                                  ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                  : allCharge
+                                                    ? 'Issue Charge Invoice'
+                                                    : allInstallment
+                                                      ? 'Create Installment Plan'
+                                                      : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'

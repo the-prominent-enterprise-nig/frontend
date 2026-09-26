@@ -754,7 +754,14 @@ export interface AcknowledgementReceipt {
   reason: string | null
   amount: number
   paymentDate: string
+  /** Which of the two this record is — drives which title/download shows on
+   * the detail page. Null on records saved before this field existed. */
+  receiptType: 'COLLECTION' | 'ACKNOWLEDGEMENT' | null
   method: PaymentMethod | null
+  /** SAME_DATE | LATER_DATE — whether the payment clears the bank on
+   * paymentDate itself or on a later date. Informational only. */
+  clearedType: string | null
+  clearedDate: string | null
   /** Which of the tenant's own bank/cash accounts this landed in — matches
    * "Received in" on the client's reference tool. Informational only. */
   bankAccountId: string | null
@@ -775,7 +782,10 @@ export interface CreateAcknowledgementReceiptInput {
   reason?: string
   amount: number
   paymentDate: string
+  receiptType: 'COLLECTION' | 'ACKNOWLEDGEMENT'
   method?: PaymentMethod
+  clearedType?: string
+  clearedDate?: string
   bankAccountId?: string
   reference?: string
   notes?: string

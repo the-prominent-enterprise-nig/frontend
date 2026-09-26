@@ -36,10 +36,11 @@ function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
  * in a 3-column header, the description as a bold title line, a single
  * #/Account/Total row, and two signature blocks (Prepared by / Certified by
  * — no "Approved by," unlike the AP voucher's 3-block signature line).
- * Rendered twice on the page — once as the real Acknowledgement Receipt,
- * once titled "Collection Receipt" below it (developer decision,
- * 2026-09-21: shown on-screen too, not just available as a second print
- * action) — same data both times, just the title differs. */
+ * Originally always rendered twice — once as "Acknowledgement Receipt", once
+ * titled "Collection Receipt" — off the same data (developer decision,
+ * 2026-09-21). Now the user picks one via receiptType at creation, so only
+ * the matching title renders; a legacy record with no receiptType stored
+ * still falls back to showing both. */
 function ReceiptSheet({ receipt, title }: { receipt: AcknowledgementReceipt; title: string }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
@@ -60,6 +61,9 @@ function ReceiptSheet({ receipt, title }: { receipt: AcknowledgementReceipt; tit
         <div className="text-right">
           <MetaPair label="Date" value={longDate(receipt.paymentDate)} />
           <MetaPair label="Reference" value={receipt.reference || receipt.number || '—'} />
+          {receipt.clearedType === 'LATER_DATE' && (
+            <MetaPair label="Clearing Date" value={longDate(receipt.clearedDate)} />
+          )}
         </div>
         <div className="md:border-l md:border-gray-300 md:pl-7">
           <p className="font-bold text-prominent-purple-900">
@@ -172,6 +176,11 @@ function AcknowledgementReceiptDetailBody() {
     )
   }
 
+  // Legacy records saved before receiptType existed still fall back to
+  // showing both, matching the original always-both behavior.
+  const showCollection = receipt ? receipt.receiptType !== 'ACKNOWLEDGEMENT' : false
+  const showAcknowledgement = receipt ? receipt.receiptType !== 'COLLECTION' : false
+
   if (error || !receipt) {
     return (
       <div className="px-4 py-6 sm:px-6 lg:px-8">
@@ -223,39 +232,43 @@ function AcknowledgementReceiptDetailBody() {
           <ArrowLeft className="h-4 w-4" /> Back to Acknowledgement Receipts
         </Link>
         <div className="flex items-center gap-2">
-          {/* Scenario 57 — a second, separate document off the same data,
-              titled "Collection Receipt" instead. Not a real CollectionReceipt
-              row (no customer/invoice here to satisfy that model) and not
-              wired into cash reconciliation — developer decision, 2026-09-21:
-              "this is manual for a reason." Both buttons download a real
-              .pdf (developer decision, same day: "both should download a
-              .pdf file") captured from the on-screen sheets below, not the
+          {/* Scenario 57 — not a real CollectionReceipt row (no
+              customer/invoice here to satisfy that model) and not wired into
+              cash reconciliation. Which of the two buttons/sheets shows is
+              driven by receiptType, picked at creation (developer decision,
+              2026-09-26 — was always-both before). Both download a real .pdf
+              (developer decision, 2026-09-21: "both should download a .pdf
+              file") captured from the on-screen sheet below, not the
               print-dialog "Save as PDF" every other document in this app
               relies on. */}
-          <button
-            onClick={() => void downloadCr()}
-            disabled={downloadingCr}
-            className="inline-flex items-center gap-1.5 rounded-md border border-prominent-purple-700 px-3 py-1.5 text-[13px] font-semibold text-prominent-purple-700 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {downloadingCr ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            Download Collection Receipt
-          </button>
-          <button
-            onClick={() => void downloadAck()}
-            disabled={downloadingAck}
-            className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {downloadingAck ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            Download
-          </button>
+          {showCollection && (
+            <button
+              onClick={() => void downloadCr()}
+              disabled={downloadingCr}
+              className="inline-flex items-center gap-1.5 rounded-md border border-prominent-purple-700 px-3 py-1.5 text-[13px] font-semibold text-prominent-purple-700 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {downloadingCr ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Download Collection Receipt
+            </button>
+          )}
+          {showAcknowledgement && (
+            <button
+              onClick={() => void downloadAck()}
+              disabled={downloadingAck}
+              className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {downloadingAck ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Download{showCollection ? '' : ' Acknowledgement Receipt'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -268,12 +281,16 @@ function AcknowledgementReceiptDetailBody() {
         <span>Received {fmtMoney(receipt.amount)}</span>
       </div>
 
-      <div ref={ackSheetRef} className="mt-2.5">
-        <ReceiptSheet receipt={receipt} title="Acknowledgement Receipt" />
-      </div>
-      <div ref={crSheetRef} className="mt-6">
-        <ReceiptSheet receipt={receipt} title="Collection Receipt" />
-      </div>
+      {showAcknowledgement && (
+        <div ref={ackSheetRef} className="mt-2.5">
+          <ReceiptSheet receipt={receipt} title="Acknowledgement Receipt" />
+        </div>
+      )}
+      {showCollection && (
+        <div ref={crSheetRef} className={showAcknowledgement ? 'mt-6' : 'mt-2.5'}>
+          <ReceiptSheet receipt={receipt} title="Collection Receipt" />
+        </div>
+      )}
     </div>
   )
 }

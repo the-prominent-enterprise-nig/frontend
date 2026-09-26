@@ -446,7 +446,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // buttons on the Collections page (developer decision, 2026-09-21),
         // same permission as Collections since it's the same "money
         // received at the counter" capability.
-        label: 'Acknowledgement Receipts',
+        label: 'New Receipts',
         href: '/pos/collections/acknowledgement',
         icon: ReceiptText,
         requiredPermission: 'pos:collections:manage',
