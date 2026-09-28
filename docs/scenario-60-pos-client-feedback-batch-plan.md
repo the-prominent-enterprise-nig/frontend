@@ -10,25 +10,25 @@ Unlike most scenarios in this series, this one is not a single feature. It is a 
 
 Verified against `development` on 2026-09-24 (both repos freshly pulled; frontend `cb7b48e8`, backend `f8dc9ee`).
 
-| #   | Client note                                             | Verdict                       | Why                                                           |
-| --- | ------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------- |
-| 1   | Region 6 default on the first dropdown                  | ✅ **Today**                  | Frontend only — one `useState` seed                           |
-| 2   | "Raise one for this cart" → New Credit Application Form | ✅ **Today**                  | One string                                                    |
-| 3   | Remove "Approved amount (optional)" from TPF            | ✅ **Today**                  | Field is nullable end-to-end, nothing reads it                |
-| 4   | Co-maker **number** required                            | ✅ **Today**                  | Frontend only — and it fixes a real drift (see gap 4)         |
-| 5   | "Spouse or Co-maker" wording                            | ✅ **Today** (needs 1 answer) | Relabel is trivial; the ask is ambiguous                      |
-| 6   | Approved-but-incomplete when ID is missing              | ✅ **Today** (needs 1 answer) | Derivable with no migration; a persisted flag is not          |
-| 7   | Co-maker **address** required                           | ❌ Migration                  | `CoMaker` has no address column at all                        |
-| 8   | Collector on the credit application                     | ❌ Migration                  | No FK exists; `Collector` does                                |
-| 9   | Address on the New Credit Application                   | ❌ Migration                  | Applicant block is phone + email only                         |
-| 10  | Home + current address, current synced                  | ❌ Migration + decision       | Reverses a deliberate Scenario 24 decision                    |
-| 11  | Deliver to / Delivery Address / delivery fee            | ❌ Migration                  | Half the columns exist and are never written; two don't exist |
-| 12  | Delivery fee excluded from the total                    | ➖ Already designed for       | Schema already keeps it out of `subtotal`/`totalAmount`       |
-| 13  | Delivery fee GL mapping                                 | ❌ Depends on 11              | No migration needed, but nothing to post until 11 lands       |
-| 14  | Separate CR for down payment and delivery fee           | ➖ Already built              | The report already emits it as its own CR line                |
-| 15  | Cancel Sale → dropdown                                  | 🚧 **Blocked**                | Elijah owes the list of cancellation reasons                  |
-| 16  | Friends-and-family price override                       | 🚧 **Parked by client**       | "format is not finalized with client"                         |
-| 17  | Reference lives on the hard copy; TPE is lite           | ➖ No build                   | Informational — it is a decision _not_ to add a field         |
+| #   | Client note                                             | Verdict                   | Why                                                           |
+| --- | ------------------------------------------------------- | ------------------------- | ------------------------------------------------------------- |
+| 1   | Region 6 default on the first dropdown                  | ✅ **Today**              | Frontend only — one `useState` seed                           |
+| 2   | "Raise one for this cart" → New Credit Application Form | ✅ **Today**              | One string                                                    |
+| 3   | Remove "Approved amount (optional)" from TPF            | ✅ **Today**              | Field is nullable end-to-end, nothing reads it                |
+| 4   | Co-maker **number** required                            | ✅ **Today**              | Frontend only — and it fixes a real drift (see gap 4)         |
+| 5   | "Spouse or Co-maker" wording                            | ✅ **Shipped** 2026-09-28 | Built as a two-level picker, not a relabel — see the log      |
+| 6   | Approved-but-incomplete when ID is missing              | ✅ **Shipped** 2026-09-28 | Derived; the list surface needed a backend field after all    |
+| 7   | Co-maker **address** required                           | ❌ Migration              | `CoMaker` has no address column at all                        |
+| 8   | Collector on the credit application                     | ❌ Migration              | No FK exists; `Collector` does                                |
+| 9   | Address on the New Credit Application                   | ❌ Migration              | Applicant block is phone + email only                         |
+| 10  | Home + current address, current synced                  | ❌ Migration + decision   | Reverses a deliberate Scenario 24 decision                    |
+| 11  | Deliver to / Delivery Address / delivery fee            | ❌ Migration              | Half the columns exist and are never written; two don't exist |
+| 12  | Delivery fee excluded from the total                    | ➖ Already designed for   | Schema already keeps it out of `subtotal`/`totalAmount`       |
+| 13  | Delivery fee GL mapping                                 | ❌ Depends on 11          | No migration needed, but nothing to post until 11 lands       |
+| 14  | Separate CR for down payment and delivery fee           | ➖ Already built          | The report already emits it as its own CR line                |
+| 15  | Cancel Sale → dropdown                                  | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                  |
+| 16  | Friends-and-family price override                       | 🚧 **Parked by client**   | "format is not finalized with client"                         |
+| 17  | Reference lives on the hard copy; TPE is lite           | ➖ No build               | Informational — it is a decision _not_ to add a field         |
 
 **Doable today: items 1, 2, 3, 4, 5, 6.** Two of those need a one-line answer first (5 and 6) — both are under _Decisions needed_ below, and both have a safe reading that ships today either way.
 
@@ -218,3 +218,27 @@ None matched yet — to be identified before Phase 7.
 - **"POS Terminal" still appears in Settings** — `PaymentMethodOptionsSection.tsx:113` and `BranchDetailClient.tsx:425`. An admin configures "POS Terminals" while the cashier now picks a "Card Acquirer". Left alone deliberately as out of scope; worth renaming for one vocabulary end to end.
 - **Nothing is committed**, and the branch `feat/scenario-60-pos-client-feedback-batch` (frontend only) also carries one unrelated pre-existing modification to `e2e/pos-checkout-selling-agent.spec.ts` that predates it.
 - **Gaps 5 and 6 remain open**, both awaiting decisions B and C, and both were in the confirmed "doable today" set — they were simply not part of the Parts 1–4 scope the developer approved. Gaps 7–14 are unchanged and still need migrations; 15 and 16 are still blocked on Elijah and the client.
+
+---
+
+## Implementation Log — 2026-09-28
+
+Second run on this scenario, on the same branch as the first
+(`feat/scenario-60-pos-client-feedback-batch`) so all six parts live together.
+
+**For this scenario, I have done:**
+
+- **Part 5 (gap 5) — Spouse-or-Co-maker picker.** Not the relabel the plan doc proposed. Asked about the wording and the answer reframed the requirement: _"the choices are either spouse or co-maker, but can we make it like, if its co-maker we have dropdown if its parent or etc."_ So it is **two questions, not one** — first the person's role, then, for a co-maker only, their relation to the applicant (Parent / Sibling / Child / Relative / Friend / Other). A spouse is asked nothing further, because the role already gives the relation. Decision A in the earlier log (a flat six-option list) was built first and then replaced.
+- **Part 6 (gap 6) — "Approved — ID pending".** Amber panel on the detail view and amber pill in the queue when an approved application has no `applicant_id` document. Derived, never stored, so it clears itself when the ID is attached.
+
+**Worth flagging:**
+
+- **Part 6 was not frontend-only, contrary to this doc's own prediction.** The detail view needed no backend, as expected — but the queue did: `findAll()` builds from `detailInclude`, which carries no documents, and the list cannot fetch them per row without an N+1. So the backend now returns a `hasApplicantId` boolean, on its own branch `feat/scenario-60-credit-application-id-pending`. Still **no migration** — a service/DTO change only — but it makes this a two-repo part, and **the backend must land first** or the queue pill silently shows plain "Approved" for everything. `creditApplicationBadge()` checks `hasApplicantId === false` rather than falsy for exactly this reason: `undefined` means the caller doesn't know, and must not be read as "ID missing".
+- **The role/relation pair is stored in one column** as `"Spouse"` or `"Co-maker — Parent"` (developer decision: keep the role rather than flatten to the relation, since a spouse co-signing is not the same instrument as a third-party guarantee). A real `role` column is the better shape and would be queryable; it needs a migration, so it was not done. Parsing is tolerant of legacy free text and of a plain hyphen, so existing or imported values round-trip.
+- **Choosing "Co-maker" with no relation yet composes to `''` deliberately**, so the existing "Relationship is required" rule fires and the second dropdown cannot be skipped. No new validation was added.
+- **Safe to constrain when it was done:** `co_makers` held zero rows, so no free-text value was orphaned. That will not be true again — a later change to this list needs a backfill question.
+- **Part 5 only covers half its checklist line.** The client wrote _"make the number and address required"_. The number shipped in Part 4; the **address is still not done** and is gap 7, needing a migration (`CoMaker` has no address column).
+- **Neither part is manually confirmed yet.** Both type-check clean with zero lint errors, and the backend field was verified live (`GET /credit/applications` returns `hasApplicantId`). The click-through was written up but not run — the picker was rebuilt as a cascade after the steps were handed over, so step 5 of those steps is now stale.
+- **PR #190 was closed unmerged by another developer (chloebellee) on 2026-09-28, with no comment.** `origin/development` was untouched, so nothing landed. The branch and all commits survive. Unresolved at the time of writing — possibly an objection to that PR bundling 11 unrelated `main` commits alongside the scenario, which was a known risk when that shape was chosen.
+
+**Still open on this scenario:** gaps 7-14 (all need migrations; 10 and 11 need a product decision first), 15 (blocked on Elijah's cancellation-reason list) and 16 (parked by the client).
