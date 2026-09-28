@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Controller,
   useWatch,
@@ -19,6 +19,100 @@ import {
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+
+/**
+ * Scenario 60 Part 5 — Relationship was free text. The client's ask ("Spouse
+ * or Co-maker") is two questions, not one: first the person's ROLE, and only
+ * for a co-maker does their relation to the applicant matter. A spouse's
+ * relation is already given by the role, so asking again would be noise.
+ *
+ * Both answers go into `CoMaker.relationship`, the one column that exists —
+ * "Spouse", or "Co-maker — Parent" (developer decision 2026-09-28, keeping
+ * the role rather than flattening to the relation alone, since a spouse
+ * co-signing is not the same instrument as a third-party guarantee). A real
+ * `role` column would model this properly and is the better long-term shape,
+ * but needs a migration.
+ *
+ * Safe to constrain now: `co_makers` held zero rows at the time of the
+ * change, so no legacy free-text value is orphaned. parseRelationship still
+ * degrades gracefully for anything pre-existing — an unrecognised value is
+ * read as a co-maker relation rather than discarded.
+ */
+const CO_MAKER_ROLES = ['Spouse', 'Co-maker'] as const
+const CO_MAKER_RELATIONS = ['Parent', 'Sibling', 'Child', 'Relative', 'Friend', 'Other'] as const
+
+const ROLE_OPTIONS = CO_MAKER_ROLES.map((r) => ({ value: r, label: r }))
+const RELATION_OPTIONS = CO_MAKER_RELATIONS.map((r) => ({ value: r, label: r }))
+
+/** Separator between role and relation. Parsing accepts the ASCII hyphen too,
+ * so a value hand-edited or imported without the em dash still round-trips. */
+const ROLE_SEPARATOR = ' — '
+
+function parseRelationship(raw: string): { role: string; relation: string } {
+  const value = (raw ?? '').trim()
+  if (!value) return { role: '', relation: '' }
+  if (value === 'Spouse') return { role: 'Spouse', relation: '' }
+  const match = /^Co-maker\s*[—-]\s*(.+)$/.exec(value)
+  if (match) return { role: 'Co-maker', relation: match[1].trim() }
+  if (value === 'Co-maker') return { role: 'Co-maker', relation: '' }
+  // Pre-existing free text ("Sibling", typed before this picker existed).
+  return { role: 'Co-maker', relation: value }
+}
+
+/** Composes back to the stored string. A co-maker with no relation chosen
+ * yet composes to '' on purpose, so the existing "Relationship is required"
+ * rule fires and the second dropdown can't be skipped. */
+function composeRelationship(role: string, relation: string): string {
+  if (role === 'Spouse') return 'Spouse'
+  if (role === 'Co-maker' && relation) return `Co-maker${ROLE_SEPARATOR}${relation}`
+  return ''
+}
+
+/** The two-level picker itself, shared by the existing- and new-co-maker
+ * blocks so they can't drift apart. Role lives in local state because a
+ * half-made choice (Co-maker, no relation yet) intentionally composes to an
+ * empty field value, which would otherwise reset the first dropdown. */
+function RelationshipPicker({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (next: string) => void
+}) {
+  const parsed = parseRelationship(value)
+  // The stored value is the source of truth whenever it says anything, so
+  // pre-filling from an existing co-maker needs no syncing effect. Local
+  // state covers only the one gap the field cannot express: "Co-maker picked,
+  // relation not yet", which composes to '' on purpose so the required rule
+  // still fires.
+  const [pickedRole, setPickedRole] = useState('')
+  const role = parsed.role || pickedRole
+  const relation = parsed.relation
+
+  const setRole = setPickedRole
+
+  return (
+    <div className="space-y-2">
+      <Select
+        value={role}
+        onChange={(next) => {
+          setRole(next)
+          onChange(composeRelationship(next, next === 'Co-maker' ? relation : ''))
+        }}
+        options={ROLE_OPTIONS}
+        placeholder="Spouse or Co-maker…"
+      />
+      {role === 'Co-maker' && (
+        <Select
+          value={relation}
+          onChange={(next) => onChange(composeRelationship('Co-maker', next))}
+          options={RELATION_OPTIONS}
+          placeholder="Relation to applicant…"
+        />
+      )}
+    </div>
+  )
+}
 
 /**
  * PhoneInput's `value` must be E.164 (leading '+') or undefined, or it logs
@@ -82,7 +176,7 @@ export function CoMakerFields({
     <div className="space-y-3">
       <div>
         <label className="mb-1 block text-sm font-medium text-zinc-700">
-          Co-Maker <span className="text-zinc-400">(optional)</span>
+          Spouse or Co-maker <span className="text-zinc-400">(optional)</span>
         </label>
         <Controller
           name="coMakerId"
@@ -188,12 +282,7 @@ export function CoMakerFields({
                 name="coMakerRelationship"
                 control={control}
                 render={({ field }) => (
-                  <input
-                    {...field}
-                    value={field.value ?? ''}
-                    maxLength={100}
-                    className={fieldClass}
-                  />
+                  <RelationshipPicker value={field.value ?? ''} onChange={field.onChange} />
                 )}
               />
               {errors.coMakerRelationship && (
@@ -290,7 +379,7 @@ export function CoMakerFields({
               name="newCoMakerRelationship"
               control={control}
               render={({ field }) => (
-                <input {...field} value={field.value ?? ''} className={fieldClass} />
+                <RelationshipPicker value={field.value ?? ''} onChange={field.onChange} />
               )}
             />
             {errors.newCoMakerRelationship && (

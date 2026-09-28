@@ -34,6 +34,32 @@ export const CREDIT_APPLICATION_STATUS_COLORS: Record<CreditApplicationStatus, s
   cancelled: 'bg-red-100 text-red-600',
 }
 
+/**
+ * Scenario 60 Part 6 — an approved application with no applicant ID on file
+ * is "approved but incomplete": still usable for a sale (the client's
+ * explicit requirement — nothing here gates anything), but visibly not
+ * finished. Derived, never stored, so it corrects itself the moment the ID
+ * is attached.
+ *
+ * `hasApplicantId === false` is checked explicitly rather than falsy: only
+ * findAll() sets the flag, so `undefined` means "this caller doesn't know"
+ * (the detail endpoint, which loads documents separately) and must fall
+ * through to the plain Approved badge rather than wrongly claiming the ID
+ * is missing.
+ */
+export function creditApplicationBadge(app: {
+  status: CreditApplicationStatus
+  hasApplicantId?: boolean
+}): { label: string; colorClassName: string } {
+  if (app.status === 'approved' && app.hasApplicantId === false) {
+    return { label: 'Approved — ID pending', colorClassName: 'bg-amber-100 text-amber-700' }
+  }
+  return {
+    label: CREDIT_APPLICATION_STATUS_LABELS[app.status],
+    colorClassName: CREDIT_APPLICATION_STATUS_COLORS[app.status],
+  }
+}
+
 // Scenario 29 POS-02 — per-item status, independent of the application's
 // own status above.
 export const CreditApplicationItemStatusSchema = z.enum(['pending', 'approved', 'declined'])
@@ -454,6 +480,12 @@ export interface CreditApplication {
   monthlyInstallment?: number | null
   totalPayable?: number | null
   status: CreditApplicationStatus
+  /** Scenario 60 Part 6 — list-only. Whether an `applicant_id` document is
+   * on file, so the queue can mark an approval as "ID pending" without
+   * fetching every row's attachments. Set by findAll() alone; the detail
+   * endpoint omits it and derives the same thing from the documents it
+   * loads separately, hence optional. */
+  hasApplicantId?: boolean
   createdById: string
   submittedAt?: string | null
   submittedById?: string | null

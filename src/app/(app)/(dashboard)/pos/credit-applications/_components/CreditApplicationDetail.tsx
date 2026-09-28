@@ -757,16 +757,37 @@ export default function CreditApplicationDetail({
             </div>
           )}
 
-        {application.status === 'approved' && (
-          <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-            <p className="text-sm font-medium text-green-800">Approved</p>
-            <p className="mt-1 text-sm text-green-700">
-              {application.posTransactionId
-                ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}.`
-                : 'This application has been approved and is ready to proceed.'}
-            </p>
-          </div>
-        )}
+        {/* Scenario 60 Part 6 — "pwede ma approve maski ID not included.
+            Should record as approved but incomplete, and can proceed with
+            buying the item." Approving without an ID already worked: nothing
+            gates on documents, in this component or in the backend service.
+            The only gap was that nothing said the record was incomplete, so
+            an approval missing its ID looked identical to a complete one.
+
+            Derived from the documents already loaded rather than stored, so
+            there is no migration and no new status value — and it corrects
+            itself the moment the ID is attached. Deliberately NOT a gate:
+            the sale must still proceed, which is the client's explicit ask. */}
+        {application.status === 'approved' &&
+          (isDocumentsLoading || documents.some((d) => d.documentType === 'applicant_id') ? (
+            <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+              <p className="text-sm font-medium text-green-800">Approved</p>
+              <p className="mt-1 text-sm text-green-700">
+                {application.posTransactionId
+                  ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}.`
+                  : 'This application has been approved and is ready to proceed.'}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-medium text-amber-800">Approved — ID pending</p>
+              <p className="mt-1 text-sm text-amber-700">
+                {application.posTransactionId
+                  ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}, but no applicant ID is on file yet.`
+                  : 'This application has been approved and the sale can proceed. The applicant ID is still to follow — attach it above once the hard copy arrives.'}
+              </p>
+            </div>
+          ))}
 
         {application.status === 'partially_approved' && (
           <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
