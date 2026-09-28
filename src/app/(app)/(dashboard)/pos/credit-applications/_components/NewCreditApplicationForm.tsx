@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, UserPlus } from 'lucide-react'
 import {
   CreateCreditApplicationFormSchema,
@@ -128,6 +128,7 @@ export default function NewCreditApplicationForm({
     router.push('/pos/customers/new?returnTo=/pos/credit-applications/new')
   }
 
+  const queryClient = useQueryClient()
   const applicantQuery = useQuery({
     queryKey: ['credit-application-applicant-detail', applicantCustomerId],
     queryFn: () => getApplicantCustomer(applicantCustomerId),
@@ -237,6 +238,15 @@ export default function NewCreditApplicationForm({
             return
           }
           resolvedCoMakerId = addRes.data.id
+          // The dedupe above reads `coMakers` out of this query's cache, so
+          // without refreshing it a retry cannot see what this call just
+          // created and adds another copy — which is how a customer reached
+          // the hard cap of 5 identical co-makers in testing (2026-09-28).
+          // The cap then withholds "Add a new co-maker" entirely, so the
+          // form becomes unusable for that applicant.
+          await queryClient.invalidateQueries({
+            queryKey: ['credit-application-applicant-detail', data.applicantCustomerId],
+          })
         }
       } else if (data.coMakerId) {
         const selected = coMakers.find((cm) => cm.id === data.coMakerId)
@@ -270,6 +280,12 @@ export default function NewCreditApplicationForm({
             setServerError(updateRes.error ?? 'Failed to update the co-maker')
             return
           }
+          // Same reason: the `changed` diff above compares against cached
+          // values, which would otherwise re-send an identical update on
+          // every retry.
+          await queryClient.invalidateQueries({
+            queryKey: ['credit-application-applicant-detail', data.applicantCustomerId],
+          })
         }
       }
 
@@ -279,6 +295,20 @@ export default function NewCreditApplicationForm({
       const result = await createApplication({
         ...data,
         coMakerId: resolvedCoMakerId,
+        // createCreditApplication re-validates this payload against the very
+        // same schema, and by here coMakerId is a real id even when the user
+        // filled the NEW co-maker fields. That makes the schema take its
+        // "existing co-maker" branch, which requires coMakerContactNumber —
+        // a field this flow never populates. The number lives in
+        // newCoMakerContactNumber, so carry it across and send a coherent
+        // payload rather than one that describes an existing co-maker while
+        // omitting its number. (Scenario 60 Part 4 added that rule; before
+        // it, this mismatch was harmless and so went unnoticed — the
+        // co-maker was created and the application then failed validation.)
+        coMakerContactNumber:
+          data.coMakerId === NEW_CO_MAKER_VALUE
+            ? data.newCoMakerContactNumber
+            : data.coMakerContactNumber,
         // Same empty-string-select → undefined normalization as coMakerId
         // above — the backend's @IsUUID() rejects '' outright, and
         // @IsOptional() only skips undefined/null, not an empty string.

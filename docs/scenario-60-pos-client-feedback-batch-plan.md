@@ -39,7 +39,7 @@ Verified against `development` on 2026-09-24 (both repos freshly pulled; fronten
 
 More than the notes assume, in three places:
 
-- **A cashier can already approve a credit application without an ID, and the sale can already proceed** (item 6). There is no document gate anywhere: `CreditApplicationDocument` exists with an `applicant_id` type (`prisma/schema.prisma:7035`), but `credit-application.service.ts` never checks for one before allowing `approve`, and `CreditApplicationDetail.tsx` never blocks the button on it. The _behaviour_ the client asked for is the behaviour we already have. What is missing is only that nothing **says** the record is incomplete.
+- ~~**A cashier can already approve a credit application without an ID, and the sale can already proceed** (item 6). There is no document gate anywhere.~~ **WRONG — corrected 2026-09-28.** Nothing gates on the `applicant_id` type specifically, which is what I checked; but there were **three** separate blocks on the surrounding workflow, and I missed all of them because I grepped `credit-application.service.ts` for `documents` and stopped there. See the 2026-09-28 implementation log: submit required at least one document (enforced in **both** repos), and attaching was refused outright once a decision was made — that guard lives in `credit-application-documents.service.ts`, a different file from the one I searched. The behaviour the client asked for was **not** already there.
 - **Delivery fee is already modelled, and the separate collection receipt already exists** (items 12, 14). `PosTransaction.deliveryFee` and `PosTransaction.deliveryFeeReferenceNumber` exist (`prisma/schema.prisma:3485`, `:3489`), added by two migrations in Aug/Sep 2026, and `daily-collection.service.ts:604-617` already emits the delivery fee as its **own collection-receipt line** with its own CR number and a `delivery_fee` tender — which is item 14, built. The schema's own doc comment states item 12 as the design intent: _"kept separate from subtotal/taxTotal so it never enters the per-line/per-financing-term amounts used to balance charge/installment JEs."_
 - **The Philippine address picker is cascading and already puts Region first** (item 1). `PhilippineAddressPicker.tsx:204` renders Region as the first `SearchableSelect`, backed by a self-hosted PSGC dataset. Region VI is `region_code` `'06'` in `public/data/ph-address/region.json`.
 - **`Collector` is a real, branch-scoped model** (item 8) with barangay-level `CollectorArea` coverage used for auto-assignment. Adding it to a credit application is a wiring job, not a new concept.
@@ -266,3 +266,37 @@ Second run on this scenario, on the same branch as the first
 - **PR #190 was closed unmerged by another developer (chloebellee) on 2026-09-28, with no comment.** `origin/development` was untouched, so nothing landed. The branch and all commits survive. Unresolved at the time of writing — possibly an objection to that PR bundling 11 unrelated `main` commits alongside the scenario, which was a known risk when that shape was chosen.
 
 **Still open on this scenario:** gaps 7-14 (all need migrations; 10 and 11 need a product decision first), 15 (blocked on Elijah's cancellation-reason list) and 16 (parked by the client).
+
+---
+
+## Implementation Log — 2026-09-28 (second entry)
+
+Manual testing of Parts 5-6 turned up four defects. Two were regressions from
+this scenario's own earlier parts; two were pre-existing and unrelated.
+
+**Gap 6 was far larger than this doc predicted, and the prediction was based on a wrong reading of the code.**
+
+It was scoped here as a display-only, no-migration, frontend-only change. It
+was actually four changes across both repos, because the workflow blocked the
+client's process at three separate points:
+
+1. **The badge** — "Approved — ID pending" on the detail and the queue. Frontend.
+2. **`hasApplicantId` on `findAll()`** — the queue carried no documents and could not fetch them per row without an N+1. Backend, no migration.
+3. **Submit required at least one document** — enforced in the UI (disabled button) _and_ the backend (`credit-application.service.ts`). Removed in both on the client's explicit instruction: _"allow submission with none and the documents are to follow"_. An applicant whose only document is the ID could not otherwise submit at all, which is exactly the case the client described.
+4. **Attaching was refused after a decision** — `credit-application-documents.service.ts` threw _"Documents can no longer be managed once a decision has been made"_. So the badge told the user to attach the ID and the API refused. Attaching now permits `approved`/`partially_approved`; **removal deliberately still does not**, since chasing a missing document is additive while deleting evidence from a decided (and possibly already-sold) application is a different question nobody asked for.
+
+**Two regressions this scenario introduced, both found by manual testing, not by the type-checker:**
+
+- **Part 4 broke the new-co-maker submit.** Adding the required-contact-number rule to the _existing_ co-maker branch was wrong because the payload changes shape between client and server validation: the submit handler resolves `coMakerId` to a real id before calling the server action, which re-validates with the same schema — so the schema takes its "existing co-maker" branch and demands `coMakerContactNumber`, a field this flow never populates. The co-maker was created, then the application failed. Fixed by carrying the number across into the payload. Symptom was exactly as reported: _"it says failed cause contact number is required BUT when I select co-maker again which is the new co-maker I added, it submits"_.
+- **The "Approved — ID pending" copy told users to attach the ID "above"** when no upload control was rendered at that status. Fixed as item 4 above.
+
+**Two pre-existing bugs fixed along the way, neither on the client checklist:**
+
+- **Autofilled phone numbers were silently discarded** in all four forms that capture one (co-maker ×2, CRM customer, New Lead, Accounting customer). A browser autofill assigns `input.value` directly, which updates React's own value tracker, so the `input` event that follows looks like a no-op and `onChange` never fires — the number is on screen while the form holds `''`, and the next render wipes it back to "+63". Invisible until Part 4 made one of those fields required. Now one shared `components/ui/PhoneField`, which owns its display state and reads the DOM back on blur and shortly after mount. Three duplicate copies of `toDisplayPhoneValue` deleted.
+- **A retried submit created duplicate co-makers.** The dedupe (from PR #179) reads `coMakers` out of a react-query cache that `addCoMaker` never invalidated, so a retry could not see what it had just created. One customer reached the hard cap of 5 identical co-makers during testing, at which point "Add a new co-maker" is withheld and the form becomes unusable for that applicant. Fixed by invalidating after add and after update.
+
+**Worth flagging:**
+
+- **A real product tension the client's instruction creates, raised and deliberately left as-is.** With no document required to submit, the Credit Investigator and Business Owner can be reviewing an application with nothing attached. The approval chain itself is unchanged and still enforced (`draft → submitted → under_investigation → pending_approval → decide`, with `decideItems()` refusing anything not `pending_approval`, and approval remaining Business-Owner-only). A middle option — require documents to **approve** but not to **submit** — was put to the developer and declined for now: the client gave a clear instruction and it is their process.
+- **Method note.** Three wrong diagnoses preceded the real one on the co-maker bug, each from reasoning instead of instrumenting. What settled it was tagging the two validation branches with distinct messages and reading which fired. The lesson for this codebase: the same zod schema runs client-side and again inside the server action, on a payload the handler has already reshaped — so a form error can come from a shape the user never saw.
+- **Not manually confirmed yet:** that checkout accepts an ID-pending application and completes the sale. That is the client's actual requirement for gap 6 and remains the one untested step.

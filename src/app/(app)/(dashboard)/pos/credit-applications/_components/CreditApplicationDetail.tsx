@@ -246,6 +246,18 @@ export default function CreditApplicationDetail({
   const isEditable = (
     ['draft', 'submitted', 'under_investigation', 'pending_approval'] as string[]
   ).includes(application.status)
+  // Documents outlive that window. Scenario 60 gap 6: an application can now
+  // be approved with no applicant ID on file ("ID will be to followed"), and
+  // the "Approved — ID pending" banner tells the user to attach it once the
+  // hard copy arrives — which was impossible while the upload panel was
+  // gated on isEditable, since that excludes approved. The backend never
+  // restricted attachDocument by status, so this was a UI-only block.
+  // Deliberately NOT widening isEditable itself: items, terms and notes
+  // should still freeze once a decision is made. Removing a document stays
+  // on isEditable too — chasing a missing ID is additive, and deleting
+  // evidence from a decided application is a different question.
+  const canAttachDocuments =
+    isEditable || (['approved', 'partially_approved'] as string[]).includes(application.status)
 
   async function handleAttach() {
     if (!pendingFile) return
@@ -317,16 +329,21 @@ export default function CreditApplicationDetail({
           </div>
           {isDraft && (
             <div className="flex items-center gap-2">
+              {/* No document requirement (client decision, 2026-09-28,
+                    Scenario 60 gap 6). This was disabled until at least one
+                    document was attached, which made the client's own process
+                    impossible: "ID will be to followed ... pwede ma approve
+                    maski ID not included". The ID is usually the only
+                    document they hold at intake, so the gate blocked exactly
+                    the case they asked for. The backend check was removed
+                    with it. Incompleteness is surfaced instead — an approved
+                    application with no applicant_id is badged "Approved — ID
+                    pending" here and in the queue. */}
               {canUpdate && (
                 <button
                   type="button"
                   onClick={() => submit()}
-                  disabled={isSubmitting || documents.length === 0}
-                  title={
-                    documents.length === 0
-                      ? 'Attach at least one document before submitting'
-                      : undefined
-                  }
+                  disabled={isSubmitting}
                   className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
                 >
                   {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -613,7 +630,7 @@ export default function CreditApplicationDetail({
             </ul>
           )}
 
-          {isEditable && canUpdate && (
+          {canAttachDocuments && canUpdate && (
             <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-zinc-100 pt-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-700">

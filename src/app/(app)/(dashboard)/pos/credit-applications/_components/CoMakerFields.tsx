@@ -8,9 +8,8 @@ import {
   type FieldErrors,
   type UseFormSetValue,
 } from 'react-hook-form'
-import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import { Select } from '@/src/components/ui/Select'
+import { PhoneField } from '@/src/components/ui/PhoneField'
 import {
   NEW_CO_MAKER_VALUE,
   type CreateCreditApplicationFormValues,
@@ -112,25 +111,6 @@ function RelationshipPicker({
       )}
     </div>
   )
-}
-
-/**
- * PhoneInput's `value` must be E.164 (leading '+') or undefined, or it logs
- * a console error on every mount. Co-maker numbers were captured as plain
- * local strings ("09170004321") before this form used PhoneInput, so
- * best-effort re-parse them as PH and hand back E.164; undefined otherwise,
- * which renders empty while the underlying form value keeps the raw string.
- * Same helper and reasoning as CustomerForm's own toDisplayPhoneValue.
- */
-function toDisplayPhoneValue(raw: string): string | undefined {
-  if (!raw) return undefined
-  if (raw.startsWith('+')) return raw
-  try {
-    const parsed = parsePhoneNumber(raw, 'PH')
-    return parsed?.isValid() ? parsed.number : undefined
-  } catch {
-    return undefined
-  }
 }
 
 type Props = {
@@ -299,15 +279,7 @@ export function CoMakerFields({
                 name="coMakerContactNumber"
                 control={control}
                 render={({ field }) => (
-                  <PhoneInput
-                    value={toDisplayPhoneValue(field.value ?? '')}
-                    defaultCountry="PH"
-                    international
-                    countryCallingCodeEditable={false}
-                    onChange={(v) => field.onChange(v ?? '')}
-                    numberInputProps={{ className: 'phone-input-field' }}
-                    className="ph-phone-input"
-                  />
+                  <PhoneField value={field.value ?? ''} onChange={field.onChange} />
                 )}
               />
               {errors.coMakerContactNumber && (
@@ -394,15 +366,7 @@ export function CoMakerFields({
               name="newCoMakerContactNumber"
               control={control}
               render={({ field }) => (
-                <PhoneInput
-                  value={toDisplayPhoneValue(field.value ?? '')}
-                  defaultCountry="PH"
-                  international
-                  countryCallingCodeEditable={false}
-                  onChange={(v) => field.onChange(v ?? '')}
-                  numberInputProps={{ className: 'phone-input-field' }}
-                  className="ph-phone-input"
-                />
+                <PhoneField value={field.value ?? ''} onChange={field.onChange} />
               )}
             />
             {errors.newCoMakerContactNumber && (

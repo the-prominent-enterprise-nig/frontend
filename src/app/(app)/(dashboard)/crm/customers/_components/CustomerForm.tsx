@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AlertTriangle, ArrowLeft, Paperclip, X } from 'lucide-react'
-import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
 import { posCustomersApi } from '@/src/libs/api/pos-customers'
 import { showToast } from '@/src/components/ui/toast'
@@ -26,6 +24,7 @@ import type {
 } from '@/src/schema/crm/types'
 import CustomerExtraFields from '@/src/components/crm/CustomerExtraFields'
 import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
+import { PhoneField } from '@/src/components/ui/PhoneField'
 
 type FormState = {
   customerCode: string
@@ -85,28 +84,6 @@ const empty: FormState = {
   idNumber: '',
   idDocumentFileId: '',
   consentGiven: false,
-}
-
-/**
- * PhoneInput's own `value` prop must always be E.164 (a leading `+`) or
- * `undefined` — some existing customer records predate this component
- * (imported/seeded data entered in a local format like "(656) 929-6118")
- * and break it otherwise, logging a console error every time that record's
- * edit form mounts. Best-effort re-parses a legacy value assuming PH as the
- * default country and returns its real E.164 form when that succeeds;
- * `undefined` otherwise (PhoneInput just renders empty — the underlying
- * `form.phone` state keeps the original raw string either way, so an
- * unrelated edit-and-save never silently overwrites/loses it).
- */
-function toDisplayPhoneValue(raw: string): string | undefined {
-  if (!raw) return undefined
-  if (raw.startsWith('+')) return raw
-  try {
-    const parsed = parsePhoneNumber(raw, 'PH')
-    return parsed?.isValid() ? parsed.number : undefined
-  } catch {
-    return undefined
-  }
 }
 
 /**
@@ -485,14 +462,10 @@ export default function CustomerForm({
           />
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Phone *</label>
-            <PhoneInput
-              value={toDisplayPhoneValue(form.phone ?? '')}
-              defaultCountry="PH"
-              international
-              countryCallingCodeEditable={false}
-              onChange={(v) => setField('phone', v ?? '')}
-              numberInputProps={{ className: 'phone-input-field' }}
-              className="ph-phone-input mt-1"
+            <PhoneField
+              value={form.phone ?? ''}
+              onChange={(v) => setField('phone', v)}
+              className="mt-1"
             />
             {errors.phone && <p className="mt-1 text-[12px] text-red-600">{errors.phone}</p>}
           </div>

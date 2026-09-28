@@ -4,8 +4,6 @@ import React, { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Plus, Search, RefreshCw, Trash2, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
-import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import {
   getCustomers,
   createCustomer,
@@ -16,23 +14,7 @@ import {
 import { SessionUser, can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
-
-/**
- * PhoneInput's own `value` prop must always be E.164 (a leading `+`) or
- * `undefined` — some existing customer records predate this component
- * (imported/seeded data entered in a local format) and break it otherwise.
- * Mirrors CRM's own CustomerForm.toDisplayPhoneValue().
- */
-function toDisplayPhoneValue(raw: string): string | undefined {
-  if (!raw) return undefined
-  if (raw.startsWith('+')) return raw
-  try {
-    const parsed = parsePhoneNumber(raw, 'PH')
-    return parsed?.isValid() ? parsed.number : undefined
-  } catch {
-    return undefined
-  }
-}
+import { PhoneField } from '@/src/components/ui/PhoneField'
 
 const FIELD_LIMITS = {
   firstName: 150,
@@ -363,15 +345,7 @@ function CustomerFormDialog({
             </Field>
             <div>
               <span className="mb-1 block text-xs font-medium text-zinc-600">Phone Number</span>
-              <PhoneInput
-                value={toDisplayPhoneValue(form.phoneNumber ?? '')}
-                defaultCountry="PH"
-                international
-                countryCallingCodeEditable={false}
-                onChange={(v) => set('phoneNumber', v ?? '')}
-                numberInputProps={{ className: 'phone-input-field' }}
-                className="ph-phone-input"
-              />
+              <PhoneField value={form.phoneNumber ?? ''} onChange={(v) => set('phoneNumber', v)} />
             </div>
           </div>
           <Field label="Group ID" count={[form.groupId?.length ?? 0, FIELD_LIMITS.groupId]}>
