@@ -24,6 +24,11 @@ import {
 import { DEFAULT_VAT_RATE } from '../../_actions/pos-constants'
 import { Select } from '@/src/components/ui/Select'
 import type { FinancingTerm, InstallmentPreview } from '@/src/schema/pos'
+import {
+  DOWN_PAYMENT_FLOOR_RATE,
+  DOWN_PAYMENT_FLOOR_LABEL,
+  DOWN_PAYMENT_FLOOR_TOLERANCE,
+} from '@/src/libs/constants/financing'
 
 function formatPeso(n: number): string {
   return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -176,7 +181,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // while these prices come straight off the price list. Under exclusive
   // pricing that makes the sale's floor ~12% higher than the application's,
   // so an application approved at exactly its own floor was rejected at the
-  // till ("down payment must be at least 10% of its sale amount") on an
+  // till ("down payment must be at least the floor % of its sale amount") on an
   // application the server had already accepted. Work the floor out on the
   // same basis the sale will use, so what is approved is sellable.
   //
@@ -187,7 +192,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   const floorBasis = inclusivePricing
     ? estimatedTotal
     : estimatedTotal * (1 + DEFAULT_VAT_RATE.rate / 100)
-  const downPaymentFloor = floorBasis * 0.1
+  const downPaymentFloor = floorBasis * DOWN_PAYMENT_FLOOR_RATE
 
   // The floor is checked in the schema, which can only see form state — so
   // both figures have to live there too, not just in this component.

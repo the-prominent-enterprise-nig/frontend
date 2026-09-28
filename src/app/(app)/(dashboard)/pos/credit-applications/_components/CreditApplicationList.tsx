@@ -177,8 +177,11 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                         <p className="truncate font-medium text-zinc-900">
                           {app.applicantCustomer.name}
                         </p>
-                        <p className="mt-0.5 font-mono text-xs text-zinc-500">
-                          {app.applicationNumber}
+                        {/* The desktop table has an "Application #" column
+                            header to explain this; the card had none, so the
+                            code read as an unlabelled reference. */}
+                        <p className="mt-0.5 text-xs text-zinc-500">
+                          Application No. <span className="font-mono">{app.applicationNumber}</span>
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">

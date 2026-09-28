@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DOWN_PAYMENT_FLOOR_RATE, DOWN_PAYMENT_FLOOR_LABEL } from '@/src/libs/constants/financing'
 
 export const CreditApplicationStatusSchema = z.enum([
   'draft',
@@ -236,13 +237,13 @@ const CreateCreditApplicationBaseSchema = z.object({
   // in the catalog differs by PHP 4,009 between the two).
   resolvedItemTotal: z.number().optional(),
   // Also client-only. The down-payment floor the SALE will demand, which is
-  // not simply 10% of the total above: checkout measures its 10% against
-  // the tax-effective line amount, while an application is priced from the
-  // ex-tax price list. With exclusive pricing and 12% VAT that makes
-  // checkout's floor ~12% higher, so an application approved at exactly its
-  // own floor could never be sold — "down payment must be at least 10% of
-  // its sale amount" at the till, on an application the server had already
-  // accepted. The form computes the stricter figure and passes it here.
+  // not simply the floor rate applied to the total above: checkout measures
+  // its floor against the tax-effective line amount, while an application is
+  // priced from the ex-tax price list. With exclusive pricing and 12% VAT
+  // that makes checkout's floor ~12% higher, so an application approved at
+  // exactly its own floor could never be sold — the till would reject a down
+  // payment the server had already accepted. The form computes the stricter
+  // figure and passes it here. (Rate itself: DOWN_PAYMENT_FLOOR_RATE.)
   downPaymentFloor: z.number().optional(),
 })
 
@@ -289,7 +290,7 @@ export function refineDownPayment(
   // Prefer the floor the form worked out from the tax-effective amount;
   // fall back to a plain 10% when it hasn't been supplied (an API caller,
   // or prices still resolving).
-  const floor = data.downPaymentFloor ?? total * 0.1
+  const floor = data.downPaymentFloor ?? total * DOWN_PAYMENT_FLOOR_RATE
   if (downPayment < floor - 0.005) {
     // Name the basis the figure was actually worked out on. The panel below
     // this field shows the ex-tax item total, so "10% of the item total"
@@ -301,8 +302,8 @@ export function refineDownPayment(
       path: ['downPayment'],
       message:
         data.downPaymentFloor != null
-          ? `Down payment must be at least ${pesos(floor)} — 10% of the sale amount incl. VAT, which is what the till will require`
-          : `Down payment must be at least ${pesos(floor)} (10% of the item total)`,
+          ? `Down payment must be at least ${pesos(floor)} — ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount incl. VAT, which is what the till will require`
+          : `Down payment must be at least ${pesos(floor)} (${DOWN_PAYMENT_FLOOR_LABEL} of the item total)`,
     })
     return
   }

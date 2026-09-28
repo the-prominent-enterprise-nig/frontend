@@ -86,6 +86,11 @@ import {
 } from '../_actions/pos-actions'
 import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import {
+  DOWN_PAYMENT_FLOOR_RATE,
+  DOWN_PAYMENT_FLOOR_LABEL,
+  DOWN_PAYMENT_FLOOR_TOLERANCE,
+} from '@/src/libs/constants/financing'
 import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
@@ -2017,7 +2022,7 @@ export default function CheckoutPage() {
         const fallbackDownPayment =
           l.priceListDownPayment != null
             ? Number(l.priceListDownPayment).toFixed(2)
-            : Math.ceil(lineAmount * 0.1).toFixed(2)
+            : Math.ceil(lineAmount * DOWN_PAYMENT_FLOOR_RATE).toFixed(2)
         return {
           ...l,
           installmentProvider: provider,
@@ -2062,12 +2067,13 @@ export default function CheckoutPage() {
     // effectiveUnitPrice × quantity, tax included. Splitting on the raw
     // unitPrice instead left every share about 12% short under exclusive
     // pricing, so a sale built from an approved application was refused
-    // with "down payment must be at least 10% of its sale amount".
+    // with "down payment must be at least the floor % of its sale amount".
     const lineAmount = (l: CartLine) =>
       effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
     // Whole centavos, rounded UP, so a fractional 10% can't land a hair
     // under the floor.
-    const lineFloor = (l: CartLine) => Math.ceil(lineAmount(l) * 0.1 * 100) / 100
+    const lineFloor = (l: CartLine) =>
+      Math.ceil(lineAmount(l) * DOWN_PAYMENT_FLOOR_RATE * 100) / 100
     const total = lines.reduce((sum, l) => sum + lineAmount(l), 0)
     const approvedDp = application.downPayment ?? null
 
@@ -2508,8 +2514,10 @@ export default function CheckoutPage() {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
-        if (downPayment < 0.1 * lineAmount - 0.005) {
-          setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
+        if (downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE) {
+          setError(
+            `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
+          )
           return
         }
       }
@@ -2526,8 +2534,10 @@ export default function CheckoutPage() {
       // tax-inclusive/exclusive price conversion above — without it, typing
       // the exact rounded-to-centavo value shown by the "Min" hint below
       // can land a hair under the true unrounded floor and be rejected.
-      if (downPayment < 0.1 * lineAmount - 0.005) {
-        setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
+      if (downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE) {
+        setError(
+          `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
+        )
         return
       }
     }
@@ -4306,7 +4316,7 @@ export default function CheckoutPage() {
                   const lineSaleAmount =
                     effectiveUnitPrice(line, activeTaxRate, inclusivePricing, isTaxExempt) *
                     line.quantity
-                  const minDownPayment = 0.1 * lineSaleAmount
+                  const minDownPayment = DOWN_PAYMENT_FLOOR_RATE * lineSaleAmount
                   // Whole pesos, rounded up — matches the auto-fill in
                   // setLineFinancingTermId() so the displayed floor is never
                   // a centavo amount the field itself won't accept.
@@ -4413,7 +4423,9 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
+                                      {curatedDownPaymentWhole !== null
+                                        ? 'Rate card'
+                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
@@ -4433,8 +4445,8 @@ export default function CheckoutPage() {
                               <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                 <span className="text-prominent-purple-400">●</span>
                                 {curatedDownPaymentWhole !== null
-                                  ? 'From the rate card for this term — the minimum accepted is still 10% of the sale amount.'
-                                  : 'Fixed at 10% of the sale amount — the same for every term.'}
+                                  ? `From the rate card for this term — the minimum accepted is still ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount.`
+                                  : `Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
                               </p>
                               {line.financingTermId && (
                                 <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
@@ -4505,7 +4517,9 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
+                                      {curatedDownPaymentWhole !== null
+                                        ? 'Rate card'
+                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">

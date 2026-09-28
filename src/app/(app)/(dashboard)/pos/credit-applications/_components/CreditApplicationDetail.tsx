@@ -303,8 +303,18 @@ export default function CreditApplicationDetail({
 
         <div className="flex items-start justify-between">
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-zinc-900">{application.applicationNumber}</h1>
+            {/* Labelled, not a bare code. The number has always been
+                auto-generated and shown here, but as an unexplained heading
+                it did not read as an application number at all — the client
+                asked for one to be added (2026-09-28), not realising this
+                was it. */}
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Application No.
+            </p>
+            <div className="mt-0.5 flex items-center gap-3">
+              <h1 className="font-mono text-2xl font-bold text-zinc-900">
+                {application.applicationNumber}
+              </h1>
               <span
                 className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${CREDIT_APPLICATION_STATUS_COLORS[application.status]}`}
               >
