@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, loginAs, fillStable, clickStable } from './utils'
+import { gotoReady, loginAs, fillStable, clickStable, openCustomSelect } from './utils'
 
 // Scenario 17, Part 3 — Cashier intake UI for a formal NIG in-house
 // financing application. Backend CRUD/documents/submit workflow itself is
@@ -31,7 +31,15 @@ test.describe('Credit Applications — Cashier intake', () => {
     await loginAs(page, CASHIER_EMAIL, DEV_PASSWORD)
 
     const applicantName = `E2E Credit Applicant ${Date.now()}`
-    const createCustomerRes = await page.request.post('/api/crm/customers', {
+    // POS, not CRM. This spec deliberately throws away the shared Business
+    // Owner storage state above to run as a cashier, and a cashier does not
+    // hold crm:customers:create — so setting the fixture up through the CRM
+    // route 403'd and killed the test before it reached what it tests.
+    // POST /pos/customers is gated on pos:customers:create (held via the POS
+    // module wildcard), takes the same CreateCustomerDto, and delegates to
+    // the same CustomerService.create() — so this is also how a real cashier
+    // would create this applicant.
+    const createCustomerRes = await page.request.post('/api/pos/customers', {
       data: {
         name: applicantName,
         customerType: 'individual',
@@ -49,16 +57,29 @@ test.describe('Credit Applications — Cashier intake', () => {
       page.getByRole('heading', { name: 'New Credit Application' })
     )
 
+    // SearchCombobox renders closed as a button carrying the placeholder as
+    // its text, swapping to a real input only once clicked — see the "Closed
+    // state is a button, not the search <input>, on purpose" note in that
+    // component. Matching the result by name also drops the old
+    // `div.fixed.z-100` container selector, which was tied to its styling.
+    // Wrapped in toPass because the search is debounced: a retried fill
+    // restarts the debounce, so typing once and then waiting for the result
+    // races it. Same shape as pickAddressLevel in crm-add-customer.spec.ts —
+    // retype, then expect the result, and let the whole pair retry.
+    await page.getByRole('button', { name: 'Search customer by name or phone…' }).click()
     const applicantInput = page.getByPlaceholder('Search customer by name or phone…')
-    await applicantInput.click()
-    await applicantInput.fill(applicantName)
-    const applicantDropdown = page.locator('div.fixed.z-100')
-    await expect(applicantDropdown).toBeVisible({ timeout: 10_000 })
-    await applicantDropdown.locator('button').first().click()
+    const applicantResult = page.getByRole('button', { name: new RegExp(applicantName) })
+    await expect(async () => {
+      await applicantInput.fill(applicantName)
+      await expect(applicantResult).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 20_000 })
+    await applicantResult.click()
 
-    const coMakerSelect = page.locator('select').filter({ hasText: 'E2E Intake Co-Maker' })
-    await expect(coMakerSelect).toBeVisible({ timeout: 10_000 })
-    await coMakerSelect.selectOption({ label: 'E2E Intake Co-Maker (Sibling)' })
+    // The co-maker picker is the shared Select, not a native <select>: it is
+    // a role=combobox named by what it currently shows, with its options in a
+    // popup rather than as <option> children.
+    await openCustomSelect(page.getByRole('combobox', { name: /No co-maker/ }))
+    await page.getByRole('option', { name: 'E2E Intake Co-Maker (Sibling)' }).click()
 
     await fillStable(page.locator('input[type="number"]'), '25000')
 
