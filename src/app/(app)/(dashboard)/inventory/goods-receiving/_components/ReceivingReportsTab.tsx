@@ -899,6 +899,7 @@ export default function ReceivingReportsTab({
           isSubmitting={receiveMutation.isPending}
           warehouses={destinationWarehousesQuery.data?.data?.data ?? []}
           items={createItemsQuery.data?.data?.data ?? []}
+          actorBranchId={me?.branchId}
           canViewCost={canViewCost}
           title="Create Receiving Report"
           subtitle="Record what was delivered against a purchase order."

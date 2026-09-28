@@ -150,7 +150,7 @@ export default function ManualRrLineRow({
           className={toggleBtnClass(mode === 'other')}
           onClick={() => onSetMode('other')}
         >
-          Something else
+          Non-catalog items
         </button>
       </div>
 

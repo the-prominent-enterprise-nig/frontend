@@ -165,87 +165,100 @@ export function RrDeliveryPanel({
             PO is linked — getting your own stock back, or fulfilling a PO
             that already names its supplier, genuinely has no separate source
             to require. */}
-        <Field
-          label="Source"
-          required={!linkedPo && !reason}
-          tooltip={
-            linkedPo
-              ? `From ${linkedPo.code}`
-              : reason
-                ? 'Optional — name it if known.'
-                : 'Required unless this receipt is linked to a PO.'
-          }
-        >
-          {!linkedPo && (
-            <div className="mb-1 flex gap-1.5">
-              <button
-                type="button"
-                className={toggleBtnClass(sourceMode === 'registered')}
-                onClick={() => onSourceModeChange('registered')}
-              >
-                Registered
-              </button>
-              <button
-                type="button"
-                className={toggleBtnClass(sourceMode === 'new')}
-                onClick={() => onSourceModeChange('new')}
-              >
-                Other
-              </button>
-            </div>
-          )}
-          {linkedPo || sourceMode === 'registered' ? (
-            <SupplierSearchCombobox
-              value={supplierId}
-              onChange={(id) => onSupplierChange(id)}
-              onSelect={(option) => onSupplierChange(option.id, option.primary)}
-              initialLabel={supplierName}
-              error={
-                showErrors && !linkedPo && !reason && !supplierId ? 'Source is required' : undefined
-              }
-            />
-          ) : (
+        {/* Repossession drops Source, Location and Delivery Receipt No.
+            entirely (developer-confirmed 2026-09-28) — none of the three
+            genuinely apply to taking a unit back from a customer: there is
+            no source to name beyond the account it's picked from below, and
+            the destination is always the receiver's own branch, silently
+            (see ReceiveStockModal's own auto-default effect), never asked
+            for. */}
+        {reason !== 'repossession' && (
+          <Field
+            label="Source"
+            required={!linkedPo && !reason}
+            tooltip={
+              linkedPo
+                ? `From ${linkedPo.code}`
+                : reason
+                  ? 'Optional — name it if known.'
+                  : 'Required unless this receipt is linked to a PO.'
+            }
+          >
+            {!linkedPo && (
+              <div className="mb-1 flex gap-1.5">
+                <button
+                  type="button"
+                  className={toggleBtnClass(sourceMode === 'registered')}
+                  onClick={() => onSourceModeChange('registered')}
+                >
+                  Registered
+                </button>
+                <button
+                  type="button"
+                  className={toggleBtnClass(sourceMode === 'new')}
+                  onClick={() => onSourceModeChange('new')}
+                >
+                  Other
+                </button>
+              </div>
+            )}
+            {linkedPo || sourceMode === 'registered' ? (
+              <SupplierSearchCombobox
+                value={supplierId}
+                onChange={(id) => onSupplierChange(id)}
+                onSelect={(option) => onSupplierChange(option.id, option.primary)}
+                initialLabel={supplierName}
+                error={
+                  showErrors && !linkedPo && !reason && !supplierId
+                    ? 'Source is required'
+                    : undefined
+                }
+              />
+            ) : (
+              <Controller
+                name="newSourceName"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="text"
+                    placeholder="Who or what this came from"
+                    className={INPUT}
+                  />
+                )}
+              />
+            )}
+          </Field>
+        )}
+
+        {reason !== 'repossession' && (
+          <Field
+            label="Location"
+            required
+            footer={
+              showErrors && errors.warehouseId ? (
+                <FieldError text={errors.warehouseId.message} />
+              ) : undefined
+            }
+          >
             <Controller
-              name="newSourceName"
+              name="warehouseId"
               control={control}
               render={({ field }) => (
-                <input
-                  {...field}
+                <SearchableSelect
                   value={field.value ?? ''}
-                  type="text"
-                  placeholder="Who or what this came from"
-                  className={INPUT}
+                  onChange={field.onChange}
+                  placeholder="Select location…"
+                  loading={warehouses.length === 0}
+                  loadingLabel="Loading locations…"
+                  chrome={showErrors && errors.warehouseId ? INVALID_CHROME : CONTROL_CHROME}
+                  options={locationOptions}
                 />
               )}
             />
-          )}
-        </Field>
-
-        <Field
-          label="Location"
-          required
-          footer={
-            showErrors && errors.warehouseId ? (
-              <FieldError text={errors.warehouseId.message} />
-            ) : undefined
-          }
-        >
-          <Controller
-            name="warehouseId"
-            control={control}
-            render={({ field }) => (
-              <SearchableSelect
-                value={field.value ?? ''}
-                onChange={field.onChange}
-                placeholder="Select location…"
-                loading={warehouses.length === 0}
-                loadingLabel="Loading locations…"
-                chrome={showErrors && errors.warehouseId ? INVALID_CHROME : CONTROL_CHROME}
-                options={locationOptions}
-              />
-            )}
-          />
-        </Field>
+          </Field>
+        )}
 
         {/* Scenario 55 (Stock-side Manual RR parity, follow-up) — date only,
             matching ManualRrForm.tsx's own Date Received field exactly; the
@@ -266,31 +279,33 @@ export function RrDeliveryPanel({
           />
         </Field>
 
-        <Field
-          label="Delivery Receipt No."
-          hint="optional"
-          footer={
-            showErrors && errors.deliveryReceiptNumber ? (
-              <FieldError text={errors.deliveryReceiptNumber.message} />
-            ) : (
-              <Hint>The supplier&rsquo;s own DR, as it came with the goods.</Hint>
-            )
-          }
-        >
-          <Controller
-            name="deliveryReceiptNumber"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="text"
-                placeholder="e.g. DR-00123"
-                className={showErrors && errors.deliveryReceiptNumber ? INPUT_BAD : INPUT}
-              />
-            )}
-          />
-        </Field>
+        {reason !== 'repossession' && (
+          <Field
+            label="Delivery Receipt No."
+            hint="optional"
+            footer={
+              showErrors && errors.deliveryReceiptNumber ? (
+                <FieldError text={errors.deliveryReceiptNumber.message} />
+              ) : (
+                <Hint>The supplier&rsquo;s own DR, as it came with the goods.</Hint>
+              )
+            }
+          >
+            <Controller
+              name="deliveryReceiptNumber"
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  value={field.value ?? ''}
+                  type="text"
+                  placeholder="e.g. DR-00123"
+                  className={showErrors && errors.deliveryReceiptNumber ? INPUT_BAD : INPUT}
+                />
+              )}
+            />
+          </Field>
+        )}
 
         {/* No supplier, no invoice — same reasoning as PO Number/Date and
             the whole Withholding/VAT/NNDP row below. */}

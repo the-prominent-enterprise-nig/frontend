@@ -15,6 +15,7 @@ import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import SegmentedControl from '@/src/components/ui/SegmentedControl'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { useBranches } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePos'
 
 function Field({
   label,
@@ -77,8 +78,22 @@ function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] 
  * free text by developer decision — no search/link to an existing
  * Customer/Supplier/Employee record, closer to a digitized paper receipt
  * book than a linked transaction. */
-export default function NewAcknowledgementReceiptForm() {
+export default function NewAcknowledgementReceiptForm({
+  restrictedBranchId,
+}: {
+  /** A branch-assigned caller's own branch — the service stores this
+   * server-side regardless of what's submitted, so the form locks to it
+   * instead of offering a picker that would just get overridden. Null for a
+   * non-branch-assigned caller (e.g. Business Owner), who picks one below.
+   * Same idiom as financing-terms' own restrictedBranchId. */
+  restrictedBranchId: string | null
+}) {
   const router = useRouter()
+  const { data: branchesData, isLoading: branchesLoading } = useBranches()
+  const branches = (branchesData?.data ?? []) as Array<{ id: string; name: string }>
+  const restrictedBranchName = restrictedBranchId
+    ? (branches.find((b) => b.id === restrictedBranchId)?.name ?? 'your branch')
+    : null
 
   const [form, setForm] = useState({
     paymentDate: new Date().toISOString().slice(0, 10),
@@ -92,6 +107,7 @@ export default function NewAcknowledgementReceiptForm() {
     method: 'CASH' as PaymentMethod,
     clearedType: 'SAME_DATE',
     clearedDate: '',
+    branchId: restrictedBranchId ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -116,6 +132,7 @@ export default function NewAcknowledgementReceiptForm() {
       accountId: form.accountId || undefined,
       reason: form.reason || undefined,
       reference: form.reference || undefined,
+      branchId: restrictedBranchId ?? (form.branchId || undefined),
       clearedDate: form.clearedType === 'LATER_DATE' ? form.clearedDate || undefined : undefined,
     })
     setSaving(false)
@@ -160,6 +177,23 @@ export default function NewAcknowledgementReceiptForm() {
             <option value="ACKNOWLEDGEMENT">Acknowledgement</option>
             <option value="COLLECTION">Collection</option>
           </select>
+        </Field>
+
+        <Field label="Branch">
+          {restrictedBranchId ? (
+            <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+              {restrictedBranchName}
+            </p>
+          ) : (
+            <SearchableSelect
+              value={form.branchId}
+              onChange={(value) => setForm({ ...form, branchId: value })}
+              options={branches.map((b) => ({ value: b.id, label: b.name }))}
+              placeholder={branchesLoading ? 'Loading branches…' : '— Not tracked —'}
+              disabled={branchesLoading}
+              clearable
+            />
+          )}
         </Field>
 
         <div className="grid grid-cols-2 gap-3">

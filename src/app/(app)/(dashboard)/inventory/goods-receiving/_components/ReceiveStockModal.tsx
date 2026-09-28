@@ -20,17 +20,21 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { showToast } from '@/src/components/ui/toast'
 import type { RepossessedSerialMeta } from '@/src/components/inventory/RepossessedSerialSearchCombobox'
 import type { InstallmentAccountMeta } from '@/src/components/inventory/InstallmentAccountSearchCombobox'
-import { getInstallmentAccounts } from '../_actions/get-installment-accounts'
-import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import {
+  getInstallmentAccount,
+  type InstallmentAccountUnitItem,
+} from '../_actions/get-installment-account'
 import type { ItemSearchMeta } from '../../purchase-requests/_components/ItemSearchCombobox'
 import { MONO, PLEX, fmtPeso } from '../../purchase-orders/_components/procurementTokens'
 import { ReceiveActionBar } from '../../purchase-orders/_components/receive-po/ReceiveActionBar'
 import { itemTitle } from '../../purchase-orders/_components/receive-po/itemTitle'
 import {
   isDuplicateSerial,
+  type Blocker,
   type IssueFix,
 } from '../../purchase-orders/_components/receive-po/receiveIssues'
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
+import { RepossessedItemsPanel } from './create-rr/RepossessedItemsPanel'
 import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPanel'
 import { RrLineRow } from './create-rr/RrLineRow'
 import { collectRrBlockers, rrLineIssues, toIssueLines } from './create-rr/rrChecks'
@@ -44,6 +48,11 @@ type Props = {
   isSubmitting: boolean
   warehouses: WarehouseOption[]
   items: ItemSummary[]
+  /** The receiver's own branch — a repossession line drops the Location
+   * field entirely and lands silently in this branch's own warehouse
+   * instead (developer-confirmed 2026-09-28). Null/undefined (unrestricted,
+   * e.g. Business Owner) falls back to one of the 2 real warehouses. */
+  actorBranchId?: string | null
   /** Unit cost is sensitive pricing data — hidden from Branch Manager/Stock
    * Controller, restricted to Business Owner/Accountant (Scenario 05 followup).
    * Server-side enforcement in receiveStock() is the real guard; this just
@@ -121,6 +130,7 @@ export default function ReceiveStockModal({
   isSubmitting,
   warehouses,
   items,
+  actorBranchId,
   canViewCost,
   title = 'Receive Stock',
   subtitle = 'Record incoming stock into inventory.',
@@ -158,12 +168,39 @@ export default function ReceiveStockModal({
   const [installmentAccountLabels, setInstallmentAccountLabels] = useState<Record<string, string>>(
     {}
   )
-  // Scenario 55 Part 4 — one level deeper than the above: a repossession
-  // line can pick more than one existing serial (one per unit), each with
-  // its own label.
-  const [existingSerialLabels, setExistingSerialLabels] = useState<
-    Record<string, Record<number, string>>
+  // Repossessed-from-account (developer-confirmed 2026-09-28) — who a
+  // repossession line's unit is coming from, picked before the account
+  // (which is then scoped to them). Local-only, like the other display maps
+  // here: never submitted, just narrows the account search.
+  const [repossessionCustomerIds, setRepossessionCustomerIds] = useState<Record<string, string>>({})
+  const [repossessionCustomerLabels, setRepossessionCustomerLabels] = useState<
+    Record<string, string>
   >({})
+  // The picked account's own sold units (resolved via installmentSchedule ->
+  // posTransactionLines), fetched once an account is selected. undefined =
+  // nothing picked yet or still loading; [] = a hand-entered/imported
+  // account with no linked schedule to resolve from (the fallback path).
+  const [unitItemsByField, setUnitItemsByField] = useState<
+    Record<string, InstallmentAccountUnitItem[] | undefined>
+  >({})
+  const [unitItemsLoadingByField, setUnitItemsLoadingByField] = useState<Record<string, boolean>>(
+    {}
+  )
+  // True when the picked account DID have a linked schedule but every one
+  // of its units has already been repossessed — distinct from a
+  // hand-entered/imported account, which never had one at all. Both read as
+  // "unitItemsByField[key] is []", so the fallback message needs this to
+  // say the right thing instead of "no linked catalog sale" for an account
+  // that very much had one.
+  const [accountExhaustedByField, setAccountExhaustedByField] = useState<Record<string, boolean>>(
+    {}
+  )
+  // Repossession, fallback path only (a hand-entered/imported account with
+  // no unitItems to resolve from) — the manually-searched serial's display
+  // label. One per line, not per unit: a repossession row is always exactly
+  // one unit (developer-confirmed 2026-09-28), unlike a purchase line's
+  // quantity-many serial slots.
+  const [fallbackSerialLabels, setFallbackSerialLabels] = useState<Record<string, string>>({})
   const [linkedPo, setLinkedPo] = useState<PurchaseOrderSummary | null>(null)
   const [poPickerOpen, setPoPickerOpen] = useState(false)
   const [supplierName, setSupplierName] = useState<string | undefined>(undefined)
@@ -185,7 +222,12 @@ export default function ReceiveStockModal({
     setLineModes({})
     setOtherLineTrackSerial({})
     setInstallmentAccountLabels({})
-    setExistingSerialLabels({})
+    setRepossessionCustomerIds({})
+    setRepossessionCustomerLabels({})
+    setUnitItemsByField({})
+    setUnitItemsLoadingByField({})
+    setAccountExhaustedByField({})
+    setFallbackSerialLabels({})
     setLinkedPo(null)
     setPoPickerOpen(false)
     setSupplierName(undefined)
@@ -291,6 +333,22 @@ export default function ReceiveStockModal({
     issueLines,
     labelFor
   )
+  // receiveStock() rejects a submitted unitCost that isn't positive (a real
+  // stored 0, not just "blank" — see get-installment-account.ts's own
+  // unitCost, which can genuinely be a recorded zero for a historical sale).
+  // Caught here rather than left for the server to reject after the fact:
+  // RepossessedUnitRow already offers a Cost field the moment this applies.
+  if (watched.reason === 'repossession') {
+    lines.forEach((line, index) => {
+      if (!line.itemId || Number(line.unitCost) > 0) return
+      blockers.push({
+        key: `repossession-cost-${index}`,
+        kind: 'error',
+        lineIndex: index,
+        text: `${labelFor(index)}: needs a cost before it can be received.`,
+      } satisfies Blocker)
+    })
+  }
 
   // Unit cost follows SRP through the discount chain, the same rule the PO
   // form and the receive-against-PO screen apply. Without it the two could
@@ -325,6 +383,23 @@ export default function ReceiveStockModal({
       setValue('supplierInvoiceNumber', '', { shouldValidate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watched.reason])
+
+  // Repossession drops Location from the form entirely (developer-confirmed
+  // 2026-09-28) — the destination still has to be a real warehouseId
+  // server-side (receiveStock() requires one unconditionally), so it's set
+  // here instead: the receiver's own branch warehouse, same one
+  // stock.service.ts already forces a branch-scoped reasoned receipt into
+  // regardless of what's submitted. Never overwrites an already-set value —
+  // a PO link, or a Location picked before switching Reason on, both stay.
+  useEffect(() => {
+    if (watched.reason !== 'repossession' || watched.warehouseId) return
+    const ownBranch = actorBranchId
+      ? warehouses.find((w) => w.branchId === actorBranchId)
+      : undefined
+    const target = ownBranch ?? warehouses.find((w) => !w.branchId)
+    if (target) setValue('warehouseId', target.id, { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watched.reason, watched.warehouseId, actorBranchId, warehouses])
 
   const outstandingNotPulled = useMemo(() => {
     if (!linkedPo) return []
@@ -368,49 +443,69 @@ export default function ReceiveStockModal({
     setValue(`lines.${index}.serialNumbers`, next, { shouldValidate: showErrors })
   }
 
-  /** Scenario 55 Part 4 — picking a repossessed unit also tries to resolve
-   * its InstallmentAccount from the sale it came off (meta.soldToCustomerId),
-   * so the receiver isn't left to separately search for what the serial
-   * pick already implies. Left for manual search when it doesn't resolve to
-   * exactly one account — a customer can hold more than one, or none at all
-   * (a legacy/imported sale). */
-  function setExistingSerial(
+  /** Repossession, fallback path only (developer-confirmed 2026-09-28) — a
+   * hand-entered/imported account has no unitItems to resolve from, so the
+   * item and serial are searched manually instead. An account is always
+   * already picked by the time this fires (that's what put the row into
+   * this fallback in the first place), so there's nothing left to
+   * auto-resolve here, just the pick itself. Always the row's one and only
+   * unit (index 0) — a repossession row is never more than one unit. */
+  function setFallbackSerial(
     index: number,
-    unitIndex: number,
     id: string,
-    meta?: RepossessedSerialMeta,
+    _meta?: RepossessedSerialMeta,
     label?: string
   ): void {
     const key = fields[index]?.id ?? ''
-    const next = (lines[index]?.existingSerialNumberIds ?? []).slice()
-    while (next.length <= unitIndex) next.push('')
-    next[unitIndex] = id
-    setValue(`lines.${index}.existingSerialNumberIds`, next, { shouldValidate: showErrors })
-    if (label) {
-      setExistingSerialLabels((prev) => ({
-        ...prev,
-        [key]: { ...prev[key], [unitIndex]: label },
-      }))
-    }
-
-    const customerId = meta?.soldToCustomerId
-    if (!id || !customerId) return
-    void (async () => {
-      const res = await getInstallmentAccounts({ customerId, limit: 5 })
-      const matches = res.data?.data ?? []
-      if (matches.length !== 1) return
-      setValue(`lines.${index}.installmentAccountId`, matches[0].id, { shouldValidate: false })
-      setInstallmentAccountLabels((prev) => ({ ...prev, [key]: matches[0].accountNumber }))
-    })()
+    setValue(`lines.${index}.existingSerialNumberIds`, id ? [id] : undefined, {
+      shouldValidate: showErrors,
+    })
+    setFallbackSerialLabels((prev) => ({ ...prev, [key]: label ?? '' }))
   }
 
-  /** Scenario 55 Part 4 — the other direction of the same resolution:
-   * picking the account first tries to find the one sold serial of this
-   * line's item that belongs to that customer, so the receiver who already
-   * knows WHO they're repossessing from isn't then made to separately hunt
-   * down which unit. Only auto-fills the first unit slot — a line with
-   * quantity > 1 still needs the rest picked manually, same as any other
-   * partial match. */
+  /** Repossession — the cost typed in by hand, either because there's no
+   * original-sale record to pull one from (fallback path) or because there
+   * is one but it's not usable (missing or a recorded zero — see
+   * RepossessedUnitRow's own resolved-but-no-cost branch). */
+  function setUnitCost(index: number, value: number | undefined): void {
+    setValue(`lines.${index}.unitCost`, value, { shouldValidate: false })
+  }
+
+  /** Repossession, Part 1 — who a repossessed unit is coming from, picked
+   * before the account (InstallmentAccountSearchCombobox's own customerId
+   * prop scopes to them). Changing this clears whatever account/unit/cost
+   * were already resolved under a different customer, so a stale pick can't
+   * ride along pointing at someone no longer shown. */
+  function setRepossessionCustomer(index: number, id: string, label?: string): void {
+    const key = fields[index]?.id ?? ''
+    setRepossessionCustomerIds((prev) => ({ ...prev, [key]: id }))
+    setRepossessionCustomerLabels((prev) => ({ ...prev, [key]: label ?? '' }))
+    if (!lines[index]?.installmentAccountId) return
+    setValue(`lines.${index}.installmentAccountId`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.itemId`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.existingSerialNumberIds`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.unitCost`, undefined, { shouldValidate: false })
+    setInstallmentAccountLabels((prev) => ({ ...prev, [key]: '' }))
+    setUnitItemsByField((prev) => ({ ...prev, [key]: undefined }))
+    setAccountExhaustedByField((prev) => ({ ...prev, [key]: false }))
+  }
+
+  /** Repossession, Part 2 — picking the account (whether via the
+   * "Installment" field itself or the "Invoice #" one — both are the same
+   * search, just framed differently) fetches its own sold unit(s)
+   * (installmentSchedule -> posTransactionLines) so the item, serial, AND
+   * cost can be shown rather than asked for: exactly one unit auto-fills
+   * outright (cost = what it was actually sold at, so a real cost layer gets
+   * created on receiving — a blank/zero cost silently created none at all),
+   * several are left for the row's own unit picker (a shared-term account
+   * can span more than one DIFFERENT item — Scenario 23), and none at all (a
+   * hand-entered/imported account has no linked schedule to resolve from)
+   * falls back to the old manual item+serial+cost entry.
+   *
+   * Also fills in "Repossessed From" from meta.customerName when the
+   * account was found some other way than searching for the customer first
+   * (by invoice #, item, or serial) — resolving the account this way is
+   * just as authoritative about who it belongs to. */
   function setInstallmentAccount(
     index: number,
     id: string,
@@ -419,27 +514,84 @@ export default function ReceiveStockModal({
   ): void {
     const key = fields[index]?.id ?? ''
     setValue(`lines.${index}.installmentAccountId`, id || undefined, { shouldValidate: false })
+    setValue(`lines.${index}.itemId`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.existingSerialNumberIds`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.unitCost`, undefined, { shouldValidate: false })
     setInstallmentAccountLabels((prev) => ({ ...prev, [key]: label ?? '' }))
+    setUnitItemsByField((prev) => ({ ...prev, [key]: undefined }))
+    setAccountExhaustedByField((prev) => ({ ...prev, [key]: false }))
+    if (meta?.customerId) {
+      setRepossessionCustomerIds((prev) => ({ ...prev, [key]: meta.customerId }))
+      setRepossessionCustomerLabels((prev) => ({ ...prev, [key]: meta.customerName ?? '' }))
+    }
+    if (!id) return
 
-    const customerId = meta?.customerId
-    const itemId = lines[index]?.itemId
-    if (!id || !customerId || !itemId) return
+    setUnitItemsLoadingByField((prev) => ({ ...prev, [key]: true }))
     void (async () => {
-      const res = await getSerialNumbers({
-        itemId,
-        status: 'sold',
-        soldToCustomerId: customerId,
-        limit: 5,
-      })
-      const matches = res.data?.data ?? []
-      if (matches.length !== 1) return
-      const serial = matches[0]
-      setValue(`lines.${index}.existingSerialNumberIds`, [serial.id], { shouldValidate: false })
-      setExistingSerialLabels((prev) => ({
+      const res = await getInstallmentAccount(id)
+      const allUnitItems = res.data?.unitItems ?? []
+      // Only a unit still actually out with the customer (serialStatus
+      // 'sold') is available to repossess again — one already brought back
+      // by an earlier receipt (status now in_stock) has nothing left to
+      // resolve and must not be offered a second time. allUnitItems.length
+      // vs this filtered count is also how "genuinely no linked sale"
+      // (hand-entered/imported account) is told apart from "linked, but
+      // every unit already repossessed" below — the fallback message reads
+      // differently for each.
+      const unitItems = allUnitItems.filter((u) => u.serialNumberId && u.serialStatus === 'sold')
+      setUnitItemsByField((prev) => ({ ...prev, [key]: unitItems }))
+      setAccountExhaustedByField((prev) => ({
         ...prev,
-        [key]: { 0: serial.serialNumber },
+        [key]: allUnitItems.length > 0 && unitItems.length === 0,
       }))
+      setUnitItemsLoadingByField((prev) => ({ ...prev, [key]: false }))
+      if (unitItems.length !== 1) return
+      applyRepossessionUnit(index, unitItems[0])
     })()
+  }
+
+  /** Shared by the auto-fill-on-single-match path above and the row's own
+   * unit picker (>1-unit case) below — resolves a picked unit into the
+   * line's itemId/existingSerialNumberIds/unitCost, and remembers the item's
+   * display meta the same way a catalog pick would. */
+  function applyRepossessionUnit(index: number, unit: InstallmentAccountUnitItem): void {
+    if (!unit.serialNumberId) return
+    rememberItem(unit.itemId, {
+      name: unit.itemName ?? unit.itemId,
+      isSerialTracked: true,
+      modelNumber: unit.modelNumber,
+      brand: unit.brand ? { name: unit.brand } : null,
+    })
+    setValue(`lines.${index}.itemId`, unit.itemId, { shouldValidate: false })
+    setValue(`lines.${index}.existingSerialNumberIds`, [unit.serialNumberId], {
+      shouldValidate: false,
+    })
+    setValue(`lines.${index}.unitCost`, unit.unitCost ?? undefined, { shouldValidate: false })
+  }
+
+  /** The form only ever stores a picked serial's id — this resolves its
+   * display string back out of the account's own unitItems, so the summary
+   * row can show which serial was picked, not just the item. */
+  function serialLabelFor(fieldId: string, serialNumberId?: string): string | undefined {
+    if (!serialNumberId) return undefined
+    return (
+      unitItemsByField[fieldId]?.find((u) => u.serialNumberId === serialNumberId)?.serialNumber ??
+      undefined
+    )
+  }
+
+  /** Whether the RESOLVED unit itself had a usable recorded cost — read off
+   * unitItemsByField, never off the line's own (live-edited) unitCost. A
+   * row with no original cost still needs a Cost input once the receiver
+   * starts typing a positive number into it; deciding "editable or not" off
+   * the value being typed would yank the input away mid-keystroke the
+   * moment it crosses 0. */
+  function hasOriginalCost(fieldId: string, serialNumberId?: string): boolean {
+    if (!serialNumberId) return false
+    const unitCost = unitItemsByField[fieldId]?.find(
+      (u) => u.serialNumberId === serialNumberId
+    )?.unitCost
+    return unitCost != null && unitCost > 0
   }
 
   function toggleFreebie(index: number): void {
@@ -532,15 +684,39 @@ export default function ReceiveStockModal({
     }
     if (isSerialTracked) {
       const qty = Number(lines[index]?.quantityReceived) || 1
-      const isRepossession = watched.reason === 'repossession'
       setValue(
-        isRepossession ? `lines.${index}.existingSerialNumberIds` : `lines.${index}.serialNumbers`,
+        `lines.${index}.serialNumbers`,
         Array.from({ length: qty }, () => ''),
-        { shouldValidate: false }
+        {
+          shouldValidate: false,
+        }
       )
       // Serial inputs render inline as soon as isSerialTracked is true (see
       // RrLineRow.tsx) — nothing left to open.
     }
+  }
+
+  /** Repossession, fallback path only — picking the item by hand (no
+   * account-resolved unit to derive it from). Unlike an ordinary catalog
+   * pick, this never touches unitCost: the catalog's current cost price
+   * means nothing for a unit re-entering stock from a customer, not a
+   * supplier — the receiver types the actual figure themselves (see
+   * setUnitCost). */
+  function onSelectFallbackItem(index: number, option: SearchComboboxOption): void {
+    rememberItem(option.id, {
+      name: option.primary,
+      sku: option.secondary,
+      isSerialTracked: true,
+    })
+    setValue(`lines.${index}.itemId`, option.id, { shouldValidate: false })
+    setValue(`lines.${index}.existingSerialNumberIds`, undefined, { shouldValidate: false })
+  }
+
+  /** Repossession rows have no quantity of their own (always exactly one
+   * unit) and none of the purchase-pricing/tax fields a normal line
+   * defaults — see addLine() below for the ordinary case this mirrors. */
+  function addRepossessionUnit(): void {
+    append({ quantityReceived: 1 })
   }
 
   function pullPoLines(): void {
@@ -753,180 +929,206 @@ export default function ReceiveStockModal({
           onUnlinkPo={unlinkPo}
         />
 
-        <div className={PANEL}>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-3.5">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <div className="flex items-center gap-2.5">
-                <span className="text-[13.5px] font-semibold">
-                  Items received <span className="text-[#b42318]">*</span>
-                </span>
-                <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
-                  {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totals.units} units
+        {watched.reason === 'repossession' ? (
+          <RepossessedItemsPanel
+            fields={fields}
+            lines={lines}
+            canViewCost={canViewCost}
+            showErrors={showErrors}
+            issuesFor={(index) =>
+              rrLineIssues(issueLines, index, contextFor(index), lines[index] ?? {}).filter(
+                (issue) => showErrors || issue.kind === 'warn'
+              )
+            }
+            itemNameFor={(itemId) => (itemId ? metaFor(itemId)?.name : undefined)}
+            serialLabelFor={serialLabelFor}
+            hasOriginalCostFor={hasOriginalCost}
+            customerIdFor={(fieldId) => repossessionCustomerIds[fieldId]}
+            customerLabelFor={(fieldId) => repossessionCustomerLabels[fieldId]}
+            onCustomerChange={(index, id, label) => setRepossessionCustomer(index, id, label)}
+            installmentAccountLabelFor={(fieldId) => installmentAccountLabels[fieldId]}
+            onInstallmentAccountChange={(index, id, meta, label) =>
+              setInstallmentAccount(index, id, meta, label)
+            }
+            unitItemsFor={(fieldId) => unitItemsByField[fieldId]}
+            unitItemsLoadingFor={(fieldId) => unitItemsLoadingByField[fieldId]}
+            accountExhaustedFor={(fieldId) => accountExhaustedByField[fieldId]}
+            onPickUnit={(index, unitItem) => applyRepossessionUnit(index, unitItem)}
+            onSelectFallbackItem={(index, option) => onSelectFallbackItem(index, option)}
+            fallbackSerialLabelFor={(fieldId) => fallbackSerialLabels[fieldId]}
+            onFallbackSerialChange={(index, id, meta, label) =>
+              setFallbackSerial(index, id, meta, label)
+            }
+            onCostChange={(index, value) => setUnitCost(index, value)}
+            onAdd={addRepossessionUnit}
+            onRemove={(index) => remove(index)}
+          />
+        ) : (
+          <div className={PANEL}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-3.5">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[13.5px] font-semibold">
+                    Items received <span className="text-[#b42318]">*</span>
+                  </span>
+                  <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                    {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totals.units} units
+                  </span>
+                </div>
+                <span className="text-[11.5px] text-[#8b8b9b]">
+                  Pick a catalog item, or mark it &ldquo;Non-catalog items&rdquo; for anything not
+                  in the catalog.
                 </span>
               </div>
-              <span className="text-[11.5px] text-[#8b8b9b]">
-                Pick a catalog item, or mark it &ldquo;Something else&rdquo; for anything not in the
-                catalog.
-              </span>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {outstandingNotPulled.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {outstandingNotPulled.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={pullPoLines}
+                    className="rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-2.5 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+                  >
+                    Pull {outstandingNotPulled.length} outstanding{' '}
+                    {outstandingNotPulled.length === 1 ? 'line' : 'lines'}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={pullPoLines}
-                  className="rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-2.5 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+                  onClick={addLine}
+                  className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
                 >
-                  Pull {outstandingNotPulled.length} outstanding{' '}
-                  {outstandingNotPulled.length === 1 ? 'line' : 'lines'}
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Line
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={addLine}
-                className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Line
-              </button>
+              </div>
             </div>
-          </div>
 
-          {/* Scenario 55 (Stock-side Manual RR parity) — mirrors
+            {/* Scenario 55 (Stock-side Manual RR parity) — mirrors
               ManualRrForm.tsx's own Defaults bar exactly: applied to every
               new line going forward, not retroactively. */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
-            <span className="text-[11px] text-[#8b8b9b]">Defaults</span>
-            <select
-              value={defaultTaxCode}
-              onChange={(e) => setDefaultTaxCode(e.target.value)}
-              aria-label="Default tax code"
-              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
-            >
-              {MANUAL_RR_TAX_CODES.map((code) => (
-                <option key={code.value} value={code.value}>
-                  {code.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={defaultWithholdingClass}
-              onChange={(e) => setDefaultWithholdingClass(e.target.value)}
-              aria-label="Default withholding"
-              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
-            >
-              {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
-                <option key={cls.value} value={cls.value}>
-                  {cls.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {!hasLines ? (
-            <div className="flex flex-col items-center gap-2 px-5.5 py-10 text-center">
-              <PackagePlus className="h-7 w-7 text-[#d3d3db]" />
-              <span className="text-[13.5px] font-semibold">No items added yet.</span>
-              <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#5b5b6b]">
-                {linkedPo
-                  ? `Add a line, or pull the lines ${linkedPo.code} is still waiting on.`
-                  : 'Add a line, then pick a catalog item or name what arrived.'}
-              </span>
-              <button
-                type="button"
-                onClick={addLine}
-                className="mt-2 rounded-lg bg-[#5b21b6] px-3.75 py-2.25 text-[13px] font-medium text-white hover:bg-[#4a189b]"
+            <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
+              <span className="text-[11px] text-[#8b8b9b]">Defaults</span>
+              <select
+                value={defaultTaxCode}
+                onChange={(e) => setDefaultTaxCode(e.target.value)}
+                aria-label="Default tax code"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
               >
-                Add a line
-              </button>
+                {MANUAL_RR_TAX_CODES.map((code) => (
+                  <option key={code.value} value={code.value}>
+                    {code.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={defaultWithholdingClass}
+                onChange={(e) => setDefaultWithholdingClass(e.target.value)}
+                aria-label="Default withholding"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+              >
+                {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
+                  <option key={cls.value} value={cls.value}>
+                    {cls.label}
+                  </option>
+                ))}
+              </select>
             </div>
-          ) : (
-            <>
-              <div
-                className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
-              >
-                <span>Item / SKU</span>
-                <span className="text-right">Qty</span>
-                <span className="text-right">SRP</span>
-                <span>Discounts</span>
-                <span className="text-right">Unit Price</span>
-                <span className="text-right">Line Total</span>
-                <span className="text-center">Free</span>
-                <span />
-              </div>
 
-              {fields.map((field, index) => {
-                const line = lines[index]
-                if (!line) return null
-                const context = contextFor(index)
-                const mode = lineModeFor(field.id, line)
-                return (
-                  <RrLineRow
-                    key={field.id}
-                    control={control}
-                    lineIndex={index}
-                    line={line}
-                    mode={mode}
-                    onSetMode={(m) => setLineMode(index, field.id, m)}
-                    itemName={line.itemId ? metaFor(line.itemId)?.name : undefined}
-                    isSerialTracked={context.isSerialTracked}
-                    poChip={
-                      context.outstanding != null && linkedPo
-                        ? `${context.outstanding} outstanding on ${linkedPo.code}`
-                        : undefined
-                    }
-                    canViewCost={canViewCost}
-                    showErrors={showErrors}
-                    itemError={errors.lines?.[index]?.itemId?.message}
-                    issues={rrLineIssues(issueLines, index, context, line).filter(
-                      (issue) => showErrors || issue.kind === 'warn'
-                    )}
-                    isDuplicateSerial={(unit) => isDuplicateSerial(issueLines, index, unit)}
-                    onSelectCatalogItem={(option) => onSelectCatalogItem(index, option)}
-                    onQtyChange={(raw) => setQuantity(index, raw)}
-                    onSerialChange={(unit, value) => setSerial(index, unit, value)}
-                    onClearSerials={() =>
-                      setValue(
-                        `lines.${index}.serialNumbers`,
-                        Array.from({ length: line.quantityReceived || 0 }, () => ''),
-                        { shouldValidate: showErrors }
-                      )
-                    }
-                    onToggleTrackSerial={() => toggleOtherLineTrackSerial(index, field.id)}
-                    onToggleFreebie={() => toggleFreebie(index)}
-                    onToggleQualityHold={() => toggleQualityHold(index)}
-                    onQcReasonChange={(value) =>
-                      setValue(`lines.${index}.notes`, value, { shouldValidate: false })
-                    }
-                    showInstallmentAccountPicker={watched.reason === 'repossession'}
-                    installmentAccountLabel={installmentAccountLabels[field.id]}
-                    onInstallmentAccountChange={(id, meta, label) =>
-                      setInstallmentAccount(index, id, meta, label)
-                    }
-                    existingSerialLabels={existingSerialLabels[field.id]}
-                    onExistingSerialChange={(unitIndex, id, meta, label) =>
-                      setExistingSerial(index, unitIndex, id, meta, label)
-                    }
-                    onDuplicate={() => duplicateLine(index)}
-                    onRemove={() => remove(index)}
-                    onFixIssue={(fix) => applyLineFix(index, fix)}
-                  />
-                )
-              })}
-
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
-                <span className="text-[11.5px] text-[#8b8b9b]">
-                  Held lines land in quarantine, not as sellable stock. Freebies are received at
-                  zero cost.
+            {!hasLines ? (
+              <div className="flex flex-col items-center gap-2 px-5.5 py-10 text-center">
+                <PackagePlus className="h-7 w-7 text-[#d3d3db]" />
+                <span className="text-[13.5px] font-semibold">No items added yet.</span>
+                <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#5b5b6b]">
+                  {linkedPo
+                    ? `Add a line, or pull the lines ${linkedPo.code} is still waiting on.`
+                    : 'Add a line, then pick a catalog item or name what arrived.'}
                 </span>
-                <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
-                  {totals.units} units{canViewCost && ` · ${fmtPeso(totals.invoice)} invoiced`}
-                </span>
+                <button
+                  type="button"
+                  onClick={addLine}
+                  className="mt-2 rounded-lg bg-[#5b21b6] px-3.75 py-2.25 text-[13px] font-medium text-white hover:bg-[#4a189b]"
+                >
+                  Add a line
+                </button>
               </div>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <div
+                  className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+                >
+                  <span>Item / SKU</span>
+                  <span className="text-right">Qty</span>
+                  <span className="text-right">SRP</span>
+                  <span>Discounts</span>
+                  <span className="text-right">Unit Price</span>
+                  <span className="text-right">Line Total</span>
+                  <span className="text-center">Free</span>
+                  <span />
+                </div>
 
+                {fields.map((field, index) => {
+                  const line = lines[index]
+                  if (!line) return null
+                  const context = contextFor(index)
+                  const mode = lineModeFor(field.id, line)
+                  return (
+                    <RrLineRow
+                      key={field.id}
+                      control={control}
+                      lineIndex={index}
+                      line={line}
+                      mode={mode}
+                      onSetMode={(m) => setLineMode(index, field.id, m)}
+                      itemName={line.itemId ? metaFor(line.itemId)?.name : undefined}
+                      isSerialTracked={context.isSerialTracked}
+                      poChip={
+                        context.outstanding != null && linkedPo
+                          ? `${context.outstanding} outstanding on ${linkedPo.code}`
+                          : undefined
+                      }
+                      canViewCost={canViewCost}
+                      showErrors={showErrors}
+                      itemError={errors.lines?.[index]?.itemId?.message}
+                      issues={rrLineIssues(issueLines, index, context, line).filter(
+                        (issue) => showErrors || issue.kind === 'warn'
+                      )}
+                      isDuplicateSerial={(unit) => isDuplicateSerial(issueLines, index, unit)}
+                      onSelectCatalogItem={(option) => onSelectCatalogItem(index, option)}
+                      onQtyChange={(raw) => setQuantity(index, raw)}
+                      onSerialChange={(unit, value) => setSerial(index, unit, value)}
+                      onClearSerials={() =>
+                        setValue(
+                          `lines.${index}.serialNumbers`,
+                          Array.from({ length: line.quantityReceived || 0 }, () => ''),
+                          { shouldValidate: showErrors }
+                        )
+                      }
+                      onToggleTrackSerial={() => toggleOtherLineTrackSerial(index, field.id)}
+                      onToggleFreebie={() => toggleFreebie(index)}
+                      onToggleQualityHold={() => toggleQualityHold(index)}
+                      onQcReasonChange={(value) =>
+                        setValue(`lines.${index}.notes`, value, { shouldValidate: false })
+                      }
+                      onDuplicate={() => duplicateLine(index)}
+                      onRemove={() => remove(index)}
+                      onFixIssue={(fix) => applyLineFix(index, fix)}
+                    />
+                  )
+                })}
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
+                  <span className="text-[11.5px] text-[#8b8b9b]">
+                    Held lines land in quarantine, not as sellable stock. Freebies are received at
+                    zero cost.
+                  </span>
+                  <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
+                    {totals.units} units{canViewCost && ` · ${fmtPeso(totals.invoice)} invoiced`}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
           <label className="text-[12px] font-medium text-[#3d3d4a]">
             Notes <span className="font-normal text-[#8b8b9b]">optional</span>

@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft, Loader2, Plus, RefreshCw } from 'lucide-react'
+import { Download, Eye, Loader2, Pencil, Plus, RefreshCw } from 'lucide-react'
 import {
   AcknowledgementReceipts,
   fmtMoney,
   fmtDate,
   type AcknowledgementReceipt,
 } from '@/src/libs/data/AccountingV2Data'
+import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 
 function accountLabel(account: AcknowledgementReceipt['account']): string {
   if (!account) return '—'
@@ -37,13 +37,6 @@ export default function AcknowledgementReceiptsList() {
 
   return (
     <div className="px-4 py-4 sm:px-6 lg:px-8">
-      <Link
-        href="/pos/collections"
-        className="mb-3 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Collections
-      </Link>
-
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-2xl font-bold text-prominent-purple-900">New Receipts</h2>
@@ -78,39 +71,60 @@ export default function AcknowledgementReceiptsList() {
               <th className="px-4 py-2.5">Description</th>
               <th className="px-4 py-2.5">Branch</th>
               <th className="px-4 py-2.5 text-right">Amount</th>
+              <th className="px-4 py-2.5" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                   <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                 </td>
               </tr>
             ) : receipts.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                   No acknowledgement receipts yet.
                 </td>
               </tr>
             ) : (
-              receipts.map((r) => (
-                <tr
-                  key={r.id}
-                  onClick={() => router.push(`/pos/collections/acknowledgement/view?id=${r.id}`)}
-                  className="cursor-pointer hover:bg-gray-50"
-                >
-                  <td className="px-4 py-2.5 font-medium text-gray-900">{r.number ?? '—'}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{fmtDate(r.paymentDate)}</td>
-                  <td className="px-4 py-2.5 text-gray-900">{r.payerName}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{accountLabel(r.account)}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{r.reason ?? '—'}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{r.branch?.name ?? '—'}</td>
-                  <td className="px-4 py-2.5 text-right font-medium tabular-nums text-gray-900">
-                    {fmtMoney(r.amount)}
-                  </td>
-                </tr>
-              ))
+              receipts.map((r) => {
+                const viewUrl = `/pos/collections/acknowledgement/view?id=${r.id}`
+                return (
+                  <tr
+                    key={r.id}
+                    onClick={() => router.push(viewUrl)}
+                    className="cursor-pointer hover:bg-gray-50"
+                  >
+                    <td className="px-4 py-2.5 font-medium text-gray-900">{r.number ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{fmtDate(r.paymentDate)}</td>
+                    <td className="px-4 py-2.5 text-gray-900">{r.payerName}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{accountLabel(r.account)}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{r.reason ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{r.branch?.name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-right font-medium tabular-nums text-gray-900">
+                      {fmtMoney(r.amount)}
+                    </td>
+                    <td className="px-2 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                      <RowActionsMenu
+                        items={[
+                          { label: 'View', icon: Eye, onClick: () => router.push(viewUrl) },
+                          {
+                            label: 'Edit',
+                            icon: Pencil,
+                            onClick: () => router.push(`${viewUrl}&action=edit`),
+                          },
+                          {
+                            label: 'Download',
+                            icon: Download,
+                            onClick: () => router.push(`${viewUrl}&action=download`),
+                          },
+                        ]}
+                      />
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>

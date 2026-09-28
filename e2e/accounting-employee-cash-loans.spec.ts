@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady, loginAs, fillStable, clickStable } from './utils'
 
-// Scenario 52 (revised) — POS Employee Cash Loans UI: an amortizing loan
+// Scenario 52 (revised) — Accounting Employee Cash Loans UI: an amortizing loan
 // with a computed schedule, no modal (3 real pages: list/new/detail).
 // Backend financing/posting/search/list/detail is covered by
 // backend/test/pos-employee-cash-loans.e2e-spec.ts; this spec exercises the
@@ -11,7 +11,7 @@ import { gotoReady, loginAs, fillStable, clickStable } from './utils'
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
 const CASHIER_EMAIL = 'technova.b1.cashier@test.com'
 
-test.describe('POS — Employee Cash Loans (amortizing)', () => {
+test.describe('Accounting — Employee Cash Loans (amortizing)', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
   test('a Cashier searches an employee, previews financing terms, issues a loan, and sees its schedule', async ({
@@ -20,7 +20,7 @@ test.describe('POS — Employee Cash Loans (amortizing)', () => {
     test.setTimeout(120_000)
     await loginAs(page, CASHIER_EMAIL, DEV_PASSWORD)
 
-    await gotoReady(page, '/pos/employee-cash-loans')
+    await gotoReady(page, '/accounting/employee-cash-loans')
     await expect(page.getByRole('heading', { name: 'Employee Cash Loans' })).toBeVisible()
 
     // Longer timeout: this is the New Loan route's first-ever compile on a
@@ -109,9 +109,9 @@ test.describe('POS — Employee Cash Loans (amortizing)', () => {
 
   test('a user with no POS access cannot reach the list or new-loan page', async ({ page }) => {
     await loginAs(page, 'technova.accounting@test.com', DEV_PASSWORD)
-    await gotoReady(page, '/pos/employee-cash-loans')
+    await gotoReady(page, '/accounting/employee-cash-loans')
     await expect(page).toHaveURL(/\/403/)
-    await gotoReady(page, '/pos/employee-cash-loans/new')
+    await gotoReady(page, '/accounting/employee-cash-loans/new')
     await expect(page).toHaveURL(/\/403/)
   })
 })

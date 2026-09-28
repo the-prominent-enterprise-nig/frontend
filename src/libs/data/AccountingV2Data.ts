@@ -373,6 +373,9 @@ export interface ARPayment {
   paymentDate: string
   method?: PaymentMethod | null
   reference?: string | null
+  /** The bank's own transaction reference — only meaningful when method is
+   *  BANK_TRANSFER, distinct from `reference` (the CR number). */
+  bankReferenceNumber?: string | null
   notes?: string | null
   isOverpayment: boolean
   overpaidAmount: number
@@ -399,6 +402,7 @@ export interface ARPayment {
     id: string
     number: string | null
     reference: string | null
+    bankReferenceNumber?: string | null
     amount: number
     settledOthers: {
       arInvoiceId: string
@@ -439,6 +443,9 @@ export interface RecordArPaymentInput {
   /** Named sub-choice under paymentMethodConfigId, e.g. which bank/gateway. */
   paymentMethodOptionId?: string
   reference?: string
+  /** The bank's own transaction reference — only meaningful when method is
+   *  BANK_TRANSFER, distinct from `reference` (the CR number). */
+  bankReferenceNumber?: string
   notes?: string
   withholdingAmount?: number
   withholdingCertificateNo?: string
@@ -582,6 +589,9 @@ export interface BulkRecordArPaymentInput {
   /** Required only once collectorId is given — that's the only time an OR
    * is actually cut; optional for a walk-in payment with no collector. */
   reference?: string
+  /** The bank's own transaction reference — only meaningful when method is
+   *  BANK_TRANSFER, distinct from `reference` (the CR number). */
+  bankReferenceNumber?: string
   notes?: string
   branchId?: string
   collectorId?: string
@@ -792,6 +802,27 @@ export interface CreateAcknowledgementReceiptInput {
   branchId?: string
   collectorId?: string
 }
+/** Everything is editable (developer decision, 2026-09-27). Changing amount
+ * and/or accountId requires correctionReason — the backend posts a new
+ * adjusting journal entry for just the delta rather than touching the
+ * original (mirrors the RR unit-cost correction pattern). */
+export interface UpdateAcknowledgementReceiptInput {
+  payerName?: string
+  accountId?: string
+  reason?: string
+  amount?: number
+  correctionReason?: string
+  paymentDate?: string
+  receiptType?: 'COLLECTION' | 'ACKNOWLEDGEMENT'
+  method?: PaymentMethod
+  clearedType?: string
+  clearedDate?: string
+  bankAccountId?: string
+  reference?: string
+  notes?: string
+  branchId?: string
+  collectorId?: string
+}
 export const AcknowledgementReceipts = {
   list: (params?: { branchId?: string }) =>
     api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
@@ -799,6 +830,8 @@ export const AcknowledgementReceipts = {
     api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
   create: (body: CreateAcknowledgementReceiptInput) =>
     api.post<AcknowledgementReceipt>('/accounting/acknowledgement-receipts', body),
+  update: (id: string, body: UpdateAcknowledgementReceiptInput) =>
+    api.patch<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`, body),
 }
 
 // ============ Credit Memos ============

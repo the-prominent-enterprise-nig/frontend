@@ -10,5 +10,5 @@ export type EmployeeCashLoanBankAccount = {
 }
 
 export async function listEmployeeCashLoanBankAccounts() {
-  return api.get<EmployeeCashLoanBankAccount[]>('/pos/employee-cash-loans/bank-accounts')
+  return api.get<EmployeeCashLoanBankAccount[]>('/accounting/employee-cash-loans/bank-accounts')
 }

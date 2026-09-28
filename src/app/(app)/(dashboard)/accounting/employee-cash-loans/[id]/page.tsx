@@ -1,15 +1,15 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
-import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
-import EditLoanForm from '../_components/EditLoanForm'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import LoanDetail from './_components/LoanDetail'
 
 export const metadata = {
-  title: 'Edit Employee Cash Loan | Prominent Enterprise',
-  description: 'Edit an employee cash loan',
+  title: 'Employee Cash Loan | Prominent Enterprise',
+  description: 'Employee cash loan detail and schedule',
 }
 
-export default async function EditEmployeeCashLoanPage({
+export default async function EmployeeCashLoanDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
@@ -20,7 +20,7 @@ export default async function EditEmployeeCashLoanPage({
     redirect('/login')
   }
 
-  if (!can(session, POS_PERMISSIONS.EMPLOYEE_CASH_LOAN_CREATE)) {
+  if (!can(session, ACCOUNTING_PERMISSIONS.EMPLOYEE_CASH_LOAN_READ)) {
     redirect('/403')
   }
 
@@ -28,7 +28,7 @@ export default async function EditEmployeeCashLoanPage({
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <EditLoanForm id={id} />
+      <LoanDetail id={id} session={session} />
     </div>
   )
 }

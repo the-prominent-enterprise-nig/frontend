@@ -2136,6 +2136,199 @@ export function printExpenseVoucherDocument(data: unknown): void {
 }
 
 /**
+ * Employee Cash Loan voucher — same letterhead/Account-table/signatures/
+ * acknowledgment family as buildExpenseVoucherHtml (Scenario 52 revision 2:
+ * this replaced a bespoke receipt-tape-style print with no company
+ * letterhead). Adds a Disbursement line (method/bank/reference) and, below
+ * the Account table, either the EMPLOYEE amortization Schedule or the OTHER
+ * loan's Ledger (disbursement + payments, running balance) — the one thing
+ * this document type needs that a plain payment voucher doesn't.
+ */
+export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const l = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const isOther = l.borrowerType === 'OTHER'
+  const principal = Number(l.principal ?? 0)
+  const totalInterest = Number(l.totalInterest ?? 0)
+  const totalReceivable = Number(l.totalReceivable ?? 0)
+
+  const accountRows = [
+    `<tr><td>Loans to Officers and Employees</td><td>Principal</td><td class="right">${fmt(principal)}</td></tr>`,
+    ...(totalInterest > 0
+      ? [
+          `<tr><td>Unearned Interest Income</td><td>Deferred interest</td><td class="right">${fmt(totalInterest)}</td></tr>`,
+        ]
+      : []),
+  ].join('')
+
+  const scheduleLines = (l.scheduleLines ?? []) as {
+    lineNumber: number
+    dueDate: string
+    principalAmount: number
+    interestAmount: number
+    totalAmount: number
+  }[]
+  const payments = (l.payments ?? []) as {
+    paymentDate: string
+    amount: number
+    referenceNumber?: string | null
+  }[]
+
+  const addendumLabel = isOther ? 'Ledger' : 'Schedule'
+  const addendumHead = isOther
+    ? '<tr><th>Date</th><th>Description</th><th class="right">Amount</th><th class="right">Balance</th></tr>'
+    : '<tr><th>#</th><th>Due Date</th><th class="right">Principal</th><th class="right">Interest</th><th class="right">Total</th></tr>'
+  const addendumRows = isOther
+    ? (() => {
+        let running = totalReceivable
+        const rows = [
+          `<tr><td>${fmtDate(l.loanDate)}</td><td>Loan disbursed</td><td class="right">${fmt(totalReceivable)}</td><td class="right">${fmt(running)}</td></tr>`,
+        ]
+        for (const p of payments) {
+          running = Math.round((running - Number(p.amount)) * 100) / 100
+          rows.push(
+            `<tr><td>${fmtDate(p.paymentDate)}</td><td>${p.referenceNumber ? `Payment (${esc(p.referenceNumber)})` : 'Payment'}</td><td class="right">${fmt(Number(p.amount))}</td><td class="right">${fmt(running)}</td></tr>`
+          )
+        }
+        return rows.join('')
+      })()
+    : scheduleLines
+        .map(
+          (s) =>
+            `<tr><td>${s.lineNumber}</td><td>${fmtDate(s.dueDate)}</td><td class="right">${fmt(Number(s.principalAmount))}</td><td class="right">${fmt(Number(s.interestAmount))}</td><td class="right">${fmt(Number(s.totalAmount))}</td></tr>`
+        )
+        .join('')
+
+  return `<!DOCTYPE html><html><head><title>${esc(l.loanNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; margin: 0 0 16px; }
+    .section-label { font-weight: 700; margin: 16px 0 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .ack { margin-top: 48px; text-align: center; }
+    .ack-line { display: inline-block; border-bottom: 1px solid #333; width: 320px; margin: 0 4px; }
+    .ack-line.short { width: 120px; }
+    .ack-caption { margin-top: 4px; font-size: 11px; color: #666; text-align: center; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Employee Cash Loan</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(l.borrowerLabel) || '—'}</p>
+        ${isOther ? '<p class="party-address">Others (non-employee)</p>' : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(l.loanDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${l.referenceNumber ? esc(l.referenceNumber) : '—'}</p>
+        <p class="meta-label">LOAN #</p>
+        <p class="meta-value">${esc(l.loanNumber)}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${l.note ? `<p class="description">${esc(l.note)}</p>` : ''}
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>
+        ${accountRows}
+        <tr class="total-row">
+          <td colspan="2">Total Amount Receivable</td>
+          <td class="right">${fmt(totalReceivable)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="section-label">Disbursement</p>
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Bank / Cash Account</th><th>Reference</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${esc(String(l.disbursementMethod ?? '').replace(/_/g, ' '))}</td>
+          <td>${l.bankAccountName ? esc(l.bankAccountName) : '—'}</td>
+          <td>${l.referenceNumber ? esc(l.referenceNumber) : '—'}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    ${
+      addendumRows
+        ? `<p class="section-label">${addendumLabel}</p>
+    <table>
+      <thead>${addendumHead}</thead>
+      <tbody>${addendumRows}</tbody>
+    </table>`
+        : ''
+    }
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">${isOther ? 'Borrower' : 'Employee'} Signature:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Cashier Signature:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <p class="ack">Acknowledged receipt of loan proceeds from ${esc(enterprise?.companyLegalName)}:</p>
+    <p class="ack" style="margin-top:24px">
+      <span class="ack-line"></span>/<span class="ack-line short"></span>
+    </p>
+    <p class="ack-caption">Printed Name and Signature / Date &amp; Time</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printEmployeeCashLoanVoucherDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildEmployeeCashLoanVoucherHtml(data))
+  win.document.close()
+}
+
+/**
  * The Collection Receipt as the customer receives it.
  *
  * A receipt records MONEY RECEIVED, so every figure here is about the

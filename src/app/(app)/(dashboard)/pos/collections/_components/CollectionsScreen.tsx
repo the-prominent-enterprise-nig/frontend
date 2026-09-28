@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Search,
@@ -22,7 +23,6 @@ import {
   getPaymentMethods,
   getEnabledBranchPaymentMethods,
 } from '../../_actions/pos-actions'
-import { collectorsApi } from '@/src/libs/api/crm'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/data/AccountingV2Data'
@@ -535,12 +535,25 @@ export default function CollectionsScreen() {
                   )}
                 </div>
               </div>
-              <button
-                onClick={() => selectCustomer(null)}
-                className="text-[13px] font-medium text-prominent-purple-700 hover:underline"
-              >
-                Change customer
-              </button>
+              <div className="flex items-center gap-4">
+                {/* Opens in a new tab — a cashier mid-collection may have
+                    dues checked and a payment in progress on this screen;
+                    navigating away in place would lose that selection. */}
+                <Link
+                  href={`/pos/customers/${customer.id}/ledger`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[13px] font-medium text-prominent-purple-700 hover:underline"
+                >
+                  View ledger
+                </Link>
+                <button
+                  onClick={() => selectCustomer(null)}
+                  className="text-[13px] font-medium text-prominent-purple-700 hover:underline"
+                >
+                  Change customer
+                </button>
+              </div>
             </div>
 
             {/* Left: due list. Right: live payment panel driven by whatever's
@@ -756,9 +769,9 @@ function PaymentPanel({
     paymentMethodConfigId: '',
     paymentMethodOptionId: '',
     reference: '',
+    bankReferenceNumber: '',
     notes: '',
     branchId: '',
-    collectorId: '',
   })
 
   // Live per-due preview, recomputed on every render against form.paymentDate
@@ -843,9 +856,6 @@ function PaymentPanel({
   // combobox's one-shot initialLabel is never stale — see BranchSearchCombobox's
   // key usage below for why this is a separate piece of state from form.branchId.
   const [branchDefault, setBranchDefault] = useState<{ id: string; name: string } | null>(null)
-  const [collectors, setCollectors] = useState<{ id: string; name: string; stubNumber: string }[]>(
-    []
-  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overpaymentResult, setOverpaymentResult] = useState<{
@@ -872,15 +882,6 @@ function PaymentPanel({
       cancelled = true
     }
   }, [defaultBranchId])
-
-  // Collector options narrow to the chosen branch — refetch whenever it changes.
-  useEffect(() => {
-    collectorsApi
-      .list({ limit: 200, ...(form.branchId ? { branchId: form.branchId } : {}) })
-      .then((res) => {
-        if (res.success && res.data) setCollectors(res.data.data)
-      })
-  }, [form.branchId])
 
   const paymentMethods = useCollectionsPaymentMethods(form.branchId)
   // Falls through to Cash (same default this form always had) until the
@@ -961,9 +962,9 @@ function PaymentPanel({
         paymentMethodConfigId: selectedPaymentMethod?.configId,
         paymentMethodOptionId: form.paymentMethodOptionId || undefined,
         reference: form.reference || undefined,
+        bankReferenceNumber: form.bankReferenceNumber || undefined,
         notes: form.notes || undefined,
         branchId: form.branchId || undefined,
-        collectorId: form.collectorId || undefined,
         posSessionId: openSessionId,
       })
       if (!res.success) {
@@ -993,9 +994,9 @@ function PaymentPanel({
         paymentMethodConfigId: selectedPaymentMethod?.configId,
         paymentMethodOptionId: form.paymentMethodOptionId || undefined,
         reference: form.reference || undefined,
+        bankReferenceNumber: form.bankReferenceNumber || undefined,
         notes: form.notes || undefined,
         branchId: form.branchId || undefined,
-        collectorId: form.collectorId || undefined,
         posSessionId: openSessionId,
       })
       if (!res.success) {
@@ -1313,7 +1314,7 @@ function PaymentPanel({
             <BranchSearchCombobox
               key={branchDefault?.id ?? 'no-default'}
               value={form.branchId}
-              onChange={(id) => setForm({ ...form, branchId: id, collectorId: '' })}
+              onChange={(id) => setForm({ ...form, branchId: id })}
               initialLabel={branchDefault?.name}
               placeholder="Search branch…"
             />
@@ -1328,6 +1329,7 @@ function PaymentPanel({
                   ...form,
                   paymentMethodConfigId: e.target.value,
                   paymentMethodOptionId: '',
+                  bankReferenceNumber: '',
                 })
               }
               className={fieldClass}
@@ -1361,22 +1363,6 @@ function PaymentPanel({
           )}
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-700">Collector</label>
-            <select
-              value={form.collectorId}
-              onChange={(e) => setForm({ ...form, collectorId: e.target.value })}
-              className={fieldClass}
-            >
-              <option value="">Walk-in / none</option>
-              {collectors.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.stubNumber} — {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">
               CR number <span className="text-red-500">*</span>
             </label>
@@ -1391,6 +1377,24 @@ function PaymentPanel({
               Required — the CR number on the collection receipt issued for this payment.
             </p>
           </div>
+
+          {selectedPaymentMethod?.method === 'BANK_TRANSFER' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Reference number <span className="text-red-500">*</span>
+              </label>
+              <input
+                required
+                value={form.bankReferenceNumber}
+                onChange={(e) => setForm({ ...form, bankReferenceNumber: e.target.value })}
+                placeholder="Bank transaction reference"
+                className={fieldClass}
+              />
+              <p className="mt-1 text-[12px] text-zinc-400">
+                Required — the bank&apos;s own transaction reference for this transfer.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
@@ -1407,7 +1411,13 @@ function PaymentPanel({
         <div className="flex items-center justify-end border-t border-zinc-200 px-6 py-4">
           <button
             type="submit"
-            disabled={submitting || isFullyPaid || !form.reference.trim()}
+            disabled={
+              submitting ||
+              isFullyPaid ||
+              !form.reference.trim() ||
+              (selectedPaymentMethod?.method === 'BANK_TRANSFER' &&
+                !form.bankReferenceNumber.trim())
+            }
             className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

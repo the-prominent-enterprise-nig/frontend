@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { HandCoins, Search } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
-import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { useEmployeeCashLoans } from '../_hooks/useEmployeeCashLoans'
 
@@ -18,7 +18,7 @@ function fmt(n: number) {
 }
 
 export default function EmployeeCashLoansList({ session }: { session: SessionUser }) {
-  const canIssue = hasPermission(session, POS_PERMISSIONS.EMPLOYEE_CASH_LOAN_CREATE)
+  const canIssue = hasPermission(session, ACCOUNTING_PERMISSIONS.EMPLOYEE_CASH_LOAN_CREATE)
   const { loans, isLoading, isFetching, error, search, setSearch } = useEmployeeCashLoans()
 
   return (
@@ -30,12 +30,12 @@ export default function EmployeeCashLoansList({ session }: { session: SessionUse
               Employee Cash Loans
             </h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Amortizing cash loans issued from POS — company-wide, no approval step.
+              Amortizing cash loans — company-wide, no approval step.
             </p>
           </div>
           {canIssue && (
             <Link
-              href="/pos/employee-cash-loans/new"
+              href="/accounting/employee-cash-loans/new"
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
             >
               <HandCoins className="h-4 w-4" />
@@ -49,7 +49,7 @@ export default function EmployeeCashLoansList({ session }: { session: SessionUse
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by loan # or employee name…"
+            placeholder="Search by loan # or borrower name…"
             className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
           />
         </div>
@@ -94,7 +94,7 @@ export default function EmployeeCashLoansList({ session }: { session: SessionUse
                       Loan #
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Employee
+                      Borrower
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                       Principal
@@ -126,30 +126,35 @@ export default function EmployeeCashLoansList({ session }: { session: SessionUse
                         key={loan.id}
                         className="cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50"
                         onClick={() =>
-                          (window.location.href = `/pos/employee-cash-loans/${loan.id}`)
+                          (window.location.href = `/accounting/employee-cash-loans/${loan.id}`)
                         }
                       >
                         <td className="px-4 py-3">
                           <Link
-                            href={`/pos/employee-cash-loans/${loan.id}`}
+                            href={`/accounting/employee-cash-loans/${loan.id}`}
                             className="font-mono text-xs text-prominent-purple-700 hover:underline"
                           >
                             {loan.loanNumber}
                           </Link>
                         </td>
                         <td className="px-4 py-3 font-medium text-zinc-900">
-                          {loan.employee
-                            ? `${loan.employee.firstName} ${loan.employee.lastName}`
-                            : '—'}
+                          {loan.borrowerType === 'OTHER'
+                            ? (loan.borrowerName ?? 'Others')
+                            : loan.employee
+                              ? `${loan.employee.firstName} ${loan.employee.lastName}`
+                              : '—'}
+                          {loan.borrowerType === 'OTHER' && (
+                            <span className="ml-2 text-xs font-normal text-zinc-400">(Others)</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right text-zinc-700 hidden md:table-cell">
                           {fmt(loan.principal)}
                         </td>
                         <td className="px-4 py-3 text-center text-zinc-500 hidden md:table-cell">
-                          {loan.termMonths}mo
+                          {loan.termMonths ? `${loan.termMonths}mo` : '—'}
                         </td>
                         <td className="px-4 py-3 text-right text-zinc-700 hidden md:table-cell">
-                          {fmt(loan.monthlyDeduction)}
+                          {loan.monthlyDeduction ? fmt(loan.monthlyDeduction) : '—'}
                         </td>
                         <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
                           {nextDue ? new Date(nextDue.dueDate).toLocaleDateString('en-PH') : '—'}

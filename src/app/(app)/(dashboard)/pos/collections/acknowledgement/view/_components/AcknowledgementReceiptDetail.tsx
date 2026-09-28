@@ -3,13 +3,22 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, Download, Loader2 } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Pencil, X } from 'lucide-react'
 import {
   AcknowledgementReceipts,
+  BankAccounts,
   fmtMoney,
+  type BankAccount,
+  type PaymentMethod,
   type AcknowledgementReceipt,
+  PAYMENT_METHOD_OPTIONS,
 } from '@/src/libs/data/AccountingV2Data'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { downloadElementAsPdf } from '@/src/libs/print/htmlToPdf'
+import SegmentedControl from '@/src/components/ui/SegmentedControl'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
+import { useBranches } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePos'
 
 function accountLabel(account: AcknowledgementReceipt['account']): string {
   if (!account) return 'Miscellaneous Collections'
@@ -29,6 +38,43 @@ function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
       <p className="mb-3 text-gray-700">{value}</p>
     </>
   )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-gray-800">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+// Same helper NewAcknowledgementReceiptForm.tsx uses for its own Account
+// picker — duplicated rather than shared, matching how this app's small
+// per-form helpers (e.g. Field) are usually kept local to each file.
+function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] {
+  const idsInList = new Set(accounts.map((a) => a.id))
+  const childrenByParent = new Map<string, Account[]>()
+  const roots: Account[] = []
+  for (const a of accounts) {
+    if (a.parentId && idsInList.has(a.parentId)) {
+      const siblings = childrenByParent.get(a.parentId) ?? []
+      siblings.push(a)
+      childrenByParent.set(a.parentId, siblings)
+    } else {
+      roots.push(a)
+    }
+  }
+  const options: CategorySelectOption[] = []
+  const walk = (list: Account[], depth: number) => {
+    for (const a of list) {
+      options.push({ id: a.id, name: a.number ? `${a.number} — ${a.name}` : a.name, depth })
+      const children = childrenByParent.get(a.id)
+      if (children) walk(children, depth + 1)
+    }
+  }
+  walk(roots, 0)
+  return options
 }
 
 /** The letterhead sheet, matching the client's own real document exactly
@@ -134,7 +180,11 @@ function ReceiptSheet({ receipt, title }: { receipt: AcknowledgementReceipt; tit
   )
 }
 
-function AcknowledgementReceiptDetailBody() {
+function AcknowledgementReceiptDetailBody({
+  restrictedBranchId,
+}: {
+  restrictedBranchId: string | null
+}) {
   const searchParams = useSearchParams()
   const id = searchParams.get('id')
 
@@ -145,6 +195,44 @@ function AcknowledgementReceiptDetailBody() {
   const [downloadingCr, setDownloadingCr] = useState(false)
   const ackSheetRef = useRef<HTMLDivElement>(null)
   const crSheetRef = useRef<HTMLDivElement>(null)
+
+  // Everything is editable (developer decision, 2026-09-27). amount/account
+  // are the two fields that drive the already-posted journal entry — editing
+  // either requires correctionReason and the backend posts a new adjusting
+  // entry for the delta, same as the create form's own field set.
+  const [editing, setEditing] = useState(false)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<{
+    payerName: string
+    accountId: string
+    reason: string
+    amount: string
+    correctionReason: string
+    paymentDate: string
+    receiptType: 'COLLECTION' | 'ACKNOWLEDGEMENT'
+    method: PaymentMethod
+    clearedType: string
+    clearedDate: string
+    bankAccountId: string
+    reference: string
+    branchId: string
+  } | null>(null)
+
+  const { data: branchesData, isLoading: branchesLoading } = useBranches()
+  const branches = (branchesData?.data ?? []) as Array<{ id: string; name: string }>
+  const restrictedBranchName = restrictedBranchId
+    ? (branches.find((b) => b.id === restrictedBranchId)?.name ?? 'your branch')
+    : null
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
+  useEffect(() => {
+    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+    getAccounts({ limit: 500 }).then((res) => {
+      const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
+      setAccountOptions(accountsToCategoryOptions(list))
+    })
+  }, [])
 
   useEffect(() => {
     if (!id) {
@@ -167,6 +255,75 @@ function AcknowledgementReceiptDetailBody() {
       cancelled = true
     }
   }, [id])
+
+  // Real .pdf files, not the print-dialog "Save as PDF" every other document
+  // in this app relies on (developer decision, 2026-09-21: "both should
+  // download a .pdf file") — captures the already-on-screen sheet below,
+  // same downloadElementAsPdf() utility Purchase Orders' own Download button
+  // uses. Defined above the loading/error guards (rather than as inline
+  // handlers further down) so the row menu's ?action= auto-trigger effect
+  // below can call them too.
+  const downloadAck = async () => {
+    if (!ackSheetRef.current || !receipt) return
+    setDownloadingAck(true)
+    try {
+      await downloadElementAsPdf(ackSheetRef.current, receipt.number || 'acknowledgement-receipt')
+    } finally {
+      setDownloadingAck(false)
+    }
+  }
+  const downloadCr = async () => {
+    if (!crSheetRef.current || !receipt) return
+    setDownloadingCr(true)
+    try {
+      await downloadElementAsPdf(
+        crSheetRef.current,
+        `${receipt.number || 'receipt'}-collection-receipt`
+      )
+    } finally {
+      setDownloadingCr(false)
+    }
+  }
+
+  const startEdit = () => {
+    if (!receipt) return
+    setEditForm({
+      payerName: receipt.payerName,
+      accountId: receipt.accountId ?? '',
+      reason: receipt.reason ?? '',
+      amount: String(receipt.amount),
+      correctionReason: '',
+      paymentDate: receipt.paymentDate.slice(0, 10),
+      receiptType: receipt.receiptType ?? 'ACKNOWLEDGEMENT',
+      method: receipt.method ?? 'CASH',
+      clearedType: receipt.clearedType ?? 'SAME_DATE',
+      clearedDate: receipt.clearedDate ? receipt.clearedDate.slice(0, 10) : '',
+      bankAccountId: receipt.bankAccountId ?? '',
+      reference: receipt.reference ?? '',
+      branchId: receipt.branchId ?? '',
+    })
+    setEditError(null)
+    setEditing(true)
+  }
+
+  // The row menu on the list page (RowActionsMenu: View/Edit/Download) links
+  // here with ?action=edit or ?action=download instead of duplicating the
+  // capture/edit-panel logic per row — this page already has the loaded
+  // receipt, the rendered sheet to capture, and the edit form. Fires once
+  // per navigation (autoActionRef), not on every re-render (e.g. the one
+  // saveEdit() triggers via setReceipt()).
+  const autoActionRef = useRef(false)
+  useEffect(() => {
+    if (!receipt || autoActionRef.current) return
+    autoActionRef.current = true
+    const action = searchParams.get('action')
+    if (action === 'edit') startEdit()
+    else if (action === 'download') {
+      if (receipt.receiptType === 'COLLECTION') void downloadCr()
+      else void downloadAck()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receipt])
 
   if (loading) {
     return (
@@ -195,31 +352,46 @@ function AcknowledgementReceiptDetailBody() {
     )
   }
 
-  // Real .pdf files, not the print-dialog "Save as PDF" every other document
-  // in this app relies on (developer decision, 2026-09-21: "both should
-  // download a .pdf file") — captures the already-on-screen sheet below,
-  // same downloadElementAsPdf() utility Purchase Orders' own Download button
-  // uses.
-  const downloadAck = async () => {
-    if (!ackSheetRef.current) return
-    setDownloadingAck(true)
-    try {
-      await downloadElementAsPdf(ackSheetRef.current, receipt.number || 'acknowledgement-receipt')
-    } finally {
-      setDownloadingAck(false)
+  // Mirrors the backend's own check — amount/accountId are the two fields
+  // that drove the journal entry already posted at create(), so changing
+  // either needs a correction reason and posts a new adjusting entry for
+  // just the delta (the original is never touched).
+  const financialChange =
+    !!editForm &&
+    (Number(editForm.amount) !== receipt.amount ||
+      (editForm.accountId || null) !== receipt.accountId)
+
+  const saveEdit = async () => {
+    if (!editForm) return
+    if (financialChange && !editForm.correctionReason.trim()) {
+      setEditError('A correction reason is required when amount or account changes.')
+      return
     }
-  }
-  const downloadCr = async () => {
-    if (!crSheetRef.current) return
-    setDownloadingCr(true)
-    try {
-      await downloadElementAsPdf(
-        crSheetRef.current,
-        `${receipt.number || 'receipt'}-collection-receipt`
-      )
-    } finally {
-      setDownloadingCr(false)
+    setSavingEdit(true)
+    setEditError(null)
+    const res = await AcknowledgementReceipts.update(receipt.id, {
+      payerName: editForm.payerName,
+      accountId: editForm.accountId || undefined,
+      reason: editForm.reason || undefined,
+      amount: Number(editForm.amount),
+      correctionReason: editForm.correctionReason || undefined,
+      paymentDate: editForm.paymentDate,
+      receiptType: editForm.receiptType,
+      method: editForm.method,
+      clearedType: editForm.clearedType,
+      clearedDate:
+        editForm.clearedType === 'LATER_DATE' ? editForm.clearedDate || undefined : undefined,
+      bankAccountId: editForm.bankAccountId || undefined,
+      reference: editForm.reference || undefined,
+      branchId: restrictedBranchId ?? (editForm.branchId || undefined),
+    })
+    setSavingEdit(false)
+    if (!res.success || !res.data) {
+      setEditError(res.message || res.error || 'Save failed')
+      return
     }
+    setReceipt(res.data)
+    setEditing(false)
   }
 
   return (
@@ -252,7 +424,7 @@ function AcknowledgementReceiptDetailBody() {
               ) : (
                 <Download className="h-4 w-4" />
               )}
-              Download Collection Receipt
+              Download{showAcknowledgement ? ' Collection Receipt' : ''}
             </button>
           )}
           {showAcknowledgement && (
@@ -266,7 +438,15 @@ function AcknowledgementReceiptDetailBody() {
               ) : (
                 <Download className="h-4 w-4" />
               )}
-              Download{showCollection ? '' : ' Acknowledgement Receipt'}
+              Download{showCollection ? ' Acknowledgement Receipt' : ''}
+            </button>
+          )}
+          {!editing && (
+            <button
+              onClick={startEdit}
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-[13px] font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <Pencil className="h-4 w-4" /> Edit
             </button>
           )}
         </div>
@@ -280,6 +460,205 @@ function AcknowledgementReceiptDetailBody() {
         <span>{longDate(receipt.paymentDate)}</span>
         <span>Received {fmtMoney(receipt.amount)}</span>
       </div>
+
+      {editing && editForm && (
+        <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-prominent-purple-900">Edit receipt</p>
+            <button
+              onClick={() => setEditing(false)}
+              disabled={savingEdit}
+              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-not-allowed"
+              aria-label="Cancel edit"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Receipt Type">
+                <SegmentedControl
+                  name="Receipt Type"
+                  value={editForm.receiptType}
+                  onChange={(value) => setEditForm({ ...editForm, receiptType: value })}
+                  options={[
+                    { value: 'ACKNOWLEDGEMENT', label: 'Acknowledgement' },
+                    { value: 'COLLECTION', label: 'Collection' },
+                  ]}
+                />
+              </Field>
+              <Field label="Branch">
+                {restrictedBranchId ? (
+                  <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                    {restrictedBranchName}
+                  </p>
+                ) : (
+                  <SearchableSelect
+                    value={editForm.branchId}
+                    onChange={(value) => setEditForm({ ...editForm, branchId: value })}
+                    options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                    placeholder={branchesLoading ? 'Loading branches…' : '— Not tracked —'}
+                    disabled={branchesLoading}
+                    clearable
+                  />
+                )}
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Date">
+                <input
+                  type="date"
+                  value={editForm.paymentDate}
+                  onChange={(e) => setEditForm({ ...editForm, paymentDate: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+              </Field>
+              <Field label="Reference">
+                <input
+                  value={editForm.reference}
+                  onChange={(e) => setEditForm({ ...editForm, reference: e.target.value })}
+                  placeholder="Optional"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Cleared">
+                <SegmentedControl
+                  name="Cleared"
+                  value={editForm.clearedType}
+                  onChange={(value) =>
+                    setEditForm({
+                      ...editForm,
+                      clearedType: value,
+                      clearedDate: value === 'LATER_DATE' ? editForm.clearedDate : '',
+                    })
+                  }
+                  options={[
+                    { value: 'SAME_DATE', label: 'Same date' },
+                    { value: 'LATER_DATE', label: 'Later date' },
+                  ]}
+                />
+              </Field>
+              <Field label="Clear Date">
+                <input
+                  type="date"
+                  disabled={editForm.clearedType !== 'LATER_DATE'}
+                  value={editForm.clearedDate}
+                  onChange={(e) => setEditForm({ ...editForm, clearedDate: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+                />
+              </Field>
+            </div>
+
+            <Field label="Paid by">
+              <input
+                value={editForm.payerName}
+                onChange={(e) => setEditForm({ ...editForm, payerName: e.target.value })}
+                placeholder="Payer name"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              />
+            </Field>
+
+            <Field label="Received in">
+              <SearchableSelect
+                value={editForm.bankAccountId}
+                onChange={(value) => setEditForm({ ...editForm, bankAccountId: value })}
+                options={bankAccounts.map((acc) => ({
+                  value: acc.id,
+                  label: `${acc.name} — ${acc.bankName} (${acc.accountNumber})`,
+                }))}
+                placeholder="— Not tracked —"
+                clearable
+              />
+            </Field>
+
+            <Field label="Account">
+              <CategorySelect
+                value={editForm.accountId || undefined}
+                onChange={(value) => setEditForm({ ...editForm, accountId: value ?? '' })}
+                options={accountOptions}
+                placeholder="Select account…"
+                noun="accounts"
+              />
+            </Field>
+
+            <Field label="Description">
+              <input
+                value={editForm.reason}
+                onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })}
+                placeholder="Optional"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Amount">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.amount}
+                  onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+              </Field>
+              <Field label="Method">
+                <select
+                  value={editForm.method}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, method: e.target.value as PaymentMethod })
+                  }
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                >
+                  {PAYMENT_METHOD_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {financialChange && (
+              <Field label="Correction Reason">
+                <input
+                  required
+                  value={editForm.correctionReason}
+                  onChange={(e) => setEditForm({ ...editForm, correctionReason: e.target.value })}
+                  placeholder="Why is the amount/account changing? — becomes the adjusting entry's label"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+              </Field>
+            )}
+          </div>
+
+          {editError && (
+            <div className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              {editError}
+            </div>
+          )}
+
+          <div className="mt-3 flex justify-end gap-2 border-t border-gray-100 pt-3">
+            <button
+              onClick={() => setEditing(false)}
+              disabled={savingEdit}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void saveEdit()}
+              disabled={savingEdit}
+              className="rounded-lg bg-purple-700 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {savingEdit ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showAcknowledgement && (
         <div ref={ackSheetRef} className="mt-2.5">
@@ -295,7 +674,11 @@ function AcknowledgementReceiptDetailBody() {
   )
 }
 
-export default function AcknowledgementReceiptDetail() {
+export default function AcknowledgementReceiptDetail({
+  restrictedBranchId,
+}: {
+  restrictedBranchId: string | null
+}) {
   return (
     <Suspense
       fallback={
@@ -304,7 +687,7 @@ export default function AcknowledgementReceiptDetail() {
         </div>
       }
     >
-      <AcknowledgementReceiptDetailBody />
+      <AcknowledgementReceiptDetailBody restrictedBranchId={restrictedBranchId} />
     </Suspense>
   )
 }

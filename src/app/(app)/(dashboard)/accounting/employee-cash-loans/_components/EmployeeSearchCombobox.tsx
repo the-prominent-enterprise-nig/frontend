@@ -2,7 +2,7 @@
 
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { searchEmployeesForCashLoan } from '../_actions/search-employees'
-import type { EmployeeCashLoanEmployee } from '@/src/schema/pos/employee-cash-loans'
+import type { EmployeeCashLoanEmployee } from '@/src/schema/accounting/employee-cash-loans'
 
 function fullName(e: EmployeeCashLoanEmployee): string {
   return [e.firstName, e.lastName].filter(Boolean).join(' ')
