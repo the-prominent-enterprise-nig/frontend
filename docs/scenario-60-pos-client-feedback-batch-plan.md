@@ -29,6 +29,7 @@ Verified against `development` on 2026-09-24 (both repos freshly pulled; fronten
 | 15  | Cancel Sale → dropdown                                  | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                  |
 | 16  | Friends-and-family price override                       | 🚧 **Parked by client**   | "format is not finalized with client"                         |
 | 17  | Reference lives on the hard copy; TPE is lite           | ➖ No build               | Informational — it is a decision _not_ to add a field         |
+| 18  | Down payment is 30%, not 10%                            | ❌ Not started            | Added 2026-09-28. Hardcoded 10% in 9 places across both repos |
 
 **Doable today: items 1, 2, 3, 4, 5, 6.** Two of those need a one-line answer first (5 and 6) — both are under _Decisions needed_ below, and both have a safe reading that ships today either way.
 
@@ -90,6 +91,29 @@ More than the notes assume, in three places:
     `deliveryFee` is **orphan schema**: grep across `backend/src` finds only _reads_ (`daily-collection.service.ts`, `sales-report.workbook.ts`) — no create path sets it, and it is absent from `pos/dto/pos.dto.ts`. The frontend never sends it. So the fee is permanently `0` in production and the report line can never fire. On top of that, **"Deliver to" and "Delivery Address" do not exist in any form** — those are net-new columns. (`deliveryReceiptNumber` at `:3496` is a different thing: the paper DR number, and it _is_ already captured.)
 
 12. **Delivery fee GL mapping.** ❌ No `DELIVERY_FEE_INCOME` in `STANDARD_MAPPINGS`, and no posting line for it. No migration needed — but nothing to post until 11 lands.
+
+### Added after the original triage
+
+16. **The down payment floor is 10%, and the client says it should be 30%.** ❌ — _raised 2026-09-28, after the first six parts shipped_
+    Not on the original checklist; surfaced while answering a question about where the credit application's down payment comes from. There is **no 30% anywhere in either repo** — the floor is hardcoded `0.1` in **nine places**:
+
+    | Repo     | Where                                                                                                                          |
+    | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+    | backend  | `credit/services/credit-application.service.ts:445` — the credit application itself                                            |
+    | backend  | `pos/transactions.service.ts:458` and `:503` — checkout, two separate paths                                                    |
+    | backend  | `credit/dto/credit-application.dto.ts:108` — the DTO description                                                               |
+    | frontend | `pos/checkout/page.tsx` — `lineFloor` (`:2070`), two submit guards (`:2511`, `:2529`), `minDownPayment` (`:4309`)              |
+    | frontend | `pos/checkout/page.tsx:4416`, `:4436-4437` — user-facing copy: the **"10% min"** badge and _"Fixed at 10% of the sale amount"_ |
+
+    **The copy must move with the rule**, or the screen advertises 10% while the server rejects anything under 30% — the worst version of this change.
+
+    **Open questions, none answered yet:**
+    - Is 30% a **floor** (pay more if you like), as 10% is today, or a **fixed** amount?
+    - Does it apply to **checkout as well**, or only the credit application? They share the rule today but are enforced separately.
+    - How does it interact with a **curated down payment** on a price list item? Those are peso amounts per SKU and can sit below 30% — does the curated figure win, or is it floored?
+    - What happens to **existing** applications and installment accounts raised at 10%? Nothing reads the floor retroactively, but it is worth confirming none should be re-checked.
+
+    Related and **unresolved**: the same note said _"there's a set price, price should follow their own price in credit application"_. Ambiguous between "use a manually entered price, overriding the price list" and "follow the price list for the chosen Price Use rather than the fallback it uses now" — today `resolveItemPricing()` resolves through `resolvePosPrice()` for the chosen Price Use and falls back to `Item.sellingPrice` when no price list covers the item. Needs clarifying before either is built.
 
 ### Blocked / parked
 
