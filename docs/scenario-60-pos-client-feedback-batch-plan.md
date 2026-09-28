@@ -10,29 +10,30 @@ Unlike most scenarios in this series, this one is not a single feature. It is a 
 
 Verified against `development` on 2026-09-24 (both repos freshly pulled; frontend `cb7b48e8`, backend `f8dc9ee`).
 
-| #   | Client note                                             | Verdict                   | Why                                                             |
-| --- | ------------------------------------------------------- | ------------------------- | --------------------------------------------------------------- |
-| 1   | Region 6 default on the first dropdown                  | ✅ **Today**              | Frontend only — one `useState` seed                             |
-| 2   | "Raise one for this cart" → New Credit Application Form | ✅ **Today**              | One string                                                      |
-| 3   | Remove "Approved amount (optional)" from TPF            | ✅ **Today**              | Field is nullable end-to-end, nothing reads it                  |
-| 4   | Co-maker **number** required                            | ✅ **Today**              | Frontend only — and it fixes a real drift (see gap 4)           |
-| 5   | "Spouse or Co-maker" wording                            | ✅ **Shipped** 2026-09-28 | Built as a two-level picker, not a relabel — see the log        |
-| 6   | Approved-but-incomplete when ID is missing              | ✅ **Shipped** 2026-09-28 | Derived; the list surface needed a backend field after all      |
-| 7   | Co-maker **address** required                           | ❌ Migration              | `CoMaker` has no address column at all                          |
-| 8   | Collector on the credit application                     | ❌ Migration              | No FK exists; `Collector` does                                  |
-| 9   | Address on the New Credit Application                   | ❌ Migration              | **Clarified 2026-09-28** — it is the CURRENT address, read-only |
-| 10  | Home + current address, current synced                  | ❌ Migration              | **Clarified 2026-09-28** — "synced" is now resolved, see below  |
-| 11  | Deliver to / Delivery Address / delivery fee            | ❌ Migration              | Half the columns exist and are never written; two don't exist   |
-| 12  | Delivery fee excluded from the total                    | ➖ Already designed for   | Schema already keeps it out of `subtotal`/`totalAmount`         |
-| 13  | Delivery fee GL mapping                                 | ❌ Depends on 11          | No migration needed, but nothing to post until 11 lands         |
-| 14  | Separate CR for down payment and delivery fee           | ➖ Already built          | The report already emits it as its own CR line                  |
-| 15  | Cancel Sale → dropdown                                  | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                    |
-| 16  | Friends-and-family price override                       | 🚧 **Parked by client**   | "format is not finalized with client"                           |
-| 17  | Reference lives on the hard copy; TPE is lite           | ➖ No build               | Informational — it is a decision _not_ to add a field           |
-| 18  | Down payment is 30%, not 10%                            | ✅ **Shipped** 2026-09-28 | Was 10% at 15 sites across both repos, incl. user-facing copy   |
-| 19  | Application number, auto-generated                      | ✅ **Shipped** 2026-09-28 | Already existed; was unlabelled, so it did not read as one      |
-| 20  | Supporting docs optional / approve but incomplete       | ✅ **Shipped** 2026-09-28 | Same work as gap 6 — see the second 2026-09-28 log              |
-| 21  | Item price must come from the Inventory price list      | ✅ **Shipped** 2026-09-28 | No application had EVER been priced from a price list — see log |
+| #   | Client note                                                  | Verdict                   | Why                                                             |
+| --- | ------------------------------------------------------------ | ------------------------- | --------------------------------------------------------------- |
+| 1   | Region 6 default on the first dropdown                       | ✅ **Today**              | Frontend only — one `useState` seed                             |
+| 2   | "Raise one for this cart" → New Credit Application Form      | ✅ **Today**              | One string                                                      |
+| 3   | Remove "Approved amount (optional)" from TPF                 | ✅ **Today**              | Field is nullable end-to-end, nothing reads it                  |
+| 4   | Co-maker **number** required                                 | ✅ **Today**              | Frontend only — and it fixes a real drift (see gap 4)           |
+| 5   | "Spouse or Co-maker" wording                                 | ✅ **Shipped** 2026-09-28 | Built as a two-level picker, not a relabel — see the log        |
+| 6   | Approved-but-incomplete when ID is missing                   | ✅ **Shipped** 2026-09-28 | Derived; the list surface needed a backend field after all      |
+| 7   | Co-maker **address** required                                | ❌ Migration              | `CoMaker` has no address column at all                          |
+| 8   | Collector on the credit application                          | ❌ Migration              | No FK exists; `Collector` does                                  |
+| 9   | Address on the New Credit Application                        | ❌ Migration              | **Clarified 2026-09-28** — it is the CURRENT address, read-only |
+| 10  | Home + current address, current synced                       | ❌ Migration              | **Clarified 2026-09-28** — "synced" is now resolved, see below  |
+| 11  | Deliver to / Delivery Address / delivery fee                 | ❌ Migration              | Half the columns exist and are never written; two don't exist   |
+| 12  | Delivery fee excluded from the total                         | ➖ Already designed for   | Schema already keeps it out of `subtotal`/`totalAmount`         |
+| 13  | Delivery fee GL mapping                                      | ❌ Depends on 11          | No migration needed, but nothing to post until 11 lands         |
+| 14  | Separate CR for down payment and delivery fee                | ➖ Already built          | The report already emits it as its own CR line                  |
+| 15  | Cancel Sale → dropdown                                       | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                    |
+| 16  | Friends-and-family price override                            | 🚧 **Parked by client**   | "format is not finalized with client"                           |
+| 17  | Reference lives on the hard copy; TPE is lite                | ➖ No build               | Informational — it is a decision _not_ to add a field           |
+| 18  | Down payment is 30%, not 10%                                 | ✅ **Shipped** 2026-09-28 | Was 10% at 15 sites across both repos, incl. user-facing copy   |
+| 19  | Application number, auto-generated                           | ✅ **Shipped** 2026-09-28 | Already existed; was unlabelled, so it did not read as one      |
+| 20  | Supporting docs optional / approve but incomplete            | ✅ **Shipped** 2026-09-28 | Same work as gap 6 — see the second 2026-09-28 log              |
+| 21  | Item price must come from the Inventory price list           | ✅ **Shipped** 2026-09-28 | No application had EVER been priced from a price list — see log |
+| 22  | Curated rate-card down payment now falls below the 30% floor | 🚧 **Blocked on client**  | Raised 2026-09-28. The form seeds a value its own rule rejects  |
 
 **Doable today: items 1, 2, 3, 4, 5, 6.** Two of those need a one-line answer first (5 and 6) — both are under _Decisions needed_ below, and both have a safe reading that ships today either way.
 
@@ -387,3 +388,47 @@ Business Owner (`technova.owner@test.com`). A **priced** item is now required �
 12. ✅ On a narrow window (phone width), the queue card shows _"Application No. CA-…"_ rather than an unlabelled string.
 
 **Not yet confirmed by hand:** steps 9 and 10, the checkout half of item 18. Everything else above was verified against the running stack via the API during implementation.
+
+---
+
+## Item 22 — the curated down payment and the 30% floor now contradict each other
+
+**Raised 2026-09-28, immediately after item 18 shipped. Not fixed — it needs a
+decision from the client, not a code change.**
+
+Found in manual testing. On a WIP-priced item at **₱21,010** the form pre-fills
+a down payment of **₱4,620** and then rejects it:
+
+> _Down payment must be at least ₱6,303.00 — 30% of the sale amount incl. VAT, which is what the till will require_
+
+₱4,620 is **22%**. ₱6,303 is exactly 30% of ₱21,010. So the form fills in a
+number and immediately tells the user it is wrong.
+
+**Where the seeded figure comes from.** `CreditApplicationFinancingFields`
+seeds `curatedDownPaymentSum ?? downPaymentFloor` — i.e. it prefers the
+**curated rate-card down payment** on the `PriceListItem`, falling back to the
+computed floor only when no curated figure exists. That was correct while the
+floor was 10%: curated figures comfortably cleared it. At 30% they do not.
+
+The arithmetic checks out and nothing here is a mistake in the new code — the
+floor is right, the basis is right (`inclusivePricing` is on, so ₱21,010 is
+already VAT-inclusive and the "incl. VAT" wording is accurate). The two rules
+simply disagree, and the client owns both.
+
+**Three ways out, and they are genuinely different decisions:**
+
+1. **Floor wins** — seed `max(curated, floor)`. The rate card becomes a minimum suggestion, the pre-filled value is always valid, and no sale is ever blocked. Safest interim.
+2. **Curated wins** — the price list is authoritative and the 30% floor does not apply where a curated figure exists. Consistent with item 21's "use the price list, and only that", but means some sales legitimately take under 30% down.
+3. **The data is stale** — the rate cards were priced against a 10% policy and need re-pricing at 30%. Then this is a data migration, not a code change at all.
+
+My instinct is (3) is what has actually happened, since the rate cards predate
+the 30% instruction — but that is a guess, and (1) is the safe interim because
+it can never block a sale.
+
+**The question worth putting to the client verbatim:** _"your rate card says
+₱4,620 down on this item, but the new 30% rule needs ₱6,303 — which is
+right?"_
+
+**Until then this is live and visible**: any item whose curated down payment is
+under 30% shows a pre-filled value with a red error beneath it. Item 18 is
+shipped and correct; this is the consequence nobody had costed.
