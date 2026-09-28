@@ -10,26 +10,28 @@ Unlike most scenarios in this series, this one is not a single feature. It is a 
 
 Verified against `development` on 2026-09-24 (both repos freshly pulled; frontend `cb7b48e8`, backend `f8dc9ee`).
 
-| #   | Client note                                             | Verdict                   | Why                                                           |
-| --- | ------------------------------------------------------- | ------------------------- | ------------------------------------------------------------- |
-| 1   | Region 6 default on the first dropdown                  | ✅ **Today**              | Frontend only — one `useState` seed                           |
-| 2   | "Raise one for this cart" → New Credit Application Form | ✅ **Today**              | One string                                                    |
-| 3   | Remove "Approved amount (optional)" from TPF            | ✅ **Today**              | Field is nullable end-to-end, nothing reads it                |
-| 4   | Co-maker **number** required                            | ✅ **Today**              | Frontend only — and it fixes a real drift (see gap 4)         |
-| 5   | "Spouse or Co-maker" wording                            | ✅ **Shipped** 2026-09-28 | Built as a two-level picker, not a relabel — see the log      |
-| 6   | Approved-but-incomplete when ID is missing              | ✅ **Shipped** 2026-09-28 | Derived; the list surface needed a backend field after all    |
-| 7   | Co-maker **address** required                           | ❌ Migration              | `CoMaker` has no address column at all                        |
-| 8   | Collector on the credit application                     | ❌ Migration              | No FK exists; `Collector` does                                |
-| 9   | Address on the New Credit Application                   | ❌ Migration              | Applicant block is phone + email only                         |
-| 10  | Home + current address, current synced                  | ❌ Migration + decision   | Reverses a deliberate Scenario 24 decision                    |
-| 11  | Deliver to / Delivery Address / delivery fee            | ❌ Migration              | Half the columns exist and are never written; two don't exist |
-| 12  | Delivery fee excluded from the total                    | ➖ Already designed for   | Schema already keeps it out of `subtotal`/`totalAmount`       |
-| 13  | Delivery fee GL mapping                                 | ❌ Depends on 11          | No migration needed, but nothing to post until 11 lands       |
-| 14  | Separate CR for down payment and delivery fee           | ➖ Already built          | The report already emits it as its own CR line                |
-| 15  | Cancel Sale → dropdown                                  | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                  |
-| 16  | Friends-and-family price override                       | 🚧 **Parked by client**   | "format is not finalized with client"                         |
-| 17  | Reference lives on the hard copy; TPE is lite           | ➖ No build               | Informational — it is a decision _not_ to add a field         |
-| 18  | Down payment is 30%, not 10%                            | ❌ Not started            | Added 2026-09-28. Hardcoded 10% in 9 places across both repos |
+| #   | Client note                                             | Verdict                   | Why                                                             |
+| --- | ------------------------------------------------------- | ------------------------- | --------------------------------------------------------------- |
+| 1   | Region 6 default on the first dropdown                  | ✅ **Today**              | Frontend only — one `useState` seed                             |
+| 2   | "Raise one for this cart" → New Credit Application Form | ✅ **Today**              | One string                                                      |
+| 3   | Remove "Approved amount (optional)" from TPF            | ✅ **Today**              | Field is nullable end-to-end, nothing reads it                  |
+| 4   | Co-maker **number** required                            | ✅ **Today**              | Frontend only — and it fixes a real drift (see gap 4)           |
+| 5   | "Spouse or Co-maker" wording                            | ✅ **Shipped** 2026-09-28 | Built as a two-level picker, not a relabel — see the log        |
+| 6   | Approved-but-incomplete when ID is missing              | ✅ **Shipped** 2026-09-28 | Derived; the list surface needed a backend field after all      |
+| 7   | Co-maker **address** required                           | ❌ Migration              | `CoMaker` has no address column at all                          |
+| 8   | Collector on the credit application                     | ❌ Migration              | No FK exists; `Collector` does                                  |
+| 9   | Address on the New Credit Application                   | ❌ Migration              | **Clarified 2026-09-28** — it is the CURRENT address, read-only |
+| 10  | Home + current address, current synced                  | ❌ Migration              | **Clarified 2026-09-28** — "synced" is now resolved, see below  |
+| 11  | Deliver to / Delivery Address / delivery fee            | ❌ Migration              | Half the columns exist and are never written; two don't exist   |
+| 12  | Delivery fee excluded from the total                    | ➖ Already designed for   | Schema already keeps it out of `subtotal`/`totalAmount`         |
+| 13  | Delivery fee GL mapping                                 | ❌ Depends on 11          | No migration needed, but nothing to post until 11 lands         |
+| 14  | Separate CR for down payment and delivery fee           | ➖ Already built          | The report already emits it as its own CR line                  |
+| 15  | Cancel Sale → dropdown                                  | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                    |
+| 16  | Friends-and-family price override                       | 🚧 **Parked by client**   | "format is not finalized with client"                           |
+| 17  | Reference lives on the hard copy; TPE is lite           | ➖ No build               | Informational — it is a decision _not_ to add a field           |
+| 18  | Down payment is 30%, not 10%                            | ❌ Not started            | Added 2026-09-28. Hardcoded 10% in 9 places across both repos   |
+| 19  | Application number, auto-generated                      | ➖ Already built          | `generateApplicationNumber()` — `CA-YYYYMMDD-NNNN`, per tenant  |
+| 20  | Supporting docs optional / approve but incomplete       | ✅ **Shipped** 2026-09-28 | Same work as gap 6 — see the second 2026-09-28 log              |
 
 **Doable today: items 1, 2, 3, 4, 5, 6.** Two of those need a one-line answer first (5 and 6) — both are under _Decisions needed_ below, and both have a safe reading that ships today either way.
 
@@ -300,3 +302,40 @@ client's process at three separate points:
 - **A real product tension the client's instruction creates, raised and deliberately left as-is.** With no document required to submit, the Credit Investigator and Business Owner can be reviewing an application with nothing attached. The approval chain itself is unchanged and still enforced (`draft → submitted → under_investigation → pending_approval → decide`, with `decideItems()` refusing anything not `pending_approval`, and approval remaining Business-Owner-only). A middle option — require documents to **approve** but not to **submit** — was put to the developer and declined for now: the client gave a clear instruction and it is their process.
 - **Method note.** Three wrong diagnoses preceded the real one on the co-maker bug, each from reasoning instead of instrumenting. What settled it was tagging the two validation branches with distinct messages and reading which fired. The lesson for this codebase: the same zod schema runs client-side and again inside the server action, on a payload the handler has already reshaped — so a form error can come from a shape the user never saw.
 - **Not manually confirmed yet:** that checkout accepts an ID-pending application and completes the sale. That is the client's actual requirement for gap 6 and remains the one untested step.
+
+---
+
+## Clarifications received 2026-09-28 (second batch)
+
+Four points from the client. **Two were already satisfied**, and saying so
+matters more than logging them as work:
+
+- **"Supporting documents in credit application to follow, make it optional"** and **"add approve but incomplete, meaning can proceed without attached documents"** — this is gap 6, and both shipped earlier the same day. Submitting no longer requires an attachment (removed in both repos), an approved application with no `applicant_id` is badged **"Approved — ID pending"** on the detail and in the queue, and documents can now be attached after approval so the ID really can follow. Nothing further to build.
+- **"In credit application, add application number (auto-generated)"** — already built and has been for some time. `CreditApplicationService.generateApplicationNumber()` issues `CA-YYYYMMDD-NNNN`, sequential per tenant per day, unique on `(tenantId, applicationNumber)`, and it is already displayed on the queue and the detail page. If the client means it should appear somewhere it currently does not — on the intake form before submission, say, or on a printed form — that is a different and much smaller request, and worth confirming which they mean before building anything.
+
+**The remaining point is the valuable one, because it resolves what gap 10 could not previously be built from:**
+
+> _"add address to credit application (current address, current address is non-editable). So there's two, home address and current, current is the one used in credit application."_
+
+This settles the question the original triage flagged as unanswerable. The earlier note — _"current address should be synced"_ — had no definable meaning; this replaces it with a concrete rule:
+
+|                                        |                                               |
+| -------------------------------------- | --------------------------------------------- |
+| The customer carries **two** addresses | `home` and `current`                          |
+| The credit application uses            | the **current** address                       |
+| On the credit application it is        | **read-only** — displayed, never edited there |
+
+So the credit application does **not** need its own address column after all, which is a meaningful simplification of gap 9: it reads the customer's current address rather than snapshotting one. That also explains the original note _"add the address since the customer profile is different"_ — the profile shows the home address, and the application needs the current one.
+
+**What it still costs**, and it is not small:
+
+- `Customer.address` is **one** column today. Scenario 24 Part 1 deliberately collapsed `billingAddress`/`shippingAddress` into it, on the grounds that _"nothing in this codebase ever legitimately needed them to differ"_. That judgement is now overtaken by the business: home and current genuinely differ, and the difference is what the credit decision rests on. Re-splitting is a migration plus a backfill (existing `address` becomes which of the two?) plus every read path.
+- `Customer.barangayCode` has the same problem — it is the area key used for collector assignment, so it has to follow whichever address the collector actually visits. Almost certainly the current one, but that needs confirming rather than assuming.
+- The CRM and Accounting customer forms, `PhilippineAddressPicker`'s single-value contract, and the POS walk-in create path all assume one address.
+
+**Still open on this**, and worth asking in the same breath as anything else:
+
+1. When only one address is known — a walk-in with no separate current address — does current default to home, or stay blank?
+2. Which address does **collector assignment** use? (`barangayCode` today is singular.)
+3. Read-only on the credit application is clear. Where **is** the current address edited — the CRM customer profile only, or also the POS customer form?
+4. Does an existing customer's single `address` backfill into home, current, or both?
