@@ -29,9 +29,10 @@ Verified against `development` on 2026-09-24 (both repos freshly pulled; fronten
 | 15  | Cancel Sale → dropdown                                  | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                    |
 | 16  | Friends-and-family price override                       | 🚧 **Parked by client**   | "format is not finalized with client"                           |
 | 17  | Reference lives on the hard copy; TPE is lite           | ➖ No build               | Informational — it is a decision _not_ to add a field           |
-| 18  | Down payment is 30%, not 10%                            | ❌ Not started            | Added 2026-09-28. Hardcoded 10% in 9 places across both repos   |
-| 19  | Application number, auto-generated                      | ➖ Already built          | `generateApplicationNumber()` — `CA-YYYYMMDD-NNNN`, per tenant  |
+| 18  | Down payment is 30%, not 10%                            | ✅ **Shipped** 2026-09-28 | Was 10% at 15 sites across both repos, incl. user-facing copy   |
+| 19  | Application number, auto-generated                      | ✅ **Shipped** 2026-09-28 | Already existed; was unlabelled, so it did not read as one      |
 | 20  | Supporting docs optional / approve but incomplete       | ✅ **Shipped** 2026-09-28 | Same work as gap 6 — see the second 2026-09-28 log              |
+| 21  | Item price must come from the Inventory price list      | ✅ **Shipped** 2026-09-28 | No application had EVER been priced from a price list — see log |
 
 **Doable today: items 1, 2, 3, 4, 5, 6.** Two of those need a one-line answer first (5 and 6) — both are under _Decisions needed_ below, and both have a safe reading that ships today either way.
 
@@ -339,3 +340,50 @@ So the credit application does **not** need its own address column after all, wh
 2. Which address does **collector assignment** use? (`barangayCode` today is singular.)
 3. Read-only on the credit application is clear. Where **is** the current address edited — the CRM customer profile only, or also the POS customer form?
 4. Does an existing customer's single `address` backfill into home, current, or both?
+
+---
+
+## Implementation Log — 2026-09-28 (third entry)
+
+Items 18, 19 and 21, all from the client the same day, all shipped.
+
+**For this scenario, I have done:**
+
+- **Item 18 — the down-payment floor is 30%, not 10%.** A floor, not a fixed amount, applying to both the credit application at intake and in-house installment lines at checkout. Now driven by a named constant in each repo (`DOWN_PAYMENT_FLOOR_RATE`) rather than inlined.
+- **Item 19 — the application number is labelled.** It has always been auto-generated (`CA-YYYYMMDD-NNNN`, sequential per tenant per day) and displayed; the client asked for one to be _added_ because on the detail page it was a bare unexplained heading and on the mobile card an unlabelled mono string. Both now say **"Application No."**. The desktop table already had an "Application #" column header and is unchanged — which is probably why this went unnoticed for so long.
+- **Item 21 — applications are priced from the Inventory price list, "and only that."**
+
+**Worth flagging:**
+
+- **No credit application had ever been priced from a price list.** This is the significant finding of the three. `entry.unitPrice` won outright when supplied, and the intake form always supplied one, seeded from the flat `Item.sellingPrice`. So the price shown to the applicant came from the item record rather than the branch's agreed price list. Worse, that path also set `priceListItemId: null`, which is what the curated per-SKU down payment and the rate-card (`PriceListItemTerm`) instalment figures hang off — so that entire mechanism was inert on credit applications, silently falling back to a generic `factorRate` approximation. Fixed on both sides: the form no longer sends `unitPrice`, and the server ignores it if sent (the DTO field stays so existing callers do not 400).
+- **Two further fallbacks removed** for the same reason: no Price Use chosen fell back to `resolveDefaultSellingPrice`, and an item on no active list under the chosen Price Use fell back to flat `Item.sellingPrice`. Both now return null, which surfaces as a rejection rather than a wrong price.
+- **This will reject more items than before, and that is the point.** The catalog is ~1,399 items and only a handful sit on active price lists. An item nobody has priced under the chosen Price Use cannot be financed until somebody prices it; the error now says so and points at Inventory. **Worth checking price-list coverage on the items actually sold on credit before this reaches a counter** — it is the one part of this change likely to surprise someone.
+- **The 10% was at 15 sites, not the 9 my first pass reported.** Three of them were user-facing copy — the "10% min" badge and two explanatory sentences — which is exactly how a screen ends up advertising one rule while the server enforces another. All copy now derives its percentage from the constant.
+- **The two constants must stay in step.** `DOWN_PAYMENT_FLOOR_RATE` exists separately in each repo (`backend/src/common/constants/financing.constants.ts`, `frontend/src/libs/constants/financing.ts`). A drift between them shows up as a form accepting a value the till then rejects.
+
+## Manual testing — items 18, 19, 21
+
+Business Owner (`technova.owner@test.com`). A **priced** item is now required — `SHARP ESWP85` is ₱7,490 on the **WIP** price list; `CAMEL COF16` is ₱1,713.60 on WIP.
+
+**Item 21 — price comes from the price list**
+
+1. Credit Applications → New Application → pick an applicant.
+2. Add **SHARP ESWP85** and set Price Use to **WIP**.
+3. ✅ The requested amount should be **₱7,490** — the WIP price list figure, not the item's own selling price. If those two differ for an item, that difference is the whole test.
+4. Change Price Use to a different type the item is also listed under and confirm the amount follows the list, not the item.
+5. ✅ Pick an item that is on **no** active price list for the chosen Price Use → submitting is rejected with _"… is not on an active price list for the selected Price Use — price it in Inventory before it can be financed."_
+6. ✅ Leave Price Use unset entirely → same rejection. An application can no longer be priced without one.
+
+**Item 18 — 30% floor**
+
+7. With ₱7,490 selected and a financing term chosen, enter a down payment of **₱1,500** (~20%) → ✅ rejected, _"Down payment must be at least 30% of the item total"_.
+8. Enter **₱2,300** (~31%) → ✅ accepted.
+9. ✅ At checkout, the down-payment badge on an installment line reads **"30% min"**, not "10% min", and the explanatory text underneath says 30% too. A mismatch between badge and rule is the specific failure this test exists to catch.
+10. ✅ At the till, an installment line with a down payment below 30% is refused — the same floor, enforced separately from the application.
+
+**Item 19 — application number**
+
+11. ✅ Open any application: the header reads **APPLICATION NO.** above the number, rather than the bare code.
+12. ✅ On a narrow window (phone width), the queue card shows _"Application No. CA-…"_ rather than an unlabelled string.
+
+**Not yet confirmed by hand:** steps 9 and 10, the checkout half of item 18. Everything else above was verified against the running stack via the API during implementation.
