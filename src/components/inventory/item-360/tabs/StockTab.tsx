@@ -15,6 +15,7 @@ import {
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import { SerialAges } from '@/src/components/inventory/SerialAges'
 import { stockStatusOf } from '@/src/libs/inventory/stock-status'
+import { useUIShell } from '@/src/stores/ui-shell.store'
 
 const GONE_STATUSES = new Set<SerialNumberSummary['status']>(['sold', 'scrapped', 'pulled_out'])
 
@@ -65,6 +66,7 @@ export default function StockTab({
   onSelectSerial,
 }: Props) {
   const router = useRouter()
+  const clearPanels = useUIShell((s) => s.clearPanels)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   // Scenario 56 — one search across every location rather than one box per
   // location: a unit you're looking for could be at any of them.
@@ -167,17 +169,18 @@ export default function StockTab({
   // shown here, with its status, so its absence from a pick isn't a mystery.
   const startTransfer = (warehouseId: string, serialIds: string[]) => {
     if (serialIds.length === 0) return
-    // Only the count travels, not the ids: which physical units leave is the
-    // source branch's call at dispatch (see the backend's
-    // assignDispatchSerials), so a pick made here would be a promise the
-    // transfer can't keep. Ticking units is still the natural way to say
-    // "these many of these" — it just resolves to a quantity.
+    // The ticked units travel as-is: the transfer line opens in pick-serials
+    // mode with them chosen, and dispatch ships exactly those.
     const params = new URLSearchParams({
       prefillFromWarehouseId: warehouseId,
       prefillItemId: itemId,
       prefillItemLabel: itemLabel,
       prefillQty: String(serialIds.length),
+      prefillSerialIds: serialIds.join(','),
     })
+    // The drawer lives in the shell store, not the route, so navigating alone
+    // would leave it open on top of the Create Transfer modal.
+    clearPanels()
     router.push(`/inventory/transfers?${params.toString()}`)
   }
 

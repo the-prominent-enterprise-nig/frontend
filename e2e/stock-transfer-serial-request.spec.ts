@@ -1,13 +1,11 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady, clickStable, pickComboboxOption } from './utils'
 
-// Scenario 06, Part 1 — a request for a serial-tracked item names the item and
-// how many units, never which physical units. The specific serials are chosen
-// by the source at dispatch (see TransferDetailModal's dispatch form and the
-// backend's assignDispatchSerials), since the requester can't see what's
-// actually on the shelf at the other branch. A quantity of N is split into N
-// single-unit lines at submit, satisfying the backend's per-line invariant
-// without making the requester add the same item N times.
+// Scenario 06, Part 1 (reworked) — a request for a serial-tracked item names
+// the exact units it sends. The line shows the source's free in-stock
+// serials; the unit count is the pick itself. Each picked serial goes out as
+// its own single-unit line carrying serialNumberId, which dispatch then ships
+// as-is. Item 360's "Transfer selected" carries its ticked units straight in.
 
 async function openCreateModal(page: import('@playwright/test').Page) {
   await gotoReady(page, '/inventory/transfers')
@@ -61,41 +59,98 @@ async function addSerialTrackedItem(page: import('@playwright/test').Page) {
   return item.sku
 }
 
+type FreeSerial = {
+  id: string
+  serialNumber: string
+  item?: { id: string; name?: string } | null
+  currentWarehouse?: { id: string } | null
+}
+
+/** A unit in stock and not claimed by any open transfer — one the create
+ * endpoint will accept as a pinned line. */
+async function findFreeSerial(page: import('@playwright/test').Page): Promise<FreeSerial> {
+  const res = await page.request.get('/api/inventory/serial-numbers', {
+    params: { status: 'in_stock', freeForTransfer: 'true', limit: '50' },
+  })
+  const serial = (((await res.json()).data ?? []) as FreeSerial[]).find(
+    (s) => s.item?.id && s.currentWarehouse?.id
+  )
+  if (!serial) throw new Error('no free in-stock serial found to transfer')
+  return serial
+}
+
 test.describe('Inventory — Stock Transfer serial-tracked requesting', () => {
-  test('a serial-tracked line asks for a quantity, not a specific unit', async ({ page }) => {
+  test('a serial-tracked line picks exact serials — no quantity mode', async ({ page }) => {
     await openCreateModal(page)
     await pickWarehouses(page)
     await addSerialTrackedItem(page)
 
-    // The card says once — not per row — that the source decides which units
-    // leave, and no serial picker is offered anywhere in the form.
-    await expect(
-      page.getByText(
-        'Serial-tracked — the source picks which exact units leave when they dispatch.'
-      )
-    ).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('serial-pick-panel')).toHaveCount(0)
-    await expect(page.getByTestId('serial-pick-card')).toHaveCount(0)
+    // The picker shows straight away; there is no by-quantity alternative.
+    await expect(page.getByTestId('serial-pick-panel')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('radio', { name: 'By quantity' })).toHaveCount(0)
+
+    // The unit count is the pick itself — read-only, starting at none.
+    const qty = page.getByLabel('Units to send')
+    await expect(qty).toHaveAttribute('readonly', '')
+    await expect(qty).toHaveValue('0')
+
+    // The option list only opens once the search box is in use.
+    const panel = page.getByTestId('serial-pick-panel')
+    await expect(panel.getByRole('checkbox')).toHaveCount(0)
+    await panel.getByPlaceholder('Search serial number to add…').click()
+
+    // Ticking a free unit, if the source has one, counts it.
+    const firstSerial = page.getByTestId('serial-pick-panel').getByRole('checkbox').first()
+    if (await firstSerial.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await firstSerial.click()
+      await expect(qty).toHaveValue('1')
+    }
 
     await page.getByRole('button', { name: 'Close dialog' }).click()
   })
 
-  test('creates a transfer for a serial-tracked item, then cancels it (cleanup)', async ({
-    page,
-  }) => {
-    // Identifies this run's own transfer reliably in the list — nothing else
-    // about a bulk request is unique enough to match on.
-    const uniqueReason = `E2E-TRF-SERIAL-${Date.now()}`
-
+  test('submitting a serial-tracked line with nothing picked is refused', async ({ page }) => {
     await openCreateModal(page)
     await pickWarehouses(page)
     await addSerialTrackedItem(page)
+    await expect(page.getByTestId('serial-pick-panel')).toBeVisible({ timeout: 10_000 })
 
+    await page.getByRole('button', { name: 'Submit Request' }).click()
+    await expect(page.getByText('Pick at least one serial')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Close dialog' }).click()
+  })
+
+  test('serials ticked in Item 360 arrive picked and ship pinned (then cancel)', async ({
+    page,
+  }) => {
+    const uniqueReason = `E2E-TRF-SERIAL-${Date.now()}`
+    await gotoReady(page, '/inventory/transfers')
+    const serial = await findFreeSerial(page)
+
+    // The same deep link Item 360's "Transfer selected" builds.
+    const params = new URLSearchParams({
+      prefillFromWarehouseId: serial.currentWarehouse!.id,
+      prefillItemId: serial.item!.id,
+      prefillItemLabel: serial.item?.name ?? 'Item',
+      prefillQty: '1',
+      prefillSerialIds: serial.id,
+    })
+    await gotoReady(page, `/inventory/transfers?${params.toString()}`)
+    await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toBeVisible({
+      timeout: 10_000,
+    })
+
+    const panel = page.getByTestId('serial-pick-panel')
+    await expect(panel.getByText(serial.serialNumber, { exact: true }).first()).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByText('1 line · 1 units')).toBeVisible()
+
+    await pickComboboxOption(page, 'Search destination branch…')
     await page.getByPlaceholder('e.g. Rebalancing stock for upcoming campaign').fill(uniqueReason)
 
-    // Submit can be un-hydrated for an instant after the modal mounts (same
-    // hydration race fillStable/clickStable work around elsewhere) — retry
-    // the click until the modal actually closes on success.
     await expect(async () => {
       await page.getByRole('button', { name: 'Submit Request' }).click()
       await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toHaveCount(0, {
@@ -103,11 +158,7 @@ test.describe('Inventory — Stock Transfer serial-tracked requesting', () => {
       })
     }).toPass({ timeout: 15_000 })
 
-    // The newly created draft should be the most recent transfer (list is
-    // sorted by createdAt desc), but the list can still be showing a
-    // pre-refetch stale order for a moment right after creation — retry
-    // until the opened detail's Reason actually matches this run's unique
-    // marker, closing and reopening in between if a stale/wrong row opens.
+    // Open this run's transfer and confirm the line is pinned to that unit.
     await expect(async () => {
       await page.locator('tbody tr').first().click()
       await expect(page.getByRole('heading', { name: 'Transfer Details' })).toBeVisible({
@@ -122,25 +173,11 @@ test.describe('Inventory — Stock Transfer serial-tracked requesting', () => {
         throw new Error('opened transfer is not the one just created — retrying')
       }
     }).toPass({ timeout: 20_000 })
+    await expect(page.getByText(serial.serialNumber).first()).toBeVisible()
 
-    // Cleanup: cancel the draft so repeated runs don't pile up test transfers.
+    // Cleanup: cancel so repeated runs don't pile up test transfers.
     await page.getByRole('button', { name: 'Cancel Transfer' }).click()
     await page.getByRole('button', { name: 'Yes, Cancel Transfer' }).click()
     await expect(page.getByText('Cancel this transfer?')).toHaveCount(0, { timeout: 10_000 })
-  })
-
-  test('asking for several units of a serial-tracked item sends one line per unit', async ({
-    page,
-  }) => {
-    await openCreateModal(page)
-    await pickWarehouses(page)
-    await addSerialTrackedItem(page)
-
-    // One UI line, three units — the split into three single-unit lines only
-    // happens at submit, so the header count is what proves the intent here.
-    await page.getByLabel('Units to send').fill('3')
-    await expect(page.getByText('1 line · 3 units')).toBeVisible()
-
-    await page.getByRole('button', { name: 'Close dialog' }).click()
   })
 })

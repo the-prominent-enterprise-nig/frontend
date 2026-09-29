@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   useForm,
   useWatch,
@@ -30,6 +30,7 @@ import { getItem } from '../../items/_actions/get-item'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { NewCaravanFields } from './CaravanDestinationFields'
+import TransferSerialPicker, { type PickedSerial } from './TransferSerialPicker'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
@@ -53,14 +54,15 @@ type Props = {
   // offered it at all.
   canSkipApproval?: boolean
   // Deep-link from Item 360's Stock tab: seeds the source branch and one
-  // line for the item being looked at. Only a count — the exact units are
-  // the source's call at dispatch, so a selection made over there can't be
-  // carried through as a binding choice.
+  // line for the item being looked at. `serialIds`, when present, are the
+  // exact units ticked over there — the line opens in pick-serials mode with
+  // them already chosen; without it the line is a plain count.
   initialDraft?: {
     fromWarehouseId: string
     itemId: string
     itemLabel?: string
     quantity: number
+    serialIds?: string[]
   } | null
   // Scenario 60 — a caravan can be created inline as the destination. It is
   // created first; its warehouse then becomes the transfer's toWarehouseId.
@@ -156,9 +158,6 @@ type LineRowProps = {
   // user picked, so without this the row would show a bare, unlabeled id
   // until someone happened to re-search the same item.
   initialItemLabel?: string
-  /** Scenario 60 — this transfer goes to or from a caravan, which carries
-   * serial-tracked units only (the host's POS sells caravan stock by serial). */
-  caravanLeg?: boolean
 }
 
 function TransferLineRow({
@@ -169,7 +168,6 @@ function TransferLineRow({
   itemError,
   quantityError,
   initialItemLabel,
-  caravanLeg = false,
 }: LineRowProps) {
   const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
   const fromWarehouseId = useWatch({ control, name: 'fromWarehouseId' })
@@ -213,9 +211,9 @@ function TransferLineRow({
     enabled: itemDetailQuery.isSuccess && isSerialTracked && !!fromWarehouseId && !!selectedItemId,
     staleTime: 30 * 1000,
   })
-  // Availability at the chosen source — informational only, never blocks
-  // submit. The source's own accept/dispatch step is the real check, since
-  // actual stock can shift between a request and its dispatch.
+  // Availability at the chosen source, shown as the requester types. The
+  // backend refuses a request for more than the source has, and checks again
+  // at dispatch, since stock can shift between the two.
   const crossBranchStockQuery = useQuery({
     queryKey: ['inventory-cross-branch-stock', selectedItemId],
     queryFn: () => getCrossBranchStock(selectedItemId),
@@ -233,18 +231,40 @@ function TransferLineRow({
 
   const quantityController = useController({ control, name: `lines.${index}.quantity` })
 
+  const serialsController = useController({ control, name: `lines.${index}.serials` })
+  const pickedSerials: PickedSerial[] = serialsController.field.value ?? []
+
+  // A serial-tracked line's unit count is its pick — never typed separately.
+  const setPicked = (next: PickedSerial[]): void => {
+    serialsController.field.onChange(next)
+    quantityController.field.onChange(next.length)
+  }
+
   // Form-only field carrying whether this line's item is serial-tracked, so
-  // handleFormSubmit knows which lines to split into single-unit lines
-  // without re-deriving it.
+  // handleFormSubmit knows which lines go out as one line per picked serial.
+  // Once the item turns out to be serial-tracked, the count re-derives from
+  // the pick — a seeded pick (Item 360) keeps its units; a fresh line starts
+  // at none picked.
   const isTrackedController = useController({
     control,
     name: `lines.${index}.isSerialTracked`,
   })
   useEffect(() => {
     isTrackedController.field.onChange(isSerialTracked)
+    if (isSerialTracked) setPicked(pickedSerials)
     // Only re-run when the tracked-ness itself changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSerialTracked])
+
+  // Picked units belong to the source they were picked at — a new source
+  // can't ship them. Skips the first render so a seeded pick survives.
+  const prevFromRef = useRef(fromWarehouseId)
+  useEffect(() => {
+    if (prevFromRef.current === fromWarehouseId) return
+    prevFromRef.current = fromWarehouseId
+    if (isSerialTracked) setPicked([])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromWarehouseId])
 
   return (
     <div
@@ -267,7 +287,9 @@ function TransferLineRow({
             step="1"
             placeholder="Qty"
             aria-label="Units to send"
-            className={`${inputClass} text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+            readOnly={isSerialTracked}
+            title={isSerialTracked ? 'Set by the serials picked below' : undefined}
+            className={`${inputClass} text-center ${isSerialTracked ? 'bg-[#f7f7f9] text-[#5b5b6b]' : ''} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
             onChange={(e) =>
               quantityController.field.onChange(e.target.value === '' ? '' : Number(e.target.value))
             }
@@ -289,30 +311,37 @@ function TransferLineRow({
       </div>
 
       {quantityError && (
-        <p className="mt-1.5 pl-0.5 text-[11.5px] text-[#b42318]">{quantityError}</p>
+        <p className="mt-1.5 pl-0.5 text-[11.5px] text-[#b42318]">
+          {isSerialTracked && pickedSerials.length === 0
+            ? 'Pick at least one serial'
+            : quantityError}
+        </p>
+      )}
+
+      {isSerialTracked && selectedItemId && (
+        <div className="mt-2">
+          <TransferSerialPicker
+            fromWarehouseId={fromWarehouseId}
+            itemId={selectedItemId}
+            selected={pickedSerials}
+            onChange={setPicked}
+          />
+        </div>
       )}
 
       {showAvailability && (
         <p
           className={`mt-1 pl-0.5 text-[11.5px] ${
-            exceedsAvailable ? 'font-medium text-[#8a4b06]' : 'text-[#8b8b9b]'
+            exceedsAvailable ? 'font-medium text-[#b42318]' : 'text-[#8b8b9b]'
           }`}
         >
           {exceedsAvailable
-            ? `Only ${available} available at the source (requesting ${quantityValue}).`
+            ? available === 0
+              ? 'Out of stock at the source — remove this line or pick another source.'
+              : `Only ${available} available at the source — reduce the quantity.`
             : `Available at the source: ${available}`}
         </p>
       )}
-
-      {caravanLeg &&
-        !isSerialTracked &&
-        selectedItemId &&
-        itemDetailQuery.isSuccess &&
-        !itemError && (
-          <p className="mt-2 pl-0.5 text-[11.5px] font-medium text-[#8a4b06]">
-            Only serial-tracked items can be transferred to or from a caravan.
-          </p>
-        )}
     </div>
   )
 }
@@ -414,8 +443,9 @@ export default function CreateTransferModal({
                 ? [
                     {
                       itemId: initialDraft.itemId,
-                      quantity: initialDraft.quantity,
+                      quantity: initialDraft.serialIds?.length || initialDraft.quantity,
                       itemLabel: initialDraft.itemLabel,
+                      serials: initialDraft.serialIds?.map((id) => ({ id })),
                     },
                   ]
                 : [],
@@ -456,7 +486,6 @@ export default function CreateTransferModal({
   }, [isOpen, isEditing, lockedToWarehouseId, setValue])
 
   const totalUnits = watchedLines.reduce((sum, l) => sum + (Number(l?.quantity) || 0), 0)
-  const hasSerialTrackedLine = watchedLines.some((l) => l?.isSerialTracked)
 
   // Scenario 60 — "For a caravan": the stock goes to a new caravan (a
   // temporary branch set up at a host branch for an event), created from the
@@ -467,7 +496,6 @@ export default function CreateTransferModal({
   const toId = watch('toWarehouseId')
   const fromWarehouse = warehouses.find((w) => w.id === fromId)
   const toWarehouse = warehouses.find((w) => w.id === toId)
-  const caravanLeg = isCaravanDestination || isCaravanBranch(fromWarehouse?.branch)
   // Editing a request that already goes to a caravan keeps that caravan.
   const editingCaravanDestination = isEditing && isCaravanDestination && !isCreatingNewCaravan
 
@@ -529,17 +557,19 @@ export default function CreateTransferModal({
 
   async function handleFormSubmit(data: CreateTransferFormValues) {
     // Strip every form-only field before this reaches the server action, and
-    // split a serial-tracked line asking for N units into N single-unit
-    // lines — the backend enforces exactly 1 unit per serial-tracked line
-    // (validateSerialLineQuantities) so each can take its own serial at
-    // dispatch, but the requester shouldn't have to add the same item N
-    // times to satisfy that.
+    // send a serial-tracked line as one single-unit line per picked serial —
+    // the backend enforces exactly 1 unit per serial-tracked line
+    // (validateSerialLineQuantities), and each carries the exact unit it
+    // ships, so dispatch has nothing left to choose.
     const lines = data.lines.flatMap((line) => {
-      const quantity = Number(line.quantity) || 0
-      if (line.isSerialTracked && quantity > 1) {
-        return Array.from({ length: quantity }, () => ({ itemId: line.itemId, quantity: 1 }))
+      if (line.isSerialTracked) {
+        return (line.serials ?? []).map((serial) => ({
+          itemId: line.itemId,
+          quantity: 1,
+          serialNumberId: serial.id,
+        }))
       }
-      return [{ itemId: line.itemId, quantity }]
+      return [{ itemId: line.itemId, quantity: Number(line.quantity) || 0 }]
     })
 
     const toWarehouseId = await resolveDestination(data)
@@ -920,19 +950,6 @@ export default function CreateTransferModal({
                 </div>
               )}
 
-              {/* Said once for the whole card rather than per row — it's how
-                  serial-tracked transfers work, not a fact about one line. */}
-              {caravanLeg && (
-                <p className="border-b border-[#eeeef1] bg-[#fcfaff] px-[18px] py-2 text-[11.5px] text-[#3f1490]">
-                  Caravans take serial-tracked items only.
-                </p>
-              )}
-              {hasSerialTrackedLine && (
-                <p className="border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[11.5px] text-[#5b5b6b]">
-                  Serial-tracked — the source picks which exact units leave when they dispatch.
-                </p>
-              )}
-
               {fields.length === 0 && (
                 <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
                   <PackageSearch className="h-7 w-7 text-[#c9c9d3]" />
@@ -955,7 +972,6 @@ export default function CreateTransferModal({
                     onRemove={() => remove(index)}
                     itemError={errors.lines?.[index]?.itemId?.message}
                     quantityError={errors.lines?.[index]?.quantity?.message}
-                    caravanLeg={caravanLeg}
                     initialItemLabel={
                       initialDraft && watchedLines[index]?.itemId === initialDraft.itemId
                         ? initialDraft.itemLabel

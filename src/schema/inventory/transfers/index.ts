@@ -13,21 +13,26 @@ export const TransferStatusSchema = z.enum([
   'cancelled',
 ])
 
-// The requester never names a specific unit — they can't see what's
-// physically on the shelf at the source. The serial is chosen at dispatch by
-// whoever's holding the stock (see TransferDetailModal's dispatch form and
-// the backend's assignDispatchSerials). A serial-tracked line still carries
-// an ordinary quantity here; the backend's per-line invariant
-// (validateSerialLineQuantities: exactly 1 unit per serial-tracked line) is
-// satisfied by splitting that line into N single-unit lines at submit (see
-// CreateTransferModal's handleFormSubmit), rather than making the requester
-// add the same item N times themselves.
+// A serial-tracked line names the exact units it sends (`serials`), which
+// dispatch then ships as-is; anything else is a plain count. The backend's
+// per-line invariant (validateSerialLineQuantities: exactly 1 unit per
+// serial-tracked line) is satisfied by sending one single-unit line per
+// picked serial at submit (see CreateTransferModal's handleFormSubmit),
+// rather than making the requester add the same item N times themselves.
 export const CreateTransferLineSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
   quantity: z.number().positive('Quantity must be greater than 0'),
+  // Sent — set only on the single-unit lines handleFormSubmit builds from a
+  // pick, pinning that line to the exact unit (the server action re-parses
+  // with this schema, so it has to be declared to survive).
+  serialNumberId: z.string().optional(),
   // Form-only — never sent to the server. Tells handleFormSubmit which
   // lines to split, and drives the row's own serial-tracked note.
   isSerialTracked: z.boolean().optional(),
+  // Form-only — a serial-tracked line's picked units. Each goes out as its
+  // own line carrying serialNumberId, and `quantity` follows the pick's
+  // size. `serialNumber` is display-only (the pill label).
+  serials: z.array(z.object({ id: z.string(), serialNumber: z.string().optional() })).optional(),
   // Form-only display context, captured from the search result that added
   // this line — the row renders the item as plain text (it's only ever
   // added through the card's own "Add item" search), so it needs the name

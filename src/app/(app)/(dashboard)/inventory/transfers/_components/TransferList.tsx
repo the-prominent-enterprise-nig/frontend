@@ -263,13 +263,14 @@ export default function TransferList({ session }: { session: SessionUser }) {
     itemId: string
     itemLabel?: string
     quantity: number
+    serialIds?: string[]
   } | null>(null)
 
   // Item 360's Stock tab "Request transfer" deep-links here with a source
   // warehouse, an item and how many units — read once on mount, open straight
   // into a pre-filled create form, then strip the params so a refresh or Back
-  // doesn't silently reopen it. Which physical units ship is decided by the
-  // source at dispatch, so only a count travels, never serial ids.
+  // doesn't silently reopen it. `prefillSerialIds` carries the exact units
+  // ticked there, so the line opens with those serials already picked.
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -283,6 +284,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         itemId,
         itemLabel: searchParams.get('prefillItemLabel') ?? undefined,
         quantity,
+        serialIds: searchParams.get('prefillSerialIds')?.split(',').filter(Boolean),
       })
       setIsCreateOpen(true)
       router.replace('/inventory/transfers')
