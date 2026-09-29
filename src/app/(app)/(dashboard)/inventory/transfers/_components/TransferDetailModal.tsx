@@ -56,6 +56,7 @@ import { MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
 import { searchVehicles } from '../_actions/search-vehicles'
 import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
+import { warehouseLabel } from '@/src/schema/inventory/warehouses'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 
 /** A transfer line's unit, opening its history when the line has one. */
@@ -161,11 +162,8 @@ function formatDateOnly(iso?: string | null) {
 // Each branch has exactly one warehouse, so a transfer's fromWarehouse/
 // toWarehouse is really a branch — display the branch's own name rather than
 // the warehouse's auto-generated "{branch} Warehouse" name.
-function branchLabel(
-  wh: { name: string; branch?: { name: string } | null } | null | undefined,
-  fallback = '—'
-): string {
-  return wh?.branch?.name ?? wh?.name ?? fallback
+function branchLabel(wh: Parameters<typeof warehouseLabel>[0], fallback = '—'): string {
+  return warehouseLabel(wh, fallback)
 }
 
 // One search box per DISTINCT serial-tracked item being dispatched (not one

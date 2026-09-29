@@ -39,6 +39,56 @@ export type CreateWarehouseFormValues = z.infer<typeof CreateWarehouseFormSchema
 export type UpdateWarehouseFormValues = z.infer<typeof UpdateWarehouseFormSchema>
 export type CreateLocationFormValues = z.infer<typeof CreateLocationFormSchema>
 
+// Scenario 60 Part 2 — a warehouse's branch, with the caravan fields the
+// backend sends alongside it (false/null for an ordinary branch). A caravan
+// is a temporary Branch parked at a host branch for an event.
+export const WarehouseBranchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  isTemporary: z.boolean().optional(),
+  eventName: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+  hostBranch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  // A caravan's location — where it is physically set up. Null when none was given.
+  addressLine1: z.string().nullable().optional(),
+})
+export type WarehouseBranch = z.infer<typeof WarehouseBranchSchema>
+
+type LabelledWarehouse = { name: string; branch?: WarehouseBranch | null } | null | undefined
+
+export function isCaravanBranch(branch: WarehouseBranch | null | undefined): boolean {
+  return !!branch?.isTemporary
+}
+
+/** Ended once its end date is before today — mirrors the backend rule that
+ * stops new stock going in (stock can still be transferred out). */
+export function isCaravanEnded(branch: WarehouseBranch | null | undefined): boolean {
+  if (!branch?.isTemporary || !branch.endDate) return false
+  return branch.endDate.slice(0, 10) < new Date().toISOString().slice(0, 10)
+}
+
+/**
+ * How a warehouse reads anywhere a location is named. Each branch has one
+ * warehouse, so it shows as its branch; a caravan says so outright and names
+ * its host, so no one mistakes event stock for a branch of its own.
+ */
+export function warehouseLabel(wh: LabelledWarehouse, fallback = '—'): string {
+  const branch = wh?.branch
+  if (branch?.isTemporary) {
+    const event = branch.eventName ?? branch.name
+    const host = branch.hostBranch?.name
+    const location = branch.addressLine1?.trim()
+    if (location) {
+      return host
+        ? `Caravan · ${event} — ${location} (hosted by ${host})`
+        : `Caravan · ${event} — ${location}`
+    }
+    return host ? `Caravan · ${event} — hosted at ${host}` : `Caravan · ${event}`
+  }
+  return branch?.name ?? wh?.name ?? fallback
+}
+
 export const WarehouseSummarySchema = z.object({
   id: z.string(),
   code: z.string(),
@@ -51,7 +101,7 @@ export const WarehouseSummarySchema = z.object({
   region: z.enum(['panay', 'negros']).nullable().optional(),
   // Each branch has exactly one warehouse — pickers display this branch name
   // rather than the warehouse's own "{branch} Warehouse" name.
-  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  branch: WarehouseBranchSchema.nullable().optional(),
   _count: z.object({ locations: z.number() }).optional(),
 })
 

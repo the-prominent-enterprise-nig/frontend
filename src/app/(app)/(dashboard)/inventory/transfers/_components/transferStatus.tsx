@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import type { TransferStatus } from '@/src/schema/inventory/transfers'
+import { warehouseLabel } from '@/src/schema/inventory/warehouses'
 
 // Shared by the Transfers list and the Item 360 drawer's Transfers tab
 // (Scenario 56), so a transfer's status reads the same in both places.
@@ -83,11 +84,10 @@ export const STATUS_CONFIG: Record<
 
 // Each branch has exactly one warehouse, so a transfer's fromWarehouse/
 // toWarehouse is really a branch — display the branch's own name rather than
-// the warehouse's auto-generated "{branch} Warehouse" name.
-export function branchLabel(
-  wh: { name: string; branch?: { name: string } | null } | null | undefined
-): string {
-  return wh?.branch?.name ?? wh?.name ?? '—'
+// the warehouse's auto-generated "{branch} Warehouse" name. A caravan reads as
+// the event at its host (Scenario 60) — see warehouseLabel.
+export function branchLabel(wh: Parameters<typeof warehouseLabel>[0]): string {
+  return warehouseLabel(wh)
 }
 
 export function StatusChip({ status }: { status: TransferStatus }) {

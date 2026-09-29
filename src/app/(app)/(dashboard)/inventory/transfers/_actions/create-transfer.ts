@@ -23,9 +23,14 @@ export async function createTransfer(input: unknown): Promise<ApiResponse<{ id: 
   // useForm<CreateTransferFormValues>() (the transform makes the field's
   // inferred type mandatory-but-possibly-undefined instead of omittable,
   // which the resolver's generic can't reconcile without extra ceremony).
+  // destinationType/newCaravan are form-only (Scenario 60): the modal has
+  // already created any new caravan and put its warehouse in toWarehouseId.
+  const data = { ...parsed.data }
+  delete data.destinationType
+  delete data.newCaravan
   const result = await api.post<{ id: string }>('/inventory/transfers', {
-    ...parsed.data,
-    expectedArrival: parsed.data.expectedArrival || undefined,
+    ...data,
+    expectedArrival: data.expectedArrival || undefined,
   })
 
   if (!result.success) {

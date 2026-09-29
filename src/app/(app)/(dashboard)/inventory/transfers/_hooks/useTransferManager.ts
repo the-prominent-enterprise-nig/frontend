@@ -12,8 +12,7 @@ import { showToast } from '@/src/components/ui/toast'
 import { getTransfers } from '../_actions/get-transfers'
 import { getTransfer } from '../_actions/get-transfer'
 import { createTransfer } from '../_actions/create-transfer'
-import { consignToBranch } from '../../serial-numbers/_actions/consign-to-branch'
-import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
+import { createCaravan } from '../_actions/create-caravan'
 import { dispatchTransfer } from '../_actions/dispatch-transfer'
 import { receiveTransfer } from '../_actions/receive-transfer'
 import { cancelTransfer } from '../_actions/cancel-transfer'
@@ -28,6 +27,7 @@ import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getBranches } from '../_actions/get-branches'
 import type {
   CreateTransferFormValues,
+  NewCaravanFormValues,
   DispatchTransferFormValues,
   ReceiveTransferFormValues,
   RejectHqTransferFormValues,
@@ -203,32 +203,17 @@ export function useTransferManager() {
     },
   })
 
-  // Sending stock out for a caravan starts on this screen too, but it is not
-  // a transfer: ownership never moves, so there is no destination warehouse,
-  // no dispatch and no receipt — just the units being marked as out. It
-  // therefore goes to the consign endpoint rather than createTransfer, and
-  // invalidates the serial lists rather than the transfer ones.
-  const consignMutation = useMutation({
-    mutationFn: ({
-      serialNumberIds,
-      data,
-    }: {
-      serialNumberIds: string[]
-      data: ConsignToBranchFormValues
-    }) => consignToBranch(serialNumberIds, data),
+  // Scenario 60 Part 2 — a caravan created inline from New Stock Transfer.
+  // Refreshes the warehouse list so the new caravan is pickable at once,
+  // including when the transfer after it fails and the user retries.
+  const createCaravanMutation = useMutation({
+    mutationFn: (data: NewCaravanFormValues) => createCaravan(data),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({
-          title: 'Units consigned',
-          description: result.message,
-          status: 'success',
-        })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials-available-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-warehouses-lookup'] })
       } else {
         showToast({
-          title: 'Failed to consign these units',
+          title: 'Failed to create the caravan',
           description: result.message,
           status: 'error',
         })
@@ -499,9 +484,8 @@ export function useTransferManager() {
       updateMutation.mutateAsync({ id, data }),
     isUpdating: updateMutation.isPending,
 
-    consignUnits: (serialNumberIds: string[], data: ConsignToBranchFormValues) =>
-      consignMutation.mutateAsync({ serialNumberIds, data }),
-    isConsigning: consignMutation.isPending,
+    createCaravan: (data: NewCaravanFormValues) => createCaravanMutation.mutateAsync(data),
+    isCreatingCaravan: createCaravanMutation.isPending,
 
     approveHqTransfer: approveHqMutation.mutateAsync,
     isApprovingHq: approveHqMutation.isPending,

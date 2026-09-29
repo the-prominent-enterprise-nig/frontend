@@ -148,6 +148,9 @@ function DirectionTag({
 
 export default function TransferList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
+  // Scenario 60 — starting a new caravan stays gated on caravan:manage, so
+  // holding transfers:create alone doesn't grant it.
+  const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   const canAccept = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_ACCEPT)
   const canReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_REJECT)
   const canDispatch = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DISPATCH)
@@ -188,8 +191,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     createTransfer,
     updateTransfer,
     isUpdating,
-    consignUnits,
-    isConsigning,
+    createCaravan,
+    isCreatingCaravan,
     isCreating,
     approveHqTransfer,
     isApprovingHq,
@@ -761,8 +764,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
         }
         isSubmitting={editingTransfer ? isUpdating : isCreating}
         editing={editingTransfer}
-        onConsign={consignUnits}
-        isConsigning={isConsigning}
+        onCreateCaravan={createCaravan}
+        isCreatingCaravan={isCreatingCaravan}
+        canCreateCaravan={canManageCaravan}
         warehouses={warehouseOptions}
         currentUserBranchId={session.branchId}
         canSkipApproval={canSkipApproval}

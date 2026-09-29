@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { WarehouseBranchSchema } from '@/src/schema/inventory/warehouses'
 
 export const TransferStatusSchema = z.enum([
   'pending_manager_approval',
@@ -35,10 +36,34 @@ export const CreateTransferLineSchema = z.object({
   itemSku: z.string().optional(),
 })
 
+// Scenario 60 Part 2 — a caravan created inline from New Stock Transfer:
+// a temporary branch parked at a real host branch for an event. Every field
+// is required; there is no "somewhere else" venue option any more.
+export const NewCaravanFormSchema = z
+  .object({
+    hostBranchId: z.string().min(1, 'Select the host branch'),
+    eventName: z.string().trim().min(1, 'Enter the event name').max(150),
+    // Where the caravan is physically set up — not required.
+    location: z.string().trim().max(255, 'Keep the location under 255 characters').optional(),
+    startDate: z.string().min(1, 'Enter the start date'),
+    endDate: z.string().min(1, 'Enter the end date'),
+  })
+  .refine((d) => !d.startDate || !d.endDate || d.endDate >= d.startDate, {
+    message: 'End date cannot be before the start date',
+    path: ['endDate'],
+  })
+export type NewCaravanFormValues = z.infer<typeof NewCaravanFormSchema>
+
 export const CreateTransferFormSchema = z
   .object({
     fromWarehouseId: z.string().min(1, 'Source warehouse is required'),
-    toWarehouseId: z.string().min(1, 'Destination warehouse is required'),
+    // Required unless a new caravan is being created — see superRefine below.
+    toWarehouseId: z.string(),
+    // Form-only — whether the destination is a branch or a caravan. Never sent.
+    destinationType: z.enum(['branch', 'caravan']).optional(),
+    // Form-only — set while creating a caravan inline; it is created first
+    // and its warehouse becomes toWarehouseId. Never sent with the transfer.
+    newCaravan: NewCaravanFormSchema.optional(),
     transferDate: z.string().min(1, 'Transfer date is required'),
     expectedArrival: z.string().optional(),
     reason: z.string().max(500).optional(),
@@ -56,6 +81,30 @@ export const CreateTransferFormSchema = z
   .refine((d) => !d.expectedArrival || d.expectedArrival >= d.transferDate, {
     message: 'Expected arrival cannot be before the transfer date',
     path: ['expectedArrival'],
+  })
+  .superRefine((d, ctx) => {
+    if (!d.newCaravan && !d.toWarehouseId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          d.destinationType === 'caravan'
+            ? 'Select a caravan'
+            : 'Destination warehouse is required',
+        path: ['toWarehouseId'],
+      })
+    }
+    // Mirrors the backend: a caravan carries serial-tracked units only,
+    // since the host's POS sells caravan stock by serial.
+    if (d.destinationType !== 'caravan') return
+    d.lines.forEach((line, i) => {
+      if (line.isSerialTracked === false) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Only serial-tracked items can be transferred to a caravan',
+          path: ['lines', i, 'itemId'],
+        })
+      }
+    })
   })
 
 // One entry per serial-tracked line being dispatched — itemId/itemLabel are
@@ -189,7 +238,7 @@ const TransferWarehouseSchema = z.object({
   // branch-local one. For a branch-local warehouse the UI shows `branch`'s
   // name instead of the warehouse's own "{branch} Warehouse" name.
   region: z.enum(['panay', 'negros']).nullable().optional(),
-  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  branch: WarehouseBranchSchema.nullable().optional(),
 })
 
 const TransferLineSchema = z.object({

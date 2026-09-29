@@ -11,28 +11,26 @@ import {
 } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import {
-  X,
-  Loader2,
-  Trash2,
-  AlertTriangle,
-  ArrowRight,
-  PackageSearch,
-  Check,
-  Search,
-} from 'lucide-react'
+import { X, Loader2, Trash2, AlertTriangle, ArrowRight, PackageSearch, Plus } from 'lucide-react'
 import {
   CreateTransferFormSchema,
   CreateTransferFormValues,
   type CreateTransferLineValues,
+  type NewCaravanFormValues,
   type TransferSummary,
 } from '@/src/schema/inventory/transfers'
-import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
+import {
+  isCaravanBranch,
+  isCaravanEnded,
+  warehouseLabel,
+  type WarehouseSummary,
+} from '@/src/schema/inventory/warehouses'
+import { formatShortDate } from '@/src/libs/format/date'
 import type { ApiResponse } from '@/src/libs/api/client'
-import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
 import { getItem } from '../../items/_actions/get-item'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { CaravanSummary, NewCaravanFields } from './CaravanDestinationFields'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
@@ -65,23 +63,18 @@ type Props = {
     itemLabel?: string
     quantity: number
   } | null
-  // Sending stock out for a caravan starts on this screen too, but it is not
-  // a transfer — ownership never moves, so there is no destination branch,
-  // no dispatch and no receipt. It goes to the consign endpoint instead,
-  // which is why it takes its own submit handler rather than reusing
-  // onSubmit with a flag.
-  onConsign?: (
-    serialNumberIds: string[],
-    data: ConsignToBranchFormValues
-  ) => Promise<ApiResponse<unknown>>
-  isConsigning?: boolean
+  // Scenario 60 — a caravan can be created inline as the destination. It is
+  // created first; its warehouse then becomes the transfer's toWarehouseId.
+  onCreateCaravan?: (data: NewCaravanFormValues) => Promise<ApiResponse<{ warehouseId: string }>>
+  isCreatingCaravan?: boolean
+  // Gated on inventory:caravan:manage — transfers:create alone doesn't grant it.
+  canCreateCaravan?: boolean
   // Set to turn this screen into an edit of an existing, undispatched
   // request instead of a new one. The whole form is reused rather than given
   // a second copy: an edit submits the same complete request shape a create
   // does (the backend replaces the request wholesale and re-routes it), so
   // the two differ only in where the initial values come from and where the
-  // submit goes. Consignment is hidden entirely while editing — a caravan
-  // was never a transfer, so an existing transfer can't become one.
+  // submit goes.
   editing?: TransferSummary | null
 }
 
@@ -128,9 +121,25 @@ function collapseLinesForEdit(
 
 // Each branch has exactly one warehouse, so this picker is really choosing a
 // branch — display the branch's own name rather than the warehouse's
-// auto-generated "{branch} Warehouse" name.
+// auto-generated "{branch} Warehouse" name. A caravan names its event and
+// host; one whose event is over says so, since it can still be a source.
 function branchLabel(wh: WarehouseSummary): string {
-  return wh.branch?.name ?? wh.name
+  const label = warehouseLabel(wh)
+  return isCaravanEnded(wh.branch) ? `${label} (ended)` : label
+}
+
+function caravanDates(wh: WarehouseSummary | undefined): string {
+  const { startDate, endDate } = wh?.branch ?? {}
+  if (!startDate || !endDate) return ''
+  return `${formatShortDate(startDate)} – ${formatShortDate(endDate)}`
+}
+
+const EMPTY_NEW_CARAVAN: NewCaravanFormValues = {
+  hostBranchId: '',
+  eventName: '',
+  location: '',
+  startDate: '',
+  endDate: '',
 }
 
 const inputClass =
@@ -142,13 +151,6 @@ const inputClass =
 // themselves actually changed.
 const EMPTY_LINES: CreateTransferFormValues['lines'] = []
 const labelClass = 'mb-1.5 block text-[12px] font-medium text-[#3d3d4a]'
-/** Stable empty default for a row's picked-serial list — see EMPTY_LINES. */
-const EMPTY_IDS: string[] = []
-/** Same stable-reference trick for a row's fetched serial list. */
-const EMPTY_SERIAL_ROWS: never[] = []
-/** How many unit checkboxes a consignment row shows before the rest go
- * behind a "see more" — a branch can hold hundreds of one model. */
-const SERIAL_PREVIEW_COUNT = 30
 
 type LineRowProps = {
   control: Control<CreateTransferFormValues>
@@ -162,15 +164,9 @@ type LineRowProps = {
   // user picked, so without this the row would show a bare, unlabeled id
   // until someone happened to re-search the same item.
   initialItemLabel?: string
-  /** Consignment mode: the row picks the exact units going out instead of a
-   * quantity. Unlike a transfer — where the source decides at dispatch what
-   * physically leaves — a consignment names its units up front, because the
-   * consign endpoint marks those specific serials and nothing downstream
-   * ever gets a chance to choose them. */
-  consignMode?: boolean
-  pickedSerialIds?: string[]
-  onPickedSerialIdsChange?: (ids: string[]) => void
-  serialError?: string
+  /** Scenario 60 — this transfer goes to or from a caravan, which carries
+   * serial-tracked units only (the host's POS sells caravan stock by serial). */
+  caravanLeg?: boolean
 }
 
 function TransferLineRow({
@@ -181,10 +177,7 @@ function TransferLineRow({
   itemError,
   quantityError,
   initialItemLabel,
-  consignMode = false,
-  pickedSerialIds = EMPTY_IDS,
-  onPickedSerialIdsChange,
-  serialError,
+  caravanLeg = false,
 }: LineRowProps) {
   const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
   const fromWarehouseId = useWatch({ control, name: 'fromWarehouseId' })
@@ -216,57 +209,18 @@ function TransferLineRow({
   // there's nothing to enumerate. limit:1 keeps it to `total` off the
   // envelope rather than dragging hundreds of rows across for a number.
   const serialAvailabilityQuery = useQuery({
-    queryKey: ['inventory-serials-available-count', fromWarehouseId, selectedItemId, consignMode],
+    queryKey: ['inventory-serials-available-count', fromWarehouseId, selectedItemId],
     queryFn: () =>
       getSerialNumbers({
         warehouseId: fromWarehouseId,
         itemId: selectedItemId,
         status: 'in_stock',
         freeForTransfer: true,
-        // A transfer only needs the number; a consignment has to list them,
-        // since the user is picking the individual units.
-        limit: consignMode ? 200 : 1,
+        limit: 1,
       }),
     enabled: itemDetailQuery.isSuccess && isSerialTracked && !!fromWarehouseId && !!selectedItemId,
     staleTime: 30 * 1000,
   })
-  const serialRows = serialAvailabilityQuery.data?.data?.data
-  const serialOptions = useMemo(() => serialRows ?? EMPTY_SERIAL_ROWS, [serialRows])
-
-  const [serialSearch, setSerialSearch] = useState('')
-  const [showAllSerials, setShowAllSerials] = useState(false)
-  const filteredSerialOptions = useMemo(() => {
-    const q = serialSearch.trim().toLowerCase()
-    if (!q) return serialOptions
-    return serialOptions.filter((sn) => sn.serialNumber.toLowerCase().includes(q))
-  }, [serialOptions, serialSearch])
-  const visibleSerialOptions = showAllSerials
-    ? filteredSerialOptions
-    : filteredSerialOptions.slice(0, SERIAL_PREVIEW_COUNT)
-  const hiddenSerialCount = filteredSerialOptions.length - visibleSerialOptions.length
-  // Bulk-select only ever touches what's on screen — ticking units hidden
-  // behind the search would be the opposite of what the button offers.
-  const allFilteredPicked =
-    filteredSerialOptions.length > 0 &&
-    filteredSerialOptions.every((sn) => pickedSerialIds.includes(sn.id))
-
-  function toggleSerial(id: string) {
-    onPickedSerialIdsChange?.(
-      pickedSerialIds.includes(id)
-        ? pickedSerialIds.filter((x) => x !== id)
-        : [...pickedSerialIds, id]
-    )
-  }
-
-  function toggleAllFiltered() {
-    const ids = filteredSerialOptions.map((sn) => sn.id)
-    onPickedSerialIdsChange?.(
-      allFilteredPicked
-        ? pickedSerialIds.filter((id) => !ids.includes(id))
-        : [...new Set([...pickedSerialIds, ...ids])]
-    )
-  }
-
   // Availability at the chosen source — informational only, never blocks
   // submit. The source's own accept/dispatch step is the real check, since
   // actual stock can shift between a request and its dispatch.
@@ -314,30 +268,18 @@ function TransferLineRow({
         </div>
 
         <div>
-          {consignMode ? (
-            <span
-              className={`${MONO} block text-center text-[15px] ${
-                pickedSerialIds.length > 0 ? 'font-semibold text-[#17171c]' : 'text-[#a3a3b2]'
-              }`}
-            >
-              {pickedSerialIds.length}
-            </span>
-          ) : (
-            <input
-              {...quantityController.field}
-              type="number"
-              min="1"
-              step="1"
-              placeholder="Qty"
-              aria-label="Units to send"
-              className={`${inputClass} text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-              onChange={(e) =>
-                quantityController.field.onChange(
-                  e.target.value === '' ? '' : Number(e.target.value)
-                )
-              }
-            />
-          )}
+          <input
+            {...quantityController.field}
+            type="number"
+            min="1"
+            step="1"
+            placeholder="Qty"
+            aria-label="Units to send"
+            className={`${inputClass} text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+            onChange={(e) =>
+              quantityController.field.onChange(e.target.value === '' ? '' : Number(e.target.value))
+            }
+          />
         </div>
 
         <div className="flex items-center justify-end">
@@ -358,7 +300,7 @@ function TransferLineRow({
         <p className="mt-1.5 pl-0.5 text-[11.5px] text-[#b42318]">{quantityError}</p>
       )}
 
-      {!consignMode && showAvailability && (
+      {showAvailability && (
         <p
           className={`mt-1 pl-0.5 text-[11.5px] ${
             exceedsAvailable ? 'font-medium text-[#8a4b06]' : 'text-[#8b8b9b]'
@@ -370,149 +312,15 @@ function TransferLineRow({
         </p>
       )}
 
-      {consignMode && !isSerialTracked && selectedItemId && (
-        <p className="mt-2 pl-0.5 text-[11.5px] font-medium text-[#8a4b06]">
-          Only serial-tracked items can go out on a caravan — a consignment marks specific units,
-          and this item has none to mark.
-        </p>
-      )}
-
-      {consignMode && isSerialTracked && !fromWarehouseId && (
-        <p className="mt-2 pl-0.5 text-[11px] text-[#5b5b6b]">
-          Pick a source branch first, so this only shows units actually there.
-        </p>
-      )}
-
-      {consignMode && isSerialTracked && fromWarehouseId && (
-        <div
-          data-testid="consign-pick-panel"
-          className="mt-2.5 rounded-[9px] border border-[#ddd0f7] bg-[#fcfaff] p-2.5"
-        >
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p
-              className={`${MONO} text-[9.5px] font-semibold tracking-[.08em] text-[#7c4fd1] uppercase`}
-            >
-              Pick the units going out
-            </p>
-            {serialOptions.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span
-                  className={`${MONO} text-[10.5px] font-semibold ${
-                    pickedSerialIds.length > 0 ? 'text-[#0b6644]' : 'text-[#8a4b06]'
-                  }`}
-                >
-                  {pickedSerialIds.length} of {serialOptions.length} picked
-                </span>
-                <button
-                  type="button"
-                  onClick={toggleAllFiltered}
-                  disabled={filteredSerialOptions.length === 0}
-                  className="rounded-[6px] border border-[#ddd0f7] bg-white px-2 py-1 text-[10.5px] font-medium text-[#3f1490] hover:bg-[#f1ebfb] disabled:opacity-40"
-                >
-                  {allFilteredPicked
-                    ? 'Clear all'
-                    : serialSearch.trim()
-                      ? `Select all ${filteredSerialOptions.length} matches`
-                      : 'Select all'}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {serialOptions.length > 0 && (
-            <div className="relative mb-2">
-              <Search className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b8b9b]" />
-              <input
-                value={serialSearch}
-                onChange={(e) => setSerialSearch(e.target.value)}
-                type="text"
-                placeholder="Search serial number…"
-                className="w-full rounded-[7px] border border-[#ddd0f7] bg-white py-1.5 pr-7 pl-7 text-[11.5px] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
-              />
-              {serialSearch && (
-                <button
-                  type="button"
-                  onClick={() => setSerialSearch('')}
-                  title="Clear search"
-                  className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-[5px] p-0.5 text-[#8b8b9b] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          )}
-
-          {serialAvailabilityQuery.isLoading ? (
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-8 animate-pulse rounded-[7px] bg-[#eeeef1]" />
-              ))}
-            </div>
-          ) : serialOptions.length === 0 ? (
-            <p className="text-[11px] font-medium text-[#8a4b06]">
-              No in-stock units of this item at the source.
-            </p>
-          ) : filteredSerialOptions.length === 0 ? (
-            <p className="text-[11px] text-[#5b5b6b]">
-              No unit here matches &ldquo;{serialSearch.trim()}&rdquo;.
-            </p>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
-                {visibleSerialOptions.map((sn) => {
-                  const checked = pickedSerialIds.includes(sn.id)
-                  return (
-                    <Tooltip
-                      key={sn.id}
-                      label={checked ? 'Click to remove this unit' : 'Click to select this unit'}
-                      className="w-full"
-                    >
-                      <button
-                        type="button"
-                        data-testid="consign-pick-card"
-                        aria-pressed={checked}
-                        onClick={() => toggleSerial(sn.id)}
-                        className={`flex w-full items-center gap-1.5 rounded-[7px] border px-2 py-1.5 text-left ${
-                          checked
-                            ? 'border-[#5b21b6] bg-[#f7f3ff]'
-                            : 'border-[#e4e4e9] bg-white hover:border-[#ddd0f7]'
-                        }`}
-                      >
-                        <span
-                          className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[4px] border ${
-                            checked
-                              ? 'border-[#5b21b6] bg-[#5b21b6] text-white'
-                              : 'border-[#d3d3db] bg-white'
-                          }`}
-                        >
-                          {checked && <Check className="h-2.5 w-2.5" />}
-                        </span>
-                        <span
-                          className={`${MONO} truncate text-[10.5px] font-medium text-[#17171c]`}
-                        >
-                          {sn.serialNumber}
-                        </span>
-                      </button>
-                    </Tooltip>
-                  )
-                })}
-              </div>
-
-              {hiddenSerialCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllSerials(true)}
-                  className="mt-2 w-full rounded-[7px] border border-[#ddd0f7] bg-white py-1.5 text-[11px] font-medium text-[#3f1490] hover:bg-[#f1ebfb]"
-                >
-                  See {hiddenSerialCount} more {hiddenSerialCount === 1 ? 'unit' : 'units'}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {serialError && <p className="mt-1.5 pl-0.5 text-[11.5px] text-[#b42318]">{serialError}</p>}
+      {caravanLeg &&
+        !isSerialTracked &&
+        selectedItemId &&
+        itemDetailQuery.isSuccess &&
+        !itemError && (
+          <p className="mt-2 pl-0.5 text-[11.5px] font-medium text-[#8a4b06]">
+            Only serial-tracked items can be transferred to or from a caravan.
+          </p>
+        )}
     </div>
   )
 }
@@ -526,8 +334,9 @@ export default function CreateTransferModal({
   currentUserBranchId,
   canSkipApproval = false,
   initialDraft = null,
-  onConsign,
-  isConsigning = false,
+  onCreateCaravan,
+  isCreatingCaravan = false,
+  canCreateCaravan = false,
   editing = null,
 }: Props) {
   const today = new Date().toISOString().split('T')[0]
@@ -541,25 +350,6 @@ export default function CreateTransferModal({
   // among their own rather than have an arbitrary one silently picked.
   const lockedToWarehouseId =
     ownBranchWarehouses.length === 1 ? ownBranchWarehouses[0].id : undefined
-
-  // Consignment lives outside react-hook-form: it doesn't submit a
-  // CreateTransferFormValues at all, it calls the consign endpoint with the
-  // units picked below. Keeping it out of the resolver means the transfer
-  // schema can't start half-describing something that isn't a transfer.
-  const [isConsignment, setIsConsignment] = useState(false)
-  const [destKind, setDestKind] = useState<'branch' | 'venue'>('venue')
-  const [hostBranchId, setHostBranchId] = useState('')
-  const [venue, setVenue] = useState('')
-  const [eventName, setEventName] = useState('')
-  const [eventStart, setEventStart] = useState('')
-  const [eventEnd, setEventEnd] = useState('')
-  // One picked-serial list per line index, keyed by the field array's own id
-  // so removing a line can't shift another line's picks onto it.
-  const [pickedByLine, setPickedByLine] = useState<Record<string, string[]>>({})
-  // react-hook-form's isSubmitted never flips in consignment mode (the
-  // resolver is bypassed entirely), so inline errors need their own "they
-  // have tried once" signal.
-  const [consignSubmitTried, setConsignSubmitTried] = useState(false)
 
   // Remounts the header's "add item" search box after each pick — it never
   // holds a confirmed value itself (each pick appends a new line instead),
@@ -582,6 +372,7 @@ export default function CreateTransferModal({
       expectedArrival: '',
       reason: '',
       skipDestinationApproval: false,
+      destinationType: 'branch',
       lines: [],
     },
   })
@@ -616,6 +407,7 @@ export default function CreateTransferModal({
               expectedArrival: (editing.expectedArrival ?? '').slice(0, 10),
               reason: editing.reason ?? '',
               skipDestinationApproval: false,
+              destinationType: isCaravanBranch(editing.toWarehouse?.branch) ? 'caravan' : 'branch',
               lines: collapseLinesForEdit(editing.lines ?? []),
             }
           : {
@@ -624,6 +416,7 @@ export default function CreateTransferModal({
               transferDate: today,
               expectedArrival: '',
               reason: '',
+              destinationType: 'branch',
               lines: initialDraft
                 ? [
                     {
@@ -636,15 +429,6 @@ export default function CreateTransferModal({
             }
       )
       setAddItemKey((k) => k + 1)
-      setIsConsignment(false)
-      setDestKind('venue')
-      setHostBranchId('')
-      setVenue('')
-      setEventName('')
-      setEventStart('')
-      setEventEnd('')
-      setPickedByLine({})
-      setConsignSubmitTried(false)
     } else {
       reset({
         fromWarehouseId: '',
@@ -678,44 +462,57 @@ export default function CreateTransferModal({
     }
   }, [isOpen, isEditing, lockedToWarehouseId, setValue])
 
-  // In consignment mode a line's "how many" is however many units are
-  // ticked on it, not the quantity box (which isn't shown).
-  const pickedSerialIds = useMemo(
-    () => fields.flatMap((f) => pickedByLine[f.id] ?? EMPTY_IDS),
-    [fields, pickedByLine]
-  )
-  const totalUnits = isConsignment
-    ? pickedSerialIds.length
-    : watchedLines.reduce((sum, l) => sum + (Number(l?.quantity) || 0), 0)
+  const totalUnits = watchedLines.reduce((sum, l) => sum + (Number(l?.quantity) || 0), 0)
   const hasSerialTrackedLine = watchedLines.some((l) => l?.isSerialTracked)
 
-  // Consignment's own required fields, checked by hand because they sit
-  // outside the resolver (see the state block above).
-  const consignDestinationMissing =
-    isConsignment && (destKind === 'venue' ? !venue.trim() : !hostBranchId)
-  const consignEventNameMissing = isConsignment && !eventName.trim()
-  const consignNothingPicked = isConsignment && pickedSerialIds.length === 0
-  const consignEventEndInvalid = !!eventStart && !!eventEnd && eventEnd < eventStart
-  const consignInvalid =
-    isConsignment &&
-    (consignDestinationMissing ||
-      consignEventNameMissing ||
-      consignNothingPicked ||
-      consignEventEndInvalid ||
-      !fromId)
+  // Scenario 60 — the destination is either a branch or a caravan (a
+  // temporary branch hosted at a real one for an event).
+  const destinationType = watch('destinationType') ?? 'branch'
+  const isCaravanDestination = destinationType === 'caravan'
+  const newCaravan = watch('newCaravan')
+  const isCreatingNewCaravan = isCaravanDestination && !!newCaravan
+  const toId = watch('toWarehouseId')
+  const fromWarehouse = warehouses.find((w) => w.id === fromId)
+  const toWarehouse = warehouses.find((w) => w.id === toId)
+  const caravanLeg = isCaravanDestination || isCaravanBranch(fromWarehouse?.branch)
 
-  // Each branch has one warehouse here, so the host-branch options come off
-  // the same warehouse list the route already uses rather than a second
-  // branches fetch. The source branch is excluded: consigning to yourself
-  // through this screen would be a no-op move with an event attached, and
-  // the Serial Numbers screen already covers that case properly.
-  const hostBranchOptions = useMemo(
-    () =>
-      warehouses
-        .filter((wh) => !!wh.branchId && wh.id !== fromId)
-        .map((wh) => ({ value: wh.branchId as string, label: branchLabel(wh) })),
-    [warehouses, fromId]
+  // Branch destinations never list a caravan; caravan destinations list only
+  // ongoing ones — an ended caravan can still send stock out, never take it
+  // in. A branch-scoped user sees the caravans their own branch hosts.
+  const branchDestinations = (currentUserBranchId ? ownBranchWarehouses : warehouses).filter(
+    (wh) => wh.id !== fromId && !isCaravanBranch(wh.branch)
   )
+  const caravanDestinations = warehouses.filter(
+    (wh) =>
+      wh.id !== fromId &&
+      isCaravanBranch(wh.branch) &&
+      !isCaravanEnded(wh.branch) &&
+      (!currentUserBranchId || wh.branch?.hostBranch?.id === currentUserBranchId)
+  )
+  // Host branch for a new caravan: a real branch, never another caravan. A
+  // branch-scoped user can only host at their own branch (the backend
+  // enforces the same).
+  const hostBranchOptions = (currentUserBranchId ? ownBranchWarehouses : warehouses)
+    .filter((wh) => !!wh.branchId && !isCaravanBranch(wh.branch))
+    .map((wh) => ({ value: wh.branchId as string, label: branchLabel(wh) }))
+
+  function switchDestinationType(next: 'branch' | 'caravan'): void {
+    if (next === destinationType) return
+    setValue('destinationType', next)
+    setValue('newCaravan', undefined)
+    setValue('toWarehouseId', next === 'branch' ? (lockedToWarehouseId ?? '') : '', {
+      shouldValidate: isSubmitted,
+    })
+  }
+
+  function startNewCaravan(): void {
+    setValue('toWarehouseId', '')
+    setValue('newCaravan', {
+      ...EMPTY_NEW_CARAVAN,
+      hostBranchId: currentUserBranchId ?? '',
+      startDate: today,
+    })
+  }
 
   const fromLabel = warehouses.find((w) => w.id === fromId)
 
@@ -725,59 +522,48 @@ export default function CreateTransferModal({
   // exact same string in two places on screen at once (the row's own error
   // and this panel) would make `getByText` locators in e2e specs ambiguous.
   const issues = useMemo(() => {
-    if (!isSubmitted && !consignSubmitTried) return []
+    if (!isSubmitted) return []
     const out: string[] = []
-    if (isConsignment) {
-      if (!fromId) out.push('Pick the branch these units are leaving.')
-      if (consignDestinationMissing) out.push('Say where the units are going.')
-      if (consignEventNameMissing) out.push('Name the caravan event.')
-      if (consignNothingPicked) out.push('Tick at least one unit to send out.')
-      if (consignEventEndInvalid) out.push('The event ends before it starts.')
-      return out
-    }
     if (errors.fromWarehouseId) out.push(errors.fromWarehouseId.message ?? 'Source is required')
     if (errors.toWarehouseId) out.push(errors.toWarehouseId.message ?? 'Destination is required')
+    const caravanErr = errors.newCaravan
+    if (caravanErr?.hostBranchId) out.push('New caravan: choose its host branch.')
+    if (caravanErr?.eventName) out.push('New caravan: give the event a name.')
+    if (caravanErr?.startDate || caravanErr?.endDate)
+      out.push('New caravan: check the event dates.')
     if (errors.transferDate) out.push(errors.transferDate.message ?? 'Transfer date is required')
     if (errors.expectedArrival) out.push(errors.expectedArrival.message ?? '')
     watchedLines.forEach((line, i) => {
       const lineErr = errors.lines?.[i]
       if (!lineErr) return
       const label = line?.itemId ? `Line ${i + 1}` : `Line ${i + 1} — no item picked yet`
-      if (lineErr.itemId) out.push(`${label}: pick an item.`)
+      if (lineErr.itemId) {
+        out.push(
+          line?.itemId
+            ? `${label}: not serial-tracked, so it can't go to a caravan.`
+            : `${label}: pick an item.`
+        )
+      }
       if (lineErr.quantity) out.push(`${label}: quantity needs a fix.`)
     })
     if (typeof errors.lines?.message === 'string') out.push(errors.lines.message)
     if (errors.lines?.root?.message) out.push(errors.lines.root.message)
     return out.filter(Boolean)
-  }, [
-    isSubmitted,
-    consignSubmitTried,
-    errors,
-    watchedLines,
-    isConsignment,
-    fromId,
-    consignDestinationMissing,
-    consignEventNameMissing,
-    consignNothingPicked,
-    consignEventEndInvalid,
-  ])
+  }, [isSubmitted, errors, watchedLines])
 
   if (!isOpen) return null
 
-  // Consignment never goes through handleSubmit — the transfer resolver
-  // would reject it for the missing destination it legitimately doesn't
-  // have. This is the whole submit path for that mode.
-  async function handleConsignSubmit() {
-    setConsignSubmitTried(true)
-    if (consignInvalid || !onConsign) return
-    const result = await onConsign(pickedSerialIds, {
-      destinationKind: destKind,
-      ...(destKind === 'venue' ? { venue: venue.trim() } : { hostBranchId }),
-      eventName: eventName.trim(),
-      ...(eventStart && { eventStartDate: eventStart }),
-      ...(eventEnd && { eventEndDate: eventEnd }),
-    })
-    if (result.success) onClose()
+  // Scenario 60 — a new caravan is created before the transfer, and the
+  // form is switched over to it as an existing caravan straight away: if the
+  // transfer then fails, a retry reuses the caravan instead of making another.
+  async function resolveDestination(data: CreateTransferFormValues): Promise<string | null> {
+    if (!data.newCaravan) return data.toWarehouseId
+    if (!onCreateCaravan) return null
+    const created = await onCreateCaravan(data.newCaravan)
+    if (!created.success || !created.data) return null
+    setValue('newCaravan', undefined)
+    setValue('toWarehouseId', created.data.warehouseId)
+    return created.data.warehouseId
   }
 
   async function handleFormSubmit(data: CreateTransferFormValues) {
@@ -795,8 +581,13 @@ export default function CreateTransferModal({
       return [{ itemId: line.itemId, quantity }]
     })
 
+    const toWarehouseId = await resolveDestination(data)
+    if (!toWarehouseId) return
+
     const result = await onSubmit({
       ...data,
+      toWarehouseId,
+      newCaravan: undefined,
       lines,
       // Fields are defaulted to '' (not undefined) so their inputs stay
       // controlled from mount — but the backend DTO's @IsOptional() only
@@ -821,16 +612,12 @@ export default function CreateTransferModal({
             <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-[#17171c]">
               {isEditing
                 ? `Edit Request ${editing?.transferNumber ?? ''}`.trim()
-                : isConsignment
-                  ? 'Send Stock Out on Caravan'
-                  : 'New Stock Transfer'}
+                : 'New Stock Transfer'}
             </h2>
             <p className="mt-1 text-[13px] text-[#5b5b6b]">
               {isEditing
                 ? 'Saving resubmits this request for approval from the start — any sign-off it already has is cleared.'
-                : isConsignment
-                  ? 'Takes effect immediately — no approval, no dispatch. The units stay on your books and stay sellable here.'
-                  : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
+                : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
             </p>
           </div>
           <button
@@ -856,29 +643,8 @@ export default function CreateTransferModal({
               <div className="rounded-xl border border-[#e4e4e9] bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-[18px] py-[13px]">
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
-                    {isConsignment ? 'Consignment details' : 'Transfer details'}
+                    Transfer details
                   </span>
-                  {/* Two different operations sharing one screen, so the
-                      switch sits at the top of the card rather than inside
-                      the route: everything below it changes meaning.
-                      Absent while editing — a consignment is not a transfer
-                      (ownership never moves, there is no dispatch and no
-                      receipt), so an existing transfer cannot be turned into
-                      one, and the endpoint behind it takes no transfer id. */}
-                  {!isEditing && (
-                    <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-[#3d3d4a]">
-                      <input
-                        type="checkbox"
-                        checked={isConsignment}
-                        onChange={(e) => setIsConsignment(e.target.checked)}
-                        className="h-3.5 w-3.5 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
-                      />
-                      <span className="font-medium">This is a consignment</span>
-                      <span className="text-[#8b8b9b]">
-                        — a caravan: stock goes out, stays on your books
-                      </span>
-                    </label>
-                  )}
                 </div>
                 <div className="flex flex-col gap-4 px-[18px] py-4">
                   <div>
@@ -893,8 +659,7 @@ export default function CreateTransferModal({
                     <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
                       <div>
                         <label className={labelClass}>
-                          {isConsignment ? 'Host branch' : 'From'}{' '}
-                          <span className="text-[#b42318]">*</span>
+                          From <span className="text-[#b42318]">*</span>
                         </label>
                         <Controller
                           name="fromWarehouseId"
@@ -905,15 +670,20 @@ export default function CreateTransferModal({
                               onChange={field.onChange}
                               placeholder="Search source branch…"
                               chrome={CONTROL_CHROME}
+                              // A Branch Manager's own branch is normally the
+                              // destination, never the source — except when
+                              // it is sending to a caravan it hosts.
                               options={warehouses
-                                .filter((wh) => wh.id !== lockedToWarehouseId)
+                                .filter(
+                                  (wh) => isCaravanDestination || wh.id !== lockedToWarehouseId
+                                )
                                 .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
                             />
                           )}
                         />
                         <p className="mt-1 text-[11px] text-[#5b5b6b]">
-                          {isConsignment
-                            ? 'Whose stock goes out — and whose books it stays on.'
+                          {isCaravanBranch(fromWarehouse?.branch)
+                            ? `Caravan stock, recorded under ${fromWarehouse?.branch?.hostBranch?.name ?? 'its host branch'}.`
                             : 'Stock leaves here.'}
                         </p>
                         {errors.fromWarehouseId && (
@@ -932,190 +702,152 @@ export default function CreateTransferModal({
 
                       <div>
                         <label className={labelClass}>
-                          {isConsignment ? 'Goes to' : 'To'}{' '}
-                          <span className="text-[#b42318]">*</span>
+                          To <span className="text-[#b42318]">*</span>
                         </label>
+                        <div
+                          role="radiogroup"
+                          aria-label="Destination type"
+                          className="mb-2 flex gap-1.5"
+                        >
+                          {(
+                            [
+                              { value: 'branch', label: 'Branch' },
+                              { value: 'caravan', label: 'Caravan' },
+                            ] as const
+                          ).map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={destinationType === opt.value}
+                              onClick={() => switchDestinationType(opt.value)}
+                              className={`flex-1 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-medium ${
+                                destinationType === opt.value
+                                  ? 'border-[#5b21b6] bg-[#f1ebfb] text-[#3f1490]'
+                                  : 'border-[#d3d3db] bg-white text-[#5b5b6b] hover:bg-[#fafafb]'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
 
-                        {isConsignment ? (
-                          <>
-                            {/* Branch or venue are genuinely different
-                                outcomes, not two spellings of one: a host
-                                branch takes the stock in and sells it, a
-                                venue is only a place it sits. */}
-                            <div className="mb-2 flex gap-1.5">
-                              {(
-                                [
-                                  { value: 'venue', label: 'A place' },
-                                  { value: 'branch', label: 'Another branch' },
-                                ] as const
-                              ).map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  onClick={() => setDestKind(opt.value)}
-                                  className={`flex-1 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-medium ${
-                                    destKind === opt.value
-                                      ? 'border-[#5b21b6] bg-[#f1ebfb] text-[#3f1490]'
-                                      : 'border-[#d3d3db] bg-white text-[#5b5b6b] hover:bg-[#fafafb]'
-                                  }`}
-                                >
-                                  {opt.label}
-                                </button>
-                              ))}
+                        {isCaravanDestination ? (
+                          isCreatingNewCaravan ? (
+                            <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-[#ddd0f7] bg-[#fcfaff] px-3 py-2 text-[12.5px] text-[#3f1490]">
+                              <span>New caravan — enter its details below.</span>
+                              <button
+                                type="button"
+                                onClick={() => setValue('newCaravan', undefined)}
+                                className="shrink-0 text-[11.5px] font-medium hover:underline"
+                              >
+                                Use an existing caravan
+                              </button>
                             </div>
-
-                            {destKind === 'venue' ? (
-                              <input
-                                value={venue}
-                                onChange={(e) => setVenue(e.target.value)}
-                                type="text"
-                                placeholder="e.g. Lemery Town Fair"
-                                className={
-                                  consignSubmitTried && consignDestinationMissing
-                                    ? `${inputClass} border-[#b42318]`
-                                    : inputClass
-                                }
+                          ) : (
+                            <>
+                              <Controller
+                                name="toWarehouseId"
+                                control={control}
+                                render={({ field }) => (
+                                  <SearchableSelect
+                                    value={field.value ?? ''}
+                                    onChange={field.onChange}
+                                    placeholder="Search ongoing caravans…"
+                                    chrome={CONTROL_CHROME}
+                                    options={caravanDestinations.map((wh) => ({
+                                      value: wh.id,
+                                      label: [warehouseLabel(wh), caravanDates(wh)]
+                                        .filter(Boolean)
+                                        .join(' · '),
+                                    }))}
+                                  />
+                                )}
                               />
-                            ) : (
-                              <SearchableSelect
-                                value={hostBranchId}
-                                onChange={setHostBranchId}
-                                placeholder="Search host branch…"
-                                chrome={CONTROL_CHROME}
-                                options={hostBranchOptions}
-                              />
-                            )}
-                            <p className="mt-1 text-[11px] text-[#5b5b6b]">
-                              {destKind === 'venue'
-                                ? 'Any place with no branch of ours — a fair, a dealer, a town. These units stay yours and stay sellable here.'
-                                : 'The host sells these units while they are there; they stay on your books.'}
-                            </p>
-                            {consignSubmitTried && consignDestinationMissing && (
-                              <p className="mt-1 text-[11.5px] text-[#b42318]">
-                                Say where the units are going.
-                              </p>
-                            )}
-                          </>
+                              {caravanDestinations.length === 0 && (
+                                <p className="mt-1 text-[11px] text-[#5b5b6b]">
+                                  {currentUserBranchId
+                                    ? 'No ongoing caravans hosted at your branch.'
+                                    : 'No ongoing caravans.'}
+                                </p>
+                              )}
+                              {canCreateCaravan && !isEditing && (
+                                <button
+                                  type="button"
+                                  onClick={startNewCaravan}
+                                  className="mt-1.5 flex items-center gap-1 text-[12px] font-medium text-[#5b21b6] hover:underline"
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                  New caravan
+                                </button>
+                              )}
+                            </>
+                          )
                         ) : (
-                          <>
-                            <Controller
-                              name="toWarehouseId"
-                              control={control}
-                              render={({ field }) =>
-                                lockedToWarehouseId ? (
-                                  <SearchableSelect
-                                    value={field.value ?? ''}
-                                    onChange={field.onChange}
-                                    disabled
-                                    chrome={CONTROL_CHROME}
-                                    options={[
-                                      {
-                                        value: lockedToWarehouseId,
-                                        label: branchLabel(ownBranchWarehouses[0]),
-                                      },
-                                    ]}
-                                  />
-                                ) : (
-                                  <SearchableSelect
-                                    value={field.value ?? ''}
-                                    onChange={field.onChange}
-                                    placeholder="Search destination branch…"
-                                    chrome={CONTROL_CHROME}
-                                    options={(currentUserBranchId
-                                      ? ownBranchWarehouses
-                                      : warehouses
-                                    )
-                                      .filter((wh) => wh.id !== fromId)
-                                      .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
-                                  />
-                                )
-                              }
-                            />
-                            <p className="mt-1 text-[11px] text-[#5b5b6b]">
-                              {lockedToWarehouseId
-                                ? 'Requests are always routed to your own branch.'
-                                : 'Stock arrives here.'}
-                            </p>
-                            {errors.toWarehouseId && (
-                              <p className="mt-1 text-[11.5px] text-[#b42318]">
-                                {errors.toWarehouseId.message}
-                              </p>
-                            )}
-                          </>
+                          <Controller
+                            name="toWarehouseId"
+                            control={control}
+                            render={({ field }) =>
+                              lockedToWarehouseId ? (
+                                <SearchableSelect
+                                  value={field.value ?? ''}
+                                  onChange={field.onChange}
+                                  disabled
+                                  chrome={CONTROL_CHROME}
+                                  options={[
+                                    {
+                                      value: lockedToWarehouseId,
+                                      label: branchLabel(ownBranchWarehouses[0]),
+                                    },
+                                  ]}
+                                />
+                              ) : (
+                                <SearchableSelect
+                                  value={field.value ?? ''}
+                                  onChange={field.onChange}
+                                  placeholder="Search destination branch…"
+                                  chrome={CONTROL_CHROME}
+                                  options={branchDestinations.map((wh) => ({
+                                    value: wh.id,
+                                    label: branchLabel(wh),
+                                  }))}
+                                />
+                              )
+                            }
+                          />
+                        )}
+                        <p className="mt-1 text-[11px] text-[#5b5b6b]">
+                          {isCaravanDestination
+                            ? 'Serial-tracked items only. The host branch receives and sells caravan stock.'
+                            : lockedToWarehouseId
+                              ? 'Requests are always routed to your own branch.'
+                              : 'Stock arrives here.'}
+                        </p>
+                        {errors.toWarehouseId && (
+                          <p className="mt-1 text-[11.5px] text-[#b42318]">
+                            {errors.toWarehouseId.message}
+                          </p>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  {isConsignment && (
-                    <div className="rounded-[10px] border border-[#ddd0f7] bg-[#fcfaff] p-3.5">
-                      <p
-                        className={`${MONO} mb-2.5 text-[10px] tracking-[0.09em] text-[#7c4fd1] uppercase`}
-                      >
-                        Caravan event
-                      </p>
-                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
-                        <div>
-                          <label className={labelClass}>
-                            Name <span className="text-[#b42318]">*</span>
-                          </label>
-                          <input
-                            value={eventName}
-                            onChange={(e) => setEventName(e.target.value)}
-                            type="text"
-                            placeholder="e.g. Iloilo Appliance Fair 2026"
-                            className={
-                              consignSubmitTried && consignEventNameMissing
-                                ? `${inputClass} border-[#b42318]`
-                                : inputClass
-                            }
-                          />
-                          {consignSubmitTried && consignEventNameMissing && (
-                            <p className="mt-1 text-[11.5px] text-[#b42318]">
-                              Name the event this stock is going out for.
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <label className={labelClass}>Starts</label>
-                          <input
-                            value={eventStart}
-                            onChange={(e) => setEventStart(e.target.value)}
-                            type="date"
-                            className={inputClass}
-                          />
-                        </div>
-                        <div>
-                          <label className={labelClass}>Ends</label>
-                          <input
-                            value={eventEnd}
-                            onChange={(e) => setEventEnd(e.target.value)}
-                            type="date"
-                            className={
-                              consignEventEndInvalid ? `${inputClass} border-[#b42318]` : inputClass
-                            }
-                          />
-                          {consignEventEndInvalid && (
-                            <p className="mt-1 text-[11.5px] text-[#b42318]">
-                              Must be on or after the start.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                  {isCreatingNewCaravan && (
+                    <NewCaravanFields
+                      control={control}
+                      errors={errors}
+                      hostBranchOptions={hostBranchOptions}
+                      hostLocked={!!currentUserBranchId}
+                    />
                   )}
-
+                  {isCaravanDestination && !isCreatingNewCaravan && toWarehouse && (
+                    <CaravanSummary warehouse={toWarehouse} />
+                  )}
                   {/* Same column template as the route grid above (with an
                       empty cell where the arrow sits) so Transfer date lines
                       up under the source and Expected arrival under the
-                      destination — the dates belong to those two ends. A
-                      consignment has no such journey: nothing is dispatched
-                      and nothing arrives, so these don't apply to it. */}
-                  <div
-                    className={`grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] ${
-                      isConsignment ? 'hidden' : ''
-                    }`}
-                  >
+                      destination — the dates belong to those two ends. */}
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
                     <div>
                       <label className={labelClass}>
                         Transfer date <span className="text-[#b42318]">*</span>
@@ -1154,7 +886,7 @@ export default function CreateTransferModal({
                     </div>
                   </div>
 
-                  <div className={isConsignment ? 'hidden' : undefined}>
+                  <div>
                     <label className={labelClass}>Reason</label>
                     <Controller
                       name="reason"
@@ -1174,7 +906,7 @@ export default function CreateTransferModal({
                       Stock Request flow. Both paths stay available; this only
                       changes whether the destination branch's manager has to
                       approve first. */}
-                  {canSkipApproval && !isConsignment && (
+                  {canSkipApproval && (
                     <div className="rounded-lg border border-[#e4e4e9] bg-[#faf9fb] px-3 py-2.5">
                       <label className="flex items-start gap-2 text-[13px] text-[#3d3d4a]">
                         <Controller
@@ -1222,8 +954,7 @@ export default function CreateTransferModal({
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-[18px] py-[13px]">
                 <div className="flex items-center gap-2.5">
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
-                    {isConsignment ? 'Units going out' : 'Items to transfer'}{' '}
-                    <span className="text-[#b42318]">*</span>
+                    Items to transfer <span className="text-[#b42318]">*</span>
                   </span>
                   <span className={`${MONO} text-[11px] text-[#5b5b6b]`}>
                     {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totalUnits} units
@@ -1268,14 +999,14 @@ export default function CreateTransferModal({
                   className={`${MONO} hidden items-center gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[10px] font-semibold tracking-[.09em] text-[#8b8b9b] uppercase sm:grid sm:grid-cols-[minmax(0,1fr)_96px_40px]`}
                 >
                   <span>Item / SKU</span>
-                  <span className="text-center">{isConsignment ? 'Picked' : 'Units'}</span>
+                  <span className="text-center">Units</span>
                   <span />
                 </div>
               )}
 
               {/* Said once for the whole card rather than per row — it's how
                   serial-tracked transfers work, not a fact about one line. */}
-              {hasSerialTrackedLine && !isConsignment && (
+              {hasSerialTrackedLine && (
                 <p className="border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[11.5px] text-[#5b5b6b]">
                   Serial-tracked — the source picks which exact units leave when they dispatch.
                 </p>
@@ -1287,10 +1018,8 @@ export default function CreateTransferModal({
                   <p className="text-[13.5px] font-semibold text-[#17171c]">No items yet</p>
                   <p className="max-w-[420px] text-[12px] leading-relaxed text-[#5b5b6b]">
                     Use the search above to add stock held at{' '}
-                    {fromLabel ? branchLabel(fromLabel) : 'the source branch'}
-                    {isConsignment
-                      ? ', then tick the exact units going out.'
-                      : ', then say how many units you need.'}
+                    {fromLabel ? branchLabel(fromLabel) : 'the source branch'}, then say how many
+                    units you need.
                   </p>
                 </div>
               )}
@@ -1305,16 +1034,7 @@ export default function CreateTransferModal({
                     onRemove={() => remove(index)}
                     itemError={errors.lines?.[index]?.itemId?.message}
                     quantityError={errors.lines?.[index]?.quantity?.message}
-                    consignMode={isConsignment}
-                    pickedSerialIds={pickedByLine[field.id] ?? EMPTY_IDS}
-                    onPickedSerialIdsChange={(ids) =>
-                      setPickedByLine((prev) => ({ ...prev, [field.id]: ids }))
-                    }
-                    serialError={
-                      consignSubmitTried && consignNothingPicked
-                        ? 'Tick at least one unit to send out.'
-                        : undefined
-                    }
+                    caravanLeg={caravanLeg}
                     initialItemLabel={
                       initialDraft && watchedLines[index]?.itemId === initialDraft.itemId
                         ? initialDraft.itemLabel
@@ -1326,7 +1046,7 @@ export default function CreateTransferModal({
             </div>
 
             {/* Validation issues — only once a submit has actually been tried */}
-            {(isSubmitted || consignSubmitTried) && issues.length > 0 && (
+            {isSubmitted && issues.length > 0 && (
               <div className="rounded-xl border border-[#f3c9c5] bg-white p-[15px]">
                 <div className="mb-2.5 flex items-center gap-2">
                   <AlertTriangle className="h-3.5 w-3.5 text-[#b42318]" />
@@ -1350,9 +1070,7 @@ export default function CreateTransferModal({
         {/* Sticky footer */}
         <div className="flex shrink-0 items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
           <div className="hidden sm:flex flex-col gap-0.5">
-            <span className="text-[11px] text-[#5b5b6b]">
-              {isConsignment ? 'Units going out' : 'Units selected'}
-            </span>
+            <span className="text-[11px] text-[#5b5b6b]">Units selected</span>
             <span className={`${MONO} text-[16px] font-semibold tracking-[-0.01em] text-[#17171c]`}>
               {totalUnits}
             </span>
@@ -1366,37 +1084,22 @@ export default function CreateTransferModal({
             >
               Cancel
             </button>
-            {/* A consignment doesn't go through the form's resolver (it
-                isn't a CreateTransferFormValues), so it can't ride the
-                submit event — it's a button with its own handler. */}
-            {isConsignment ? (
-              <button
-                type="button"
-                onClick={handleConsignSubmit}
-                disabled={isConsigning}
-                className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
-              >
-                {isConsigning && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isConsigning
-                  ? 'Consigning…'
-                  : `Consign ${totalUnits} ${totalUnits === 1 ? 'Unit' : 'Units'}`}
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={isSubmitting || arrivalBeforeTransfer}
-                className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
-              >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isSubmitting
+            <button
+              type="submit"
+              disabled={isSubmitting || isCreatingCaravan || arrivalBeforeTransfer}
+              className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
+            >
+              {(isSubmitting || isCreatingCaravan) && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isCreatingCaravan
+                ? 'Creating caravan…'
+                : isSubmitting
                   ? isEditing
                     ? 'Saving…'
                     : 'Submitting…'
                   : isEditing
                     ? 'Save & Resubmit'
                     : 'Submit Request'}
-              </button>
-            )}
+            </button>
           </div>
         </div>
       </form>

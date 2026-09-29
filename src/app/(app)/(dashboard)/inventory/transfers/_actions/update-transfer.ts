@@ -37,9 +37,13 @@ export async function updateTransfer(
   // Same '' -> undefined normalization createTransfer does, and for the same
   // reason: the backend's @IsOptional() excuses undefined, not an empty
   // string, so a blank Expected Arrival would fail @IsDateString().
+  // Form-only fields (Scenario 60) — never part of the request.
+  const data = { ...parsed.data }
+  delete data.destinationType
+  delete data.newCaravan
   const result = await api.patch<{ id: string; status: string }>(`/inventory/transfers/${id}`, {
-    ...parsed.data,
-    expectedArrival: parsed.data.expectedArrival || undefined,
+    ...data,
+    expectedArrival: data.expectedArrival || undefined,
   })
 
   if (!result.success) {
