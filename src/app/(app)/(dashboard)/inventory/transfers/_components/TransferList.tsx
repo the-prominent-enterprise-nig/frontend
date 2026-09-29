@@ -13,6 +13,7 @@ import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/pr
 import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
 import { LocationName, STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
+import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 
 // The five stages the design tracks: the three live ones plus both terminal
 // outcomes, so the band reads as the whole life of a transfer rather than
@@ -395,6 +396,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
             )}
           </div>
         </div>
+
+        {/* Scenario 60 Part 3 — ended caravans still holding stock, for the
+            people who can transfer it out. */}
+        <EndedCaravansBanner variant="inventory" enabled={canCreate} />
 
         {/* Pipeline band */}
         <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#e4e4e9] bg-white lg:grid-cols-5">

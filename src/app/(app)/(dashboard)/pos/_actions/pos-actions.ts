@@ -2442,6 +2442,8 @@ export interface SerialNumberRecord {
   openTransfer?: { transferNumber: string } | null
 }
 
+// `forSale` (Scenario 60 Part 3): a caravan this branch hosts stops being
+// sellable once its event has ended — its units must be transferred out.
 export async function getAvailableSerialNumbers(
   itemId: string,
   branchId?: string
@@ -2449,7 +2451,7 @@ export async function getAvailableSerialNumbers(
   try {
     type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
     const result = await api.get<Envelope>(
-      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock${branchId ? `&branchId=${branchId}` : ''}`
+      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock&forSale=true${branchId ? `&branchId=${branchId}` : ''}`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch serial numbers' }
@@ -2477,7 +2479,7 @@ export async function searchSerialsAcrossItems(
   try {
     type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
     const result = await api.get<Envelope>(
-      `/inventory/serial-numbers?search=${encodeURIComponent(query)}&status=in_stock&limit=10${branchId ? `&branchId=${branchId}` : ''}`
+      `/inventory/serial-numbers?search=${encodeURIComponent(query)}&status=in_stock&forSale=true&limit=10${branchId ? `&branchId=${branchId}` : ''}`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to search serial numbers' }

@@ -33,7 +33,10 @@ function unitStatusRank(status: SerialStatus): number {
   return i === -1 ? UNIT_STATUS_ORDER.length : i
 }
 
-export function useSerialNumbers() {
+export function useSerialNumbers(
+  // Scenario 60 Part 3 — opens straight onto one caravan (`?caravan=` deep link).
+  opts: { initialCaravanId?: string } = {}
+) {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
@@ -51,8 +54,8 @@ export function useSerialNumbers() {
   // got there on an ordinary Stock Transfer). No caravan picked means every
   // caravan; a branch-restricted viewer only ever sees the caravans their
   // own branch hosts, enforced server-side.
-  const [caravanView, setCaravanView] = useState(false)
-  const [caravanId, setCaravanId] = useState<string | undefined>(undefined)
+  const [caravanView, setCaravanView] = useState(!!opts.initialCaravanId)
+  const [caravanId, setCaravanId] = useState<string | undefined>(opts.initialCaravanId)
 
   // Scenario 60 — the Caravan tab is one list: a row per item per caravan
   // that opens onto its units. Rows start closed, except while searching,

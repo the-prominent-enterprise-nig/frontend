@@ -69,6 +69,34 @@ export function isCaravanEnded(branch: WarehouseBranch | null | undefined): bool
   return branch.endDate.slice(0, 10) < new Date().toISOString().slice(0, 10)
 }
 
+// Scenario 60 Part 3 — a caravan that needs attention: running (counting
+// down to its end date) or ended with stock still in it, which has to be
+// transferred out. See GET /inventory/caravans/alerts.
+export const CaravanAlertSchema = WarehouseBranchSchema.extend({
+  ended: z.boolean(),
+  warehouseId: z.string().nullable(),
+  unitsHeld: z.number(),
+})
+export type CaravanAlert = z.infer<typeof CaravanAlertSchema>
+
+/** Whole days from today to a caravan's end date — 0 on its last day,
+ * negative once it has ended. Null when it has no end date. */
+export function caravanDaysLeft(endDate: string | null | undefined): number | null {
+  if (!endDate) return null
+  const today = Date.parse(new Date().toISOString().slice(0, 10))
+  return Math.round((Date.parse(endDate.slice(0, 10)) - today) / 86_400_000)
+}
+
+/** "Ends today", "3 days left", "Ended 2 days ago". */
+export function caravanCountdown(endDate: string | null | undefined): string {
+  const days = caravanDaysLeft(endDate)
+  if (days === null) return 'No end date'
+  if (days === 0) return 'Ends today'
+  if (days > 0) return `${days} ${days === 1 ? 'day' : 'days'} left`
+  const ago = -days
+  return `Ended ${ago === 1 ? 'yesterday' : `${ago} days ago`}`
+}
+
 /**
  * How a warehouse reads anywhere a location is named. Each branch has one
  * warehouse, so it shows as its branch; a caravan says so outright and names

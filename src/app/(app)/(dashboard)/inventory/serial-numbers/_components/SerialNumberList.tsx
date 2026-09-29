@@ -17,6 +17,8 @@ import {
 import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import CaravanItemTable from './CaravanItemTable'
+import CaravanCountdownStrip from './CaravanCountdownStrip'
+import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import CopySerialButton from './CopySerialButton'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
@@ -90,7 +92,13 @@ function MetricCell({
   )
 }
 
-export default function SerialNumberList({ session }: { session: SessionUser }) {
+export default function SerialNumberList({
+  session,
+  initialCaravanId,
+}: {
+  session: SessionUser
+  initialCaravanId?: string
+}) {
   const { pushPanel } = useUIShell()
   const canManage = hasPermission(session, INVENTORY_PERMISSIONS.SERIAL_MANAGE)
   const canTransfer = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
@@ -132,7 +140,12 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     isGroupOpen,
     toggleGroup,
     groupSerials,
-  } = useSerialNumbers()
+  } = useSerialNumbers({ initialCaravanId })
+
+  const openCaravan = (id: string): void => {
+    setCaravanView(true)
+    setCaravanId(id)
+  }
 
   const brandOptions = useMemo(() => {
     const seen = new Map<string, string>()
@@ -216,6 +229,13 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           </div>
         )}
 
+        {/* Scenario 60 Part 3 — ended caravans still holding stock. The
+            Caravan tab's own cards already show them, so only on All Serials.
+            Gated on transfers:create: those are the people who can act. */}
+        {!caravanView && (
+          <EndedCaravansBanner variant="inventory" enabled={canTransfer} onView={openCaravan} />
+        )}
+
         {/* Scenario 08 (Caravan) Part 2 — tabs */}
         <div className="flex gap-1 border-b border-[#e4e4e9]">
           <button
@@ -242,6 +262,10 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
             Caravan
           </button>
         </div>
+
+        {caravanView && canTransfer && (
+          <CaravanCountdownStrip selectedId={caravanId} onSelect={setCaravanId} />
+        )}
 
         {/* Filter bar */}
         <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3">
