@@ -13,6 +13,7 @@ import { getTransfers } from '../_actions/get-transfers'
 import { getTransfer } from '../_actions/get-transfer'
 import { createTransfer } from '../_actions/create-transfer'
 import { createCaravan } from '../_actions/create-caravan'
+import { updateCaravan } from '../_actions/update-caravan'
 import { dispatchTransfer } from '../_actions/dispatch-transfer'
 import { receiveTransfer } from '../_actions/receive-transfer'
 import { cancelTransfer } from '../_actions/cancel-transfer'
@@ -214,6 +215,23 @@ export function useTransferManager() {
       } else {
         showToast({
           title: 'Failed to create the caravan',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  // A caravan's details edited from Edit Request, saved before the request.
+  const updateCaravanMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: NewCaravanFormValues }) =>
+      updateCaravan(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        queryClient.invalidateQueries({ queryKey: ['inventory-warehouses-lookup'] })
+      } else {
+        showToast({
+          title: 'Failed to update the caravan',
           description: result.message,
           status: 'error',
         })
@@ -486,6 +504,10 @@ export function useTransferManager() {
 
     createCaravan: (data: NewCaravanFormValues) => createCaravanMutation.mutateAsync(data),
     isCreatingCaravan: createCaravanMutation.isPending,
+
+    updateCaravan: (id: string, data: NewCaravanFormValues) =>
+      updateCaravanMutation.mutateAsync({ id, data }),
+    isUpdatingCaravan: updateCaravanMutation.isPending,
 
     approveHqTransfer: approveHqMutation.mutateAsync,
     isApprovingHq: approveHqMutation.isPending,

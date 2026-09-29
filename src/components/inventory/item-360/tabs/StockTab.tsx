@@ -169,14 +169,16 @@ export default function StockTab({
   // shown here, with its status, so its absence from a pick isn't a mystery.
   const startTransfer = (warehouseId: string, serialIds: string[]) => {
     if (serialIds.length === 0) return
-    // The ticked units travel as-is: the transfer line opens in pick-serials
-    // mode with them chosen, and dispatch ships exactly those.
+    // Only the count travels, not the ids: which physical units leave is the
+    // source branch's call at dispatch (see the backend's
+    // assignDispatchSerials), so a pick made here would be a promise the
+    // transfer can't keep. Ticking units is still the natural way to say
+    // "these many of these" — it just resolves to a quantity.
     const params = new URLSearchParams({
       prefillFromWarehouseId: warehouseId,
       prefillItemId: itemId,
       prefillItemLabel: itemLabel,
       prefillQty: String(serialIds.length),
-      prefillSerialIds: serialIds.join(','),
     })
     // The drawer lives in the shell store, not the route, so navigating alone
     // would leave it open on top of the Create Transfer modal.

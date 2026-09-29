@@ -57,6 +57,7 @@ import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
 import { searchVehicles } from '../_actions/search-vehicles'
 import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
 import { warehouseLabel } from '@/src/schema/inventory/warehouses'
+import { LocationName } from './transferStatus'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 
 /** A transfer line's unit, opening its history when the line has one. */
@@ -1147,9 +1148,11 @@ export default function TransferDetailModal({
                   <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
                     From · Supplying branch
                   </p>
-                  <p className="mt-1 truncate text-[16px] font-semibold">
-                    {branchLabel(transfer.fromWarehouse)}
-                  </p>
+                  <LocationName
+                    wh={transfer.fromWarehouse}
+                    className="mt-1 text-[16px] font-semibold"
+                    subtitleClassName="text-[12px] text-[#5b5b6b]"
+                  />
                   <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
                     Sends the stock · deducted on dispatch
                   </p>
@@ -1161,9 +1164,11 @@ export default function TransferDetailModal({
                   <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
                     To · Requesting branch
                   </p>
-                  <p className="mt-1 truncate text-[16px] font-semibold">
-                    {branchLabel(transfer.toWarehouse)}
-                  </p>
+                  <LocationName
+                    wh={transfer.toWarehouse}
+                    className="mt-1 text-[16px] font-semibold"
+                    subtitleClassName="text-[12px] text-[#5b5b6b]"
+                  />
                   <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
                     Asked for the stock · added on receipt
                   </p>
@@ -1180,10 +1185,10 @@ export default function TransferDetailModal({
                 value={transfer.expectedArrival ? formatDateOnly(transfer.expectedArrival) : null}
               />
               <Fact
-                label="Requested By"
+                label="Approved By"
                 value={
-                  transfer.requestedByName
-                    ? `${transfer.requestedByName} · ${branchLabel(transfer.toWarehouse)}`
+                  transfer.acceptedByName
+                    ? `${transfer.acceptedByName} · ${branchLabel(transfer.fromWarehouse)}`
                     : null
                 }
               />
@@ -1516,7 +1521,7 @@ export default function TransferDetailModal({
                   <LedgerEvent
                     icon={<Truck className="h-3.5 w-3.5" />}
                     label={`Dispatched — stock deducted from ${branchLabel(transfer.fromWarehouse, 'source')}`}
-                    timestamp={transfer.dispatchedAt ?? transfer.transferDate}
+                    timestamp={transfer.dispatchedAt}
                     color="text-blue-700 bg-blue-100"
                   />
                 )}
@@ -1524,7 +1529,7 @@ export default function TransferDetailModal({
                   <LedgerEvent
                     icon={<CheckCircle className="h-3.5 w-3.5" />}
                     label={`Received — stock added to ${branchLabel(transfer.toWarehouse, 'destination')}`}
-                    timestamp={transfer.receivedAt}
+                    timestamp={transfer.receivedDate}
                     color="text-green-700 bg-green-100"
                   />
                 )}
@@ -1532,7 +1537,7 @@ export default function TransferDetailModal({
                   <LedgerEvent
                     icon={<AlertTriangle className="h-3.5 w-3.5" />}
                     label="Partially received — see item table for shortfalls"
-                    timestamp={transfer.receivedAt}
+                    timestamp={transfer.receivedDate}
                     color="text-amber-700 bg-amber-100"
                   />
                 )}
@@ -2346,19 +2351,23 @@ function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; s
   // via an unscoped `modal.getByText(status, { exact: true })`, which a
   // second exact-text match here would turn into a Playwright strict-mode
   // violation.
+  // Each reached step shows the date it happened, like Request does. A step
+  // reached with no date on record falls back to a plain word, not a dash.
+  const dateOr = (iso: string | null | undefined, fallback: string): string =>
+    iso ? formatDateOnly(iso) : fallback
   const steps: { label: string; meta: string }[] = [
     { label: 'Request', meta: formatDateOnly(transfer.transferDate) },
     {
       label: 'Accept',
-      meta: doneAccepted ? (transfer.acceptedByName ?? 'Accepted') : 'Awaiting acceptance',
+      meta: doneAccepted ? dateOr(transfer.acceptedAt, 'Accepted') : 'Awaiting acceptance',
     },
     {
       label: 'Dispatch',
-      meta: doneDispatched ? `${totalQty} units sent` : 'Not dispatched',
+      meta: doneDispatched ? dateOr(transfer.dispatchedAt, 'Dispatched') : 'Not dispatched',
     },
     {
       label: 'Receive',
-      meta: receivedQty > 0 ? `${receivedQty} of ${totalQty} units` : 'Not received',
+      meta: receivedQty > 0 ? dateOr(transfer.receivedDate, 'Received') : 'Not received',
     },
   ]
 

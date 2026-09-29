@@ -12,7 +12,7 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
-import { STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
+import { LocationName, STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
 
 // The five stages the design tracks: the three live ones plus both terminal
 // outcomes, so the band reads as the whole life of a transfer rather than
@@ -193,6 +193,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     isUpdating,
     createCaravan,
     isCreatingCaravan,
+    updateCaravan,
+    isUpdatingCaravan,
     isCreating,
     approveHqTransfer,
     isApprovingHq,
@@ -263,14 +265,13 @@ export default function TransferList({ session }: { session: SessionUser }) {
     itemId: string
     itemLabel?: string
     quantity: number
-    serialIds?: string[]
   } | null>(null)
 
   // Item 360's Stock tab "Request transfer" deep-links here with a source
   // warehouse, an item and how many units — read once on mount, open straight
   // into a pre-filled create form, then strip the params so a refresh or Back
-  // doesn't silently reopen it. `prefillSerialIds` carries the exact units
-  // ticked there, so the line opens with those serials already picked.
+  // doesn't silently reopen it. Which physical units ship is decided by the
+  // source at dispatch, so only a count travels, never serial ids.
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -284,7 +285,6 @@ export default function TransferList({ session }: { session: SessionUser }) {
         itemId,
         itemLabel: searchParams.get('prefillItemLabel') ?? undefined,
         quantity,
-        serialIds: searchParams.get('prefillSerialIds')?.split(',').filter(Boolean),
       })
       setIsCreateOpen(true)
       router.replace('/inventory/transfers')
@@ -663,13 +663,15 @@ export default function TransferList({ session }: { session: SessionUser }) {
                         </td>
                         <td className="px-[18px] py-[13px]">
                           <div className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-[12.5px] text-[#5b5b6b]">
-                              {branchLabel(tr.fromWarehouse)}
-                            </span>
+                            <LocationName
+                              wh={tr.fromWarehouse}
+                              className="text-[12.5px] text-[#5b5b6b]"
+                            />
                             <ArrowRight className="h-3 w-3 shrink-0 text-[#c9c9d3]" />
-                            <span className="truncate text-[12.5px] font-semibold">
-                              {branchLabel(tr.toWarehouse)}
-                            </span>
+                            <LocationName
+                              wh={tr.toWarehouse}
+                              className="text-[12.5px] font-semibold"
+                            />
                             <DirectionTag direction={directionFor(tr, session.branchId)} />
                           </div>
                         </td>
@@ -767,7 +769,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
         isSubmitting={editingTransfer ? isUpdating : isCreating}
         editing={editingTransfer}
         onCreateCaravan={createCaravan}
-        isCreatingCaravan={isCreatingCaravan}
+        onUpdateCaravan={updateCaravan}
+        isCreatingCaravan={isCreatingCaravan || isUpdatingCaravan}
         canCreateCaravan={canManageCaravan}
         warehouses={warehouseOptions}
         currentUserBranchId={session.branchId}

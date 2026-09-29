@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { TransferStatus } from '@/src/schema/inventory/transfers'
 import { warehouseLabel } from '@/src/schema/inventory/warehouses'
+import { caravanSubtitle } from '@/src/libs/format/locationLabel'
 
 // Shared by the Transfers list and the Item 360 drawer's Transfers tab
 // (Scenario 56), so a transfer's status reads the same in both places.
@@ -88,6 +89,36 @@ export const STATUS_CONFIG: Record<
 // the event at its host (Scenario 60) — see warehouseLabel.
 export function branchLabel(wh: Parameters<typeof warehouseLabel>[0]): string {
   return warehouseLabel(wh)
+}
+
+/**
+ * A transfer's end, named as a branch. A caravan reads as its host branch
+ * ("Ajuy") with the event and location underneath ("Ajuy Caravan · Lemery"),
+ * so the name stays short where it sits in a row or a card.
+ */
+export function LocationName({
+  wh,
+  className = '',
+  subtitleClassName = 'text-[11px] text-[#8b8b9b]',
+}: {
+  wh: Parameters<typeof warehouseLabel>[0]
+  className?: string
+  subtitleClassName?: string
+}): React.ReactElement {
+  const branch = wh?.branch
+  if (!branch?.isTemporary) {
+    return <span className={`block truncate ${className}`}>{warehouseLabel(wh)}</span>
+  }
+  return (
+    <span className="block min-w-0">
+      <span className={`block truncate ${className}`}>
+        {branch.hostBranch?.name ?? warehouseLabel(wh)}
+      </span>
+      <span className={`block truncate font-normal ${subtitleClassName}`}>
+        {caravanSubtitle(branch)}
+      </span>
+    </span>
+  )
 }
 
 export function StatusChip({ status }: { status: TransferStatus }) {

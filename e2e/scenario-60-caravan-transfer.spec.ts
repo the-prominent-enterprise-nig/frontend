@@ -106,7 +106,7 @@ test.describe('Inventory — Caravan as a Stock Transfer destination', () => {
     await page.getByRole('button', { name: 'Close dialog' }).click()
   })
 
-  test('creates a caravan inline and sends stock to it, labelled with its event, location and host', async ({
+  test('creates a caravan inline and sends stock to it, labelled with its event name alone', async ({
     page,
   }) => {
     const stamp = Date.now()
@@ -120,7 +120,7 @@ test.describe('Inventory — Caravan as a Stock Transfer destination', () => {
 
     await turnOnForACaravan(page)
     const fields = page.getByTestId('new-caravan-fields')
-    const host = await pickComboboxOption(page, 'Search host branch…')
+    await pickComboboxOption(page, 'Search host branch…')
     await fillStable(fields.getByPlaceholder(/Fiesta Appliance Fair/), eventName)
     await fillStable(fields.getByPlaceholder(/SM City Bacolod/), 'E2E Town Plaza')
     // Ends today, so the caravan drops out of the branch lists by tomorrow.
@@ -134,10 +134,11 @@ test.describe('Inventory — Caravan as a Stock Transfer destination', () => {
       })
     }).toPass({ timeout: 30_000 })
 
-    const label = `Caravan · ${eventName} — E2E Town Plaza (hosted by ${host})`
-    await expect(page.locator('tbody tr', { hasText: eventName }).first()).toContainText(label, {
-      timeout: 15_000,
-    })
+    // The event is named "…Caravan…", so the label is the name alone — no
+    // "Caravan ·" prefix, location or host.
+    const row = page.locator('tbody tr', { hasText: eventName }).first()
+    await expect(row).toContainText(eventName, { timeout: 15_000 })
+    await expect(row).not.toContainText('hosted by')
 
     // Cleanup: cancel the request and retire the caravan.
     const transferId = await findStockTransferIdByReason(page.request, reason)

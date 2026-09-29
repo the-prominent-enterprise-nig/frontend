@@ -30,20 +30,25 @@ type CaravanFields = {
 
 /**
  * Scenario 60 — a caravan is a temporary branch set up at a real host branch
- * for an event. It always says so outright, with its location and host, so
- * no one mistakes event stock for a branch of its own:
- * "Caravan · Bago Town Fiesta — SM City Bacolod (hosted by Bago)".
+ * for an event. Its label stays short enough to sit in a column or a picker:
+ * the event, marked as a caravan unless its own name already says so —
+ * "Caravan · Bago Town Fiesta", "Ajuy Caravan". Location and host are shown
+ * where there is room for them (the Caravan tab's own columns), not here.
  */
 export function caravanLabel(branch: CaravanFields): string {
-  const event = branch.eventName ?? branch.name
-  const host = branch.hostBranch?.name
+  const event = (branch.eventName ?? branch.name).trim()
+  return /caravan/i.test(event) ? event : `Caravan · ${event}`
+}
+
+/**
+ * The second line under a caravan shown by its host branch's name (the
+ * transfer screens): its event, then where it is set up —
+ * "Ajuy Caravan · Lemery".
+ */
+export function caravanSubtitle(branch: CaravanFields): string {
+  const event = (branch.eventName ?? branch.name).trim()
   const location = branch.addressLine1?.trim()
-  if (location) {
-    return host
-      ? `Caravan · ${event} — ${location} (hosted by ${host})`
-      : `Caravan · ${event} — ${location}`
-  }
-  return host ? `Caravan · ${event} — hosted at ${host}` : `Caravan · ${event}`
+  return location ? `${event} · ${location}` : event
 }
 
 export function locationLabel(
