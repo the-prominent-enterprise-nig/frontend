@@ -1,6 +1,17 @@
 import { create } from 'zustand'
 
-export type Panel = {
+export type Panel = Item360Panel | SerialHistoryPanel
+
+/** One physical unit's own history — opened from anywhere a serial number
+ *  appears (Serial Numbers list, Stock Balance search, Item 360, UDS and
+ *  transfer lines), so finding a unit's past is one click wherever you are. */
+export type SerialHistoryPanel = {
+  type: 'serial'
+  serialId: string
+  serialNumber?: string
+}
+
+export type Item360Panel = {
   type: 'item360'
   itemId: string
   itemName?: string
@@ -20,13 +31,6 @@ export type Panel = {
   // Scenario 56 — the list's Operations (region) filter, carried along with
   // `locations` so picking "Panay" doesn't show Negros stock in the drawer.
   region?: 'panay' | 'negros'
-  // Scenario 60 Part 4 — set when the drawer is opened from a serial search
-  // (e.g. Stock Balance's own search box matching a serial number rather
-  // than a brand/model). Once this item's serials load, the drawer jumps
-  // straight to that one serial's movement history instead of landing on
-  // the Stock tab first, so "search a serial" and "see its movements" is a
-  // single step rather than search → open → search again → click.
-  focusSerialId?: string
 }
 
 interface UIShellStore {

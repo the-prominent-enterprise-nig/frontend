@@ -197,16 +197,8 @@ export default function StockBalanceList({
     }
   }, [search])
 
-  const openSerialMovements = (serial: SerialNumberSummary) => {
-    if (!serial.item?.id) return
-    pushPanel({
-      type: 'item360',
-      itemId: serial.item.id,
-      itemName: itemTitle(serial.item),
-      context: 'stock',
-      focusSerialId: serial.id,
-    })
-  }
+  const openSerialMovements = (serial: SerialNumberSummary) =>
+    pushPanel({ type: 'serial', serialId: serial.id, serialNumber: serial.serialNumber })
 
   const showTable = !isLoading && balances.length > 0
   const isNoResults = !isLoading && balances.length === 0

@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { X, PackageCheck, ArrowLeftRight, ChevronLeft } from 'lucide-react'
 import { useItem360 } from './hooks/useItem360'
 import OverviewTab from './tabs/OverviewTab'
 import StockTab from './tabs/StockTab'
-import SerialMovementsTab from './tabs/SerialMovementsTab'
+import SerialHistoryContent from '../serial-history/SerialHistoryContent'
 import MovementsTab from './tabs/MovementsTab'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import type { StockBalance } from '@/src/schema/inventory/goods-receiving'
@@ -69,18 +69,16 @@ function Item360Content({
   context,
   locations,
   region,
-  focusSerialId,
   onClose,
 }: {
   itemId: string
   context: DrawerContext
   locations?: string[]
   region?: 'panay' | 'negros'
-  focusSerialId?: string
   onClose: () => void
 }) {
+  const { pushPanel } = useUIShell()
   const [activeTab, setActiveTab] = useState<Tab>(DEFAULT_TAB[context])
-  const [selectedSerial, setSelectedSerial] = useState<SerialNumberSummary | null>(null)
   const visibleTabs = TABS.filter((tab) => tab.context === context)
   const { item, stock, serials } = useItem360(itemId, activeTab, locations, region)
 
@@ -91,23 +89,6 @@ function Item360Content({
   const serialsData: SerialNumberSummary[] = serials.data?.success
     ? (serials.data.data?.data ?? [])
     : []
-
-  // Opened from a serial search (Stock Balance) rather than an item row —
-  // jump straight to that one serial's movement history once its data
-  // arrives, instead of landing on the Stock tab and making the searcher
-  // find it again themselves. Gated on `hasAppliedFocus`, not on
-  // `selectedSerial` being empty — this only fires once. Gating on
-  // `selectedSerial` instead re-triggered on every "Back to Stock" click
-  // (which clears it), snapping the drawer straight back to the same
-  // serial and making Back look like it did nothing.
-  const [hasAppliedFocus, setHasAppliedFocus] = useState(false)
-  useEffect(() => {
-    if (!focusSerialId || hasAppliedFocus || serials.isLoading) return
-    const match = serialsData.find((s) => s.id === focusSerialId)
-    if (match) setSelectedSerial(match)
-    setHasAppliedFocus(true)
-  }, [focusSerialId, serialsData, serials.isLoading, hasAppliedFocus])
-  const awaitingFocusSerial = !!focusSerialId && !hasAppliedFocus
 
   const lifecycle = (itemData as { lifecycle?: string } | null)?.lifecycle ?? 'active'
   // Both only mean something once the Stock tab's own queries have actually
@@ -209,19 +190,15 @@ function Item360Content({
       </div>
 
       {/* Tab nav — hidden when there's only one tab to switch between (the
-          Items catalog's Overview-only case), or while drilled into a single
-          serial's own movement timeline */}
-      {visibleTabs.length > 1 && !selectedSerial && !awaitingFocusSerial && (
+          Items catalog's Overview-only case) */}
+      {visibleTabs.length > 1 && (
         <div className={`${PLEX} shrink-0 border-b border-[#e4e4e9] bg-white`}>
           <nav className="flex overflow-x-auto px-5" aria-label="Item 360 tabs">
             {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => {
-                  setActiveTab(tab.id)
-                  setSelectedSerial(null)
-                }}
+                onClick={() => setActiveTab(tab.id)}
                 className={`shrink-0 border-b-2 px-3 py-3 text-[12.5px] font-medium whitespace-nowrap transition-colors ${
                   activeTab === tab.id
                     ? 'border-[#5b21b6] text-[#5b21b6]'
@@ -236,14 +213,11 @@ function Item360Content({
       )}
 
       {/* Tab content — Overview keeps the app's default (Poppins) font since
-          neither this wrapper nor OverviewTab itself carries PLEX. A selected
-          serial takes over the panel regardless of which tab is active — the
-          only way to reach one is by expanding a location in Stock, so it's
-          effectively Stock's own drill-down rather than a tab of its own. */}
+          neither this wrapper nor OverviewTab itself carries PLEX. A serial
+          opens as its own panel on top (Back returns here), the same panel
+          every other screen opens. */}
       <div className="flex-1 overflow-y-auto">
-        {selectedSerial ? (
-          <SerialMovementsTab serial={selectedSerial} onBack={() => setSelectedSerial(null)} />
-        ) : item.isLoading || awaitingFocusSerial ? (
+        {item.isLoading ? (
           <DrawerSkeleton />
         ) : !itemData ? (
           <div className="p-5 text-[13px] text-[#8b8b9b]">Failed to load item details.</div>
@@ -257,7 +231,9 @@ function Item360Content({
             isLoading={stock.isLoading}
             serials={serialsData}
             serialsLoading={serials.isLoading}
-            onSelectSerial={setSelectedSerial}
+            onSelectSerial={(serial) =>
+              pushPanel({ type: 'serial', serialId: serial.id, serialNumber: serial.serialNumber })
+            }
           />
         ) : activeTab === 'movements' ? (
           <MovementsTab itemId={itemId} locations={locations} region={region} />
@@ -271,7 +247,7 @@ export default function Item360Drawer() {
   const { panelStack, popPanel } = useUIShell()
 
   const topPanel = panelStack[panelStack.length - 1]
-  const isOpen = topPanel?.type === 'item360'
+  const isOpen = !!topPanel
   const itemId = topPanel?.type === 'item360' ? topPanel.itemId : null
   // Pre-existing call sites not yet updated to pass a context fall back to
   // 'stock' (the broader, operational tab set) rather than 'catalog', so
@@ -302,7 +278,7 @@ export default function Item360Drawer() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Item Details"
+        aria-label={topPanel?.type === 'serial' ? 'Serial History' : 'Item Details'}
         className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[820px] flex-col border-l border-[#e4e4e9] bg-white shadow-2xl transition-transform duration-300 ease-out ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
@@ -321,14 +297,20 @@ export default function Item360Drawer() {
           </div>
         )}
 
-        {isOpen && itemId ? (
+        {topPanel?.type === 'serial' ? (
+          <SerialHistoryContent
+            key={topPanel.serialId}
+            serialId={topPanel.serialId}
+            serialNumber={topPanel.serialNumber}
+            onClose={popPanel}
+          />
+        ) : isOpen && itemId ? (
           <Item360Content
             key={itemId}
             itemId={itemId}
             context={context}
             locations={locations}
             region={itemPanel?.region}
-            focusSerialId={itemPanel?.focusSerialId}
             onClose={popPanel}
           />
         ) : (

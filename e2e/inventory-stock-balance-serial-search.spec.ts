@@ -34,15 +34,10 @@ test.describe('Inventory — Stock Balance, jump to a serial’s movement histor
 
     await banner.click()
 
-    const drawer = page.getByRole('dialog', { name: 'Item Details' })
+    // Straight to the unit's own Serial History panel — no item drawer, no
+    // tab, no second search.
+    const drawer = page.getByRole('dialog', { name: 'Serial History' })
     await expect(drawer).toBeVisible({ timeout: 10_000 })
-
-    // Straight to the serial's own timeline — no tab nav, no Stock tab
-    // detour, no second search.
-    await expect(drawer.getByRole('navigation', { name: 'Item 360 tabs' })).toHaveCount(0)
-    await expect(drawer.getByRole('button', { name: 'Back to Stock' })).toBeVisible({
-      timeout: 10_000,
-    })
     await expect(drawer.getByText('SN-2819281', { exact: true })).toBeVisible()
     // The real sale that produced this data (Scenario 60 manual testing) —
     // proves the movement entry actually rendered, not just the header.

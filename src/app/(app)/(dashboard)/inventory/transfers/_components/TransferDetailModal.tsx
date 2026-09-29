@@ -56,6 +56,19 @@ import { MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
 import { searchVehicles } from '../_actions/search-vehicles'
 import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
+import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
+
+/** A transfer line's unit, opening its history when the line has one. */
+function LineSerial({
+  line,
+}: {
+  line: { serialNumberId?: string | null; serialNumber?: { serialNumber: string } | null }
+}): React.ReactElement {
+  const serialNumber = line.serialNumber?.serialNumber
+  if (!serialNumber) return <>—</>
+  if (!line.serialNumberId) return <>{serialNumber}</>
+  return <SerialLink serialId={line.serialNumberId} serialNumber={serialNumber} />
+}
 
 // A serial-tracked item requested with quantity > 1 arrives here as several
 // separate quantity-1 StockTransferLine rows (see CreateTransferModal's
@@ -1367,16 +1380,16 @@ export default function TransferDetailModal({
                                   <span className="text-zinc-300 line-through">
                                     {line.receiptCorrectedFromSerial.serialNumber}
                                   </span>{' '}
-                                  {line.serialNumber?.serialNumber ?? '—'}
+                                  <LineSerial line={line} />
                                 </span>
                               ) : line.receiptCorrectionReason ? (
                                 <span
                                   title={`Corrected at receipt. ${line.receiptCorrectionReason}`}
                                 >
-                                  {line.serialNumber?.serialNumber ?? '—'} *
+                                  <LineSerial line={line} /> *
                                 </span>
                               ) : (
-                                (line.serialNumber?.serialNumber ?? '—')
+                                <LineSerial line={line} />
                               )}
                             </td>
                           )}

@@ -30,6 +30,8 @@ import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
 import { LocationFilters } from '@/src/components/inventory/LocationFilters'
+import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
+import { useUIShell } from '@/src/stores/ui-shell.store'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Matches Stock Balance's own #5b21b6 palette (same StockHub tab group), so
@@ -115,6 +117,7 @@ function MetricCell({
 }
 
 export default function SerialNumberList({ session }: { session: SessionUser }) {
+  const { pushPanel } = useUIShell()
   const canManage = hasPermission(session, INVENTORY_PERMISSIONS.SERIAL_MANAGE)
   const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
@@ -521,12 +524,22 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                       {serials.map((serial) => (
                         <tr
                           key={serial.id}
-                          className={`hover:bg-[#fcfcfd] ${
+                          // The whole row opens the unit's history — the
+                          // serial number below is the keyboard-reachable
+                          // version of the same action.
+                          onClick={() =>
+                            pushPanel({
+                              type: 'serial',
+                              serialId: serial.id,
+                              serialNumber: serial.serialNumber,
+                            })
+                          }
+                          className={`cursor-pointer hover:bg-[#fcfcfd] ${
                             selectedIds.has(serial.id) ? 'bg-[#f8f4fd]' : ''
                           }`}
                         >
                           {showSelection && (
-                            <td className="px-4 py-[11px]">
+                            <td className="px-4 py-[11px]" onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="checkbox"
                                 aria-label={`Select ${serial.serialNumber}`}
@@ -539,11 +552,11 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                           <td className="px-4 py-[11px]">
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-1.5">
-                                <span
+                                <SerialLink
+                                  serialId={serial.id}
+                                  serialNumber={serial.serialNumber}
                                   className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
-                                >
-                                  {serial.serialNumber}
-                                </span>
+                                />
                                 <CopySerialButton serialNumber={serial.serialNumber} />
                               </div>
                               {displayClassificationLabel(serial.item?.type?.name) && (
@@ -578,6 +591,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                             {serial.goodsReceiptLine?.goodsReceipt ? (
                               <Link
                                 href={`/inventory/stock/reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
+                                onClick={(e) => e.stopPropagation()}
                                 className={`${MONO} text-[14px] text-[#5b21b6] hover:underline`}
                               >
                                 {serial.goodsReceiptLine.goodsReceipt.code}

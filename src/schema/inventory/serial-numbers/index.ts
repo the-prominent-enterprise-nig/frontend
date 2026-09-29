@@ -328,6 +328,8 @@ export const SerialMovementTypeSchema = z.enum([
   'credit_memo',
   'debit_memo',
   'service',
+  // Each step of a repair (UDS) the unit went through.
+  'uds',
 ])
 export type SerialMovementType = z.infer<typeof SerialMovementTypeSchema>
 
@@ -343,7 +345,21 @@ export const SerialMovementEntrySchema = z.object({
 })
 export type SerialMovementEntry = z.infer<typeof SerialMovementEntrySchema>
 
+/** Who and where the unit is now — sent with the timeline so the Serial
+ *  History panel can open from nothing but a serial id. */
+export const SerialHistoryHeaderSchema = z.object({
+  id: z.string(),
+  serialNumber: z.string(),
+  status: SerialStatusSchema,
+  createdAt: z.string(),
+  item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
+  location: z.string().nullable(),
+  consignedToVenue: z.string().nullable().optional(),
+})
+export type SerialHistoryHeader = z.infer<typeof SerialHistoryHeaderSchema>
+
 export const SerialMovementsResponseSchema = z.object({
   data: z.array(SerialMovementEntrySchema),
+  serial: SerialHistoryHeaderSchema.optional(),
 })
 export type SerialMovementsResponse = z.infer<typeof SerialMovementsResponseSchema>
