@@ -17,8 +17,7 @@ import {
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
-import ConsignToBranchModal from './ConsignToBranchModal'
-import CaravanItemTable from './CaravanItemTable'
+import CaravanItemTable, { CaravanCells, TransferOutLink } from './CaravanItemTable'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
@@ -28,7 +27,6 @@ import { SerialAges } from '@/src/components/inventory/SerialAges'
 import { originLabel } from '@/src/libs/format/serial-provenance'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
-import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
 import { LocationFilters } from '@/src/components/inventory/LocationFilters'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 import { useUIShell } from '@/src/stores/ui-shell.store'
@@ -119,11 +117,9 @@ function MetricCell({
 export default function SerialNumberList({ session }: { session: SessionUser }) {
   const { pushPanel } = useUIShell()
   const canManage = hasPermission(session, INVENTORY_PERMISSIONS.SERIAL_MANAGE)
-  const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
+  const canTransfer = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
   const [isImportOpen, setIsImportOpen] = useState(false)
-  const [isConsignOpen, setIsConsignOpen] = useState(false)
-  const [moveTargetBranchId, setMoveTargetBranchId] = useState('')
 
   const {
     serials,
@@ -147,14 +143,14 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     setLimit,
     warehouseOptions,
     itemOptions,
-    branchOptions,
     registerSerials,
     isRegistering,
     refetch,
     caravanView,
     setCaravanView,
-    caravanBranchId,
-    setCaravanBranchId,
+    caravanId,
+    setCaravanId,
+    caravanOptions,
     caravanReady,
     caravanGrouping,
     setCaravanGrouping,
@@ -163,13 +159,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     toggleExpandedGroup,
     expandedSerials,
     isLoadingExpandedSerials,
-    selectedIds,
-    toggleSelected,
-    toggleSelectAll,
-    closeConsignment,
-    isClosingConsignment,
-    consignToBranch,
-    isConsigning,
   } = useSerialNumbers()
 
   const brandOptions = useMemo(() => {
@@ -183,7 +172,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
   }, [itemOptions])
 
   // The Caravan tab's "By Item" rollup — group rows, not serial rows, so the
-  // serial-level bulk actions and the serial table both stand down for it.
+  // serial table stands down for it.
   const groupedCaravan = caravanView && caravanGrouping === 'item'
 
   const hasFilters =
@@ -192,19 +181,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     locationFilter.region ||
     search ||
     brandFilter
-  const showSelection = canManageCaravan
-
-  const handleReturnToOrigin = async () => {
-    await closeConsignment(undefined)
-  }
-
-  const handleMoveOnward = async () => {
-    if (!moveTargetBranchId) return
-    await closeConsignment(moveTargetBranchId)
-    setMoveTargetBranchId('')
-  }
-
-  const handleConsignSubmit = async (data: ConsignToBranchFormValues) => consignToBranch(data)
 
   const soldReturned = statusCounts.sold + statusCounts.returned
 
@@ -345,17 +321,15 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           />
 
           {caravanView ? (
-            !session.branchId && (
-              <SearchableSelect
-                className="w-[190px]"
-                value={caravanBranchId ?? ''}
-                onChange={(v) => setCaravanBranchId(v || undefined)}
-                placeholder="All branches"
-                chrome={CONTROL_CHROME}
-                clearable
-                options={branchOptions.map((b) => ({ value: b.id, label: b.name }))}
-              />
-            )
+            <SearchableSelect
+              className="w-[320px]"
+              value={caravanId ?? ''}
+              onChange={(v) => setCaravanId(v || undefined)}
+              placeholder="All caravans"
+              chrome={CONTROL_CHROME}
+              clearable
+              options={caravanOptions}
+            />
           ) : (
             <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
           )}
@@ -384,58 +358,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           )}
         </div>
 
-        {showSelection && !caravanView && selectedIds.size > 0 && (
-          <div className="flex flex-wrap items-center gap-3 rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb] p-3">
-            <span className="text-[12.5px] font-medium text-[#3f1490]">
-              {selectedIds.size} selected
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsConsignOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4c1a9b]"
-            >
-              <Truck className="h-3.5 w-3.5" />
-              Consign for Caravan
-            </button>
-          </div>
-        )}
-
-        {showSelection && caravanView && !groupedCaravan && selectedIds.size > 0 && (
-          <div className="flex flex-wrap items-center gap-3 rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb] p-3">
-            <span className="text-[12.5px] font-medium text-[#3f1490]">
-              {selectedIds.size} selected
-            </span>
-            <button
-              type="button"
-              onClick={handleReturnToOrigin}
-              disabled={isClosingConsignment}
-              className="rounded-lg bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] shadow-sm hover:bg-[#f1ebfb] disabled:opacity-50"
-            >
-              Return to Origin
-            </button>
-            <div className="flex items-center gap-2">
-              <SearchableSelect
-                className="min-w-40"
-                value={moveTargetBranchId}
-                onChange={setMoveTargetBranchId}
-                placeholder="Move to…"
-                chrome={CONTROL_CHROME}
-                options={branchOptions
-                  .filter((b) => b.id !== caravanBranchId)
-                  .map((b) => ({ value: b.id, label: b.name }))}
-              />
-              <button
-                type="button"
-                onClick={handleMoveOnward}
-                disabled={!moveTargetBranchId || isClosingConsignment}
-                className="rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4c1a9b] disabled:opacity-50"
-              >
-                Move
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Table card */}
         {(!caravanView || caravanReady) && (
           <>
@@ -456,7 +378,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               ) : groupedCaravan ? (
                 <CaravanItemTable
                   groups={caravanGroups}
-                  isBranchScoped={!!(caravanBranchId || session.branchId)}
+                  canTransfer={canTransfer}
                   expandedGroupKey={expandedGroupKey}
                   onToggleGroup={toggleExpandedGroup}
                   expandedSerials={expandedSerials}
@@ -467,8 +389,8 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                   <Hash className="h-[30px] w-[30px] text-[#c9c9d3]" />
                   {caravanView ? (
                     <div className="mt-1 text-[14px] font-semibold">
-                      {caravanBranchId || session.branchId
-                        ? 'Nothing currently consigned to this branch'
+                      {caravanId
+                        ? 'Nothing currently at this caravan'
                         : 'Nothing currently out on caravan'}
                     </div>
                   ) : hasFilters ? (
@@ -495,17 +417,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                       <tr
                         className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
                       >
-                        {showSelection && (
-                          <th className="w-10 px-4 py-[9px]">
-                            <input
-                              type="checkbox"
-                              aria-label="Select all"
-                              checked={selectedIds.size > 0 && selectedIds.size === serials.length}
-                              onChange={toggleSelectAll}
-                              className="h-4 w-4 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
-                            />
-                          </th>
-                        )}
                         <th className="px-4 py-[9px] text-left">Serial #</th>
                         <th className="px-4 py-[9px] text-left hidden sm:table-cell">Location</th>
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">
@@ -515,9 +426,14 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Origin</th>
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">Date In</th>
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">Age</th>
-                        {caravanView && <th className="px-4 py-[9px] text-left">Home Branch</th>}
-                        {caravanView && <th className="px-4 py-[9px] text-left">Event</th>}
+                        {caravanView && <th className="px-4 py-[9px] text-left">Caravan</th>}
+                        {caravanView && <th className="px-4 py-[9px] text-left">Host branch</th>}
                         <th className="px-4 py-[9px] text-center">Status</th>
+                        {caravanView && canTransfer && (
+                          <th className="px-4 py-[9px] text-right">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f4f4f6]">
@@ -534,21 +450,8 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                               serialNumber: serial.serialNumber,
                             })
                           }
-                          className={`cursor-pointer hover:bg-[#fcfcfd] ${
-                            selectedIds.has(serial.id) ? 'bg-[#f8f4fd]' : ''
-                          }`}
+                          className="cursor-pointer hover:bg-[#fcfcfd]"
                         >
-                          {showSelection && (
-                            <td className="px-4 py-[11px]" onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                aria-label={`Select ${serial.serialNumber}`}
-                                checked={selectedIds.has(serial.id)}
-                                onChange={() => toggleSelected(serial.id)}
-                                className="h-4 w-4 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
-                              />
-                            </td>
-                          )}
                           <td className="px-4 py-[11px]">
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-1.5">
@@ -569,7 +472,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                           <td className="px-4 py-[11px] text-[14.5px] text-[#5b5b6b] hidden sm:table-cell">
                             {(() => {
                               const wh = serial.warehouse ?? serial.currentWarehouse
-                              const owner = wh?.branch?.name ?? wh?.name ?? '—'
+                              const owner = locationLabel(wh)
                               // A unit out at a venue is physically at the
                               // venue, not on the shelf its warehouse names —
                               // that warehouse is only who still owns it.
@@ -621,32 +524,22 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                               locationSince={serial.locationSince}
                             />
                           </td>
-                          {caravanView && (
-                            <td className="px-4 py-[11px]">
-                              <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf3e7] px-2.5 py-0.5 text-[13px] font-medium text-[#8a4b06]">
-                                {locationLabel(serial.currentWarehouse)}
-                              </span>
-                            </td>
-                          )}
-                          {caravanView && (
-                            <td className="px-4 py-[11px] text-[14.5px] text-[#5b5b6b]">
-                              <div>{serial.caravanEventName ?? '—'}</div>
-                              {(serial.caravanEventStartDate || serial.caravanEventEndDate) && (
-                                <div className="text-[13px] text-[#8b8b9b]">
-                                  {serial.caravanEventStartDate
-                                    ? formatShortDate(serial.caravanEventStartDate)
-                                    : '—'}
-                                  {' – '}
-                                  {serial.caravanEventEndDate
-                                    ? formatShortDate(serial.caravanEventEndDate)
-                                    : '—'}
-                                </div>
-                              )}
-                            </td>
-                          )}
+                          {caravanView && <CaravanCells branch={serial.currentWarehouse?.branch} />}
                           <td className="px-4 py-[11px] text-center">
                             <SerialStatusPill status={serial.status} />
                           </td>
+                          {caravanView && canTransfer && (
+                            <td className="px-4 py-[11px] text-right">
+                              {serial.status === 'in_stock' && serial.currentWarehouse && (
+                                <TransferOutLink
+                                  fromWarehouseId={serial.currentWarehouse.id}
+                                  itemId={serial.item?.id}
+                                  itemLabel={serial.item?.name}
+                                  quantity={1}
+                                />
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -717,15 +610,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}
         warehouses={warehouseOptions}
-      />
-
-      <ConsignToBranchModal
-        isOpen={isConsignOpen}
-        onClose={() => setIsConsignOpen(false)}
-        onSubmit={handleConsignSubmit}
-        isSubmitting={isConsigning}
-        selectedCount={selectedIds.size}
-        branches={branchOptions}
       />
     </div>
   )

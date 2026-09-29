@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { WarehouseBranchSchema } from '@/src/schema/inventory/warehouses'
 
 // Mirrors the backend's SerialNumberStatus enum exactly (backend/prisma/schema.prisma)
 export const SerialStatusSchema = z.enum([
@@ -93,36 +94,6 @@ export const RegisterSerialsFormInputSchema = z.object({
 
 export type RegisterSerialsFormInput = z.infer<typeof RegisterSerialsFormInputSchema>
 
-// Scenario 08 (Caravan) — the "Consign" bulk action. Stock goes out either
-// to one of our own branches (which then sells it) or to a place that isn't
-// a branch at all — a fair, a dealer's floor, a town we have no branch in.
-// For a venue nothing changes hands: the owning branch keeps the units on
-// its books and keeps selling them, so only their location is really being
-// recorded.
-export const ConsignToBranchFormSchema = z
-  .object({
-    destinationKind: z.enum(['branch', 'venue']),
-    hostBranchId: z.string().optional(),
-    venue: z.string().max(150, 'Venue name is too long').optional(),
-    eventName: z.string().max(150, 'Event name is too long').optional(),
-    eventStartDate: z.string().optional(),
-    eventEndDate: z.string().optional(),
-  })
-  .refine((data) => data.destinationKind !== 'branch' || !!data.hostBranchId?.trim(), {
-    message: 'Host branch is required',
-    path: ['hostBranchId'],
-  })
-  .refine((data) => data.destinationKind !== 'venue' || !!data.venue?.trim(), {
-    message: 'Say where the units are going',
-    path: ['venue'],
-  })
-  .refine(
-    (data) =>
-      !data.eventStartDate || !data.eventEndDate || data.eventEndDate >= data.eventStartDate,
-    { message: 'Event end date cannot be before the start date', path: ['eventEndDate'] }
-  )
-export type ConsignToBranchFormValues = z.infer<typeof ConsignToBranchFormSchema>
-
 export const UpdateSerialStatusFormSchema = z
   .object({
     status: SerialStatusSchema,
@@ -172,9 +143,11 @@ const SerialWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
-  // Scenario 08 (Caravan) — the warehouse's own (home/ownership) branch,
-  // distinct from consignedToBranch below.
-  branch: SerialBranchSchema.optional().nullable(),
+  // The warehouse's own branch. For a unit out at a caravan this is the
+  // caravan itself (Scenario 60), carrying its event, location and host.
+  branch: WarehouseBranchSchema.extend({ code: z.string().optional().nullable() })
+    .optional()
+    .nullable(),
 })
 
 // Provenance — which receiving report this unit arrived on, if any. "age" is
@@ -254,46 +227,26 @@ export const SerialNumberListResponseSchema = z
     limit: meta.limit,
   }))
 
-// Scenario 08 (Caravan) — the "By Item" rollup of the same rows the Caravan
-// serial list returns. One row is one item at one destination for one event:
-// the same item out at a venue and hosted in for someone else's event are two
-// separate things to count, and the tab shows both halves at once.
+// Scenario 60 — the Caravan tab's "By Item" rollup of the same rows its
+// serial list returns. One row is one item at one caravan.
 export const CaravanItemGroupSchema = z.object({
   key: z.string(),
   item: SerialItemSchema.nullable(),
   quantity: z.number(),
-  // Per-status unit counts within the group, keyed by SerialStatus. Left as a
-  // loose record so a status added backend-side surfaces instead of failing
-  // the parse and blanking the whole tab.
-  statusCounts: z.record(z.string(), z.number()).default({}),
-  consignedToBranch: SerialBranchSchema.nullable(),
-  consignedToVenue: z.string().nullable(),
-  caravanEventName: z.string().nullable(),
-  caravanEventStartDate: z.string().nullable(),
-  caravanEventEndDate: z.string().nullable(),
+  statusCounts: z.record(z.string(), z.number()).optional(),
+  warehouseId: z.string().nullable(),
+  caravan: WarehouseBranchSchema.nullable(),
 })
 export type CaravanItemGroup = z.infer<typeof CaravanItemGroupSchema>
 
-// Rebuilds a serial's rollup key exactly as consignedSummary composes it
-// backend-side, so an expanded group can pick its own units out of an
-// item-filtered serial fetch — the list endpoint can filter by item but has no
-// venue/event filter to narrow to one group on its own.
+// Rebuilds a serial's rollup key exactly as caravanSummary composes it
+// backend-side (item + warehouse), so an expanded group can pick its own
+// units out of an item-filtered serial fetch.
 export function caravanGroupKey(serial: {
   item?: { id: string } | null
-  consignedToBranch?: { id: string } | null
-  consignedToVenue?: string | null
-  caravanEventName?: string | null
-  caravanEventStartDate?: string | null
-  caravanEventEndDate?: string | null
+  currentWarehouse?: { id: string } | null
 }): string {
-  return [
-    serial.item?.id ?? '',
-    serial.consignedToBranch?.id ?? '',
-    serial.consignedToVenue ?? '',
-    serial.caravanEventName ?? '',
-    serial.caravanEventStartDate ?? '',
-    serial.caravanEventEndDate ?? '',
-  ].join('|')
+  return `${serial.item?.id ?? ''}|${serial.currentWarehouse?.id ?? ''}`
 }
 
 export const CaravanItemGroupListResponseSchema = z

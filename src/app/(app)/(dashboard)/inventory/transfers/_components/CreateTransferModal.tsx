@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   useForm,
   useWatch,
@@ -11,7 +11,7 @@ import {
 } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { X, Loader2, Trash2, AlertTriangle, ArrowRight, PackageSearch, Plus } from 'lucide-react'
+import { X, Loader2, Trash2, ArrowRight, PackageSearch } from 'lucide-react'
 import {
   CreateTransferFormSchema,
   CreateTransferFormValues,
@@ -25,12 +25,11 @@ import {
   warehouseLabel,
   type WarehouseSummary,
 } from '@/src/schema/inventory/warehouses'
-import { formatShortDate } from '@/src/libs/format/date'
 import type { ApiResponse } from '@/src/libs/api/client'
 import { getItem } from '../../items/_actions/get-item'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import { CaravanSummary, NewCaravanFields } from './CaravanDestinationFields'
+import { NewCaravanFields } from './CaravanDestinationFields'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
@@ -128,12 +127,6 @@ function branchLabel(wh: WarehouseSummary): string {
   return isCaravanEnded(wh.branch) ? `${label} (ended)` : label
 }
 
-function caravanDates(wh: WarehouseSummary | undefined): string {
-  const { startDate, endDate } = wh?.branch ?? {}
-  if (!startDate || !endDate) return ''
-  return `${formatShortDate(startDate)} – ${formatShortDate(endDate)}`
-}
-
 const EMPTY_NEW_CARAVAN: NewCaravanFormValues = {
   hostBranchId: '',
   eventName: '',
@@ -146,9 +139,8 @@ const inputClass =
   'w-full rounded-lg border border-[#d3d3db] bg-white px-3 py-2 text-[13px] text-[#17171c] outline-none transition-colors focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
 
 // Stable reference for useWatch's fallback below — `?? []` inline would hand
-// back a fresh array every render, which the issues useMemo then sees as a
-// changed dependency on every render regardless of whether the lines
-// themselves actually changed.
+// back a fresh array every render, so anything depending on it would see a
+// change every render regardless of whether the lines actually changed.
 const EMPTY_LINES: CreateTransferFormValues['lines'] = []
 const labelClass = 'mb-1.5 block text-[12px] font-medium text-[#3d3d4a]'
 
@@ -362,6 +354,7 @@ export default function CreateTransferModal({
     reset,
     watch,
     setValue,
+    getValues,
     formState: { errors, isSubmitted },
   } = useForm<CreateTransferFormValues>({
     resolver: zodResolver(CreateTransferFormSchema),
@@ -465,29 +458,22 @@ export default function CreateTransferModal({
   const totalUnits = watchedLines.reduce((sum, l) => sum + (Number(l?.quantity) || 0), 0)
   const hasSerialTrackedLine = watchedLines.some((l) => l?.isSerialTracked)
 
-  // Scenario 60 — the destination is either a branch or a caravan (a
-  // temporary branch hosted at a real one for an event).
-  const destinationType = watch('destinationType') ?? 'branch'
-  const isCaravanDestination = destinationType === 'caravan'
-  const newCaravan = watch('newCaravan')
-  const isCreatingNewCaravan = isCaravanDestination && !!newCaravan
+  // Scenario 60 — "For a caravan": the stock goes to a new caravan (a
+  // temporary branch set up at a host branch for an event), created from the
+  // details entered here. An existing caravan is never a destination; stock
+  // already at one moves on by picking the caravan as the source.
+  const isCaravanDestination = (watch('destinationType') ?? 'branch') === 'caravan'
+  const isCreatingNewCaravan = isCaravanDestination && !!watch('newCaravan')
   const toId = watch('toWarehouseId')
   const fromWarehouse = warehouses.find((w) => w.id === fromId)
   const toWarehouse = warehouses.find((w) => w.id === toId)
   const caravanLeg = isCaravanDestination || isCaravanBranch(fromWarehouse?.branch)
+  // Editing a request that already goes to a caravan keeps that caravan.
+  const editingCaravanDestination = isEditing && isCaravanDestination && !isCreatingNewCaravan
 
-  // Branch destinations never list a caravan; caravan destinations list only
-  // ongoing ones — an ended caravan can still send stock out, never take it
-  // in. A branch-scoped user sees the caravans their own branch hosts.
+  // Branch destinations never list a caravan.
   const branchDestinations = (currentUserBranchId ? ownBranchWarehouses : warehouses).filter(
     (wh) => wh.id !== fromId && !isCaravanBranch(wh.branch)
-  )
-  const caravanDestinations = warehouses.filter(
-    (wh) =>
-      wh.id !== fromId &&
-      isCaravanBranch(wh.branch) &&
-      !isCaravanEnded(wh.branch) &&
-      (!currentUserBranchId || wh.branch?.hostBranch?.id === currentUserBranchId)
   )
   // Host branch for a new caravan: a real branch, never another caravan. A
   // branch-scoped user can only host at their own branch (the backend
@@ -496,60 +482,35 @@ export default function CreateTransferModal({
     .filter((wh) => !!wh.branchId && !isCaravanBranch(wh.branch))
     .map((wh) => ({ value: wh.branchId as string, label: branchLabel(wh) }))
 
-  function switchDestinationType(next: 'branch' | 'caravan'): void {
-    if (next === destinationType) return
-    setValue('destinationType', next)
-    setValue('newCaravan', undefined)
-    setValue('toWarehouseId', next === 'branch' ? (lockedToWarehouseId ?? '') : '', {
+  // A new caravan's host defaults to where the stock is coming from — the
+  // source branch itself, or a source caravan's own host. A branch-scoped
+  // user can only ever host at their own branch.
+  const defaultHostBranchId =
+    currentUserBranchId ??
+    (isCaravanBranch(fromWarehouse?.branch)
+      ? (fromWarehouse?.branch?.hostBranch?.id ?? '')
+      : (fromWarehouse?.branchId ?? ''))
+
+  function setForCaravan(on: boolean): void {
+    setValue('destinationType', on ? 'caravan' : 'branch')
+    setValue(
+      'newCaravan',
+      on ? { ...EMPTY_NEW_CARAVAN, hostBranchId: defaultHostBranchId, startDate: today } : undefined
+    )
+    setValue('toWarehouseId', on ? '' : (lockedToWarehouseId ?? ''), {
       shouldValidate: isSubmitted,
     })
   }
 
-  function startNewCaravan(): void {
-    setValue('toWarehouseId', '')
-    setValue('newCaravan', {
-      ...EMPTY_NEW_CARAVAN,
-      hostBranchId: currentUserBranchId ?? '',
-      startDate: today,
-    })
-  }
+  // A source picked after "For a caravan" was switched on still fills an
+  // empty Host branch — never overwrites one the user already chose.
+  useEffect(() => {
+    if (isCreatingNewCaravan && defaultHostBranchId && !getValues('newCaravan.hostBranchId')) {
+      setValue('newCaravan.hostBranchId', defaultHostBranchId)
+    }
+  }, [isCreatingNewCaravan, defaultHostBranchId, getValues, setValue])
 
   const fromLabel = warehouses.find((w) => w.id === fromId)
-
-  // Flat, human-readable summary of what's still wrong, shown as one panel
-  // once a submit has actually been attempted. Deliberately paraphrases
-  // rather than repeating a field's own inline error verbatim — reusing the
-  // exact same string in two places on screen at once (the row's own error
-  // and this panel) would make `getByText` locators in e2e specs ambiguous.
-  const issues = useMemo(() => {
-    if (!isSubmitted) return []
-    const out: string[] = []
-    if (errors.fromWarehouseId) out.push(errors.fromWarehouseId.message ?? 'Source is required')
-    if (errors.toWarehouseId) out.push(errors.toWarehouseId.message ?? 'Destination is required')
-    const caravanErr = errors.newCaravan
-    if (caravanErr?.hostBranchId) out.push('New caravan: choose its host branch.')
-    if (caravanErr?.eventName) out.push('New caravan: give the event a name.')
-    if (caravanErr?.startDate || caravanErr?.endDate)
-      out.push('New caravan: check the event dates.')
-    if (errors.transferDate) out.push(errors.transferDate.message ?? 'Transfer date is required')
-    if (errors.expectedArrival) out.push(errors.expectedArrival.message ?? '')
-    watchedLines.forEach((line, i) => {
-      const lineErr = errors.lines?.[i]
-      if (!lineErr) return
-      const label = line?.itemId ? `Line ${i + 1}` : `Line ${i + 1} — no item picked yet`
-      if (lineErr.itemId) {
-        out.push(
-          line?.itemId
-            ? `${label}: not serial-tracked, so it can't go to a caravan.`
-            : `${label}: pick an item.`
-        )
-      }
-      if (lineErr.quantity) out.push(`${label}: quantity needs a fix.`)
-    })
-    if (typeof errors.lines?.message === 'string') out.push(errors.lines.message)
-    if (errors.lines?.root?.message) out.push(errors.lines.root.message)
-    return out.filter(Boolean)
-  }, [isSubmitted, errors, watchedLines])
 
   if (!isOpen) return null
 
@@ -645,6 +606,25 @@ export default function CreateTransferModal({
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
                     Transfer details
                   </span>
+                  {canCreateCaravan && !isEditing && (
+                    <label className="flex cursor-pointer items-center gap-2 text-[12px] text-[#3d3d4a]">
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={isCaravanDestination}
+                        onChange={(e) => setForCaravan(e.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="relative h-[18px] w-8 shrink-0 rounded-full bg-[#d3d3db] transition-colors after:absolute after:top-[2px] after:left-[2px] after:h-[14px] after:w-[14px] after:rounded-full after:bg-white after:transition-transform peer-checked:bg-[#5b21b6] peer-checked:after:translate-x-[14px] peer-focus-visible:ring-2 peer-focus-visible:ring-[#5b21b6]/40"
+                      />
+                      <span className="font-medium">For a caravan</span>
+                      <span className="hidden text-[#8b8b9b] sm:inline">
+                        — sending stock to a caravan event hosted at a branch
+                      </span>
+                    </label>
+                  )}
                 </div>
                 <div className="flex flex-col gap-4 px-[18px] py-4">
                   <div>
@@ -693,142 +673,81 @@ export default function CreateTransferModal({
                         )}
                       </div>
 
-                      <span
-                        aria-hidden="true"
-                        className="mt-6.5 hidden h-7 w-7 items-center justify-center rounded-full bg-[#f1ebfb] text-[#5b21b6] sm:flex"
-                      >
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </span>
+                      {/* Hidden for "For a caravan": the caravan's details
+                          below are the destination. */}
+                      {!isCreatingNewCaravan && (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="mt-6.5 hidden h-7 w-7 items-center justify-center rounded-full bg-[#f1ebfb] text-[#5b21b6] sm:flex"
+                          >
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </span>
 
-                      <div>
-                        <label className={labelClass}>
-                          To <span className="text-[#b42318]">*</span>
-                        </label>
-                        <div
-                          role="radiogroup"
-                          aria-label="Destination type"
-                          className="mb-2 flex gap-1.5"
-                        >
-                          {(
-                            [
-                              { value: 'branch', label: 'Branch' },
-                              { value: 'caravan', label: 'Caravan' },
-                            ] as const
-                          ).map((opt) => (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              role="radio"
-                              aria-checked={destinationType === opt.value}
-                              onClick={() => switchDestinationType(opt.value)}
-                              className={`flex-1 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-medium ${
-                                destinationType === opt.value
-                                  ? 'border-[#5b21b6] bg-[#f1ebfb] text-[#3f1490]'
-                                  : 'border-[#d3d3db] bg-white text-[#5b5b6b] hover:bg-[#fafafb]'
-                              }`}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-
-                        {isCaravanDestination ? (
-                          isCreatingNewCaravan ? (
-                            <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-[#ddd0f7] bg-[#fcfaff] px-3 py-2 text-[12.5px] text-[#3f1490]">
-                              <span>New caravan — enter its details below.</span>
-                              <button
-                                type="button"
-                                onClick={() => setValue('newCaravan', undefined)}
-                                className="shrink-0 text-[11.5px] font-medium hover:underline"
-                              >
-                                Use an existing caravan
-                              </button>
-                            </div>
-                          ) : (
-                            <>
+                          <div>
+                            <label className={labelClass}>
+                              To <span className="text-[#b42318]">*</span>
+                            </label>
+                            {editingCaravanDestination ? (
+                              <SearchableSelect
+                                value={toId ?? ''}
+                                onChange={() => {}}
+                                disabled
+                                chrome={CONTROL_CHROME}
+                                options={
+                                  toWarehouse
+                                    ? [{ value: toWarehouse.id, label: branchLabel(toWarehouse) }]
+                                    : []
+                                }
+                              />
+                            ) : (
                               <Controller
                                 name="toWarehouseId"
                                 control={control}
-                                render={({ field }) => (
-                                  <SearchableSelect
-                                    value={field.value ?? ''}
-                                    onChange={field.onChange}
-                                    placeholder="Search ongoing caravans…"
-                                    chrome={CONTROL_CHROME}
-                                    options={caravanDestinations.map((wh) => ({
-                                      value: wh.id,
-                                      label: [warehouseLabel(wh), caravanDates(wh)]
-                                        .filter(Boolean)
-                                        .join(' · '),
-                                    }))}
-                                  />
-                                )}
+                                render={({ field }) =>
+                                  lockedToWarehouseId ? (
+                                    <SearchableSelect
+                                      value={field.value ?? ''}
+                                      onChange={field.onChange}
+                                      disabled
+                                      chrome={CONTROL_CHROME}
+                                      options={[
+                                        {
+                                          value: lockedToWarehouseId,
+                                          label: branchLabel(ownBranchWarehouses[0]),
+                                        },
+                                      ]}
+                                    />
+                                  ) : (
+                                    <SearchableSelect
+                                      value={field.value ?? ''}
+                                      onChange={field.onChange}
+                                      placeholder="Search destination branch…"
+                                      chrome={CONTROL_CHROME}
+                                      options={branchDestinations.map((wh) => ({
+                                        value: wh.id,
+                                        label: branchLabel(wh),
+                                      }))}
+                                    />
+                                  )
+                                }
                               />
-                              {caravanDestinations.length === 0 && (
-                                <p className="mt-1 text-[11px] text-[#5b5b6b]">
-                                  {currentUserBranchId
-                                    ? 'No ongoing caravans hosted at your branch.'
-                                    : 'No ongoing caravans.'}
-                                </p>
-                              )}
-                              {canCreateCaravan && !isEditing && (
-                                <button
-                                  type="button"
-                                  onClick={startNewCaravan}
-                                  className="mt-1.5 flex items-center gap-1 text-[12px] font-medium text-[#5b21b6] hover:underline"
-                                >
-                                  <Plus className="h-3.5 w-3.5" />
-                                  New caravan
-                                </button>
-                              )}
-                            </>
-                          )
-                        ) : (
-                          <Controller
-                            name="toWarehouseId"
-                            control={control}
-                            render={({ field }) =>
-                              lockedToWarehouseId ? (
-                                <SearchableSelect
-                                  value={field.value ?? ''}
-                                  onChange={field.onChange}
-                                  disabled
-                                  chrome={CONTROL_CHROME}
-                                  options={[
-                                    {
-                                      value: lockedToWarehouseId,
-                                      label: branchLabel(ownBranchWarehouses[0]),
-                                    },
-                                  ]}
-                                />
-                              ) : (
-                                <SearchableSelect
-                                  value={field.value ?? ''}
-                                  onChange={field.onChange}
-                                  placeholder="Search destination branch…"
-                                  chrome={CONTROL_CHROME}
-                                  options={branchDestinations.map((wh) => ({
-                                    value: wh.id,
-                                    label: branchLabel(wh),
-                                  }))}
-                                />
-                              )
-                            }
-                          />
-                        )}
-                        <p className="mt-1 text-[11px] text-[#5b5b6b]">
-                          {isCaravanDestination
-                            ? 'Serial-tracked items only. The host branch receives and sells caravan stock.'
-                            : lockedToWarehouseId
-                              ? 'Requests are always routed to your own branch.'
-                              : 'Stock arrives here.'}
-                        </p>
-                        {errors.toWarehouseId && (
-                          <p className="mt-1 text-[11.5px] text-[#b42318]">
-                            {errors.toWarehouseId.message}
-                          </p>
-                        )}
-                      </div>
+                            )}
+                            <p className="mt-1 text-[11px] text-[#5b5b6b]">
+                              {isCaravanDestination
+                                ? ''
+                                : lockedToWarehouseId
+                                  ? 'Requests are always routed to your own branch.'
+                                  : 'Stock arrives here.'}
+                            </p>
+                            {errors.toWarehouseId && (
+                              <p className="mt-1 text-[11.5px] text-[#b42318]">
+                                {errors.toWarehouseId.message}
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -839,9 +758,6 @@ export default function CreateTransferModal({
                       hostBranchOptions={hostBranchOptions}
                       hostLocked={!!currentUserBranchId}
                     />
-                  )}
-                  {isCaravanDestination && !isCreatingNewCaravan && toWarehouse && (
-                    <CaravanSummary warehouse={toWarehouse} />
                   )}
                   {/* Same column template as the route grid above (with an
                       empty cell where the arrow sits) so Transfer date lines
@@ -1006,6 +922,11 @@ export default function CreateTransferModal({
 
               {/* Said once for the whole card rather than per row — it's how
                   serial-tracked transfers work, not a fact about one line. */}
+              {caravanLeg && (
+                <p className="border-b border-[#eeeef1] bg-[#fcfaff] px-[18px] py-2 text-[11.5px] text-[#3f1490]">
+                  Caravans take serial-tracked items only.
+                </p>
+              )}
               {hasSerialTrackedLine && (
                 <p className="border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[11.5px] text-[#5b5b6b]">
                   Serial-tracked — the source picks which exact units leave when they dispatch.
@@ -1044,26 +965,6 @@ export default function CreateTransferModal({
                 ))}
               </div>
             </div>
-
-            {/* Validation issues — only once a submit has actually been tried */}
-            {isSubmitted && issues.length > 0 && (
-              <div className="rounded-xl border border-[#f3c9c5] bg-white p-[15px]">
-                <div className="mb-2.5 flex items-center gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5 text-[#b42318]" />
-                  <span className="text-[12.5px] font-semibold text-[#b42318]">
-                    {issues.length} {issues.length === 1 ? 'issue' : 'issues'} to resolve before
-                    this can be submitted
-                  </span>
-                </div>
-                <ul className="flex flex-col gap-1.5">
-                  {issues.map((issue, i) => (
-                    <li key={i} className="text-[12px] leading-relaxed text-[#3d3d4a]">
-                      {issue}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
         </div>
 

@@ -91,7 +91,7 @@ export const INVENTORY_PERMISSIONS = {
   // permission string.
   MANUAL_RR_CREATE: 'inventory:manual-rr:create',
 
-  // ── Caravan (Scenario 08) ──────────────────────────────────────────────────
+  // ── Caravan (Scenario 08, reworked in Scenario 60) ──────────────────────────────────────────────────
   CARAVAN_READ: 'inventory:caravan:read',
   CARAVAN_MANAGE: 'inventory:caravan:manage',
 
@@ -244,10 +244,9 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:serial:manage': 'Assign and manage serial numbers',
   'inventory:manual-rr:create':
     'Submit or approve a manual receiving report that originates a serial with no PO/transfer/count context — owner-only by default',
-  'inventory:caravan:read':
-    'View caravan consignments (stock consigned to a host branch for an event)',
+  'inventory:caravan:read': 'View caravans and the stock currently at them',
   'inventory:caravan:manage':
-    'Consign stock to a host branch for a caravan event, and return/reassign it at close',
+    'Create caravans — temporary branches set up at a host branch for an event',
   'inventory:uds:read': 'View Unit Document Sheets (repair, pull-out, loan)',
   'inventory:uds:manage': 'Issue and update Unit Document Sheets',
   'inventory:mobile-count:use': 'Perform mobile barcode stock counts',

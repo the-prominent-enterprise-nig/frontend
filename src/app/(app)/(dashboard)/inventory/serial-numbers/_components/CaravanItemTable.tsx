@@ -1,7 +1,8 @@
 'use client'
 
 import { Fragment } from 'react'
-import { ChevronRight, Package } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRightLeft, ChevronRight, Package } from 'lucide-react'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatShortDate } from '@/src/libs/format/date'
@@ -14,19 +15,20 @@ import {
   type SerialNumberSummary,
   type SerialStatus,
 } from '@/src/schema/inventory/serial-numbers'
+import { isCaravanEnded, type WarehouseBranch } from '@/src/schema/inventory/warehouses'
+import Tooltip from '@/src/components/ui/Tooltip'
 
 type Props = {
   groups: CaravanItemGroup[]
-  // Whether the list is narrowed to one branch — only the wording of the
-  // empty state differs, so it stays a plain boolean rather than the branch.
-  isBranchScoped: boolean
+  // inventory:transfers:create — the "Transfer out" action opens a transfer.
+  canTransfer: boolean
   expandedGroupKey: string | null
   onToggleGroup: (key: string) => void
   expandedSerials: SerialNumberSummary[]
   isLoadingExpandedSerials: boolean
 }
 
-const COLUMN_COUNT = 5
+const COLUMN_COUNT = 7
 
 function itemLabel(item: CaravanItemGroup['item']): string {
   if (!item) return 'Unknown item'
@@ -34,24 +36,86 @@ function itemLabel(item: CaravanItemGroup['item']): string {
   return parts.length > 0 ? parts.join(' ') : item.name
 }
 
-// A group is always at exactly one of the two: a host branch that may sell it,
-// or an outside venue where ownership never moved.
-function destinationLabel(group: CaravanItemGroup): string {
-  return group.consignedToBranch?.name ?? group.consignedToVenue ?? '—'
+function caravanDateRange(branch: WarehouseBranch | null | undefined): string {
+  if (!branch?.startDate || !branch.endDate) return '—'
+  return `${formatShortDate(branch.startDate)} – ${formatShortDate(branch.endDate)}`
 }
 
-function eventDateRange(group: CaravanItemGroup): string | null {
-  if (!group.caravanEventStartDate && !group.caravanEventEndDate) return null
-  const start = group.caravanEventStartDate ? formatShortDate(group.caravanEventStartDate) : '—'
-  const end = group.caravanEventEndDate ? formatShortDate(group.caravanEventEndDate) : '—'
-  return `${start} – ${end}`
+/**
+ * Scenario 60 — the two caravan columns shared by the Caravan tab's serial
+ * list and this rollup: which caravan (event, where it is set up, when) and
+ * the host branch whose books and POS it belongs to. An ended caravan is
+ * flagged, since whatever is still in it has to be transferred out.
+ */
+export function CaravanCells({
+  branch,
+}: {
+  branch: WarehouseBranch | null | undefined
+}): React.ReactElement {
+  const ended = isCaravanEnded(branch)
+  return (
+    <>
+      <td className="px-4 py-[11px] text-[13.5px]">
+        <div className="flex flex-wrap items-center gap-1.5 font-medium text-[#17171c]">
+          {branch?.eventName ?? branch?.name ?? '—'}
+          {ended && (
+            <span className="rounded-full bg-[#fdeceb] px-2 py-0.5 text-[11px] font-medium text-[#b42318]">
+              Ended
+            </span>
+          )}
+        </div>
+        {branch?.addressLine1 && (
+          <div className="text-[12.5px] text-[#5b5b6b]">{branch.addressLine1}</div>
+        )}
+        <div className="text-[12px] text-[#8b8b9b]">{caravanDateRange(branch)}</div>
+      </td>
+      <td className="px-4 py-[11px] text-[13.5px] text-[#5b5b6b]">
+        {branch?.hostBranch?.name ?? '—'}
+      </td>
+    </>
+  )
+}
+
+/** Opens New Stock Transfer with this caravan as the source and the item
+ * filled in — the destination (host, any branch, another caravan) is
+ * chosen there. Which units ship is decided at dispatch, as for any transfer. */
+export function TransferOutLink({
+  fromWarehouseId,
+  itemId,
+  itemLabel,
+  quantity,
+}: {
+  fromWarehouseId: string
+  itemId?: string
+  itemLabel?: string
+  quantity: number
+}): React.ReactElement | null {
+  if (!itemId || quantity < 1) return null
+  const params = new URLSearchParams({
+    prefillFromWarehouseId: fromWarehouseId,
+    prefillItemId: itemId,
+    prefillQty: String(quantity),
+    ...(itemLabel && { prefillItemLabel: itemLabel }),
+  })
+  return (
+    <Tooltip label="Transfer to the host branch, another branch or another caravan">
+      <Link
+        href={`/inventory/transfers?${params.toString()}`}
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1 text-[12px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb]"
+      >
+        <ArrowRightLeft className="h-3.5 w-3.5" />
+        Transfer out
+      </Link>
+    </Tooltip>
+  )
 }
 
 // Ordered by the status enum rather than by count, so the same item's
 // breakdown reads the same way from one row to the next.
 function orderedStatusCounts(group: CaravanItemGroup): Array<[SerialStatus, number]> {
   return SerialStatusSchema.options
-    .map((status) => [status, group.statusCounts[status] ?? 0] as [SerialStatus, number])
+    .map((status) => [status, group.statusCounts?.[status] ?? 0] as [SerialStatus, number])
     .filter(([, count]) => count > 0)
 }
 
@@ -59,12 +123,14 @@ function GroupRow({
   group,
   isExpanded,
   onToggle,
+  canTransfer,
 }: {
   group: CaravanItemGroup
   isExpanded: boolean
   onToggle: () => void
+  canTransfer: boolean
 }): React.ReactElement {
-  const dateRange = eventDateRange(group)
+  const inStock = group.statusCounts?.in_stock ?? 0
 
   return (
     <tr
@@ -91,15 +157,7 @@ function GroupRow({
       <td className={`${MONO} px-4 py-[11px] text-right text-[13px] font-semibold text-[#17171c]`}>
         {group.quantity.toLocaleString()}
       </td>
-      <td className="px-4 py-[11px]">
-        <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf3e7] px-2.5 py-0.5 text-[11px] font-medium text-[#8a4b06]">
-          {destinationLabel(group)}
-        </span>
-      </td>
-      <td className="px-4 py-[11px] text-[12.5px] text-[#5b5b6b] hidden md:table-cell">
-        <div>{group.caravanEventName ?? '—'}</div>
-        {dateRange && <div className="text-[11px] text-[#8b8b9b]">{dateRange}</div>}
-      </td>
+      <CaravanCells branch={group.caravan} />
       <td className="px-4 py-[11px]">
         <div className="flex flex-wrap justify-center gap-1">
           {orderedStatusCounts(group).map(([status, count]) => (
@@ -112,6 +170,16 @@ function GroupRow({
             />
           ))}
         </div>
+      </td>
+      <td className="px-4 py-[11px] text-right">
+        {canTransfer && group.warehouseId && (
+          <TransferOutLink
+            fromWarehouseId={group.warehouseId}
+            itemId={group.item?.id}
+            itemLabel={group.item?.name}
+            quantity={inStock}
+          />
+        )}
       </td>
     </tr>
   )
@@ -157,12 +225,12 @@ function ExpandedSerials({
   )
 }
 
-// Scenario 08 (Caravan) — the "By Item" view. Quantities come from the backend
-// rollup, so they count every consigned unit rather than the page on screen;
-// expanding a row lists that group's individual serials.
+// Scenario 60 — the Caravan tab's "By Item" view: one row per item per
+// caravan. Quantities come from the backend rollup, so they count every unit
+// rather than the page on screen; expanding a row lists its serials.
 export default function CaravanItemTable({
   groups,
-  isBranchScoped,
+  canTransfer,
   expandedGroupKey,
   onToggleGroup,
   expandedSerials,
@@ -172,11 +240,7 @@ export default function CaravanItemTable({
     return (
       <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
         <Package className="h-[30px] w-[30px] text-[#c9c9d3]" />
-        <div className="mt-1 text-[14px] font-semibold">
-          {isBranchScoped
-            ? 'Nothing currently consigned to this branch'
-            : 'Nothing currently out on caravan'}
-        </div>
+        <div className="mt-1 text-[14px] font-semibold">Nothing currently out on caravan</div>
       </div>
     )
   }
@@ -190,9 +254,12 @@ export default function CaravanItemTable({
           >
             <th className="px-4 py-[9px] text-left">Item</th>
             <th className="px-4 py-[9px] text-right">Qty</th>
-            <th className="px-4 py-[9px] text-left">Host / Venue</th>
-            <th className="px-4 py-[9px] text-left hidden md:table-cell">Event</th>
+            <th className="px-4 py-[9px] text-left">Caravan</th>
+            <th className="px-4 py-[9px] text-left">Host branch</th>
             <th className="px-4 py-[9px] text-center">Units by status</th>
+            <th className="px-4 py-[9px] text-right">
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#f4f4f6]">
@@ -202,6 +269,7 @@ export default function CaravanItemTable({
                 group={group}
                 isExpanded={expandedGroupKey === group.key}
                 onToggle={() => onToggleGroup(group.key)}
+                canTransfer={canTransfer}
               />
               {expandedGroupKey === group.key && (
                 <ExpandedSerials serials={expandedSerials} isLoading={isLoadingExpandedSerials} />

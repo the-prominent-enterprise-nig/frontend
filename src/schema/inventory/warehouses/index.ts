@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { caravanLabel } from '@/src/libs/format/locationLabel'
 
 export const WarehouseStatusSchema = z.enum(['active', 'inactive'])
 export const LocationTypeSchema = z.enum(['shelf', 'bin', 'zone', 'dock'])
@@ -75,17 +76,7 @@ export function isCaravanEnded(branch: WarehouseBranch | null | undefined): bool
  */
 export function warehouseLabel(wh: LabelledWarehouse, fallback = '—'): string {
   const branch = wh?.branch
-  if (branch?.isTemporary) {
-    const event = branch.eventName ?? branch.name
-    const host = branch.hostBranch?.name
-    const location = branch.addressLine1?.trim()
-    if (location) {
-      return host
-        ? `Caravan · ${event} — ${location} (hosted by ${host})`
-        : `Caravan · ${event} — ${location}`
-    }
-    return host ? `Caravan · ${event} — hosted at ${host}` : `Caravan · ${event}`
-  }
+  if (branch?.isTemporary) return caravanLabel(branch)
   return branch?.name ?? wh?.name ?? fallback
 }
 
