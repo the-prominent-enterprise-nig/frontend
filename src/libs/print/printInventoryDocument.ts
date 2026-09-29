@@ -2,6 +2,7 @@ import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/s
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   receivingReportSourceName,
+  receivingReportSourceSubtitle,
   receivingReportSourceRef,
 } from '@/src/libs/format/receiving-report'
 import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
@@ -112,6 +113,9 @@ export function buildReceivingReportHtml(
   const sourceName = receivingReportSourceName(
     rr as Parameters<typeof receivingReportSourceName>[0]
   )
+  const sourceSubtitle = receivingReportSourceSubtitle(
+    rr as Parameters<typeof receivingReportSourceSubtitle>[0]
+  )
   // The same formatter the on-screen sheet uses, so the printout and the
   // preview never disagree on how the crew is written.
   const driverHelper = receivingReportDriverHelper(
@@ -189,6 +193,7 @@ export function buildReceivingReportHtml(
     <div class="info">
       <div class="party">
         <p class="party-name">${esc(sourceName) || '—'}</p>
+        ${sourceSubtitle ? `<p class="party-address">${esc(sourceSubtitle)}</p>` : ''}
         ${driverHelper ? `<p class="party-address">Driver/Helper: ${esc(driverHelper)}</p>` : ''}
       </div>
       <div class="meta">

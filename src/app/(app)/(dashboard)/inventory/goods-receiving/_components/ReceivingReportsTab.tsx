@@ -23,7 +23,11 @@ import type {
   ReceiveStockFormValues,
   ReceivingReport,
 } from '@/src/schema/inventory/goods-receiving'
-import { receivingReportSourceRef } from '@/src/libs/format/receiving-report'
+import {
+  receivingReportSourceName,
+  receivingReportSourceRef,
+  receivingReportSourceSubtitle,
+} from '@/src/libs/format/receiving-report'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
@@ -221,19 +225,11 @@ function CopyCodeButton({ code }: { code: string }) {
   )
 }
 
-/** Who the goods came from — the "Source / Ref." column's first line.
- *
- * A transfer-sourced receipt has no supplier at all: the stock came from
- * another branch, so the counterpart is the branch that sent it. This column
- * read a bare "—" on every such row, which said nothing about where a
- * delivery had actually come from. */
+/** Who the goods came from — the "Source / Ref." column's first line: the
+ * supplier, or the branch that sent a transfer (a caravan by where it was
+ * set up). Same resolver as the RR sheet and its printout. */
 function sourceName(report: ReceivingReport): string {
-  if (report.supplier?.name) return report.supplier.name
-  const from = report.stockTransfer?.fromWarehouse
-  // Every branch's warehouse is named "<Branch> Warehouse", so the branch is
-  // the name staff actually use for the place.
-  if (from) return from.branch?.name ?? from.name
-  return '—'
+  return receivingReportSourceName(report) ?? '—'
 }
 
 /** The reference under the source name — a PO code for a supplier receipt,
@@ -745,6 +741,11 @@ export default function ReceivingReportsTab({
                       <p className="truncate text-[14.5px] font-medium text-[#17171c]">
                         {sourceName(report)}
                       </p>
+                      {receivingReportSourceSubtitle(report) && (
+                        <p className="truncate text-[13px] text-[#8b8b9b]">
+                          {receivingReportSourceSubtitle(report)}
+                        </p>
+                      )}
                       <PoLink report={report} />
                     </div>
 
