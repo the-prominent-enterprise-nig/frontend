@@ -18,7 +18,7 @@ export type SerialStatus = z.infer<typeof SerialStatusSchema>
 
 export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   in_stock: 'In Stock',
-  held: 'Held',
+  held: 'Reserved',
   sold: 'Sold',
   returned: 'Returned',
   defective: 'Defective',
@@ -28,6 +28,18 @@ export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   lost_in_transit: 'Lost in Transit',
   in_transit: 'In Transit',
 }
+
+/**
+ * The statuses a person can filter by, grouped by where the unit is. Leaves
+ * out `returned`: nothing sets it — a customer return goes straight back to
+ * in_stock, or defective when damaged (backend stock.service receive flow).
+ */
+export const SERIAL_STATUS_FILTER_GROUPS: { group: string; statuses: SerialStatus[] }[] = [
+  { group: 'On hand', statuses: ['in_stock', 'held'] },
+  { group: 'Moving', statuses: ['in_transit'] },
+  { group: 'Service', statuses: ['in_repair', 'defective', 'pulled_out'] },
+  { group: 'Gone', statuses: ['sold', 'scrapped', 'lost_in_transit'] },
+]
 
 export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   // Matches the Stock Balance tab's "In Stock" pill (StockBalanceList.tsx)
@@ -93,36 +105,6 @@ export const RegisterSerialsFormInputSchema = z.object({
 })
 
 export type RegisterSerialsFormInput = z.infer<typeof RegisterSerialsFormInputSchema>
-
-export const UpdateSerialStatusFormSchema = z
-  .object({
-    status: SerialStatusSchema,
-    warehouseId: z.string().optional(),
-    soldToCustomerId: z.string().optional(),
-    saleDate: z.string().optional(),
-  })
-  // "Sold" is the one transition the backend actually needs extra data for
-  // (who bought it, and when) — every other status only needs the enum
-  // value itself, so this stays a conditional refinement rather than making
-  // these fields required across the whole schema.
-  .superRefine((data, ctx) => {
-    if (data.status !== 'sold') return
-    if (!data.soldToCustomerId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Select the customer this unit was sold to',
-        path: ['soldToCustomerId'],
-      })
-    }
-    if (!data.saleDate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Sale date is required',
-        path: ['saleDate'],
-      })
-    }
-  })
-export type UpdateSerialStatusFormValues = z.infer<typeof UpdateSerialStatusFormSchema>
 
 const SerialItemSchema = z.object({
   id: z.string(),
@@ -236,6 +218,17 @@ export const CaravanItemGroupSchema = z.object({
   statusCounts: z.record(z.string(), z.number()).optional(),
   warehouseId: z.string().nullable(),
   caravan: WarehouseBranchSchema.nullable(),
+  // The receiving reports these units arrived on, newest first — usually one.
+  receipts: z
+    .array(
+      z.object({
+        id: z.string(),
+        code: z.string(),
+        receivedAt: z.string().nullable(),
+        transferNumber: z.string().nullable(),
+      })
+    )
+    .default([]),
 })
 export type CaravanItemGroup = z.infer<typeof CaravanItemGroupSchema>
 

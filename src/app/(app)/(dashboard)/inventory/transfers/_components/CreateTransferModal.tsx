@@ -488,7 +488,6 @@ export default function CreateTransferModal({
   }, [isOpen, isEditing, lockedToWarehouseId, setValue])
 
   const totalUnits = watchedLines.reduce((sum, l) => sum + (Number(l?.quantity) || 0), 0)
-  const hasSerialTrackedLine = watchedLines.some((l) => l?.isSerialTracked)
 
   // Scenario 60 — "For a caravan": the stock goes to a new caravan (a
   // temporary branch set up at a host branch for an event), created from the
@@ -945,14 +944,6 @@ export default function CreateTransferModal({
                   <span className="text-center">Units</span>
                   <span />
                 </div>
-              )}
-
-              {/* Said once for the whole card rather than per row — it's how
-                  serial-tracked transfers work, not a fact about one line. */}
-              {hasSerialTrackedLine && (
-                <p className="border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[11.5px] text-[#5b5b6b]">
-                  Serial-tracked — the source picks which exact units leave when they dispatch.
-                </p>
               )}
 
               {fields.length === 0 && (

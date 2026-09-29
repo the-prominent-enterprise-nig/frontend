@@ -150,7 +150,7 @@ test.describe('Inventory — Caravan as a Stock Transfer destination', () => {
     if (caravan) await page.request.patch(`/api/branches/${caravan.id}/deactivate`)
   })
 
-  test('Serial Numbers: no consign action; the Caravan tab lists a received unit with its caravan, host and Transfer out', async ({
+  test('Serial Numbers: no consign action; the Caravan tab lists a received unit under its item row, with Transfer out', async ({
     page,
   }) => {
     const api = page.request
@@ -240,13 +240,169 @@ test.describe('Inventory — Caravan as a Stock Transfer destination', () => {
     await caravanPicker.fill(eventName)
     await page.getByTestId('searchable-select-option').first().click()
 
-    const row = page.locator('tbody tr', { hasText: unit.serialNumber })
-    await expect(row).toBeVisible({ timeout: 15_000 })
-    await expect(row).toContainText(eventName)
-    await expect(row).toContainText('E2E Town Plaza')
+    // One item row for the one unit in this new caravan, carrying the caravan
+    // and where it is set up; opening it lists the unit itself.
+    const itemRow = page.locator('tbody tr', { hasText: eventName }).first()
+    await expect(itemRow).toBeVisible({ timeout: 15_000 })
+    await expect(itemRow).toContainText('E2E Town Plaza')
+    await itemRow.click()
+    await expect(
+      page.getByTestId('serial-link').filter({ hasText: unit.serialNumber })
+    ).toBeVisible({ timeout: 15_000 })
 
     // Transfer out opens New Stock Transfer with the caravan as the source.
-    await row.getByRole('link', { name: 'Transfer out' }).click()
+    await itemRow.getByRole('link', { name: 'Transfer out' }).click()
+    await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Close dialog' }).click()
+  })
+
+  test('creates a caravan inline and sends stock to it, labelled with its event name alone', async ({
+    page,
+  }) => {
+    const stamp = Date.now()
+    const eventName = `E2E Caravan Fair ${stamp}`
+    const reason = `${REASON_PREFIX} ${stamp}`
+    const today = new Date().toISOString().slice(0, 10)
+
+    await openCreateModal(page)
+    await pickComboboxOption(page, 'Search source branch…')
+    await addSerialTrackedItem(page)
+
+    await turnOnForACaravan(page)
+    const fields = page.getByTestId('new-caravan-fields')
+    await pickComboboxOption(page, 'Search host branch…')
+    await fillStable(fields.getByPlaceholder(/Fiesta Appliance Fair/), eventName)
+    await fillStable(fields.getByPlaceholder(/SM City Bacolod/), 'E2E Town Plaza')
+    // Ends today, so the caravan drops out of the branch lists by tomorrow.
+    await fillStable(fields.locator('input[type="date"]').nth(1), today)
+    await fillStable(page.getByPlaceholder(/Rebalancing stock/), reason)
+
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Submit Request' }).click()
+      await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toHaveCount(0, {
+        timeout: 5_000,
+      })
+    }).toPass({ timeout: 30_000 })
+
+    // The event is named "…Caravan…", so the label is the name alone — no
+    // "Caravan ·" prefix, location or host.
+    const row = page.locator('tbody tr', { hasText: eventName }).first()
+    await expect(row).toContainText(eventName, { timeout: 15_000 })
+    await expect(row).not.toContainText('hosted by')
+
+    // Cleanup: cancel the request and retire the caravan.
+    const transferId = await findStockTransferIdByReason(page.request, reason)
+    await cancelStockTransfer(page.request, transferId)
+    const caravansRes = await page.request.get('/api/inventory/caravans')
+    const caravan = ((await caravansRes.json()).data as { id: string; eventName: string }[]).find(
+      (c) => c.eventName === eventName
+    )
+    if (caravan) await page.request.patch(`/api/branches/${caravan.id}/deactivate`)
+  })
+
+  test('Serial Numbers: no consign action; the Caravan tab lists a received unit under its item row, with Transfer out', async ({
+    page,
+  }) => {
+    const api = page.request
+    const stamp = Date.now()
+    const eventName = `E2E Caravan Tab ${stamp}`
+    const today = new Date().toISOString().slice(0, 10)
+
+    // A unit that actually sits in a caravan: create the caravan, then walk
+    // one serial through the ordinary transfer lifecycle into it.
+    const warehouses = (
+      await (await api.get('/api/inventory/warehouses?limit=200&status=active')).json()
+    ).data as { id: string; branchId: string | null; branch?: { isTemporary?: boolean } | null }[]
+    const serials = (
+      await (await api.get('/api/inventory/serial-numbers?status=in_stock&limit=200')).json()
+    ).data as {
+      id: string
+      serialNumber: string
+      item: { id: string }
+      currentWarehouse: { id: string; branchId: string | null } | null
+      openTransfer: unknown
+    }[]
+    const unit = serials.find(
+      (s) =>
+        !s.openTransfer &&
+        s.currentWarehouse?.branchId &&
+        !warehouses.find((w) => w.id === s.currentWarehouse?.id)?.branch?.isTemporary
+    )
+    if (!unit?.currentWarehouse?.branchId) throw new Error('no free in-stock serial at a branch')
+    const host = unit.currentWarehouse
+
+    const caravan = await (
+      await api.post('/api/inventory/caravans', {
+        data: {
+          hostBranchId: host.branchId,
+          eventName,
+          location: 'E2E Town Plaza',
+          startDate: today,
+          endDate: today,
+        },
+      })
+    ).json()
+    const created = await (
+      await api.post('/api/inventory/transfers', {
+        data: {
+          fromWarehouseId: host.id,
+          toWarehouseId: caravan.warehouseId,
+          transferDate: today,
+          skipDestinationApproval: true,
+          reason: `${REASON_PREFIX} tab ${stamp}`,
+          lines: [{ itemId: unit.item.id, quantity: 1 }],
+        },
+      })
+    ).json()
+    if (created.status === 'pending_hq_approval') {
+      await api.patch(`/api/inventory/transfers/${created.id}/approve-hq`, { data: {} })
+    }
+    await api.patch(`/api/inventory/transfers/${created.id}/accept`, { data: {} })
+    await api.patch(`/api/inventory/transfers/${created.id}/dispatch`, {
+      data: {
+        driverName: 'E2E Driver',
+        driverPhone: '09170000000',
+        vehiclePlate: 'E2E 600',
+        carrierName: 'E2E Carrier',
+        serialAssignments: [{ lineId: created.lines[0].id, serialNumberId: unit.id }],
+      },
+    })
+    const received = await api.patch(`/api/inventory/transfers/${created.id}/receive`, {
+      data: {
+        receivedDate: today,
+        lines: [{ stockTransferLineId: created.lines[0].id, quantityReceived: 1 }],
+      },
+    })
+    expect(received.ok()).toBe(true)
+
+    // All Serials: the old bulk consign action and its row checkboxes are gone.
+    await gotoReady(page, '/inventory/serial-numbers')
+    await expect(page.getByRole('checkbox', { name: 'Select all' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Consign for Caravan' })).toHaveCount(0)
+
+    // Caravan tab, narrowed to this caravan.
+    await clickStable(
+      page.getByRole('button', { name: 'Caravan', exact: true }),
+      page.getByPlaceholder('All caravans')
+    )
+    const caravanPicker = page.getByPlaceholder('All caravans')
+    await caravanPicker.click()
+    await caravanPicker.fill(eventName)
+    await page.getByTestId('searchable-select-option').first().click()
+
+    // One item row for the one unit in this new caravan, carrying the caravan
+    // and where it is set up; opening it lists the unit itself.
+    const itemRow = page.locator('tbody tr', { hasText: eventName }).first()
+    await expect(itemRow).toBeVisible({ timeout: 15_000 })
+    await expect(itemRow).toContainText('E2E Town Plaza')
+    await itemRow.click()
+
+    const row = page.locator('tbody tr', { hasText: unit.serialNumber }).last()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+
+    // Transfer unit opens New Stock Transfer with the caravan as the source.
+    await row.getByRole('link', { name: 'Transfer unit' }).click()
     await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toBeVisible({
       timeout: 15_000,
     })

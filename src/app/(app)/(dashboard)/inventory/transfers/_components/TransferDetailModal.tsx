@@ -1065,8 +1065,13 @@ export default function TransferDetailModal({
 
   // Fleet roster (Vehicle model) lookup for the dispatch form — scoped to
   // the source branch a vehicle is on file for, same as the branch the
-  // dispatching stock is leaving from.
-  const dispatchFromBranchId = transfer?.fromWarehouse?.branch?.id
+  // dispatching stock is leaving from. A caravan has no fleet of its own
+  // (vehicles are registered to real branches), so stock leaving a caravan
+  // goes out on its host branch's vehicles.
+  const fromBranch = transfer?.fromWarehouse?.branch
+  const dispatchFromBranchId = fromBranch?.isTemporary
+    ? (fromBranch.hostBranch?.id ?? fromBranch.id)
+    : fromBranch?.id
   async function searchDispatchVehicles(query: string) {
     const result = await searchVehicles({ q: query, branchId: dispatchFromBranchId })
     return result.success && result.data ? result.data : []

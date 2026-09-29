@@ -12,20 +12,26 @@ import { showToast } from '@/src/components/ui/toast'
 import { getSerialNumbers } from '../_actions/get-serial-numbers'
 import { getCaravanItemGroups } from '../_actions/get-caravan-item-groups'
 import { registerSerialNumbers } from '../_actions/register-serial-numbers'
-import { updateSerialStatus } from '../_actions/update-serial-status'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
 import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
-import { getCustomers } from '@/src/libs/data/AccountingData'
 import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type {
   RegisterSerialsFormInput,
-  UpdateSerialStatusFormValues,
   SerialStatus,
+  SerialNumberSummary,
 } from '@/src/schema/inventory/serial-numbers'
 import { isCaravanBranch, warehouseLabel } from '@/src/schema/inventory/warehouses'
 import { caravanGroupKey } from '@/src/schema/inventory/serial-numbers'
 import { useLocationFilter } from '@/src/libs/inventory/useLocationFilter'
+
+// An opened caravan row lists what is still there first: on hand, then on
+// its way out, then everything already gone.
+const UNIT_STATUS_ORDER: SerialStatus[] = ['in_stock', 'held', 'in_transit', 'sold']
+function unitStatusRank(status: SerialStatus): number {
+  const i = UNIT_STATUS_ORDER.indexOf(status)
+  return i === -1 ? UNIT_STATUS_ORDER.length : i
+}
 
 export function useSerialNumbers() {
   const queryClient = useQueryClient()
@@ -48,12 +54,12 @@ export function useSerialNumbers() {
   const [caravanView, setCaravanView] = useState(false)
   const [caravanId, setCaravanId] = useState<string | undefined>(undefined)
 
-  // Scenario 08 (Caravan) — "By Item" vs "By Serial" within the Caravan tab.
-  // Serials lead: this is the Serial Number Tracking page, and the unit-level
-  // "Transfer out" action lives on that list. The item rollup is the summary
-  // you switch to, not the way in.
-  const [caravanGrouping, setCaravanGrouping] = useState<'item' | 'serial'>('serial')
-  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null)
+  // Scenario 60 — the Caravan tab is one list: a row per item per caravan
+  // that opens onto its units. Rows start closed, except while searching,
+  // when every matching item starts open so a typed serial is on screen
+  // straight away. `toggledKeys` holds the rows flipped from that default,
+  // and is cleared whenever the list itself changes.
+  const [toggledKeys, setToggledKeys] = useState<ReadonlySet<string>>(new Set())
 
   const queryParams = useMemo(
     () =>
@@ -100,8 +106,8 @@ export function useSerialNumbers() {
   const caravanReady = true
 
   // The item rollup is its own paginated list, so the serial list stands down
-  // entirely while "By Item" is showing rather than paging in the background.
-  const groupedCaravan = caravanView && caravanGrouping === 'item'
+  // entirely on the Caravan tab rather than paging in the background.
+  const groupedCaravan = caravanView
 
   const serialsQuery = useQuery({
     queryKey: ['inventory-serial-numbers', queryParams],
@@ -131,30 +137,48 @@ export function useSerialNumbers() {
     enabled: caravanReady && groupedCaravan,
   })
 
-  // Units behind the one expanded group. The list endpoint can narrow to the
-  // item but not to one caravan's warehouse at once across every caravan, so
-  // other caravans' units of the same item are filtered out here by the
-  // shared rollup key rather than by re-querying.
-  const expandedGroup = (caravanGroupsQuery.data?.data?.data ?? []).find(
-    (g) => g.key === expandedGroupKey
-  )
-  const expandedSerialsQuery = useQuery({
-    queryKey: ['inventory-caravan-group-serials', expandedGroupKey, caravanGroupParams],
-    queryFn: () =>
-      getSerialNumbers({
-        ...caravanGroupParams,
-        page: 1,
-        // One group is one item at one event — a few dozen units at most in
-        // practice, and there is no drill-down pagination to fall back on.
-        limit: 200,
-        itemId: expandedGroup?.item?.id,
-      }),
+  const caravanGroups = caravanGroupsQuery.data?.data?.data ?? []
+  const isGroupOpen = (key: string): boolean => toggledKeys.has(key) !== !!search
+
+  // While searching, one fetch covers every open row: the same search over
+  // the same caravans returns exactly the units the matching groups count.
+  const searchedSerialsQuery = useQuery({
+    queryKey: ['inventory-caravan-searched-serials', caravanGroupParams],
+    queryFn: () => getSerialNumbers({ ...caravanGroupParams, page: 1, limit: 200 }),
     staleTime: 30 * 1000,
-    enabled: !!expandedGroupKey && !!expandedGroup?.item?.id,
+    enabled: groupedCaravan && !!search,
   })
-  const expandedSerials = (expandedSerialsQuery.data?.data?.data ?? []).filter(
-    (s) => caravanGroupKey(s) === expandedGroupKey
-  )
+
+  // Otherwise each open row fetches its own units. One group is one item at
+  // one caravan — a few dozen units at most in practice, so no pagination
+  // inside a row. Narrowed by the group's own caravan and item, then by the
+  // rollup key in case the caravan holds more than one warehouse.
+  const openGroups = search ? [] : caravanGroups.filter((g) => isGroupOpen(g.key))
+  const groupSerialQueries = useQueries({
+    queries: openGroups.map((group) => ({
+      queryKey: ['inventory-caravan-group-serials', group.key, caravanGroupParams],
+      queryFn: () =>
+        getSerialNumbers({
+          ...caravanGroupParams,
+          caravanId: group.caravan?.id ?? caravanGroupParams.caravanId,
+          itemId: group.item?.id,
+          page: 1,
+          limit: 200,
+        }),
+      staleTime: 30 * 1000,
+      enabled: !!group.item?.id,
+    })),
+  })
+
+  const groupSerials = (key: string): { serials: SerialNumberSummary[]; isLoading: boolean } => {
+    const query = search
+      ? searchedSerialsQuery
+      : groupSerialQueries[openGroups.findIndex((g) => g.key === key)]
+    const serials = (query?.data?.data?.data ?? [])
+      .filter((s) => caravanGroupKey(s) === key)
+      .sort((a, b) => unitStatusRank(a.status) - unitStatusRank(b.status))
+    return { serials, isLoading: query?.isLoading ?? false }
+  }
 
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
@@ -174,22 +198,19 @@ export function useSerialNumbers() {
     staleTime: 5 * 60 * 1000,
   })
 
-  // Only needed for the "Change Status" modal's "sold to" picker (Scenario:
-  // Serial Numbers tab revamp). `getCustomers` returns either a flat array
-  // or `{ items, total, page, limit }` depending on whether the backend
-  // paginated — normalized to a flat array here so callers don't have to
-  // know about that union.
-  const customersQuery = useQuery({
-    queryKey: ['inventory-customers-lookup'],
-    queryFn: () => getCustomers({ limit: 200 }),
-    staleTime: 5 * 60 * 1000,
-  })
-
   // Metric band on the All Serials tab — counts across every matching
   // record, not just the current page, so each bucket is its own limit:1
-  // request (only `meta.total` is read from it). "Reserved" reads the
-  // `held` status (the schema has no literal "reserved" value).
-  const STATUS_COUNT_BUCKETS = ['in_stock', 'held', 'sold', 'returned', 'pulled_out'] as const
+  // request (only `meta.total` is read from it). "Reserved" is the `held`
+  // status; in_repair + defective + pulled_out fold into one "Service" cell.
+  const STATUS_COUNT_BUCKETS = [
+    'in_stock',
+    'held',
+    'in_transit',
+    'in_repair',
+    'defective',
+    'pulled_out',
+    'sold',
+  ] as const
   const statusCountQueries = useQueries({
     queries: STATUS_COUNT_BUCKETS.map((status) => ({
       queryKey: ['inventory-serial-status-count', status],
@@ -211,21 +232,6 @@ export function useSerialNumbers() {
     onSuccess: (result) => {
       if (result.success) {
         showToast({ title: 'Serials registered', description: result.message, status: 'success' })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-caravan-item-groups'] })
-      } else {
-        showToast({ title: 'Failed', description: result.message, status: 'error' })
-      }
-    },
-  })
-
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateSerialStatusFormValues }) =>
-      updateSerialStatus(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({ title: 'Status updated', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-caravan-item-groups'] })
@@ -274,6 +280,7 @@ export function useSerialNumbers() {
     setSearch: (v: string | undefined) => {
       setSearch(v)
       setPage(1)
+      setToggledKeys(new Set())
     },
     resetFilters: () => {
       setStatusFilter(undefined)
@@ -295,24 +302,18 @@ export function useSerialNumbers() {
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
     categoryOptions: flatToCategorySelectOptions(categoriesQuery.data?.data?.data ?? []),
-    customerOptions: (() => {
-      const raw = customersQuery.data?.data
-      if (!raw) return []
-      const list = Array.isArray(raw) ? raw : (raw.items ?? [])
-      return list.map((c) => ({ id: String(c.id), name: c.name }))
-    })(),
 
     caravanView,
     setCaravanView: (v: boolean) => {
       setCaravanView(v)
       setPage(1)
-      setExpandedGroupKey(null)
+      setToggledKeys(new Set())
     },
     caravanId,
     setCaravanId: (v: string | undefined) => {
       setCaravanId(v)
       setPage(1)
-      setExpandedGroupKey(null)
+      setToggledKeys(new Set())
     },
     // Every caravan the viewer can see, ended ones included — stock left in
     // an ended caravan still has to be found and transferred out.
@@ -320,26 +321,20 @@ export function useSerialNumbers() {
       .filter((wh) => isCaravanBranch(wh.branch))
       .map((wh) => ({ value: wh.branch?.id as string, label: warehouseLabel(wh) })),
     caravanReady,
-    caravanGrouping,
-    setCaravanGrouping: (v: 'item' | 'serial') => {
-      setCaravanGrouping(v)
-      setPage(1)
-      setExpandedGroupKey(null)
-    },
-    caravanGroups: caravanGroupsQuery.data?.data?.data ?? [],
+    caravanGroups,
     isLoadingCaravanGroups: caravanGroupsQuery.isLoading,
     caravanGroupsError: caravanGroupsQuery.error,
-    expandedGroupKey,
-    toggleExpandedGroup: (key: string) =>
-      setExpandedGroupKey((prev) => (prev === key ? null : key)),
-    expandedSerials,
-    isLoadingExpandedSerials: expandedSerialsQuery.isLoading,
+    isGroupOpen,
+    toggleGroup: (key: string) =>
+      setToggledKeys((prev) => {
+        const next = new Set(prev)
+        if (!next.delete(key)) next.add(key)
+        return next
+      }),
+    groupSerials,
 
     registerSerials: registerMutation.mutateAsync,
     isRegistering: registerMutation.isPending,
-
-    updateStatus: updateStatusMutation.mutateAsync,
-    isUpdatingStatus: updateStatusMutation.isPending,
 
     refetch: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })

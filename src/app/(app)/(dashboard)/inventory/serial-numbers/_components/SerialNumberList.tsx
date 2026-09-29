@@ -2,8 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Hash, RefreshCw, X, Truck, Search, Copy, Check } from 'lucide-react'
-import { showToast } from '@/src/components/ui/toast'
+import { Hash, RefreshCw, X, Truck, Search } from 'lucide-react'
 import { useSerialNumbers } from '../_hooks/useSerialNumbers'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -12,14 +11,14 @@ import {
   SERIAL_STATUS_LABELS,
   SERIAL_STATUS_COLORS,
   SERIAL_STATUS_DOT_COLORS,
-  SerialStatusSchema,
+  SERIAL_STATUS_FILTER_GROUPS,
   type SerialStatus,
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
-import CaravanItemTable, { CaravanCells, TransferOutLink } from './CaravanItemTable'
+import CaravanItemTable from './CaravanItemTable'
+import CopySerialButton from './CopySerialButton'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatShortDate } from '@/src/libs/format/date'
@@ -35,7 +34,9 @@ import { useUIShell } from '@/src/stores/ui-shell.store'
 // Matches Stock Balance's own #5b21b6 palette (same StockHub tab group), so
 // the two lists in the Stock hub read as one design language.
 
-const statusOptions = SerialStatusSchema.options
+const statusOptions = SERIAL_STATUS_FILTER_GROUPS.flatMap(({ group, statuses }) =>
+  statuses.map((s) => ({ value: s, label: SERIAL_STATUS_LABELS[s], group }))
+)
 
 const CONTROL_CHROME = {
   idle: 'border-[#d3d3db]',
@@ -48,31 +49,6 @@ function brandModel(
   if (!item) return '—'
   const parts = [item.brand?.name, item.modelNumber].filter(Boolean)
   return parts.length > 0 ? parts.join(' ') : item.name
-}
-
-function CopySerialButton({ serialNumber }: { serialNumber: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const copy = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    await navigator.clipboard?.writeText(serialNumber)
-    showToast({ title: `${serialNumber} copied`, status: 'success' })
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  return (
-    <Tooltip label={copied ? 'Copied' : 'Copy serial number'}>
-      <button
-        type="button"
-        onClick={copy}
-        aria-label="Copy serial number"
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#a3a3b2] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
-      >
-        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-      </button>
-    </Tooltip>
-  )
 }
 
 function SerialStatusPill({ status }: { status: SerialStatus }) {
@@ -152,13 +128,10 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     setCaravanId,
     caravanOptions,
     caravanReady,
-    caravanGrouping,
-    setCaravanGrouping,
     caravanGroups,
-    expandedGroupKey,
-    toggleExpandedGroup,
-    expandedSerials,
-    isLoadingExpandedSerials,
+    isGroupOpen,
+    toggleGroup,
+    groupSerials,
   } = useSerialNumbers()
 
   const brandOptions = useMemo(() => {
@@ -171,10 +144,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     )
   }, [itemOptions])
 
-  // The Caravan tab's "By Item" rollup — group rows, not serial rows, so the
-  // serial table stands down for it.
-  const groupedCaravan = caravanView && caravanGrouping === 'item'
-
   const hasFilters =
     statusFilter ||
     locationFilter.locations.length > 0 ||
@@ -182,7 +151,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     search ||
     brandFilter
 
-  const soldReturned = statusCounts.sold + statusCounts.returned
+  const inService = statusCounts.in_repair + statusCounts.defective + statusCounts.pulled_out
 
   return (
     <div className={`${PLEX} min-h-screen bg-zinc-50 text-[#17171c] antialiased`}>
@@ -232,7 +201,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
             applies to the All Serials tab; Caravan has no equivalent
             aggregate to show. */}
         {!caravanView && !isLoading && (
-          <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1080px]:grid-cols-5 min-[1080px]:divide-y-0">
+          <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1080px]:grid-cols-6 min-[1080px]:divide-y-0">
             <MetricCell label="Registered" value={pagination.total} sub="total units" />
             <MetricCell
               label="In Stock"
@@ -240,9 +209,10 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               sub="available to sell"
               highlight
             />
-            <MetricCell label="Reserved" value={statusCounts.held} sub="committed" />
-            <MetricCell label="Pulled Out" value={statusCounts.pulled_out} sub="repossessed" />
-            <MetricCell label="Sold / Returned" value={soldReturned} sub="out of stock" />
+            <MetricCell label="Reserved" value={statusCounts.held} sub="claimed for a sale" />
+            <MetricCell label="In Transit" value={statusCounts.in_transit} sub="on a transfer" />
+            <MetricCell label="Service" value={inService} sub="repair, defective, pulled out" />
+            <MetricCell label="Sold" value={statusCounts.sold} sub="out of stock" />
           </div>
         )}
 
@@ -273,29 +243,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           </button>
         </div>
 
-        {/* Scenario 08 (Caravan) — "By Serial" vs "By Item". Serials lead, in
-            both order and default: this is the Serial Number Tracking page,
-            and the unit-level actions live on that list. The item rollup is
-            the summary you switch to. */}
-        {caravanView && (
-          <div className="flex w-fit gap-1 rounded-lg border border-[#e4e4e9] bg-white p-1">
-            {(['serial', 'item'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setCaravanGrouping(mode)}
-                className={`rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium ${
-                  caravanGrouping === mode
-                    ? 'bg-[#f1ebfb] text-[#3f1490]'
-                    : 'text-[#5b5b6b] hover:text-[#17171c]'
-                }`}
-              >
-                {mode === 'item' ? 'By Item' : 'By Serial'}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* Filter bar */}
         <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3">
           <div
@@ -317,7 +264,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
             placeholder="All statuses"
             chrome={CONTROL_CHROME}
             clearable
-            options={statusOptions.map((s) => ({ value: s, label: SERIAL_STATUS_LABELS[s] }))}
+            options={statusOptions}
           />
 
           {caravanView ? (
@@ -375,25 +322,23 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                     </div>
                   ))}
                 </div>
-              ) : groupedCaravan ? (
+              ) : caravanView ? (
                 <CaravanItemTable
                   groups={caravanGroups}
                   canTransfer={canTransfer}
-                  expandedGroupKey={expandedGroupKey}
-                  onToggleGroup={toggleExpandedGroup}
-                  expandedSerials={expandedSerials}
-                  isLoadingExpandedSerials={isLoadingExpandedSerials}
+                  isGroupOpen={isGroupOpen}
+                  onToggleGroup={toggleGroup}
+                  groupSerials={groupSerials}
+                  emptyLabel={
+                    caravanId
+                      ? 'Nothing currently at this caravan'
+                      : 'Nothing currently out on caravan'
+                  }
                 />
               ) : serials.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
                   <Hash className="h-[30px] w-[30px] text-[#c9c9d3]" />
-                  {caravanView ? (
-                    <div className="mt-1 text-[14px] font-semibold">
-                      {caravanId
-                        ? 'Nothing currently at this caravan'
-                        : 'Nothing currently out on caravan'}
-                    </div>
-                  ) : hasFilters ? (
+                  {hasFilters ? (
                     <>
                       <div className="mt-1 text-[14px] font-semibold">
                         No serial numbers match your filters
@@ -426,14 +371,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Origin</th>
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">Date In</th>
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">Age</th>
-                        {caravanView && <th className="px-4 py-[9px] text-left">Caravan</th>}
-                        {caravanView && <th className="px-4 py-[9px] text-left">Host branch</th>}
                         <th className="px-4 py-[9px] text-center">Status</th>
-                        {caravanView && canTransfer && (
-                          <th className="px-4 py-[9px] text-right">
-                            <span className="sr-only">Actions</span>
-                          </th>
-                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f4f4f6]">
@@ -524,22 +462,9 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                               locationSince={serial.locationSince}
                             />
                           </td>
-                          {caravanView && <CaravanCells branch={serial.currentWarehouse?.branch} />}
                           <td className="px-4 py-[11px] text-center">
                             <SerialStatusPill status={serial.status} />
                           </td>
-                          {caravanView && canTransfer && (
-                            <td className="px-4 py-[11px] text-right">
-                              {serial.status === 'in_stock' && serial.currentWarehouse && (
-                                <TransferOutLink
-                                  fromWarehouseId={serial.currentWarehouse.id}
-                                  itemId={serial.item?.id}
-                                  itemLabel={serial.item?.name}
-                                  quantity={1}
-                                />
-                              )}
-                            </td>
-                          )}
                         </tr>
                       ))}
                     </tbody>
