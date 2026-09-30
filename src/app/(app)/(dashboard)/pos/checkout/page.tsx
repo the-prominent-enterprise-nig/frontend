@@ -205,6 +205,12 @@ interface CartLine {
   payNowMethod?: PayNowMethod
   financingTermId?: string
   downPaymentInput?: string
+  /** Which priceListItemId downPaymentInput was auto-derived for (curated
+   * or 10%-floor) — unset when the cashier typed it themselves, or copied
+   * in from an approved credit application. Lets a later Price Use change
+   * tell "stale auto-fill, safe to recompute" apart from "an entry that
+   * must never be silently overwritten". */
+  downPaymentAutoForPriceListItemId?: string | null
 }
 
 interface PaymentRow {
@@ -674,13 +680,27 @@ export default function CheckoutPage() {
       prev.map((line) => {
         if (line.priceOverrideBy) return line
         if (!line.priceUseTypeId) return line
+        // A downPaymentInput this line auto-filled for its PREVIOUS
+        // priceListItemId (curated or 10%-floor) is now stale the moment
+        // Price Use resolves to a different one — e.g. WIP's curated 2,900
+        // must not linger once the line switches to CR-BR's 2,600. A value
+        // the cashier actually typed (or one copied from an approved
+        // credit application) never carries this marker, so it survives.
+        // Recomputed immediately (never just cleared to blank) since a
+        // financingTermId may already be active and the installment-preview
+        // fetch reads downPaymentInput directly — a blank value would send
+        // a 0 down payment to that preview until something else refilled it.
+        const isStaleAutoDownPayment = (newPriceListItemId: string | null) =>
+          line.downPaymentAutoForPriceListItemId !== undefined &&
+          line.downPaymentAutoForPriceListItemId !== newPriceListItemId
         const resolved = resolvedPrices[resolutionKey(line.itemId, line.priceUseTypeId)]
         if (!resolved) {
           // No active price list matches this line's picked Price Use — clear
           // unitPrice back to 0 too, not just the resolved flags. Leaving the
           // old Price Use's unitPrice in place kept the Order Summary total
           // frozen on the stale price even though the per-line cell correctly
-          // switched to "No price — Override".
+          // switched to "No price — Override". Nothing to recompute a down
+          // payment against here, so a stale auto-fill just goes blank.
           return line.priceResolved
             ? {
                 ...line,
@@ -688,16 +708,38 @@ export default function CheckoutPage() {
                 priceResolved: false,
                 priceListItemId: null,
                 priceListDownPayment: null,
+                ...(isStaleAutoDownPayment(null)
+                  ? { downPaymentInput: undefined, downPaymentAutoForPriceListItemId: undefined }
+                  : {}),
               }
             : line
         }
         if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line
+        const recomputedDownPayment = isStaleAutoDownPayment(resolved.priceListItemId)
+          ? {
+              downPaymentInput: (resolved.downPayment != null
+                ? Number(resolved.downPayment)
+                : Math.ceil(
+                    effectiveUnitPrice(
+                      { ...line, unitPrice: resolved.price },
+                      activeTaxRate,
+                      inclusivePricing,
+                      isTaxExempt
+                    ) *
+                      line.quantity *
+                      0.1
+                  )
+              ).toFixed(2),
+              downPaymentAutoForPriceListItemId: resolved.priceListItemId,
+            }
+          : {}
         return {
           ...line,
           unitPrice: resolved.price,
           priceListItemId: resolved.priceListItemId,
           priceListDownPayment: resolved.downPayment,
           priceResolved: true,
+          ...recomputedDownPayment,
         }
       })
     )
@@ -1459,7 +1501,7 @@ export default function CheckoutPage() {
     installmentCartLines
       .map(
         (l) =>
-          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}`
+          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}`
       )
       .join('|') + `|employeeLoan:${employeeApplianceLoanActive}`
 
@@ -1655,6 +1697,15 @@ export default function CheckoutPage() {
           totalAmount: lineAmount,
           downPayment,
           financingTermId,
+          // Curated PriceListItemTerm (the real rate card) wins over the
+          // generic factorRate calculation when one exists for this SKU +
+          // term — matches the down-payment badge above, which already
+          // sources from this same line.priceListItemId. Previously omitted
+          // here, so the preview silently fell back to the generic formula
+          // even for a rate-card SKU (found 2026-09-22: DP badge showed the
+          // curated ₱3,590 but the monthly installment showed the generic
+          // ₱4,575.60 instead of the rate card's ₱5,130).
+          priceListItemId: line.priceListItemId ?? undefined,
         })
         setInstallmentPreviews((prev) => ({
           ...prev,
@@ -1990,6 +2041,7 @@ export default function CheckoutPage() {
                 ? {
                     financingTermId: undefined,
                     downPaymentInput: undefined,
+                    downPaymentAutoForPriceListItemId: undefined,
                     installmentProvider: undefined,
                   }
                 : {}),
@@ -2025,13 +2077,21 @@ export default function CheckoutPage() {
         // moment to hang the down-payment pre-fill off the way inhouse does
         // (see setLineFinancingTermId) — seed it here instead, so the panel
         // never opens on a blank field that reads as "nothing to collect".
+        // Same curated-over-floor priority as setLineFinancingTermId().
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
+        const fallbackDownPayment =
+          l.priceListDownPayment != null
+            ? Number(l.priceListDownPayment).toFixed(2)
+            : Math.ceil(lineAmount * 0.1).toFixed(2)
         return {
           ...l,
           installmentProvider: provider,
           financingTermId: undefined,
-          downPaymentInput: l.downPaymentInput ?? Math.ceil(0.1 * lineAmount).toFixed(2),
+          downPaymentInput: l.downPaymentInput ?? fallbackDownPayment,
+          downPaymentAutoForPriceListItemId: l.downPaymentInput
+            ? l.downPaymentAutoForPriceListItemId
+            : (l.priceListItemId ?? null),
         }
       })
     )
@@ -2114,6 +2174,12 @@ export default function CheckoutPage() {
           ...l,
           financingTermId: application.financingTermId ?? l.financingTermId,
           downPaymentInput,
+          // An approved application's figure is authoritative, same as a
+          // cashier's own typed entry — a later Price Use change must not
+          // treat it as a stale auto-fill and silently recompute it away.
+          downPaymentAutoForPriceListItemId: dpByLine.has(l.lineId)
+            ? undefined
+            : l.downPaymentAutoForPriceListItemId,
         }
       })
     )
@@ -2142,14 +2208,27 @@ export default function CheckoutPage() {
                   l.quantity *
                   0.1
               ).toFixed(2)
-        return { ...l, financingTermId, downPaymentInput }
+        return {
+          ...l,
+          financingTermId,
+          downPaymentInput,
+          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+        }
       })
     )
   }
 
   function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, downPaymentInput } : l)))
+    setCart((prev) =>
+      prev.map((l) =>
+        ids.has(l.lineId)
+          ? // An explicit cashier edit — no longer an auto-fill a later
+            // Price Use change is allowed to silently recompute.
+            { ...l, downPaymentInput, downPaymentAutoForPriceListItemId: undefined }
+          : l
+      )
+    )
   }
 
   function toggleDownPaymentEdit(lineId: string) {
@@ -4402,11 +4481,23 @@ export default function CheckoutPage() {
                   // payment entirely, overriding whatever was typed/defaulted
                   // before the checkbox was checked, both for display here
                   // and for what actually gets submitted (see handleConfirm).
+                  //
+                  // Otherwise, same priority as setLineFinancingTermId()'s
+                  // auto-fill: a curated per-SKU down payment from the real
+                  // rate card wins over the generic 10%-floor fallback when
+                  // one exists — the DISPLAY-time version of that rule, for
+                  // before a term has been picked yet (downPaymentInput still
+                  // unset) so the shown figure doesn't disagree with what
+                  // picking a term is about to fill in.
+                  const curatedDownPaymentWhole =
+                    line.priceListDownPayment != null
+                      ? Math.round(Number(line.priceListDownPayment))
+                      : null
                   const downPaymentValue = employeeApplianceLoanActive
                     ? 0
                     : line.downPaymentInput
                       ? parseFloat(line.downPaymentInput) || 0
-                      : minDownPaymentWhole
+                      : (curatedDownPaymentWhole ?? minDownPaymentWhole)
                   const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
@@ -4524,7 +4615,7 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      10% min
+                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
@@ -4544,7 +4635,9 @@ export default function CheckoutPage() {
                               {!employeeApplianceLoanActive && (
                                 <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                   <span className="text-prominent-purple-400">●</span>
-                                  Fixed at 10% of the sale amount — the same for every term.
+                                  {curatedDownPaymentWhole !== null
+                                    ? 'From the rate card for this term — the minimum accepted is still 10% of the sale amount.'
+                                    : 'Fixed at 10% of the sale amount — the same for every term.'}
                                 </p>
                               )}
                               {line.financingTermId && (
@@ -4635,7 +4728,7 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      10% min
+                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
@@ -5241,7 +5334,7 @@ export default function CheckoutPage() {
                                             : needsManagerOverride && !managerOverrideApproved
                                               ? 'Manager override required'
                                               : cart.some((l) => l.isSerialTracked)
-                                                ? 'Submit for Approval'
+                                                ? 'Checkout'
                                                 : saleMode === 'reserve'
                                                   ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
                                                   : allCharge

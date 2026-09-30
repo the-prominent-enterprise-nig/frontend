@@ -158,11 +158,14 @@ const CreateCreditApplicationBaseSchema = z.object({
   newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   // An application can cover a bundle of models (2026-08-15, second pass) —
   // checkout enforces an exact match against the sale's installment lines.
-  // estimatedPrice is client-side only (never sent past whitelist-stripping
-  // on the way in) — the flat catalog price the item combobox's search
-  // result carries, kept in form state (not component state) purely so the
+  // estimatedPrice is the flat catalog price the item combobox's search
+  // result carries, kept in form state (not component state) so the
   // financing preview below can sum it reactively via watch('items') and
-  // stay index-safe across add/remove.
+  // stay index-safe across add/remove. Also sent to the backend (mapped to
+  // the DTO's unitPrice in create-application.ts/update-application.ts) —
+  // the backend now trusts this client-supplied price over its own Price
+  // List resolution, so the down payment matches the price actually shown
+  // here instead of a possibly-divergent Price Use lookup.
   items: z
     .array(
       z.object({
