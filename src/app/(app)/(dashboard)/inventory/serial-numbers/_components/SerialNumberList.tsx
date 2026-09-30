@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Hash, X, Truck, Search } from 'lucide-react'
+import { Hash, X, Truck, Search, ArrowRightLeft } from 'lucide-react'
 import { useSerialNumbers } from '../_hooks/useSerialNumbers'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -16,11 +16,14 @@ import {
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
+import ConsignToCaravanModal from './ConsignToCaravanModal'
+import { useSerialSelection, isConsignable } from '../_hooks/useSerialSelection'
+import { useConsignToCaravan } from '../_hooks/useConsignToCaravan'
 import CaravanItemTable from './CaravanItemTable'
-import CaravanCountdownStrip from './CaravanCountdownStrip'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import CopySerialButton from './CopySerialButton'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatShortDate } from '@/src/libs/format/date'
@@ -61,6 +64,23 @@ function SerialStatusPill({ status }: { status: SerialStatus }) {
       dotClassName={SERIAL_STATUS_DOT_COLORS[status]}
       size="xs"
     />
+  )
+}
+
+// A unit an open transfer already claims (requested through partially
+// received) — says which one, so it's clear why the row can't be consigned.
+function OpenTransferChip({ number }: { number: string }): React.JSX.Element {
+  return (
+    <Tooltip label="Open this transfer">
+      <Link
+        href={`/inventory/transfers?transfer=${encodeURIComponent(number)}`}
+        onClick={(e) => e.stopPropagation()}
+        className={`${MONO} inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-[#f1ebfb] px-2 py-0.5 text-[11.5px] font-medium text-[#5b21b6] hover:bg-[#e6dcf8]`}
+      >
+        <ArrowRightLeft className="h-3 w-3" />
+        On {number}
+      </Link>
+    </Tooltip>
   )
 }
 
@@ -163,6 +183,13 @@ export default function SerialNumberList({
     search ||
     brandFilter
 
+  // Scenario 60 — tick in-stock units, then "Consign to Caravan": a new
+  // caravan plus a stock transfer carrying exactly those units.
+  const selection = useSerialSelection(serials)
+  const [isConsignOpen, setIsConsignOpen] = useState(false)
+  const { consignToCaravan, isConsigning } = useConsignToCaravan(selection.clear)
+  const showSelection = canConsign && !caravanView
+
   const inService = statusCounts.in_repair + statusCounts.defective + statusCounts.pulled_out
 
   return (
@@ -179,17 +206,6 @@ export default function SerialNumberList({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Opens New Stock Transfer with "For a caravan" on — a caravan
-                is stocked by an ordinary transfer, so its fields live there. */}
-            {canConsign && (
-              <Link
-                href="/inventory/transfers?new=caravan"
-                className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb]"
-              >
-                <Truck className="h-3.5 w-3.5" />
-                Consign to Caravan
-              </Link>
-            )}
             {canManage && (
               <button
                 type="button"
@@ -264,10 +280,6 @@ export default function SerialNumberList({
           </button>
         </div>
 
-        {caravanView && canTransfer && (
-          <CaravanCountdownStrip selectedId={caravanId} onSelect={setCaravanId} />
-        )}
-
         {/* Filter bar */}
         <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3">
           <div
@@ -330,6 +342,35 @@ export default function SerialNumberList({
           )}
         </div>
 
+        {showSelection && selection.selected.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb] p-3">
+            <span className="text-[12.5px] font-medium text-[#3f1490]">
+              {selection.selected.length} selected
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsConsignOpen(true)}
+              disabled={selection.mixedSources}
+              className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4c1a9b] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Truck className="h-3.5 w-3.5" />
+              Consign to Caravan
+            </button>
+            <button
+              type="button"
+              onClick={selection.clear}
+              className="rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-white"
+            >
+              Clear
+            </button>
+            {selection.mixedSources && (
+              <span className="text-[12px] text-[#8a4b06]">
+                Tick units from one branch only — a transfer leaves from a single source.
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Table card */}
         {(!caravanView || caravanReady) && (
           <>
@@ -387,6 +428,17 @@ export default function SerialNumberList({
                       <tr
                         className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
                       >
+                        {showSelection && (
+                          <th className="w-10 px-4 py-[9px]">
+                            <input
+                              type="checkbox"
+                              aria-label="Select all in-stock units"
+                              checked={selection.allSelected}
+                              onChange={selection.toggleAll}
+                              className="h-4 w-4 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
+                            />
+                          </th>
+                        )}
                         <th className="px-4 py-[9px] text-left">Serial #</th>
                         <th className="px-4 py-[9px] text-left hidden sm:table-cell">Location</th>
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">
@@ -413,8 +465,23 @@ export default function SerialNumberList({
                               serialNumber: serial.serialNumber,
                             })
                           }
-                          className="cursor-pointer hover:bg-[#fcfcfd]"
+                          className={`cursor-pointer hover:bg-[#fcfcfd] ${
+                            selection.isSelected(serial.id) ? 'bg-[#f8f4fd]' : ''
+                          }`}
                         >
+                          {showSelection && (
+                            <td className="px-4 py-[11px]" onClick={(e) => e.stopPropagation()}>
+                              {isConsignable(serial) && (
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Select ${serial.serialNumber}`}
+                                  checked={selection.isSelected(serial.id)}
+                                  onChange={() => selection.toggle(serial.id)}
+                                  className="h-4 w-4 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
+                                />
+                              )}
+                            </td>
+                          )}
                           <td className="px-4 py-[11px]">
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-1.5">
@@ -488,7 +555,12 @@ export default function SerialNumberList({
                             />
                           </td>
                           <td className="px-4 py-[11px] text-center">
-                            <SerialStatusPill status={serial.status} />
+                            <div className="flex flex-col items-center gap-1">
+                              <SerialStatusPill status={serial.status} />
+                              {serial.openTransfer && (
+                                <OpenTransferChip number={serial.openTransfer.transferNumber} />
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -560,6 +632,18 @@ export default function SerialNumberList({
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}
         warehouses={warehouseOptions}
+      />
+
+      <ConsignToCaravanModal
+        isOpen={isConsignOpen}
+        onClose={() => setIsConsignOpen(false)}
+        onSubmit={consignToCaravan}
+        isSubmitting={isConsigning}
+        serials={selection.selected}
+        sourceId={selection.sourceWarehouse?.id ?? ''}
+        sourceLabel={locationLabel(selection.sourceWarehouse)}
+        warehouses={warehouseOptions}
+        currentUserBranchId={session.branchId}
       />
     </div>
   )

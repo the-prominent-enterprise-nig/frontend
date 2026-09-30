@@ -2,7 +2,7 @@
 
 import { Fragment } from 'react'
 import Link from 'next/link'
-import { ArrowRightLeft, ChevronRight, Package } from 'lucide-react'
+import { AlertTriangle, ArrowRightLeft, CalendarClock, ChevronRight, Package } from 'lucide-react'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatShortDate } from '@/src/libs/format/date'
@@ -15,7 +15,12 @@ import {
   type SerialNumberSummary,
   type SerialStatus,
 } from '@/src/schema/inventory/serial-numbers'
-import { isCaravanEnded, type WarehouseBranch } from '@/src/schema/inventory/warehouses'
+import {
+  caravanCountdown,
+  caravanDaysLeft,
+  isCaravanEnded,
+  type WarehouseBranch,
+} from '@/src/schema/inventory/warehouses'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
@@ -46,6 +51,31 @@ function caravanDateRange(branch: WarehouseBranch | null | undefined): string {
   return `${formatShortDate(branch.startDate)} – ${formatShortDate(branch.endDate)}`
 }
 
+// Ended needs action now; the last few days are a heads-up.
+function countdownTone(branch: WarehouseBranch | null | undefined): string {
+  if (isCaravanEnded(branch)) return 'text-[#b42318]'
+  const days = caravanDaysLeft(branch?.endDate)
+  return days !== null && days <= 3 ? 'text-[#8a4b06]' : 'text-[#3f1490]'
+}
+
+/** "3 days left" / "Ended 2 days ago" — replaces the old countdown cards. */
+function CaravanCountdown({
+  branch,
+}: {
+  branch: WarehouseBranch | null | undefined
+}): React.ReactElement | null {
+  if (!branch?.endDate) return null
+  const Icon = isCaravanEnded(branch) ? AlertTriangle : CalendarClock
+  return (
+    <div
+      className={`mt-0.5 inline-flex items-center gap-1 text-[12px] font-medium ${countdownTone(branch)}`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {caravanCountdown(branch.endDate)}
+    </div>
+  )
+}
+
 /**
  * Scenario 60 — the two caravan columns shared by the Caravan tab's serial
  * list and this rollup: which caravan (event, where it is set up, when) and
@@ -57,22 +87,15 @@ export function CaravanCells({
 }: {
   branch: WarehouseBranch | null | undefined
 }): React.ReactElement {
-  const ended = isCaravanEnded(branch)
   return (
     <>
       <td className="px-4 py-[11px] text-[13.5px]">
-        <div className="flex flex-wrap items-center gap-1.5 font-medium text-[#17171c]">
-          {branch?.eventName ?? branch?.name ?? '—'}
-          {ended && (
-            <span className="rounded-full bg-[#fdeceb] px-2 py-0.5 text-[11px] font-medium text-[#b42318]">
-              Ended
-            </span>
-          )}
-        </div>
+        <div className="font-medium text-[#17171c]">{branch?.eventName ?? branch?.name ?? '—'}</div>
         {branch?.addressLine1 && (
           <div className="text-[12.5px] text-[#5b5b6b]">{branch.addressLine1}</div>
         )}
         <div className="text-[12px] text-[#8b8b9b]">{caravanDateRange(branch)}</div>
+        <CaravanCountdown branch={branch} />
       </td>
       <td className="px-4 py-[11px] text-[13.5px] text-[#5b5b6b]">
         {branch?.hostBranch?.name ?? '—'}

@@ -26,6 +26,10 @@ export const CreateTransferLineSchema = z
   .object({
     itemId: z.string().min(1, 'Item is required'),
     quantity: z.number().positive('Quantity must be greater than 0'),
+    // Set only by Serial Numbers' "Consign to Caravan": the units were
+    // ticked there, so the line is pinned to that exact serial (quantity 1)
+    // instead of the source picking one at dispatch.
+    serialNumberId: z.string().optional(),
     // Form-only — never sent to the server. Tells handleFormSubmit which
     // lines to split, and drives the row's own serial-tracked note.
     isSerialTracked: z.boolean().optional(),

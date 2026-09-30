@@ -4,7 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { CreateTransferFormSchema } from '@/src/schema/inventory/transfers'
 
-export async function createTransfer(input: unknown): Promise<ApiResponse<{ id: string }>> {
+export async function createTransfer(
+  input: unknown
+): Promise<ApiResponse<{ id: string; transferNumber?: string }>> {
   const parsed = CreateTransferFormSchema.safeParse(input)
   if (!parsed.success) {
     return {
@@ -28,7 +30,7 @@ export async function createTransfer(input: unknown): Promise<ApiResponse<{ id: 
   const data = { ...parsed.data }
   delete data.destinationType
   delete data.newCaravan
-  const result = await api.post<{ id: string }>('/inventory/transfers', {
+  const result = await api.post<{ id: string; transferNumber?: string }>('/inventory/transfers', {
     ...data,
     expectedArrival: data.expectedArrival || undefined,
   })
