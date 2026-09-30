@@ -259,6 +259,26 @@ export default function CreditApplicationDetail({
   const canAttachDocuments =
     isEditable || (['approved', 'partially_approved'] as string[]).includes(application.status)
 
+  // Scenario 60 item 27. Sorted into the paper form's order rather than
+  // whichever order the rows came back in, so the card reads like the scan
+  // it was transcribed from.
+  const RELATED_PERSON_ORDER = ['spouse', 'father', 'mother']
+  const relatedPeople = [...(application.relatedPeople ?? [])].sort(
+    (a, b) => RELATED_PERSON_ORDER.indexOf(a.role) - RELATED_PERSON_ORDER.indexOf(b.role)
+  )
+  // `paperFormConfirmed` is excluded from this check on purpose: it defaults
+  // to false on every application, so counting it would show the block
+  // everywhere. It's a flag about a form, not evidence one was transcribed.
+  const hasPaperRecord =
+    application.lcp != null ||
+    application.ppdRebate != null ||
+    !!application.firstDueDate ||
+    !!application.downPaymentCollection ||
+    !!application.posDraftReference ||
+    application.applicantIsUnitUser != null ||
+    !!application.transcribedAt ||
+    !!application.installmentAccountId
+
   async function handleAttach() {
     if (!pendingFile) return
     setUploadError(undefined)
@@ -438,7 +458,177 @@ export default function CreditApplicationDetail({
               <p className="text-sm text-zinc-400">No co-maker on this application.</p>
             )}
           </div>
+
+          {/* Scenario 60 item 27. Roles are listed in the paper form's own
+              order and a role with nothing recorded is simply absent — the
+              form lets a mobile be marked unavailable, so a name with no
+              number is a complete answer, not a half-filled row. */}
+          <div className="rounded-xl border border-zinc-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Related People</h2>
+            {relatedPeople.length > 0 ? (
+              <ul className="space-y-3 text-sm">
+                {relatedPeople.map((person) => (
+                  <li
+                    key={person.id}
+                    className="border-b border-zinc-100 pb-3 last:border-0 last:pb-0"
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="font-medium text-zinc-900">
+                        {[person.firstName, person.lastName].filter(Boolean).join(' ')}
+                      </span>
+                      <span className="shrink-0 font-mono text-xs text-zinc-600">
+                        {person.mobileNumber || '—'}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs capitalize text-zinc-500">{person.role}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-zinc-400">
+                No spouse, father or mother recorded on this application.
+              </p>
+            )}
+          </div>
+
+          {/* Scenario 60 item 27. Row numbers are shown because they are the
+              paper form's own "Reference 1/2/3" — a gap (say 1 and 3 filled,
+              2 blank) is information, not an error, so the positions are
+              rendered as stored rather than renumbered to look tidy. */}
+          <div className="rounded-xl border border-zinc-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Character References</h2>
+            {application.references && application.references.length > 0 ? (
+              <ul className="space-y-3 text-sm">
+                {application.references.map((ref) => (
+                  <li
+                    key={ref.id}
+                    className="border-b border-zinc-100 pb-3 last:border-0 last:pb-0"
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="font-medium text-zinc-900">
+                        <span className="mr-1.5 text-xs text-zinc-400">{ref.position}.</span>
+                        {ref.name}
+                      </span>
+                      <span className="shrink-0 font-mono text-xs text-zinc-600">
+                        {ref.mobileNumber}
+                      </span>
+                    </div>
+                    {ref.relationship && (
+                      <p className="mt-0.5 text-xs text-zinc-500">{ref.relationship}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-zinc-400">
+                No character references recorded on this application.
+              </p>
+            )}
+          </div>
         </div>
+
+        {/* Scenario 60 item 27 — PROPOSED PURCHASE AND PAPER RECORD. Shown
+            only when something was transcribed: these fields exist for
+            applications taken on paper, and an empty block on every other
+            application would read as missing data rather than as a form
+            nobody filled. LCP sits here rather than beside the financing
+            figures below on purpose — it is a transcribed number that feeds
+            no calculation, so putting it next to the derived totals would
+            imply it produced them. */}
+        {hasPaperRecord && (
+          <div className="rounded-xl border border-zinc-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700">
+              Paper Record
+              {application.paperFormConfirmed && (
+                <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                  Form complete and signed
+                </span>
+              )}
+            </h2>
+            <dl className="grid gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-zinc-500">LCP</dt>
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.lcp == null
+                    ? '—'
+                    : `₱${Number(application.lcp).toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                      })}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">PPD Rebate</dt>
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.ppdRebate == null
+                    ? '—'
+                    : `₱${Number(application.ppdRebate).toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                      })}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">First Due Date</dt>
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.firstDueDate
+                    ? new Date(application.firstDueDate).toLocaleDateString('en-PH', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })
+                    : '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Down Payment Collection</dt>
+                <dd className="mt-0.5 capitalize text-zinc-900">
+                  {application.downPaymentCollection ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">POS Draft / Quote</dt>
+                <dd className="mt-0.5 text-zinc-900">{application.posDraftReference || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Installment Account</dt>
+                {/* Only ever set after posting, and only for a single-term
+                    sale — see CreditApplication.installmentAccountId. */}
+                <dd className="mt-0.5 font-mono text-[13px] text-zinc-900">
+                  {application.installmentAccount?.accountNumber ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Transcribed</dt>
+                {/* The date only. transcribedById holds a raw user id, the
+                    same as createdById and approvedById, and nothing on this
+                    page can resolve any of them to a name yet — printing one
+                    raw would read as a bug rather than as an author. */}
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.transcribedAt
+                    ? new Date(application.transcribedAt).toLocaleString('en-PH', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })
+                    : '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Applicant Is Unit User</dt>
+                {/* Tri-state: a blank means the question was never asked,
+                    which is not the same answer as "No". */}
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.applicantIsUnitUser == null
+                    ? 'Not asked'
+                    : application.applicantIsUnitUser
+                      ? 'Yes'
+                      : 'No'}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        )}
 
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
           <div className="mb-3 flex items-center justify-between">

@@ -24,11 +24,7 @@ import {
 import { DEFAULT_VAT_RATE } from '../../_actions/pos-constants'
 import { Select } from '@/src/components/ui/Select'
 import type { FinancingTerm, InstallmentPreview } from '@/src/schema/pos'
-import {
-  DOWN_PAYMENT_FLOOR_RATE,
-  DOWN_PAYMENT_FLOOR_LABEL,
-  DOWN_PAYMENT_FLOOR_TOLERANCE,
-} from '@/src/libs/constants/financing'
+import { DOWN_PAYMENT_FLOOR_RATE } from '@/src/libs/constants/financing'
 
 function formatPeso(n: number): string {
   return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -49,6 +45,12 @@ type Props<T extends FinancingScopedFormValues> = {
   setValue: UseFormSetValue<T>
   trigger: UseFormTrigger<T>
   errors: FieldErrors<T>
+  /** Scenario 60 item 27 (client, 2026-09-30) — PROPOSED PURCHASE AND
+   *  INSTALLMENT is not optional, and Price Use and Term are part of it.
+   *  Off by default: the Edit modal reuses this component on a `.partial()`
+   *  schema, where demanding both would make every existing draft
+   *  uneditable. */
+  required?: boolean
   /** Scopes the financing term list the same way checkout's own selector
    * does — a branch's own terms plus tenant-wide ones. */
   branchId?: string | null
@@ -69,6 +71,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   setValue,
   trigger,
   errors,
+  required = false,
   branchId,
 }: Props<T>) {
   const items = useWatch({ control, name: 'items' as Path<T> }) as
@@ -148,23 +151,33 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectivePriceUseTypeId, itemIdsKey, branchId])
 
+  // Only price-list prices count. The old fallback to `estimatedPrice` — the
+  // flat Item.sellingPrice the item picker seeds — made the total look right
+  // for an item that is on no active list under the chosen Price Use, so
+  // switching Price Use appeared to leave some items unchanged when in fact
+  // they had never been priced from a list at all. Worse, it showed a figure
+  // the server now refuses outright (Scenario 60 item 21), so the form
+  // promised a price the submit could not honour.
   const estimatedTotal = (items ?? []).reduce((sum, i) => {
     const resolved = i.itemId ? resolvedItems[i.itemId] : undefined
-    return sum + (resolved ? Number(resolved.price) : (i.estimatedPrice ?? 0))
+    return sum + (resolved ? Number(resolved.price) : 0)
   }, 0)
 
-  // Only meaningful when every item in the bundle resolved to a real
-  // PriceListItem with a curated down payment — a partial mix (some items
-  // curated, some not) falls back to the generic 10% floor below, same as
-  // the backend's own all-or-nothing rule for the monthly-installment
-  // preview (CreditApplicationService.resolveFinancing()).
+  // Counted, not named — the row's own label lives in the item field above,
+  // and widening this component's generic just to read it is not worth it.
+  // Only meaningful once resolution has settled.
+  const unpricedCount = isResolvingPrices
+    ? 0
+    : (items ?? []).filter((i) => i.itemId && !resolvedItems[i.itemId]).length
+
+  // The curated per-SKU down payment is deliberately no longer summed or
+  // used — Scenario 60 item 22 (client, 2026-09-29): the down payment is 30%
+  // of the sale amount, full stop. Those rate-card figures were priced
+  // against the old 10% policy and now sit below the floor, so reading them
+  // pre-filled a value the form then rejected. Only the down-payment column
+  // is ignored; priceListItemId still drives the monthly-installment
+  // preview below and the real figures saved on submit.
   const resolvedItemsList = itemIds.map((id) => resolvedItems[id])
-  const allItemsCurated =
-    resolvedItemsList.length > 0 &&
-    resolvedItemsList.every((r) => r && r.priceListItemId && r.downPayment != null)
-  const curatedDownPaymentSum = allItemsCurated
-    ? resolvedItemsList.reduce((sum, r) => sum + Number(r!.downPayment), 0)
-    : null
   // The live preview's single previewInstallment() call only takes one
   // priceListItemId, so curation there is scoped to the common single-item
   // application — a multi-item bundle keeps the generic preview on screen,
@@ -211,7 +224,15 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // the term or the seed value changes, but never overwrites a figure
   // already entered — the collector is free to take more up front, and the
   // schema refuses less.
-  const seedDownPayment = curatedDownPaymentSum ?? downPaymentFloor
+  // Scenario 60 item 22 (client, 2026-09-29): the down payment is 30% of the
+  // sale amount, and the rate card's own downPayment column is no longer
+  // read. Those curated figures were priced against the old 10% policy, so
+  // seeding from them pre-filled a value the 30% floor then rejected — on a
+  // 21,010 item the form offered 4,620 (22%) and immediately called it wrong.
+  // The rate card's monthlyInstallment still drives the schedule; only its
+  // down-payment column is ignored. Checkout does the same, so the figure
+  // approved here is the figure the till will ask for.
+  const seedDownPayment = downPaymentFloor
   const seededForRef = useRef<string | null>(null)
   // The exact string this component last wrote. Changing the Price Use moves
   // the item total, and therefore the floor — a figure we seeded should
@@ -305,18 +326,22 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // number instead of silently doing nothing.
   const selectedPriceUse = priceUseTypes.find((t) => t.id === effectivePriceUseTypeId)
   const downPaymentError = (errors.downPayment as { message?: string } | undefined)?.message
+  const priceUseError = (errors.priceUseTypeId as { message?: string } | undefined)?.message
+  const financingTermError = (errors.financingTermId as { message?: string } | undefined)?.message
 
   return (
     <div className="space-y-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3">
       <div className="flex items-center gap-2">
         <Calculator className="h-4 w-4 text-zinc-400" />
         <h3 className="text-sm font-medium text-zinc-700">Price Use &amp; Financing</h3>
-        <span className="text-xs text-zinc-400">(optional)</span>
+        {!required && <span className="text-xs text-zinc-400">(optional)</span>}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs font-medium text-zinc-600">Price Use</label>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">
+            Price Use {required && <span className="text-red-500">*</span>}
+          </label>
           <Controller
             name={'priceUseTypeId' as Path<T>}
             control={control}
@@ -324,17 +349,20 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
               <Select
                 value={(field.value as string | undefined) ?? ''}
                 onChange={field.onChange}
-                placeholder="WIP (default)"
+                placeholder={required ? 'Select a Price Use' : 'WIP (default)'}
                 options={[
-                  { value: '', label: 'WIP (default)' },
+                  ...(required ? [] : [{ value: '', label: 'WIP (default)' }]),
                   ...priceUseTypes.map((t) => ({ value: t.id, label: t.name })),
                 ]}
               />
             )}
           />
+          {priceUseError && <p className="mt-1 text-xs text-red-600">{priceUseError}</p>}
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-zinc-600">Financing Term</label>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">
+            Financing Term {required && <span className="text-red-500">*</span>}
+          </label>
           <Controller
             name={'financingTermId' as Path<T>}
             control={control}
@@ -342,9 +370,9 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
               <Select
                 value={(field.value as string | undefined) ?? ''}
                 onChange={field.onChange}
-                placeholder="No installment term"
+                placeholder={required ? 'Select a term' : 'No installment term'}
                 options={[
-                  { value: '', label: 'No installment term' },
+                  ...(required ? [] : [{ value: '', label: 'No installment term' }]),
                   ...financingTerms.map((t) => ({
                     value: t.id,
                     // Just the term. The factor is a financing multiplier
@@ -362,6 +390,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
               />
             )}
           />
+          {financingTermError && <p className="mt-1 text-xs text-red-600">{financingTermError}</p>}
         </div>
       </div>
 
@@ -404,6 +433,15 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
             {estimatedTotal > 0 ? formatPeso(estimatedTotal) : '—'}
           </span>
         </div>
+        {unpricedCount > 0 && (
+          <p className="mt-2 text-xs text-amber-700">
+            {unpricedCount === 1 ? 'An item is' : `${unpricedCount} items are`} not on an active
+            price list for{' '}
+            {selectedPriceUse ? `“${selectedPriceUse.name}”` : 'the default price list'} — price
+            {unpricedCount === 1 ? ' it' : ' them'} in Inventory, or choose a different Price Use.
+            Submitting will be rejected until then.
+          </p>
+        )}
         {financingTermId &&
           (previewLoading ? (
             <div className="mt-2 flex items-center gap-2 text-xs text-zinc-400">

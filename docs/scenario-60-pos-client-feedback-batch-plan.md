@@ -10,30 +10,35 @@ Unlike most scenarios in this series, this one is not a single feature. It is a 
 
 Verified against `development` on 2026-09-24 (both repos freshly pulled; frontend `cb7b48e8`, backend `f8dc9ee`).
 
-| #   | Client note                                                  | Verdict                   | Why                                                             |
-| --- | ------------------------------------------------------------ | ------------------------- | --------------------------------------------------------------- |
-| 1   | Region 6 default on the first dropdown                       | ✅ **Today**              | Frontend only — one `useState` seed                             |
-| 2   | "Raise one for this cart" → New Credit Application Form      | ✅ **Today**              | One string                                                      |
-| 3   | Remove "Approved amount (optional)" from TPF                 | ✅ **Today**              | Field is nullable end-to-end, nothing reads it                  |
-| 4   | Co-maker **number** required                                 | ✅ **Today**              | Frontend only — and it fixes a real drift (see gap 4)           |
-| 5   | "Spouse or Co-maker" wording                                 | ✅ **Shipped** 2026-09-28 | Built as a two-level picker, not a relabel — see the log        |
-| 6   | Approved-but-incomplete when ID is missing                   | ✅ **Shipped** 2026-09-28 | Derived; the list surface needed a backend field after all      |
-| 7   | Co-maker **address** required                                | ❌ Migration              | `CoMaker` has no address column at all                          |
-| 8   | Collector on the credit application                          | ❌ Migration              | No FK exists; `Collector` does                                  |
-| 9   | Address on the New Credit Application                        | ❌ Migration              | **Clarified 2026-09-28** — it is the CURRENT address, read-only |
-| 10  | Home + current address, current synced                       | ❌ Migration              | **Clarified 2026-09-28** — "synced" is now resolved, see below  |
-| 11  | Deliver to / Delivery Address / delivery fee                 | ❌ Migration              | Half the columns exist and are never written; two don't exist   |
-| 12  | Delivery fee excluded from the total                         | ➖ Already designed for   | Schema already keeps it out of `subtotal`/`totalAmount`         |
-| 13  | Delivery fee GL mapping                                      | ❌ Depends on 11          | No migration needed, but nothing to post until 11 lands         |
-| 14  | Separate CR for down payment and delivery fee                | ➖ Already built          | The report already emits it as its own CR line                  |
-| 15  | Cancel Sale → dropdown                                       | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                    |
-| 16  | Friends-and-family price override                            | 🚧 **Parked by client**   | "format is not finalized with client"                           |
-| 17  | Reference lives on the hard copy; TPE is lite                | ➖ No build               | Informational — it is a decision _not_ to add a field           |
-| 18  | Down payment is 30%, not 10%                                 | ✅ **Shipped** 2026-09-28 | Was 10% at 15 sites across both repos, incl. user-facing copy   |
-| 19  | Application number, auto-generated                           | ✅ **Shipped** 2026-09-28 | Already existed; was unlabelled, so it did not read as one      |
-| 20  | Supporting docs optional / approve but incomplete            | ✅ **Shipped** 2026-09-28 | Same work as gap 6 — see the second 2026-09-28 log              |
-| 21  | Item price must come from the Inventory price list           | ✅ **Shipped** 2026-09-28 | No application had EVER been priced from a price list — see log |
-| 22  | Curated rate-card down payment now falls below the 30% floor | 🚧 **Blocked on client**  | Raised 2026-09-28. The form seeds a value its own rule rejects  |
+| #   | Client note                                                  | Verdict                   | Why                                                                |
+| --- | ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------ |
+| 1   | Region 6 default on the first dropdown                       | ✅ **Today**              | Frontend only — one `useState` seed                                |
+| 2   | "Raise one for this cart" → New Credit Application Form      | ✅ **Today**              | One string                                                         |
+| 3   | Remove "Approved amount (optional)" from TPF                 | ✅ **Today**              | Field is nullable end-to-end, nothing reads it                     |
+| 4   | Co-maker **number** required                                 | ✅ **Today**              | Frontend only — and it fixes a real drift (see gap 4)              |
+| 5   | "Spouse or Co-maker" wording                                 | ✅ **Shipped** 2026-09-28 | Built as a two-level picker, not a relabel — see the log           |
+| 6   | Approved-but-incomplete when ID is missing                   | ✅ **Shipped** 2026-09-28 | Derived; the list surface needed a backend field after all         |
+| 7   | Co-maker **address** required                                | ❌ Migration              | `CoMaker` has no address column at all                             |
+| 8   | Collector on the credit application                          | ❌ Migration              | No FK exists; `Collector` does                                     |
+| 9   | Address on the New Credit Application                        | ❌ Migration              | **Clarified 2026-09-28** — it is the CURRENT address, read-only    |
+| 10  | Home + current address, current synced                       | ❌ Migration              | **Clarified 2026-09-28** — "synced" is now resolved, see below     |
+| 11  | Deliver to / Delivery Address / delivery fee                 | ❌ Migration              | Half the columns exist and are never written; two don't exist      |
+| 12  | Delivery fee excluded from the total                         | ➖ Already designed for   | Schema already keeps it out of `subtotal`/`totalAmount`            |
+| 13  | Delivery fee GL mapping                                      | ❌ Depends on 11          | No migration needed, but nothing to post until 11 lands            |
+| 14  | Separate CR for down payment and delivery fee                | ➖ Already built          | The report already emits it as its own CR line                     |
+| 15  | Cancel Sale → dropdown                                       | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                       |
+| 16  | Friends-and-family price override                            | 🚧 **Parked by client**   | "format is not finalized with client"                              |
+| 17  | Reference lives on the hard copy; TPE is lite                | ➖ No build               | Informational — it is a decision _not_ to add a field              |
+| 18  | Down payment is 30%, not 10%                                 | ✅ **Shipped** 2026-09-28 | Was 10% at 15 sites across both repos, incl. user-facing copy      |
+| 19  | Application number, auto-generated                           | ✅ **Shipped** 2026-09-28 | Already existed; was unlabelled, so it did not read as one         |
+| 20  | Supporting docs optional / approve but incomplete            | ✅ **Shipped** 2026-09-28 | Same work as gap 6 — see the second 2026-09-28 log                 |
+| 21  | Item price must come from the Inventory price list           | ✅ **Shipped** 2026-09-28 | No application had EVER been priced from a price list — see log    |
+| 22  | Curated rate-card down payment now falls below the 30% floor | 🚧 **Blocked on client**  | Raised 2026-09-28. The form seeds a value its own rule rejects     |
+| 23  | Work address + company, required on the credit application   | ❌ Migration              | `Customer.companyName` exists; no address, none on the application |
+| 24  | Source of income — allotment / own business / employed       | ❌ Migration              | Net-new. A type plus a different field set per branch              |
+| 25  | Cancel Sale must be a dropdown                               | 🚧 **Blocked**            | Duplicate of item 15 — still waiting on Elijah's reason list       |
+| 26  | Credit application must use the uploaded Price Use           | ✅ **Shipped** 2026-09-28 | Same work as item 21 — priced from the Inventory price list        |
+| 27  | Simplified Credit Application v2 — the full mockup           | ❌ Large / migration      | 29 Sep mockup. ~45 fields, 3 new tables. Supersedes 7, 9, 23, 24   |
 
 **Doable today: items 1, 2, 3, 4, 5, 6.** Two of those need a one-line answer first (5 and 6) — both are under _Decisions needed_ below, and both have a safe reading that ships today either way.
 
@@ -391,7 +396,7 @@ Business Owner (`technova.owner@test.com`). A **priced** item is now required �
 
 ---
 
-## Item 22 — the curated down payment and the 30% floor now contradict each other
+## Item 22 — the curated down payment and the 30% floor contradicted each other — RESOLVED 2026-09-29
 
 **Raised 2026-09-28, immediately after item 18 shipped. Not fixed — it needs a
 decision from the client, not a code change.**
@@ -432,3 +437,432 @@ right?"_
 **Until then this is live and visible**: any item whose curated down payment is
 under 30% shows a pre-filled value with a red error beneath it. Item 18 is
 shipped and correct; this is the consequence nobody had costed.
+
+---
+
+## Clarifications received 2026-09-29
+
+Six points. **Two need no new work** and saying so is worth more than logging
+them twice:
+
+- **"Change credit application to use what price use that was uploaded"** — this is item 21, shipped 2026-09-28. Applications are priced from the Inventory price list for the chosen Price Use, with no fallback to the flat `Item.sellingPrice`. Recorded as item 26 only so the client's own wording is traceable to the work.
+- **"In cancel sale, should be dropdown"** — this is item 15, unchanged and still blocked on Elijah for the list of cancellation reasons. Logged as item 25 for the same reason.
+
+**The remaining four are net-new and all need a migration.** They describe a
+proper credit-assessment section the application does not have today:
+
+> _"add work address and company, required in credit application, as well as source of income: and address — allotment, own business, work. If allotment, estimated monthly. If own business, business name, address. If employed, company name, address."_
+
+**What exists already, and it is very little:**
+
+| Field                                  | Where it is now                                                                                                                                    |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Customer.companyName`                 | on the customer, not the application, and not required                                                                                             |
+| `Customer.employeeNumber`              | ditto                                                                                                                                              |
+| `CreditApplication.totalMonthlyIncome` | already on the application (Scenario 32 item 6) — likely what _"if allotment, estimated monthly"_ should populate, though for one income type only |
+
+Everything else — work address, source-of-income type, business name, business
+address, employer address — does not exist in any form.
+
+**The shape this implies**, and it is more than a handful of columns: a
+**source of income type** (`allotment` | `own_business` | `employed`) driving
+**a different required field set per branch**:
+
+| Source       | Then required                   |
+| ------------ | ------------------------------- |
+| Allotment    | estimated monthly amount        |
+| Own business | business name, business address |
+| Employed     | company name, company address   |
+
+That is conditional validation on both sides, not just new columns — the same
+shape as the co-maker's new/existing branches, which is exactly where a
+mismatch between client and server validation bit us on 2026-09-28 (see the
+second implementation log). Whatever is built here should have the client and
+the server agree on one rule from the start.
+
+**Open questions, none answered:**
+
+1. **"Work address and company, required"** — required for _every_ application, or only when the source of income is `employed`? As written it reads unconditional, but an allotment recipient has no employer, so it cannot be.
+2. Does the address reuse `PhilippineAddressPicker` (region → province → city → barangay, and a `barangayCode` for collector assignment), or is it free text? Every other address in this system is the former.
+3. Do these live on the **application** or on the **customer**? `companyName` is already on the customer. Putting them on the application snapshots them per request, which suits a credit decision; putting them on the customer avoids re-keying. Item 9's clarification — the application reads the customer's _current_ address read-only — suggests the client thinks of these as customer attributes surfaced on the application.
+4. Does `totalMonthlyIncome`, already on the application, become the allotment's "estimated monthly", or is that a separate field? Two fields meaning almost the same thing is how this kind of section rots.
+
+**Not started.** These are logged, not built — four new columns at minimum plus
+conditional validation, and question 3 decides whether the migration lands on
+`Customer` or `CreditApplication`.
+
+---
+
+## Implementation Log — 2026-09-29
+
+**Item 22 resolved, and the whole credit e2e suite brought back to green.**
+
+**Item 22 — 30% wins.** Developer decision, 2026-09-29: the down payment is
+30% of the sale amount, and the rate card's own `downPayment` column is no
+longer read on either surface. Those curated figures were priced against the
+old 10% policy, so seeding from them pre-filled a value the 30% floor
+immediately rejected — the form filling in a number and calling it wrong in
+the same breath.
+
+- **Both surfaces, not just the credit application.** My first description of this was wrong: checkout seeded `curatedDownPaymentWhole ?? minDownPaymentWhole` and the application `curatedDownPaymentSum ?? downPaymentFloor`. Both preferred the card; both now seed the floor.
+- **The rate card is not abandoned** — its `monthlyInstallment` still drives the schedule, and `priceListItemId` still flows through. Only the down-payment column is ignored, so item 21's work is untouched.
+- **Checkout copy follows the rule now.** The badge no longer switches between "Rate card" and "30% min" — it is always `30% min`, with the single "Fixed at 30% of the sale amount" sentence. The two-branch copy was how the screen could contradict itself.
+- **No backend change.** `curatedDownPayment` is only carried through types there; it never sets a down payment. Seeding was always frontend-only.
+
+**The e2e suite: 36 failures → 0, across 83 tests in 9 spec files.** Worth
+separating what those failures actually were, because most were not caused by
+this scenario:
+
+| Cause                                                                                                                                                                                                             | Specs                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Stale since 2026-09-18**, long before this work — asserted that Branch Manager _and_ Cashier could approve, which the client reversed                                                                           | `credit-approval` (8)                                             |
+| **Correctly changed by gap 6** — asserted submit was blocked with no documents                                                                                                                                    | `credit-application` (1)                                          |
+| **Stale assumptions this scenario exposed** — the 10% floor hardcoded, and eight specs choosing their fixture by "has a `sellingPrice`", which stopped meaning "financeable" once pricing moved to the price list | financing, investigation, documents, notifications, 3 × audit-log |
+| **Proved the fix worked** — expected `financed × factorRate`, failed because the curated rate-card figures now apply (`priceListItemId` was previously always null, so the card could never be reached)           | financing (1)                                                     |
+
+**Worth flagging:**
+
+- **The floor assertions now derive from `DOWN_PAYMENT_FLOOR_RATE`** rather than hardcoding a number, so the next change to that rule cannot leave the tests asserting the old one. That is precisely how these went stale.
+- **Eight specs shared one bad fixture assumption.** `sellingPrice: { not: null }` was a reasonable proxy for "financeable" while the flat price was a fallback. It is not any more, and the failure it produced was misleading — a 400 at create surfaced as 404s further down, the application never having been made.
+- **Specs must be run individually.** Running seven in sequence produced two spurious failures in `credit-investigation` that vanished on its own — the repo's existing convention about shared-fixture contention, confirmed again here.
+- **I over-corrected item 21 and the tests caught it.** Removing the no-Price-Use branch made a Price Use mandatory, which the client never asked for; `resolveDefaultSellingPrice` had always consulted the WIP list first anyway. It now falls back to the **WIP list** (the form's default) rather than rejecting, while still refusing to fall through to the flat `Item.sellingPrice`. A new `resolveDefaultPriceListItem()` returns the full PriceListItem context so `priceListItemId` survives that path too — which the old helper never did.
+
+---
+
+## Item 27 — Simplified Credit Application v2 (mockup, 29 Sep 2026)
+
+Source: `NIG_Prometheus_Credit_Application_ERP_Screen_Mockup_Version_2.pdf`,
+shared 2026-09-30. This is not a handful of extra fields — it is a **redesign
+of the credit application record**, and it supersedes four items already in
+this doc.
+
+**Two framing statements on the mockup itself matter as much as the fields:**
+
+> _"The fully completed signed paper form is the source of truth. Branches scan it to Google Drive. This sheet visualizes the short ERP record; **no second document upload is required in Prometheus**."_
+
+> _"Target: 5 min."_
+
+The first vindicates gap 6 — documents were made optional on 2026-09-28 for
+exactly this reason, and the mockup confirms the ERP is a transcription of
+paper, not a document store. The second is a design constraint: a 45-field
+form that takes five minutes only works if most of it prefills.
+
+### The fields, and what exists today
+
+**APPLICATION RECORD** — all four already exist.
+
+| Field                           | Status                                         |
+| ------------------------------- | ---------------------------------------------- |
+| Application ID (auto-generated) | ✅ `generateApplicationNumber()` — item 19     |
+| Customer ID (search or create)  | ✅ applicant combobox, with create-in-checkout |
+| Branch (from user)              | ✅ `branchId`, defaults to the actor's branch  |
+| Status (draft / pending)        | ✅ `CreditApplicationStatus`                   |
+
+**CUSTOMER PROFILE** — "prefill for returning customers, then confirm or edit".
+
+| Field                                             | Status                                                                                 |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Last / First / Middle initial                     | ✅ `Customer.firstName/middleName/lastName`                                            |
+| Main mobile                                       | ✅ `Customer.phone`                                                                    |
+| **Alt mobile (optional)**                         | ❌                                                                                     |
+| Birthdate                                         | ✅ `Customer.birthday`                                                                 |
+| **Civil status**                                  | ❌ — a `MaritalStatus` enum exists but is on **Employee**, not Customer                |
+| Email — _"enter address or None"_                 | ✅ `Customer.email`                                                                    |
+| **Facebook / Messenger name**                     | ❌                                                                                     |
+| **Gender**                                        | ❌                                                                                     |
+| Employer — _"if employed"_                        | ⚠️ `Customer.companyName` exists, unlabelled as employer                               |
+| **Self-employed (Yes/No)**                        | ❌                                                                                     |
+| Street / Sitio / Purok + landmark                 | ⚠️ `Customer.address` is one free-text column                                          |
+| **Barangay / City / Province as separate fields** | ⚠️ captured by `PhilippineAddressPicker` but flattened into `address` + `barangayCode` |
+
+**RELATED PEOPLE** — _"store each person separately with relationship and mobile"_. **None of this exists.**
+
+Spouse (last/first/mobile), Father (last/first/mobile or "unavailable"),
+Mother (last/first/mobile or "unavailable"), Co-maker (last/first/mobile +
+relationship).
+
+**⚠️ This contradicts item 7.** The mockup's co-maker carries **no address** —
+only name, mobile and relationship. Item 7 ("co-maker address required") came
+from the 2026-09-24 list; this mockup is five days newer and drops it. Worth
+confirming which wins before building either.
+
+**CHARACTER REFERENCES** — _"up to three to match paper form; minimum subject to NIG policy"_. **Does not exist.** Three rows of name + mobile + relationship. No `Reference` model of any kind in the schema.
+
+**PROPOSED PURCHASE AND INSTALLMENT** — _"read only from POS draft, then linked sale"_.
+
+| Field                                                   | Status                                                                                                                                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POS draft / quote ID                                    | ❌ — no draft/quote concept links to an application                                                                                                                |
+| Item summary                                            | ✅ derivable from `items`                                                                                                                                          |
+| Selected price type                                     | ✅ `priceUseTypeId`                                                                                                                                                |
+| **LCP (PHP)**                                           | ❓ — the client was asked what "LCP" means on 2026-09-21 (Scenario 57) and never answered. It is presumably the list/contract price the financing is computed from |
+| Downpayment                                             | ✅ `downPayment`                                                                                                                                                   |
+| **Downpayment collection (online / branch / delivery)** | ❌                                                                                                                                                                 |
+| Amount financed                                         | ✅ `amountFinanced`                                                                                                                                                |
+| Term                                                    | ✅ `financingTermId`                                                                                                                                               |
+| Monthly installment                                     | ✅ `monthlyInstallment`                                                                                                                                            |
+| **PPD rebate**                                          | ⚠️ `PriceListItemTerm.ppd` exists; not surfaced on the application                                                                                                 |
+| **First due date**                                      | ❌                                                                                                                                                                 |
+| Total price                                             | ✅ `totalPayable`                                                                                                                                                  |
+
+The stated formulas — `amount financed = LCP − downpayment`, `total price =
+monthly installment × term + downpayment` — should be checked against
+`resolveFinancing()` rather than assumed to match.
+
+**PAPER RECORD AND CREDIT DECISION** — _"CIC or CICS transcribes final result from paper"_. Almost none of this exists.
+
+| Field                                                    | Status                                                                                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Paper form fully complete and signed (confirmed)**     | ❌                                                                                                      |
+| **Applicant is unit user (Yes/No)**                      | ❌                                                                                                      |
+| Final credit decision (pending / approved / disapproved) | ✅ `status` + `decideItems()`                                                                           |
+| **CIC or CICS name / user ID**                           | ⚠️ `approvedById`/`declinedById` exist, but the mockup implies a transcriber distinct from the approver |
+| Decision date / time                                     | ✅ `approvedAt` / `declinedAt`                                                                          |
+| Reason if disapproved / notes                            | ✅ `declineReason`                                                                                      |
+| Linked invoice ID (after posting)                        | ✅ via `posTransactionId`                                                                               |
+| **Installment account ID (after posting)**               | ⚠️ `InstallmentAccount` exists; not linked back to the application                                      |
+
+### What this supersedes
+
+| Item                                                            | Effect                                                                                                                   |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **7** — co-maker address required                               | **Contradicted.** The mockup's co-maker has no address                                                                   |
+| **9** — address on the application                              | **Absorbed.** The mockup puts a full address on the customer profile section                                             |
+| **23** — work address + company                                 | **Partly absorbed.** Employer and Self-employed appear; a separate _work address_ does not                               |
+| **24** — source of income (allotment / own business / employed) | **Contradicted.** The mockup models this as Employer + Self-employed Yes/No, not a three-way type with per-branch fields |
+
+Items 23 and 24 came from 2026-09-29; this mockup is dated 29 Sep too, so they
+may be the same conversation captured twice — or the mockup may predate the
+note. **That needs settling before either is built**, because they describe
+different data models for the same thing.
+
+### Size
+
+Roughly **45 fields**, of which ~20 are new. At minimum:
+
+- **3 new tables** — related people, character references, and whatever holds the paper-record block (or columns on `CreditApplication`)
+- **~10 new columns** on `Customer` (alt mobile, civil status, gender, Facebook, self-employed, and the address split)
+- **~6 new columns** on `CreditApplication` (LCP, downpayment collection, first due date, paper-form confirmed, applicant-is-unit-user, transcriber)
+- A rebuilt intake form, since a five-minute target with this many fields depends on prefill and sectioning
+
+**Not started, and not a single-sitting change.** The sensible first move is
+settling the contradictions above — items 7, 23 and 24 versus this mockup —
+rather than building two competing models of the same data.
+
+## Implementation Log — 2026-09-30 (item 27, first build)
+
+Item 27 is no longer "not started". What was built, and what is deliberately
+still open.
+
+### Backend
+
+**Two migrations, both applied** (`migrate deploy`, at the user's explicit
+request):
+
+- `20260930020000_scenario_60_credit_application_references`
+- `20260930040000_scenario_60_credit_application_v2_fields`
+
+23 columns verified present: `customers` 5/5, `credit_applications` 10/10,
+`credit_application_related_people` 4/4, `credit_application_references` 4/4.
+
+| Area              | What landed                                                                                                                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Customer          | `altPhone`, `civilStatus` (reuses `MaritalStatus`), `gender` (`CustomerGender` M/F), `facebookName`; `isSelfEmployed` added then dropped the same day — see below                               |
+| CreditApplication | `lcp`, `downPaymentCollection`, `firstDueDate`, `ppdRebate`, `posDraftReference`, `paperFormConfirmed`, `applicantIsUnitUser`                                                                   |
+| New tables        | `credit_application_references`, `credit_application_related_people`                                                                                                                            |
+| DTOs              | `CreditApplicationReferenceInputDto`, `CreditApplicationRelatedPersonInputDto`, and the five new fields on `CreateCustomerDto` (shared by CRM **and** POS — `/pos/customers` imports CRM's DTO) |
+
+**A bug the new UI would have exposed.** `create()`'s retry loop treats every
+P2002 as an application-number collision. Two rows with the same role violate
+the unique `(application, role)` index — which would have been retried five
+times with fresh numbers and then surfaced as a raw 500. Once the intake form
+let the transcriber pick the role per row, that became reachable, so
+`assertRelatedPeopleRolesUnique()` now rejects it up front as a 400 naming
+the role. The comment that claimed duplicates were already "rejected" was
+wrong and has been corrected.
+
+### Frontend
+
+- **`RelatedPeopleFields`** — one row to start, "+ Add another person" up to
+  three, × to remove, role picked per row. Built first as three fixed
+  spouse/father/mother rows; rebuilt on client instruction ("same behavior as
+  the character references", 2026-09-30). The role dropdown is labelled
+  **Relationship**.
+- **`CharacterReferenceFields`** — relationship is now a dropdown too
+  (client, 2026-09-30). The options are a guess — see Open questions below.
+- **`PaperRecordFields`** — LCP, PPD rebate, first due date, DP collection,
+  POS draft ref, applicant-is-unit-user, paper-form-confirmed.
+- **`CustomerForm` / `CustomerExtraFields`** — alt mobile, civil status,
+  gender, Facebook name, self-employed. Shared by CRM and POS, so the cashier
+  and the CRM clerk get the same field set.
+- **`CreditApplicationDetail`** — renders the related-people and paper-record
+  blocks. Paper Record only appears when something was transcribed; an empty
+  block on every older application would read as missing data.
+- Email and Facebook name are **optional** (client, 2026-09-30). Neither was
+  ever enforced — the labels now say so.
+
+**Self-employed is a customer _type_, not a flag** (client, 2026-09-30).
+Built first as `Customer.isSelfEmployed` (Yes/No/Not asked) beside a Type of
+individual/business/employee. The client asked for it in **Type** instead, so
+a third migration
+(`20260930090000_scenario_60_customer_type_self_employed`) adds
+`self_employed` to the `CustomerType` enum and drops the boolean column —
+"how does this person earn" is now answered once rather than by two fields
+that can disagree. The column shipped and was dropped inside the same day and
+was never released, so nothing outside the dev database held a value.
+
+Knock-on: `companyName` now carries three labels — Company name (business),
+Business name (self-employed), Employer (everyone else). And every list that
+`capitalize`d the raw enum would have printed "Self_employed", so
+`CUSTOMER_TYPE_LABELS` in `schema/crm/types.ts` is now the single place the
+four types are spelled for display (CRM list, accounting list + modal,
+accounting detail).
+
+**Three-state, not boolean.** `applicantIsUnitUser` is nullable and the UI
+offers "Not asked". Defaulting to false would make every application taken
+before today read as an answered "No", which is a claim nobody made.
+
+### Decisions taken, worth challenging
+
+**LCP feeds no calculation.** The mockup states
+`amount financed = LCP − downpayment`, but what LCP is has never been
+answered (asked 2026-09-21, Scenario 57). It is stored as transcribed and the
+derived figures still come from the price list and the rate card. Wiring the
+formula would bake in a guess about money.
+
+**Employer reuses `companyName`.** The mockup wants an individual's employer;
+`companyName` already holds "the organisation this customer is attached to".
+The form now labels it Company name for a business and Employer otherwise,
+and sends it for every customer type rather than business-only. The
+alternative — a second `employerName` column — duplicates the same kind of
+value. **If reporting elsewhere reads `companyName` as "this is a business",
+this is the change that breaks that assumption.**
+
+**Co-maker is not a related-person role.** It keeps its own section and the
+existing `CoMaker` record, which promissory notes and the checkout gate
+already reference.
+
+### Verified by API round-trip (not just typecheck)
+
+- `CA-20260930-0003` — `lcp 21010 | dpCollection branch | firstDue 2026-11-15 | ppdRebate 250 | posDraft QT-2026-0099 | paperConfirmed true | isUnitUser false`, related people `spouse:Elena Salazar/+639171112222` + `mother:Corazon` (no last name, no mobile — both nullable by design), reference `1. Ana Reyes / Neighbor`
+- Duplicate `father` rows → **400** `"Only one father can be recorded on an application."`
+- `PATCH /pos/customers/:id` → all five profile fields persist and return
+- Frontend `next build` clean; typecheck and lint clean on both repos
+
+### Still open — NOT built
+
+1. **`update()` silently drops all of it.** `PATCH /credit/applications/:id`
+   accepts `references`, `relatedPeople` and every new scalar (the DTO is a
+   `PartialType`) and then **writes none of them**. Nothing in the UI sends
+   them today, so nothing misleads a user yet — but an API caller correcting
+   a mistyped father's mobile gets a 200 and no change. Either wire it or
+   reject the fields; accepting and dropping is the worst of the three.
+2. **The credit application does not prefill the new profile fields.** The
+   mockup's CUSTOMER PROFILE block says "prefill for returning customers,
+   then confirm or edit". Today the application's applicant section confirms
+   phone and email only; civil status, gender, alt mobile, Facebook name and
+   self-employed are captured on the customer form but not surfaced for
+   confirmation at intake.
+3. **Address is still one free-text column plus a barangay code.** The mockup
+   wants Street/Sitio/Purok + landmark, Barangay, City, Province as separate
+   fields. `PhilippineAddressPicker` captures them and flattens them.
+4. **Transcriber identity.** `transcribedById` / `transcribedAt` exist as
+   columns and are never written. The mockup's "CIC or CICS name" implies a
+   transcriber distinct from the approver.
+5. **Items 7, 23 and 24 versus this mockup** — still unsettled, still
+   describing different data models for the same thing. Nothing was built
+   either way.
+
+### Open questions this raised
+
+- **What are the character-reference relationship options?** The dropdown
+  ships with Sibling / Relative / Friend / Neighbor / Co-worker / Employer /
+  Barangay Official. The mockup does not enumerate them and the client has
+  not been asked. The column stays free text so already-recorded values still
+  display, and widening the list is a frontend-only change.
+- **Is a reference's mobile still mandatory?** It is today. Father/Mother
+  mobiles are optional because the paper form offers "unavailable"; the
+  references block offers no such option.
+
+## Implementation Log — 2026-09-30 (item 27, gap pass)
+
+A field-by-field audit against the mockup found four things missing. All four
+are now closed.
+
+### 1. CUSTOMER PROFILE on the application screen
+
+`ApplicantContactFields` rendered **phone and email only** — 2 of the
+mockup's 12 profile boxes — even though the other ten came back on the very
+same `GET /crm/customers/:id` the page already made. They were fetched and
+thrown away, so a cashier could not confirm or fix any of them while the
+applicant was standing there, which is the one moment they are checkable.
+
+Now renders last/first/middle, main + alt mobile, birthdate, civil status,
+email, Facebook name, gender, employment type, employer and address. Every
+box is seeded from the customer record and **written back to it** on submit —
+the credit application stores an `applicantCustomerId`, not a copy of the
+profile.
+
+The write-back is a diff: an application raised without touching the block
+issues no PATCH at all. `name` is rebuilt whenever a name part changes, or
+the customer would stay listed under their old name while the application
+showed the new one.
+
+### 2. Address
+
+The same `PhilippineAddressPicker` the customer form uses: a
+street/sitio/purok line plus Barangay, City/Municipality and Province as
+their own dropdowns. Stored as `address` + the barangay's PSGC code, which
+is what city and province resolve from — one code rather than three
+free-text columns that can disagree about which city a barangay sits in.
+
+### 3. CIC / CICS transcriber
+
+`transcribedById` / `transcribedAt` were columns nothing ever wrote.
+`create()` now stamps them — but only when the application actually carries
+transcribed paper data (any related person, reference, or purchase/paper
+field). An application raised at the counter with none of it has no paper and
+therefore no transcriber; stamping every `createdById` as one would make the
+field mean nothing.
+
+Verified: `CA-20260930-0004` (with paper data) →
+`transcribedById=e7f3aa26… transcribedAt=2026-09-30T02:57:57`;
+`CA-20260930-0005` (without) → both null.
+
+The detail view shows the **date only**. `transcribedById` holds a raw user
+id, exactly as `createdById` and `approvedById` do, and nothing on that page
+can resolve any of them to a name — printing one raw would read as a bug
+rather than as an author. **Resolving user ids to names is an app-wide gap,
+not this card's to fix.**
+
+### 4. Installment account link
+
+`installmentAccountId` was also never written — checkout set
+`posTransactionId` alone. `createLinkedInstallmentAccount()` now returns the
+account it created, and the same `creditApplication.update()` that marks the
+application consumed also links the account.
+
+**Only when the sale produced exactly one.** The column is a single unique
+field, matching the mockup's one "Installment account ID" box, but a cart
+mixing two financing terms creates one account per term group. There is no
+honest way to pick which of two the application "is", so it stays null there
+and `posTransactionId` remains the link to the whole sale. Single-term carts
+— effectively all of them — get the direct link. The detail view shows the
+account **number** (`IA-…`), not the uuid.
+
+### Two formulas that still disagree with the mockup
+
+Both are decisions, not bugs, but a client comparing a screen to their paper
+form will spot them:
+
+| Mockup                                                   | Code                                                                                                                                                                                         |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `amount financed = LCP − downpayment`                    | `totalAmount − downPayment`, where `totalAmount` is the **price-list** total. LCP is stored and feeds nothing — nobody has ever said what LCP is                                             |
+| `total price = monthly installment × term + downpayment` | `amountFinanced × factorRate` (`financing-terms.service.ts`), which **excludes the down payment** — so "Total payable" is smaller than the sheet's "Total price" by exactly the down payment |
+
+### Not verified end-to-end
+
+The installment-account link is typechecked and the surrounding transaction
+is unchanged, but it was **not** exercised through a real POS checkout — that
+needs a session, terminal, stock and an approved application. Everything else
+in this pass was verified against the running API.

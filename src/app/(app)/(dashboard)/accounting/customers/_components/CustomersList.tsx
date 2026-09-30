@@ -15,6 +15,7 @@ import { SessionUser, can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 import { PhoneField } from '@/src/components/ui/PhoneField'
+import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 
 const FIELD_LIMITS = {
   firstName: 150,
@@ -166,8 +167,8 @@ export default function CustomersList({ session }: Props) {
                         <Link href={`/accounting/customers/${c.id}`} className="hover:underline">
                           {c.name}
                         </Link>
-                        <span className="ml-2 text-xs font-normal capitalize text-zinc-400">
-                          {c.customerType ?? 'individual'}
+                        <span className="ml-2 text-xs font-normal text-zinc-400">
+                          {CUSTOMER_TYPE_LABELS[c.customerType ?? 'individual'] ?? c.customerType}
                         </span>
                         <span
                           className={`ml-2 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
@@ -287,9 +288,13 @@ function CustomerFormDialog({
               onChange={(e) => set('customerType', e.target.value as CustomerInput['customerType'])}
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
             >
-              <option value="individual">Individual</option>
-              <option value="business">Business</option>
-              <option value="employee">Employee</option>
+              {(Object.keys(CUSTOMER_TYPE_LABELS) as (keyof typeof CUSTOMER_TYPE_LABELS)[]).map(
+                (t) => (
+                  <option key={t} value={t}>
+                    {CUSTOMER_TYPE_LABELS[t]}
+                  </option>
+                )
+              )}
             </select>
           </Field>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

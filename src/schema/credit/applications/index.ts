@@ -150,6 +150,31 @@ const CreateCreditApplicationBaseSchema = z.object({
   // the application itself.
   applicantPhone: z.string().max(50).optional().or(z.literal('')),
   applicantEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
+  // Scenario 60 item 27 — the rest of the mockup's CUSTOMER PROFILE block.
+  // All form-only: they are seeded from the applicant's customer record and
+  // PATCHed back to it on submit, never sent in the credit application
+  // payload. Nothing is required — the mockup marks none of it so, and a
+  // returning customer captured before these existed has none on file.
+  applicantFirstName: z.string().max(150).optional().or(z.literal('')),
+  applicantMiddleName: z.string().max(150).optional().or(z.literal('')),
+  applicantLastName: z.string().max(150).optional().or(z.literal('')),
+  applicantAltPhone: z.string().max(50).optional().or(z.literal('')),
+  applicantBirthday: z.string().optional().or(z.literal('')),
+  applicantCivilStatus: z
+    .enum(['Single', 'Married', 'Widowed', 'Separated'])
+    .optional()
+    .or(z.literal('')),
+  applicantGender: z.enum(['M', 'F']).optional().or(z.literal('')),
+  applicantFacebookName: z.string().max(255).optional().or(z.literal('')),
+  /** Employer, company name or own business name depending on the type
+   *  below — all three are `Customer.companyName`. */
+  applicantEmployer: z.string().max(255).optional().or(z.literal('')),
+  applicantCustomerType: z
+    .enum(['individual', 'self_employed', 'business', 'employee'])
+    .optional()
+    .or(z.literal('')),
+  applicantAddress: z.string().max(1000).optional().or(z.literal('')),
+  applicantBarangayCode: z.string().max(20).optional().or(z.literal('')),
   // Holds an existing co-maker's id, the NEW_CO_MAKER_VALUE sentinel (fill
   // in a brand-new co-maker below), or '' (no co-maker).
   coMakerId: z.string().optional(),
@@ -183,6 +208,59 @@ const CreateCreditApplicationBaseSchema = z.object({
   newCoMakerRelationship: z.string().max(100).optional().or(z.literal('')),
   newCoMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
   newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
+  // Scenario 60 item 27 — the paper form's CHARACTER REFERENCES block, three
+  // fixed rows so the ERP record lines up with "Reference 1/2/3" on the
+  // scan. Rows are kept in the form even when blank; the submit strips the
+  // empty ones, so a transcriber can fill row 3 without touching row 2.
+  //
+  // Nothing is required: the mockup marks the minimum as "subject to NIG
+  // policy", which has not been stated. What IS enforced is that a row is
+  // all-or-nothing — a name with no number is not a usable reference, and
+  // the backend requires the number when a row exists at all.
+  // Scenario 60 item 27 — the mockup's RELATED PEOPLE block. Rows are added
+  // as needed with the role picked per row (client, 2026-09-30: "same
+  // behavior as the character references"), rather than three fixed rows
+  // for spouse/father/mother — most applications name one or two people,
+  // and three pre-labelled empty rows read as three things left undone.
+  //
+  // Co-maker is NOT a role here: it keeps its own section, backed by the
+  // existing CoMaker record that promissory notes and the checkout gate
+  // reference.
+  relatedPeople: z
+    .array(
+      z.object({
+        role: z.enum(['spouse', 'father', 'mother']).optional().or(z.literal('')),
+        firstName: z.string().max(150).optional().or(z.literal('')),
+        lastName: z.string().max(150).optional().or(z.literal('')),
+        mobileNumber: z.string().max(50).optional().or(z.literal('')),
+      })
+    )
+    .optional(),
+
+  // Scenario 60 item 27 — PROPOSED PURCHASE AND INSTALLMENT. Transcribed
+  // from paper, not derived: the mockup marks most of this block "read only
+  // from POS draft", but until a draft/quote entity exists the honest shape
+  // is a typed value.
+  lcp: z.string().optional().or(z.literal('')),
+  downPaymentCollection: z.enum(['online', 'branch', 'delivery']).optional().or(z.literal('')),
+  firstDueDate: z.string().optional().or(z.literal('')),
+  ppdRebate: z.string().optional().or(z.literal('')),
+  posDraftReference: z.string().max(100).optional().or(z.literal('')),
+
+  // Scenario 60 item 27 — PAPER RECORD AND CREDIT DECISION. The decision
+  // itself stays with decideItems(); these are the transcription facts.
+  paperFormConfirmed: z.boolean().optional(),
+  applicantIsUnitUser: z.enum(['yes', 'no']).optional().or(z.literal('')),
+
+  references: z
+    .array(
+      z.object({
+        name: z.string().max(255).optional().or(z.literal('')),
+        relationship: z.string().max(100).optional().or(z.literal('')),
+        mobileNumber: z.string().max(50).optional().or(z.literal('')),
+      })
+    )
+    .optional(),
   // An application can cover a bundle of models (2026-08-15, second pass) —
   // checkout enforces an exact match against the sale's installment lines.
   // estimatedPrice is the flat catalog price the item combobox's search
@@ -246,6 +324,74 @@ const CreateCreditApplicationBaseSchema = z.object({
   // figure and passes it here. (Rate itself: DOWN_PAYMENT_FLOOR_RATE.)
   downPaymentFloor: z.number().optional(),
 })
+
+/**
+ * Scenario 60 item 27 (client, 2026-09-30): PROPOSED PURCHASE AND INSTALLMENT
+ * and PAPER RECORD AND CREDIT DECISION are **not optional**.
+ *
+ * Applied on create only. The edit schema stays a `.partial()` — the Edit
+ * modal exposes items and terms alone, and demanding the paper record there
+ * would make every existing draft uneditable.
+ *
+ * What is deliberately NOT required, because no one can type it at intake:
+ *
+ * - **Amount financed, monthly installment, total price** — derived by
+ *   `resolveFinancing()` from the term, the price list and the down payment.
+ * - **Item summary** — the items themselves, already required above.
+ * - **Final decision, decision date, CIC/CICS name** — a decision is
+ *   `decideItems()`, made later and by a Business Owner. `transcribedById`
+ *   is stamped by the server.
+ * - **Reason if disapproved** — only exists on a decline.
+ * - **Linked invoice ID, installment account ID** — the mockup itself marks
+ *   both "after posting".
+ */
+export function refinePurchaseAndPaperRecord(
+  data: {
+    priceUseTypeId?: string
+    financingTermId?: string
+    lcp?: string
+    downPaymentCollection?: string
+    firstDueDate?: string
+    ppdRebate?: string
+    posDraftReference?: string
+    paperFormConfirmed?: boolean
+    applicantIsUnitUser?: string
+  },
+  ctx: z.RefinementCtx
+) {
+  const required: [keyof typeof data, string][] = [
+    ['priceUseTypeId', 'Price Use is required'],
+    ['financingTermId', 'Financing term is required'],
+    ['lcp', 'LCP is required'],
+    ['downPaymentCollection', 'Down payment collection is required'],
+    ['firstDueDate', 'First due date is required'],
+    // A rebate of zero is a real answer; an empty box is not. Typing 0 is
+    // what says "the form shows no rebate", and that reads differently from
+    // nobody having looked.
+    ['ppdRebate', 'PPD rebate is required — enter 0 if the form shows none'],
+    ['posDraftReference', 'POS draft / quote ID is required'],
+  ]
+  for (const [field, message] of required) {
+    if (!String(data[field] ?? '').trim()) {
+      ctx.addIssue({ code: 'custom', path: [field], message })
+    }
+  }
+
+  if (!data.paperFormConfirmed) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paperFormConfirmed'],
+      message: 'Confirm the paper form is complete and signed',
+    })
+  }
+  if (!data.applicantIsUnitUser) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['applicantIsUnitUser'],
+      message: 'Answer whether the applicant is the unit user',
+    })
+  }
+}
 
 /** Mirrors CreditApplicationService.resolveFinancing()'s own rules so a bad
  * down payment is caught under the field, at the moment it is typed, rather
@@ -375,7 +521,77 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
       }
     }
 
+    // Scenario 60 item 27 — a character reference row is all-or-nothing.
+    // Nothing forces a row to exist (the minimum is "subject to NIG policy",
+    // unstated), but a half-filled one is worse than none: a name with no
+    // number cannot be called, and the backend requires the number whenever
+    // a row is sent at all, so a partial row would 400 on submit rather than
+    // here.
+    ;(data.references ?? []).forEach((ref, index) => {
+      const name = (ref?.name ?? '').trim()
+      const mobile = (ref?.mobileNumber ?? '').trim()
+      const relationship = (ref?.relationship ?? '').trim()
+      const anyFilled = !!name || !!mobile || !!relationship
+      if (!anyFilled) return
+      if (!name) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['references', index, 'name'],
+          message: 'Name is required',
+        })
+      }
+      if (!mobile) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['references', index, 'mobileNumber'],
+          message: 'Mobile number is required',
+        })
+      }
+    })
+
+    // Scenario 60 item 27 — a related-person row needs a role and a first
+    // name. The mobile deliberately does not: the paper form offers "Father
+    // mobile / unavailable", so a name with no number is a complete answer
+    // here, unlike a character reference.
+    //
+    // Duplicate roles are caught here as well as on the backend. The unique
+    // (application, role) index means a second "father" cannot be stored,
+    // and the API answers 400 — but pointing at the offending row is far
+    // more use than a banner above the form.
+    const seenRoles = new Set<string>()
+    ;(data.relatedPeople ?? []).forEach((person, index) => {
+      const role = person?.role ?? ''
+      const firstName = (person?.firstName ?? '').trim()
+      const lastName = (person?.lastName ?? '').trim()
+      const mobile = (person?.mobileNumber ?? '').trim()
+      const anyFilled = !!role || !!firstName || !!lastName || !!mobile
+      if (!anyFilled) return
+      if (!role) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['relatedPeople', index, 'role'],
+          message: 'Pick who this is',
+        })
+      } else if (seenRoles.has(role)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['relatedPeople', index, 'role'],
+          message: `Only one ${role} can be recorded`,
+        })
+      } else {
+        seenRoles.add(role)
+      }
+      if (!firstName) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['relatedPeople', index, 'firstName'],
+          message: 'First name is required',
+        })
+      }
+    })
+
     refineDownPayment(data, ctx)
+    refinePurchaseAndPaperRecord(data, ctx)
   }
 )
 export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditApplicationBaseSchema>
@@ -481,6 +697,48 @@ export interface CreditApplication {
   monthlyInstallment?: number | null
   totalPayable?: number | null
   status: CreditApplicationStatus
+  /** Scenario 60 item 27 — character references transcribed from the paper
+   * form, ordered by their row on it. Empty array when none were recorded. */
+  references?: {
+    id: string
+    position: number
+    name: string
+    relationship: string
+    mobileNumber: string
+  }[]
+  /** Scenario 60 item 27 — the mockup's RELATED PEOPLE block, one row per
+   * person. At most one of each role. `mobileNumber` is nullable on purpose:
+   * the paper form offers "Father mobile / unavailable", so a blank is a
+   * recorded answer rather than missing data. */
+  relatedPeople?: {
+    id: string
+    role: 'spouse' | 'father' | 'mother'
+    firstName: string
+    lastName?: string | null
+    mobileNumber?: string | null
+  }[]
+  /** Scenario 60 item 27 — PROPOSED PURCHASE AND INSTALLMENT, transcribed
+   * from the paper form. `lcp` is hand-entered and feeds no calculation: the
+   * mockup says `amount financed = LCP - downpayment`, but what LCP is has
+   * not been confirmed, so the derived figures above still come from the
+   * price list and the rate card. */
+  lcp?: number | null
+  downPaymentCollection?: 'online' | 'branch' | 'delivery' | null
+  firstDueDate?: string | null
+  ppdRebate?: number | null
+  posDraftReference?: string | null
+  /** Scenario 60 item 27 — PAPER RECORD. The credit decision itself is not
+   * here; it stays with decideItems(). `applicantIsUnitUser` is tri-state —
+   * null means the question was never asked, which is not the same as "no". */
+  paperFormConfirmed?: boolean | null
+  applicantIsUnitUser?: boolean | null
+  transcribedById?: string | null
+  transcribedAt?: string | null
+  /** Scenario 60 item 27 — set by checkout when the sale it backed produced
+   *  exactly one installment account. Null for a multi-term sale, where no
+   *  single account is "the" one; posTransactionId still links the sale. */
+  installmentAccountId?: string | null
+  installmentAccount?: { id: string; accountNumber: string } | null
   /** Scenario 60 Part 6 — list-only. Whether an `applicant_id` document is
    * on file, so the queue can mark an approval as "ID pending" without
    * fetching every row's attachments. Set by findAll() alone; the detail

@@ -17,6 +17,9 @@ import { useCreateCreditApplication } from '../_hooks/useCreateCreditApplication
 import { ApplicantSearchCombobox } from './ApplicantSearchCombobox'
 import { ApplicantContactFields } from './ApplicantContactFields'
 import { CoMakerFields } from './CoMakerFields'
+import { CharacterReferenceFields } from './CharacterReferenceFields'
+import { RelatedPeopleFields } from './RelatedPeopleFields'
+import { PaperRecordFields } from './PaperRecordFields'
 import {
   CreditApplicationItemFields,
   type InitialCreditApplicationItem,
@@ -68,6 +71,14 @@ export default function NewCreditApplicationForm({
       branchId: sessionBranchId ?? undefined,
       applicantCustomerId: initialApplicantCustomerId ?? undefined,
       items: [{ itemId: '' }],
+      // One row to start; more are added as needed, up to three. Three empty
+      // boxes up front read as three things left undone, and most
+      // applications will not carry three. An untouched row is stripped on
+      // submit, so the default costs nothing.
+      references: [{ name: '', relationship: '', mobileNumber: '' }],
+      // Same reasoning as the references above — one row, role picked per
+      // row, added as needed up to three.
+      relatedPeople: [{ role: '', firstName: '', lastName: '', mobileNumber: '' }],
     },
   })
 
@@ -100,6 +111,8 @@ export default function NewCreditApplicationForm({
         // happens to carry but a seed does not.
         branchId: sessionBranchId ?? undefined,
         items: [{ itemId: '' }],
+        references: [{ name: '', relationship: '', mobileNumber: '' }],
+        relatedPeople: [{ role: '', firstName: '', lastName: '', mobileNumber: '' }],
         ...draft,
         // The customer just created wins over whatever the draft had —
         // that's the whole point of the trip.
@@ -167,6 +180,22 @@ export default function NewCreditApplicationForm({
     if (!applicant) return
     setValue('applicantPhone', applicant.phone ?? '')
     setValue('applicantEmail', applicant.email ?? '')
+    // Scenario 60 item 27 — "prefill for returning customers, then confirm
+    // or edit". These all came back on this same query long before they were
+    // rendered; seeding them is what makes the block a confirmation step
+    // rather than a second data-entry form.
+    setValue('applicantFirstName', applicant.firstName ?? '')
+    setValue('applicantMiddleName', applicant.middleName ?? '')
+    setValue('applicantLastName', applicant.lastName ?? '')
+    setValue('applicantAltPhone', applicant.altPhone ?? '')
+    setValue('applicantBirthday', applicant.birthday ? applicant.birthday.slice(0, 10) : '')
+    setValue('applicantCivilStatus', applicant.civilStatus ?? '')
+    setValue('applicantGender', applicant.gender ?? '')
+    setValue('applicantFacebookName', applicant.facebookName ?? '')
+    setValue('applicantEmployer', applicant.companyName ?? '')
+    setValue('applicantCustomerType', applicant.customerType ?? '')
+    setValue('applicantAddress', applicant.address ?? '')
+    setValue('applicantBarangayCode', applicant.barangayCode ?? '')
     // Only re-run when a *different* customer's data resolves — not on
     // every background refetch of the same customer, which would stomp
     // whatever the user is currently typing.
@@ -184,17 +213,71 @@ export default function NewCreditApplicationForm({
       // the customer's real record — independent of whether the credit
       // application below ends up saving successfully.
       if (applicant) {
-        const phoneChanged = (data.applicantPhone || '') !== (applicant.phone ?? '')
-        const emailChanged = (data.applicantEmail || '') !== (applicant.email ?? '')
-        if (phoneChanged || emailChanged) {
-          const contactRes = await posCustomersApi.update(data.applicantCustomerId, {
-            phone: data.applicantPhone || undefined,
-            email: data.applicantEmail || undefined,
-          })
+        // Scenario 60 item 27 — the whole CUSTOMER PROFILE block is diffed,
+        // not just phone and email. Each entry is [what the form holds, what
+        // the customer record holds]; only a genuine change is sent, so an
+        // application raised without touching the block issues no PATCH at
+        // all.
+        const profileDiff: [keyof typeof profilePatch, string, string][] = [
+          ['phone', data.applicantPhone || '', applicant.phone ?? ''],
+          ['email', data.applicantEmail || '', applicant.email ?? ''],
+          ['firstName', data.applicantFirstName || '', applicant.firstName ?? ''],
+          ['middleName', data.applicantMiddleName || '', applicant.middleName ?? ''],
+          ['lastName', data.applicantLastName || '', applicant.lastName ?? ''],
+          ['altPhone', data.applicantAltPhone || '', applicant.altPhone ?? ''],
+          [
+            'birthday',
+            data.applicantBirthday || '',
+            applicant.birthday ? applicant.birthday.slice(0, 10) : '',
+          ],
+          ['civilStatus', data.applicantCivilStatus || '', applicant.civilStatus ?? ''],
+          ['gender', data.applicantGender || '', applicant.gender ?? ''],
+          ['facebookName', data.applicantFacebookName || '', applicant.facebookName ?? ''],
+          ['companyName', data.applicantEmployer || '', applicant.companyName ?? ''],
+          ['customerType', data.applicantCustomerType || '', applicant.customerType ?? ''],
+          ['address', data.applicantAddress || '', applicant.address ?? ''],
+          ['barangayCode', data.applicantBarangayCode || '', applicant.barangayCode ?? ''],
+        ]
+        const profilePatch: Record<string, unknown> = {}
+        for (const [key, next, current] of profileDiff) {
+          if (next !== current) profilePatch[key] = next || undefined
+        }
+
+        if (Object.keys(profilePatch).length > 0) {
+          // `name` is the single display column every other screen reads, so
+          // it has to be rebuilt whenever a name part changes — leaving it
+          // stale would have the customer listed under their old name while
+          // the application showed the new one.
+          if (
+            'firstName' in profilePatch ||
+            'middleName' in profilePatch ||
+            'lastName' in profilePatch
+          ) {
+            profilePatch.name =
+              [data.applicantFirstName, data.applicantLastName]
+                .map((v) => (v ?? '').trim())
+                .filter(Boolean)
+                .join(' ') || applicant.name
+          }
+          // Birthday is a Date on the API, a 'YYYY-MM-DD' string in the form.
+          if (typeof profilePatch.birthday === 'string') {
+            profilePatch.birthday = new Date(profilePatch.birthday)
+          }
+
+          const contactRes = await posCustomersApi.update(
+            data.applicantCustomerId,
+            profilePatch as Parameters<typeof posCustomersApi.update>[1]
+          )
           if (!contactRes.success) {
-            setServerError(contactRes.error ?? "Failed to update the applicant's contact info")
+            setServerError(contactRes.error ?? "Failed to update the applicant's profile")
             return
           }
+          // The diff above reads this query's cache, so without refreshing it
+          // a retry would re-send an identical patch — same reason the
+          // co-maker paths below invalidate.
+          await queryClient.invalidateQueries({
+            queryKey: ['credit-application-applicant-detail', data.applicantCustomerId],
+          })
         }
       }
 
@@ -382,7 +465,13 @@ export default function NewCreditApplicationForm({
               />
             </div>
 
-            {applicantCustomerId && <ApplicantContactFields control={control} errors={errors} />}
+            {applicantCustomerId && (
+              <ApplicantContactFields
+                control={control}
+                errors={errors}
+                customerType={watch('applicantCustomerType')}
+              />
+            )}
 
             <CoMakerFields
               control={control}
@@ -392,6 +481,10 @@ export default function NewCreditApplicationForm({
               applicantSelected={!!applicantCustomerId}
               isLoading={applicantQuery.isLoading}
             />
+
+            <RelatedPeopleFields control={control} errors={errors} />
+
+            <CharacterReferenceFields control={control} errors={errors} />
 
             <CreditApplicationItemFields
               key={restoredItems ? 'restored' : 'fresh'}
@@ -407,7 +500,10 @@ export default function NewCreditApplicationForm({
               trigger={trigger}
               errors={errors}
               branchId={sessionBranchId}
+              required
             />
+
+            <PaperRecordFields control={control} errors={errors} />
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">

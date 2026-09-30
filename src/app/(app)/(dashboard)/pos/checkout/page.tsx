@@ -3,7 +3,6 @@
 import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import {
   Search,
-  CreditCard,
   Plus,
   Minus,
   X,
@@ -609,7 +608,11 @@ export default function CheckoutPage() {
       id: string
       applicationNumber: string
       requestedAmount: number
-      items: { itemName: string }[]
+      // itemId as well as the name: the backend requires the sale's
+      // installment lines to match this set EXACTLY, so the picker has to be
+      // able to tell which applications can actually be used with the cart
+      // in front of the cashier.
+      items: { itemId: string; itemName: string }[]
       // The terms the customer agreed to and the owner approved. Carried so
       // selecting an application can fill the cart's own term/down payment
       // in, rather than the cashier re-keying figures that were already
@@ -1247,6 +1250,42 @@ export default function CheckoutPage() {
   const inhouseInstallmentCartLines = installmentCartLines.filter(
     (l) => l.installmentProvider !== 'tpf'
   )
+
+  /**
+   * The picker used to list every approved, unconsumed application for the
+   * customer, regardless of what is in the cart — so a cashier could pick one
+   * that TransactionsService.validateAndPrepare() is certain to reject, and
+   * only find out at submit. The rule there is an EXACT match: every approved
+   * item must be an installment line, and no installment line may sit outside
+   * the application.
+   *
+   * Mismatched applications are labelled rather than hidden: a cashier who
+   * knows the customer has an approved application needs to see that it
+   * exists and why it cannot be used here, not an empty list. Usable ones are
+   * listed first so the common case stays a single glance.
+   */
+  const creditApplicationOptions = (() => {
+    const cartItemIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
+    const decorated = approvedCreditApplications.map((a) => {
+      const appItemIds = new Set(a.items.map((i) => i.itemId))
+      const matches =
+        cartItemIds.size > 0 &&
+        appItemIds.size === cartItemIds.size &&
+        [...appItemIds].every((id) => cartItemIds.has(id))
+      const scope = a.items.map((i) => i.itemName).join(', ')
+      const amount = a.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })
+      return {
+        matches,
+        value: a.id,
+        label: `${a.applicationNumber} · ${scope} · ₱${amount}${
+          matches ? '' : ' — does not match this cart'
+        }`,
+      }
+    })
+    return [...decorated.filter((o) => o.matches), ...decorated.filter((o) => !o.matches)].map(
+      ({ value, label }) => ({ value, label })
+    )
+  })()
   // Institutional (business) customers under the government sub-category
   // skip the credit application requirement entirely — a private business
   // or an individual customer still needs one for every installment sale.
@@ -1571,6 +1610,7 @@ export default function CheckoutPage() {
               // of addition.
               requestedAmount: approvedOnly.reduce((sum, i) => sum + Number(i.requestedAmount), 0),
               items: approvedOnly.map((i) => ({
+                itemId: i.itemId,
                 itemName: i.item?.name ?? '—',
               })),
               financingTermId: a.financingTermId ?? null,
@@ -4203,24 +4243,27 @@ export default function CheckoutPage() {
                         <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           Approved Credit Application
                         </label>
-                        {/* Disabled while loading and when there's nothing to
-                            pick — the empty case is explained by the amber
-                            note below, so an openable dropdown onto one dead
-                            row added nothing. */}
+                        {/* "Raise a new application" is an extraAction on the
+                            picker, not a button hidden inside the empty state
+                            — same shape as the co-maker Select's "Add a new
+                            co-maker". It used to appear ONLY when the customer
+                            had no approved application at all, which made a
+                            second purchase impossible from the till: a
+                            CreditApplication's posTransactionId is unique, so
+                            one approved application backs exactly one sale and
+                            every repeat installment customer needs a fresh
+                            one. The same applies when the approved one covers
+                            different items than the cart, or the customer
+                            wants different terms. Previously the only way out
+                            was to abandon the cart and start in Credit
+                            Applications. */}
                         <Select
                           value={creditApplicationId}
                           onChange={(v) => {
                             setCreditApplicationId(v)
                             if (v) applyCreditApplicationTerms(v)
                           }}
-                          options={approvedCreditApplications.map((a) => ({
-                            value: a.id,
-                            label: `${a.applicationNumber} · ${a.items
-                              .map((i) => i.itemName)
-                              .join(', ')} · ₱${a.requestedAmount.toLocaleString('en-PH', {
-                              minimumFractionDigits: 2,
-                            })}`,
-                          }))}
+                          options={creditApplicationOptions}
                           placeholder={
                             creditApplicationsLoading
                               ? 'Loading…'
@@ -4228,8 +4271,17 @@ export default function CheckoutPage() {
                                 ? 'No approved application on file'
                                 : 'Select an approved application…'
                           }
-                          disabled={
-                            creditApplicationsLoading || approvedCreditApplications.length === 0
+                          // Only genuinely dead while loading. With no
+                          // applications the picker still opens, because the
+                          // extraAction below is the way out of that state.
+                          disabled={creditApplicationsLoading}
+                          extraAction={
+                            creditApplicationsLoading
+                              ? undefined
+                              : {
+                                  label: 'New application for this cart',
+                                  onClick: goToRaiseCreditApplication,
+                                }
                           }
                           compact
                         />
@@ -4246,18 +4298,11 @@ export default function CheckoutPage() {
                             <p className="mt-1 text-[12px] text-amber-600">
                               Waiting on an approval? This refreshes when you come back to this tab.
                             </p>
-                            {/* Was a dead sentence telling the cashier to go
-                                do it themselves. Carries the customer and
-                                these installment lines straight into the
-                                form, and brings the cart back afterwards. */}
-                            <button
-                              type="button"
-                              onClick={goToRaiseCreditApplication}
-                              className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
-                            >
-                              <CreditCard size={12} />
-                              New Credit Application Form
-                            </button>
+                            {/* The button that used to sit here moved onto the
+                                picker above as an extraAction, so it is
+                                reachable whether or not an approved
+                                application already exists. This panel keeps
+                                only the guidance. */}
                             <p className="mt-1 text-[11px] text-amber-600">
                               Your cart is kept — it still needs the owner&apos;s approval before
                               this sale can be completed.
@@ -4328,13 +4373,18 @@ export default function CheckoutPage() {
                   // before a term has been picked yet (downPaymentInput still
                   // unset) so the shown figure doesn't disagree with what
                   // picking a term is about to fill in.
-                  const curatedDownPaymentWhole =
-                    line.priceListDownPayment != null
-                      ? Math.round(Number(line.priceListDownPayment))
-                      : null
+                  // Scenario 60 item 22 (client, 2026-09-29): the down
+                  // payment is 30% of the sale amount, and the rate card's
+                  // own downPayment column is no longer read. Those figures
+                  // were priced against the old 10% policy, so seeding from
+                  // them pre-filled a value the 30% floor then rejected — the
+                  // form filling in a number and immediately calling it
+                  // wrong. The rate card's monthlyInstallment is unaffected
+                  // and still drives the schedule; only its down-payment
+                  // column is ignored.
                   const downPaymentValue = line.downPaymentInput
                     ? parseFloat(line.downPaymentInput) || 0
-                    : (curatedDownPaymentWhole ?? minDownPaymentWhole)
+                    : minDownPaymentWhole
                   const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
@@ -4423,9 +4473,7 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null
-                                        ? 'Rate card'
-                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
+                                      {`${DOWN_PAYMENT_FLOOR_LABEL} min`}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
@@ -4444,9 +4492,7 @@ export default function CheckoutPage() {
                               )}
                               <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                 <span className="text-prominent-purple-400">●</span>
-                                {curatedDownPaymentWhole !== null
-                                  ? `From the rate card for this term — the minimum accepted is still ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount.`
-                                  : `Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
+                                {`Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
                               </p>
                               {line.financingTermId && (
                                 <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
@@ -4517,9 +4563,7 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null
-                                        ? 'Rate card'
-                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
+                                      {`${DOWN_PAYMENT_FLOOR_LABEL} min`}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
