@@ -4,7 +4,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import TransactionsList from './_components/TransactionsList'
 
 export const metadata = {
-  title: 'Transactions | Prominent Enterprise',
+  title: 'Transactions | NIG Central',
 }
 
 export default async function TransactionsPage() {

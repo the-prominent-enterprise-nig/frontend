@@ -34,7 +34,7 @@ const plexMono = IBM_Plex_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Prominent Enterprise',
+  title: 'NIG Central',
   description: 'Smart Solutions for Smart Businesses',
 }
 

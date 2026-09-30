@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { RevaluationPageView } from './_components'
 
 export const metadata = {
-  title: 'Inventory Revaluation | Prominent Enterprise',
+  title: 'Inventory Revaluation | NIG Central',
   description: 'Create and review inventory revaluation entries to adjust carrying values',
 }
 

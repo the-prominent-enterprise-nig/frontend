@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import DebitMemoList from './_components/DebitMemoList'
 
 export const metadata = {
-  title: 'Debit Memos | Prominent Enterprise',
+  title: 'Debit Memos | NIG Central',
   description:
     'Raise and approve returns of defective stock to suppliers, deducted from their open invoices',
 }

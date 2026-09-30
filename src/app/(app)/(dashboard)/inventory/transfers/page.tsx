@@ -6,7 +6,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { TransferList } from './_components'
 
 export const metadata = {
-  title: 'Stock Transfers | Prominent Enterprise',
+  title: 'Stock Transfers | NIG Central',
   description: 'Transfer stock between branches with full ledger traceability',
 }
 

@@ -5,6 +5,7 @@ import { revalidateTag } from 'next/cache'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import type {
   PosCustomer,
+  PosEmployeeResult,
   CollectionsCustomer,
   CreateWalkInCustomerInput,
   PosTerminal,
@@ -1497,6 +1498,43 @@ export async function searchCustomers(q: string): Promise<ApiResponse<PosCustome
     return { success: true, data: rows }
   } catch {
     return { success: false, error: 'Failed to search customers' }
+  }
+}
+
+export async function searchCustomersAndEmployees(
+  q: string
+): Promise<ApiResponse<{ customers: PosCustomer[]; employees: PosEmployeeResult[] }>> {
+  try {
+    // Checkout's buyer picker — customers and not-yet-linked employees side
+    // by side, so an employee can be picked directly rather than someone
+    // pre-creating a Customer for them first.
+    const result = await api.get<{ customers: PosCustomer[]; employees: PosEmployeeResult[] }>(
+      '/pos/customers/search-with-employees',
+      { q } as Record<string, string>
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Search failed' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to search customers and employees' }
+  }
+}
+
+/** Resolves an Employee pick to their Customer record — reuses it if they've
+ * already bought before, get-or-creates it (tagged customerType 'employee')
+ * the first time. The returned customer is then just picked normally. */
+export async function createCustomerFromEmployee(
+  employeeId: string
+): Promise<ApiResponse<PosCustomer>> {
+  try {
+    const result = await api.post<PosCustomer>('/pos/customers/from-employee', { employeeId })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to resolve this employee' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to resolve this employee' }
   }
 }
 

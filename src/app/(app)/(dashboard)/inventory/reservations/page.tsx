@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { ReservationsPageView } from './_components'
 
 export const metadata = {
-  title: 'Stock Reservations | Prominent Enterprise',
+  title: 'Stock Reservations | NIG Central',
   description: 'View and manage stock reservations for sales orders and production',
 }
 

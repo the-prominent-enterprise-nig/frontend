@@ -4,7 +4,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import JournalEntriesList from './_components/JournalEntriesList'
 
 export const metadata = {
-  title: 'Journal Entries | Prominent Enterprise',
+  title: 'Journal Entries | NIG Central',
 }
 
 export default async function JournalEntriesPage() {

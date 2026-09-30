@@ -6,7 +6,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { OperationsHub } from './_components/OperationsHub'
 
 export const metadata = {
-  title: 'Operations | Prominent Enterprise',
+  title: 'Operations | NIG Central',
   description: 'Stock transfers, returns, quality hold, and backorders',
 }
 
