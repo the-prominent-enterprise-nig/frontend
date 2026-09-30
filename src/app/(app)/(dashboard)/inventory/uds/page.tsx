@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import UdsList from './_components/UdsList'
 
 export const metadata = {
-  title: 'Unit Document Sheets | Prominent Enterprise',
+  title: 'Unit Document Sheets | NIG Central',
   description: 'Track units leaving the branch for repair, pull-out, maintenance, or loan.',
 }
 

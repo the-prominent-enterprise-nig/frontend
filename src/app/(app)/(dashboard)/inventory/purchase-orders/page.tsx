@@ -8,7 +8,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { ProcurementHub } from './_components/ProcurementHub'
 
 export const metadata = {
-  title: 'Purchase Orders | Prominent Enterprise',
+  title: 'Purchase Orders | NIG Central',
   description: 'View and manage purchase orders and purchase requests',
 }
 

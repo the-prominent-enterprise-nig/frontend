@@ -4,7 +4,7 @@ import { canManagePosSettings } from '@/src/libs/guards/permission'
 import { PosTopBar } from './_components/PosTopBar'
 
 export const metadata = {
-  title: 'Point of Sale - Prominent Enterprise',
+  title: 'Point of Sale - NIG Central',
   description: 'Point of Sale operations',
 }
 

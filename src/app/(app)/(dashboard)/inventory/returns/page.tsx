@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { ReturnList } from './_components'
 
 export const metadata = {
-  title: 'Stock Returns | Prominent Enterprise',
+  title: 'Stock Returns | NIG Central',
   description:
     'Process returned items back into inventory with condition inspection and full traceability',
 }

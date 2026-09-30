@@ -5,7 +5,7 @@ import { getNotifications } from '@/src/libs/actions/notifications.actions'
 import NotificationsPageSection from '@/src/components/notifications/NotificationsPageSection'
 
 export const metadata = {
-  title: 'Notifications | Prominent Enterprise',
+  title: 'Notifications | NIG Central',
 }
 
 export default async function NotificationsPage() {

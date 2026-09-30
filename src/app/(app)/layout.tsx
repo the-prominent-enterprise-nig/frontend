@@ -9,8 +9,8 @@ import { isSuperAdmin } from '@/src/libs/guards/permission'
 
 export function generateMetadata() {
   return {
-    title: 'App - Prominent Enterprise',
-    description: 'Main application layout for Prominent Enterprise',
+    title: 'NIG Central',
+    description: 'Main application layout for NIG Central',
   }
 }
 

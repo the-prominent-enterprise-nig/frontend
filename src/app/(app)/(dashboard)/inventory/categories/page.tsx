@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { CategoryManager } from './_components'
 
 export const metadata = {
-  title: 'Category Management | Prominent Enterprise',
+  title: 'Category Management | NIG Central',
   description: 'Organize inventory items into nested categories for easy navigation and reporting',
 }
 

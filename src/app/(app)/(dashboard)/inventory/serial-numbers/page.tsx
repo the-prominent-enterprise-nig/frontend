@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { SerialNumberList } from './_components'
 
 export const metadata = {
-  title: 'Serial Number Tracking | Prominent Enterprise',
+  title: 'Serial Number Tracking | NIG Central',
   description: 'Register, search, and track individual serial numbers across their lifecycle',
 }
 

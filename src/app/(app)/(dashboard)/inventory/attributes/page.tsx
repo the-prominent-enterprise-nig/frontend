@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { AttributesPageView } from './_components'
 
 export const metadata = {
-  title: 'Item Attributes | Prominent Enterprise',
+  title: 'Item Attributes | NIG Central',
   description: 'Create and manage custom attributes for inventory items',
 }
 

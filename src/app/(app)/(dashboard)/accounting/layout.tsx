@@ -2,8 +2,8 @@ import ModuleGuard from '@/src/components/guards/ModuleGuard'
 
 export function AccountingMetadata() {
   return {
-    title: 'Accounting - Prominent Enterprise',
-    description: 'Manage your accounting workflows with Prominent Enterprise',
+    title: 'Accounting - NIG Central',
+    description: 'Manage your accounting workflows with NIG Central',
   }
 }
 

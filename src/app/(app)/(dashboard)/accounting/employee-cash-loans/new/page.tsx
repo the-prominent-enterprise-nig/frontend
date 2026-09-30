@@ -5,7 +5,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import NewLoanForm from './_components/NewLoanForm'
 
 export const metadata = {
-  title: 'New Employee Cash Loan | Prominent Enterprise',
+  title: 'New Employee Cash Loan | NIG Central',
   description: 'Issue a new employee cash loan',
 }
 

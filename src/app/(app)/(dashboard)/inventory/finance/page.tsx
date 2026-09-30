@@ -6,7 +6,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { FinanceHub } from './_components/FinanceHub'
 
 export const metadata = {
-  title: 'Finance | Prominent Enterprise',
+  title: 'Finance | NIG Central',
   description: 'Stock costing, price lists, landed costs, and inventory revaluation',
 }
 
