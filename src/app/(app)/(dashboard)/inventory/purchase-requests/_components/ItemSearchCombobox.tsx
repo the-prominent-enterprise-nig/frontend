@@ -54,17 +54,14 @@ async function searchCatalog(
     }))
 }
 
-/** Items with available stock at the warehouse, most units first. */
-async function searchStocked(
-  query: string,
-  warehouseId: string,
-  excludeSerialTracked?: boolean
-): Promise<SearchComboboxOption[]> {
+/** Items with available stock at the warehouse, most units first. Serial-
+ * tracked filtering happens later in searchStockedFirst against the catalog,
+ * since the stock balance row's item shape doesn't carry isSerialTracked. */
+async function searchStocked(query: string, warehouseId: string): Promise<SearchComboboxOption[]> {
   const res = await getStockBalances({ warehouseId, search: query || undefined, limit: 50 })
   const stocked = new Map<string, SearchComboboxOption & { qty: number }>()
   for (const row of res.data?.data ?? []) {
     if (!row.item || row.availableQty <= 0 || stocked.has(row.item.id)) continue
-    if (excludeSerialTracked && row.item.isSerialTracked) continue
     stocked.set(row.item.id, {
       id: row.item.id,
       primary: row.item.name,
@@ -82,13 +79,18 @@ async function searchStockedFirst(
   excludeSerialTracked?: boolean
 ): Promise<SearchComboboxOption[]> {
   const [stocked, catalog] = await Promise.all([
-    searchStocked(query, warehouseId, excludeSerialTracked),
+    searchStocked(query, warehouseId),
     searchCatalog(query, excludeSerialTracked),
   ])
   const catalogById = new Map(catalog.map((o) => [o.id, o]))
-  const stockedIds = new Set(stocked.map((o) => o.id))
+  // Catalog is already filtered when excludeSerialTracked is on, so gate
+  // stocked rows on catalog membership to inherit the same filter.
+  const stockedFiltered = excludeSerialTracked
+    ? stocked.filter((o) => catalogById.has(o.id))
+    : stocked
+  const stockedIds = new Set(stockedFiltered.map((o) => o.id))
   return [
-    ...stocked.map((o) => ({ ...o, meta: catalogById.get(o.id)?.meta })),
+    ...stockedFiltered.map((o) => ({ ...o, meta: catalogById.get(o.id)?.meta })),
     ...catalog.filter((o) => !stockedIds.has(o.id)),
   ]
 }
