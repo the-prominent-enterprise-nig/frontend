@@ -51,6 +51,44 @@ export function caravanSubtitle(branch: CaravanFields): string {
   return location ? `${event} · ${location}` : event
 }
 
+/**
+ * A caravan named by where it is set up rather than its event — for branch
+ * pickers, where staff look for the place: "Caravan · Lemery". Location is
+ * optional, so a caravan without one falls back to its event label.
+ */
+export function caravanPlaceLabel(branch: CaravanFields): string {
+  const location = branch.addressLine1?.trim()
+  return location ? `Caravan · ${location}` : caravanLabel(branch)
+}
+
+/** A branch's name in a branch picker — a caravan reads by its place. */
+export function branchDisplayName(branch: CaravanFields): string {
+  return branch.isTemporary ? caravanPlaceLabel(branch) : branch.name
+}
+
+type TerminalPlace = {
+  branchId?: string | null
+  branch?: { id?: string; name: string } | null
+  caravanBranchId?: string | null
+  caravanBranch?: Omit<CaravanFields, 'isTemporary'> | null
+}
+
+/**
+ * Where a POS terminal physically is. A caravan's terminal is stored on its
+ * host branch (so its cash is the host's) but sits at the caravan.
+ */
+export function terminalPlaceId(terminal?: TerminalPlace | null): string | undefined {
+  return terminal?.caravanBranchId ?? terminal?.branchId ?? terminal?.branch?.id ?? undefined
+}
+
+/** That place's name — "Caravan · Lemery" for a caravan's terminal. */
+export function terminalPlaceName(terminal?: TerminalPlace | null): string | undefined {
+  if (terminal?.caravanBranch) {
+    return caravanPlaceLabel({ ...terminal.caravanBranch, isTemporary: true })
+  }
+  return terminal?.branch?.name
+}
+
 export function locationLabel(
   warehouse?: {
     name: string

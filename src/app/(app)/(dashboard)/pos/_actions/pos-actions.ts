@@ -2,6 +2,7 @@
 
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { revalidateTag } from 'next/cache'
+import { branchDisplayName } from '@/src/libs/format/locationLabel'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import type {
   PosCustomer,
@@ -1458,6 +1459,9 @@ export interface Branch {
   id: string
   name: string
   isMainBranch?: boolean
+  isTemporary?: boolean
+  eventName?: string | null
+  addressLine1?: string | null
 }
 
 export async function getBranches(): Promise<ApiResponse<Branch[]>> {
@@ -1473,7 +1477,9 @@ export async function getBranches(): Promise<ApiResponse<Branch[]>> {
       return { success: false, error: result.error || 'Failed to fetch branches' }
     }
     const branches = Array.isArray(result.data) ? result.data : result.data.data
-    return { success: true, data: branches }
+    // A caravan reads by its place ("Caravan · Lemery") in every POS picker,
+    // not by its event name.
+    return { success: true, data: branches.map((b) => ({ ...b, name: branchDisplayName(b) })) }
   } catch {
     return { success: false, error: 'Failed to fetch branches' }
   }
@@ -2432,7 +2438,18 @@ export interface SerialNumberRecord {
   id: string
   serialNumber: string
   currentWarehouseId?: string | null
-  currentWarehouse?: { id: string; code: string; name: string } | null
+  currentWarehouse?: {
+    id: string
+    code: string
+    name: string
+    /** The warehouse's branch — for a caravan, its event and location. */
+    branch?: {
+      name: string
+      isTemporary?: boolean
+      eventName?: string | null
+      addressLine1?: string | null
+    } | null
+  } | null
   /** Only populated by searchSerialsAcrossItems — the item this serial
    * belongs to, since that search doesn't scope to one itemId up front. */
   item?: { id: string; sku: string; name: string } | null
@@ -2442,8 +2459,9 @@ export interface SerialNumberRecord {
   openTransfer?: { transferNumber: string } | null
 }
 
-// `forSale` (Scenario 60 Part 3): a caravan this branch hosts stops being
-// sellable once its event has ended — its units must be transferred out.
+// `forSale` (Scenario 60): only units sellable at this terminal — a caravan's
+// units sell on the caravan's own terminal (branchId = the caravan), never the
+// host's, and not at all once its event has ended.
 export async function getAvailableSerialNumbers(
   itemId: string,
   branchId?: string
