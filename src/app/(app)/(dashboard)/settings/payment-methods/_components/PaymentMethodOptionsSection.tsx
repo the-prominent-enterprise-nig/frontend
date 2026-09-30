@@ -14,11 +14,11 @@ type Props = {
   initialMethods: PaymentMethodConfig[]
 }
 
-// Scenario 37 — only these three methods carry a named sub-choice today.
+// Scenario 37 — only these four methods carry a named sub-choice today.
 // Filtered by key rather than hardcoding labels here, so a future standard
 // method just needs its own STANDARD_METHOD_OPTIONS entry on the backend to
 // show up the same way.
-const OPTION_METHOD_KEYS = ['card', 'bank_transfer', 'qr']
+const OPTION_METHOD_KEYS = ['cash', 'card', 'bank_transfer', 'qr']
 
 export default function PaymentMethodOptionsSection({ initialMethods }: Props) {
   const [methods, setMethods] = useState(initialMethods)
@@ -109,11 +109,13 @@ export default function PaymentMethodOptionsSection({ initialMethods }: Props) {
           <div className="border-b border-zinc-200 px-6 py-4">
             <h2 className="text-lg font-semibold text-zinc-900">{m.name}</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
-              {m.key === 'card'
-                ? 'The POS Terminal offered when a card payment is entered.'
-                : m.key === 'bank_transfer'
-                  ? 'The bank offered when a bank transfer is entered.'
-                  : 'The gateway offered when a QR payment is entered.'}
+              {m.key === 'cash'
+                ? 'Named cash channels, such as Check, offered beside Cash on Hand.'
+                : m.key === 'card'
+                  ? 'The POS Terminal offered when a card payment is entered.'
+                  : m.key === 'bank_transfer'
+                    ? 'The bank offered when a bank transfer is entered.'
+                    : 'The gateway offered when a QR payment is entered.'}
             </p>
           </div>
           <div className="divide-y divide-zinc-100">

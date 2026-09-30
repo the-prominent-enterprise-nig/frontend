@@ -259,6 +259,7 @@ export interface PosPayment {
   paymentMethod: PosPaymentMethod
   amount: number
   referenceNumber?: string | null
+  checkNumber?: string | null
   giftCardId?: string | null
   createdAt: string
 }
@@ -641,6 +642,8 @@ export interface AddPaymentInput {
   amount: number
   giftCardId?: string
   referenceNumber?: string
+  /** The check's own number — cash tendered via the Check sub-mode. */
+  checkNumber?: string
   paymentMethodConfigId?: string
   /** Named sub-choice used (Scenario 37) — POS Terminal for card, bank for
    * bank_transfer, gateway for qr. */
