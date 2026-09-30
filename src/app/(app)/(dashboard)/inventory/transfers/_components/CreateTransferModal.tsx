@@ -920,6 +920,7 @@ export default function CreateTransferModal({
                       setAddItemKey((k) => k + 1)
                     }}
                     placeholder="Add item — search name, SKU, or serial…"
+                    stockWarehouseId={fromId || undefined}
                   />
                 </div>
               </div>

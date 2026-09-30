@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Hash, RefreshCw, X, Truck, Search } from 'lucide-react'
+import { Hash, X, Truck, Search } from 'lucide-react'
 import { useSerialNumbers } from '../_hooks/useSerialNumbers'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -102,6 +102,7 @@ export default function SerialNumberList({
   const { pushPanel } = useUIShell()
   const canManage = hasPermission(session, INVENTORY_PERMISSIONS.SERIAL_MANAGE)
   const canTransfer = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
+  const canConsign = canTransfer && hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
   const [isImportOpen, setIsImportOpen] = useState(false)
 
@@ -110,7 +111,6 @@ export default function SerialNumberList({
     pagination,
     statusCounts,
     isLoading,
-    isFetching,
     error,
     statusFilter,
     categoryFilter: _categoryFilter,
@@ -129,7 +129,6 @@ export default function SerialNumberList({
     itemOptions,
     registerSerials,
     isRegistering,
-    refetch,
     caravanView,
     setCaravanView,
     caravanId,
@@ -180,15 +179,17 @@ export default function SerialNumberList({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
+            {/* Opens New Stock Transfer with "For a caravan" on — a caravan
+                is stocked by an ordinary transfer, so its fields live there. */}
+            {canConsign && (
+              <Link
+                href="/inventory/transfers?new=caravan"
+                className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb]"
+              >
+                <Truck className="h-3.5 w-3.5" />
+                Consign to Caravan
+              </Link>
+            )}
             {canManage && (
               <button
                 type="button"

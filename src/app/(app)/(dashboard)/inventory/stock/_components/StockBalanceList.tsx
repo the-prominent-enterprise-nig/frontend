@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { RefreshCw, Search, Package, X, History } from 'lucide-react'
+import { Search, Package, X, History } from 'lucide-react'
 import { useStockBalance } from '../_hooks/useStockBalance'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -122,7 +122,6 @@ export default function StockBalanceList({
     summary,
     pagination,
     isLoading,
-    isFetching,
     error,
     locations,
     region,
@@ -142,7 +141,6 @@ export default function StockBalanceList({
     locationOptions,
     locationsLoading,
     categoryOptions,
-    refetch,
   } = useStockBalance(onLocationsChange)
 
   const activeFilterCount = [locations.length > 0, !!region, !!categoryId, !!stockStatus].filter(
@@ -218,15 +216,6 @@ export default function StockBalanceList({
           <div className="flex items-center gap-2">
             {/* Scenario 56 — add an item without leaving Stock. */}
             {hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE) && <AddItemButton />}
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
           </div>
         </div>
 
