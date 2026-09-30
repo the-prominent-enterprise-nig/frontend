@@ -1826,7 +1826,11 @@ export interface SpecialAccountRegister {
  * money recovered — shown as two positive columns rather than one signed
  * figure, which is how a subsidiary ledger reads. */
 export interface SpecialAccountLedgerEntry {
-  expenseId: string
+  /** The expense (payroll/advance) behind the movement, if any. */
+  expenseId: string | null
+  /** Scenario 63 — the Employee Cash Loan behind it (a release or a
+   * payment), if any. */
+  loanId: string | null
   date: string | null
   reference: string
   description: string | null
