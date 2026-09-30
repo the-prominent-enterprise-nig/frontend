@@ -2,27 +2,24 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import { listEmployeeCashLoans } from '../_actions/list-cash-loans'
+import { listEmployees } from '../_actions/list-employees'
 
-export function useEmployeeCashLoans(initialEmployeeId?: string) {
+export function useEmployees() {
   const [search, setSearch] = useState('')
 
-  const queryParams = useMemo(
-    () => ({ search: search || undefined, employeeId: initialEmployeeId }),
-    [search, initialEmployeeId]
-  )
+  const queryParams = useMemo(() => ({ search: search || undefined }), [search])
 
   const listQuery = useQuery({
-    queryKey: ['pos-employee-cash-loans', queryParams],
-    queryFn: () => listEmployeeCashLoans(queryParams),
+    queryKey: ['accounting-employees', queryParams],
+    queryFn: () => listEmployees(queryParams),
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
   })
 
-  const loans = listQuery.data?.data?.items ?? []
+  const employees = listQuery.data?.data?.items ?? []
 
   return {
-    loans,
+    employees,
     total: listQuery.data?.data?.total ?? 0,
     isLoading: listQuery.isLoading,
     isFetching: listQuery.isFetching,

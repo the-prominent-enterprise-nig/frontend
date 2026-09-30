@@ -1909,8 +1909,12 @@ export interface EmployeeLite {
   branch?: { id: string; name: string } | null
 }
 export const EmployeesApi = {
+  // The Employees master-list page (src/app/.../accounting/employees) owns
+  // GET /accounting/employees itself now — this picker's bounded,
+  // active-only typeahead moved to its own sub-route so the two don't
+  // collide.
   search: (search?: string) =>
-    api.get<EmployeeLite[]>('/accounting/employees', search ? { search } : undefined),
+    api.get<EmployeeLite[]>('/accounting/employees/search', search ? { search } : undefined),
 }
 
 // ============ Bank Accounts ============

@@ -17,9 +17,18 @@ function fmt(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 }
 
-export default function EmployeeCashLoansList({ session }: { session: SessionUser }) {
+export default function EmployeeCashLoansList({
+  session,
+  employeeId,
+}: {
+  session: SessionUser
+  /** Pre-filters to one employee's loans — set when this list is reached
+   * from that employee's detail page (accounting/employees/[id]). */
+  employeeId?: string
+}) {
   const canIssue = hasPermission(session, ACCOUNTING_PERMISSIONS.EMPLOYEE_CASH_LOAN_CREATE)
-  const { loans, isLoading, isFetching, error, search, setSearch } = useEmployeeCashLoans()
+  const { loans, isLoading, isFetching, error, search, setSearch } =
+    useEmployeeCashLoans(employeeId)
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">

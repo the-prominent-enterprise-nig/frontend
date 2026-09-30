@@ -31,6 +31,7 @@ import {
   List,
   Printer,
   FileSignature,
+  IdCard,
 } from 'lucide-react'
 import {
   computePricingTotals,
@@ -53,7 +54,8 @@ import {
   addPayment,
   validatePromoCode,
   parkSale,
-  searchCustomers,
+  searchCustomersAndEmployees,
+  createCustomerFromEmployee,
   getCustomerById,
   getLoyaltyByCustomer,
   earnPoints,
@@ -109,6 +111,7 @@ import type {
   PayNowMethod,
   PromoValidationResult,
   PosCustomer,
+  PosEmployeeResult,
   LoyaltyAccount,
   LoyaltyProgram,
   PosTransaction,
@@ -480,6 +483,12 @@ export default function CheckoutPage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<PosCustomer[]>([])
+  // Not-yet-linked employees matching the same search — shown alongside
+  // customerResults in one picker; selecting one get-or-creates their real
+  // Customer record (see selectEmployee below), never used as the buyer id
+  // directly.
+  const [employeeResults, setEmployeeResults] = useState<PosEmployeeResult[]>([])
+  const [resolvingEmployee, setResolvingEmployee] = useState(false)
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
   const [searchingCustomers, setSearchingCustomers] = useState(false)
   const customerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1055,18 +1064,20 @@ export default function CheckoutPage() {
     }
   }, [OFFLINE_QUEUE_KEY])
 
-  // Debounced customer search
+  // Debounced customer + employee search
   useEffect(() => {
     if (!customerSearch.trim()) {
       setCustomerResults([])
+      setEmployeeResults([])
       setCustomerSearchOpen(false)
       return
     }
     if (customerTimer.current) clearTimeout(customerTimer.current)
     customerTimer.current = setTimeout(async () => {
       setSearchingCustomers(true)
-      const res = await searchCustomers(customerSearch.trim())
-      setCustomerResults(res.data ?? [])
+      const res = await searchCustomersAndEmployees(customerSearch.trim())
+      setCustomerResults(res.data?.customers ?? [])
+      setEmployeeResults(res.data?.employees ?? [])
       setCustomerSearchOpen(true)
       setSearchingCustomers(false)
     }, 300)
@@ -1704,10 +1715,27 @@ export default function CheckoutPage() {
 
   // ─── Customer actions ──────────────────────────────────────────────────────
 
+  // Resolves the employee to their real Customer record (get-or-create, see
+  // PosCustomersService.getOrCreateFromEmployee) and picks that — from this
+  // point on it's exactly a normal customer pick, tagged customerType
+  // 'employee', which is what already drives the Employee Appliance Loan
+  // option below (Scenario 60).
+  async function selectEmployee(employee: PosEmployeeResult) {
+    setResolvingEmployee(true)
+    const res = await createCustomerFromEmployee(employee.id)
+    setResolvingEmployee(false)
+    if (!res.success || !res.data) {
+      setError(res.error || 'Could not resolve this employee to a customer record.')
+      return
+    }
+    await selectCustomer(res.data)
+  }
+
   async function selectCustomer(customer: PosCustomer) {
     setSelectedCustomer(customer)
     setCustomerSearch('')
     setCustomerResults([])
+    setEmployeeResults([])
     setCustomerSearchOpen(false)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
@@ -3649,23 +3677,53 @@ export default function CheckoutPage() {
                 </div>
 
                 {customerSearchOpen && (
-                  <div className="mt-1 max-h-36 overflow-y-auto rounded-xl border border-purple-200 bg-white shadow-lg">
-                    {customerResults.length === 0 ? (
-                      <p className="px-3 py-2 text-xs text-gray-700">No customers found</p>
+                  <div className="mt-1 max-h-48 overflow-y-auto rounded-xl border border-purple-200 bg-white shadow-lg">
+                    {customerResults.length === 0 && employeeResults.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-700">
+                        No customers or employees found
+                      </p>
                     ) : (
-                      customerResults.map((c) => (
-                        <button
-                          key={c.id}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
-                          onMouseDown={() => selectCustomer(c)}
-                        >
-                          <User size={11} className="shrink-0 text-gray-700" />
-                          <div>
-                            <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
-                            {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
-                          </div>
-                        </button>
-                      ))
+                      <>
+                        {customerResults.map((c) => (
+                          <button
+                            key={c.id}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
+                            onMouseDown={() => selectCustomer(c)}
+                          >
+                            <User size={11} className="shrink-0 text-gray-700" />
+                            <div>
+                              <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
+                              {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
+                            </div>
+                          </button>
+                        ))}
+                        {employeeResults.length > 0 && (
+                          <p className="border-t border-gray-100 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                            Employees
+                          </p>
+                        )}
+                        {employeeResults.map((emp) => (
+                          <button
+                            key={emp.id}
+                            disabled={resolvingEmployee}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50 disabled:opacity-50"
+                            onMouseDown={() => selectEmployee(emp)}
+                          >
+                            <IdCard size={11} className="shrink-0 text-gray-700" />
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {[emp.firstName, emp.middleName, emp.lastName]
+                                  .filter(Boolean)
+                                  .join(' ')}
+                              </p>
+                              <p className="text-xs text-gray-700">
+                                {emp.employeeCode}
+                                {emp.branch ? ` · ${emp.branch.name}` : ''}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </>
                     )}
                   </div>
                 )}

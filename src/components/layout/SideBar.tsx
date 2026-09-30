@@ -907,6 +907,17 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     href: '/settings/pending-invites',
     icon: UserPlus,
   },
+  {
+    // Business-Owner-level master list — also the source of the
+    // employee-cash-loan borrower picker and the "Create Customer"
+    // quick-link on its own detail page (accounting/employees).
+    section: 'My Workspace',
+    label: 'Employees',
+    href: '/accounting/employees',
+    icon: IdCard,
+    requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_READ,
+    usePrefix: true,
+  },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
   {

@@ -576,6 +576,18 @@ export interface PosCustomer {
   businessCategory?: 'private' | 'government'
 }
 
+// Checkout's buyer picker — an Employee not yet linked to a Customer.
+// Picking one resolves to a real PosCustomer via createCustomerFromEmployee
+// (get-or-create), never used as the buyer directly.
+export interface PosEmployeeResult {
+  id: string
+  employeeCode: string
+  firstName: string
+  lastName: string
+  middleName?: string | null
+  branch?: { id: string; name: string } | null
+}
+
 // POS Collections — one row per customer with at least one outstanding
 // installment due, aggregated across all their installment schedules.
 export interface CollectionsCustomer {

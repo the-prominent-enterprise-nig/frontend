@@ -9,7 +9,11 @@ export const metadata = {
   description: 'Issue and track employee cash loans',
 }
 
-export default async function EmployeeCashLoansPage() {
+export default async function EmployeeCashLoansPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ employeeId?: string }>
+}) {
   const session = await getSessionOrNull()
 
   if (!session) {
@@ -20,9 +24,11 @@ export default async function EmployeeCashLoansPage() {
     redirect('/403')
   }
 
+  const { employeeId } = await searchParams
+
   return (
     <div className="min-h-screen bg-zinc-50">
-      <EmployeeCashLoansList session={session} />
+      <EmployeeCashLoansList session={session} employeeId={employeeId} />
     </div>
   )
 }
