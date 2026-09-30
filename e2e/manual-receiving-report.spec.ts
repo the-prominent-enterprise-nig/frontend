@@ -25,17 +25,17 @@ async function pickSearchableOption(
 // Scenario 53 — rebuilt from RR-05's single-item/submit-then-approve shape
 // (Scenario 29) into a multi-line, draft-then-post document mirroring the
 // normal Create Receiving Report screen. Real differences from that normal
-// flow: a line's item may be "Something else" (a typed name, not a catalog
-// pick — resolved into a brand-new Item only once the report is posted),
-// and there's no approval gate — the same person who saves the draft posts
-// it themselves, whenever ready.
+// flow: a line's item may be "Non-catalog items" (a typed name, not a
+// catalog pick — resolved into a brand-new Item only once the report is
+// posted), and there's no approval gate — the same person who saves the
+// draft posts it themselves, whenever ready.
 //
 // Covers: Business Owner creates a draft with one catalog line and one
-// "Something else" line, saves it (lands on the detail page as "Draft"),
+// "Non-catalog items" line, saves it (lands on the detail page as "Draft"),
 // then posts it themselves (no second approver) and sees it flip to
 // "Posted" with both lines shown.
 
-test('Business Owner creates a multi-line draft (catalog + Something else) and posts it themselves', async ({
+test('Business Owner creates a multi-line draft (catalog + non-catalog item) and posts it themselves', async ({
   page,
 }) => {
   test.setTimeout(120_000)
@@ -74,13 +74,13 @@ test('Business Owner creates a multi-line draft (catalog + Something else) and p
   await expect(itemOption).toBeVisible({ timeout: 10_000 })
   await itemOption.click()
 
-  // ── Line 2: "Something else" — not in the catalog ───────────────────────
+  // ── Line 2: "Non-catalog items" — not in the catalog ────────────────────
   await clickStable(
     page.getByRole('button', { name: 'Add Line' }),
-    page.getByRole('button', { name: 'Something else' }).last()
+    page.getByRole('button', { name: 'Non-catalog items' }).last()
   )
   await clickStable(
-    page.getByRole('button', { name: 'Something else' }).last(),
+    page.getByRole('button', { name: 'Non-catalog items' }).last(),
     page.getByPlaceholder('What was it? e.g. "10 assorted screws"')
   )
   await fillStable(page.getByPlaceholder('What was it? e.g. "10 assorted screws"'), uniqueName)

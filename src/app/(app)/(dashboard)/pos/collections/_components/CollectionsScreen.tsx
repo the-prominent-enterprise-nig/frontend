@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Search,
   AlertTriangle,
+  ArrowLeft,
   Banknote,
   CalendarClock,
   CheckCircle2,
@@ -21,7 +23,6 @@ import {
   getPaymentMethods,
   getEnabledBranchPaymentMethods,
 } from '../../_actions/pos-actions'
-import { collectorsApi } from '@/src/libs/api/crm'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/data/AccountingV2Data'
@@ -230,11 +231,13 @@ function dueSuggestions(
   ppd: number | null,
   paymentDateIso: string
 ): { isLate: boolean; suggestedRebate: number | null; suggestedPenalty: number } {
-  // A due paid after its own due date forfeits its rebate entirely — mirrors
+  // Raw date comparison, not dueStatus() — a PARTIAL due counts as late too,
+  // same as a SENT one. Used for the Late badge and to default the rebate
+  // checkbox unchecked below — a late due can still have its rebate granted
+  // (developer decision, reversing the original forfeit-on-late rule), it
+  // just isn't pre-checked the way an on-time due's is. Mirrors
   // ar-invoices.service.ts's applySingleInvoicePayment() cap logic exactly,
-  // so this preview can never promise more than the backend will allow. Raw
-  // date comparison, not dueStatus() — a PARTIAL due late-forfeits too, same
-  // as a SENT one.
+  // so this preview can never promise more than the backend will allow.
   const isLate = line.dueDate.slice(0, 10) < paymentDateIso
   // Late-payment penalty — 5% of the due's own amount, once it's at least 15
   // days past its own due date. Same day-count as applySingleInvoicePayment()'s
@@ -245,10 +248,7 @@ function dueSuggestions(
   )
   return {
     isLate,
-    // null (no linked account) stays null — only a real, otherwise-positive
-    // ppd gets zeroed out by lateness, so "no account" and "forfeited" stay
-    // distinguishable to anything downstream that checks for null specifically.
-    suggestedRebate: ppd == null ? null : isLate ? 0 : ppd,
+    suggestedRebate: ppd,
     suggestedPenalty: daysLate >= 15 ? Math.round(Number(line.amount) * 0.05 * 100) / 100 : 0,
   }
 }
@@ -421,12 +421,16 @@ export default function CollectionsScreen() {
   return (
     <div className="min-h-full w-full bg-zinc-50 p-4 md:p-6 lg:p-8">
       <div className={`mx-auto space-y-6 ${customer ? 'max-w-6xl' : 'max-w-3xl'}`}>
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Collections</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Customers with an outstanding installment due — pick one to collect payment. Payments
-            that exceed what&apos;s owed are recorded, not rejected, and flagged as an overpayment.
-          </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="text-zinc-400 hover:text-zinc-600"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <h1 className="text-xl font-bold text-prominent-purple-900">Collections</h1>
         </div>
 
         {/* Scenario 54 — simulate a hypothetical "today" across this screen
@@ -531,18 +535,31 @@ export default function CollectionsScreen() {
                   )}
                 </div>
               </div>
-              <button
-                onClick={() => selectCustomer(null)}
-                className="text-[13px] font-medium text-prominent-purple-700 hover:underline"
-              >
-                Change customer
-              </button>
+              <div className="flex items-center gap-4">
+                {/* Opens in a new tab — a cashier mid-collection may have
+                    dues checked and a payment in progress on this screen;
+                    navigating away in place would lose that selection. */}
+                <Link
+                  href={`/pos/customers/${customer.id}/ledger`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[13px] font-medium text-prominent-purple-700 hover:underline"
+                >
+                  View ledger
+                </Link>
+                <button
+                  onClick={() => selectCustomer(null)}
+                  className="text-[13px] font-medium text-prominent-purple-700 hover:underline"
+                >
+                  Change customer
+                </button>
+              </div>
             </div>
 
             {/* Left: due list. Right: live payment panel driven by whatever's
                 checked on the left — no modal, no "Pay Selected" trigger
                 needed, the panel is always here (client feedback). */}
-            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[2fr_3fr]">
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_2fr]">
               <div className="space-y-4">
                 {schedulesQuery.isLoading && (
                   <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-zinc-400">
@@ -752,9 +769,9 @@ function PaymentPanel({
     paymentMethodConfigId: '',
     paymentMethodOptionId: '',
     reference: '',
+    bankReferenceNumber: '',
     notes: '',
     branchId: '',
-    collectorId: '',
   })
 
   // Live per-due preview, recomputed on every render against form.paymentDate
@@ -791,35 +808,32 @@ function PaymentPanel({
   )
   const penaltyCapSum = liveLines.reduce((sum, { suggestedPenalty }) => sum + suggestedPenalty, 0)
   const outstandingTotal = single ? outstanding : outstandingSum
-  const rebateCap = single ? (single.suggestedRebate ?? 0) : rebateCapSum
-  const penaltyCap = single ? single.suggestedPenalty : penaltyCapSum
 
-  // Rebate defaults checked whenever a due is still eligible (on-time, has a
-  // suggested rebate) — it's already been earned, so applying it is the
-  // default, not something the cashier has to opt into. Penalty defaults
-  // checked whenever a due qualifies (15+ days late) — developer-confirmed
-  // (this feature is "real" now, not simulate-only). Both keyed by line.id
-  // so a batch's dues can be applied/waived independently of each other.
-  // Seeded once at mount, against the Payment date field's own starting
-  // value — this panel remounts fresh whenever the selection changes (see
-  // the component doc comment above), so this never goes stale against a
-  // different set of dues. If the cashier later edits the Payment date, a
-  // due's checkbox stays wherever they left it; rebateAmountFor/
-  // penaltyAmountFor below always clamp to the LIVE cap regardless, so a
-  // checked-but-no-longer-qualifying due safely contributes ₱0 rather than
-  // ever submitting more than the backend will actually allow.
+  // Rebate defaults checked whenever a due is on-time and has a suggested
+  // rebate — it's already been earned, so applying it is the default, not
+  // something the cashier has to opt into. A late due can still have its
+  // rebate granted (see dueSuggestions — no longer auto-forfeited), but
+  // defaults unchecked since it's a cashier exception, not the earned norm.
+  // Penalty defaults checked whenever a due qualifies (15+ days late) —
+  // developer-confirmed (this feature is "real" now, not simulate-only).
+  // Both keyed by line.id so a batch's dues can be applied/waived
+  // independently of each other. Seeded once at mount, against the Payment
+  // date field's own starting value — this panel remounts fresh whenever
+  // the selection changes (see the component doc comment above), so this
+  // never goes stale against a different set of dues. If the cashier later
+  // edits the Payment date, a due's checkbox stays wherever they left it;
+  // rebateAmountFor/penaltyAmountFor below always clamp to the LIVE cap
+  // regardless, so a checked-but-no-longer-qualifying due safely
+  // contributes ₱0 rather than ever submitting more than the backend will
+  // actually allow.
   const [rebateChecked, setRebateChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
-      lines.map(({ line, ppd }) => [
-        line.id,
-        (dueSuggestions(line, ppd, initialPaymentDateIso).suggestedRebate ?? 0) > 0,
-      ])
+      lines.map(({ line, ppd }) => {
+        const s = dueSuggestions(line, ppd, initialPaymentDateIso)
+        return [line.id, !s.isLate && (s.suggestedRebate ?? 0) > 0]
+      })
     )
   )
-  // Rebate can still be reduced to a partial amount once checked — a due's
-  // own suggestedRebate is the ceiling, enforced via each input's own `max`.
-  // Blank (the common case) falls back to the full suggested amount.
-  const [rebateOverrides, setRebateOverrides] = useState<Record<string, string>>({})
   // Penalty has no amount override at all — auto-calculated only, per the
   // developer's explicit instruction ("should not be inputted by a
   // personel"). Checked = the full 5% applies; unchecked = none.
@@ -833,13 +847,7 @@ function PaymentPanel({
   )
 
   function rebateAmountFor(lineId: string, suggestedRebate: number | null): number {
-    if (!rebateChecked[lineId]) return 0
-    const override = rebateOverrides[lineId]
-    if (override !== undefined && override !== '') {
-      const n = Number(override)
-      return Number.isFinite(n) ? Math.max(Math.min(n, suggestedRebate ?? 0), 0) : 0
-    }
-    return suggestedRebate ?? 0
+    return rebateChecked[lineId] ? (suggestedRebate ?? 0) : 0
   }
   function penaltyAmountFor(lineId: string, suggestedPenalty: number): number {
     return penaltyChecked[lineId] ? suggestedPenalty : 0
@@ -848,9 +856,6 @@ function PaymentPanel({
   // combobox's one-shot initialLabel is never stale — see BranchSearchCombobox's
   // key usage below for why this is a separate piece of state from form.branchId.
   const [branchDefault, setBranchDefault] = useState<{ id: string; name: string } | null>(null)
-  const [collectors, setCollectors] = useState<{ id: string; name: string; stubNumber: string }[]>(
-    []
-  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overpaymentResult, setOverpaymentResult] = useState<{
@@ -877,15 +882,6 @@ function PaymentPanel({
       cancelled = true
     }
   }, [defaultBranchId])
-
-  // Collector options narrow to the chosen branch — refetch whenever it changes.
-  useEffect(() => {
-    collectorsApi
-      .list({ limit: 200, ...(form.branchId ? { branchId: form.branchId } : {}) })
-      .then((res) => {
-        if (res.success && res.data) setCollectors(res.data.data)
-      })
-  }, [form.branchId])
 
   const paymentMethods = useCollectionsPaymentMethods(form.branchId)
   // Falls through to Cash (same default this form always had) until the
@@ -966,9 +962,9 @@ function PaymentPanel({
         paymentMethodConfigId: selectedPaymentMethod?.configId,
         paymentMethodOptionId: form.paymentMethodOptionId || undefined,
         reference: form.reference || undefined,
+        bankReferenceNumber: form.bankReferenceNumber || undefined,
         notes: form.notes || undefined,
         branchId: form.branchId || undefined,
-        collectorId: form.collectorId || undefined,
         posSessionId: openSessionId,
       })
       if (!res.success) {
@@ -998,9 +994,9 @@ function PaymentPanel({
         paymentMethodConfigId: selectedPaymentMethod?.configId,
         paymentMethodOptionId: form.paymentMethodOptionId || undefined,
         reference: form.reference || undefined,
+        bankReferenceNumber: form.bankReferenceNumber || undefined,
         notes: form.notes || undefined,
         branchId: form.branchId || undefined,
-        collectorId: form.collectorId || undefined,
         posSessionId: openSessionId,
       })
       if (!res.success) {
@@ -1137,227 +1133,137 @@ function PaymentPanel({
             </div>
           )}
 
-          {single ? (
-            <div>
-              <div className="flex items-center justify-between rounded-lg bg-zinc-50 px-4 py-3">
-                <span className="text-[13px] text-zinc-500">Outstanding</span>
-                <span className="text-base font-semibold text-zinc-900">
-                  {fmtMoney(outstanding)}
-                </span>
-              </div>
-              {single.isLate ? (
-                <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-red-700">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  Late — this due&apos;s rebate is forfeited.
-                </p>
-              ) : (
-                rebateCap > 0 && (
-                  <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                    <label className="flex items-center gap-2 text-[12.5px] font-medium text-emerald-800">
-                      <input
-                        type="checkbox"
-                        checked={rebateChecked[single.line.id] ?? false}
-                        onChange={(e) =>
-                          setRebateChecked((prev) => ({
-                            ...prev,
-                            [single.line.id]: e.target.checked,
-                          }))
-                        }
-                        className="h-4 w-4 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      Apply rebate — {fmtMoney(rebateCap)}
-                    </label>
-                    {rebateChecked[single.line.id] && (
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max={rebateCap}
-                        placeholder={fmtMoney(rebateCap)}
-                        value={rebateOverrides[single.line.id] ?? ''}
-                        onChange={(e) =>
-                          setRebateOverrides((prev) => ({
-                            ...prev,
-                            [single.line.id]: e.target.value,
-                          }))
-                        }
-                        className={`${fieldClass} mt-2`}
-                      />
-                    )}
-                  </div>
-                )
-              )}
-              {penaltyCap > 0 && (
-                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                  <label className="flex items-center gap-2 text-[12.5px] font-medium text-red-800">
-                    <input
-                      type="checkbox"
-                      checked={penaltyChecked[single.line.id] ?? false}
-                      onChange={(e) =>
-                        setPenaltyChecked((prev) => ({
-                          ...prev,
-                          [single.line.id]: e.target.checked,
-                        }))
-                      }
-                      className="h-4 w-4 rounded border-red-400 text-red-600 focus:ring-red-500"
-                    />
-                    Apply late penalty — {fmtMoney(penaltyCap)}
-                  </label>
-                  <p className="mt-1 text-[11px] text-red-600">
-                    5% of this due, auto-calculated — 15+ days late. Not editable.
-                  </p>
-                </div>
-              )}
-              {(resolvedLines[0]?.penaltyAmount ?? 0) > 0 && (
-                <div className="mt-1.5 flex items-center justify-between rounded-lg bg-red-50 px-4 py-2">
-                  <span className="text-[12px] text-red-700">Total with penalty</span>
-                  <span className="text-[13px] font-semibold text-red-800">
-                    {fmtMoney(outstanding + (resolvedLines[0]?.penaltyAmount ?? 0))}
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : (
-            // Reference only — the cashier may not end up giving the
-            // rebate at all, so this shows both outcomes per due up
-            // front rather than assuming it's applied. What actually
-            // gets collected/submitted is whatever's typed into
-            // Total/Rebate below (see bulkAllocated).
-            <div className="overflow-hidden rounded-lg border border-zinc-200">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="bg-zinc-50 text-left text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                    <th className="px-3 py-2 font-medium">Due</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 text-right font-medium">Without rebate</th>
-                    <th className="px-3 py-2 text-right font-medium">Rebate</th>
-                    <th className="px-3 py-2 text-right font-medium">Penalty</th>
-                    <th className="px-3 py-2 text-right font-medium">Net</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {liveLines.map(({ line, isLate, suggestedRebate, suggestedPenalty }) => {
-                    const remaining = dueOutstanding(line)
-                    const cap = suggestedRebate ?? 0
-                    // isLate/suggestedRebate/suggestedPenalty are all live
-                    // against form.paymentDate (see liveLines above), so
-                    // this badge and the Rebate/Penalty columns beside it
-                    // can never disagree with each other or with what the
-                    // backend will actually allow for that date.
-                    //
-                    // Live per-due checkbox state — not just the cap — so
-                    // Net reflects exactly what's about to be applied, same
-                    // as resolvedLines/bulkAllocated below.
-                    const rowRebate = rebateAmountFor(line.id, suggestedRebate)
-                    const rowPenalty = penaltyAmountFor(line.id, suggestedPenalty)
-                    const net = Math.max(Math.round((remaining - rowRebate) * 100) / 100, 0)
-                    return (
-                      <tr key={line.id}>
-                        <td className="px-3 py-2 text-zinc-700">
-                          Payment {line.lineNumber} · due {fmtDate(line.dueDate)}
-                        </td>
-                        <td className="px-3 py-2">
-                          {isLate ? (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
-                              Late
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
-                              On-time
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right text-zinc-500">
-                          {fmtMoney(remaining)}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {isLate ? (
-                            <span className="text-[11px] text-zinc-400">forfeited</span>
-                          ) : cap > 0 ? (
-                            <label className="flex items-center justify-end gap-1.5 text-emerald-700">
-                              <input
-                                type="checkbox"
-                                checked={rebateChecked[line.id] ?? false}
-                                onChange={(e) =>
-                                  setRebateChecked((prev) => ({
-                                    ...prev,
-                                    [line.id]: e.target.checked,
-                                  }))
-                                }
-                                className="h-3.5 w-3.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              −{fmtMoney(rowRebate)}
-                            </label>
-                          ) : (
-                            <span className="text-zinc-400">{fmtMoney(0)}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {suggestedPenalty > 0 ? (
-                            <label className="flex items-center justify-end gap-1.5 text-red-700">
-                              <input
-                                type="checkbox"
-                                checked={penaltyChecked[line.id] ?? false}
-                                onChange={(e) =>
-                                  setPenaltyChecked((prev) => ({
-                                    ...prev,
-                                    [line.id]: e.target.checked,
-                                  }))
-                                }
-                                className="h-3.5 w-3.5 rounded border-red-400 text-red-600 focus:ring-red-500"
-                              />
-                              +{fmtMoney(rowPenalty)}
-                            </label>
-                          ) : (
-                            <span className="text-zinc-400">{fmtMoney(0)}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium text-zinc-900">
-                          {fmtMoney(net)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {!single && rebateCapSum > 0 && (
+          {/* Reference only — the cashier may not end up giving the
+              rebate at all, so this shows both outcomes per due up
+              front rather than assuming it's applied. What actually
+              gets collected/submitted is whatever's typed into
+              Total/Rebate below (see bulkAllocated). Same table for a
+              single selected due as for multiple — it just renders one row. */}
+          <div className="overflow-hidden rounded-lg border border-zinc-200">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="bg-zinc-50 text-left text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                  <th className="px-3 py-2 font-medium">Due</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 text-right font-medium">Without rebate</th>
+                  <th className="px-3 py-2 text-right font-medium">Rebate</th>
+                  <th className="px-3 py-2 text-right font-medium">Penalty</th>
+                  <th className="px-3 py-2 text-right font-medium">Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {liveLines.map(({ line, isLate, suggestedRebate, suggestedPenalty }) => {
+                  const remaining = dueOutstanding(line)
+                  const cap = suggestedRebate ?? 0
+                  // isLate/suggestedRebate/suggestedPenalty are all live
+                  // against form.paymentDate (see liveLines above), so
+                  // this badge and the Rebate/Penalty columns beside it
+                  // can never disagree with each other or with what the
+                  // backend will actually allow for that date.
+                  //
+                  // Live per-due checkbox state — not just the cap — so
+                  // Net reflects exactly what's about to be applied, same
+                  // as resolvedLines/bulkAllocated below.
+                  const rowRebate = rebateAmountFor(line.id, suggestedRebate)
+                  const rowPenalty = penaltyAmountFor(line.id, suggestedPenalty)
+                  const net = Math.max(Math.round((remaining - rowRebate) * 100) / 100, 0)
+                  return (
+                    <tr key={line.id}>
+                      <td className="px-3 py-2 text-zinc-700">
+                        Payment {line.lineNumber} · due {fmtDate(line.dueDate)}
+                      </td>
+                      <td className="px-3 py-2">
+                        {isLate ? (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                            Late
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                            On-time
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-zinc-500">{fmtMoney(remaining)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {cap > 0 ? (
+                          <label className="flex items-center justify-end gap-1.5 text-emerald-700">
+                            <input
+                              type="checkbox"
+                              checked={rebateChecked[line.id] ?? false}
+                              onChange={(e) =>
+                                setRebateChecked((prev) => ({
+                                  ...prev,
+                                  [line.id]: e.target.checked,
+                                }))
+                              }
+                              className="h-3.5 w-3.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            −{fmtMoney(rowRebate)}
+                          </label>
+                        ) : (
+                          <span className="text-zinc-400">{fmtMoney(0)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {suggestedPenalty > 0 ? (
+                          <label className="flex items-center justify-end gap-1.5 text-red-700">
+                            <input
+                              type="checkbox"
+                              checked={penaltyChecked[line.id] ?? false}
+                              onChange={(e) =>
+                                setPenaltyChecked((prev) => ({
+                                  ...prev,
+                                  [line.id]: e.target.checked,
+                                }))
+                              }
+                              className="h-3.5 w-3.5 rounded border-red-400 text-red-600 focus:ring-red-500"
+                            />
+                            +{fmtMoney(rowPenalty)}
+                          </label>
+                        ) : (
+                          <span className="text-zinc-400">{fmtMoney(0)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-zinc-900">
+                        {fmtMoney(net)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          {rebateCapSum > 0 && (
             <p className="text-[12px] text-zinc-400">
               Rebate is about {((rebateCapSum / outstandingSum) * 100).toFixed(1)}% of the amount
               due.
             </p>
           )}
-          {!single && penaltyCapSum > 0 && (
+          {penaltyCapSum > 0 && (
             <p className="flex items-center gap-1.5 text-[12px] text-red-700">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               {fmtMoney(penaltyCapSum)} in penalties assessed across dues 15+ days late.
             </p>
           )}
-          {/* Always visible — mirrors the single-due "Outstanding" box, so
-              the cashier has one at-a-glance figure for what's about to be
-              collected before typing Amount received, the same way the
-              single-due view always gives them one. Net of whatever
-              rebates are currently checked in the table above; becomes
-              "Total with penalty" once any checked due adds one. */}
-          {!single && (
-            <div
-              className={`flex items-center justify-between rounded-lg px-4 py-2 ${
-                penaltyTotal > 0 ? 'bg-red-50' : 'bg-zinc-50'
-              }`}
+          {/* Always visible, single or multiple dues — one at-a-glance
+              figure for what's about to be collected before typing Amount
+              received. Net of whatever rebates are currently checked in the
+              table above; becomes "Total with penalty" once any checked due
+              adds one. */}
+          <div
+            className={`flex items-center justify-between rounded-lg px-4 py-2 ${
+              penaltyTotal > 0 ? 'bg-red-50' : 'bg-zinc-50'
+            }`}
+          >
+            <span className={`text-[12px] ${penaltyTotal > 0 ? 'text-red-700' : 'text-zinc-500'}`}>
+              {penaltyTotal > 0 ? 'Total with penalty' : 'Total'}
+            </span>
+            <span
+              className={`text-[13px] font-semibold ${penaltyTotal > 0 ? 'text-red-800' : 'text-zinc-900'}`}
             >
-              <span
-                className={`text-[12px] ${penaltyTotal > 0 ? 'text-red-700' : 'text-zinc-500'}`}
-              >
-                {penaltyTotal > 0 ? 'Total with penalty' : 'Total'}
-              </span>
-              <span
-                className={`text-[13px] font-semibold ${penaltyTotal > 0 ? 'text-red-800' : 'text-zinc-900'}`}
-              >
-                {fmtMoney(outstandingSum - rebateTotal + penaltyTotal)}
-              </span>
-            </div>
-          )}
+              {fmtMoney(outstandingSum - rebateTotal + penaltyTotal)}
+            </span>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1408,7 +1314,7 @@ function PaymentPanel({
             <BranchSearchCombobox
               key={branchDefault?.id ?? 'no-default'}
               value={form.branchId}
-              onChange={(id) => setForm({ ...form, branchId: id, collectorId: '' })}
+              onChange={(id) => setForm({ ...form, branchId: id })}
               initialLabel={branchDefault?.name}
               placeholder="Search branch…"
             />
@@ -1423,6 +1329,7 @@ function PaymentPanel({
                   ...form,
                   paymentMethodConfigId: e.target.value,
                   paymentMethodOptionId: '',
+                  bankReferenceNumber: '',
                 })
               }
               className={fieldClass}
@@ -1456,22 +1363,6 @@ function PaymentPanel({
           )}
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-700">Collector</label>
-            <select
-              value={form.collectorId}
-              onChange={(e) => setForm({ ...form, collectorId: e.target.value })}
-              className={fieldClass}
-            >
-              <option value="">Walk-in / none</option>
-              {collectors.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.stubNumber} — {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">
               CR number <span className="text-red-500">*</span>
             </label>
@@ -1486,6 +1377,24 @@ function PaymentPanel({
               Required — the CR number on the collection receipt issued for this payment.
             </p>
           </div>
+
+          {selectedPaymentMethod?.method === 'BANK_TRANSFER' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Reference number <span className="text-red-500">*</span>
+              </label>
+              <input
+                required
+                value={form.bankReferenceNumber}
+                onChange={(e) => setForm({ ...form, bankReferenceNumber: e.target.value })}
+                placeholder="Bank transaction reference"
+                className={fieldClass}
+              />
+              <p className="mt-1 text-[12px] text-zinc-400">
+                Required — the bank&apos;s own transaction reference for this transfer.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
@@ -1502,7 +1411,13 @@ function PaymentPanel({
         <div className="flex items-center justify-end border-t border-zinc-200 px-6 py-4">
           <button
             type="submit"
-            disabled={submitting || isFullyPaid || !form.reference.trim()}
+            disabled={
+              submitting ||
+              isFullyPaid ||
+              !form.reference.trim() ||
+              (selectedPaymentMethod?.method === 'BANK_TRANSFER' &&
+                !form.bankReferenceNumber.trim())
+            }
             className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

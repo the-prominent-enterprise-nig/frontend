@@ -250,6 +250,17 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Wallet,
       },
       {
+        // Scenario 52 — moved from POS. Issues against the same Employee
+        // Cash Loan Special Account ledger this screen's neighbor posts to.
+        label: 'Employee Cash Loans',
+        href: '/accounting/employee-cash-loans',
+        icon: HandCoins,
+        requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_CASH_LOAN_READ,
+        // Has real [id]/new detail routes (Scenario 52 revision), same
+        // reason Credit Applications/AP Invoices set this.
+        usePrefix: true,
+      },
+      {
         label: 'Unapplied Collections',
         href: '/accounting/unapplied-collections',
         icon: Wallet,
@@ -446,7 +457,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // buttons on the Collections page (developer decision, 2026-09-21),
         // same permission as Collections since it's the same "money
         // received at the counter" capability.
-        label: 'Acknowledgement Receipts',
+        label: 'New Receipts',
         href: '/pos/collections/acknowledgement',
         icon: ReceiptText,
         requiredPermission: 'pos:collections:manage',
@@ -475,17 +486,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // Has a real [id] detail route (unlike its sibling items here,
         // which are all single-page-with-modals) — without this, viewing
         // an application's detail page wouldn't highlight this as active.
-        usePrefix: true,
-      },
-      {
-        // Scenario 52 — issues against the same Employee Cash Loan Special
-        // Account ledger Accounting's Expense screen already posts to.
-        label: 'Employee Cash Loans',
-        href: '/pos/employee-cash-loans',
-        icon: HandCoins,
-        requiredPermission: POS_PERMISSIONS.EMPLOYEE_CASH_LOAN_READ,
-        // Has real [id]/new detail routes now (Scenario 52 revision), same
-        // reason Credit Applications sets this above.
         usePrefix: true,
       },
       {
@@ -906,6 +906,17 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     label: 'Pending Invites',
     href: '/settings/pending-invites',
     icon: UserPlus,
+  },
+  {
+    // Business-Owner-level master list — also the source of the
+    // employee-cash-loan borrower picker and the "Create Customer"
+    // quick-link on its own detail page (accounting/employees).
+    section: 'My Workspace',
+    label: 'Employees',
+    href: '/accounting/employees',
+    icon: IdCard,
+    requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_READ,
+    usePrefix: true,
   },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },

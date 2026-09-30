@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Check, Search } from 'lucide-react'
+import { ChevronDown, Check } from 'lucide-react'
 
 export type CategorySelectOption = { id: string; name: string; depth: number }
 
@@ -13,8 +13,7 @@ type Props = {
   placeholder?: string
   /** What the list holds, lowercase plural — this component is reused for
    * suppliers, bank accounts, invoices etc., not just categories, and the
-   * search box and empty state both read wrong when they say "categories"
-   * for those. */
+   * empty state reads wrong when it says "categories" for those. */
   noun?: string
   className?: string
   disabled?: boolean
@@ -38,12 +37,17 @@ export default function CategorySelect({
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  // A query seeded from the current selection is for DISPLAY only — it
+  // keeps the chosen label visible in the trigger, but must not filter the
+  // list down to just that one option. Reopening should show everything
+  // until the user actually types (same fix SearchableSelect uses).
+  const [querySeeded, setQuerySeeded] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
 
   const selected = options.find((o) => o.id === value)
-  const normalizedQuery = query.trim().toLowerCase()
+  const normalizedQuery = querySeeded ? '' : query.trim().toLowerCase()
   // Matches against both top-level categories and their subcategories — all
   // depths live in the same flat `options` array, so one substring filter
   // over the name covers "search the main and the sub".
@@ -56,19 +60,16 @@ export default function CategorySelect({
       const target = e.target as Node
       // popupRef too, not just containerRef: the popup is portalled to
       // <body>, so it is no longer a descendant of the trigger. Checking only
-      // the trigger would close the popup on its own search box and options.
+      // the trigger would close the popup on its own options.
       if (!containerRef.current?.contains(target) && !popupRef.current?.contains(target)) {
         setOpen(false)
+        setQuery('')
+        setQuerySeeded(false)
       }
     }
     document.addEventListener('mousedown', handleMouseDown)
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [])
-
-  useEffect(() => {
-    if (open) searchRef.current?.focus()
-    else setQuery('')
-  }, [open])
 
   const [position, setPosition] = useState<{
     top: number
@@ -97,31 +98,76 @@ export default function CategorySelect({
     }
   }, [open, updatePosition])
 
+  function openWithSeed() {
+    setQuery(selected?.name ?? '')
+    setQuerySeeded(!!selected)
+    setOpen(true)
+  }
+
+  function close() {
+    setOpen(false)
+    setQuery('')
+    setQuerySeeded(false)
+  }
+
   return (
     <div ref={containerRef} className={`relative ${className}`}>
-      <button
-        type="button"
-        aria-label={ariaLabel}
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className={`flex w-full min-w-0 items-center justify-between rounded-lg border border-zinc-200 bg-white outline-none transition-colors focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:cursor-not-allowed disabled:opacity-50 ${
-          compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
-        } ${open ? 'border-prominent-purple-500 ring-1 ring-prominent-purple-500' : ''}`}
+      {/* The search box IS the trigger — typing here filters directly,
+          instead of opening a button that then reveals a second, separate
+          search field inside the popup (developer decision, 2026-09-26: the
+          two-step version read as one extra click for no reason). */}
+      <div
+        className={`flex w-full min-w-0 items-center gap-1 rounded-lg border border-zinc-200 bg-white transition-colors focus-within:border-prominent-purple-500 focus-within:ring-1 focus-within:ring-prominent-purple-500 ${
+          disabled ? 'cursor-not-allowed bg-zinc-50 opacity-50' : ''
+        } ${compact ? 'py-1.5 pl-2.5 pr-1.5' : 'py-2 pl-3 pr-2'} ${
+          open ? 'border-prominent-purple-500 ring-1 ring-prominent-purple-500' : ''
+        }`}
       >
-        {/* truncate + min-w-0 so a long account or category name shortens with
-            an ellipsis instead of wrapping — a wrapped label makes the button
-            two lines tall and, in a grid row, drags every sibling with it. The
-            title attribute keeps the full text reachable. */}
-        <span
-          title={selected ? selected.name : undefined}
-          className={`min-w-0 truncate text-left ${selected ? 'text-zinc-900' : 'text-zinc-400'}`}
-        >
-          {selected ? selected.name : placeholder}
-        </span>
-        <ChevronDown
-          className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`}
+        <input
+          ref={inputRef}
+          aria-label={ariaLabel}
+          disabled={disabled}
+          value={open ? query : (selected?.name ?? '')}
+          placeholder={placeholder}
+          onFocus={() => {
+            if (!open) openWithSeed()
+            inputRef.current?.select()
+          }}
+          onClick={() => {
+            if (!open) openWithSeed()
+          }}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setQuerySeeded(false)
+            if (!open) setOpen(true)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') close()
+            if (e.key === 'ArrowDown' && !open) openWithSeed()
+          }}
+          className={`w-full min-w-0 bg-transparent text-left outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed ${
+            compact ? 'text-[13px]' : 'text-sm'
+          } ${selected && !open ? 'text-zinc-900' : ''}`}
         />
-      </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          disabled={disabled}
+          aria-label={open ? 'Close options' : 'Open options'}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (open) {
+              close()
+              return
+            }
+            openWithSeed()
+            inputRef.current?.focus()
+          }}
+          className="shrink-0 rounded p-0.5 text-zinc-400 disabled:cursor-not-allowed"
+        >
+          <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
 
       {open &&
         position &&
@@ -129,71 +175,55 @@ export default function CategorySelect({
           <div
             ref={popupRef}
             style={{ top: position.top, left: position.left, width: position.width }}
-            className="fixed z-100 max-h-72 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg"
+            className="fixed z-100 max-h-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
           >
-            <div
-              className={`flex items-center gap-2 border-b border-zinc-100 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
-            >
-              <Search className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-              <input
-                ref={searchRef}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={`Search ${noun}…`}
-                className={`w-full outline-none placeholder:text-zinc-400 ${compact ? 'text-[13px]' : 'text-sm'}`}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-            <div className="max-h-60 overflow-y-auto py-1">
-              {!normalizedQuery && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChange(undefined)
-                    setOpen(false)
-                  }}
-                  className={`flex w-full items-center text-zinc-400 hover:bg-zinc-50 ${
-                    compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
-                  }`}
-                >
-                  {placeholder}
-                </button>
-              )}
-              {filteredOptions.length === 0 && (
-                <p
-                  className={`text-zinc-400 ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'}`}
-                >
-                  No {noun} match &ldquo;{query}&rdquo;
-                </p>
-              )}
-              {filteredOptions.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(opt.id)
-                    setOpen(false)
-                  }}
-                  className={`flex w-full items-center gap-2 transition-colors hover:bg-zinc-50 ${
-                    compact ? 'py-1.5 pr-2.5 text-[13px]' : 'py-2 pr-3 text-sm'
-                  } ${
-                    opt.id === value
-                      ? 'bg-prominent-purple-50 text-prominent-purple-700'
-                      : 'text-zinc-800'
-                  }`}
-                  style={{
-                    paddingLeft: `${(normalizedQuery ? 0 : opt.depth) * (compact ? 14 : 16) + (compact ? 10 : 12)}px`,
-                  }}
-                >
-                  {!normalizedQuery && opt.depth > 0 && (
-                    <span className="shrink-0 text-zinc-300">{'—'.repeat(opt.depth)}</span>
-                  )}
-                  <span className="flex-1 text-left">{opt.name}</span>
-                  {opt.id === value && <Check className="h-3.5 w-3.5 shrink-0" />}
-                </button>
-              ))}
-            </div>
+            {!normalizedQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(undefined)
+                  close()
+                }}
+                className={`flex w-full items-center text-zinc-400 hover:bg-zinc-50 ${
+                  compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
+                }`}
+              >
+                {placeholder}
+              </button>
+            )}
+            {filteredOptions.length === 0 && (
+              <p
+                className={`text-zinc-400 ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'}`}
+              >
+                No {noun} match &ldquo;{query}&rdquo;
+              </p>
+            )}
+            {filteredOptions.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  onChange(opt.id)
+                  close()
+                }}
+                className={`flex w-full items-center gap-2 transition-colors hover:bg-zinc-50 ${
+                  compact ? 'py-1.5 pr-2.5 text-[13px]' : 'py-2 pr-3 text-sm'
+                } ${
+                  opt.id === value
+                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                    : 'text-zinc-800'
+                }`}
+                style={{
+                  paddingLeft: `${(normalizedQuery ? 0 : opt.depth) * (compact ? 14 : 16) + (compact ? 10 : 12)}px`,
+                }}
+              >
+                {!normalizedQuery && opt.depth > 0 && (
+                  <span className="shrink-0 text-zinc-300">{'—'.repeat(opt.depth)}</span>
+                )}
+                <span className="flex-1 text-left">{opt.name}</span>
+                {opt.id === value && <Check className="h-3.5 w-3.5 shrink-0" />}
+              </button>
+            ))}
           </div>,
           document.body
         )}
