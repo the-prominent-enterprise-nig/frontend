@@ -622,6 +622,25 @@ export default function CheckoutPage() {
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
+  // Scenario 60 item 28 — an application arriving from "Continue to sale" on
+  // its own detail page. It cannot simply be selected on arrival: the picker's
+  // list is only fetched once there is an installment line in the cart, and
+  // there is no cart yet. So it is held here while the cart is built from the
+  // application's own items, and selected once those lines exist.
+  const [arrivingCreditApplication, setArrivingCreditApplication] = useState<{
+    id: string
+    stage: 'fetching' | 'adding'
+    expectedLines?: number
+    /** The Price Use the application was approved under. Every new cart line
+     *  otherwise defaults to WIP, so an application approved under any other
+     *  Price Use would be priced at the till off a different list than the
+     *  one the owner approved — different unit price, different totals, and a
+     *  down payment that can land under the floor for the sale it becomes. */
+    priceUseTypeId?: string | null
+  } | null>(null)
+  /** The application whose lines have already been put in the cart. Survives
+   *  re-renders, unlike the state above, which is what makes it the guard. */
+  const arrivalBuiltRef = useRef<string | null>(null)
   const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
 
   // Park sale
@@ -1018,6 +1037,25 @@ export default function CheckoutPage() {
     if (handoff && belongsToAnOpenSession) {
       if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
         setCart(handoff.lines)
+      }
+      // Scenario 60 item 28. Carried instead of lines, never alongside them —
+      // the cart is derived below from the application's own approved items,
+      // here at the till where price, tax and UoM actually resolve.
+      if (handoff.creditApplicationId) {
+        setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
+      }
+      // The booklet numbers, back as they were typed.
+      if (handoff.salesInvoiceNumber) setInvoiceNumberInput(handoff.salesInvoiceNumber)
+      if (handoff.paymentReferences?.length) {
+        const refs = handoff.paymentReferences
+        // By row order, and only onto rows that came back with the cart — a
+        // reference belongs to the payment it was issued for, so it is never
+        // applied to a row that did not exist when it was typed.
+        setPayments((prev) =>
+          prev.map((row, index) =>
+            refs[index] && !row.referenceNumber ? { ...row, referenceNumber: refs[index] } : row
+          )
+        )
       }
       clearCheckoutHandoff()
     }
@@ -1861,6 +1899,11 @@ export default function CheckoutPage() {
         lines: cart,
         customerId: selectedCustomer?.id,
         sessionId: sessionId || undefined,
+        // Both are read off physical booklets, so losing them on this detour
+        // meant finding the same two booklets and copying the same numbers
+        // again on the way back.
+        salesInvoiceNumber: invoiceNumberInput.trim() || undefined,
+        paymentReferences: payments.map((p) => p.referenceNumber ?? ''),
       })
     }
     localStorage.setItem(
@@ -1891,6 +1934,87 @@ export default function CheckoutPage() {
   }
 
   // ─── Cart actions ──────────────────────────────────────────────────────────
+
+  // Scenario 60 item 28 — turn the arriving application into a cart.
+  //
+  // Two passes, because both halves depend on state this render does not have
+  // yet: the items have to be in the cart before they can be switched to
+  // installment, and the picker's own list is not fetched until an installment
+  // line exists. `stage` walks it through rather than a chain of booleans.
+  useEffect(() => {
+    if (!arrivingCreditApplication || arrivingCreditApplication.stage !== 'fetching') return
+    if (!selectedCustomer || catalogItems.length === 0) return
+    // Once per application, and enforced with a ref rather than the `stage`
+    // above, because `stage` only advances after the fetch resolves. The
+    // customer and the catalogue both arrive asynchronously, so a dep landing
+    // mid-flight re-entered this and added every line a second time — which
+    // the till showed as being asked for a serial twice for one item, and for
+    // a serial-tracked item with one serial on hand, the second was
+    // unanswerable. (React's dev double-invoke reproduces the same thing.)
+    if (arrivalBuiltRef.current === arrivingCreditApplication.id) return
+    arrivalBuiltRef.current = arrivingCreditApplication.id
+
+    let cancelled = false
+    getCreditApplications({
+      checkoutEligible: true,
+      applicantCustomerId: selectedCustomer.id,
+      unconsumed: true,
+      limit: 50,
+    }).then((res) => {
+      if (cancelled) return
+      const application = (res.data?.data ?? []).find((a) => a.id === arrivingCreditApplication.id)
+      // Only the approved items: a partially approved application's declined
+      // items are never sellable, and silently carting one would have someone
+      // promising a customer what the owner refused.
+      const itemIds = (application?.items ?? [])
+        .filter((i) => i.status === 'approved')
+        .map((i) => i.itemId)
+      const approvedPriceUseTypeId = application?.priceUseTypeId ?? null
+      const found = itemIds
+        .map((id) => catalogItems.find((c) => c.id === id))
+        .filter((c): c is LookupItem => !!c)
+
+      if (found.length === 0) {
+        // Nothing to build a cart from — drop the arrival rather than leaving
+        // the till half-arrived. The application is still selectable by hand
+        // once the cashier adds the items themselves.
+        arrivalBuiltRef.current = null
+        setArrivingCreditApplication(null)
+        return
+      }
+      found.forEach((item) => addToCart(item))
+      setArrivingCreditApplication({
+        id: arrivingCreditApplication.id,
+        stage: 'adding',
+        expectedLines: found.length,
+        priceUseTypeId: approvedPriceUseTypeId,
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+    // addToCart is stable enough for this one-shot arrival; re-running on every
+    // cart change would re-add the lines it just added.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingCreditApplication, selectedCustomer, catalogItems])
+
+  useEffect(() => {
+    if (arrivingCreditApplication?.stage !== 'adding') return
+    if (cart.length < (arrivingCreditApplication.expectedLines ?? 0)) return
+    // Installment is the whole point of an application — leaving the lines on
+    // cash would show the cashier a picker with nothing in it.
+    const lineIds = cart.map((l) => l.lineId)
+    // Price Use before the term and down payment: changing it re-resolves the
+    // line's price, and the down payment the application approved is measured
+    // against that price.
+    if (arrivingCreditApplication.priceUseTypeId) {
+      setLinePriceUseTypeId(lineIds, arrivingCreditApplication.priceUseTypeId)
+    }
+    setLineInvoiceType(lineIds, 'installment')
+    setCreditApplicationId(arrivingCreditApplication.id)
+    setArrivingCreditApplication(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingCreditApplication, cart.length])
 
   function addToCart(item: LookupItem, qty = 1) {
     // Reserve mode (Scenario 03, Part 3): a SkuReservation is one item +

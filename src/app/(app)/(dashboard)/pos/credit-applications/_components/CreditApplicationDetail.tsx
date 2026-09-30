@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowLeft, FileText, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
@@ -9,6 +10,8 @@ import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
 import { CreditApplicationFinancingFields } from './CreditApplicationFinancingFields'
 import { Select } from '@/src/components/ui/Select'
+import { writeCheckoutHandoff } from '@/src/libs/pos/checkout-handoff'
+import { useSessions } from '../../_hooks/usePos'
 import { PhAddressText } from '@/src/components/common/PhAddressText'
 import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -112,6 +115,20 @@ export default function CreditApplicationDetail({
   const [uploadError, setUploadError] = useState<string | undefined>(undefined)
   const [isCancelOpen, setIsCancelOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const router = useRouter()
+  // Scenario 60 item 28 — the same hook checkout uses for its own session
+  // picker, so "Continue to sale" needs no new API surface. Declared up here
+  // with the other hooks: the component returns early when the application
+  // has not loaded, and a hook below that runs on some renders and not
+  // others.
+  const { data: openSessionsData } = useSessions({ status: 'open' })
+  // Only the sessions THIS user opened. `GET /pos/sessions` scopes by branch
+  // for a branch-locked caller and not at all for anyone else — a Business
+  // Owner is not branch-locked, so they see every open till in the company,
+  // including the Alimodian cashier's. Counting those would light the button
+  // up for an owner who has no till of their own, and hand them a session
+  // whose cash drawer and attribution belong to someone else.
+  const myOpenSessions = (openSessionsData?.data ?? []).filter((s) => s.cashierId === session.id)
   const [editError, setEditError] = useState<string | undefined>(undefined)
 
   // Scenario 29 POS-02 — per-item decision state while status is
@@ -262,6 +279,39 @@ export default function CreditApplicationDetail({
     isEditable || (['approved', 'partially_approved'] as string[]).includes(application.status)
 
   const applicant = application.applicantCustomer
+
+  // Scenario 60 item 28 — "Continue to sale". An approved application already
+  // knows the customer and the items. Without this the seller leaves it, opens
+  // checkout, finds the customer again, re-adds every item by hand, and only
+  // then picks the application out of a list — where anything short of an
+  // exact match is labelled as not matching. The cart is built FROM the
+  // application instead, so it matches by construction and the exact-match
+  // rule (what stops a fridge being sold against an approved washing machine)
+  // never has to be relaxed.
+  const canSell =
+    (['approved', 'partially_approved'] as string[]).includes(application.status) &&
+    !application.posTransactionId
+
+  // Opening a session is a real act with cash in it — a declared float, a
+  // named cashier, a terminal — so a button on an approval screen must not do
+  // it on someone's behalf (developer, 2026-09-30). Disabled with the reason
+  // on it rather than hidden: a missing button just looks broken.
+  const hasOpenSession = myOpenSessions.length > 0
+
+  const sellableApplicationId = application.id
+  const sellableCustomerId = application.applicantCustomerId
+
+  function continueToSale() {
+    writeCheckoutHandoff({
+      customerId: sellableCustomerId,
+      creditApplicationId: sellableApplicationId,
+      // Named only when there is exactly one session it could mean. With
+      // several open, picking one would be guessing which till the seller is
+      // standing at; checkout asks instead.
+      sessionId: myOpenSessions.length === 1 ? myOpenSessions[0].id : undefined,
+    })
+    router.push('/pos/checkout')
+  }
 
   // Scenario 60 item 27. The application's own related-people rows and the
   // customer's CoMaker record are two tables, but one list to a reader —
@@ -1113,6 +1163,30 @@ export default function CreditApplicationDetail({
               </p>
             </div>
           ))}
+
+        {/* Scenario 60 item 28 — directly under the decision, because that is
+            where the approver is looking the moment it lands, and going to
+            the till is the only thing anyone wants next. */}
+        {canSell && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-prominent-purple-200 bg-prominent-purple-50 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-prominent-purple-900">Ready to sell</p>
+              <p className="mt-0.5 text-sm text-prominent-purple-700">
+                {hasOpenSession
+                  ? 'Opens the till with this customer, these items and this application already selected.'
+                  : 'Open a POS session at a terminal first — this cannot open one for you, and another cashier’s open till is not yours to sell on.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={continueToSale}
+              disabled={!hasOpenSession}
+              className="shrink-0 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
+            </button>
+          </div>
+        )}
 
         {application.status === 'partially_approved' && (
           <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
