@@ -52,8 +52,9 @@ export function PaperRecordFields({ control, errors }: Props) {
           Proposed Purchase &amp; Paper Record
         </label>
         <p className="mt-0.5 text-xs text-zinc-500">
-          Transcribed from the signed form, and required on every application (client, 2026-09-30).
-          The paper remains the source of truth.
+          LCP, PPD rebate and the first due date are filled in from the price list and the term
+          above — correct them if the signed paper says otherwise, since the paper is the source of
+          truth. All fields are required.
         </p>
       </div>
 

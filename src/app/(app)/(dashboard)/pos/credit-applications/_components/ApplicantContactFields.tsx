@@ -1,6 +1,7 @@
 'use client'
 
-import { Controller, type Control, type FieldErrors } from 'react-hook-form'
+import { useState } from 'react'
+import { Controller, type Control, type FieldErrors, type UseFormSetValue } from 'react-hook-form'
 import { PhoneField } from '@/src/components/ui/PhoneField'
 import { Select } from '@/src/components/ui/Select'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
@@ -23,11 +24,16 @@ const CUSTOMER_TYPE_SELECT = (
 
 type Props = {
   control: Control<CreateCreditApplicationFormValues>
+  setValue: UseFormSetValue<CreateCreditApplicationFormValues>
   errors: FieldErrors<CreateCreditApplicationFormValues>
   /** Labels the Employer box the way the customer's type reads it — a
    *  business has a company name, a self-employed applicant has their own
    *  business. One column, three names; see the Customer type. */
   customerType?: string
+  /** The home address on the customer's record, when they have one. Offered
+   *  as a one-tick fill for the address below; not captured separately here. */
+  homeAddress?: string | null
+  homeBarangayCode?: string | null
 }
 
 /**
@@ -51,7 +57,20 @@ type Props = {
  * making any of them mandatory would block an application over a blank the
  * applicant may not be able to fill.
  */
-export function ApplicantContactFields({ control, errors, customerType }: Props) {
+export function ApplicantContactFields({
+  control,
+  setValue,
+  errors,
+  customerType,
+  homeAddress,
+  homeBarangayCode,
+}: Props) {
+  // PhilippineAddressPicker reads its initial values once, at mount — so
+  // filling the fields underneath it is not enough to change what it shows.
+  // Bumping this key remounts it with the copied address in place, the same
+  // trick the item rows use when a stashed draft is restored.
+  const [addressKey, setAddressKey] = useState(0)
+  const hasHomeAddress = !!(homeAddress || homeBarangayCode)
   const employerLabel =
     customerType === 'business'
       ? 'Company name'
@@ -60,15 +79,7 @@ export function ApplicantContactFields({ control, errors, customerType }: Props)
         : 'Employer'
 
   return (
-    <div className="space-y-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-4">
-      <div>
-        <label className="block text-sm font-medium text-zinc-700">Customer Profile</label>
-        <p className="mt-0.5 text-xs text-zinc-500">
-          Prefilled from the customer&apos;s record. Confirm or correct it while the applicant is
-          here — changes save back to their record, not to this application.
-        </p>
-      </div>
-
+    <div className="space-y-3">
       {/*
        * One 12-column grid for the whole block, with each field taking a
        * span, rather than a fresh 3-column grid per row. The rows had
@@ -263,7 +274,34 @@ export function ApplicantContactFields({ control, errors, customerType }: Props)
           status message of its own, so inline it read as a second form
           leaking into this one rather than as one field called Address. */}
       <div className="rounded-lg border border-zinc-100 bg-white p-3">
-        <label className={labelClass}>Address</label>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <label className={labelClass}>Current address</label>
+          {/* Only when there is one to copy. The application captures the
+              CURRENT address — that is the one the rest of the app acts on,
+              since collector assignment matches on its barangay. The home
+              address is a fill for it, not a second field: an applicant who
+              says "same as home" gets it in one tick instead of retyping a
+              province, city and barangay someone already recorded.
+
+              A tick copies; it does not link. Editing afterwards changes the
+              current address alone, which is the point — they are only the
+              same until the applicant moves. */}
+          {hasHomeAddress && (
+            <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-600">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded border-zinc-300"
+                onChange={(e) => {
+                  if (!e.target.checked) return
+                  setValue('applicantAddress', homeAddress ?? '')
+                  setValue('applicantBarangayCode', homeBarangayCode ?? '')
+                  setAddressKey((key) => key + 1)
+                }}
+              />
+              Use home address
+            </label>
+          )}
+        </div>
         {/* Street/sitio/purok line plus Barangay, City/Municipality and
             Province as their own dropdowns. Stored as `address` + the
             barangay's PSGC code, which is what the city and province are
@@ -278,6 +316,7 @@ export function ApplicantContactFields({ control, errors, customerType }: Props)
               control={control}
               render={({ field: addressField }) => (
                 <PhilippineAddressPicker
+                  key={addressKey}
                   onChange={(v) => {
                     addressField.onChange(v.address)
                     barangayField.onChange(v.barangayCode)

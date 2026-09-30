@@ -325,6 +325,52 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // including the WIP default, so a changed dropdown visibly changes the
   // number instead of silently doing nothing.
   const selectedPriceUse = priceUseTypes.find((t) => t.id === effectivePriceUseTypeId)
+  // Scenario 60 item 27 — the mockup shades PROPOSED PURCHASE AND
+  // INSTALLMENT "read only from POS draft": the figures come from the system,
+  // not from a transcriber re-keying them. Three of them already exist once
+  // this block has resolved prices and a term, so they are filled in here.
+  //
+  //   LCP            the resolved item total. This is what the app has always
+  //                  called listedCashPrice — checkout passes the very same
+  //                  group total into InstallmentAccount.listedCashPrice — so
+  //                  what LCP means is answered by the codebase rather than
+  //                  guessed at.
+  //   First due date the first line of the installment schedule the preview
+  //                  already computes and shows below.
+  //   PPD rebate     the curated rate card's own PriceListItemTerm.ppd, which
+  //                  the preview endpoint already returns. Absent on the
+  //                  generic factor-rate path, where no rate card exists to
+  //                  quote one — left blank there rather than filled with 0,
+  //                  which would claim a rebate of nothing.
+  //
+  // Only ever fills a field that is empty: a transcriber who typed a figure
+  // off the paper has overridden the system on purpose, and the paper is the
+  // source of truth.
+  const lcpValue = useWatch({ control, name: 'lcp' as Path<T> }) as string | undefined
+  const ppdValue = useWatch({ control, name: 'ppdRebate' as Path<T> }) as string | undefined
+  const firstDueValue = useWatch({ control, name: 'firstDueDate' as Path<T> }) as string | undefined
+
+  useEffect(() => {
+    // `required` is true only on the create form, the only schema that has
+    // these fields at all.
+    if (!required) return
+    if (!lcpValue && estimatedTotal > 0) {
+      setValue('lcp' as Path<T>, String(estimatedTotal) as never, { shouldDirty: false })
+    }
+    if (!firstDueValue && preview?.lines?.[0]?.dueDate) {
+      setValue('firstDueDate' as Path<T>, preview.lines[0].dueDate.slice(0, 10) as never, {
+        shouldDirty: false,
+      })
+    }
+    if (!ppdValue && preview?.ppd != null) {
+      setValue('ppdRebate' as Path<T>, String(preview.ppd) as never, { shouldDirty: false })
+    }
+    // Deliberately not depending on the three current values: this runs when
+    // the system's own figures change, not on every keystroke in the fields
+    // it fills.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [required, estimatedTotal, preview, setValue])
+
   const downPaymentError = (errors.downPayment as { message?: string } | undefined)?.message
   const priceUseError = (errors.priceUseTypeId as { message?: string } | undefined)?.message
   const financingTermError = (errors.financingTermId as { message?: string } | undefined)?.message
@@ -461,10 +507,23 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
                 </span>
                 <span className="text-zinc-700">{formatPeso(preview.monthlyInstallment)}</span>
               </div>
+              {/* The app's own vocabulary, from InstallmentAccount: PNV is
+                  MI x term, and Total Price adds the down payment back.
+                  Every application becomes one of those contracts, and it
+                  used to stop at PNV under the name "Total payable" — so the
+                  figure quoted at intake was smaller than the one the
+                  customer's contract would show, by exactly the down payment
+                  they had just been asked for. Nothing is recomputed here:
+                  preview.totalPayable IS the PNV the backend already stores.
+                  (computeFinancing(): totalPrice = pnv + downPayment.) */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-500">PNV (monthly x term)</span>
+                <span className="text-zinc-700">{formatPeso(preview.totalPayable)}</span>
+              </div>
               <div className="flex items-center justify-between text-sm font-semibold">
-                <span className="text-zinc-700">Total payable</span>
+                <span className="text-zinc-700">Total price</span>
                 <span className="text-prominent-purple-700">
-                  {formatPeso(preview.totalPayable)}
+                  {formatPeso(preview.totalPayable + (parseFloat(downPaymentInput ?? '') || 0))}
                 </span>
               </div>
             </div>

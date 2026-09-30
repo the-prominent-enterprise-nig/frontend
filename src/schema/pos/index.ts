@@ -1037,6 +1037,11 @@ export interface InstallmentPreview {
   totalPayable: number
   monthlyInstallment: number
   lines: InstallmentPreviewLine[]
+  /** Prompt-payment discount from the curated rate card
+   *  (`PriceListItemTerm.ppd`). Only present when a curated term was found
+   *  for this SKU and term — the generic factor-rate path has no PPD to
+   *  quote, so `undefined` means "no rate card said", not "zero". */
+  ppd?: number
 }
 
 export interface ComputeInstallmentPreviewInput {

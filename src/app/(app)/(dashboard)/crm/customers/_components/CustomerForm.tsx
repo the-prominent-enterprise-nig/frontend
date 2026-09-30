@@ -52,6 +52,8 @@ type FormState = {
   phone: string
   address: string
   barangayCode: string
+  homeAddress: string
+  homeBarangayCode: string
   creditLimit: string
   groupId: string
   branchId: string
@@ -98,6 +100,8 @@ const empty: FormState = {
   phone: '',
   address: '',
   barangayCode: '',
+  homeAddress: '',
+  homeBarangayCode: '',
   creditLimit: '',
   groupId: '',
   branchId: '',
@@ -224,6 +228,8 @@ export default function CustomerForm({
           phone: c.phone ?? '',
           address: c.address ?? '',
           barangayCode: c.barangayCode ?? '',
+          homeAddress: c.homeAddress ?? '',
+          homeBarangayCode: c.homeBarangayCode ?? '',
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
           groupId: c.groupId ?? '',
           branchId: c.branchId ?? '',
@@ -330,6 +336,8 @@ export default function CustomerForm({
       phone: form.phone,
       address: form.address || undefined,
       barangayCode: form.barangayCode || undefined,
+      homeAddress: form.homeAddress || undefined,
+      homeBarangayCode: form.homeBarangayCode || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
       groupId: form.groupId || undefined,
       branchId: form.branchId || undefined,

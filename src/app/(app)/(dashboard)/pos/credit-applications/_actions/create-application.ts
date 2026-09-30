@@ -73,7 +73,11 @@ export async function createCreditApplication(
         lastName: (person?.lastName ?? '').trim() || undefined,
         mobileNumber: (person?.mobileNumber ?? '').trim() || undefined,
       }))
-      .filter((person) => person.role && person.firstName),
+      // A co-maker row never reaches the API as a related person: it is
+      // resolved to coMakerId against the customer's own CoMaker record
+      // before submit. Filtered here as well as in the form so a stale
+      // client cannot send a role the DTO's enum would reject.
+      .filter((person) => person.role && person.role !== 'co_maker' && person.firstName),
     // Numeric text inputs: '' must become undefined, not 0 — the DTO's
     // @Type(() => Number) would coerce an empty string to 0, and "LCP 0" is
     // a claim about money that nobody made.

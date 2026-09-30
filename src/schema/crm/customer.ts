@@ -99,8 +99,12 @@ export const createCustomerSchema = z.object({
   taxExemptionRef: z.string().max(100).optional().or(z.literal('')),
   email: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   phone: z.string().min(1, 'Phone number is required').max(50),
+  // The CURRENT address — see the Customer type for why it kept these
+  // column names rather than being renamed.
   address: z.string().max(1000).optional().or(z.literal('')),
   barangayCode: z.string().max(20).optional().or(z.literal('')),
+  homeAddress: z.string().max(1000).optional().or(z.literal('')),
+  homeBarangayCode: z.string().max(20).optional().or(z.literal('')),
   paymentTerms: z.string().max(50).optional().or(z.literal('')),
   creditLimit: z.coerce.number().min(0).optional(),
   groupId: z.string().max(50).optional().or(z.literal('')),

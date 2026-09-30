@@ -132,8 +132,9 @@ export interface CreditInvestigation {
   updatedAt: string
 }
 
-// Sentinel `coMakerId` value meaning "fill in a brand-new co-maker below"
-// instead of picking one already on file for the applicant.
+/** @deprecated Sentinel from the deleted co-maker section. Nothing sets or
+ *  reads it since the co-maker became a Related People row (2026-09-30);
+ *  kept only so an older client posting it does not break. */
 export const NEW_CO_MAKER_VALUE = '__new__'
 
 const CreateCreditApplicationBaseSchema = z.object({
@@ -173,10 +174,15 @@ const CreateCreditApplicationBaseSchema = z.object({
     .enum(['individual', 'self_employed', 'business', 'employee'])
     .optional()
     .or(z.literal('')),
+  /** The CURRENT address — `Customer.address`/`barangayCode`. */
   applicantAddress: z.string().max(1000).optional().or(z.literal('')),
   applicantBarangayCode: z.string().max(20).optional().or(z.literal('')),
-  // Holds an existing co-maker's id, the NEW_CO_MAKER_VALUE sentinel (fill
-  // in a brand-new co-maker below), or '' (no co-maker).
+  // The home address is NOT captured here. It lives on the customer and is
+  // offered as a one-tick fill for the current address above — see
+  // ApplicantContactFields. Editing it is the customer form's job.
+  // The co-maker this application is backed by, resolved from its Related
+  // People row on submit — either a CoMaker already on the customer, or one
+  // created from what the row holds. Not typed directly by anyone.
   coMakerId: z.string().optional(),
   // Editable details for whichever existing co-maker is selected above —
   // same "diff and PATCH separately" treatment as applicantPhone/Email,
@@ -193,46 +199,22 @@ const CreateCreditApplicationBaseSchema = z.object({
   // with a single space on save — the same fallback CustomerForm already
   // uses for records predating its own firstName/lastName columns. Lossless
   // on round-trip apart from collapsing repeated whitespace.
-  coMakerFirstName: z.string().max(120).optional().or(z.literal('')),
-  coMakerLastName: z.string().max(120).optional().or(z.literal('')),
-  coMakerRelationship: z.string().max(100).optional().or(z.literal('')),
-  coMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
-  coMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
-  // Only used when coMakerId === NEW_CO_MAKER_VALUE — creates a co-maker on
-  // the applicant's profile via customersApi.addCoMaker() before the
-  // application itself is submitted.
-  // First/last are captured separately here and joined into the single
-  // CoMaker.name column on submit — the table has no split name columns.
-  newCoMakerFirstName: z.string().max(120).optional().or(z.literal('')),
-  newCoMakerLastName: z.string().max(120).optional().or(z.literal('')),
-  newCoMakerRelationship: z.string().max(100).optional().or(z.literal('')),
-  newCoMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
-  newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
-  // Scenario 60 item 27 — the paper form's CHARACTER REFERENCES block, three
-  // fixed rows so the ERP record lines up with "Reference 1/2/3" on the
-  // scan. Rows are kept in the form even when blank; the submit strips the
-  // empty ones, so a transcriber can fill row 3 without touching row 2.
-  //
-  // Nothing is required: the mockup marks the minimum as "subject to NIG
-  // policy", which has not been stated. What IS enforced is that a row is
-  // all-or-nothing — a name with no number is not a usable reference, and
-  // the backend requires the number when a row exists at all.
-  // Scenario 60 item 27 — the mockup's RELATED PEOPLE block. Rows are added
-  // as needed with the role picked per row (client, 2026-09-30: "same
-  // behavior as the character references"), rather than three fixed rows
-  // for spouse/father/mother — most applications name one or two people,
-  // and three pre-labelled empty rows read as three things left undone.
-  //
-  // Co-maker is NOT a role here: it keeps its own section, backed by the
-  // existing CoMaker record that promissory notes and the checkout gate
-  // reference.
   relatedPeople: z
     .array(
       z.object({
-        role: z.enum(['spouse', 'father', 'mother']).optional().or(z.literal('')),
+        role: z.enum(['spouse', 'father', 'mother', 'co_maker']).optional().or(z.literal('')),
         firstName: z.string().max(150).optional().or(z.literal('')),
         lastName: z.string().max(150).optional().or(z.literal('')),
         mobileNumber: z.string().max(50).optional().or(z.literal('')),
+        /** Co-maker rows only — "Relationship" on the mockup's co-maker row,
+         *  and a required column on the CoMaker record this row writes to.
+         *  The other three roles ARE the relationship. */
+        relationship: z.string().max(100).optional().or(z.literal('')),
+        /** Co-maker rows only — set when the row was filled from a co-maker
+         *  already on the customer. Two jobs: submit reuses that exact record
+         *  instead of matching on name, and the picker hides anyone already
+         *  taken so the same person cannot be attached twice. */
+        coMakerId: z.string().optional().or(z.literal('')),
       })
     )
     .optional(),
@@ -475,51 +457,21 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
     // .contactNumber is NOT NULL in the schema, so leaving it blank was
     // writing an empty string into a required column rather than failing.
     // Email stays optional.
-    if (data.coMakerId === NEW_CO_MAKER_VALUE) {
-      if (!data.newCoMakerFirstName?.trim()) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['newCoMakerFirstName'],
-          message: 'First name is required',
-        })
-      }
-      if (!data.newCoMakerLastName?.trim()) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['newCoMakerLastName'],
-          message: 'Last name is required',
-        })
-      }
-      if (!data.newCoMakerRelationship?.trim()) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['newCoMakerRelationship'],
-          message: 'Relationship is required',
-        })
-      }
-      if (!data.newCoMakerContactNumber?.trim()) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['newCoMakerContactNumber'],
-          message: 'Contact number is required',
-        })
-      }
-    } else if (data.coMakerId) {
-      // Editing an already-saved co-maker inline. Only the number is checked
-      // here: this branch submits each field as `value || undefined`, so a
-      // blank leaves the stored value untouched rather than overwriting it —
-      // except that a co-maker saved before this rule can legitimately hold a
-      // blank number, and this is what surfaces it for fixing instead of
-      // letting it ride. Name/relationship are deliberately left unchecked,
-      // matching what this branch already did.
-      if (!data.coMakerContactNumber?.trim()) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['coMakerContactNumber'],
-          message: 'Contact number is required',
-        })
-      }
-    }
+    // A co-maker's rules live with its Related People row now: that row
+    // needs a first name, a contact number and a relationship.
+    //
+    // What stood here was a second set of rules keyed on the top-level
+    // `coMakerId`, from when the co-maker had a section of its own. It
+    // outlived that section by a few hours and broke every application
+    // carrying a co-maker: handleFormSubmit resolves the row to a real
+    // CoMaker id and puts it in `coMakerId`, the server action re-validates
+    // the payload against this very schema, the "existing co-maker" branch
+    // fired, and it demanded a `coMakerContactNumber` the form no longer
+    // captures anywhere.
+    //
+    // The same failure Part 4 hit on 2026-09-28, for the same underlying
+    // reason: a field that means one thing to the form and another to the
+    // schema that re-checks the form's own output.
 
     // Scenario 60 item 27 — a character reference row is all-or-nothing.
     // Nothing forces a row to exist (the minimum is "subject to NIG policy",
@@ -564,7 +516,12 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
       const firstName = (person?.firstName ?? '').trim()
       const lastName = (person?.lastName ?? '').trim()
       const mobile = (person?.mobileNumber ?? '').trim()
-      const anyFilled = !!role || !!firstName || !!lastName || !!mobile
+      // The role deliberately does not count towards "filled": the first row
+      // arrives pre-set to Co-maker, and a row nobody typed into is still an
+      // empty row that gets dropped on submit, not a co-maker with missing
+      // details.
+      const anyFilled =
+        !!firstName || !!lastName || !!mobile || !!(person?.relationship ?? '').trim()
       if (!anyFilled) return
       if (!role) {
         ctx.addIssue({
@@ -587,6 +544,28 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
           path: ['relatedPeople', index, 'firstName'],
           message: 'First name is required',
         })
+      }
+      // Required on every row (client, 2026-09-30). This overrides the paper
+      // form's own "Father mobile / unavailable" option, which the first
+      // build honoured — a related person is recorded to be called, and one
+      // nobody can reach is not worth the row.
+      if (!mobile) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['relatedPeople', index, 'mobileNumber'],
+          message: 'Contact number is required',
+        })
+      }
+      // A co-maker also needs a relationship; the other three roles already
+      // are one.
+      if (role === 'co_maker') {
+        if (!(person?.relationship ?? '').trim()) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['relatedPeople', index, 'relationship'],
+            message: 'Relationship is required for a co-maker',
+          })
+        }
       }
     })
 
@@ -638,6 +617,20 @@ export interface CreditApplicationCustomerLite {
   customerCode: string
   phone?: string | null
   email?: string | null
+  /** Scenario 60 item 27 — the mockup's CUSTOMER PROFILE block, returned so
+   *  a reviewer can read the application without opening the customer
+   *  elsewhere. All null for anyone captured before these fields existed. */
+  altPhone?: string | null
+  birthday?: string | null
+  civilStatus?: string | null
+  gender?: string | null
+  facebookName?: string | null
+  customerType?: 'individual' | 'self_employed' | 'business' | 'employee' | null
+  companyName?: string | null
+  address?: string | null
+  barangayCode?: string | null
+  homeAddress?: string | null
+  homeBarangayCode?: string | null
 }
 
 export interface CreditApplicationCoMakerLite {

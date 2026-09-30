@@ -193,8 +193,14 @@ export interface Customer {
   taxExemptionRef?: string | null
   email?: string | null
   phone?: string | null
+  /** The CURRENT address. Scenario 60 items 9/10 kept it in these two
+   *  columns rather than renaming them: `barangayCode` is the key collector
+   *  assignment matches on, and a collector visits where the customer lives
+   *  now. Home is the pair below, null before 2026-09-30. */
   address?: string | null
   barangayCode?: string | null
+  homeAddress?: string | null
+  homeBarangayCode?: string | null
   paymentTerms?: string | null
   creditLimit?: number | string | null
   groupId?: string | null

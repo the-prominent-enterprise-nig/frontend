@@ -9,6 +9,8 @@ import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
 import { CreditApplicationFinancingFields } from './CreditApplicationFinancingFields'
 import { Select } from '@/src/components/ui/Select'
+import { PhAddressText } from '@/src/components/common/PhAddressText'
+import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -259,13 +261,44 @@ export default function CreditApplicationDetail({
   const canAttachDocuments =
     isEditable || (['approved', 'partially_approved'] as string[]).includes(application.status)
 
-  // Scenario 60 item 27. Sorted into the paper form's order rather than
-  // whichever order the rows came back in, so the card reads like the scan
-  // it was transcribed from.
+  const applicant = application.applicantCustomer
+
+  // Scenario 60 item 27. The application's own related-people rows and the
+  // customer's CoMaker record are two tables, but one list to a reader —
+  // flattened here so the card does not have to know which is which.
+  //
+  // Sorted into the paper form's order rather than whichever order the rows
+  // came back in, with the co-maker last exactly as the form draws it, so
+  // the card reads like the scan it was transcribed from.
   const RELATED_PERSON_ORDER = ['spouse', 'father', 'mother']
-  const relatedPeople = [...(application.relatedPeople ?? [])].sort(
-    (a, b) => RELATED_PERSON_ORDER.indexOf(a.role) - RELATED_PERSON_ORDER.indexOf(b.role)
-  )
+  const relatedPeople: {
+    id: string
+    name: string
+    mobileNumber: string | null
+    label: string
+  }[] = [
+    ...[...(application.relatedPeople ?? [])]
+      .sort((a, b) => RELATED_PERSON_ORDER.indexOf(a.role) - RELATED_PERSON_ORDER.indexOf(b.role))
+      .map((person) => ({
+        id: person.id,
+        name: [person.firstName, person.lastName].filter(Boolean).join(' '),
+        mobileNumber: person.mobileNumber ?? null,
+        // "Spouse", "Father" — the role is the relationship for these three.
+        label: person.role.charAt(0).toUpperCase() + person.role.slice(1),
+      })),
+    ...(application.coMaker
+      ? [
+          {
+            id: application.coMaker.id,
+            name: application.coMaker.name,
+            mobileNumber: application.coMaker.contactNumber,
+            // A co-maker carries its own relationship, because unlike the
+            // other three the role does not say how they relate.
+            label: `Co-maker · ${application.coMaker.relationship}`,
+          },
+        ]
+      : []),
+  ]
   // `paperFormConfirmed` is excluded from this check on purpose: it defaults
   // to false on every application, so counting it would show the block
   // everywhere. It's a flag about a form, not evidence one was transcribed.
@@ -410,61 +443,119 @@ export default function CreditApplicationDetail({
           )}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-zinc-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Applicant</h2>
-            <dl className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Name</dt>
-                <dd className="font-medium text-zinc-900">{application.applicantCustomer.name}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Customer Code</dt>
-                <dd className="text-zinc-700">{application.applicantCustomer.customerCode}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Phone</dt>
-                <dd className="text-zinc-700">{application.applicantCustomer.phone ?? '—'}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Email</dt>
-                <dd className="text-zinc-700">{application.applicantCustomer.email ?? '—'}</dd>
-              </div>
-            </dl>
+        {/* items-start so a short card keeps its own height instead of being
+            stretched to match the tall one beside it — the Related People
+            card was drawing a half-empty box the height of the applicant's
+            whole profile. */}
+        {/* The applicant spans the row on its own. It carries eleven fields
+            against the three or four its neighbours hold, and sharing a
+            column with them stacked every one into a narrow label/value pair
+            — eleven rows deep, with the addresses wrapping across five lines
+            each. Given the width it becomes three short columns and reads at
+            a glance.
+
+            items-start so the two cards below keep their own heights instead
+            of the shorter being stretched to match the taller. */}
+        <div className="rounded-xl border border-zinc-200 bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-100 pb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-700">Applicant</h2>
+              <p className="mt-0.5 text-base font-medium text-zinc-900">{applicant.name}</p>
+            </div>
+            <span className="font-mono text-xs text-zinc-500">{applicant.customerCode}</span>
           </div>
 
-          <div className="rounded-xl border border-zinc-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Co-Maker</h2>
-            {application.coMaker ? (
-              <dl className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <dt className="text-zinc-500">Name</dt>
-                  <dd className="font-medium text-zinc-900">{application.coMaker.name}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-zinc-500">Relationship</dt>
-                  <dd className="text-zinc-700">{application.coMaker.relationship}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-zinc-500">Phone</dt>
-                  <dd className="text-zinc-700">{application.coMaker.contactNumber}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-zinc-500">Email</dt>
-                  <dd className="text-zinc-700">{application.coMaker.email ?? '—'}</dd>
-                </div>
-              </dl>
-            ) : (
-              <p className="text-sm text-zinc-400">No co-maker on this application.</p>
-            )}
-          </div>
+          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <dt className="text-xs text-zinc-500">Mobile</dt>
+              <dd className="mt-0.5 text-zinc-900">{applicant.phone ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Alt mobile</dt>
+              <dd className="mt-0.5 text-zinc-900">{applicant.altPhone || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Email</dt>
+              <dd className="mt-0.5 break-words text-zinc-900">{applicant.email || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Facebook / Messenger</dt>
+              <dd className="mt-0.5 break-words text-zinc-900">{applicant.facebookName || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Birthdate</dt>
+              <dd className="mt-0.5 text-zinc-900">
+                {applicant.birthday
+                  ? new Date(applicant.birthday).toLocaleDateString('en-PH', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                  : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Civil status &amp; gender</dt>
+              <dd className="mt-0.5 text-zinc-900">
+                {[applicant.civilStatus, applicant.gender].filter(Boolean).join(' · ') || '—'}
+              </dd>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-1">
+              <dt className="text-xs text-zinc-500">Employment</dt>
+              <dd className="mt-0.5 text-zinc-900">
+                {[
+                  applicant.customerType ? CUSTOMER_TYPE_LABELS[applicant.customerType] : null,
+                  applicant.companyName,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || '—'}
+              </dd>
+            </div>
+          </dl>
 
-          {/* Scenario 60 item 27. Roles are listed in the paper form's own
-              order and a role with nothing recorded is simply absent — the
-              form lets a mobile be marked unavailable, so a name with no
-              number is a complete answer, not a half-filled row. */}
+          {/* Addresses last and full width: each is a sentence, and boxed into
+              a third of the row they wrapped over several lines apiece. */}
+          <dl className="mt-4 grid gap-x-6 gap-y-3 border-t border-zinc-100 pt-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-zinc-500">Current address</dt>
+              <dd className="mt-0.5">
+                <PhAddressText
+                  address={applicant.address}
+                  barangayCode={applicant.barangayCode}
+                  className="text-zinc-900"
+                />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">
+                Home address{' '}
+                {!applicant.homeAddress && !applicant.homeBarangayCode && (
+                  <span className="text-zinc-400">(same as current)</span>
+                )}
+              </dt>
+              <dd className="mt-0.5">
+                <PhAddressText
+                  address={applicant.homeAddress}
+                  barangayCode={applicant.homeBarangayCode}
+                  className="text-zinc-900"
+                  emptyText="—"
+                />
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          {/* Scenario 60 item 27. The co-maker is listed here rather than in
+              a card of its own: on the intake form it is a Related People
+              row, and the mockup draws it as the last row of that same
+              block, so two cards said the record held two different kinds of
+              thing when it holds one.
+
+              Listed in the paper form's order, and a role with nothing
+              recorded is simply absent. */}
           <div className="rounded-xl border border-zinc-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Related People</h2>
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Related People or Co-maker</h2>
             {relatedPeople.length > 0 ? (
               <ul className="space-y-3 text-sm">
                 {relatedPeople.map((person) => (
@@ -473,20 +564,18 @@ export default function CreditApplicationDetail({
                     className="border-b border-zinc-100 pb-3 last:border-0 last:pb-0"
                   >
                     <div className="flex items-baseline justify-between gap-3">
-                      <span className="font-medium text-zinc-900">
-                        {[person.firstName, person.lastName].filter(Boolean).join(' ')}
-                      </span>
+                      <span className="font-medium text-zinc-900">{person.name}</span>
                       <span className="shrink-0 font-mono text-xs text-zinc-600">
                         {person.mobileNumber || '—'}
                       </span>
                     </div>
-                    <p className="mt-0.5 text-xs capitalize text-zinc-500">{person.role}</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">{person.label}</p>
                   </li>
                 ))}
               </ul>
             ) : (
               <p className="text-sm text-zinc-400">
-                No spouse, father or mother recorded on this application.
+                No related people or co-maker on this application.
               </p>
             )}
           </div>
@@ -768,11 +857,30 @@ export default function CreditApplicationDetail({
                     })}
                   </dd>
                 </div>
+                {/* The app's own vocabulary, from InstallmentAccount: PNV is
+                    MI x term, and Total Price adds the down payment back.
+                    This application becomes one of those contracts, and it
+                    used to stop at PNV under the name "Total Payable" — so it
+                    quoted a figure smaller than the contract's own Total
+                    Price by exactly the down payment. Nothing new is
+                    computed: totalPayable IS the PNV already stored.
+                    (computeFinancing(): totalPrice = pnv + downPayment.) */}
                 <div>
-                  <dt className="text-zinc-500">Total Payable</dt>
-                  <dd className="mt-0.5 font-semibold text-zinc-900">
+                  <dt className="text-zinc-500">PNV (monthly × term)</dt>
+                  <dd className="mt-0.5 text-zinc-900">
                     ₱
                     {Number(application.totalPayable ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Total Price</dt>
+                  <dd className="mt-0.5 font-semibold text-zinc-900">
+                    ₱
+                    {(
+                      Number(application.totalPayable ?? 0) + Number(application.downPayment ?? 0)
+                    ).toLocaleString('en-PH', {
                       minimumFractionDigits: 2,
                     })}
                   </dd>

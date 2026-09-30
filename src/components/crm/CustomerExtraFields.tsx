@@ -162,6 +162,8 @@ export interface CustomerExtraFieldsValues {
   facebookName: string
   address: string
   barangayCode: string
+  homeAddress: string
+  homeBarangayCode: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -392,12 +394,27 @@ export default function CustomerExtraFields({
         </div>
       )}
 
+      {/* Two addresses (Scenario 60 items 9/10). Current is first and is the
+          one the rest of the app uses — collector assignment matches on its
+          barangay, so it is the address someone will actually be sent to.
+          Home is second and optional: it exists for the credit application,
+          which asks for both, and most customers will leave it blank because
+          it is the same place. */}
       <div className="sm:col-span-2">
-        <label className="mb-1 block text-[13px] font-medium text-gray-700">Address</label>
+        <label className="mb-1 block text-[13px] font-medium text-gray-700">Current address</label>
         <PhilippineAddressPicker
           onChange={(v) => onChange({ address: v.address, barangayCode: v.barangayCode })}
           initialBarangayCode={values.barangayCode || undefined}
           initialAddress={values.address || undefined}
+        />
+
+        <label className="mt-3 mb-1 block text-[13px] font-medium text-gray-700">
+          Home address <span className="font-normal text-gray-400">(if different)</span>
+        </label>
+        <PhilippineAddressPicker
+          onChange={(v) => onChange({ homeAddress: v.address, homeBarangayCode: v.barangayCode })}
+          initialBarangayCode={values.homeBarangayCode || undefined}
+          initialAddress={values.homeAddress || undefined}
         />
 
         <label className="mt-3 mb-1 block text-[13px] font-medium text-gray-700">Notes</label>

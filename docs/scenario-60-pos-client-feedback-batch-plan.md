@@ -866,3 +866,292 @@ The installment-account link is typechecked and the surrounding transaction
 is unchanged, but it was **not** exercised through a real POS checkout — that
 needs a session, terminal, stock and an approved application. Everything else
 in this pass was verified against the running API.
+
+## Manual test — item 27 end to end (2026-09-30)
+
+Covers everything built for the Simplified Credit Application v2: the customer
+profile block, related people + co-maker, character references, the required
+purchase/paper-record block, the prefills, and the links written back after
+posting.
+
+### Environment
+
+|           |                                                                    |
+| --------- | ------------------------------------------------------------------ |
+| Account   | `technova.owner@test.com` / `dev-prominent-enterprise-2026`        |
+| Why owner | approval has been Business-Owner-only since 2026-09-18             |
+| Frontend  | http://localhost:3000                                              |
+| Backend   | http://localhost:3001                                              |
+| Branch    | **Alimodian** — it has a POS terminal _and_ the item's only serial |
+
+### Fixture, and why it had to be set up
+
+**No financeable item in the dev database had stock.** All 1,264 items on the
+WIP price list carried zero stock; the only stocked items were service parts
+(`TN-NIG-PART-*`), which are on no price list at all. Since item 21 made the
+price list the only source of price, that combination meant an application
+could be raised but never sold.
+
+Stock was added through the app's own adjustment workflow (reason _found_,
+submitted -> confirmed -> investigating -> **approved**), not by writing rows,
+so the stock ledger and GL stay consistent:
+
+|               |                                                                      |
+| ------------- | -------------------------------------------------------------------- |
+| Item          | `TN-ITEM-0365` — DOWELL ARC230P, 23 L detachable and invertible tank |
+| WIP price     | ₱8,340.00                                                            |
+| Curated terms | 3 mo -> MI ₱2,525, PPD ₱190 · 6 mo -> MI ₱1,380, PPD ₱100            |
+| Stock         | Alimodian Warehouse = 2 (plus 3 at Binalbagan, spare)                |
+| Serial        | `25A01037` — the only one, at Alimodian                              |
+
+**Every financeable item in this database is serial-tracked**, so a serial is
+unavoidable at checkout, and there is exactly one — which is one complete
+sale. A second run needs another serial.
+
+### Step 1 — Create the customer
+
+`POS -> Customers -> New Customer`
+
+| Field                       | Value                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| First / Last / Middle       | Marisol / Fuentes / Ibarra                                                             |
+| Email (optional)            | **leave blank**                                                                        |
+| Phone                       | `+63 917 555 0142`                                                                     |
+| Alt mobile                  | `+63 918 555 0143`                                                                     |
+| Type                        | **Self-employed**                                                                      |
+| Business name               | Fuentes Sari-Sari Store                                                                |
+| Birthday                    | 12 / June / 1994                                                                       |
+| Civil status                | Married                                                                                |
+| Gender                      | F                                                                                      |
+| Facebook / Messenger        | `marisol.fuentes.94`                                                                   |
+| Current address             | Region VI -> Iloilo -> Alimodian -> any barangay; street `Blk 7 Lot 3, Purok Masagana` |
+| Home address (if different) | Region VI -> Iloilo -> Passi City -> any barangay; street `12 Rizal St`                |
+
+Expected:
+
+1. Type offers **Self-employed**, and choosing it relabels Employer to
+   **Business name**. There is no separate Self-employed Yes/No field.
+2. Civil status and Gender share a row, Gender narrow.
+3. Every dropdown is the app's styled control, not a browser-native `select`.
+4. Two address blocks, **Current first**.
+5. Saving succeeds with Email blank.
+
+### Step 2 — Raise the credit application
+
+`POS -> Credit Applications -> New`, search **Marisol Fuentes**.
+
+**Customer Profile** — arrives **collapsed**, summarising
+`+63 917 555 0142 · Married · F · 12/06/1994`. Expand it: every field is
+prefilled from the customer. Tick **Use home address** — the picker jumps to
+Passi City. It copies rather than links, so untick does nothing; re-pick
+Alimodian before continuing.
+
+**Related People or Co-maker** — row 1 is already **Co-maker**:
+
+| Row | Relationship | Mobile             | First   | Last    | Rel. to applicant |
+| --- | ------------ | ------------------ | ------- | ------- | ----------------- |
+| 1   | Co-maker     | `+63 917 555 0150` | Ramon   | Fuentes | **Spouse**        |
+| 2   | Father       | `+63 917 555 0151` | Eduardo | Ibarra  | —                 |
+| 3   | Mother       | `+63 917 555 0152` | Lucia   | Ibarra  | —                 |
+
+Expected: each row is titled by its role, never "Person 2";
+`+ Add another person` disappears at three; **mobile is required on all
+three**; "Co-maker on file" is full width at the top of row 1 and empty for a
+new customer.
+
+**Character references** — Ana Reyes · `+63 917 555 0160` · **Neighbor**
+(dropdown, not free text).
+
+**Items / financing** — item `TN-ITEM-0365`, Price Use **WIP**, term
+**3 months**, down payment = the **Min.** shown in the placeholder. That
+figure is deliberately higher than 30% of ₱8,340: checkout measures its floor
+on the VAT-effective amount, and the form matches it so an application cannot
+be approved at a down payment the till would then reject.
+
+Expected breakdown, in this order:
+
+```
+Amount financed
+Monthly installment x 3 mo.     2,525.00
+PNV (monthly x term)            7,575.00     = 2,525 x 3
+Total price                     7,575 + your down payment
+```
+
+`Total price` is the figure the resulting contract will show. Before today
+the block stopped at PNV under the name "Total payable", which quoted the
+customer less than their contract by exactly the down payment.
+
+**Proposed Purchase & Paper Record**
+
+| Field                          | Expected                                      |
+| ------------------------------ | --------------------------------------------- |
+| LCP                            | **8340**, filled in                           |
+| PPD rebate                     | **190**, filled in from the 3-month rate card |
+| First due date                 | filled in from the schedule                   |
+| Down payment collection        | choose **Branch**                             |
+| POS draft / quote ID           | type `QT-MANUAL-001`                          |
+| Applicant is unit user         | **Yes**                                       |
+| Paper form complete and signed | tick                                          |
+
+**Negative check:** clear the tick and submit — it must be refused. Same for
+each of the other fields above; the whole block is required now.
+
+### Step 3 — Decide it
+
+Submit -> Start investigation -> record it -> **Decide** -> approve the item.
+
+Expected on the detail page:
+
+1. **One** "Related People or Co-maker" card listing Father, Mother, then
+   `Co-maker · Spouse`. The separate Co-Maker card is gone.
+2. The Applicant card carries the whole profile, with both addresses as
+   readable text (`…, Alimodian, Iloilo`), not PSGC codes.
+3. A **Paper Record** card with LCP, PPD, first due date, DP collection, POS
+   draft, applicant-is-unit-user, and **Transcribed** showing today's date.
+
+### Step 4 — Sell it
+
+`POS -> Checkout`, Alimodian / Counter 1.
+
+Marisol -> `TN-ITEM-0365` -> **Installment** -> pick the approved application
+-> serial **`25A01037`** -> take the down payment -> complete the sale.
+
+Expected back on the application: status consumed, **Linked invoice**
+populated, and **Installment Account** showing an `IA-…` number. That link
+was never written before 2026-09-30 — checkout set `posTransactionId` alone.
+
+### Known imperfections — expected, not bugs to raise
+
+- **Transcribed shows a date, no name.** `transcribedById` is stored, but it
+  holds a raw user id exactly as `createdById` and `approvedById` do, and
+  nothing in the app resolves user ids to names yet.
+- **POS draft / quote ID is mandatory** though no draft or quote entity
+  exists to copy one from. Most awkward on checkout's "New application for
+  this cart" path, where a cashier has nothing real to type.
+- **Installment Account stays blank for a multi-term cart.** One sale with
+  two financing terms creates one account per term group, and the column
+  holds one — so it is left null rather than guessing.
+
+## Item 28 — from approval straight into the sale (plan, 2026-09-30)
+
+Raised from manual testing of item 27, not from the client list. Nothing here
+is built yet.
+
+**Corrected after a first pass** that assumed a cashier raises the
+application and waits on someone else. The flow that actually matters is
+simpler and has one person in it: **the owner approves, stays on the
+application, and walks to the till.**
+
+### What already works
+
+The checkout picker lists **every** approved, unconsumed application for the
+selected customer — matching ones first, the rest labelled "— does not match
+this cart" (`creditApplicationOptions`). So the application does load in.
+Nothing needs building there.
+
+### The one thing missing: the cart
+
+Selecting the application is not enough. The sale is only allowed when the
+cart's installment lines match the application's items **exactly**
+(`validateAndPrepare`, Scenario 17 Part 6). So after approving, the owner
+still has to:
+
+1. leave the application,
+2. open checkout,
+3. find the customer again,
+4. re-add every item by hand,
+5. then pick the application out of the list.
+
+Five steps of re-entry for information the application is already holding.
+And step 4 has to be exactly right or step 5 gives them an application
+labelled as not matching.
+
+### The approach
+
+**One button at the moment of approval.** When the decision lands and the
+result is approved (or partially approved), the next thing on screen is
+**Continue to sale** — which opens checkout with the customer selected, the
+cart already built from the approved items, and the application already
+picked. One click from approving to taking payment.
+
+The cart is built **from the application**, so it matches by construction.
+This is deliberately not "relax the exact-match rule": that rule is what
+stops a fridge being sold against an application approved for a washing
+machine. Inverting the direction keeps the control and removes the re-entry.
+
+### Part 1 — "Continue to sale" on an approved application
+
+On the detail page whenever status is `approved`/`partially_approved` and
+`posTransactionId` is null — so it is there straight after deciding, and
+still there tomorrow if they come back to it. Builds a checkout handoff from
+the application's own items and applicant, adds `creditApplicationId` to
+`CheckoutHandoff`, and checkout pre-selects it on arrival.
+
+Frontend only, no migration. **S–M.** This is the whole idea; the rest are
+conveniences around it.
+
+### Part 2 — offer it at the till too
+
+When a customer is selected at checkout and has approved, unconsumed
+applications, say so and offer to load one. Covers the owner who goes to the
+till first out of habit rather than using the button.
+
+Frontend only. **S.**
+
+### Part 3 — the same thing from the queue
+
+A "Continue to sale" action on each approved row in the credit applications
+list, so it does not require opening the application first.
+
+Frontend only. **S.**
+
+### Part 4 — for when the approver is NOT the seller
+
+Only worth building if that case turns out to be common. `notifyResolved()`
+already messages `submittedById ?? createdById` on decision
+(`credit_application_resolved`) — give that message a deep link to Part 1's
+button. And, for a cart that has to survive the wait, park the sale
+server-side as a `PosParkedSale` rather than in `localStorage`, which cannot
+outlive the shift (`checkout-handoff.ts` discards a handoff whose session has
+closed, by design since 2026-09-19).
+
+Backend + frontend. **M–L.** Nothing in Parts 1-3 depends on it.
+
+### Decisions taken
+
+- **Cart already in progress** — neither replace nor refuse. Ask, and offer
+  to park the current cart first. Refusing makes them clear it by hand and
+  lose it; replacing silently loses it without asking.
+- **Partially approved** — load the approved items and say so plainly ("1 of
+  2 approved. Chest Freezer was declined."). Dropping the rest quietly has
+  someone promising a customer what is not in the sale.
+
+### Decided: no open session, no button
+
+**"Continue to sale" must not open checkout when no POS session is open**
+(developer, 2026-09-30). Opening a session is a real act with cash in it —
+a declared opening float, a named cashier, a terminal — and it is not
+something a button on an approval screen should do on someone's behalf.
+
+So the button is **rendered disabled, with the reason on it** rather than
+hidden: "No open POS session" tells the owner what is missing, where a
+missing button would just look broken. `useSessions({ status: 'open' })` is
+the same hook checkout already uses to populate its session picker, so the
+answer is available on the application page without new API work.
+
+An owner approving from a desk therefore sees the button greyed with its
+reason, opens a session at a terminal as they would anyway, and the button
+lights up.
+
+### Still open
+
+1. Is the approver-is-not-the-seller case common enough to justify Part 4 at
+   all?
+2. With more than one session open (several terminals in a branch), does the
+   button pick one, or land on checkout with the session picker focused?
+
+### Suggested order
+
+Part 1 alone removes the re-entry. Parts 2 and 3 are the same action from
+the two other places someone might start. Part 4 only if the split-person
+case proves real.
