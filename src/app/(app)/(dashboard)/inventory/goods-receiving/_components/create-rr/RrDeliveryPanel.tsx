@@ -38,11 +38,13 @@ const toggleBtnClass = (active: boolean) =>
   }`
 
 // Scenario 55 — why this is a no-PO receipt with no registered supplier.
-// '' reads as "None" — an ordinary supplier/PO-linked delivery, the
-// existing default this form has always had.
+// The form stores '' for an ordinary supplier/PO-linked delivery (the
+// default this form has always had), but a select treats '' as "nothing
+// picked" and shows its placeholder — so the option carries this sentinel
+// and it is mapped to/from '' at the field boundary below.
+const REGULAR_DELIVERY = 'regular'
 const REASON_OPTIONS: SearchableSelectOption[] = [
-  { value: '', label: 'None — ordinary supplier delivery' },
-  { value: 'repair_return', label: 'Repair return' },
+  { value: REGULAR_DELIVERY, label: 'Regular Supplier Delivery' },
   { value: 'repossession', label: 'Repossession' },
   { value: 'other', label: 'Other' },
 ]
@@ -136,8 +138,8 @@ export function RrDeliveryPanel({
               hint="optional"
               footer={
                 <Hint>
-                  Getting your own stock back — a repair return, a repossession — rather than a
-                  purchase. Drops the supplier requirement below.
+                  Getting your own stock back — a repossession — rather than a purchase. Drops the
+                  supplier requirement below.
                 </Hint>
               }
             >
@@ -146,8 +148,8 @@ export function RrDeliveryPanel({
                 control={control}
                 render={({ field }) => (
                   <SearchableSelect
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
+                    value={field.value || REGULAR_DELIVERY}
+                    onChange={(v) => field.onChange(v === REGULAR_DELIVERY ? '' : v)}
                     chrome={CONTROL_CHROME}
                     options={REASON_OPTIONS}
                   />

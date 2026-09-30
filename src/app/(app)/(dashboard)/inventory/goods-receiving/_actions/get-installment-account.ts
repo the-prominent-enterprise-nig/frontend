@@ -17,6 +17,11 @@ export interface InstallmentAccountUnitItem {
    * same cost rather than the receiver guessing or typing one. Null for a
    * pre-cost-tracking sale, same as any other historical gap. */
   unitCost: number | null
+  /** What the unit re-enters stock at: LCP - total payments (monthly + down
+   * payment) + agent commission (skipped when the agent is Office), split
+   * across the account's units by listed-price share. Can be <= 0 on a
+   * fully-paid account, in which case the receiver types a cost. */
+  repoCost: number
   /** SerialNumber.status as of right now — 'sold' means still out with the
    * customer; anything else (most likely 'in_stock', once a prior
    * repossession already brought it back) means this specific unit isn't

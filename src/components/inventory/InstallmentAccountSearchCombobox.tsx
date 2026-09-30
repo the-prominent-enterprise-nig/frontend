@@ -61,6 +61,7 @@ export function InstallmentAccountSearchCombobox({
         const res = await getInstallmentAccounts({
           search: query || undefined,
           customerId,
+          repossessable: true,
           limit: 20,
         })
         return (res.data?.data ?? []).map((a) => {

@@ -32,6 +32,9 @@ export async function getInstallmentAccounts(params?: {
    * picked, so the account search doesn't have to also disambiguate whose
    * account it is. */
   customerId?: string
+  /** Hides accounts with nothing left to repossess (every unit already back
+   * in stock). */
+  repossessable?: boolean
   limit?: number
 }): Promise<ApiResponse<InstallmentAccountListResponse>> {
   try {

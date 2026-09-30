@@ -566,7 +566,10 @@ export default function ReceiveStockModal({
     setValue(`lines.${index}.existingSerialNumberIds`, [unit.serialNumberId], {
       shouldValidate: false,
     })
-    setValue(`lines.${index}.unitCost`, unit.unitCost ?? undefined, { shouldValidate: false })
+    // Repo Cost, not the original sale cost — the client's formula.
+    setValue(`lines.${index}.unitCost`, unit.repoCost > 0 ? unit.repoCost : undefined, {
+      shouldValidate: false,
+    })
   }
 
   /** The form only ever stores a picked serial's id — this resolves its
@@ -588,10 +591,10 @@ export default function ReceiveStockModal({
    * moment it crosses 0. */
   function hasOriginalCost(fieldId: string, serialNumberId?: string): boolean {
     if (!serialNumberId) return false
-    const unitCost = unitItemsByField[fieldId]?.find(
+    const repoCost = unitItemsByField[fieldId]?.find(
       (u) => u.serialNumberId === serialNumberId
-    )?.unitCost
-    return unitCost != null && unitCost > 0
+    )?.repoCost
+    return repoCost != null && repoCost > 0
   }
 
   function toggleFreebie(index: number): void {
