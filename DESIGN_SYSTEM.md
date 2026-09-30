@@ -1,8 +1,8 @@
-# Prominent Enterprise Design System
+# NIG Central Design System
 
 ## Color Palette
 
-The Prominent Enterprise application uses a cohesive color palette based on deep purple and bright orange accents.
+NIG Central application uses a cohesive color palette based on deep purple and bright orange accents.
 
 ### Primary Colors
 

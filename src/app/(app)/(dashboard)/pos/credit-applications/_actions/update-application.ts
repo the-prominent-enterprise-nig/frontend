@@ -33,7 +33,17 @@ export async function updateCreditApplication(
     }
   }
 
-  const result = await api.patch<CreditApplication>(`/credit/applications/${id}`, parsed.data)
+  const payload = {
+    ...parsed.data,
+    // Backend trusts this client-supplied price over its own Price List
+    // resolution — see credit/applications schema's items.estimatedPrice comment.
+    items: parsed.data.items?.map(({ itemId, estimatedPrice }) => ({
+      itemId,
+      unitPrice: estimatedPrice,
+    })),
+  }
+
+  const result = await api.patch<CreditApplication>(`/credit/applications/${id}`, payload)
   if (!result.success) {
     const msg =
       typeof result.message === 'string' ? result.message : 'Failed to update credit application'

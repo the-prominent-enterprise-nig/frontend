@@ -4,7 +4,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import InstallmentInterestReleaseView from './_components/InstallmentInterestReleaseView'
 
 export const metadata = {
-  title: 'Installment Interest Release | Prominent Enterprise',
+  title: 'Installment Interest Release | NIG Central',
 }
 
 export default async function InstallmentInterestReleasePage() {

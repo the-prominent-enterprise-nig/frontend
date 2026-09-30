@@ -45,7 +45,7 @@ export default async function OnboardPage({
             <Building2 className="h-6 w-6 text-white" />
           </div>
           <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
-            Prominent Enterprise
+            NIG Central
           </p>
         </div>
 

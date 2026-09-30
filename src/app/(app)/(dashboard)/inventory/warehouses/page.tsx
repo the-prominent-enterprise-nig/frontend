@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { WarehouseList } from './_components'
 
 export const metadata = {
-  title: 'Warehouses | Prominent Enterprise',
+  title: 'Warehouses | NIG Central',
   description: 'Manage warehouses and storage sub-locations for stock tracking',
 }
 

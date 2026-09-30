@@ -205,6 +205,12 @@ interface CartLine {
   payNowMethod?: PayNowMethod
   financingTermId?: string
   downPaymentInput?: string
+  /** Which priceListItemId downPaymentInput was auto-derived for (curated
+   * or 10%-floor) — unset when the cashier typed it themselves, or copied
+   * in from an approved credit application. Lets a later Price Use change
+   * tell "stale auto-fill, safe to recompute" apart from "an entry that
+   * must never be silently overwritten". */
+  downPaymentAutoForPriceListItemId?: string | null
 }
 
 interface PaymentRow {
@@ -223,6 +229,157 @@ interface PaymentRow {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+// Dropdown that reads as clickable: white field, purple border, visible
+// chevron. Tinted purple once a value is chosen.
+function PillSelect({
+  filled,
+  wrapperClassName = '',
+  className = '',
+  children,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  filled: boolean
+  wrapperClassName?: string
+}) {
+  return (
+    <div className={`relative ${wrapperClassName}`}>
+      <select
+        {...props}
+        className={`w-full cursor-pointer appearance-none rounded-lg border-2 py-2.5 pl-3 pr-10 text-[13px] font-semibold shadow-sm outline-none transition-colors hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 ${
+          filled
+            ? 'border-purple-300 bg-purple-50 text-purple-800'
+            : 'border-purple-200 bg-white text-gray-600'
+        } ${className}`}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-500"
+      />
+    </div>
+  )
+}
+
+// Searchable version of PillSelect: type to filter, arrows + Enter to pick.
+function PillCombobox({
+  options,
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  wrapperClassName = '',
+}: {
+  options: { value: string; label: string }[]
+  value: string | undefined
+  onChange: (value: string | undefined) => void
+  placeholder: string
+  ariaLabel: string
+  wrapperClassName?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const selected = options.find((o) => o.value === value)
+  const q = query.trim().toLowerCase()
+  const filtered = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  function pick(v: string | undefined) {
+    onChange(v)
+    setOpen(false)
+    setQuery('')
+  }
+
+  return (
+    <div ref={rootRef} className={`relative ${wrapperClassName}`}>
+      <input
+        type="text"
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        autoComplete="off"
+        value={open ? query : (selected?.label ?? '')}
+        placeholder={open && selected ? selected.label : placeholder}
+        onFocus={() => {
+          setOpen(true)
+          setActive(0)
+        }}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setActive(0)
+          setOpen(true)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setOpen(true)
+            setActive((a) => Math.min(a + 1, filtered.length - 1))
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setActive((a) => Math.max(a - 1, 0))
+          } else if (e.key === 'Enter' && open) {
+            e.preventDefault()
+            if (filtered[active]) pick(filtered[active].value)
+          } else if (e.key === 'Escape') {
+            setOpen(false)
+            setQuery('')
+          }
+        }}
+        className={`w-full cursor-pointer rounded-lg border-2 py-2.5 pl-3 pr-10 text-[13px] font-semibold shadow-sm outline-none transition-colors placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 ${
+          selected && !open
+            ? 'border-purple-300 bg-purple-50 text-purple-800'
+            : 'border-purple-200 bg-white text-gray-800'
+        }`}
+      />
+      <ChevronDown
+        aria-hidden
+        className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-500 transition-transform ${open ? 'rotate-180' : ''}`}
+      />
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-purple-200 bg-white py-1 shadow-lg"
+        >
+          {filtered.length === 0 ? (
+            <li className="px-3 py-2 text-[13px] text-gray-400">No matches</li>
+          ) : (
+            filtered.map((o, i) => (
+              <li
+                key={o.value}
+                role="option"
+                aria-selected={o.value === value}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  pick(o.value)
+                }}
+                onMouseEnter={() => setActive(i)}
+                className={`cursor-pointer px-3 py-2 text-[13px] font-medium ${
+                  i === active ? 'bg-purple-100 text-purple-800' : 'text-gray-700'
+                } ${o.value === value ? 'font-semibold' : ''}`}
+              >
+                {o.label}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   cash: 'Cash',
@@ -512,7 +669,9 @@ export default function CheckoutPage() {
   // just applied to every line at once via the toggle's onClick below
   // instead of chosen per line). If any item needs a different mode, that's
   // a separate transaction.
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment' | 'credit_card'>('cash')
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment' | 'delivery_receipt'>(
+    'cash'
+  )
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -525,10 +684,13 @@ export default function CheckoutPage() {
   // Scenario 37 — same treatment for Cash's own sub-choice (Cash on Hand /
   // Bank Transfer / QR), captured once via Item Payment Mode (transaction-
   // scoped, see hasCashLine), carried into whatever payment row gets added.
-  const [cashSubMode, setCashSubMode] = useState<'cash_on_hand' | 'bank_transfer' | 'qr'>(
-    'cash_on_hand'
-  )
+  const [cashSubMode, setCashSubMode] = useState<
+    'cash_on_hand' | 'check' | 'bank_transfer' | 'qr' | 'card'
+  >('cash_on_hand')
   const [cashPaymentOptionId, setCashPaymentOptionId] = useState<string | undefined>()
+  // The check's own number, captured once for the transaction while the Check
+  // sub-mode is chosen.
+  const [checkNumber, setCheckNumber] = useState('')
   // Scenario 38 Gap 7 — the cashier confirms the transfer already landed at
   // the register (e.g. checked the business's own banking app in real
   // time), so it posts straight to Cash in Bank instead of the usual
@@ -674,13 +836,27 @@ export default function CheckoutPage() {
       prev.map((line) => {
         if (line.priceOverrideBy) return line
         if (!line.priceUseTypeId) return line
+        // A downPaymentInput this line auto-filled for its PREVIOUS
+        // priceListItemId (curated or 10%-floor) is now stale the moment
+        // Price Use resolves to a different one — e.g. WIP's curated 2,900
+        // must not linger once the line switches to CR-BR's 2,600. A value
+        // the cashier actually typed (or one copied from an approved
+        // credit application) never carries this marker, so it survives.
+        // Recomputed immediately (never just cleared to blank) since a
+        // financingTermId may already be active and the installment-preview
+        // fetch reads downPaymentInput directly — a blank value would send
+        // a 0 down payment to that preview until something else refilled it.
+        const isStaleAutoDownPayment = (newPriceListItemId: string | null) =>
+          line.downPaymentAutoForPriceListItemId !== undefined &&
+          line.downPaymentAutoForPriceListItemId !== newPriceListItemId
         const resolved = resolvedPrices[resolutionKey(line.itemId, line.priceUseTypeId)]
         if (!resolved) {
           // No active price list matches this line's picked Price Use — clear
           // unitPrice back to 0 too, not just the resolved flags. Leaving the
           // old Price Use's unitPrice in place kept the Order Summary total
           // frozen on the stale price even though the per-line cell correctly
-          // switched to "No price — Override".
+          // switched to "No price — Override". Nothing to recompute a down
+          // payment against here, so a stale auto-fill just goes blank.
           return line.priceResolved
             ? {
                 ...line,
@@ -688,16 +864,38 @@ export default function CheckoutPage() {
                 priceResolved: false,
                 priceListItemId: null,
                 priceListDownPayment: null,
+                ...(isStaleAutoDownPayment(null)
+                  ? { downPaymentInput: undefined, downPaymentAutoForPriceListItemId: undefined }
+                  : {}),
               }
             : line
         }
         if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line
+        const recomputedDownPayment = isStaleAutoDownPayment(resolved.priceListItemId)
+          ? {
+              downPaymentInput: (resolved.downPayment != null
+                ? Number(resolved.downPayment)
+                : Math.ceil(
+                    effectiveUnitPrice(
+                      { ...line, unitPrice: resolved.price },
+                      activeTaxRate,
+                      inclusivePricing,
+                      isTaxExempt
+                    ) *
+                      line.quantity *
+                      0.1
+                  )
+              ).toFixed(2),
+              downPaymentAutoForPriceListItemId: resolved.priceListItemId,
+            }
+          : {}
         return {
           ...line,
           unitPrice: resolved.price,
           priceListItemId: resolved.priceListItemId,
           priceListDownPayment: resolved.downPayment,
           priceResolved: true,
+          ...recomputedDownPayment,
         }
       })
     )
@@ -1244,14 +1442,14 @@ export default function CheckoutPage() {
   // paid by card in this sale, so the POS Terminal/Straight-Installment/Term
   // fields render once, not per line.
   const hasCreditCardLine =
-    (cashCartLines.length > 0 && paymentMode === 'credit_card') ||
+    (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
     (installmentCartLines.length > 0 && installmentPaymentMethod === 'credit_card')
   // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR). Also
   // covers the down payment's cash tendering now that it shares this pool —
   // cash-lines and installment-lines never coexist in one cart, so only one
   // of the two OR branches is ever true.
   const hasCashLine =
-    (cashCartLines.length > 0 && paymentMode === 'cash') ||
+    (cashCartLines.length > 0 && paymentMode !== 'installment') ||
     (installmentCartLines.length > 0 && installmentPaymentMethod === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
@@ -1459,7 +1657,7 @@ export default function CheckoutPage() {
     installmentCartLines
       .map(
         (l) =>
-          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}`
+          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}`
       )
       .join('|') + `|employeeLoan:${employeeApplianceLoanActive}`
 
@@ -1655,6 +1853,15 @@ export default function CheckoutPage() {
           totalAmount: lineAmount,
           downPayment,
           financingTermId,
+          // Curated PriceListItemTerm (the real rate card) wins over the
+          // generic factorRate calculation when one exists for this SKU +
+          // term — matches the down-payment badge above, which already
+          // sources from this same line.priceListItemId. Previously omitted
+          // here, so the preview silently fell back to the generic formula
+          // even for a rate-card SKU (found 2026-09-22: DP badge showed the
+          // curated ₱3,590 but the monthly installment showed the generic
+          // ₱4,575.60 instead of the rate card's ₱5,130).
+          priceListItemId: line.priceListItemId ?? undefined,
         })
         setInstallmentPreviews((prev) => ({
           ...prev,
@@ -1990,6 +2197,7 @@ export default function CheckoutPage() {
                 ? {
                     financingTermId: undefined,
                     downPaymentInput: undefined,
+                    downPaymentAutoForPriceListItemId: undefined,
                     installmentProvider: undefined,
                   }
                 : {}),
@@ -2025,13 +2233,21 @@ export default function CheckoutPage() {
         // moment to hang the down-payment pre-fill off the way inhouse does
         // (see setLineFinancingTermId) — seed it here instead, so the panel
         // never opens on a blank field that reads as "nothing to collect".
+        // Same curated-over-floor priority as setLineFinancingTermId().
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
+        const fallbackDownPayment =
+          l.priceListDownPayment != null
+            ? Number(l.priceListDownPayment).toFixed(2)
+            : Math.ceil(lineAmount * 0.1).toFixed(2)
         return {
           ...l,
           installmentProvider: provider,
           financingTermId: undefined,
-          downPaymentInput: l.downPaymentInput ?? Math.ceil(0.1 * lineAmount).toFixed(2),
+          downPaymentInput: l.downPaymentInput ?? fallbackDownPayment,
+          downPaymentAutoForPriceListItemId: l.downPaymentInput
+            ? l.downPaymentAutoForPriceListItemId
+            : (l.priceListItemId ?? null),
         }
       })
     )
@@ -2114,6 +2330,12 @@ export default function CheckoutPage() {
           ...l,
           financingTermId: application.financingTermId ?? l.financingTermId,
           downPaymentInput,
+          // An approved application's figure is authoritative, same as a
+          // cashier's own typed entry — a later Price Use change must not
+          // treat it as a stale auto-fill and silently recompute it away.
+          downPaymentAutoForPriceListItemId: dpByLine.has(l.lineId)
+            ? undefined
+            : l.downPaymentAutoForPriceListItemId,
         }
       })
     )
@@ -2142,14 +2364,27 @@ export default function CheckoutPage() {
                   l.quantity *
                   0.1
               ).toFixed(2)
-        return { ...l, financingTermId, downPaymentInput }
+        return {
+          ...l,
+          financingTermId,
+          downPaymentInput,
+          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+        }
       })
     )
   }
 
   function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, downPaymentInput } : l)))
+    setCart((prev) =>
+      prev.map((l) =>
+        ids.has(l.lineId)
+          ? // An explicit cashier edit — no longer an auto-fill a later
+            // Price Use change is allowed to silently recompute.
+            { ...l, downPaymentInput, downPaymentAutoForPriceListItemId: undefined }
+          : l
+      )
+    )
   }
 
   function toggleDownPaymentEdit(lineId: string) {
@@ -2299,7 +2534,7 @@ export default function CheckoutPage() {
   function preferredPaymentMethodKey(): PosPaymentMethod | null {
     if (hasCreditCardLine) return 'card'
     if (hasCashLine) {
-      return cashSubMode === 'cash_on_hand'
+      return cashSubMode === 'cash_on_hand' || cashSubMode === 'check'
         ? 'cash'
         : cashSubMode === 'bank_transfer'
           ? 'bank_transfer'
@@ -2552,21 +2787,24 @@ export default function CheckoutPage() {
         setError('Only cash payments are accepted while offline.')
         return
       }
-      // CR Number (collection receipt) is required on every row whenever
-      // this sale has an inhouse installment/down-payment component, or a
-      // pure-TPF cart's own down payment — it doubles as the receipt/CR
-      // number issued at the time the down payment is collected, so plain
-      // cash isn't exempt the way it is elsewhere. A plain sale still needs
-      // a reference for card/bank/e-wallet/etc. (REF_METHODS), just not for
-      // plain cash.
+      // CR Number (collection receipt) is required on every payment row of
+      // a sale, whatever the method — cash on hand and check included.
+      // Reserve mode still only asks for a reference on REF_METHODS.
       const missingRef = payments.find(
         (p) =>
           p.amount > 0 &&
           !p.referenceNumber.trim() &&
-          (inhouseInstallmentCartLines.length > 0 ||
-            (isPureTpfCart && tpfDownPaymentsTotal > 0) ||
-            REF_METHODS.includes(p.method))
+          (saleMode === 'sale' || REF_METHODS.includes(p.method))
       )
+      if (
+        hasCashLine &&
+        cashSubMode === 'check' &&
+        !checkNumber.trim() &&
+        payments.some((p) => p.method === 'cash' && p.amount > 0)
+      ) {
+        setError('Check Number is required for check payments.')
+        return
+      }
       if (missingRef) {
         setError(`CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
         return
@@ -2865,6 +3103,10 @@ export default function CheckoutPage() {
             paymentMethod: row.method,
             amount,
             referenceNumber: row.referenceNumber || undefined,
+            checkNumber:
+              row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+                ? checkNumber.trim() || undefined
+                : undefined,
             paymentMethodConfigId: row.configId,
             // Scenario 37 — card's terminal/txn-mode/term, and bank_transfer/qr's
             // bank/gateway, all come from the Payment Method toggle's
@@ -2874,7 +3116,11 @@ export default function CheckoutPage() {
                 ? cardTerminalOptionId
                 : row.method === 'bank_transfer' || row.method === 'qr'
                   ? cashPaymentOptionId
-                  : row.paymentMethodOptionId,
+                  : row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+                    ? configuredMethods
+                        .find((m) => m.key === 'cash')
+                        ?.options.find((o) => o.isEnabled && o.name === 'Check')?.id
+                    : row.paymentMethodOptionId,
             cardTxnMode: row.method === 'card' ? cardTxnMode : undefined,
             cardInstallmentTerm: row.method === 'card' ? cardInstallmentTerm : undefined,
             bankTransferVerifiedAtRegister:
@@ -3567,7 +3813,7 @@ export default function CheckoutPage() {
 
         {/* ── Right: Customer + Summary + Payment ─────────────────────────────── */}
         <div
-          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-130 lg:w-150 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
+          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-140 lg:w-165 xl:w-180 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
@@ -4358,12 +4604,14 @@ export default function CheckoutPage() {
                     different mode, it's a separate transaction. */}
                 <div className="relative">
                   <div className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1">
-                    {(['cash', 'installment', 'credit_card'] as const).map((mode) => (
+                    {(['cash', 'installment', 'delivery_receipt'] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => {
                           setPaymentMode(mode)
+                          if (mode === 'installment' && cashSubMode === 'card')
+                            setCashSubMode('cash_on_hand')
                           setLineInvoiceType(
                             cart.map((l) => l.lineId),
                             mode === 'installment' ? 'installment' : 'cash'
@@ -4379,7 +4627,7 @@ export default function CheckoutPage() {
                           ? 'Cash'
                           : mode === 'installment'
                             ? 'Installment'
-                            : 'Debit/Credit Card'}
+                            : 'Delivery Receipt'}
                       </button>
                     ))}
                   </div>
@@ -4402,11 +4650,23 @@ export default function CheckoutPage() {
                   // payment entirely, overriding whatever was typed/defaulted
                   // before the checkbox was checked, both for display here
                   // and for what actually gets submitted (see handleConfirm).
+                  //
+                  // Otherwise, same priority as setLineFinancingTermId()'s
+                  // auto-fill: a curated per-SKU down payment from the real
+                  // rate card wins over the generic 10%-floor fallback when
+                  // one exists — the DISPLAY-time version of that rule, for
+                  // before a term has been picked yet (downPaymentInput still
+                  // unset) so the shown figure doesn't disagree with what
+                  // picking a term is about to fill in.
+                  const curatedDownPaymentWhole =
+                    line.priceListDownPayment != null
+                      ? Math.round(Number(line.priceListDownPayment))
+                      : null
                   const downPaymentValue = employeeApplianceLoanActive
                     ? 0
                     : line.downPaymentInput
                       ? parseFloat(line.downPaymentInput) || 0
-                      : minDownPaymentWhole
+                      : (curatedDownPaymentWhole ?? minDownPaymentWhole)
                   const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
@@ -4524,7 +4784,7 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      10% min
+                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
@@ -4544,7 +4804,9 @@ export default function CheckoutPage() {
                               {!employeeApplianceLoanActive && (
                                 <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                   <span className="text-prominent-purple-400">●</span>
-                                  Fixed at 10% of the sale amount — the same for every term.
+                                  {curatedDownPaymentWhole !== null
+                                    ? 'From the rate card for this term — the minimum accepted is still 10% of the sale amount.'
+                                    : 'Fixed at 10% of the sale amount — the same for every term.'}
                                 </p>
                               )}
                               {line.financingTermId && (
@@ -4635,7 +4897,7 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      10% min
+                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
@@ -4769,7 +5031,10 @@ export default function CheckoutPage() {
                   >
                     <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
                     <div className="flex gap-1.5">
-                      {(['cash_on_hand', 'bank_transfer', 'qr'] as const).map((mode) => (
+                      {(paymentMode === 'installment'
+                        ? (['cash_on_hand', 'check', 'bank_transfer', 'qr'] as const)
+                        : (['cash_on_hand', 'check', 'bank_transfer', 'qr', 'card'] as const)
+                      ).map((mode) => (
                         <button
                           key={mode}
                           type="button"
@@ -4786,34 +5051,44 @@ export default function CheckoutPage() {
                         >
                           {mode === 'cash_on_hand'
                             ? 'Cash on Hand'
-                            : mode === 'bank_transfer'
-                              ? 'Bank Transfer'
-                              : 'QR'}
+                            : mode === 'check'
+                              ? 'Check'
+                              : mode === 'bank_transfer'
+                                ? 'Bank Transfer'
+                                : mode === 'card'
+                                  ? 'Debit/Credit Card'
+                                  : 'QR'}
                         </button>
                       ))}
                     </div>
                     {cashSubMode !== 'cash_on_hand' &&
+                      cashSubMode !== 'check' &&
+                      cashSubMode !== 'card' &&
                       (() => {
                         const config = configuredMethods.find((m) => m.key === cashSubMode)
                         const options = config?.options.filter((o) => o.isEnabled) ?? []
                         if (options.length === 0) return null
                         const label = cashSubMode === 'bank_transfer' ? 'Bank' : 'Gateway'
                         return (
-                          <select
-                            aria-label={label}
-                            className="mt-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                            value={cashPaymentOptionId ?? ''}
-                            onChange={(e) => setCashPaymentOptionId(e.target.value || undefined)}
-                          >
-                            <option value="">{`Select ${label.toLowerCase()}…`}</option>
-                            {options.map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.name}
-                              </option>
-                            ))}
-                          </select>
+                          <PillCombobox
+                            ariaLabel={label}
+                            wrapperClassName="mt-1.5"
+                            placeholder={`Select ${label.toLowerCase()}…`}
+                            options={options.map((o) => ({ value: o.id, label: o.name }))}
+                            value={cashPaymentOptionId}
+                            onChange={setCashPaymentOptionId}
+                          />
                         )
                       })()}
+                    {cashSubMode === 'check' && (
+                      <input
+                        aria-label="Check Number"
+                        className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                        placeholder="Check Number (required)"
+                        value={checkNumber}
+                        onChange={(e) => setCheckNumber(e.target.value)}
+                      />
+                    )}
                     {cashSubMode === 'bank_transfer' && (
                       <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
                         <input
@@ -4840,19 +5115,14 @@ export default function CheckoutPage() {
                       return (
                         <>
                           {terminalOptions.length > 0 && (
-                            <select
-                              aria-label="POS Terminal"
-                              className="mb-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                              value={cardTerminalOptionId ?? ''}
-                              onChange={(e) => setCardTerminalOptionId(e.target.value || undefined)}
-                            >
-                              <option value="">Select pos terminal…</option>
-                              {terminalOptions.map((o) => (
-                                <option key={o.id} value={o.id}>
-                                  {o.name}
-                                </option>
-                              ))}
-                            </select>
+                            <PillCombobox
+                              ariaLabel="POS Terminal"
+                              wrapperClassName="mb-1.5"
+                              placeholder="Select pos terminal…"
+                              options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
+                              value={cardTerminalOptionId}
+                              onChange={setCardTerminalOptionId}
+                            />
                           )}
                           <div className="flex gap-1.5">
                             {(['straight', 'installment'] as const).map((mode) => (
@@ -4876,9 +5146,10 @@ export default function CheckoutPage() {
                             ))}
                           </div>
                           {cardTxnMode === 'installment' && (
-                            <select
+                            <PillSelect
                               aria-label="Term"
-                              className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${!cardInstallmentTerm ? 'border-amber-300 bg-amber-50' : 'border-purple-200'}`}
+                              filled={!!cardInstallmentTerm}
+                              wrapperClassName="mt-1.5"
                               value={cardInstallmentTerm ?? ''}
                               onChange={(e) =>
                                 setCardInstallmentTerm(
@@ -4886,13 +5157,13 @@ export default function CheckoutPage() {
                                 )
                               }
                             >
-                              <option value="">Select term… * required</option>
+                              <option value="">Select Term (required)</option>
                               {[3, 6, 9, 12, 18, 24].map((m) => (
                                 <option key={m} value={m}>
                                   {m} months
                                 </option>
                               ))}
-                            </select>
+                            </PillSelect>
                           )}
                         </>
                       )
@@ -5060,21 +5331,12 @@ export default function CheckoutPage() {
                     always need their own reference, installment or not —
                     same as reserve mode. */}
                 {payments.some(
-                  (p) =>
-                    (saleMode === 'sale' &&
-                      (inhouseInstallmentCartLines.length > 0 ||
-                        (isPureTpfCart && tpfDownPaymentsTotal > 0))) ||
-                    REF_METHODS.includes(p.method) ||
-                    p.refFieldLabel
+                  (p) => saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
                 ) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
                       const needsRef =
-                        (saleMode === 'sale' &&
-                          (inhouseInstallmentCartLines.length > 0 ||
-                            (isPureTpfCart && tpfDownPaymentsTotal > 0))) ||
-                        REF_METHODS.includes(p.method) ||
-                        p.refFieldLabel
+                        saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
                       const label =
                         p.refFieldLabel ??
                         (saleMode === 'sale'
@@ -5089,9 +5351,7 @@ export default function CheckoutPage() {
                       // (matches the same-scoped check at submit time).
                       const isRequired =
                         saleMode === 'sale'
-                          ? inhouseInstallmentCartLines.length > 0 ||
-                            (isPureTpfCart && tpfDownPaymentsTotal > 0) ||
-                            REF_METHODS.includes(p.method)
+                          ? true
                           : (p.refRequired ?? REF_METHODS.includes(p.method))
                       // Scenario 37 — POS Terminal (card) / Bank (bank_transfer) /
                       // Gateway (qr) all live in Item Payment Mode now (transaction-
@@ -5241,7 +5501,7 @@ export default function CheckoutPage() {
                                             : needsManagerOverride && !managerOverrideApproved
                                               ? 'Manager override required'
                                               : cart.some((l) => l.isSerialTracked)
-                                                ? 'Submit for Approval'
+                                                ? 'Checkout'
                                                 : saleMode === 'reserve'
                                                   ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
                                                   : allCharge

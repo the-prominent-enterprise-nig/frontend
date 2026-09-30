@@ -261,6 +261,7 @@ export interface PosPayment {
   paymentMethod: PosPaymentMethod
   amount: number
   referenceNumber?: string | null
+  checkNumber?: string | null
   giftCardId?: string | null
   createdAt: string
 }
@@ -643,6 +644,8 @@ export interface AddPaymentInput {
   amount: number
   giftCardId?: string
   referenceNumber?: string
+  /** The check's own number — cash tendered via the Check sub-mode. */
+  checkNumber?: string
   paymentMethodConfigId?: string
   /** Named sub-choice used (Scenario 37) — POS Terminal for card, bank for
    * bank_transfer, gateway for qr. */
@@ -1072,6 +1075,10 @@ export interface ComputeInstallmentPreviewInput {
   totalAmount: number
   downPayment?: number
   financingTermId: string
+  /** When given, a curated PriceListItemTerm (the real rate card) for this
+   * SKU + term wins over the generic factorRate calculation, if one exists
+   * — see FinancingTermsService.preview(). */
+  priceListItemId?: string
 }
 
 export interface InstallmentScheduleLineWithInvoice {

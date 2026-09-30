@@ -32,7 +32,17 @@ export async function createCreditApplication(
     }
   }
 
-  const result = await api.post<CreditApplication>('/credit/applications', parsed.data)
+  const payload = {
+    ...parsed.data,
+    // Backend trusts this client-supplied price over its own Price List
+    // resolution — see credit/applications schema's items.estimatedPrice comment.
+    items: parsed.data.items.map(({ itemId, estimatedPrice }) => ({
+      itemId,
+      unitPrice: estimatedPrice,
+    })),
+  }
+
+  const result = await api.post<CreditApplication>('/credit/applications', payload)
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')
     const msg =

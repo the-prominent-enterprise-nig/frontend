@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { CostingConfigForm } from './_components'
 
 export const metadata = {
-  title: 'Inventory Settings | Prominent Enterprise',
+  title: 'Inventory Settings | NIG Central',
   description: 'Manage inventory settings and configurations',
 }
 

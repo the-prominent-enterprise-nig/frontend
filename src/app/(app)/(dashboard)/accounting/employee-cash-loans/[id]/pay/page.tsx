@@ -5,7 +5,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import PayLoanForm from './_components/PayLoanForm'
 
 export const metadata = {
-  title: 'Pay Employee Cash Loan | Prominent Enterprise',
+  title: 'Pay Employee Cash Loan | NIG Central',
   description: 'Record a payment against an Others cash loan',
 }
 

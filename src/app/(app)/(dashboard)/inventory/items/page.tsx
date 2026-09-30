@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { ItemMasterList } from './_components'
 
 export const metadata = {
-  title: 'Item Master | Prominent Enterprise',
+  title: 'Item Master | NIG Central',
   description: 'Create and manage product records in the Item Master',
 }
 

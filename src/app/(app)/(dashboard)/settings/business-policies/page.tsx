@@ -5,7 +5,7 @@ import { getBusinessProfile } from '@/src/libs/actions/enterprise.actions'
 import BusinessPoliciesSection from '@/src/components/settings/BusinessPoliciesSection'
 
 export const metadata = {
-  title: 'Business Policies | Prominent Enterprise',
+  title: 'Business Policies | NIG Central',
 }
 
 // One page for cross-module, owner-level decisions — each module's policies

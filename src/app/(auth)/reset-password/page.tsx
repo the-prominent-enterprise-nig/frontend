@@ -162,7 +162,7 @@ function ResetPasswordContent() {
           </div>
 
           <p className="relative text-[10px] text-violet-400/50">
-            © {new Date().getFullYear()} Prominent Enterprise
+            © {new Date().getFullYear()} NIG Central
           </p>
         </div>
 

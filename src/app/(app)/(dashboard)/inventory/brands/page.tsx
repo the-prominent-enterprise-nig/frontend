@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { BrandsPageView } from './_components'
 
 export const metadata = {
-  title: 'Item Brands | Prominent Enterprise',
+  title: 'Item Brands | NIG Central',
   description: 'Create and manage brands used to classify inventory items',
 }
 

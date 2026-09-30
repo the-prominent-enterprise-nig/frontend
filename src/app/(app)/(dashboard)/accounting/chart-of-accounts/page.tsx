@@ -4,7 +4,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { ChartOfAccountsList } from './_components/ChartOfAccountsList'
 
 export const metadata = {
-  title: 'Chart of Accounts | Prominent Enterprise',
+  title: 'Chart of Accounts | NIG Central',
   description: 'Manage accounting accounts',
 }
 

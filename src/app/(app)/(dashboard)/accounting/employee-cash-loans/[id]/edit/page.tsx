@@ -5,7 +5,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import EditLoanForm from '../_components/EditLoanForm'
 
 export const metadata = {
-  title: 'Edit Employee Cash Loan | Prominent Enterprise',
+  title: 'Edit Employee Cash Loan | NIG Central',
   description: 'Edit an employee cash loan',
 }
 

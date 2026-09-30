@@ -4,7 +4,7 @@ import { can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { CashInTransitList } from '../../pos/undeposited-funds/_components/CashInTransitList'
 
-export const metadata = { title: 'Cash-in-Transit | Prominent Enterprise' }
+export const metadata = { title: 'Cash-in-Transit | NIG Central' }
 
 /**
  * Scenario 53 — Accounting's own view of Cash-in-Transit.
