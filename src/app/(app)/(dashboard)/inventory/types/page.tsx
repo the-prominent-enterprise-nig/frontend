@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { TypesPageView } from './_components'
 
 export const metadata = {
-  title: 'Item Types | Prominent Enterprise',
+  title: 'Item Types | NIG Central',
   description: 'Create and manage item types used to classify inventory items',
 }
 

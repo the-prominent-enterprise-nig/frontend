@@ -5,7 +5,7 @@ import { getPaymentMethods } from '../../pos/_actions/pos-actions'
 import PaymentMethodOptionsSection from './_components/PaymentMethodOptionsSection'
 
 export const metadata = {
-  title: 'Payment Methods | Prominent Enterprise',
+  title: 'Payment Methods | NIG Central',
 }
 
 // Scenario 37 — manages the named sub-choices under a payment method (POS

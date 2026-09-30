@@ -3,27 +3,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import {
-  Plus,
-  RefreshCw,
-  Pencil,
-  Trash2,
-  CheckCircle,
-  Ban,
-  Search,
-  Printer,
-  Eye,
-} from 'lucide-react'
+import { Plus, Pencil, Trash2, CheckCircle, Ban, Search, Printer, Eye } from 'lucide-react'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
-import {
-  BranchesApi,
-  DepartmentsApi,
-  type BranchLite,
-  type Department,
-} from '@/src/libs/data/OrgStructureData'
+import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
 
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -90,14 +75,6 @@ function extra(x: BusinessExpense): string {
   return x.payments.length > 1 ? ` +${x.payments.length - 1} more` : ''
 }
 
-// Where the money left from: the named bank when it was a transfer, the
-// method itself otherwise (Cash has no account to name).
-function paidFromLabel(x: BusinessExpense): string {
-  if (x.payments.length === 0) return '—'
-  const p = x.payments[0]
-  return (p.bankAccount || p.paymentMethod.replace(/_/g, ' ')) + extra(x)
-}
-
 function referenceLabel(x: BusinessExpense): string {
   const first = x.payments.find((p) => p.reference)?.reference
   return first ? first + extra(x) : '—'
@@ -111,13 +88,9 @@ export default function ExpensesList() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  // Division filters — an entry matches when any of its lines carries that
-  // branch or department. Department still narrows to the chosen branch,
-  // which is the only reason Branch appears here at all.
+  // An entry matches when any of its lines carries the chosen branch.
   const [branchFilter, setBranchFilter] = useState('')
-  const [departmentFilter, setDepartmentFilter] = useState('')
   const [branches, setBranches] = useState<BranchLite[]>([])
-  const [departments, setDepartments] = useState<Department[]>([])
 
   const expenseAccounts = accounts.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE')
 
@@ -128,11 +101,10 @@ export default function ExpensesList() {
       status: statusFilter || undefined,
       categoryAccountId: categoryFilter || undefined,
       divisionBranchId: branchFilter || undefined,
-      divisionDepartmentId: departmentFilter || undefined,
     })
     setItems(res.data?.items ?? [])
     setLoading(false)
-  }, [search, statusFilter, categoryFilter, branchFilter, departmentFilter])
+  }, [search, statusFilter, categoryFilter, branchFilter])
 
   useEffect(() => {
     load()
@@ -141,19 +113,6 @@ export default function ExpensesList() {
   useEffect(() => {
     BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
   }, [])
-  useEffect(() => {
-    if (!branchFilter) {
-      setDepartments([])
-      return
-    }
-    let cancelled = false
-    DepartmentsApi.list({ branchId: branchFilter }).then((r) => {
-      if (!cancelled) setDepartments(r.data?.data ?? [])
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [branchFilter])
   useEffect(() => {
     getAccounts({ limit: 500 }).then((r) =>
       setAccounts(((r.data as any)?.items ?? r.data ?? []) as Account[])
@@ -220,45 +179,41 @@ export default function ExpensesList() {
     else alert(res.message || res.error || 'Could not build the voucher')
   }
 
+  const selectCls =
+    'h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-purple-500'
+
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-6">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold">Expenses</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="text-2xl font-bold text-prominent-purple-900">Expenses</h2>
+          <p className="mt-1 text-sm text-zinc-500">
             Record and categorize business expenses. Recording posts a journal entry to the GL.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
-          <Link
-            href="/accounting/expenses/new"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
-          >
-            <Plus className="w-4 h-4" /> New Expense
-          </Link>
-        </div>
+        <Link
+          href="/accounting/expenses/new"
+          className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800"
+        >
+          <Plus className="h-4 w-4" /> New Expense
+        </Link>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[240px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search # / reference / payee / description..."
-            className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg w-64"
+            placeholder="Search"
+            className="h-10 w-full rounded-lg border border-zinc-200 bg-white pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          aria-label="Filter by status"
+          className={selectCls}
         >
           <option value="">All statuses</option>
           <option value="DRAFT">Draft</option>
@@ -268,7 +223,8 @@ export default function ExpensesList() {
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          aria-label="Filter by account"
+          className={`${selectCls} max-w-[260px]`}
         >
           <option value="">All accounts</option>
           {expenseAccounts.map((a) => (
@@ -279,12 +235,9 @@ export default function ExpensesList() {
         </select>
         <select
           value={branchFilter}
-          onChange={(e) => {
-            setBranchFilter(e.target.value)
-            setDepartmentFilter('')
-          }}
+          onChange={(e) => setBranchFilter(e.target.value)}
           aria-label="Filter by branch"
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          className={selectCls}
         >
           <option value="">All branches</option>
           {branches.map((b) => (
@@ -293,93 +246,84 @@ export default function ExpensesList() {
             </option>
           ))}
         </select>
-        <select
-          value={departmentFilter}
-          onChange={(e) => setDepartmentFilter(e.target.value)}
-          disabled={!branchFilter}
-          aria-label="Filter by department"
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg disabled:bg-gray-50 disabled:text-gray-400"
-        >
-          <option value="">{branchFilter ? 'All departments' : 'Pick a branch first'}</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-            <tr>
-              <th className="px-3 py-2 text-left">Date</th>
-              <th className="px-3 py-2 text-left">Reference</th>
-              <th className="px-3 py-2 text-left">Paid from</th>
-              <th className="px-3 py-2 text-left">Payee</th>
-              <th className="px-3 py-2 text-left">Accounts</th>
-              <th className="px-3 py-2 text-right">Amount</th>
-              <th className="px-3 py-2 text-left">Voucher #</th>
-              <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {loading ? (
+      <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
-                  Loading...
-                </td>
+                <th className="px-5 py-3 text-left font-semibold">Date</th>
+                <th className="px-5 py-3 text-left font-semibold">Payee</th>
+                <th className="px-5 py-3 text-right font-semibold">Amount</th>
+                <th className="px-5 py-3 text-left font-semibold">Status</th>
+                <th className="w-12 px-3 py-3">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
-                  No expenses.
-                </td>
-              </tr>
-            ) : (
-              items.map((x) => (
-                <tr
-                  key={x.id}
-                  onClick={() => router.push(`/accounting/expenses/${x.id}`)}
-                  className="cursor-pointer hover:bg-gray-50"
-                >
-                  <td className="px-3 py-2 text-xs">{fmtDate(x.expenseDate)}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{referenceLabel(x)}</td>
-                  <td className="px-3 py-2 text-xs">{paidFromLabel(x)}</td>
-                  <td className="px-3 py-2">{payeeLabel(x)}</td>
-                  <td className="px-3 py-2">
-                    {categoryLabel(x)}
-                    {x.specialAccountType === 'CA_LIQUIDATION' && (
-                      <span className="ml-1 text-[11px] text-purple-600">(Liquidation)</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right font-medium">{fmtMoney(x.totalAmount)}</td>
-                  {/* Voucher # is Supplier-only; the expense number stands in
-                      for the rest, so every row still has an identifier. */}
-                  <td className="px-3 py-2 font-mono text-xs text-purple-700">
-                    {x.voucherNumber || x.expenseNumber}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs ${STATUS_STYLES[x.status] ?? 'bg-purple-50 text-purple-700'}`}
-                    >
-                      {x.status}
-                    </span>
-                  </td>
-                  {/* Actions are inside a row that navigates on click — stop
-                      the bubble so a Delete/Record press doesn't also open
-                      the detail page behind the confirm dialog. */}
-                  <td className="px-3 py-2 text-right" onClick={(ev) => ev.stopPropagation()}>
-                    <div className="flex justify-end">
-                      <RowActionsMenu items={rowMenu(x)} />
-                    </div>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-12 text-center text-zinc-400">
+                    Loading...
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : items.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-12 text-center text-zinc-400">
+                    No expenses.
+                  </td>
+                </tr>
+              ) : (
+                items.map((x) => {
+                  const ref = referenceLabel(x)
+                  return (
+                    <tr
+                      key={x.id}
+                      onClick={() => router.push(`/accounting/expenses/${x.id}`)}
+                      className="cursor-pointer transition-colors hover:bg-purple-50/40"
+                    >
+                      <td className="whitespace-nowrap px-5 py-2.5 text-zinc-600">
+                        {fmtDate(x.expenseDate)}
+                      </td>
+                      {/* Voucher # is Supplier-only; the expense number stands
+                          in for the rest, so every row still has an identifier.
+                          It and the reference sit under the payee instead of
+                          in columns of their own. */}
+                      <td className="px-5 py-2.5">
+                        <span className="font-medium text-zinc-900">{payeeLabel(x)}</span>
+                        <span className="ml-2 font-mono text-xs text-zinc-400">
+                          {x.voucherNumber || x.expenseNumber}
+                          {ref !== '—' && <span className="font-sans"> · Ref {ref}</span>}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-2.5 text-right font-semibold tabular-nums text-zinc-900">
+                        {fmtMoney(x.totalAmount)}
+                      </td>
+                      <td className="px-5 py-2.5">
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLES[x.status] ?? 'bg-purple-50 text-purple-700'}`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                          {x.status.charAt(0) + x.status.slice(1).toLowerCase()}
+                        </span>
+                      </td>
+                      {/* Actions are inside a row that navigates on click — stop
+                          the bubble so a Delete/Record press doesn't also open
+                          the detail page behind the confirm dialog. */}
+                      <td className="px-3 py-2.5 text-right" onClick={(ev) => ev.stopPropagation()}>
+                        <div className="flex justify-end">
+                          <RowActionsMenu items={rowMenu(x)} />
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

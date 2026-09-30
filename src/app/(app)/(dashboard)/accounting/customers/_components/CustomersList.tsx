@@ -46,7 +46,6 @@ const FIELD_LIMITS = {
 } as const
 
 const LIFECYCLE_COLORS: Record<string, string> = {
-  alive: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   dead: 'bg-gray-100 text-gray-600 ring-gray-200',
   employed: 'bg-blue-50 text-blue-700 ring-blue-200',
 }
@@ -187,13 +186,15 @@ export default function CustomersList({ session }: Props) {
                         <span className="ml-2 text-xs font-normal capitalize text-zinc-400">
                           {c.customerType ?? 'individual'}
                         </span>
-                        <span
-                          className={`ml-2 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
-                            LIFECYCLE_COLORS[c.lifecycleStatus ?? 'alive']
-                          }`}
-                        >
-                          {c.lifecycleStatus ?? 'alive'}
-                        </span>
+                        {c.lifecycleStatus && c.lifecycleStatus !== 'alive' && (
+                          <span
+                            className={`ml-2 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
+                              LIFECYCLE_COLORS[c.lifecycleStatus] ?? ''
+                            }`}
+                          >
+                            {c.lifecycleStatus}
+                          </span>
+                        )}
                         {c.groupId && (
                           <div className="mt-0.5 text-[11px] font-normal text-zinc-400">
                             Group: {c.groupId}

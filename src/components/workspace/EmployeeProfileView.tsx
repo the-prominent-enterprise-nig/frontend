@@ -58,7 +58,6 @@ export default function EmployeeProfileView({ session }: { session: SessionUser 
             <Field label="Name" value={displayName} />
             <Field label="Email" value={session.email} />
             <Field label="Role" value={titleCase(session.primaryRole)} />
-            <Field label="Account status" value={titleCase(session.status)} />
             {employeeCode && <Field label="Employee code" value={employeeCode} />}
             {branch && <Field label="Branch" value={branch.name} />}
             {session.enterpriseOwnerName && (

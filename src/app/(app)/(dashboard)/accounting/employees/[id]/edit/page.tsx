@@ -5,7 +5,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { EmployeeForm } from '../../_components'
 
 export const metadata = {
-  title: 'Edit Employee | Prominent Enterprise',
+  title: 'Edit Employee | NIG Central',
   description: 'Edit an employee',
 }
 

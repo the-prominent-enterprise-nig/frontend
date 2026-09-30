@@ -5,7 +5,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import CustomersList from './_components/CustomersList'
 
 export const metadata = {
-  title: 'Customers | Prominent Enterprise',
+  title: 'Customers | NIG Central',
   description: 'Manage customer records',
 }
 

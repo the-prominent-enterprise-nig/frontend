@@ -6,7 +6,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { CountingHub } from './_components/CountingHub'
 
 export const metadata = {
-  title: 'Counting | Prominent Enterprise',
+  title: 'Counting | NIG Central',
   description: 'Stock counts, stock adjustments, mobile counting, batches, and serial numbers',
 }
 

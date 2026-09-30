@@ -5,7 +5,7 @@ import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissio
 import { QuotaList } from './_components/QuotaList'
 
 export const metadata = {
-  title: 'Spending Quotas | Prominent Enterprise',
+  title: 'Spending Quotas | NIG Central',
   description: 'Manage procurement spending quotas for purchase orders',
 }
 

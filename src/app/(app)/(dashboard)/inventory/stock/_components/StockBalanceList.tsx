@@ -591,7 +591,7 @@ export default function StockBalanceList({
                 <div className="mt-1 text-[14px] font-semibold">No items match</div>
                 <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
                   {search
-                    ? `Nothing matches "${search}". Try the SKU, or clear a filter to widen the search.`
+                    ? `Nothing matches "${search}". Try the SKU, model or serial number, or clear a filter to widen the search.`
                     : 'No items fall inside these filters. Clear one to see more stock.'}
                 </div>
                 <button

@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PriceListDetailPageView } from './_components/PriceListDetailPageView'
 
 export const metadata = {
-  title: 'Price List Items | Prominent Enterprise',
+  title: 'Price List Items | NIG Central',
   description: 'Manage the priced items in a price list',
 }
 

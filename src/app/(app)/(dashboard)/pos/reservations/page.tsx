@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import SkuReservationsList from './_components/SkuReservationsList'
 
 export const metadata = {
-  title: 'Reservations | Prominent Enterprise',
+  title: 'Reservations | NIG Central',
 }
 
 // Scenario 03, Part 7 — the reservations list/detail Parts 1-6 never got a

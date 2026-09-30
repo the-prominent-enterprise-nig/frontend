@@ -6,7 +6,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { DebitMemosHub } from './_components/DebitMemosHub'
 
 export const metadata = {
-  title: 'Debit Memos | Prominent Enterprise',
+  title: 'Debit Memos | NIG Central',
   description: 'Customer debit memos and supplier returns in one place',
 }
 
