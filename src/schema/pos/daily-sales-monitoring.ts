@@ -23,6 +23,10 @@ export const DailySalesMonitoringReportSchema = z.object({
   date: z.string(),
   sales: z.object({
     byCategory: z.record(SalesCategorySchema, z.number()),
+    /** Units sold per category; empty from an API that predates the column. */
+    unitsByCategory: z
+      .record(SalesCategorySchema, z.number())
+      .default({} as Record<SalesCategory, number>),
     agentSales: z.number(),
     officeSales: z.number(),
     cashInvoice: z.number(),

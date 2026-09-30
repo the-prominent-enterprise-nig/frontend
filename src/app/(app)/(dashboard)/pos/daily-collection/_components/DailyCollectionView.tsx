@@ -169,7 +169,7 @@ export default function DailyCollectionView({
       : showRollup
         ? 'Every branch on one business day, and the cash each one counted against it.'
         : onSalesView
-          ? "The day's sales by category, agent and invoice type, and how the collections reach the bank — printed for the Cashier and Branch Manager to sign."
+          ? "The day's sales by category, channel and invoice type, in the Daily Collection Report's format."
           : 'Every collection taken at this branch on one business day, with the denomination count that reconciles the cash.'
 
   return (

@@ -6,9 +6,9 @@ import { gotoReady } from './utils'
  * Daily Collection page.
  *
  * Read-only: opens a branch from the owner's roll-up, switches to the sales
- * tab and checks the sheet reproduces the client's paper form — both halves
- * and no sign-offs (those are the collection report's). Nothing is created, so
- * there is nothing to clean up.
+ * tab and checks the sheet reproduces the client's form — the category
+ * table and the two cuts that tie to total sales. No sign-offs: those are
+ * the collection report's. Nothing is created, so there is nothing to clean up.
  *
  * Unlike the collection report, the owner sees this sheet whether or not the
  * branch has filed its Daily Collection form.
@@ -38,27 +38,32 @@ test.describe('POS — Daily Sales Monitoring sheet', () => {
     // Sales only — the collections are the Daily Collection Report's.
     await expect(sheet.getByText('For accounting', { exact: false })).toHaveCount(0)
 
+    // Text is uppercased by CSS, so match the DOM text, not the rendering.
     for (const label of [
-      'Appliances:',
-      'Furnitures:',
-      'A: 3E',
-      'B: Non-3E',
-      'Small items:',
-      'I.T products:',
-      'A: Comp/Laptop/Accs.',
-      'B: Cellphone',
-      'Split type:',
-      'Office sales:',
-      'Agent sales:',
-      'Total sales:',
-      'Cash invoice (COD):',
-      'Charge invoice:',
+      'For sales · per category',
+      'Appliances',
+      'Furniture',
+      '3E',
+      'Non-3E',
+      'Small items',
+      'IT products',
+      'Computers, laptops & accessories',
+      'Cellphones',
+      'Split type aircon',
+      'Total sales',
+      'By channel',
+      'Office sales',
+      'Agent sales',
+      'By invoice type',
+      'Cash invoice (COD)',
+      'Charge invoice',
     ]) {
       await expect(sheet.getByText(label, { exact: true })).toBeVisible()
     }
     // No sign-offs on this sheet — Prepared by / Checked by are the
     // collection report's.
-    await expect(sheet.getByText('Branch Manager', { exact: true })).toHaveCount(0)
+    await expect(sheet.getByText('Equals total sales', { exact: true })).toHaveCount(0)
+    await expect(sheet.getByText('Prepared by', { exact: false })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Print' })).toBeVisible()
 
     // Back to the collection report: the tab switch is a view change, not a
