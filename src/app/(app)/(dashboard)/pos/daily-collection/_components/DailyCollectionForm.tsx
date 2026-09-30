@@ -1,10 +1,10 @@
 'use client'
 
 import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
-import type { SheetDraftController } from '../_hooks/useSheetDraft'
+import { checkedByOf, type SheetDraftController } from '../_hooks/useSheetDraft'
 import {
   buildCollectionRecapLines,
-  buildDenominationLines,
+  buildFormDenominationLines,
   buildFormLines,
   footerAmount,
   formatFormDate,
@@ -31,23 +31,23 @@ import {
  * The handwritten half of the paper form — the two signatories, a remark, and
  * a corrected denomination count — is editable here when `edit` is passed.
  * Those fields are inputs on screen and plain text on paper: an input's border
- * is chrome, and chrome has no place on a form three people sign.
+ * is chrome, and chrome has no place on a form two people sign.
  */
 
 const CELL = 'border border-black px-1.5 py-[3px] leading-tight'
-const HEAD = `${CELL} bg-gray-100 text-center text-[10px] font-bold uppercase`
+const HEAD = `${CELL} text-center text-[10px] font-bold uppercase`
 const NUM = `${CELL} text-right tabular-nums`
 
 /** Blank ledger lines so a short day still prints a full-height grid, exactly
  * as the pre-ruled paper form does. Sized so a fully filled-in form — remarks
- * line, correction notice and all three signatures — still lands on one
+ * line, correction notice and both signatures — still lands on one
  * landscape page, which is the whole point of a form people sign. */
 const MIN_LEDGER_ROWS = 11
 
 /** The cash recap's own height: five DESC subtotals, TOTAL, LESS: DEPOSITED
  * and BALANCE. Anything past it is the non-cash block, which takes its rows
  * out of the ruled filler so the page total does not grow. */
-const CASH_RECAP_ROWS = 8
+const CASH_RECAP_ROWS = 7
 
 /**
  * An input that reads as part of the form rather than as a web control, and
@@ -57,14 +57,13 @@ const CASH_RECAP_ROWS = 8
  * change are obvious against the derived figures they sit among — on a grid
  * this dense, an untinted box is indistinguishable from a printed one and the
  * COINS amount in particular was being missed. The tint is screen-only: it is
- * chrome, and chrome has no place on a form three people sign.
+ * chrome, and chrome has no place on a form two people sign.
  */
 const FIELD =
   'w-full bg-amber-50 px-0 outline-none ring-1 ring-inset ring-amber-300 focus:bg-amber-100 focus:ring-prominent-orange-400 print:bg-transparent print:ring-0'
 
 interface Props {
   report: DailyCollectionReport
-  companyName: string
   preparedBy: string
   /** Omitted or null for a read-only form. */
   edit?: SheetDraftController | null
@@ -72,7 +71,6 @@ interface Props {
 
 export default function DailyCollectionForm({
   report,
-  companyName,
   preparedBy,
   edit = null,
 }: Props): React.JSX.Element {
@@ -81,7 +79,7 @@ export default function DailyCollectionForm({
   const recap = buildCollectionRecapLines(report)
   // While editing, the blocks add up what is being typed, so TOTAL and CASH
   // COLLECTED move as the cashier counts rather than only after a save.
-  const denominations = buildDenominationLines(
+  const denominations = buildFormDenominationLines(
     report,
     draft
       ? Object.fromEntries(
@@ -95,11 +93,12 @@ export default function DailyCollectionForm({
   )
 
   return (
-    <div className="print-sheet rounded-2xl border border-gray-200 bg-white p-6 print:p-0">
-      <header className="mb-2 text-[11px] font-bold uppercase leading-snug text-black">
-        <p>{companyName}</p>
+    <div className="print-sheet rounded-2xl border border-gray-200 bg-white p-6">
+      {/* The client's three header lines, as on their form. */}
+      <header className="mb-1 text-[11px] font-bold uppercase leading-snug text-black">
         <p>Daily Collection Report</p>
-        <p>{report.branchName}</p>
+        <p>Branch: {report.branchName}</p>
+        <p>{formatFormDate(report.date)}</p>
       </header>
 
       <div className="overflow-x-auto">
@@ -137,11 +136,9 @@ function FormHeader(): React.JSX.Element {
           Desc
         </th>
         <th colSpan={3} className={HEAD}>
-          Collection Receipts
+          Cash Receipt
         </th>
         <th rowSpan={2} className={`${HEAD} w-16`}>
-          Cash
-          <br />
           Invoice
         </th>
         <th rowSpan={2} className={`${HEAD} w-14`}>
@@ -184,44 +181,58 @@ function LedgerBody({
 
   return (
     <>
-      {lines.map((line, i) => (
-        <tr key={`line-${i}`}>
-          {line.type === 'deposit' ? (
-            <td className={`${CELL} font-bold`}>DEPOSIT:</td>
-          ) : (
-            i === 0 && (
+      {lines.map((line, i) =>
+        line.type === 'deposit' ? (
+          <DepositRow key={`line-${i}`} line={line} />
+        ) : (
+          <tr key={`line-${i}`}>
+            {i === 0 && (
               <td rowSpan={collectionCount} className={`${CELL} text-center align-top`}>
                 {formatFormDate(report.date)}
               </td>
-            )
-          )}
-          {line.span > 0 && (
-            <>
-              <td rowSpan={line.span} className={`${CELL} text-center`}>
-                {line.si}
-              </td>
-              <td
-                rowSpan={line.span}
-                colSpan={line.type === 'deposit' ? 2 : 1}
-                className={`${CELL} ${line.type === 'deposit' ? 'font-bold uppercase' : 'text-center'}`}
-              >
-                {line.customer}
-              </td>
-            </>
-          )}
-          {line.type !== 'deposit' && <td className={CELL}>{line.desc}</td>}
-          <td className={`${CELL} text-center`}>{line.office}</td>
-          <td className={`${CELL} text-center`}>{line.field}</td>
-          <td className={`${CELL} text-center`}>{line.others}</td>
-          <td className={`${CELL} text-center`}>{line.cashInvoice}</td>
-          <td className={NUM}>{line.ppd ? peso(line.ppd) : ''}</td>
-          <td className={NUM}>{line.penalty ? peso(line.penalty) : ''}</td>
-          <td className={NUM}>{line.debit === null ? '' : peso(line.debit)}</td>
-          <td className={NUM}>{line.credit === null ? '' : peso(line.credit)}</td>
-          <td className={NUM}>{pesoOrDash(line.balance)}</td>
-        </tr>
-      ))}
+            )}
+            {line.span > 0 && (
+              <>
+                <td rowSpan={line.span} className={`${CELL} text-center`}>
+                  {line.si}
+                </td>
+                <td rowSpan={line.span} className={`${CELL} uppercase`}>
+                  {line.customer}
+                </td>
+              </>
+            )}
+            <td className={CELL}>{line.desc}</td>
+            <td className={`${CELL} text-center`}>{line.office}</td>
+            <td className={`${CELL} text-center`}>{line.field}</td>
+            <td className={`${CELL} text-center`}>{line.others}</td>
+            <td className={`${CELL} text-center`}>{line.cashInvoice}</td>
+            <td className={NUM}>{line.ppd ? peso(line.ppd) : ''}</td>
+            <td className={NUM}>{line.penalty ? peso(line.penalty) : ''}</td>
+            <td className={NUM}>{line.debit === null ? '' : peso(line.debit)}</td>
+            <td className={NUM}>{line.credit === null ? '' : peso(line.credit)}</td>
+            <td className={NUM}>{pesoOrDash(line.balance)}</td>
+          </tr>
+        )
+      )}
     </>
+  )
+}
+
+/** DEPOSIT, then the bank and date written across SI# to CASH RECEIPT, as the
+ * client's form has it; the amount credits the balance down. */
+function DepositRow({ line }: { line: FormLine }): React.JSX.Element {
+  return (
+    <tr>
+      <td className={CELL}>DEPOSIT</td>
+      <td colSpan={6} className={`${CELL} uppercase`}>
+        {line.customer}
+      </td>
+      {Array.from({ length: 4 }, (_, c) => (
+        <td key={c} className={CELL} />
+      ))}
+      <td className={NUM}>{line.credit === null ? '' : peso(line.credit)}</td>
+      <td className={NUM}>{pesoOrDash(line.balance)}</td>
+    </tr>
   )
 }
 
@@ -265,14 +276,21 @@ function FooterBlocks({
 
         return (
           <tr key={`footer-${i}`}>
-            <td
-              className={`${CELL} whitespace-nowrap ${left?.emphasis ? 'font-bold' : ''} ${
-                left?.indent ? 'pl-5' : ''
-              }`}
-            >
-              {left?.label ?? ''}
-            </td>
-            <td colSpan={2} className={`${NUM} ${left?.emphasis ? 'font-bold' : ''}`}>
+            {/* Label | DC | amount under CUSTOMER, as on the paper. TOTAL
+                COLLECTION is highlighted across the first two cells. */}
+            {left?.highlight ? (
+              <td colSpan={2} className={`${CELL} whitespace-nowrap bg-yellow-300 font-bold`}>
+                {left.label}
+              </td>
+            ) : (
+              <>
+                <td className={`${CELL} whitespace-nowrap ${left?.emphasis ? 'font-bold' : ''}`}>
+                  {left?.label ?? ''}
+                </td>
+                <td className={CELL}>{left?.sub ?? ''}</td>
+              </>
+            )}
+            <td className={`${NUM} ${left?.emphasis ? 'font-bold' : ''}`}>
               {left ? footerAmount(left) : ''}
             </td>
             {Array.from({ length: 7 }, (_, c) => (
@@ -280,14 +298,18 @@ function FooterBlocks({
             ))}
             {i === 0 ? (
               <>
-                <td colSpan={2} className={`${CELL} font-bold uppercase`}>
+                <td colSpan={2} className={`${CELL} bg-yellow-300 text-center font-bold uppercase`}>
                   Denomination
                 </td>
                 <td className={CELL} />
               </>
             ) : (
               <>
-                <td className={`${CELL} whitespace-nowrap ${right?.emphasis ? 'font-bold' : ''}`}>
+                <td
+                  className={`${CELL} whitespace-nowrap ${
+                    right?.emphasis ? 'font-bold' : 'text-right'
+                  }`}
+                >
                   {right?.label ?? ''}
                 </td>
                 <td className={NUM}>
@@ -319,8 +341,8 @@ function DenominationCount({
   edit: SheetDraftController | null
 }): React.JSX.Element {
   const isCountable = !!line && line.count !== undefined && !line.emphasis && !line.negate
-  const face = line?.label ?? ''
-  const editable = edit && isCountable && face !== 'COINS'
+  const face = line?.face ?? ''
+  const editable = edit && isCountable && face !== '' && face !== 'coins'
 
   if (!editable) return <>{line?.count ?? ''}</>
 
@@ -352,7 +374,7 @@ function DenominationAmount({
   edit: SheetDraftController | null
 }): React.JSX.Element {
   if (!line) return <></>
-  if (!edit || line.label !== 'COINS') return <>{footerAmount(line)}</>
+  if (!edit || line.face !== 'coins') return <>{footerAmount(line)}</>
 
   return (
     <input
@@ -368,13 +390,13 @@ function DenominationAmount({
 }
 
 /**
- * Below the grid: the reason for any denomination correction, the branch's
- * remark, and the three signatures.
+ * Below the grid: the branch's remark, if any, and the two signatures. A
+ * corrected denomination count is not noted here — the client's form has no
+ * such line (Scenario 61); the correction and its reason stay on screen.
  *
- * PREPARED BY is stamped from the session — whoever pulled the report. The
- * other two are typed and saved, falling back to a ruled line to sign by hand.
- * The correction notice is not optional and not editable: a count that
- * disagrees with the day's session closings has to say so on the paper.
+ * PREPARED BY is stamped from the session — whoever pulled the report.
+ * CHECKED BY defaults to the branch manager, can be typed over and saved, and
+ * falls back to a ruled line to sign by hand.
  */
 function SignatureStrip({
   report,
@@ -385,14 +407,8 @@ function SignatureStrip({
   preparedBy: string
   edit: SheetDraftController | null
 }): React.JSX.Element {
-  const corrected = edit
-    ? edit.countsChanged
-    : report.denominationTotal !== report.countedDenominationTotal
-
   return (
     <div className="mt-4 break-inside-avoid text-[11px] uppercase text-black">
-      {corrected && <CorrectionNotice report={report} edit={edit} />}
-
       {(edit || report.sheet?.remarks) && (
         <p className="mb-4 flex gap-2">
           <span className="font-semibold">Remarks:</span>
@@ -409,29 +425,25 @@ function SignatureStrip({
         </p>
       )}
 
-      <div className="flex items-end justify-between gap-10 font-semibold">
+      <div className="flex items-start justify-between gap-10 font-semibold">
         <p className="min-w-70">
           Prepared by: <span className="font-normal">{preparedBy}</span>
         </p>
-        <p className="flex min-w-70 gap-2">
-          <span className="whitespace-nowrap">Checked by:</span>
-          <Signatory
-            value={edit ? (edit.draft?.checkedBy ?? '') : (report.sheet?.checkedBy ?? '')}
-            onChange={edit ? (v) => edit.update('checkedBy', v) : null}
-            label="Checked by"
-          />
-        </p>
+        <div className="flex min-w-70 items-start gap-2">
+          <span className="whitespace-nowrap">Check by:</span>
+          {/* The role sits in the name's own column, centred under it, as the
+              client's form prints it — so it lines up whatever the name's
+              length. */}
+          <div className="inline-flex flex-col items-center">
+            <Signatory
+              value={edit ? (edit.draft?.checkedBy ?? '') : checkedByOf(report)}
+              onChange={edit ? (v) => edit.update('checkedBy', v) : null}
+              label="Checked by"
+            />
+            <span className="mt-0.5 font-normal">Branch Manager</span>
+          </div>
+        </div>
       </div>
-      <p className="mt-6 flex min-w-70 gap-2 font-semibold">
-        <span className="whitespace-nowrap">Certified correct by:</span>
-        <Signatory
-          value={
-            edit ? (edit.draft?.certifiedCorrectBy ?? '') : (report.sheet?.certifiedCorrectBy ?? '')
-          }
-          onChange={edit ? (v) => edit.update('certifiedCorrectBy', v) : null}
-          label="Certified correct by"
-        />
-      </p>
     </div>
   )
 }
@@ -460,38 +472,5 @@ function Signatory({
       onChange={(e) => onChange(e.target.value)}
       aria-label={label}
     />
-  )
-}
-
-/**
- * States on the paper that the printed count is not the one the sessions
- * closed with. Non-negotiable: an unexplained edit to a signed cash figure is
- * the thing a reviewer most needs to see, so the reason is required to save
- * and printed whether or not anyone would like it there.
- */
-function CorrectionNotice({
-  report,
-  edit,
-}: {
-  report: DailyCollectionReport
-  edit: SheetDraftController | null
-}): React.JSX.Element {
-  return (
-    <p className="mb-3 flex gap-2 text-[10px] italic">
-      <span className="whitespace-nowrap normal-case">
-        Denomination count corrected from {peso(report.countedDenominationTotal)} as closed —
-      </span>
-      {edit ? (
-        <input
-          className={`${FIELD} border-b border-dotted border-gray-400 normal-case print:border-0`}
-          value={edit.draft?.denominationOverrideReason ?? ''}
-          onChange={(e) => edit.update('denominationOverrideReason', e.target.value)}
-          placeholder="reason (required)"
-          aria-label="Reason for the corrected denomination count"
-        />
-      ) : (
-        <span className="normal-case">{report.sheet?.denominationOverrideReason}</span>
-      )}
-    </p>
   )
 }

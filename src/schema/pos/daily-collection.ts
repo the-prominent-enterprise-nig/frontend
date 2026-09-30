@@ -5,7 +5,8 @@ import { z } from 'zod'
  * follows the client's own Daily Collection Report form: a running ledger,
  * DESC-type subtotals, a denomination block and the day's deposits.
  */
-export const CollectionKindSchema = z.enum(['COD', 'DP', 'DC', 'MI', 'MI-PARTIAL'])
+/** FP — full payment: the collection that settles an account. */
+export const CollectionKindSchema = z.enum(['COD', 'DP', 'DC', 'MI', 'MI-PARTIAL', 'FP'])
 export type CollectionKind = z.infer<typeof CollectionKindSchema>
 
 export const DailyCollectionRowSchema = z.object({
@@ -21,6 +22,9 @@ export const DailyCollectionRowSchema = z.object({
   tender: z.string(),
   amount: z.number(),
   isCash: z.boolean(),
+  /** A voided collection receipt, listed at 0.00 so the receipt numbers run
+   * without gaps, as the client's form lists them. */
+  cancelled: z.boolean().optional(),
 })
 export type DailyCollectionRow = z.infer<typeof DailyCollectionRowSchema>
 
@@ -57,6 +61,9 @@ export const DailyCollectionReportSchema = z.object({
   companyName: z.string().default(''),
   branchId: z.string().nullable(),
   branchName: z.string(),
+  /** The branch's assigned manager — pre-fills CHECKED BY until the branch
+   * saves a name of its own. */
+  branchManagerName: z.string().nullable().default(null),
   date: z.string(),
   rows: z.array(DailyCollectionRowSchema),
   deposits: z.array(DailyCollectionDepositSchema),
@@ -177,7 +184,7 @@ export const LEDGER_HEADERS = [
 ] as const
 
 /** DESC subtotal order, as the client prints it. */
-export const COLLECTION_KINDS: CollectionKind[] = ['COD', 'DP', 'DC', 'MI', 'MI-PARTIAL']
+export const COLLECTION_KINDS: CollectionKind[] = ['COD', 'DP', 'DC', 'MI', 'MI-PARTIAL', 'FP']
 
 /**
  * What the screen sends when a branch saves its form. The whole document goes

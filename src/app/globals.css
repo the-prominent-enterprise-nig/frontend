@@ -304,9 +304,22 @@ input[type='number'] {
    removed outright — display:none rather than visibility:hidden, or the
    hidden chrome still reserves its full height and trails a blank page. */
 @media print {
+  /* Zero page margin leaves the browser no room to print its own header and
+     footer (page title, date, URL); the sheet's padding below puts the
+     whitespace back. */
   @page {
     size: A4 landscape;
-    margin: 8mm;
+    margin: 0;
+  }
+
+  /* A single-column form (the Daily Sales Monitoring sheet) prints portrait.
+     Its page size is switched by the sheet itself (PortraitPrintPage) on the
+     document's main @page rule, not a named page: Chrome decides whether to
+     print its own header/footer from the main rule, so a named page left
+     the URL and title printing. */
+  .print-sheet-portrait {
+    break-inside: avoid;
+    padding: 12mm !important;
   }
 
   html:has(.print-sheet),
@@ -325,6 +338,9 @@ input[type='number'] {
     overflow: visible !important;
     margin: 0 !important;
     padding: 0 !important;
+    /* The page's own backdrop (e.g. bg-zinc-50) would otherwise print as a
+       grey band below a sheet shorter than the page. */
+    background: transparent !important;
   }
 
   body:has(.print-sheet) *:not(:has(.print-sheet), .print-sheet, .print-sheet *) {
@@ -334,7 +350,11 @@ input[type='number'] {
   .print-sheet {
     width: 100%;
     margin: 0;
-    padding: 0;
+    /* Stands in for the zeroed page margin, repeated on every printed page
+       of a sheet that runs long. */
+    padding: 8mm;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
     border: 0;
     border-radius: 0;
     box-shadow: none;

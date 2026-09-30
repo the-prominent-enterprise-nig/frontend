@@ -1,4 +1,8 @@
-import { COLLECTION_KINDS, type DailyCollectionReport } from '@/src/schema/pos/daily-collection'
+import type {
+  CollectionKind,
+  DailyCollectionReport,
+  DailyCollectionRow,
+} from '@/src/schema/pos/daily-collection'
 
 /**
  * Scenario 53 Part 6 — the view model behind the printed Daily Collection
@@ -13,10 +17,17 @@ import { COLLECTION_KINDS, type DailyCollectionReport } from '@/src/schema/pos/d
  * pre-aggregated per provider, as its own block below the cash recap.
  */
 
-/** `09/08/26` — the form's own date style, not ISO. */
+/** `9-23-26` — the form's own date style, not ISO. */
 export function formatFormDate(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split('-')
-  return y && m && d ? `${m}/${d}/${y.slice(2)}` : iso
+  return y && m && d ? `${Number(m)}-${Number(d)}-${y.slice(2)}` : iso
+}
+
+/** DESC as the client's form prints it: a part-payment is still MI there, a
+ * full payment is FP, and a cancelled receipt has none. */
+function formKind(row: DailyCollectionRow): string {
+  if (row.cancelled) return ''
+  return row.kind === 'MI-PARTIAL' ? 'MI' : row.kind
 }
 
 export function peso(amount: number): string {
@@ -63,7 +74,7 @@ function collectionLines(report: DailyCollectionReport): {
       type: 'collection',
       si: r.siNumber ?? '',
       customer: r.customerName,
-      desc: r.kind,
+      desc: formKind(r),
       office: r.channel === 'OFFICE' ? (r.crNumber ?? '') : '',
       field: r.channel === 'FIELD' ? (r.crNumber ?? '') : '',
       others: r.channel === 'OTHERS' ? (r.crNumber ?? '') : '',
@@ -107,7 +118,8 @@ export function buildFormLines(report: DailyCollectionReport): FormLine[] {
     lines.push({
       type: 'deposit',
       si: '',
-      customer: `${d.bankName}${d.reference ? ` (${d.reference})` : ''} ${formatFormDate(d.depositedAt)}`,
+      customer:
+        `${d.bankName}${d.reference ? ` (${d.reference})` : ''} ${formatFormDate(d.depositedAt)}`.toUpperCase(),
       desc: '',
       office: '',
       field: '',
@@ -126,6 +138,10 @@ export function buildFormLines(report: DailyCollectionReport): FormLine[] {
 
 export interface FooterLine {
   label: string
+  /** The second label cell — OTHERS carries DC there. */
+  sub?: string
+  /** Highlighted yellow, as the client marks TOTAL COLLECTION. */
+  highlight?: boolean
   /** Null on the blank spacer and on the NON-CASH COLLECTIONS heading, which
    * carry no figure of their own. */
   amount: number | null
@@ -143,51 +159,59 @@ export function footerAmount(line: FooterLine): string {
   return line.negate ? `(${peso(line.amount)})` : peso(line.amount)
 }
 
+/** Which line of the client's form a non-cash tender prints on. Mirrors the
+ * backend's `bucketForTender` (src/pos/tender-key.ts); change one, change the
+ * other. */
+type TenderLine = 'GCASH' | 'CHECK' | 'CARD' | 'OTHER NON-CASH'
+
+const TENDER_LINE_BY_METHOD: Record<string, TenderLine> = {
+  qr: 'GCASH',
+  gcash: 'GCASH',
+  maya: 'GCASH',
+  bank_transfer: 'GCASH',
+  cheque: 'CHECK',
+  check: 'CHECK',
+  card: 'CARD',
+}
+
+function nonCashByLine(report: DailyCollectionReport): Record<TenderLine, number> {
+  const totals: Record<TenderLine, number> = { GCASH: 0, CHECK: 0, CARD: 0, 'OTHER NON-CASH': 0 }
+  for (const t of report.nonCash ?? []) {
+    totals[TENDER_LINE_BY_METHOD[t.tender.split('::')[0]] ?? 'OTHER NON-CASH'] += t.amount
+  }
+  return totals
+}
+
 /**
- * The bottom-left block: the client's DESC-type subtotals, then the bridge
- * from what was collected to what is still in the drawer, and below it the
- * non-cash block.
- *
- * Everything down to BALANCE (UNDEPOSITED) is cash, so TOTAL COLLECTION
- * (CASH) is what the denomination block must meet, and BALANCE (UNDEPOSITED)
- * is the same figure the ledger's BALANCE column ends on. Non-cash is kept
- * strictly below that chain — it was never in the drawer, so it cannot sit in
- * a figure the drawer has to prove — and adds the one thing the cash-only
- * form could never show: GRAND TOTAL COLLECTED.
+ * The bottom-left block as the client's form has it (Alimodian sample,
+ * 2026-09-23): COD, DP, MI (part-payments included), OTHERS with DC, the
+ * highlighted TOTAL COLLECTION, then GCASH and CHECK. A card swipe or other
+ * non-cash tender has no line on their form, so it gets one only on a day
+ * that took some — never silently dropped. Mirrored by the backend's Excel
+ * form sheet.
  */
 export function buildCollectionRecapLines(report: DailyCollectionReport): FooterLine[] {
-  const line = (
-    label: string,
-    amount: number,
-    opts: { negate?: boolean; emphasis?: boolean } = {}
-  ): FooterLine => ({
+  const kind = (k: CollectionKind): number => report.byKind[k] ?? 0
+  const nonCash = nonCashByLine(report)
+  const line = (label: string, amount: number, extra: Partial<FooterLine> = {}): FooterLine => ({
     label,
-    amount,
-    negate: opts.negate ?? false,
-    emphasis: opts.emphasis ?? false,
+    amount: amount || null,
+    negate: false,
+    emphasis: false,
+    ...extra,
   })
 
-  const nonCash = report.nonCash ?? []
-
   return [
-    ...COLLECTION_KINDS.map((kind) => line(kind, report.byKind[kind] ?? 0)),
-    line('TOTAL COLLECTION (CASH)', report.totalCollection, { emphasis: true }),
-    line('LESS: DEPOSITED', report.totalDeposited, { negate: true }),
-    line('BALANCE (UNDEPOSITED)', report.balance, { emphasis: true }),
-    // A heading over nothing is worse than no heading: on a cash-only day the
-    // form stays exactly the client's own cash-only form.
-    ...(nonCash.length === 0
-      ? []
-      : [
-          { label: '', amount: null, negate: false, emphasis: false },
-          { label: 'NON-CASH COLLECTIONS', amount: null, negate: false, emphasis: true },
-          ...nonCash.map((tender) => ({
-            ...line(tender.label, tender.amount),
-            indent: true,
-          })),
-          line('SUBTOTAL', report.nonCashCollection, { emphasis: true }),
-          line('GRAND TOTAL COLLECTED', report.grandTotalCollection, { emphasis: true }),
-        ]),
+    line('COD', kind('COD')),
+    line('DP', kind('DP')),
+    // A full payment (FP) is still an instalment collection: it counts here.
+    line('MI', kind('MI') + kind('MI-PARTIAL') + kind('FP')),
+    line('OTHERS', kind('DC'), { sub: 'DC' }),
+    line('TOTAL COLLECTION', report.totalCollection, { emphasis: true, highlight: true }),
+    line('GCASH', nonCash.GCASH),
+    line('CHECK', nonCash.CHECK),
+    ...(nonCash.CARD ? [line('CARD', nonCash.CARD)] : []),
+    ...(nonCash['OTHER NON-CASH'] ? [line('OTHER NON-CASH', nonCash['OTHER NON-CASH'])] : []),
   ]
 }
 
@@ -200,6 +224,9 @@ export interface DenominationLine extends FooterLine {
   /** Null for COINS and the bridge lines, which carry an amount with no piece
    * count of their own. */
   count: number | null
+  /** The draft key this line edits — a face value or 'coins'. Absent on the
+   * derived lines (TOTAL and below). */
+  face?: string
 }
 
 /**
@@ -271,6 +298,7 @@ export function buildDenominationLines(
     const count = counts[face] ?? 0
     return {
       label: face,
+      face,
       count: count || null,
       amount: Number(face) * count,
       negate: false,
@@ -282,6 +310,7 @@ export function buildDenominationLines(
     ...notes,
     {
       label: 'COINS',
+      face: 'coins',
       count: null,
       amount: counts.coins ?? 0,
       negate: false,
@@ -309,4 +338,22 @@ export function buildDenominationLines(
       emphasis: true,
     },
   ]
+}
+
+/**
+ * The denomination block as the printed form carries it — the client's own
+ * count, 1000 down to 20, the loose coins as one unlabelled amount, then
+ * TOTAL. No float bridge: their form has none (Scenario 61, Alimodian
+ * sample). The screen's totals panel keeps the full bridge from
+ * `buildDenominationLines`.
+ */
+export function buildFormDenominationLines(
+  report: DailyCollectionReport,
+  counts?: Record<string, number>
+): DenominationLine[] {
+  const lines = buildDenominationLines(report, counts)
+  const total = lines.findIndex((line) => line.label === 'TOTAL')
+  return lines
+    .slice(0, total + 1)
+    .map((line) => (line.face === 'coins' ? { ...line, label: '' } : line))
 }
