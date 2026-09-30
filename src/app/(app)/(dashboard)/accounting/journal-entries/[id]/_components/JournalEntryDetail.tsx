@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { getJournalEntryById, type JournalEntry } from '@/src/libs/data/AccountingData'
+import { sourceDocumentLink } from '@/src/libs/format/sourceDocumentLink'
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-amber-50 text-amber-700 border border-amber-200',
@@ -57,6 +58,13 @@ export default function JournalEntryDetail({ id }: { id: string }) {
   }
 
   const transactions = entry.transactions ?? []
+  const source = sourceDocumentLink({
+    sourceModule: entry.sourceModule,
+    sourceDocumentId: entry.sourceDocumentId,
+    sourceDocumentNo: entry.sourceDocumentNo,
+    code: entry.reference,
+    description: entry.description,
+  })
   // Most entries are not about items at all — a collection is cash in and a
   // receivable down, a VAT accrual is one account against another. Showing
   // Item/Qty/Unit Price/Subtotal on those printed four columns of dashes on
@@ -111,12 +119,24 @@ export default function JournalEntryDetail({ id }: { id: string }) {
           </span>
         </div>
         <div className="mt-2 grid max-w-lg grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-sm">
-          {entry.sourceDocumentNo && (
+          {(entry.sourceDocumentNo || source) && (
             <>
               <span className="text-gray-500">Source document</span>
-              <span className="text-left font-medium tabular-nums text-gray-800">
-                {entry.sourceDocumentNo}
-              </span>
+              {/* Scenario 62 — the last hop of a report drill-down:
+                  figure → ledger line → this entry → the document itself. */}
+              {source ? (
+                <Link
+                  href={source.href}
+                  className="text-left font-medium tabular-nums text-purple-700 hover:underline"
+                >
+                  {entry.sourceDocumentNo || `Open ${source.kind}`}
+                  <span className="ml-2 text-xs font-normal text-gray-500">{source.kind}</span>
+                </Link>
+              ) : (
+                <span className="text-left font-medium tabular-nums text-gray-800">
+                  {entry.sourceDocumentNo}
+                </span>
+              )}
             </>
           )}
           <span className="text-gray-500">Branch</span>

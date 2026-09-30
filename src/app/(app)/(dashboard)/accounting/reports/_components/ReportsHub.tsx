@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -466,8 +468,49 @@ function Stat({ label, value, isCount }: { label: string; value: number; isCount
   )
 }
 
+/** Scenario 62 — the period a report figure covers, carried into the GL so
+ * the drill-down lists exactly the lines behind it. startDate '' means "from
+ * the beginning", which is what an as-of balance is. */
+type DrillScope = { startDate: string; endDate: string; branchId?: string; view?: string }
+
+const isoDay = (v: unknown) => (v ? String(v).slice(0, 10) : '')
+
+function glHref(accountId: string, scope: DrillScope) {
+  const p = new URLSearchParams({
+    accountId,
+    startDate: scope.startDate,
+    endDate: scope.endDate,
+  })
+  if (scope.branchId) p.set('branchId', scope.branchId)
+  if (scope.view === 'internal') p.set('view', 'internal')
+  return `/accounting/general-ledger?${p.toString()}`
+}
+
+/** A report figure that opens its General Ledger lines. */
+function DrillAmount({
+  accountId,
+  scope,
+  children,
+}: {
+  accountId?: string
+  scope?: DrillScope
+  children: React.ReactNode
+}) {
+  if (!accountId || !scope) return <>{children}</>
+  return (
+    <Link
+      href={glHref(accountId, scope)}
+      className="text-purple-700 hover:underline decoration-dotted underline-offset-2"
+      title="See the ledger lines behind this figure"
+    >
+      {children}
+    </Link>
+  )
+}
+
 function TrialBalanceView({ data }: { data: any }) {
   const rows = Array.isArray(data?.rows) ? data.rows : []
+  const scope: DrillScope = { startDate: '', endDate: isoDay(data?.asOf) }
   return (
     <>
       <div className="text-xs text-gray-500 mb-2">As of {fmtDate(data?.asOf)}</div>
@@ -477,8 +520,24 @@ function TrialBalanceView({ data }: { data: any }) {
             <td className="px-3 py-2 font-mono text-xs">{r.number}</td>
             <td className="px-3 py-2">{r.name}</td>
             <td className="px-3 py-2 text-xs">{r.type}</td>
-            <td className="px-3 py-2 text-right">{r.balance > 0 ? fmtMoney(r.balance) : '—'}</td>
-            <td className="px-3 py-2 text-right">{r.balance < 0 ? fmtMoney(-r.balance) : '—'}</td>
+            <td className="px-3 py-2 text-right">
+              {r.balance > 0 ? (
+                <DrillAmount accountId={r.accountId} scope={scope}>
+                  {fmtMoney(r.balance)}
+                </DrillAmount>
+              ) : (
+                '—'
+              )}
+            </td>
+            <td className="px-3 py-2 text-right">
+              {r.balance < 0 ? (
+                <DrillAmount accountId={r.accountId} scope={scope}>
+                  {fmtMoney(-r.balance)}
+                </DrillAmount>
+              ) : (
+                '—'
+              )}
+            </td>
           </tr>
         ))}
       </Table>
@@ -490,7 +549,17 @@ function TrialBalanceView({ data }: { data: any }) {
   )
 }
 
-function Section({ title, items, total }: { title: string; items?: any[]; total?: number }) {
+function Section({
+  title,
+  items,
+  total,
+  scope,
+}: {
+  title: string
+  items?: any[]
+  total?: number
+  scope?: DrillScope
+}) {
   const rows = Array.isArray(items) ? items : []
   return (
     <div className="mb-4">
@@ -506,7 +575,9 @@ function Section({ title, items, total }: { title: string; items?: any[]; total?
             <span>
               {r.number} — {r.name}
             </span>
-            <span>{fmtMoney(Math.abs(r.balance ?? 0))}</span>
+            <DrillAmount accountId={r.accountId} scope={scope}>
+              {fmtMoney(Math.abs(r.balance ?? 0))}
+            </DrillAmount>
           </div>
         ))
       )}
@@ -519,6 +590,12 @@ function Section({ title, items, total }: { title: string; items?: any[]; total?
 }
 
 function PnLView({ data, branchName }: { data: any; branchName?: string }) {
+  const scope: DrillScope = {
+    startDate: isoDay(data.startDate),
+    endDate: isoDay(data.endDate),
+    branchId: data.branchId ?? undefined,
+    view: data.view,
+  }
   return (
     <>
       <div className="text-xs text-gray-500 mb-3">
@@ -534,13 +611,13 @@ function PnLView({ data, branchName }: { data: any; branchName?: string }) {
           </span>
         )}
       </div>
-      <Section title="Revenue" items={data.revenue} total={data.totalRevenue} />
-      <Section title="Cost of Goods Sold" items={data.cogs} total={data.totalCogs} />
+      <Section scope={scope} title="Revenue" items={data.revenue} total={data.totalRevenue} />
+      <Section scope={scope} title="Cost of Goods Sold" items={data.cogs} total={data.totalCogs} />
       <div className="flex justify-between text-sm font-semibold py-2 border-y border-gray-300 bg-gray-50 px-3">
         <span>Gross Profit</span>
         <span>{fmtMoney(data.grossProfit)}</span>
       </div>
-      <Section title="Operating Expenses" items={data.opEx} total={data.totalOpEx} />
+      <Section scope={scope} title="Operating Expenses" items={data.opEx} total={data.totalOpEx} />
       <div className="flex justify-between text-base font-bold py-2 border-y-2 border-gray-700 bg-emerald-50 px-3 mt-2">
         <span>Net Income</span>
         <span>{fmtMoney(data.netIncome)}</span>
@@ -550,12 +627,18 @@ function PnLView({ data, branchName }: { data: any; branchName?: string }) {
 }
 
 function BalanceSheetView({ data }: { data: any }) {
+  const scope: DrillScope = { startDate: '', endDate: isoDay(data.asOf) }
   return (
     <>
       <div className="text-xs text-gray-500 mb-3">As of {fmtDate(data.asOf)}</div>
-      <Section title="Assets" items={data.assets} total={data.totalAssets} />
-      <Section title="Liabilities" items={data.liabilities} total={data.totalLiabilities} />
-      <Section title="Equity" items={data.equity} total={data.totalEquity} />
+      <Section scope={scope} title="Assets" items={data.assets} total={data.totalAssets} />
+      <Section
+        scope={scope}
+        title="Liabilities"
+        items={data.liabilities}
+        total={data.totalLiabilities}
+      />
+      <Section scope={scope} title="Equity" items={data.equity} total={data.totalEquity} />
       <div className="flex justify-between text-sm font-semibold py-2 border-y-2 border-gray-700 bg-gray-50 px-3 mt-2">
         <span>Liabilities + Equity</span>
         <span>{fmtMoney(data.totalLiabilities + data.totalEquity)}</span>
@@ -565,14 +648,30 @@ function BalanceSheetView({ data }: { data: any }) {
 }
 
 function CashFlowView({ data }: { data: any }) {
+  const scope: DrillScope = { startDate: isoDay(data.startDate), endDate: isoDay(data.endDate) }
   return (
     <>
       <div className="text-xs text-gray-500 mb-3">
         {fmtDate(data.startDate)} — {fmtDate(data.endDate)}
       </div>
-      <Section title="Operating Activities" items={data.operating} total={data.operatingTotal} />
-      <Section title="Investing Activities" items={data.investing} total={data.investingTotal} />
-      <Section title="Financing Activities" items={data.financing} total={data.financingTotal} />
+      <Section
+        scope={scope}
+        title="Operating Activities"
+        items={data.operating}
+        total={data.operatingTotal}
+      />
+      <Section
+        scope={scope}
+        title="Investing Activities"
+        items={data.investing}
+        total={data.investingTotal}
+      />
+      <Section
+        scope={scope}
+        title="Financing Activities"
+        items={data.financing}
+        total={data.financingTotal}
+      />
       <div className="flex justify-between text-base font-bold py-2 border-y-2 border-gray-700 bg-gray-50 px-3 mt-2">
         <span>Net Change in Cash</span>
         <span>{fmtMoney(data.netCashChange)}</span>
