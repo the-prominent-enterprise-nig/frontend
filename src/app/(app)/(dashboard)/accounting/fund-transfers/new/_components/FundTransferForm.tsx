@@ -3,36 +3,51 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Printer } from 'lucide-react'
 import {
   BankAccounts,
   BankTransfers,
   type BankAccount,
+  type FundTransfer,
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
+import { Modal } from '@/src/components/ui/Modal'
+import { printInterAccountTransferVoucherDocument } from '@/src/libs/print/printInventoryDocument'
+
+const today = () => new Date().toISOString().slice(0, 10)
+const emptyForm = () => ({
+  date: today(),
+  clearingDate: '',
+  sourceBankAccountId: '',
+  destinationBankAccountId: '',
+  amount: '',
+  reference: '',
+  description: '',
+})
 
 // Scenario 40 Gap 5 (Option B) — a real inter-account transfer, e.g.
 // funding a branch's Petty Cash Fund or the Revolving Fund from the main
 // operating account. Full page from the start, per the same developer
 // feedback that moved the Expense form off a modal (2026-08-31).
+//
+// Scenario 61 — renamed from "Fund Transfer", gains a Clearing Date, and on
+// success opens a summary pop-up with a printable voucher instead of
+// bouncing back to Bank Accounts.
 export default function FundTransferForm() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<BankAccount[]>([])
-  const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
-    sourceBankAccountId: '',
-    destinationBankAccountId: '',
-    amount: '',
-    reference: '',
-    description: '',
-  })
+  const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [created, setCreated] = useState<FundTransfer | null>(null)
+  const [printing, setPrinting] = useState(false)
 
-  useEffect(() => {
+  const loadAccounts = () =>
     BankAccounts.list().then((res) => {
       if (res.success && res.data) setAccounts(res.data)
     })
+  useEffect(() => {
+    loadAccounts()
   }, [])
 
   const source = accounts.find((a) => a.id === form.sourceBankAccountId)
@@ -45,6 +60,8 @@ export default function FundTransferForm() {
     if (form.sourceBankAccountId === form.destinationBankAccountId)
       return 'Source and destination must be different accounts.'
     if (amount <= 0) return 'Enter an amount greater than 0.'
+    if (form.clearingDate && form.clearingDate < form.date)
+      return 'Clearing date cannot be earlier than the transfer date.'
     return null
   }
 
@@ -62,28 +79,43 @@ export default function FundTransferForm() {
       destinationBankAccountId: form.destinationBankAccountId,
       amount,
       date: form.date,
+      clearingDate: form.clearingDate || undefined,
       reference: form.reference || undefined,
       description: form.description || undefined,
     })
     setSaving(false)
-    if (!res.success) {
+    if (!res.success || !res.data) {
       setError(res.message || res.error || 'Transfer failed — check Account Mapping settings')
       return
     }
-    router.push('/accounting/bank-accounts')
+    setCreated(res.data)
+  }
+
+  const printVoucher = async () => {
+    if (!created) return
+    setPrinting(true)
+    const res = await BankTransfers.getDocument(created.id)
+    setPrinting(false)
+    if (res.success && res.data) printInterAccountTransferVoucherDocument(res.data)
+  }
+
+  const startAnother = () => {
+    setCreated(null)
+    setForm(emptyForm())
+    loadAccounts()
   }
 
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href="/accounting/bank-accounts"
+        href="/accounting/fund-transfers"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to bank accounts
+        Back to transfer history
       </Link>
 
-      <h1 className="text-2xl font-semibold text-gray-900">Fund Transfer</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Inter-Account Transfer</h1>
       <p className="mt-1 text-sm text-gray-500">
         Move money between two bank/fund accounts — e.g. funding a branch&apos;s Petty Cash Fund or
         the Revolving Fund. Posts a journal entry and updates both accounts&apos; balances.
@@ -93,7 +125,7 @@ export default function FundTransferForm() {
         onSubmit={submit}
         className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-6"
       >
-        <div className="max-w-xs">
+        <div className="grid max-w-xl grid-cols-2 gap-4">
           <Field label="Date *">
             <input
               required
@@ -102,6 +134,18 @@ export default function FundTransferForm() {
               onChange={(e) => setForm({ ...form, date: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
+          </Field>
+          <Field label="Clearing Date">
+            <input
+              type="date"
+              min={form.date}
+              value={form.clearingDate}
+              onChange={(e) => setForm({ ...form, clearingDate: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+            <p className="mt-1 text-[12px] text-gray-500">
+              When it cleared the bank. Can be filled in later.
+            </p>
           </Field>
         </div>
 
@@ -184,7 +228,7 @@ export default function FundTransferForm() {
         )}
         <div className="flex justify-end gap-2 pt-3 border-t">
           <Link
-            href="/accounting/bank-accounts"
+            href="/accounting/fund-transfers"
             className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg text-gray-700"
           >
             Cancel
@@ -198,6 +242,64 @@ export default function FundTransferForm() {
           </button>
         </div>
       </form>
+
+      <Modal
+        open={!!created}
+        title="Transfer recorded"
+        description={created?.transferNumber}
+        onClose={() => created && router.push(`/accounting/fund-transfers/${created.id}`)}
+        footer={
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={startAnother}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg text-gray-700"
+            >
+              New transfer
+            </button>
+            <Link
+              href={created ? `/accounting/fund-transfers/${created.id}` : '#'}
+              className="px-4 py-2 text-sm border border-gray-200 bg-white hover:bg-gray-50 rounded-lg text-gray-700"
+            >
+              View transfer
+            </Link>
+            <button
+              type="button"
+              onClick={printVoucher}
+              disabled={printing}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            >
+              <Printer className="h-4 w-4" />
+              {printing ? 'Preparing...' : 'Print Voucher'}
+            </button>
+          </div>
+        }
+      >
+        {created && (
+          <div className="space-y-3 text-sm">
+            <p className="flex items-center gap-2 text-green-700">
+              <CheckCircle2 className="h-5 w-5" />
+              Posted to the general ledger. Both balances have been updated.
+            </p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
+              <dt className="text-gray-500">From</dt>
+              <dd className="font-medium text-gray-900">{created.sourceBankAccount.name}</dd>
+              <dt className="text-gray-500">To</dt>
+              <dd className="font-medium text-gray-900">{created.destinationBankAccount.name}</dd>
+              <dt className="text-gray-500">Amount</dt>
+              <dd className="font-semibold text-gray-900 tabular-nums">
+                {fmtMoney(created.amount)}
+              </dd>
+              <dt className="text-gray-500">Date</dt>
+              <dd>{created.date.slice(0, 10)}</dd>
+              <dt className="text-gray-500">Clearing date</dt>
+              <dd>{created.clearingDate?.slice(0, 10) ?? '—'}</dd>
+              <dt className="text-gray-500">Reference</dt>
+              <dd>{created.reference ?? '—'}</dd>
+            </dl>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

@@ -79,6 +79,8 @@ export interface Transaction {
 export interface JournalEntry {
   id: string
   reference?: string | null
+  /** Scenario 61 Part C — the paper voucher's control number, if recorded. */
+  voucherControlNo?: string | null
   date: string
   description?: string | null
   journalType: JournalType
