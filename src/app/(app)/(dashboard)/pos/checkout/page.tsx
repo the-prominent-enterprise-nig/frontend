@@ -224,6 +224,38 @@ interface PaymentRow {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// Dropdown that reads as clickable: white field, purple border, visible
+// chevron. Tinted purple once a value is chosen.
+function PillSelect({
+  filled,
+  wrapperClassName = '',
+  className = '',
+  children,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  filled: boolean
+  wrapperClassName?: string
+}) {
+  return (
+    <div className={`relative ${wrapperClassName}`}>
+      <select
+        {...props}
+        className={`w-full cursor-pointer appearance-none rounded-lg border-2 py-2.5 pl-3 pr-10 text-[13px] font-semibold shadow-sm outline-none transition-colors hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 ${
+          filled
+            ? 'border-purple-300 bg-purple-50 text-purple-800'
+            : 'border-purple-200 bg-white text-gray-600'
+        } ${className}`}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-500"
+      />
+    </div>
+  )
+}
+
 const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   cash: 'Cash',
   card: 'Card',
@@ -512,7 +544,9 @@ export default function CheckoutPage() {
   // just applied to every line at once via the toggle's onClick below
   // instead of chosen per line). If any item needs a different mode, that's
   // a separate transaction.
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment' | 'credit_card'>('cash')
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment' | 'delivery_receipt'>(
+    'cash'
+  )
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -525,9 +559,9 @@ export default function CheckoutPage() {
   // Scenario 37 — same treatment for Cash's own sub-choice (Cash on Hand /
   // Bank Transfer / QR), captured once via Item Payment Mode (transaction-
   // scoped, see hasCashLine), carried into whatever payment row gets added.
-  const [cashSubMode, setCashSubMode] = useState<'cash_on_hand' | 'bank_transfer' | 'qr'>(
-    'cash_on_hand'
-  )
+  const [cashSubMode, setCashSubMode] = useState<
+    'cash_on_hand' | 'check' | 'bank_transfer' | 'qr' | 'card'
+  >('cash_on_hand')
   const [cashPaymentOptionId, setCashPaymentOptionId] = useState<string | undefined>()
   // Scenario 38 Gap 7 — the cashier confirms the transfer already landed at
   // the register (e.g. checked the business's own banking app in real
@@ -1244,14 +1278,14 @@ export default function CheckoutPage() {
   // paid by card in this sale, so the POS Terminal/Straight-Installment/Term
   // fields render once, not per line.
   const hasCreditCardLine =
-    (cashCartLines.length > 0 && paymentMode === 'credit_card') ||
+    (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
     (installmentCartLines.length > 0 && installmentPaymentMethod === 'credit_card')
   // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR). Also
   // covers the down payment's cash tendering now that it shares this pool —
   // cash-lines and installment-lines never coexist in one cart, so only one
   // of the two OR branches is ever true.
   const hasCashLine =
-    (cashCartLines.length > 0 && paymentMode === 'cash') ||
+    (cashCartLines.length > 0 && paymentMode !== 'installment') ||
     (installmentCartLines.length > 0 && installmentPaymentMethod === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
@@ -2299,7 +2333,7 @@ export default function CheckoutPage() {
   function preferredPaymentMethodKey(): PosPaymentMethod | null {
     if (hasCreditCardLine) return 'card'
     if (hasCashLine) {
-      return cashSubMode === 'cash_on_hand'
+      return cashSubMode === 'cash_on_hand' || cashSubMode === 'check'
         ? 'cash'
         : cashSubMode === 'bank_transfer'
           ? 'bank_transfer'
@@ -2874,7 +2908,11 @@ export default function CheckoutPage() {
                 ? cardTerminalOptionId
                 : row.method === 'bank_transfer' || row.method === 'qr'
                   ? cashPaymentOptionId
-                  : row.paymentMethodOptionId,
+                  : row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+                    ? configuredMethods
+                        .find((m) => m.key === 'cash')
+                        ?.options.find((o) => o.isEnabled && o.name === 'Check')?.id
+                    : row.paymentMethodOptionId,
             cardTxnMode: row.method === 'card' ? cardTxnMode : undefined,
             cardInstallmentTerm: row.method === 'card' ? cardInstallmentTerm : undefined,
             bankTransferVerifiedAtRegister:
@@ -4358,12 +4396,14 @@ export default function CheckoutPage() {
                     different mode, it's a separate transaction. */}
                 <div className="relative">
                   <div className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1">
-                    {(['cash', 'installment', 'credit_card'] as const).map((mode) => (
+                    {(['cash', 'installment', 'delivery_receipt'] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => {
                           setPaymentMode(mode)
+                          if (mode === 'installment' && cashSubMode === 'card')
+                            setCashSubMode('cash_on_hand')
                           setLineInvoiceType(
                             cart.map((l) => l.lineId),
                             mode === 'installment' ? 'installment' : 'cash'
@@ -4379,7 +4419,7 @@ export default function CheckoutPage() {
                           ? 'Cash'
                           : mode === 'installment'
                             ? 'Installment'
-                            : 'Debit/Credit Card'}
+                            : 'Delivery Receipt'}
                       </button>
                     ))}
                   </div>
@@ -4769,7 +4809,10 @@ export default function CheckoutPage() {
                   >
                     <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
                     <div className="flex gap-1.5">
-                      {(['cash_on_hand', 'bank_transfer', 'qr'] as const).map((mode) => (
+                      {(paymentMode === 'installment'
+                        ? (['cash_on_hand', 'check', 'bank_transfer', 'qr'] as const)
+                        : (['cash_on_hand', 'check', 'bank_transfer', 'qr', 'card'] as const)
+                      ).map((mode) => (
                         <button
                           key={mode}
                           type="button"
@@ -4786,22 +4829,29 @@ export default function CheckoutPage() {
                         >
                           {mode === 'cash_on_hand'
                             ? 'Cash on Hand'
-                            : mode === 'bank_transfer'
-                              ? 'Bank Transfer'
-                              : 'QR'}
+                            : mode === 'check'
+                              ? 'Check'
+                              : mode === 'bank_transfer'
+                                ? 'Bank Transfer'
+                                : mode === 'card'
+                                  ? 'Debit/Credit Card'
+                                  : 'QR'}
                         </button>
                       ))}
                     </div>
                     {cashSubMode !== 'cash_on_hand' &&
+                      cashSubMode !== 'check' &&
+                      cashSubMode !== 'card' &&
                       (() => {
                         const config = configuredMethods.find((m) => m.key === cashSubMode)
                         const options = config?.options.filter((o) => o.isEnabled) ?? []
                         if (options.length === 0) return null
                         const label = cashSubMode === 'bank_transfer' ? 'Bank' : 'Gateway'
                         return (
-                          <select
+                          <PillSelect
                             aria-label={label}
-                            className="mt-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                            filled={!!cashPaymentOptionId}
+                            wrapperClassName="mt-1.5"
                             value={cashPaymentOptionId ?? ''}
                             onChange={(e) => setCashPaymentOptionId(e.target.value || undefined)}
                           >
@@ -4811,7 +4861,7 @@ export default function CheckoutPage() {
                                 {o.name}
                               </option>
                             ))}
-                          </select>
+                          </PillSelect>
                         )
                       })()}
                     {cashSubMode === 'bank_transfer' && (
@@ -4840,9 +4890,10 @@ export default function CheckoutPage() {
                       return (
                         <>
                           {terminalOptions.length > 0 && (
-                            <select
+                            <PillSelect
                               aria-label="POS Terminal"
-                              className="mb-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                              filled={!!cardTerminalOptionId}
+                              wrapperClassName="mb-1.5"
                               value={cardTerminalOptionId ?? ''}
                               onChange={(e) => setCardTerminalOptionId(e.target.value || undefined)}
                             >
@@ -4852,7 +4903,7 @@ export default function CheckoutPage() {
                                   {o.name}
                                 </option>
                               ))}
-                            </select>
+                            </PillSelect>
                           )}
                           <div className="flex gap-1.5">
                             {(['straight', 'installment'] as const).map((mode) => (
@@ -4876,9 +4927,10 @@ export default function CheckoutPage() {
                             ))}
                           </div>
                           {cardTxnMode === 'installment' && (
-                            <select
+                            <PillSelect
                               aria-label="Term"
-                              className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${!cardInstallmentTerm ? 'border-amber-300 bg-amber-50' : 'border-purple-200'}`}
+                              filled={!!cardInstallmentTerm}
+                              wrapperClassName="mt-1.5"
                               value={cardInstallmentTerm ?? ''}
                               onChange={(e) =>
                                 setCardInstallmentTerm(
@@ -4892,7 +4944,7 @@ export default function CheckoutPage() {
                                   {m} months
                                 </option>
                               ))}
-                            </select>
+                            </PillSelect>
                           )}
                         </>
                       )
