@@ -5,7 +5,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import InstallmentLedgerView from '@/src/components/crm/InstallmentLedgerView'
 
 export const metadata = {
-  title: 'Installment Ledger | Prominent Enterprise',
+  title: 'Installment Ledger | NIG Central',
   description: 'Chronological ledger for one customer installment plan',
 }
 

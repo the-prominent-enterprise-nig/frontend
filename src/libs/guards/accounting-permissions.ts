@@ -36,6 +36,24 @@ export const ACCOUNTING_PERMISSIONS = {
   EXPENSE_UPDATE: 'accounting:expense:update',
   EXPENSE_DELETE: 'accounting:expense:delete',
 
+  // Employees master list (Scenario 40 Gap 1 read-only search extended
+  // into full Business-Owner-level CRUD) — the source of both the
+  // loan/expense payee picker and the "Create Customer" quick-link on its
+  // detail page.
+  EMPLOYEE_READ: 'accounting:employee:read',
+  EMPLOYEE_CREATE: 'accounting:employee:create',
+  EMPLOYEE_UPDATE: 'accounting:employee:update',
+  EMPLOYEE_DELETE: 'accounting:employee:delete',
+
+  // Scenario 52 — moved from POS. Issues against the same Employee Cash
+  // Loan Special Account ledger Accounting's Expense screen already posts
+  // to (Scenario 40).
+  EMPLOYEE_CASH_LOAN_READ: 'accounting:employee-cash-loan:read',
+  EMPLOYEE_CASH_LOAN_CREATE: 'accounting:employee-cash-loan:create',
+  // Revision 2 — Others (non-employee) loans get a direct Pay action;
+  // Employee loans still don't (recovered via payroll/Accounting instead).
+  EMPLOYEE_CASH_LOAN_PAY: 'accounting:employee-cash-loan:pay',
+
   PAYMENT_READ: 'accounting:payment:read',
   PAYMENT_CREATE: 'accounting:payment:create',
   PAYMENT_UPDATE: 'accounting:payment:update',
@@ -186,6 +204,13 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:expense:create': 'Create expenses',
   'accounting:expense:update': 'Edit expenses',
   'accounting:expense:delete': 'Delete expenses',
+  'accounting:employee:read': 'View the Employees master list and search employees',
+  'accounting:employee:create': 'Add a new employee to the master list',
+  'accounting:employee:update': 'Edit an employee record',
+  'accounting:employee:delete': 'Remove an employee from the master list',
+  'accounting:employee-cash-loan:read': 'Search employees and view employee cash-loan balances',
+  'accounting:employee-cash-loan:create': 'Issue an employee cash loan — no approval step',
+  'accounting:employee-cash-loan:pay': 'Record a payment against an Others cash loan',
   'accounting:payment:read': 'View payments',
   'accounting:payment:create': 'Create payments',
   'accounting:payment:update': 'Edit payments',

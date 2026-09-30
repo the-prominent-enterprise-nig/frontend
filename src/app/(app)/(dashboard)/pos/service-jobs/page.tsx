@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { ServiceJobsList } from './_components/ServiceJobsList'
 
 export const metadata = {
-  title: 'Service Jobs | Prominent Enterprise',
+  title: 'Service Jobs | NIG Central',
   description: 'Create and manage reopenable service job material estimates',
 }
 

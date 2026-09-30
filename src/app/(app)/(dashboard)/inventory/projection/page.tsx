@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { ProjectionPageView } from './_components'
 
 export const metadata = {
-  title: 'Stock Projection | Prominent Enterprise',
+  title: 'Stock Projection | NIG Central',
   description: 'View forward stock projections based on demand and supply schedules',
 }
 

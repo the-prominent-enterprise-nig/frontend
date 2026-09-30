@@ -1,4 +1,4 @@
-# Prominent Enterprise Team Workflow
+# NIG Central Team Workflow
 
 **⚠️ IMPORTANT: These workflow rules are mandatory for all agents. Follow them in order.**
 

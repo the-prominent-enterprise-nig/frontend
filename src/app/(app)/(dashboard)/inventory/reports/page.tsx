@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { ReportsDashboard } from './_components'
 
 export const metadata = {
-  title: 'Inventory Reports | Prominent Enterprise',
+  title: 'Inventory Reports | NIG Central',
   description: 'Stock valuation, turnover, and aging reports',
 }
 

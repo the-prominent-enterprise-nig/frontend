@@ -79,7 +79,7 @@ const ReceiveStockLineSchema = z
     }
   )
   .refine((line) => !!line.itemId || !!line.newItemName?.trim(), {
-    message: 'Pick a catalog item or mark it "Something else".',
+    message: 'Pick a catalog item or mark it "Non-catalog items".',
     path: ['itemId'],
   })
 
@@ -91,7 +91,14 @@ export const ReceiveStockFormSchema = z
     // CreateManualReceivingReportFormSchema's own supplierId/newSourceName
     // either-or: an unregistered source is named here instead of picked.
     newSourceName: z.string().max(255).optional(),
-    warehouseId: z.string().min(1, 'Destination warehouse is required'),
+    // Required for every ordinary/PO/reasoned receipt — Location is asked
+    // for on the form. Repossession is the one exception: the destination
+    // is silently the receiver's own branch warehouse (or, unrestricted, one
+    // of the 2 real warehouses) rather than a field, so it can arrive here
+    // already set programmatically with no Location control ever rendered
+    // (see the refine below, and ReceiveStockModal's own auto-default
+    // effect).
+    warehouseId: z.string().optional(),
     // Scenario 55 (Stock-side Manual RR parity, follow-up) — applicationType
     // (new_stock/revert) is gone from the form: 'revert' was never reachable
     // anywhere else in the app (receive-against-PO always hardcodes
@@ -135,6 +142,10 @@ export const ReceiveStockFormSchema = z
       path: ['supplierId'],
     }
   )
+  .refine((data) => !!data.warehouseId || data.reason === 'repossession', {
+    message: 'Destination warehouse is required',
+    path: ['warehouseId'],
+  })
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 

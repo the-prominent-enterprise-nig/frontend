@@ -268,6 +268,7 @@ export interface PosPayment {
   paymentMethod: PosPaymentMethod
   amount: number
   referenceNumber?: string | null
+  checkNumber?: string | null
   giftCardId?: string | null
   createdAt: string
 }
@@ -315,6 +316,13 @@ export interface PosTransaction {
   tpfProviderId?: string | null
   tpfReferenceNumber?: string | null
   tpfApprovedAmount?: number | null
+  /** Scenario 60 — true when this sale is an Employee Appliance Loan (no
+   * down payment, no credit application). Server-verified against the
+   * customer's own customerType, never taken from the request alone. */
+  isEmployeeApplianceLoan?: boolean | null
+  /** HR's own approval reference for the employee appliance loan — set
+   * whenever isEmployeeApplianceLoan is true. */
+  hrApplianceLoanApplicationNumber?: string | null
   /** Present on create()/findOne() — one per distinct financing term used in
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
@@ -437,6 +445,14 @@ export interface CreateTransactionInput {
    * required whenever that down payment is greater than 0. Separate from
    * tpfReferenceNumber (the financier's own application/reference number). */
   tpfDownPaymentReferenceNumber?: string
+  /** Scenario 60 — marks this sale as an Employee Appliance Loan: waives
+   * the down-payment 10% floor and the credit-application requirement.
+   * Only honored server-side when the customer is actually customerType
+   * 'employee' — never trusted from this flag alone. */
+  isEmployeeApplianceLoan?: boolean
+  /** HR's own approval reference for the employee appliance loan —
+   * required whenever isEmployeeApplianceLoan is true. */
+  hrApplianceLoanApplicationNumber?: string
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -570,6 +586,18 @@ export interface PosCustomer {
   businessCategory?: 'private' | 'government'
 }
 
+// Checkout's buyer picker — an Employee not yet linked to a Customer.
+// Picking one resolves to a real PosCustomer via createCustomerFromEmployee
+// (get-or-create), never used as the buyer directly.
+export interface PosEmployeeResult {
+  id: string
+  employeeCode: string
+  firstName: string
+  lastName: string
+  middleName?: string | null
+  branch?: { id: string; name: string } | null
+}
+
 // POS Collections — one row per customer with at least one outstanding
 // installment due, aggregated across all their installment schedules.
 export interface CollectionsCustomer {
@@ -623,6 +651,8 @@ export interface AddPaymentInput {
   amount: number
   giftCardId?: string
   referenceNumber?: string
+  /** The check's own number — cash tendered via the Check sub-mode. */
+  checkNumber?: string
   paymentMethodConfigId?: string
   /** Named sub-choice used (Scenario 37) — POS Terminal for card, bank for
    * bank_transfer, gateway for qr. */
@@ -1052,6 +1082,10 @@ export interface ComputeInstallmentPreviewInput {
   totalAmount: number
   downPayment?: number
   financingTermId: string
+  /** When given, a curated PriceListItemTerm (the real rate card) for this
+   * SKU + term wins over the generic factorRate calculation, if one exists
+   * — see FinancingTermsService.preview(). */
+  priceListItemId?: string
 }
 
 export interface InstallmentScheduleLineWithInvoice {

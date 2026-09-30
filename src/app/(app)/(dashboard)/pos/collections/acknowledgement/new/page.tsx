@@ -9,9 +9,14 @@ export default async function Page() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
   if (!can(session, POS_PERMISSIONS.COLLECTIONS_MANAGE)) redirect('/403')
+  // A branch-assigned caller is restricted to their own branch server-side
+  // too (the service stores actorBranchId regardless of what's submitted) —
+  // mirrored here so the form doesn't even offer a branch picker that would
+  // just get overridden. Same idiom as financing-terms/page.tsx.
+  const restrictedBranchId = session.branchId ?? null
   return (
     <div className="min-h-screen bg-gray-50">
-      <NewAcknowledgementReceiptForm />
+      <NewAcknowledgementReceiptForm restrictedBranchId={restrictedBranchId} />
     </div>
   )
 }

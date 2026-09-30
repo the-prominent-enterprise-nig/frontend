@@ -543,7 +543,7 @@ export interface paths {
     patch: operations['PermissionsController_update']
     trace?: never
   }
-  '/pos/employee-cash-loans/employees': {
+  '/accounting/employee-cash-loans/employees': {
     parameters: {
       query?: never
       header?: never
@@ -560,7 +560,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/pos/employee-cash-loans/bank-accounts': {
+  '/accounting/employee-cash-loans/bank-accounts': {
     parameters: {
       query?: never
       header?: never
@@ -577,7 +577,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/pos/employee-cash-loans/preview': {
+  '/accounting/employee-cash-loans/preview': {
     parameters: {
       query?: never
       header?: never
@@ -594,7 +594,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/pos/employee-cash-loans': {
+  '/accounting/employee-cash-loans': {
     parameters: {
       query?: never
       header?: never
@@ -612,7 +612,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/pos/employee-cash-loans/{id}': {
+  '/accounting/employee-cash-loans/{id}': {
     parameters: {
       query?: never
       header?: never

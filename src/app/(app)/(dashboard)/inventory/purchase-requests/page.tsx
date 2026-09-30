@@ -5,7 +5,7 @@ import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissio
 import { PurchaseRequestList } from './_components/PurchaseRequestList'
 
 export const metadata = {
-  title: 'Purchase Requests | Prominent Enterprise',
+  title: 'Purchase Requests | NIG Central',
   description: 'Create and manage purchase requests for inventory procurement',
 }
 

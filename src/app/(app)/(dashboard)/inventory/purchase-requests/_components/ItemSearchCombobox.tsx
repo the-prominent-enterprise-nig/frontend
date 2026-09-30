@@ -26,28 +26,45 @@ type Props = {
   /** Lists items with available stock at this warehouse first, each with
    * its count — for pickers that draw from one source (Stock Transfer). */
   stockWarehouseId?: string
+  /** Drops serial-tracked items from the results — for a picker whose flow
+   * has no way to capture the arriving unit's actual serial (e.g. a
+   * transfer's unlisted-item receipt line, which only records a bare
+   * quantity). Without this, a serial-tracked pick either silently
+   * fabricates stock with no addressable serial, or gets rejected by the
+   * backend after the rest of the form is filled in. */
+  excludeSerialTracked?: boolean
 }
 
-async function searchCatalog(query: string): Promise<SearchComboboxOption[]> {
+async function searchCatalog(
+  query: string,
+  excludeSerialTracked?: boolean
+): Promise<SearchComboboxOption[]> {
   const res = await getItems({ search: query || undefined, limit: 20, lifecycle: 'active' })
-  return (res.data?.data ?? []).map((item) => ({
-    id: item.id,
-    primary: item.name,
-    secondary: item.sku,
-    meta: {
-      costPrice: item.costPrice ?? null,
-      isSerialTracked: item.isSerialTracked ?? false,
-      isBatchTracked: item.isBatchTracked ?? false,
-    } satisfies ItemSearchMeta,
-  }))
+  return (res.data?.data ?? [])
+    .filter((item) => !excludeSerialTracked || !item.isSerialTracked)
+    .map((item) => ({
+      id: item.id,
+      primary: item.name,
+      secondary: item.sku,
+      meta: {
+        costPrice: item.costPrice ?? null,
+        isSerialTracked: item.isSerialTracked ?? false,
+        isBatchTracked: item.isBatchTracked ?? false,
+      } satisfies ItemSearchMeta,
+    }))
 }
 
 /** Items with available stock at the warehouse, most units first. */
-async function searchStocked(query: string, warehouseId: string): Promise<SearchComboboxOption[]> {
+async function searchStocked(
+  query: string,
+  warehouseId: string,
+  excludeSerialTracked?: boolean
+): Promise<SearchComboboxOption[]> {
   const res = await getStockBalances({ warehouseId, search: query || undefined, limit: 50 })
   const stocked = new Map<string, SearchComboboxOption & { qty: number }>()
   for (const row of res.data?.data ?? []) {
     if (!row.item || row.availableQty <= 0 || stocked.has(row.item.id)) continue
+    if (excludeSerialTracked && row.item.isSerialTracked) continue
     stocked.set(row.item.id, {
       id: row.item.id,
       primary: row.item.name,
@@ -61,11 +78,12 @@ async function searchStocked(query: string, warehouseId: string): Promise<Search
 
 async function searchStockedFirst(
   query: string,
-  warehouseId: string
+  warehouseId: string,
+  excludeSerialTracked?: boolean
 ): Promise<SearchComboboxOption[]> {
   const [stocked, catalog] = await Promise.all([
-    searchStocked(query, warehouseId),
-    searchCatalog(query),
+    searchStocked(query, warehouseId, excludeSerialTracked),
+    searchCatalog(query, excludeSerialTracked),
   ])
   const catalogById = new Map(catalog.map((o) => [o.id, o]))
   const stockedIds = new Set(stocked.map((o) => o.id))
@@ -85,6 +103,7 @@ export function ItemSearchCombobox({
   placeholder = 'Search item by name or SKU…',
   disabled,
   stockWarehouseId,
+  excludeSerialTracked,
 }: Props) {
   return (
     <SearchCombobox
@@ -100,7 +119,9 @@ export function ItemSearchCombobox({
       typeToSearchMessage="Type to search items…"
       emptyMessage="No items found"
       search={(query) =>
-        stockWarehouseId ? searchStockedFirst(query, stockWarehouseId) : searchCatalog(query)
+        stockWarehouseId
+          ? searchStockedFirst(query, stockWarehouseId, excludeSerialTracked)
+          : searchCatalog(query, excludeSerialTracked)
       }
     />
   )

@@ -6,7 +6,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import DailyCollectionView from './_components/DailyCollectionView'
 
 export const metadata = {
-  title: 'Daily Collection Report | Prominent Enterprise',
+  title: 'Daily Collection Report | NIG Central',
   description: "A branch's collections for one business day, with denomination count",
 }
 

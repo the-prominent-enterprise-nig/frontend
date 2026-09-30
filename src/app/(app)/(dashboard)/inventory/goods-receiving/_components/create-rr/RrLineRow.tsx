@@ -2,16 +2,17 @@
 
 /* Scenario 55 (Stock-side Manual RR parity) — the item picker, pricing
  * columns, and per-line actions below mirror ManualRrLineRow.tsx's own
- * layout and interaction exactly: Catalog item/Something else toggle live
+ * layout and interaction exactly: Catalog item/Non-catalog items toggle live
  * in the row, SRP -> Discounts -> Unit Price -> Line Total -> Free grid, a
  * collapsed Tax/Withholding toggle, a duplicate-line action, and — for
- * anything serial-tracked, catalog or "Something else" alike — the serial
- * inputs always visible inline once quantity is set, never behind a
- * separate column or a toggle button. What's additive on top, kept because
- * Manual RR simply has no reason to need it, is a PO-outstanding chip, the
- * repossession/installment-account picker (a repossessed unit is a real
- * already-registered serial, which the plain inline inputs below can't
- * express — it needs its own richer picker), and a quality-hold reason.
+ * anything serial-tracked, catalog or non-catalog alike — the serial inputs
+ * always visible inline once quantity is set, never behind a separate
+ * column or a toggle button. What's additive on top, kept because Manual RR
+ * simply has no reason to need it, is a PO-outstanding chip and a
+ * quality-hold reason. (A repossession line no longer renders through this
+ * component at all — see RepossessedItemsPanel.tsx/RepossessedUnitRow.tsx,
+ * developer-confirmed 2026-09-28: a repossessed unit isn't a purchase line
+ * and carries none of this row's pricing/tax machinery.)
  */
 
 import { useState } from 'react'
@@ -24,11 +25,6 @@ import {
   MANUAL_RR_TAX_CODES,
   MANUAL_RR_WITHHOLDING_CLASSES,
 } from '@/src/schema/inventory/manual-receiving-reports'
-import {
-  InstallmentAccountSearchCombobox,
-  type InstallmentAccountMeta,
-} from '@/src/components/inventory/InstallmentAccountSearchCombobox'
-import type { RepossessedSerialMeta } from '@/src/components/inventory/RepossessedSerialSearchCombobox'
 import { ItemSearchCombobox } from '../../../purchase-requests/_components/ItemSearchCombobox'
 import { MONO } from '../../../purchase-orders/_components/procurementTokens'
 import { SerialCaptureDrawer } from '../../../purchase-orders/_components/receive-po/SerialCaptureDrawer'
@@ -37,7 +33,6 @@ import type {
   LineIssue,
 } from '../../../purchase-orders/_components/receive-po/receiveIssues'
 import { INPUT, INPUT_BAD } from './rrTokens'
-import { RepossessedSerialCaptureDrawer } from './RepossessedSerialCaptureDrawer'
 import { RR_LINE_GRID } from './rrTokens'
 import { lineTotal as computeLineTotal, type Discount, type RrLine } from './rrTotals'
 
@@ -83,7 +78,7 @@ export type RrLineRowProps = {
   poChip?: string
   canViewCost: boolean
   showErrors: boolean
-  /** The resolver's own "pick a catalog item or mark it Something else"
+  /** The resolver's own "pick a catalog item or mark it Non-catalog items"
    * message — a truly blank line ("+ Add Line" with neither ever filled in)
    * has nothing else to surface it, since rrChecks.ts's own issue list never
    * modeled a missing item (every line always carried one, pre-Scenario 55). */
@@ -103,21 +98,6 @@ export type RrLineRowProps = {
   onToggleFreebie: () => void
   onToggleQualityHold: () => void
   onQcReasonChange: (value: string) => void
-  /** Scenario 55 Part 4 — only rendered when the header's reason is
-   * `repossession`; the account this line's unit was repossessed from. */
-  showInstallmentAccountPicker?: boolean
-  installmentAccountLabel?: string
-  onInstallmentAccountChange: (id: string, meta?: InstallmentAccountMeta, label?: string) => void
-  /** Scenario 55 Part 4 — per-unit display labels for existingSerialNumberIds
-   * (SearchCombobox only knows a label once picked, same reason
-   * installmentAccountLabel exists). */
-  existingSerialLabels?: Record<number, string>
-  onExistingSerialChange: (
-    unitIndex: number,
-    id: string,
-    meta?: RepossessedSerialMeta,
-    label?: string
-  ) => void
   /** Scenario 55 (Stock-side Manual RR parity, follow-up) — mirrors
    * ManualRrForm.tsx's own duplicateLine(): inserts a copy right after this
    * line. The copy's mode/serial-tracked-ness is inferred from its copied
@@ -133,7 +113,7 @@ export type RrLineRowProps = {
  * One received line: which item (or, for anything not in the catalog, what
  * it's called), how many, what it cost, and how it's taxed — plus whatever
  * this specific line needs to actually land as real stock (a serial per
- * unit, which account it was repossessed from, a reason it's on hold).
+ * unit, a reason it's on hold).
  */
 export function RrLineRow(props: RrLineRowProps): React.ReactElement {
   const {
@@ -158,11 +138,6 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
     onToggleFreebie,
     onToggleQualityHold,
     onQcReasonChange,
-    showInstallmentAccountPicker,
-    installmentAccountLabel,
-    onInstallmentAccountChange,
-    existingSerialLabels,
-    onExistingSerialChange,
     onDuplicate,
     onRemove,
     onFixIssue,
@@ -187,28 +162,20 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
       }`}
     >
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        {/* Scenario 55 Part 4 — a repossessed unit is always an
-            already-registered serial on a real catalog item; "Something
-            else" has no existing serial to link, so the toggle doesn't even
-            offer it for this reason. */}
-        {!showInstallmentAccountPicker && (
-          <>
-            <button
-              type="button"
-              className={toggleBtnClass(mode === 'catalog')}
-              onClick={() => onSetMode('catalog')}
-            >
-              Catalog item
-            </button>
-            <button
-              type="button"
-              className={toggleBtnClass(mode === 'other')}
-              onClick={() => onSetMode('other')}
-            >
-              Something else
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className={toggleBtnClass(mode === 'catalog')}
+          onClick={() => onSetMode('catalog')}
+        >
+          Catalog item
+        </button>
+        <button
+          type="button"
+          className={toggleBtnClass(mode === 'other')}
+          onClick={() => onSetMode('other')}
+        >
+          Non-catalog items
+        </button>
         {poChip && (
           <span className="rounded-[4px] bg-[#f1ebfb] px-1.5 py-0.5 text-[10px] font-medium text-[#3f1490]">
             {poChip}
@@ -592,34 +559,6 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
         </div>
       )}
 
-      {/* Same "rides beside the row" treatment as the QC hold reason above —
-          which account this unit was repossessed from is exactly the kind of
-          thing the receiver needs visible while looking at the line, not
-          buried in a drawer. */}
-      {showInstallmentAccountPicker && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-2.5 rounded-[9px] border border-[#ddd0f7] bg-[#faf7ff] px-3 py-2.5">
-          <span
-            className={`${MONO} shrink-0 text-[9.5px] uppercase tracking-[.09em] text-[#3f1490]`}
-          >
-            Repossessed from
-          </span>
-          <div className="min-w-55 flex-1">
-            <InstallmentAccountSearchCombobox
-              value={line.installmentAccountId ?? ''}
-              onChange={(id) => onInstallmentAccountChange(id)}
-              onSelect={(option: SearchComboboxOption) =>
-                onInstallmentAccountChange(
-                  option.id,
-                  option.meta as InstallmentAccountMeta,
-                  option.primary
-                )
-              }
-              initialLabel={installmentAccountLabel}
-            />
-          </div>
-        </div>
-      )}
-
       {/* Scenario 55 (Stock-side Manual RR parity, follow-up) — mirrors
           ManualRrLineRow.tsx's own "Track by serial number" checkbox
           exactly: only 'other' mode needs it, since a catalog item's
@@ -642,38 +581,23 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
           toggle. Keeps Stock's own richer capture components (duplicate
           highlighting, a progress readout, Clear all) rather than switching
           to Manual RR's bare text-input grid — that part was never what was
-          being compared. Each component still takes an onClose (its own
-          "Close" button stays in the header), now a no-op: there's no
-          toggle state left for it to collapse into, and a serial-tracked
-          line always needs its serials entered regardless. */}
-      {isSerialTracked &&
-        qty > 0 &&
-        (showInstallmentAccountPicker ? (
-          <div className="mt-2.5">
-            <RepossessedSerialCaptureDrawer
-              itemId={line.itemId ?? ''}
-              quantity={qty}
-              serialIds={line.existingSerialNumberIds ?? []}
-              labels={existingSerialLabels ?? {}}
-              showErrors={showErrors}
-              isDuplicate={isDuplicateSerial}
-              onChange={onExistingSerialChange}
-              onClose={() => {}}
-            />
-          </div>
-        ) : (
-          <div className="mt-2.5">
-            <SerialCaptureDrawer
-              quantity={qty}
-              serials={line.serialNumbers ?? []}
-              showErrors={showErrors}
-              isDuplicate={isDuplicateSerial}
-              onChange={onSerialChange}
-              onClearAll={onClearSerials}
-              onClose={() => {}}
-            />
-          </div>
-        ))}
+          being compared. Still takes an onClose (its own "Close" button
+          stays in the header), now a no-op: there's no toggle state left for
+          it to collapse into, and a serial-tracked line always needs its
+          serials entered regardless. */}
+      {isSerialTracked && qty > 0 && (
+        <div className="mt-2.5">
+          <SerialCaptureDrawer
+            quantity={qty}
+            serials={line.serialNumbers ?? []}
+            showErrors={showErrors}
+            isDuplicate={isDuplicateSerial}
+            onChange={onSerialChange}
+            onClearAll={onClearSerials}
+            onClose={() => {}}
+          />
+        </div>
+      )}
 
       {issues.map((issue, n) => (
         <div

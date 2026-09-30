@@ -6,7 +6,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { CatalogHub } from './_components/CatalogHub'
 
 export const metadata = {
-  title: 'Catalog | Prominent Enterprise',
+  title: 'Catalog | NIG Central',
   description: 'Manage items, categories, attributes, units of measure, and barcodes',
 }
 

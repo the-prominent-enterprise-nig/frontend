@@ -121,12 +121,14 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const bankSelect = page.getByLabel('Bank')
     await expect(bankSelect).toBeVisible({ timeout: 10_000 })
     const optionTexts = await bankSelect.locator('option').allTextContents()
-    expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'Metrobank', 'Maya']))
+    expect(optionTexts).toEqual(
+      expect.arrayContaining(['BDO-Q', 'BPI-Araneta', 'Metrobank', 'LB-Sagay'])
+    )
 
     await cleanup(page, cartRow)
   })
 
-  test('QR sub-mode under Cash shows a Gateway dropdown with the 5 seeded gateways, and the tender section no longer duplicates it', async ({
+  test('QR sub-mode under Cash shows a Gateway dropdown with the seeded Maya and Sbank gateways, and the tender section no longer duplicates it', async ({
     page,
   }) => {
     await ensureManilaSession(page)
@@ -139,15 +141,7 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const gatewaySelect = page.getByLabel('Gateway')
     await expect(gatewaySelect).toBeVisible({ timeout: 10_000 })
     const optionTexts = await gatewaySelect.locator('option').allTextContents()
-    expect(optionTexts).toEqual(
-      expect.arrayContaining([
-        'Palawan',
-        'GCash Soundpay',
-        'ECPay',
-        'Maya QR',
-        'Security Bank (SCB) QR',
-      ])
-    )
+    expect(optionTexts).toEqual(expect.arrayContaining(['Maya', 'Sbank']))
 
     // Tender section: switch its row to QR via the row's own (always-visible)
     // method dropdown, confirm no duplicate gateway picker there — reference
@@ -174,7 +168,7 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const terminalSelect = page.getByLabel('POS Terminal')
     await expect(terminalSelect).toBeVisible({ timeout: 10_000 })
     const optionTexts = await terminalSelect.locator('option').allTextContents()
-    expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'Metrobank', 'Maya']))
+    expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'MBTC', 'Maya']))
 
     await page.getByLabel('Payment method', { exact: true }).first().selectOption({ label: 'Card' })
     await page.getByPlaceholder('0.00').first().fill('100')

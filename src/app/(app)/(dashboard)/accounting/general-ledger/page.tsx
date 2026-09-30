@@ -4,7 +4,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import GeneralLedgerView from './_components/GeneralLedgerView'
 
 export const metadata = {
-  title: 'General Ledger | Prominent Enterprise',
+  title: 'General Ledger | NIG Central',
   description: 'Every posted journal entry line, with running balances per account',
 }
 
