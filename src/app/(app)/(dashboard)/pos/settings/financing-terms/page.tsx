@@ -4,7 +4,7 @@ import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { FinancingTermList } from './_components/FinancingTermList'
 
-export const metadata = { title: 'Financing Terms | Prominent Enterprise' }
+export const metadata = { title: 'Financing Terms | NIG Central' }
 
 export default async function FinancingTermsPage() {
   const session = await getSessionOrNull()

@@ -454,8 +454,8 @@ export default function ManualRrForm() {
                 </span>
               </div>
               <span className="text-[11.5px] text-[#8b8b9b]">
-                Pick a catalog item, or mark it &ldquo;Something else&rdquo; for anything not in the
-                catalog.
+                Pick a catalog item, or mark it &ldquo;Non-catalog items&rdquo; for anything not in
+                the catalog.
               </span>
             </div>
             <button

@@ -6,7 +6,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { StockHub } from './_components/StockHub'
 
 export const metadata = {
-  title: 'Stock | Prominent Enterprise',
+  title: 'Stock | NIG Central',
   description: 'Real-time stock balances, reservations, and negative stock policies',
 }
 

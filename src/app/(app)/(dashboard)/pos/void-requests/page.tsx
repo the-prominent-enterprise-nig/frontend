@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import VoidRequestsList from './_components/VoidRequestsList'
 
 export const metadata = {
-  title: 'Void Requests | Prominent Enterprise',
+  title: 'Void Requests | NIG Central',
 }
 
 export default async function VoidRequestsPage() {

@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { NegativeStockPageView } from './_components'
 
 export const metadata = {
-  title: 'Negative Stock Policy | Prominent Enterprise',
+  title: 'Negative Stock Policy | NIG Central',
   description: 'Configure whether items are allowed to go below zero stock on hand',
 }
 

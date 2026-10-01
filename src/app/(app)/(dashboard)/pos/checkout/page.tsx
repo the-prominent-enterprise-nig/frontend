@@ -30,6 +30,7 @@ import {
   List,
   Printer,
   FileSignature,
+  IdCard,
 } from 'lucide-react'
 import {
   computePricingTotals,
@@ -52,7 +53,8 @@ import {
   addPayment,
   validatePromoCode,
   parkSale,
-  searchCustomers,
+  searchCustomersAndEmployees,
+  createCustomerFromEmployee,
   getCustomerById,
   getLoyaltyByCustomer,
   earnPoints,
@@ -114,6 +116,7 @@ import type {
   PayNowMethod,
   PromoValidationResult,
   PosCustomer,
+  PosEmployeeResult,
   LoyaltyAccount,
   LoyaltyProgram,
   PosTransaction,
@@ -231,6 +234,157 @@ interface PaymentRow {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+// Dropdown that reads as clickable: white field, purple border, visible
+// chevron. Tinted purple once a value is chosen.
+function PillSelect({
+  filled,
+  wrapperClassName = '',
+  className = '',
+  children,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  filled: boolean
+  wrapperClassName?: string
+}) {
+  return (
+    <div className={`relative ${wrapperClassName}`}>
+      <select
+        {...props}
+        className={`w-full cursor-pointer appearance-none rounded-lg border-2 py-2.5 pl-3 pr-10 text-[13px] font-semibold shadow-sm outline-none transition-colors hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 ${
+          filled
+            ? 'border-purple-300 bg-purple-50 text-purple-800'
+            : 'border-purple-200 bg-white text-gray-600'
+        } ${className}`}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-500"
+      />
+    </div>
+  )
+}
+
+// Searchable version of PillSelect: type to filter, arrows + Enter to pick.
+function PillCombobox({
+  options,
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  wrapperClassName = '',
+}: {
+  options: { value: string; label: string }[]
+  value: string | undefined
+  onChange: (value: string | undefined) => void
+  placeholder: string
+  ariaLabel: string
+  wrapperClassName?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const selected = options.find((o) => o.value === value)
+  const q = query.trim().toLowerCase()
+  const filtered = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  function pick(v: string | undefined) {
+    onChange(v)
+    setOpen(false)
+    setQuery('')
+  }
+
+  return (
+    <div ref={rootRef} className={`relative ${wrapperClassName}`}>
+      <input
+        type="text"
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        autoComplete="off"
+        value={open ? query : (selected?.label ?? '')}
+        placeholder={open && selected ? selected.label : placeholder}
+        onFocus={() => {
+          setOpen(true)
+          setActive(0)
+        }}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setActive(0)
+          setOpen(true)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setOpen(true)
+            setActive((a) => Math.min(a + 1, filtered.length - 1))
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setActive((a) => Math.max(a - 1, 0))
+          } else if (e.key === 'Enter' && open) {
+            e.preventDefault()
+            if (filtered[active]) pick(filtered[active].value)
+          } else if (e.key === 'Escape') {
+            setOpen(false)
+            setQuery('')
+          }
+        }}
+        className={`w-full cursor-pointer rounded-lg border-2 py-2.5 pl-3 pr-10 text-[13px] font-semibold shadow-sm outline-none transition-colors placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 ${
+          selected && !open
+            ? 'border-purple-300 bg-purple-50 text-purple-800'
+            : 'border-purple-200 bg-white text-gray-800'
+        }`}
+      />
+      <ChevronDown
+        aria-hidden
+        className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-500 transition-transform ${open ? 'rotate-180' : ''}`}
+      />
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-purple-200 bg-white py-1 shadow-lg"
+        >
+          {filtered.length === 0 ? (
+            <li className="px-3 py-2 text-[13px] text-gray-400">No matches</li>
+          ) : (
+            filtered.map((o, i) => (
+              <li
+                key={o.value}
+                role="option"
+                aria-selected={o.value === value}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  pick(o.value)
+                }}
+                onMouseEnter={() => setActive(i)}
+                className={`cursor-pointer px-3 py-2 text-[13px] font-medium ${
+                  i === active ? 'bg-purple-100 text-purple-800' : 'text-gray-700'
+                } ${o.value === value ? 'font-semibold' : ''}`}
+              >
+                {o.label}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   cash: 'Cash',
@@ -499,6 +653,12 @@ export default function CheckoutPage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<PosCustomer[]>([])
+  // Not-yet-linked employees matching the same search — shown alongside
+  // customerResults in one picker; selecting one get-or-creates their real
+  // Customer record (see selectEmployee below), never used as the buyer id
+  // directly.
+  const [employeeResults, setEmployeeResults] = useState<PosEmployeeResult[]>([])
+  const [resolvingEmployee, setResolvingEmployee] = useState(false)
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
   const [searchingCustomers, setSearchingCustomers] = useState(false)
   const customerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -522,7 +682,9 @@ export default function CheckoutPage() {
   // just applied to every line at once via the toggle's onClick below
   // instead of chosen per line). If any item needs a different mode, that's
   // a separate transaction.
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment' | 'credit_card'>('cash')
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment' | 'delivery_receipt'>(
+    'cash'
+  )
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -535,10 +697,13 @@ export default function CheckoutPage() {
   // Scenario 37 — same treatment for Cash's own sub-choice (Cash on Hand /
   // Bank Transfer / QR), captured once via Item Payment Mode (transaction-
   // scoped, see hasCashLine), carried into whatever payment row gets added.
-  const [cashSubMode, setCashSubMode] = useState<'cash_on_hand' | 'bank_transfer' | 'qr'>(
-    'cash_on_hand'
-  )
+  const [cashSubMode, setCashSubMode] = useState<
+    'cash_on_hand' | 'check' | 'bank_transfer' | 'qr' | 'card'
+  >('cash_on_hand')
   const [cashPaymentOptionId, setCashPaymentOptionId] = useState<string | undefined>()
+  // The check's own number, captured once for the transaction while the Check
+  // sub-mode is chosen.
+  const [checkNumber, setCheckNumber] = useState('')
   // Scenario 38 Gap 7 — the cashier confirms the transfer already landed at
   // the register (e.g. checked the business's own banking app in real
   // time), so it posts straight to Cash in Bank instead of the usual
@@ -663,6 +828,14 @@ export default function CheckoutPage() {
    *  the list contains it. */
   const arrivalSelectRef = useRef<string | null>(null)
   const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
+
+  // Scenario 60 — Employee Appliance Loan: waives the down-payment floor
+  // and the credit-application requirement for an employee-tagged customer.
+  // Gated on the tag (only rendered when isEmployeeCustomer), but still a
+  // real checked/unchecked toggle rather than a fully automatic behavior —
+  // the cashier confirms it, same spirit as a manager override.
+  const [employeeApplianceLoanChecked, setEmployeeApplianceLoanChecked] = useState(false)
+  const [hrApplianceLoanApplicationNumber, setHrApplianceLoanApplicationNumber] = useState('')
 
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
@@ -1165,18 +1338,20 @@ export default function CheckoutPage() {
     }
   }, [OFFLINE_QUEUE_KEY])
 
-  // Debounced customer search
+  // Debounced customer + employee search
   useEffect(() => {
     if (!customerSearch.trim()) {
       setCustomerResults([])
+      setEmployeeResults([])
       setCustomerSearchOpen(false)
       return
     }
     if (customerTimer.current) clearTimeout(customerTimer.current)
     customerTimer.current = setTimeout(async () => {
       setSearchingCustomers(true)
-      const res = await searchCustomers(customerSearch.trim())
-      setCustomerResults(res.data ?? [])
+      const res = await searchCustomersAndEmployees(customerSearch.trim())
+      setCustomerResults(res.data?.customers ?? [])
+      setEmployeeResults(res.data?.employees ?? [])
       setCustomerSearchOpen(true)
       setSearchingCustomers(false)
     }, 300)
@@ -1375,6 +1550,13 @@ export default function CheckoutPage() {
   const isGovernmentInstitutionalCustomer =
     selectedCustomer?.customerType === 'business' &&
     selectedCustomer?.businessCategory === 'government'
+  // Scenario 60 — an employee-tagged customer can waive the down-payment
+  // floor and the credit-application requirement the same way a government
+  // institutional customer already does, but only once the cashier
+  // explicitly checks the box below (employeeApplianceLoanChecked) rather
+  // than automatically on every sale to that customer.
+  const isEmployeeCustomer = selectedCustomer?.customerType === 'employee'
+  const employeeApplianceLoanActive = isEmployeeCustomer && employeeApplianceLoanChecked
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -1387,14 +1569,14 @@ export default function CheckoutPage() {
   // paid by card in this sale, so the Card Acquirer/Straight-Installment/Term
   // fields render once, not per line.
   const hasCreditCardLine =
-    (cashCartLines.length > 0 && paymentMode === 'credit_card') ||
+    (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
     (installmentCartLines.length > 0 && installmentPaymentMethod === 'credit_card')
   // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR). Also
   // covers the down payment's cash tendering now that it shares this pool —
   // cash-lines and installment-lines never coexist in one cart, so only one
   // of the two OR branches is ever true.
   const hasCashLine =
-    (cashCartLines.length > 0 && paymentMode === 'cash') ||
+    (cashCartLines.length > 0 && paymentMode !== 'installment') ||
     (installmentCartLines.length > 0 && installmentPaymentMethod === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
@@ -1427,20 +1609,25 @@ export default function CheckoutPage() {
     ) / 100
   const tpfShareOfPromo = subtotal > 0 ? Math.min(1, tpfLinesGross / subtotal) * promoDiscount : 0
   const tpfLinesTotal = Math.max(0, Math.round((tpfLinesGross - tpfShareOfPromo) * 100) / 100)
-  const installmentDownPaymentsTotal =
-    Math.round(
-      inhouseInstallmentCartLines.reduce(
-        (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
-        0
-      ) * 100
-    ) / 100
-  const tpfDownPaymentsTotal =
-    Math.round(
-      tpfInstallmentCartLines.reduce(
-        (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
-        0
-      ) * 100
-    ) / 100
+  // Scenario 60 — both totals collapse to 0 for an Employee Appliance
+  // Loan, overriding whatever's left in downPaymentInput from before the
+  // checkbox was checked; nothing is collected at the register for it.
+  const installmentDownPaymentsTotal = employeeApplianceLoanActive
+    ? 0
+    : Math.round(
+        inhouseInstallmentCartLines.reduce(
+          (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
+          0
+        ) * 100
+      ) / 100
+  const tpfDownPaymentsTotal = employeeApplianceLoanActive
+    ? 0
+    : Math.round(
+        tpfInstallmentCartLines.reduce(
+          (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
+          0
+        ) * 100
+      ) / 100
   // Every down payment being collected at this register, whoever carries the
   // balance afterwards — inhouse and TPF share one tender method and one
   // pool, so the toggle labels itself with the combined figure.
@@ -1592,12 +1779,13 @@ export default function CheckoutPage() {
   // has its own amount/term/down-payment, so each gets its own preview call
   // (POST /pos/financing-terms/preview is already single-amount-scoped, no
   // backend change needed to call it once per line instead of once per cart).
-  const installmentLinesDepKey = installmentCartLines
-    .map(
-      (l) =>
-        `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}`
-    )
-    .join('|')
+  const installmentLinesDepKey =
+    installmentCartLines
+      .map(
+        (l) =>
+          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}`
+      )
+      .join('|') + `|employeeLoan:${employeeApplianceLoanActive}`
 
   // Approval happens in someone ELSE's session — only Business Owner holds
   // pos:application:approve — so "approve in another tab, come back to the
@@ -1652,6 +1840,20 @@ export default function CheckoutPage() {
   // stale list that may auto-select an application already consumed
   // elsewhere. Same requestIdRef guard usePriceResolution.ts uses.
   const creditAppsRequestIdRef = useRef(0)
+
+  // Scenario 60 — resets the Employee Appliance Loan checkbox + HR
+  // reference whenever the selected customer actually changes (not on
+  // every re-render): auto-checks for a newly-selected employee-tagged
+  // customer, clears for anyone else, so a previous customer's choice
+  // never silently carries over onto a new one.
+  const lastEmployeeLoanCustomerIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const customerId = selectedCustomer?.id ?? null
+    if (lastEmployeeLoanCustomerIdRef.current === customerId) return
+    lastEmployeeLoanCustomerIdRef.current = customerId
+    setEmployeeApplianceLoanChecked(isEmployeeCustomer)
+    setHrApplianceLoanApplicationNumber('')
+  }, [selectedCustomer?.id, isEmployeeCustomer])
 
   // Scenario 17 Part 6 — reload this customer's approved, unused credit
   // applications whenever the customer or cart's installment-line count
@@ -1771,7 +1973,9 @@ export default function CheckoutPage() {
       }
       installmentPreviewTimers.current[line.lineId] = setTimeout(async () => {
         setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: true }))
-        const downPayment = parseFloat(line.downPaymentInput ?? '0') || 0
+        const downPayment = employeeApplianceLoanActive
+          ? 0
+          : parseFloat(line.downPaymentInput ?? '0') || 0
         const res = await previewInstallment({
           totalAmount: lineAmount,
           downPayment,
@@ -1845,10 +2049,27 @@ export default function CheckoutPage() {
 
   // ─── Customer actions ──────────────────────────────────────────────────────
 
+  // Resolves the employee to their real Customer record (get-or-create, see
+  // PosCustomersService.getOrCreateFromEmployee) and picks that — from this
+  // point on it's exactly a normal customer pick, tagged customerType
+  // 'employee', which is what already drives the Employee Appliance Loan
+  // option below (Scenario 60).
+  async function selectEmployee(employee: PosEmployeeResult) {
+    setResolvingEmployee(true)
+    const res = await createCustomerFromEmployee(employee.id)
+    setResolvingEmployee(false)
+    if (!res.success || !res.data) {
+      setError(res.error || 'Could not resolve this employee to a customer record.')
+      return
+    }
+    await selectCustomer(res.data)
+  }
+
   async function selectCustomer(customer: PosCustomer) {
     setSelectedCustomer(customer)
     setCustomerSearch('')
     setCustomerResults([])
+    setEmployeeResults([])
     setCustomerSearchOpen(false)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
@@ -2638,7 +2859,7 @@ export default function CheckoutPage() {
   function preferredPaymentMethodKey(): PosPaymentMethod | null {
     if (hasCreditCardLine) return 'card'
     if (hasCashLine) {
-      return cashSubMode === 'cash_on_hand'
+      return cashSubMode === 'cash_on_hand' || cashSubMode === 'check'
         ? 'cash'
         : cashSubMode === 'bank_transfer'
           ? 'bank_transfer'
@@ -2796,6 +3017,11 @@ export default function CheckoutPage() {
       return
     }
 
+    if (employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()) {
+      setError('Enter the HR appliance loan application number.')
+      return
+    }
+
     const lineMissingTerm = inhouseInstallmentCartLines.find((l) => !l.financingTermId)
     if (lineMissingTerm) {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
@@ -2804,7 +3030,8 @@ export default function CheckoutPage() {
     if (
       inhouseInstallmentCartLines.length > 0 &&
       !creditApplicationId &&
-      !isGovernmentInstitutionalCustomer
+      !isGovernmentInstitutionalCustomer &&
+      !employeeApplianceLoanActive
     ) {
       setError(
         'Select the approved credit application for this customer — every installment sale requires one.'
@@ -2825,8 +3052,12 @@ export default function CheckoutPage() {
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-        const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
-        if (downPayment <= 0) {
+        const downPayment = employeeApplianceLoanActive
+          ? 0
+          : parseFloat(l.downPaymentInput ?? '0') || 0
+        // Scenario 60 — an Employee Appliance Loan waives the down payment
+        // (and the ">0" / 10%-floor checks below) entirely.
+        if (!employeeApplianceLoanActive && downPayment <= 0) {
           setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
           return
         }
@@ -2834,7 +3065,13 @@ export default function CheckoutPage() {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
-        if (downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE) {
+        // Both sides of the merge: development's Employee Appliance Loan
+        // waiver, and the floor raised from a hard-coded 10% to the shared
+        // DOWN_PAYMENT_FLOOR_RATE (30%, client 2026-09-28).
+        if (
+          !employeeApplianceLoanActive &&
+          downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
+        ) {
           setError(
             `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
           )
@@ -2845,7 +3082,9 @@ export default function CheckoutPage() {
     for (const l of inhouseInstallmentCartLines) {
       const lineAmount =
         effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-      const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
+      const downPayment = employeeApplianceLoanActive
+        ? 0
+        : parseFloat(l.downPaymentInput ?? '0') || 0
       if (downPayment < 0 || downPayment > lineAmount) {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
         return
@@ -2854,7 +3093,12 @@ export default function CheckoutPage() {
       // tax-inclusive/exclusive price conversion above — without it, typing
       // the exact rounded-to-centavo value shown by the "Min" hint below
       // can land a hair under the true unrounded floor and be rejected.
-      if (downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE) {
+      // Waived entirely for an Employee Appliance Loan (development), and the
+      // floor itself is the shared 30% rate rather than a hard-coded 10%.
+      if (
+        !employeeApplianceLoanActive &&
+        downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
+      ) {
         setError(
           `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
         )
@@ -2882,21 +3126,24 @@ export default function CheckoutPage() {
         setError('Only cash payments are accepted while offline.')
         return
       }
-      // CR Number (collection receipt) is required on every row whenever
-      // this sale has an inhouse installment/down-payment component, or a
-      // pure-TPF cart's own down payment — it doubles as the receipt/CR
-      // number issued at the time the down payment is collected, so plain
-      // cash isn't exempt the way it is elsewhere. A plain sale still needs
-      // a reference for card/bank/e-wallet/etc. (REF_METHODS), just not for
-      // plain cash.
+      // CR Number (collection receipt) is required on every payment row of
+      // a sale, whatever the method — cash on hand and check included.
+      // Reserve mode still only asks for a reference on REF_METHODS.
       const missingRef = payments.find(
         (p) =>
           p.amount > 0 &&
           !p.referenceNumber.trim() &&
-          (inhouseInstallmentCartLines.length > 0 ||
-            (isPureTpfCart && tpfDownPaymentsTotal > 0) ||
-            REF_METHODS.includes(p.method))
+          (saleMode === 'sale' || REF_METHODS.includes(p.method))
       )
+      if (
+        hasCashLine &&
+        cashSubMode === 'check' &&
+        !checkNumber.trim() &&
+        payments.some((p) => p.method === 'cash' && p.amount > 0)
+      ) {
+        setError('Check Number is required for check payments.')
+        return
+      }
       if (missingRef) {
         setError(`CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
         return
@@ -3017,6 +3264,10 @@ export default function CheckoutPage() {
           totalAmount,
           isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
+          isEmployeeApplianceLoan: employeeApplianceLoanActive || undefined,
+          hrApplianceLoanApplicationNumber: employeeApplianceLoanActive
+            ? hrApplianceLoanApplicationNumber.trim()
+            : undefined,
           // The approving manager's id is read back off the cart when the
           // component state that normally holds it is gone. A price override
           // writes to both: priceOverrideBy on the line (which is part of
@@ -3060,10 +3311,14 @@ export default function CheckoutPage() {
                 ? l.financingTermId
                 : undefined,
             // Both providers collect one — inhouse's funds its schedule,
-            // TPF's is simply the slice the financier doesn't fund.
+            // TPF's is simply the slice the financier doesn't fund. Waived
+            // to 0 for an Employee Appliance Loan (Scenario 60), overriding
+            // whatever was typed/defaulted before the checkbox was checked.
             downPayment:
               l.invoiceType === 'installment'
-                ? parseFloat(l.downPaymentInput ?? '0') || 0
+                ? employeeApplianceLoanActive
+                  ? 0
+                  : parseFloat(l.downPaymentInput ?? '0') || 0
                 : undefined,
           })),
         })
@@ -3188,6 +3443,10 @@ export default function CheckoutPage() {
             paymentMethod: row.method,
             amount,
             referenceNumber: row.referenceNumber || undefined,
+            checkNumber:
+              row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+                ? checkNumber.trim() || undefined
+                : undefined,
             paymentMethodConfigId: row.configId,
             // Scenario 37 — card's terminal/txn-mode/term, and bank_transfer/qr's
             // bank/gateway, all come from the Payment Method toggle's
@@ -3197,7 +3456,11 @@ export default function CheckoutPage() {
                 ? cardTerminalOptionId
                 : row.method === 'bank_transfer' || row.method === 'qr'
                   ? cashPaymentOptionId
-                  : row.paymentMethodOptionId,
+                  : row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+                    ? configuredMethods
+                        .find((m) => m.key === 'cash')
+                        ?.options.find((o) => o.isEnabled && o.name === 'Check')?.id
+                    : row.paymentMethodOptionId,
             cardTxnMode: row.method === 'card' ? cardTxnMode : undefined,
             cardInstallmentTerm: row.method === 'card' ? cardInstallmentTerm : undefined,
             bankTransferVerifiedAtRegister:
@@ -3889,7 +4152,7 @@ export default function CheckoutPage() {
 
         {/* ── Right: Customer + Summary + Payment ─────────────────────────────── */}
         <div
-          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-130 lg:w-150 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
+          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-140 lg:w-165 xl:w-180 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
@@ -3905,8 +4168,13 @@ export default function CheckoutPage() {
                       <User size={13} className="text-purple-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
                         {customerDisplayName(selectedCustomer)}
+                        {isEmployeeCustomer && (
+                          <span className="rounded-full bg-prominent-purple-200 px-1.5 py-0.5 text-[10px] font-medium text-prominent-purple-900">
+                            Employee
+                          </span>
+                        )}
                       </p>
                       <div className="flex items-center gap-2">
                         {selectedCustomer.phone && (
@@ -3996,23 +4264,53 @@ export default function CheckoutPage() {
                 </div>
 
                 {customerSearchOpen && (
-                  <div className="mt-1 max-h-36 overflow-y-auto rounded-xl border border-purple-200 bg-white shadow-lg">
-                    {customerResults.length === 0 ? (
-                      <p className="px-3 py-2 text-xs text-gray-700">No customers found</p>
+                  <div className="mt-1 max-h-48 overflow-y-auto rounded-xl border border-purple-200 bg-white shadow-lg">
+                    {customerResults.length === 0 && employeeResults.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-700">
+                        No customers or employees found
+                      </p>
                     ) : (
-                      customerResults.map((c) => (
-                        <button
-                          key={c.id}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
-                          onMouseDown={() => selectCustomer(c)}
-                        >
-                          <User size={11} className="shrink-0 text-gray-700" />
-                          <div>
-                            <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
-                            {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
-                          </div>
-                        </button>
-                      ))
+                      <>
+                        {customerResults.map((c) => (
+                          <button
+                            key={c.id}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
+                            onMouseDown={() => selectCustomer(c)}
+                          >
+                            <User size={11} className="shrink-0 text-gray-700" />
+                            <div>
+                              <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
+                              {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
+                            </div>
+                          </button>
+                        ))}
+                        {employeeResults.length > 0 && (
+                          <p className="border-t border-gray-100 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                            Employees
+                          </p>
+                        )}
+                        {employeeResults.map((emp) => (
+                          <button
+                            key={emp.id}
+                            disabled={resolvingEmployee}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50 disabled:opacity-50"
+                            onMouseDown={() => selectEmployee(emp)}
+                          >
+                            <IdCard size={11} className="shrink-0 text-gray-700" />
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {[emp.firstName, emp.middleName, emp.lastName]
+                                  .filter(Boolean)
+                                  .join(' ')}
+                              </p>
+                              <p className="text-xs text-gray-700">
+                                {emp.employeeCode}
+                                {emp.branch ? ` · ${emp.branch.name}` : ''}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </>
                     )}
                   </div>
                 )}
@@ -4024,6 +4322,39 @@ export default function CheckoutPage() {
                   <UserPlus size={12} /> New Customer
                 </button>
               </>
+            )}
+
+            {/* Scenario 60 — only shown for a customer already tagged as an
+                employee; the cashier still explicitly confirms it rather
+                than this being fully automatic like the government
+                institutional skip below. */}
+            {selectedCustomer && isEmployeeCustomer && (
+              <div className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5">
+                <label className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={employeeApplianceLoanChecked}
+                    onChange={(e) => setEmployeeApplianceLoanChecked(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-prominent-purple-900">
+                      Employee Appliance Loan
+                    </span>
+                    <span className="block text-gray-700">
+                      No down payment, no credit application required
+                    </span>
+                  </span>
+                </label>
+                {employeeApplianceLoanChecked && (
+                  <input
+                    className="mt-2 w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                    placeholder="HR Appliance Loan Application Number *"
+                    value={hrApplianceLoanApplicationNumber}
+                    onChange={(e) => setHrApplianceLoanApplicationNumber(e.target.value)}
+                  />
+                )}
+              </div>
             )}
           </div>
 
@@ -4520,18 +4851,25 @@ export default function CheckoutPage() {
                         Government institutional customer — no credit application required.
                       </p>
                     )}
-                    {selectedCustomer && !isGovernmentInstitutionalCustomer && (
-                      <div className="mt-2.5">
-                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
-                          Approved Credit Application
-                        </label>
-                        {/* The picker only exists once there is something to
+                    {selectedCustomer && employeeApplianceLoanActive && (
+                      <p className="mt-2.5 text-[13px] text-prominent-purple-500">
+                        Employee Appliance Loan — no credit application required.
+                      </p>
+                    )}
+                    {selectedCustomer &&
+                      !isGovernmentInstitutionalCustomer &&
+                      !employeeApplianceLoanActive && (
+                        <div className="mt-2.5">
+                          <label className="mb-1 block text-[13px] text-prominent-purple-700">
+                            Approved Credit Application
+                          </label>
+                          {/* The picker only exists once there is something to
                             pick. With none on file it was a control whose
                             every state said "nothing here" — and the one
                             action available was buried in its dropdown. The
                             button below replaces it outright until an
                             application exists. */}
-                        {/* "Raise a new application" is an extraAction on the
+                          {/* "Raise a new application" is an extraAction on the
                             picker, not a button hidden inside the empty state
                             — same shape as the co-maker Select's "Add a new
                             co-maker". It used to appear ONLY when the customer
@@ -4545,35 +4883,35 @@ export default function CheckoutPage() {
                             wants different terms. Previously the only way out
                             was to abandon the cart and start in Credit
                             Applications. */}
-                        {(creditApplicationsLoading || approvedCreditApplications.length > 0) && (
-                          <Select
-                            value={creditApplicationId}
-                            onChange={(v) => {
-                              setCreditApplicationId(v)
-                              if (v) applyCreditApplicationTerms(v)
-                            }}
-                            options={creditApplicationOptions}
-                            placeholder={
-                              creditApplicationsLoading
-                                ? 'Loading…'
-                                : 'Select an approved application…'
-                            }
-                            // Only genuinely dead while loading. With no
-                            // applications the picker still opens, because the
-                            // extraAction below is the way out of that state.
-                            disabled={creditApplicationsLoading}
-                            extraAction={
-                              creditApplicationsLoading
-                                ? undefined
-                                : {
-                                    label: 'New application for this cart',
-                                    onClick: goToRaiseCreditApplication,
-                                  }
-                            }
-                            compact
-                          />
-                        )}
-                        {/* Three states, because they need different things
+                          {(creditApplicationsLoading || approvedCreditApplications.length > 0) && (
+                            <Select
+                              value={creditApplicationId}
+                              onChange={(v) => {
+                                setCreditApplicationId(v)
+                                if (v) applyCreditApplicationTerms(v)
+                              }}
+                              options={creditApplicationOptions}
+                              placeholder={
+                                creditApplicationsLoading
+                                  ? 'Loading…'
+                                  : 'Select an approved application…'
+                              }
+                              // Only genuinely dead while loading. With no
+                              // applications the picker still opens, because the
+                              // extraAction below is the way out of that state.
+                              disabled={creditApplicationsLoading}
+                              extraAction={
+                                creditApplicationsLoading
+                                  ? undefined
+                                  : {
+                                      label: 'New application for this cart',
+                                      onClick: goToRaiseCreditApplication,
+                                    }
+                              }
+                              compact
+                            />
+                          )}
+                          {/* Three states, because they need different things
                             from the cashier:
 
                             1. No applications at all — the picker has nothing
@@ -4591,63 +4929,65 @@ export default function CheckoutPage() {
                                link, because a cashier can legitimately need a
                                second application (client, 2026-09-29) without
                                it competing with the obvious choice. */}
-                        {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <div className="mt-2">
-                            <button
-                              type="button"
-                              onClick={goToRaiseCreditApplication}
-                              className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
-                            >
-                              New credit application
-                            </button>
-                            <p className="mt-2 text-[13px] text-amber-700">
-                              Every installment sale requires an approved credit application.
-                            </p>
-                            {/* Approval happens in the Business Owner's own
+                          {!creditApplicationsLoading &&
+                            approvedCreditApplications.length === 0 && (
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={goToRaiseCreditApplication}
+                                  className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
+                                >
+                                  New credit application
+                                </button>
+                                <p className="mt-2 text-[13px] text-amber-700">
+                                  Every installment sale requires an approved credit application.
+                                </p>
+                                {/* Approval happens in the Business Owner's own
                                 session, so the cashier is usually waiting on
                                 someone else. This list refreshes when the tab
                                 regains focus; saying so stops the wait looking
                                 like a dead screen. */}
-                            <p className="mt-1 text-[12px] text-amber-600">
-                              Waiting on an approval? This refreshes when you come back to this tab.
-                            </p>
-                            <p className="mt-1 text-[11px] text-amber-600">
-                              Your cart is kept — it still needs the owner&apos;s approval before
-                              this sale can be completed.
-                            </p>
-                          </div>
-                        )}
+                                <p className="mt-1 text-[12px] text-amber-600">
+                                  Waiting on an approval? This refreshes when you come back to this
+                                  tab.
+                                </p>
+                                <p className="mt-1 text-[11px] text-amber-600">
+                                  Your cart is kept — it still needs the owner&apos;s approval
+                                  before this sale can be completed.
+                                </p>
+                              </div>
+                            )}
 
-                        {!creditApplicationsLoading &&
-                          approvedCreditApplications.length > 0 &&
-                          matchingCreditApplicationCount === 0 && (
-                            <div className="mt-2">
-                              <button
-                                type="button"
-                                onClick={goToRaiseCreditApplication}
-                                className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
-                              >
-                                New application for this cart
-                              </button>
-                              <p className="mt-2 text-[12px] text-amber-600">
-                                {approvedCreditApplications.length === 1
-                                  ? 'The approved application on file is for different items, so it cannot be used with this cart.'
-                                  : `None of the ${approvedCreditApplications.length} approved applications on file match this cart's items.`}
-                              </p>
-                            </div>
+                          {!creditApplicationsLoading &&
+                            approvedCreditApplications.length > 0 &&
+                            matchingCreditApplicationCount === 0 && (
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={goToRaiseCreditApplication}
+                                  className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
+                                >
+                                  New application for this cart
+                                </button>
+                                <p className="mt-2 text-[12px] text-amber-600">
+                                  {approvedCreditApplications.length === 1
+                                    ? 'The approved application on file is for different items, so it cannot be used with this cart.'
+                                    : `None of the ${approvedCreditApplications.length} approved applications on file match this cart's items.`}
+                                </p>
+                              </div>
+                            )}
+
+                          {!creditApplicationsLoading && matchingCreditApplicationCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={goToRaiseCreditApplication}
+                              className="mt-1.5 text-[12px] font-medium text-prominent-purple-700 hover:underline"
+                            >
+                              + New application for this cart
+                            </button>
                           )}
-
-                        {!creditApplicationsLoading && matchingCreditApplicationCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={goToRaiseCreditApplication}
-                            className="mt-1.5 text-[12px] font-medium text-prominent-purple-700 hover:underline"
-                          >
-                            + New application for this cart
-                          </button>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      )}
                   </div>
                 )}
               </div>
@@ -4663,12 +5003,14 @@ export default function CheckoutPage() {
                     different mode, it's a separate transaction. */}
                 <div className="relative">
                   <div className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1">
-                    {(['cash', 'installment', 'credit_card'] as const).map((mode) => (
+                    {(['cash', 'installment', 'delivery_receipt'] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => {
                           setPaymentMode(mode)
+                          if (mode === 'installment' && cashSubMode === 'card')
+                            setCashSubMode('cash_on_hand')
                           setLineInvoiceType(
                             cart.map((l) => l.lineId),
                             mode === 'installment' ? 'installment' : 'cash'
@@ -4684,7 +5026,7 @@ export default function CheckoutPage() {
                           ? 'Cash'
                           : mode === 'installment'
                             ? 'Installment'
-                            : 'Debit/Credit Card'}
+                            : 'Delivery Receipt'}
                       </button>
                     ))}
                   </div>
@@ -4703,25 +5045,30 @@ export default function CheckoutPage() {
                   // setLineFinancingTermId() so the displayed floor is never
                   // a centavo amount the field itself won't accept.
                   const minDownPaymentWhole = Math.ceil(minDownPayment)
-                  // Same priority as setLineFinancingTermId()'s auto-fill: a
-                  // curated per-SKU down payment from the real rate card wins
-                  // over the generic 10%-floor fallback when one exists — this
-                  // is just the DISPLAY-time version of that same rule, for
+                  // Scenario 60 — an Employee Appliance Loan waives the down
+                  // payment entirely, overriding whatever was typed/defaulted
+                  // before the checkbox was checked, both for display here
+                  // and for what actually gets submitted (see handleConfirm).
+                  //
+                  // Otherwise, same priority as setLineFinancingTermId()'s
+                  // auto-fill: a curated per-SKU down payment from the real
+                  // rate card wins over the generic 10%-floor fallback when
+                  // one exists — the DISPLAY-time version of that rule, for
                   // before a term has been picked yet (downPaymentInput still
                   // unset) so the shown figure doesn't disagree with what
                   // picking a term is about to fill in.
-                  // Scenario 60 item 22 (client, 2026-09-29): the down
-                  // payment is 30% of the sale amount, and the rate card's
-                  // own downPayment column is no longer read. Those figures
-                  // were priced against the old 10% policy, so seeding from
-                  // them pre-filled a value the 30% floor then rejected — the
-                  // form filling in a number and immediately calling it
-                  // wrong. The rate card's monthlyInstallment is unaffected
-                  // and still drives the schedule; only its down-payment
-                  // column is ignored.
-                  const downPaymentValue = line.downPaymentInput
-                    ? parseFloat(line.downPaymentInput) || 0
-                    : minDownPaymentWhole
+                  // Scenario 60 item 22 (client, 2026-09-29): the down payment is 30%
+                  // of the sale amount, and the rate card's own downPayment column is
+                  // no longer read — those figures were priced against the old 10%
+                  // policy, so seeding from them pre-filled a value the 30% floor then
+                  // rejected. The rate card's monthlyInstallment still drives the
+                  // schedule; only its down-payment column is ignored.
+                  // Waived entirely for an Employee Appliance Loan (development).
+                  const downPaymentValue = employeeApplianceLoanActive
+                    ? 0
+                    : line.downPaymentInput
+                      ? parseFloat(line.downPaymentInput) || 0
+                      : minDownPaymentWhole
                   const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
@@ -4765,7 +5112,26 @@ export default function CheckoutPage() {
                                 placeholder="Select a term…"
                                 compact
                               />
-                              {downPaymentEditingThisLine ? (
+                              {employeeApplianceLoanActive ? (
+                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Down payment
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      Waived
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 pl-4">
+                                    <span className="text-[15px] font-bold text-prominent-purple-800">
+                                      {fmt(0)}
+                                    </span>
+                                    <span className="ml-2 text-xs text-prominent-purple-500">
+                                      Employee Appliance Loan
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : downPaymentEditingThisLine ? (
                                 <>
                                   <input
                                     type="number"
@@ -4827,10 +5193,12 @@ export default function CheckoutPage() {
                                   </div>
                                 </div>
                               )}
-                              <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
-                                <span className="text-prominent-purple-400">●</span>
-                                {`Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
-                              </p>
+                              {!employeeApplianceLoanActive && (
+                                <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
+                                  <span className="text-prominent-purple-400">●</span>
+                                  {`Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
+                                </p>
+                              )}
                               {line.financingTermId && (
                                 <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
                                   {installmentPreviewLoading[line.lineId] ? (
@@ -4859,7 +5227,26 @@ export default function CheckoutPage() {
                           )}
                           {groupProvider === 'tpf' && (
                             <>
-                              {downPaymentEditingThisLine ? (
+                              {employeeApplianceLoanActive ? (
+                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Down payment
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      Waived
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 pl-4">
+                                    <span className="text-[15px] font-bold text-prominent-purple-800">
+                                      {fmt(0)}
+                                    </span>
+                                    <span className="ml-2 text-xs text-prominent-purple-500">
+                                      Employee Appliance Loan
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : downPaymentEditingThisLine ? (
                                 <>
                                   <input
                                     type="number"
@@ -5020,7 +5407,10 @@ export default function CheckoutPage() {
                   >
                     <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
                     <div className="flex gap-1.5">
-                      {(['cash_on_hand', 'bank_transfer', 'qr'] as const).map((mode) => (
+                      {(paymentMode === 'installment'
+                        ? (['cash_on_hand', 'check', 'bank_transfer', 'qr'] as const)
+                        : (['cash_on_hand', 'check', 'bank_transfer', 'qr', 'card'] as const)
+                      ).map((mode) => (
                         <button
                           key={mode}
                           type="button"
@@ -5037,34 +5427,44 @@ export default function CheckoutPage() {
                         >
                           {mode === 'cash_on_hand'
                             ? 'Cash on Hand'
-                            : mode === 'bank_transfer'
-                              ? 'Bank Transfer'
-                              : 'QR'}
+                            : mode === 'check'
+                              ? 'Check'
+                              : mode === 'bank_transfer'
+                                ? 'Bank Transfer'
+                                : mode === 'card'
+                                  ? 'Debit/Credit Card'
+                                  : 'QR'}
                         </button>
                       ))}
                     </div>
                     {cashSubMode !== 'cash_on_hand' &&
+                      cashSubMode !== 'check' &&
+                      cashSubMode !== 'card' &&
                       (() => {
                         const config = configuredMethods.find((m) => m.key === cashSubMode)
                         const options = config?.options.filter((o) => o.isEnabled) ?? []
                         if (options.length === 0) return null
                         const label = cashSubMode === 'bank_transfer' ? 'Bank' : 'Gateway'
                         return (
-                          <select
-                            aria-label={label}
-                            className="mt-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                            value={cashPaymentOptionId ?? ''}
-                            onChange={(e) => setCashPaymentOptionId(e.target.value || undefined)}
-                          >
-                            <option value="">{`Select ${label.toLowerCase()}…`}</option>
-                            {options.map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.name}
-                              </option>
-                            ))}
-                          </select>
+                          <PillCombobox
+                            ariaLabel={label}
+                            wrapperClassName="mt-1.5"
+                            placeholder={`Select ${label.toLowerCase()}…`}
+                            options={options.map((o) => ({ value: o.id, label: o.name }))}
+                            value={cashPaymentOptionId}
+                            onChange={setCashPaymentOptionId}
+                          />
                         )
                       })()}
+                    {cashSubMode === 'check' && (
+                      <input
+                        aria-label="Check Number"
+                        className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                        placeholder="Check Number (required)"
+                        value={checkNumber}
+                        onChange={(e) => setCheckNumber(e.target.value)}
+                      />
+                    )}
                     {cashSubMode === 'bank_transfer' && (
                       <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
                         <input
@@ -5101,18 +5501,14 @@ export default function CheckoutPage() {
                       return (
                         <>
                           {terminalOptions.length > 0 && (
-                            <div className="mb-1.5">
-                              <Select
-                                value={cardTerminalOptionId ?? ''}
-                                onChange={(v) => setCardTerminalOptionId(v || undefined)}
-                                options={terminalOptions.map((o) => ({
-                                  value: o.id,
-                                  label: o.name,
-                                }))}
-                                placeholder="Select card acquirer…"
-                                compact
-                              />
-                            </div>
+                            <PillCombobox
+                              ariaLabel="Card Acquirer"
+                              wrapperClassName="mb-1.5"
+                              placeholder="Select card acquirer…"
+                              options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
+                              value={cardTerminalOptionId}
+                              onChange={setCardTerminalOptionId}
+                            />
                           )}
                           <div className="flex gap-1.5">
                             {(['straight', 'installment'] as const).map((mode) => (
@@ -5136,9 +5532,10 @@ export default function CheckoutPage() {
                             ))}
                           </div>
                           {cardTxnMode === 'installment' && (
-                            <select
+                            <PillSelect
                               aria-label="Term"
-                              className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${!cardInstallmentTerm ? 'border-amber-300 bg-amber-50' : 'border-purple-200'}`}
+                              filled={!!cardInstallmentTerm}
+                              wrapperClassName="mt-1.5"
                               value={cardInstallmentTerm ?? ''}
                               onChange={(e) =>
                                 setCardInstallmentTerm(
@@ -5146,13 +5543,13 @@ export default function CheckoutPage() {
                                 )
                               }
                             >
-                              <option value="">Select term… * required</option>
+                              <option value="">Select Term (required)</option>
                               {[3, 6, 9, 12, 18, 24].map((m) => (
                                 <option key={m} value={m}>
                                   {m} months
                                 </option>
                               ))}
-                            </select>
+                            </PillSelect>
                           )}
                         </>
                       )
@@ -5327,21 +5724,12 @@ export default function CheckoutPage() {
                     always need their own reference, installment or not —
                     same as reserve mode. */}
                 {payments.some(
-                  (p) =>
-                    (saleMode === 'sale' &&
-                      (inhouseInstallmentCartLines.length > 0 ||
-                        (isPureTpfCart && tpfDownPaymentsTotal > 0))) ||
-                    REF_METHODS.includes(p.method) ||
-                    p.refFieldLabel
+                  (p) => saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
                 ) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
                       const needsRef =
-                        (saleMode === 'sale' &&
-                          (inhouseInstallmentCartLines.length > 0 ||
-                            (isPureTpfCart && tpfDownPaymentsTotal > 0))) ||
-                        REF_METHODS.includes(p.method) ||
-                        p.refFieldLabel
+                        saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
                       const label =
                         p.refFieldLabel ??
                         (saleMode === 'sale'
@@ -5356,9 +5744,7 @@ export default function CheckoutPage() {
                       // (matches the same-scoped check at submit time).
                       const isRequired =
                         saleMode === 'sale'
-                          ? inhouseInstallmentCartLines.length > 0 ||
-                            (isPureTpfCart && tpfDownPaymentsTotal > 0) ||
-                            REF_METHODS.includes(p.method)
+                          ? true
                           : (p.refRequired ?? REF_METHODS.includes(p.method))
                       // Scenario 37 — POS Terminal (card) / Bank (bank_transfer) /
                       // Gateway (qr) all live in Item Payment Mode now (transaction-
@@ -5452,12 +5838,15 @@ export default function CheckoutPage() {
               const installmentMissingCreditApplication =
                 inhouseInstallmentCartLines.length > 0 &&
                 !creditApplicationId &&
-                !isGovernmentInstitutionalCustomer
+                !isGovernmentInstitutionalCustomer &&
+                !employeeApplianceLoanActive
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
-              const tpfMissingDownPayment = tpfInstallmentCartLines.some(
-                (l) => !(parseFloat(l.downPaymentInput ?? '0') > 0)
-              )
+              const tpfMissingDownPayment =
+                !employeeApplianceLoanActive &&
+                tpfInstallmentCartLines.some((l) => !(parseFloat(l.downPaymentInput ?? '0') > 0))
+              const missingHrLoanNumber =
+                employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
 
@@ -5492,25 +5881,27 @@ export default function CheckoutPage() {
                                   ? 'Select a TPF provider and enter a reference number'
                                   : saleMode === 'sale' && tpfMissingDownPayment
                                     ? 'Enter the down payment for the TPF-financed item(s)'
-                                    : saleMode === 'sale' &&
-                                        !hasChargeOrInstallmentLine &&
-                                        !selectedCustomer
-                                      ? 'Select a customer'
-                                      : saleMode === 'sale' && balance > 0.009
-                                        ? `Underpaid by ${fmt(balance)}`
-                                        : saleMode === 'sale' && loyaltyOverBalance
-                                          ? 'Insufficient loyalty points'
-                                          : needsManagerOverride && !managerOverrideApproved
-                                            ? 'Manager override required'
-                                            : cart.some((l) => l.isSerialTracked)
-                                              ? 'Checkout'
-                                              : saleMode === 'reserve'
-                                                ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                : allCharge
-                                                  ? 'Issue Charge Invoice'
-                                                  : allInstallment
-                                                    ? 'Create Installment Plan'
-                                                    : 'Confirm Sale'
+                                    : saleMode === 'sale' && missingHrLoanNumber
+                                      ? 'Enter the HR appliance loan application number'
+                                      : saleMode === 'sale' &&
+                                          !hasChargeOrInstallmentLine &&
+                                          !selectedCustomer
+                                        ? 'Select a customer'
+                                        : saleMode === 'sale' && balance > 0.009
+                                          ? `Underpaid by ${fmt(balance)}`
+                                          : saleMode === 'sale' && loyaltyOverBalance
+                                            ? 'Insufficient loyalty points'
+                                            : needsManagerOverride && !managerOverrideApproved
+                                              ? 'Manager override required'
+                                              : cart.some((l) => l.isSerialTracked)
+                                                ? 'Checkout'
+                                                : saleMode === 'reserve'
+                                                  ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                  : allCharge
+                                                    ? 'Issue Charge Invoice'
+                                                    : allInstallment
+                                                      ? 'Create Installment Plan'
+                                                      : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'

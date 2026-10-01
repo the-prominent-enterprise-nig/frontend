@@ -4,7 +4,7 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { requirePermission } from '@/src/libs/guards/require-permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
-export const metadata = { title: 'POS PIN | Prominent Enterprise' }
+export const metadata = { title: 'POS PIN | NIG Central' }
 
 export default async function CashierPinPage() {
   const session = await getSessionOrNull()

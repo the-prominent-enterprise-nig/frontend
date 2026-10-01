@@ -1,4 +1,4 @@
-# Prominent Enterprise — Design System Proposal
+# NIG Central — Design System Proposal
 
 > Status: Proposal — do not implement until approved.
 > Scope: Full UI/UX overhaul of the React/TypeScript/TailwindCSS frontend.

@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { CashInTransitList } from './_components/CashInTransitList'
 
-export const metadata = { title: 'Undeposited Funds | Prominent Enterprise' }
+export const metadata = { title: 'Undeposited Funds | NIG Central' }
 
 export default async function CashInTransitPage() {
   const session = await getSessionOrNull()

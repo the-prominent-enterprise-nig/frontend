@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import ReturnRefundApprovalsList from './_components/ReturnRefundApprovalsList'
 
 export const metadata = {
-  title: 'Refund Approvals | Prominent Enterprise',
+  title: 'Refund Approvals | NIG Central',
 }
 
 export default async function ReturnRefundApprovalsPage() {
