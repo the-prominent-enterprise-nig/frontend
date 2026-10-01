@@ -246,6 +246,14 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   custom: 'Custom',
 }
 
+/** Payment methods withheld from the till (client, 2026-10-01 — "just hide
+ *  the point system"). Hidden, not removed: the loyalty account still loads
+ *  and still earns, the enum and the backend path are untouched, and taking a
+ *  method out of this list puts it back. Any payment row already saved under
+ *  one of these still renders and still settles — this only governs what can
+ *  be chosen from here on. */
+const HIDDEN_PAYMENT_METHODS: PosPaymentMethod[] = ['loyalty_points']
+
 const REF_METHODS: PosPaymentMethod[] = [
   'card',
   'bank_transfer',
@@ -637,10 +645,23 @@ export default function CheckoutPage() {
      *  one the owner approved — different unit price, different totals, and a
      *  down payment that can land under the floor for the sale it becomes. */
     priceUseTypeId?: string | null
+    /** itemId -> the unit this application remembered, when that serial is
+     *  still in stock. Empty when there is nothing reusable. */
+    rememberedSerials?: Map<string, { id: string; label: string }>
   } | null>(null)
   /** The application whose lines have already been put in the cart. Survives
    *  re-renders, unlike the state above, which is what makes it the guard. */
   const arrivalBuiltRef = useRef<string | null>(null)
+  /** The application an arrival wants selected in the picker, held until the
+   *  picker's own list has actually loaded it.
+   *
+   *  Setting `creditApplicationId` straight after building the cart does not
+   *  survive: switching the new lines to installment changes
+   *  creditAppsContextKey, and the effect watching that key clears the
+   *  selection — correctly, since a real context change must not carry a
+   *  stale choice over. So the intent is kept here and reasserted below once
+   *  the list contains it. */
+  const arrivalSelectRef = useRef<string | null>(null)
   const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
 
   // Park sale
@@ -1042,7 +1063,16 @@ export default function CheckoutPage() {
       // the cart is derived below from the application's own approved items,
       // here at the till where price, tax and UoM actually resolve.
       if (handoff.creditApplicationId) {
-        setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
+        const restoredCart = Array.isArray(handoff.lines) && handoff.lines.length > 0
+        if (restoredCart) {
+          // The cart came back with the handoff — serials, quantities and
+          // prices as the cashier left them. Rebuilding it from the
+          // application's items would discard all of that and re-ask for a
+          // serial already chosen, so only the picker selection is wanted.
+          arrivalSelectRef.current = handoff.creditApplicationId
+        } else {
+          setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
+        }
       }
       // The booklet numbers, back as they were typed.
       if (handoff.salesInvoiceNumber) setInvoiceNumberInput(handoff.salesInvoiceNumber)
@@ -1302,6 +1332,21 @@ export default function CheckoutPage() {
    * exists and why it cannot be used here, not an empty list. Usable ones are
    * listed first so the common case stays a single glance.
    */
+  // How many of this customer's approved applications actually fit the cart.
+  // Zero is a different situation from "none exist": the cashier has
+  // applications but none usable here, so raising one is the way forward
+  // rather than picking from a list where every row is marked as not matching.
+  const matchingCreditApplicationCount = (() => {
+    const cartItemIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
+    if (cartItemIds.size === 0) return 0
+    return approvedCreditApplications.filter((a) => {
+      const appItemIds = new Set(a.items.map((i) => i.itemId))
+      return (
+        appItemIds.size === cartItemIds.size && [...appItemIds].every((id) => cartItemIds.has(id))
+      )
+    }).length
+  })()
+
   const creditApplicationOptions = (() => {
     const cartItemIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
     const decorated = approvedCreditApplications.map((a) => {
@@ -1914,6 +1959,10 @@ export default function CheckoutPage() {
           itemId: l.itemId,
           itemLabel: l.itemName,
           estimatedPrice: l.unitPrice,
+          // Scenario 60 item 28 — the physical unit already picked at the
+          // till, remembered on the application so coming back to sell it
+          // does not ask for a serial that has already been chosen.
+          serialNumberId: l.serialNumberId,
         })),
       })
     )
@@ -1955,48 +2004,129 @@ export default function CheckoutPage() {
     arrivalBuiltRef.current = arrivingCreditApplication.id
 
     let cancelled = false
-    getCreditApplications({
-      checkoutEligible: true,
-      applicantCustomerId: selectedCustomer.id,
-      unconsumed: true,
-      limit: 50,
-    }).then((res) => {
-      if (cancelled) return
-      const application = (res.data?.data ?? []).find((a) => a.id === arrivingCreditApplication.id)
-      // Only the approved items: a partially approved application's declined
-      // items are never sellable, and silently carting one would have someone
-      // promising a customer what the owner refused.
-      const itemIds = (application?.items ?? [])
-        .filter((i) => i.status === 'approved')
-        .map((i) => i.itemId)
-      const approvedPriceUseTypeId = application?.priceUseTypeId ?? null
-      const found = itemIds
-        .map((id) => catalogItems.find((c) => c.id === id))
-        .filter((c): c is LookupItem => !!c)
+    // Set only once the cart has actually been built. The ref guard above
+    // stops a second run adding the lines twice — but an attempt that gets
+    // CANCELLED must release the guard, or the next run returns at it and the
+    // arrival is stranded forever. That deadlock is exactly what happened:
+    // the catalogue reloads when the session auto-selects, this effect
+    // re-runs, its cleanup cancels the in-flight attempt, and the new run
+    // finds the guard already claimed. The till sat empty with the last
+    // diagnostic still on screen.
+    let completed = false
+    void (async () => {
+      try {
+        const res = await getCreditApplications({
+          checkoutEligible: true,
+          applicantCustomerId: selectedCustomer.id,
+          unconsumed: true,
+          limit: 50,
+        })
+        if (cancelled) return
 
-      if (found.length === 0) {
-        // Nothing to build a cart from — drop the arrival rather than leaving
-        // the till half-arrived. The application is still selectable by hand
-        // once the cashier adds the items themselves.
+        const application = (res.data?.data ?? []).find(
+          (a) => a.id === arrivingCreditApplication.id
+        )
+        // Only the approved items: a partially approved application's declined
+        // items are never sellable, and silently carting one would have someone
+        // promising a customer what the owner refused.
+        const approved = (application?.items ?? []).filter((i) => i.status === 'approved')
+        const approvedPriceUseTypeId = application?.priceUseTypeId ?? null
+        // Scenario 60 item 28 — the unit the cashier had already picked when
+        // this application was raised. A preference, never a hold: only reused
+        // when that serial is STILL in stock, since nothing reserved it and it
+        // may have been sold, transferred or written off while the application
+        // waited for approval.
+        const rememberedSerials = new Map<string, { id: string; label: string }>()
+        for (const line of approved) {
+          const sn = line.serialNumber
+          if (sn?.status === 'in_stock') {
+            rememberedSerials.set(line.itemId, { id: sn.id, label: sn.serialNumber })
+          }
+        }
+
+        // `catalogItems` is the page's own lookup, and itemLookup caps at 500
+        // rows against a catalogue of ~1,400 — so an application's item is very
+        // often simply not in it, which showed up as arriving at an empty till.
+        // Anything missing is fetched by its own SKU rather than assumed absent.
+        const found: LookupItem[] = []
+        for (const line of approved) {
+          const local = catalogItems.find((c) => c.id === line.itemId)
+          if (local) {
+            found.push(local)
+            continue
+          }
+          const sku = line.item?.sku
+          if (!sku) continue
+          const lookup = await itemLookup(sku, activeBranchId ?? undefined)
+          if (cancelled) return
+          const match = ((lookup.data ?? []) as LookupItem[]).find((c) => c.id === line.itemId)
+          if (match) found.push(match)
+        }
+
+        if (found.length === 0) {
+          // Say why, rather than landing on an empty till. Silently clearing the
+          // arrival left the seller looking at a blank screen with no idea
+          // whether the click had even registered.
+          setError(
+            application
+              ? 'None of this application’s approved items could be loaded for this branch, so the cart could not be built. Add them by hand, then pick the application below.'
+              : 'That credit application could not be loaded — it may already have been used for a sale.'
+          )
+          arrivalBuiltRef.current = null
+          setArrivingCreditApplication(null)
+          return
+        }
+        // A short cart is worth saying out loud rather than letting the seller
+        // notice at payment.
+        if (found.length < approved.length) {
+          setError(
+            `${found.length} of ${approved.length} approved items were added — the rest could not be loaded for this branch.`
+          )
+        }
+
+        // Last gate before touching the cart. Cancellation was checked inside
+        // the lookup loop but not here, so an attempt cancelled after its
+        // final lookup still added its lines — and the retry, which now
+        // correctly reclaims the released guard, added them again. Two lines
+        // for one item, and a serial prompt for each.
+        if (cancelled) return
+        completed = true
+        found.forEach((item) => addToCart(item))
+        setArrivingCreditApplication({
+          id: arrivingCreditApplication.id,
+          stage: 'adding',
+          expectedLines: found.length,
+          priceUseTypeId: approvedPriceUseTypeId,
+          rememberedSerials,
+        })
+      } catch (e) {
+        // Without this the arrival died silently. An unhandled rejection in a
+        // void async IIFE leaves the page on whatever it last rendered — which
+        // is precisely the "nothing at the till" this was reported as, with
+        // the last diagnostic still on screen and no clue why.
+        if (cancelled) return
         arrivalBuiltRef.current = null
         setArrivingCreditApplication(null)
-        return
+        setError(
+          `Could not build the cart from this application: ${
+            e instanceof Error ? e.message : String(e)
+          }`
+        )
       }
-      found.forEach((item) => addToCart(item))
-      setArrivingCreditApplication({
-        id: arrivingCreditApplication.id,
-        stage: 'adding',
-        expectedLines: found.length,
-        priceUseTypeId: approvedPriceUseTypeId,
-      })
-    })
+    })()
     return () => {
       cancelled = true
+      // Hand the guard back so a re-run can finish the job.
+      if (!completed) arrivalBuiltRef.current = null
     }
     // addToCart is stable enough for this one-shot arrival; re-running on every
     // cart change would re-add the lines it just added.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrivingCreditApplication, selectedCustomer, catalogItems])
+    // Deliberately catalogItems.length, not catalogItems: the array's identity
+    // changes on every catalogue reload, and each change cancelled an attempt
+    // that was already in flight. Only whether it has loaded matters here —
+    // anything missing from it is fetched by SKU above anyway.
+  }, [arrivingCreditApplication, selectedCustomer, catalogItems.length])
 
   useEffect(() => {
     if (arrivingCreditApplication?.stage !== 'adding') return
@@ -2004,6 +2134,20 @@ export default function CheckoutPage() {
     // Installment is the whole point of an application — leaving the lines on
     // cash would show the cashier a picker with nothing in it.
     const lineIds = cart.map((l) => l.lineId)
+    // Put back the unit that was already chosen, so returning to sell an
+    // application does not ask for a serial picked before it was even raised.
+    // Only onto a line that has none — anything picked since is the cashier's
+    // own, more recent, choice.
+    const remembered = arrivingCreditApplication.rememberedSerials
+    if (remembered && remembered.size > 0) {
+      setCart((prev) =>
+        prev.map((l) => {
+          if (l.serialNumberId || !l.isSerialTracked) return l
+          const hit = remembered.get(l.itemId)
+          return hit ? { ...l, serialNumberId: hit.id, serialNumberLabel: hit.label } : l
+        })
+      )
+    }
     // Price Use before the term and down payment: changing it re-resolves the
     // line's price, and the down payment the application approved is measured
     // against that price.
@@ -2011,10 +2155,22 @@ export default function CheckoutPage() {
       setLinePriceUseTypeId(lineIds, arrivingCreditApplication.priceUseTypeId)
     }
     setLineInvoiceType(lineIds, 'installment')
+    arrivalSelectRef.current = arrivingCreditApplication.id
     setCreditApplicationId(arrivingCreditApplication.id)
     setArrivingCreditApplication(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrivingCreditApplication, cart.length])
+
+  // Reasserts the arrival's application once the picker's list has loaded it.
+  // Runs at most once per arrival: the ref is cleared as soon as it takes, so
+  // this can never fight a cashier who then picks a different application.
+  useEffect(() => {
+    const wanted = arrivalSelectRef.current
+    if (!wanted) return
+    if (!approvedCreditApplications.some((a) => a.id === wanted)) return
+    arrivalSelectRef.current = null
+    if (creditApplicationId !== wanted) setCreditApplicationId(wanted)
+  }, [approvedCreditApplications, creditApplicationId])
 
   function addToCart(item: LookupItem, qty = 1) {
     // Reserve mode (Scenario 03, Part 3): a SkuReservation is one item +
@@ -3756,11 +3912,13 @@ export default function CheckoutPage() {
                         {selectedCustomer.phone && (
                           <p className="text-xs text-gray-700">{selectedCustomer.phone}</p>
                         )}
-                        {loyaltyAccount && (
-                          <p className="text-xs font-medium text-purple-500">
-                            {loyaltyAccount.currentPoints} pts
-                          </p>
-                        )}
+                        {/* The points balance that sat here is hidden (client,
+                            2026-10-01). Only the display is gone — the loyalty
+                            account is still loaded and still earns and redeems,
+                            so nothing is lost if it comes back. Deleting the
+                            data path would have taken the Loyalty Points
+                            payment method with it, which was not what was
+                            asked for. */}
                       </div>
                     </div>
                   </div>
@@ -4367,6 +4525,12 @@ export default function CheckoutPage() {
                         <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           Approved Credit Application
                         </label>
+                        {/* The picker only exists once there is something to
+                            pick. With none on file it was a control whose
+                            every state said "nothing here" — and the one
+                            action available was buried in its dropdown. The
+                            button below replaces it outright until an
+                            application exists. */}
                         {/* "Raise a new application" is an extraAction on the
                             picker, not a button hidden inside the empty state
                             — same shape as the co-maker Select's "Add a new
@@ -4381,37 +4545,62 @@ export default function CheckoutPage() {
                             wants different terms. Previously the only way out
                             was to abandon the cart and start in Credit
                             Applications. */}
-                        <Select
-                          value={creditApplicationId}
-                          onChange={(v) => {
-                            setCreditApplicationId(v)
-                            if (v) applyCreditApplicationTerms(v)
-                          }}
-                          options={creditApplicationOptions}
-                          placeholder={
-                            creditApplicationsLoading
-                              ? 'Loading…'
-                              : approvedCreditApplications.length === 0
-                                ? 'No approved application on file'
+                        {(creditApplicationsLoading || approvedCreditApplications.length > 0) && (
+                          <Select
+                            value={creditApplicationId}
+                            onChange={(v) => {
+                              setCreditApplicationId(v)
+                              if (v) applyCreditApplicationTerms(v)
+                            }}
+                            options={creditApplicationOptions}
+                            placeholder={
+                              creditApplicationsLoading
+                                ? 'Loading…'
                                 : 'Select an approved application…'
-                          }
-                          // Only genuinely dead while loading. With no
-                          // applications the picker still opens, because the
-                          // extraAction below is the way out of that state.
-                          disabled={creditApplicationsLoading}
-                          extraAction={
-                            creditApplicationsLoading
-                              ? undefined
-                              : {
-                                  label: 'New application for this cart',
-                                  onClick: goToRaiseCreditApplication,
-                                }
-                          }
-                          compact
-                        />
+                            }
+                            // Only genuinely dead while loading. With no
+                            // applications the picker still opens, because the
+                            // extraAction below is the way out of that state.
+                            disabled={creditApplicationsLoading}
+                            extraAction={
+                              creditApplicationsLoading
+                                ? undefined
+                                : {
+                                    label: 'New application for this cart',
+                                    onClick: goToRaiseCreditApplication,
+                                  }
+                            }
+                            compact
+                          />
+                        )}
+                        {/* Three states, because they need different things
+                            from the cashier:
+
+                            1. No applications at all — the picker has nothing
+                               to offer, so raising one is the ONLY way
+                               forward and gets a real button. It lived inside
+                               the picker's extraAction for a while, which
+                               meant the one action available was hidden
+                               behind opening a dropdown that looked empty.
+                            2. Applications exist but none fit this cart —
+                               every row is labelled "does not match", so
+                               picking one cannot work either. Same button,
+                               plus a line saying why the list is no help.
+                            3. At least one fits — the picker is the action.
+                               Raising another stays available as a quiet
+                               link, because a cashier can legitimately need a
+                               second application (client, 2026-09-29) without
+                               it competing with the obvious choice. */}
                         {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <div className="mt-1">
-                            <p className="text-[13px] text-amber-700">
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              onClick={goToRaiseCreditApplication}
+                              className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
+                            >
+                              New credit application
+                            </button>
+                            <p className="mt-2 text-[13px] text-amber-700">
                               Every installment sale requires an approved credit application.
                             </p>
                             {/* Approval happens in the Business Owner's own
@@ -4422,16 +4611,40 @@ export default function CheckoutPage() {
                             <p className="mt-1 text-[12px] text-amber-600">
                               Waiting on an approval? This refreshes when you come back to this tab.
                             </p>
-                            {/* The button that used to sit here moved onto the
-                                picker above as an extraAction, so it is
-                                reachable whether or not an approved
-                                application already exists. This panel keeps
-                                only the guidance. */}
                             <p className="mt-1 text-[11px] text-amber-600">
                               Your cart is kept — it still needs the owner&apos;s approval before
                               this sale can be completed.
                             </p>
                           </div>
+                        )}
+
+                        {!creditApplicationsLoading &&
+                          approvedCreditApplications.length > 0 &&
+                          matchingCreditApplicationCount === 0 && (
+                            <div className="mt-2">
+                              <button
+                                type="button"
+                                onClick={goToRaiseCreditApplication}
+                                className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
+                              >
+                                New application for this cart
+                              </button>
+                              <p className="mt-2 text-[12px] text-amber-600">
+                                {approvedCreditApplications.length === 1
+                                  ? 'The approved application on file is for different items, so it cannot be used with this cart.'
+                                  : `None of the ${approvedCreditApplications.length} approved applications on file match this cart's items.`}
+                              </p>
+                            </div>
+                          )}
+
+                        {!creditApplicationsLoading && matchingCreditApplicationCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={goToRaiseCreditApplication}
+                            className="mt-1.5 text-[12px] font-medium text-prominent-purple-700 hover:underline"
+                          >
+                            + New application for this cart
+                          </button>
                         )}
                       </div>
                     )}
@@ -5049,6 +5262,11 @@ export default function CheckoutPage() {
                               ? configuredMethods
                                   .filter((m) => {
                                     if (isOffline) return m.key === 'cash'
+                                    if (
+                                      m.key &&
+                                      HIDDEN_PAYMENT_METHODS.includes(m.key as PosPaymentMethod)
+                                    )
+                                      return false
                                     return m.key === null
                                       ? enabledPaymentMethods.includes('custom')
                                       : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
@@ -5061,6 +5279,8 @@ export default function CheckoutPage() {
                               : Object.entries(PAYMENT_LABELS)
                                   .filter(([v]) => {
                                     if (isOffline) return v === 'cash'
+                                    if (HIDDEN_PAYMENT_METHODS.includes(v as PosPaymentMethod))
+                                      return false
                                     return enabledPaymentMethods.includes(v as PosPaymentMethod)
                                   })
                                   .map(([v, l]) => (

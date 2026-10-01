@@ -45,7 +45,11 @@ export async function createCreditApplication(
     // number AND lost its priceListItemId, which is what the curated down
     // payment and the rate-card instalment figures hang off. estimatedPrice
     // stays in the form for the on-screen financing preview only.
-    items: parsed.data.items.map(({ itemId }) => ({ itemId })),
+    items: parsed.data.items.map(({ itemId, serialNumberId }) => ({
+      itemId,
+      // Scenario 60 item 28 — remembered, not reserved. See the DTO.
+      ...(serialNumberId ? { serialNumberId } : {}),
+    })),
     // Scenario 60 item 27. Rows are added as needed rather than being three
     // fixed slots, so `position` is renumbered over the FILLED rows: blanks
     // are dropped first, then 1..n. Numbering over the form's own indices

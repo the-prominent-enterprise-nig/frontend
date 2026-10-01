@@ -264,6 +264,10 @@ const CreateCreditApplicationBaseSchema = z.object({
         // looking dead. z.coerce would hide that but widens the schema's
         // input type to unknown, breaking useForm's generic.
         estimatedPrice: z.number().optional(),
+        /** Scenario 60 item 28 — the unit picked at the till when this
+         *  application was raised from a cart. Passed straight through to the
+         *  API; nothing in the form edits it. */
+        serialNumberId: z.string().optional(),
         // Also client-only. The combobox shows a label, not an id, and it
         // has no way to look one up from an id alone — so without this a
         // restored draft kept its itemId but rendered an empty picker, and
@@ -658,6 +662,17 @@ export interface CreditApplicationItemLite {
 export interface CreditApplicationItemLine {
   id: string
   itemId: string
+  /** Scenario 60 item 28 — the physical unit the cashier had picked at the
+   *  till when this application was raised from a cart. A preference, not a
+   *  hold: the till re-checks `status === 'in_stock'` before reusing it, and
+   *  asks for a serial again when it is not. */
+  serialNumberId?: string | null
+  serialNumber?: {
+    id: string
+    serialNumber: string
+    status: string
+    currentWarehouseId?: string | null
+  } | null
   item?: CreditApplicationItemLite | null
   requestedAmount: number
   status: CreditApplicationItemStatus

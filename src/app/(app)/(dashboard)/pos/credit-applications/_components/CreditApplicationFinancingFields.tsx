@@ -123,6 +123,19 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   const wipTypeId = priceUseTypes.find((t) => t.name === 'WIP')?.id
   const effectivePriceUseTypeId = priceUseTypeId || wipTypeId
 
+  // WIP is the default again. Making Price Use required removed the
+  // "WIP (default)" row that used to stand in for an unmade choice, which
+  // left the field blank on a form where almost every application uses WIP —
+  // required and empty, when it could be required and already right.
+  //
+  // Only ever fills a field that is empty, so a restored draft or an edit
+  // keeps whatever it already carries. `required` scopes this to the create
+  // form; the edit modal must not quietly re-point an application's pricing.
+  useEffect(() => {
+    if (!required || !wipTypeId || priceUseTypeId) return
+    setValue('priceUseTypeId' as Path<T>, wipTypeId as never, { shouldDirty: false })
+  }, [required, wipTypeId, priceUseTypeId, setValue])
+
   // Keeps the full resolved record (not just price) — priceListItemId and
   // downPayment are the curated rate-card fields (Scenario 15, Part 5),
   // needed below to seed Down Payment from the real rate card instead of a

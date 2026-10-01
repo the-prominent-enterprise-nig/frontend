@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, FileText, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react'
 import { useCreditApplication } from '../_hooks/useCreditApplication'
 import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
 import { CreditApplicationFinancingFields } from './CreditApplicationFinancingFields'
 import { Select } from '@/src/components/ui/Select'
-import { writeCheckoutHandoff } from '@/src/libs/pos/checkout-handoff'
+import { readCheckoutHandoff, writeCheckoutHandoff } from '@/src/libs/pos/checkout-handoff'
 import { useSessions } from '../../_hooks/usePos'
 import { PhAddressText } from '@/src/components/common/PhAddressText'
 import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
@@ -88,6 +88,8 @@ export default function CreditApplicationDetail({
 
   const {
     application,
+    refetch: refetchApplication,
+    isRefetching: isRefetchingApplication,
     isLoading,
     update,
     isUpdating,
@@ -121,14 +123,21 @@ export default function CreditApplicationDetail({
   // with the other hooks: the component returns early when the application
   // has not loaded, and a hook below that runs on some renders and not
   // others.
-  const { data: openSessionsData } = useSessions({ status: 'open' })
-  // Only the sessions THIS user opened. `GET /pos/sessions` scopes by branch
-  // for a branch-locked caller and not at all for anyone else — a Business
-  // Owner is not branch-locked, so they see every open till in the company,
-  // including the Alimodian cashier's. Counting those would light the button
-  // up for an owner who has no till of their own, and hand them a session
-  // whose cash drawer and attribution belong to someone else.
-  const myOpenSessions = (openSessionsData?.data ?? []).filter((s) => s.cashierId === session.id)
+  const {
+    data: openSessionsData,
+    refetch: refetchSessions,
+    isFetching: isRefetchingSessions,
+  } = useSessions({ status: 'open' })
+  const openSessions = openSessionsData?.data ?? []
+  // ANY open till enables the button — the rule as asked: no session open, no
+  // button. Deliberately not "a session I opened myself": a branch commonly
+  // runs one till that a manager or an earlier shift opened, and checkout
+  // imposes no such restriction either, so being stricter here would block a
+  // cashier from an application they can already sell by walking to the till.
+  //
+  // The safety that actually mattered is kept below instead — a session is
+  // only NAMED in the handoff when it is this user's own.
+  const mySessions = openSessions.filter((s) => s.cashierId === session.id)
   const [editError, setEditError] = useState<string | undefined>(undefined)
 
   // Scenario 29 POS-02 — per-item decision state while status is
@@ -296,19 +305,37 @@ export default function CreditApplicationDetail({
   // named cashier, a terminal — so a button on an approval screen must not do
   // it on someone's behalf (developer, 2026-09-30). Disabled with the reason
   // on it rather than hidden: a missing button just looks broken.
-  const hasOpenSession = myOpenSessions.length > 0
+  const hasOpenSession = openSessions.length > 0
 
   const sellableApplicationId = application.id
   const sellableCustomerId = application.applicantCustomerId
 
   function continueToSale() {
+    // The handoff is ONE slot. If this application was raised from a till that
+    // already had a cart — the usual way — that cart is sitting in it, with
+    // the serials, quantities and prices the cashier already chose. Writing a
+    // bare application over it threw all of that away and rebuilt a fresh
+    // cart at the far end, which is why a serial-tracked item asked for a
+    // serial that had already been picked.
+    //
+    // Anything already stashed for THIS customer is kept and simply gains the
+    // application. A stash for someone else is not merged — that cart belongs
+    // to a different sale.
+    const stashed = readCheckoutHandoff()
+    const keepStashed = !!stashed && stashed.customerId === sellableCustomerId
+
     writeCheckoutHandoff({
+      ...(keepStashed ? stashed : {}),
       customerId: sellableCustomerId,
       creditApplicationId: sellableApplicationId,
       // Named only when there is exactly one session it could mean. With
       // several open, picking one would be guessing which till the seller is
       // standing at; checkout asks instead.
-      sessionId: myOpenSessions.length === 1 ? myOpenSessions[0].id : undefined,
+      // This user's own, and only when there is exactly one of them. Naming
+      // someone else's would hand over a till whose drawer and attribution
+      // belong to them; naming one of several would be guessing which counter
+      // this person is standing at. Left unset, checkout asks.
+      sessionId: mySessions.length === 1 ? mySessions[0].id : undefined,
     })
     router.push('/pos/checkout')
   }
@@ -396,13 +423,38 @@ export default function CreditApplicationDetail({
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
-        <button
-          type="button"
-          onClick={goToList}
-          className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to applications
-        </button>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={goToList}
+            className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to applications
+          </button>
+
+          {/* Scenario 60 item 28 — a cashier sits on this page while the owner
+              approves in their own session. The page does poll every 10s, but
+              waiting out a poll (or reloading) to find out whether the answer
+              has come is not something anyone should have to do. This asks
+              now, and re-checks the open tills at the same time, so the
+              approval and the Continue to sale button appear together. */}
+          <button
+            type="button"
+            onClick={() => {
+              void refetchApplication()
+              void refetchSessions()
+            }}
+            disabled={isRefetchingApplication || isRefetchingSessions}
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${
+                isRefetchingApplication || isRefetchingSessions ? 'animate-spin' : ''
+              }`}
+            />
+            {isRefetchingApplication || isRefetchingSessions ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
 
         <div className="flex items-start justify-between">
           <div>
@@ -1174,17 +1226,23 @@ export default function CreditApplicationDetail({
               <p className="mt-0.5 text-sm text-prominent-purple-700">
                 {hasOpenSession
                   ? 'Opens the till with this customer, these items and this application already selected.'
-                  : 'Open a POS session at a terminal first — this cannot open one for you, and another cashier’s open till is not yours to sell on.'}
+                  : 'No till is open. Open a POS session at a terminal, then Refresh — this cannot open one for you.'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={continueToSale}
-              disabled={!hasOpenSession}
-              className="shrink-0 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* The till is usually opened on another screen, or by someone
+                  else, while this page is already up — and the session query
+                  is cached, so nothing here notices. Rather than have the
+                  seller reload the whole application, this re-asks. */}
+              <button
+                type="button"
+                onClick={continueToSale}
+                disabled={!hasOpenSession}
+                className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
+              </button>
+            </div>
           </div>
         )}
 
