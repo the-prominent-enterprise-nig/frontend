@@ -118,7 +118,7 @@ export default function CreditApplicationDetail({
   const [isCancelOpen, setIsCancelOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const router = useRouter()
-  // Scenario 60 item 28 — the same hook checkout uses for its own session
+  // Scenario 64 item 28 — the same hook checkout uses for its own session
   // picker, so "Continue to sale" needs no new API surface. Declared up here
   // with the other hooks: the component returns early when the application
   // has not loaded, and a hook below that runs on some renders and not
@@ -274,7 +274,7 @@ export default function CreditApplicationDetail({
   const isEditable = (
     ['draft', 'submitted', 'under_investigation', 'pending_approval'] as string[]
   ).includes(application.status)
-  // Documents outlive that window. Scenario 60 gap 6: an application can now
+  // Documents outlive that window. Scenario 64 gap 6: an application can now
   // be approved with no applicant ID on file ("ID will be to followed"), and
   // the "Approved — ID pending" banner tells the user to attach it once the
   // hard copy arrives — which was impossible while the upload panel was
@@ -289,7 +289,7 @@ export default function CreditApplicationDetail({
 
   const applicant = application.applicantCustomer
 
-  // Scenario 60 item 28 — "Continue to sale". An approved application already
+  // Scenario 64 item 28 — "Continue to sale". An approved application already
   // knows the customer and the items. Without this the seller leaves it, opens
   // checkout, finds the customer again, re-adds every item by hand, and only
   // then picks the application out of a list — where anything short of an
@@ -340,7 +340,7 @@ export default function CreditApplicationDetail({
     router.push('/pos/checkout')
   }
 
-  // Scenario 60 item 27. The application's own related-people rows and the
+  // Scenario 64 item 27. The application's own related-people rows and the
   // customer's CoMaker record are two tables, but one list to a reader —
   // flattened here so the card does not have to know which is which.
   //
@@ -432,7 +432,7 @@ export default function CreditApplicationDetail({
             <ArrowLeft className="h-4 w-4" /> Back to applications
           </button>
 
-          {/* Scenario 60 item 28 — a cashier sits on this page while the owner
+          {/* Scenario 64 item 28 — a cashier sits on this page while the owner
               approves in their own session. The page does poll every 10s, but
               waiting out a poll (or reloading) to find out whether the answer
               has come is not something anyone should have to do. This asks
@@ -495,7 +495,7 @@ export default function CreditApplicationDetail({
           {isDraft && (
             <div className="flex items-center gap-2">
               {/* No document requirement (client decision, 2026-09-28,
-                    Scenario 60 gap 6). This was disabled until at least one
+                    Scenario 64 gap 6). This was disabled until at least one
                     document was attached, which made the client's own process
                     impossible: "ID will be to followed ... pwede ma approve
                     maski ID not included". The ID is usually the only
@@ -648,7 +648,7 @@ export default function CreditApplicationDetail({
         </div>
 
         <div className="grid items-start gap-4 sm:grid-cols-2">
-          {/* Scenario 60 item 27. The co-maker is listed here rather than in
+          {/* Scenario 64 item 27. The co-maker is listed here rather than in
               a card of its own: on the intake form it is a Related People
               row, and the mockup draws it as the last row of that same
               block, so two cards said the record held two different kinds of
@@ -682,7 +682,7 @@ export default function CreditApplicationDetail({
             )}
           </div>
 
-          {/* Scenario 60 item 27. Row numbers are shown because they are the
+          {/* Scenario 64 item 27. Row numbers are shown because they are the
               paper form's own "Reference 1/2/3" — a gap (say 1 and 3 filled,
               2 blank) is information, not an error, so the positions are
               rendered as stored rather than renumbered to look tidy. */}
@@ -718,7 +718,7 @@ export default function CreditApplicationDetail({
           </div>
         </div>
 
-        {/* Scenario 60 item 27 — PROPOSED PURCHASE AND PAPER RECORD. Shown
+        {/* Scenario 64 item 27 — PROPOSED PURCHASE AND PAPER RECORD. Shown
             only when something was transcribed: these fields exist for
             applications taken on paper, and an empty block on every other
             application would read as missing data rather than as a form
@@ -1184,7 +1184,7 @@ export default function CreditApplicationDetail({
             </div>
           )}
 
-        {/* Scenario 60 Part 6 — "pwede ma approve maski ID not included.
+        {/* Scenario 64 Part 6 — "pwede ma approve maski ID not included.
             Should record as approved but incomplete, and can proceed with
             buying the item." Approving without an ID already worked: nothing
             gates on documents, in this component or in the backend service.
@@ -1216,7 +1216,7 @@ export default function CreditApplicationDetail({
             </div>
           ))}
 
-        {/* Scenario 60 item 28 — directly under the decision, because that is
+        {/* Scenario 64 item 28 — directly under the decision, because that is
             where the approver is looking the moment it lands, and going to
             the till is the only thing anyone wants next. */}
         {canSell && (

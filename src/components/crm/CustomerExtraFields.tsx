@@ -154,7 +154,7 @@ export interface CustomerExtraFieldsValues {
   businessCategory: string
   employeeNumber: string
   birthday: string
-  // Scenario 60 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
   // block. Captured here, on the customer, because the mockup prefills the
   // application from the profile rather than storing these per application.
   civilStatus: string
@@ -394,7 +394,7 @@ export default function CustomerExtraFields({
         </div>
       )}
 
-      {/* Two addresses (Scenario 60 items 9/10). Current is first and is the
+      {/* Two addresses (Scenario 64 items 9/10). Current is first and is the
           one the rest of the app uses — collector assignment matches on its
           barangay, so it is the address someone will actually be sent to.
           Home is second and optional: it exists for the credit application,

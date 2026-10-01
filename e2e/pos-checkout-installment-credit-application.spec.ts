@@ -58,7 +58,7 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     await expect(page.getByText('Approved Credit Application', { exact: true })).toBeVisible({
       timeout: 10_000,
     })
-    // Scenario 60 Part 1 — this copy lost its "— open one in Credit
+    // Scenario 64 Part 1 — this copy lost its "— open one in Credit
     // Applications first." tail when the panel gained a button that raises
     // the application inline, but this assertion kept the old sentence and
     // had been failing ever since. Asserted against the live copy now, plus
@@ -72,7 +72,7 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     // installmentMissingCreditApplication, even once a term is picked.
     const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await expect(termSelect).toBeVisible({ timeout: 10_000 })
-    // Scenario 60 — the term dropdown is the shared Select now, not a native
+    // Scenario 64 — the term dropdown is the shared Select now, not a native
     // <select>: no placeholder <option>, so the old selectOption({index:1})
     // (index 0 being the placeholder) is simply the first real option.
     await openCustomSelect(termSelect)
@@ -143,7 +143,7 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     await fillStable(customerInput, applicantName)
     await page.getByRole('button', { name: new RegExp(applicantName) }).click()
 
-    // Scenario 60 — the application picker is the shared Select now. Its
+    // Scenario 64 — the application picker is the shared Select now. Its
     // accessible name is whatever it currently shows, so while unselected
     // that's the placeholder; the application itself is an option in the
     // popup rather than an <option> child.

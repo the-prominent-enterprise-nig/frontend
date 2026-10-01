@@ -63,7 +63,7 @@ test.describe('CRM — Add Customer', () => {
 
     await gotoReady(page, '/crm/customers/new')
 
-    // Scenario 60 Part 3 — a fresh form opens on Region VI, where the
+    // Scenario 64 Part 3 — a fresh form opens on Region VI, where the
     // business operates, instead of a blank region the cashier re-picks
     // every time. The rest of this test then overrides it with the NCR
     // chain below, which is the point: the default is a starting value, not

@@ -1,7 +1,7 @@
 /**
  * Minimum down payment on an in-house installment, as a fraction of the sale
  * amount. Raised from 10% to 30% on the client's instruction (2026-09-28,
- * Scenario 60 item 18).
+ * Scenario 64 item 18).
  *
  * It is a FLOOR, not a fixed amount — a customer may pay more, and a curated
  * per-SKU down payment from a price list may sit above it. It applies in both

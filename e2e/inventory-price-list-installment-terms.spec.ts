@@ -137,7 +137,7 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
 
     const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await clickStable(page.getByRole('button', { name: 'Installment', exact: true }), termSelect)
-    // Scenario 60 — shared Select, not a native <select>: no placeholder
+    // Scenario 64 — shared Select, not a native <select>: no placeholder
     // <option>, so the old selectOption({index:1}) is the first real option.
     await openCustomSelect(termSelect)
     await page.getByRole('option').first().click()

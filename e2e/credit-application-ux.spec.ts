@@ -37,7 +37,7 @@ test.describe('Credit applications — co-maker identity fields', () => {
     await expect(page.getByText('Co-Maker', { exact: false }).first()).toBeVisible()
   })
 
-  // Scenario 60 Part 4 — the co-maker's contact number is required. It isn't
+  // Scenario 64 Part 4 — the co-maker's contact number is required. It isn't
   // cosmetic: CoMaker.contactNumber is NOT NULL, and this form submitted
   // `(value ?? '').trim()`, so a blank was writing an empty string into a
   // required column instead of failing. A co-maker exists to be reachable

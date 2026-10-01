@@ -141,13 +141,13 @@ test.describe('POS Checkout — installment down payment floor', () => {
 
     const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await expect(termSelect).toBeVisible({ timeout: 10_000 })
-    // Scenario 60 — the term dropdown is the shared Select now, not a native
+    // Scenario 64 — the term dropdown is the shared Select now, not a native
     // <select>: no placeholder <option>, so the old selectOption({index:1})
     // (index 0 being the placeholder) is simply the first real option.
     await openCustomSelect(termSelect)
     await page.getByRole('option').first().click()
 
-    // Scenario 60 — shared Select: named by what it shows (the placeholder
+    // Scenario 64 — shared Select: named by what it shows (the placeholder
     // while unselected), options live in a popup, not as <option> children.
     const picker = page.getByRole('combobox', { name: 'Select an approved application…' })
     await expect(picker).toBeVisible({ timeout: 10_000 })
@@ -212,13 +212,13 @@ test.describe('POS Checkout — installment down payment floor', () => {
 
     const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await expect(termSelect).toBeVisible({ timeout: 10_000 })
-    // Scenario 60 — the term dropdown is the shared Select now, not a native
+    // Scenario 64 — the term dropdown is the shared Select now, not a native
     // <select>: no placeholder <option>, so the old selectOption({index:1})
     // (index 0 being the placeholder) is simply the first real option.
     await openCustomSelect(termSelect)
     await page.getByRole('option').first().click()
 
-    // Scenario 60 — shared Select: named by what it shows (the placeholder
+    // Scenario 64 — shared Select: named by what it shows (the placeholder
     // while unselected), options live in a popup, not as <option> children.
     const picker = page.getByRole('combobox', { name: 'Select an approved application…' })
     await expect(picker).toBeVisible({ timeout: 10_000 })

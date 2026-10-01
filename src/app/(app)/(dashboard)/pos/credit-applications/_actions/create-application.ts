@@ -36,7 +36,7 @@ export async function createCreditApplication(
     ...parsed.data,
     // Backend trusts this client-supplied price over its own Price List
     // resolution — see credit/applications schema's items.estimatedPrice comment.
-    // Scenario 60 item 21 (client, 2026-09-28): the price must come from the
+    // Scenario 64 item 21 (client, 2026-09-28): the price must come from the
     // Inventory price list for the chosen Price Use, "and only that".
     // unitPrice is deliberately NOT sent. It used to carry the form's
     // estimatedPrice, which is seeded from the flat Item.sellingPrice — and
@@ -47,10 +47,10 @@ export async function createCreditApplication(
     // stays in the form for the on-screen financing preview only.
     items: parsed.data.items.map(({ itemId, serialNumberId }) => ({
       itemId,
-      // Scenario 60 item 28 — remembered, not reserved. See the DTO.
+      // Scenario 64 item 28 — remembered, not reserved. See the DTO.
       ...(serialNumberId ? { serialNumberId } : {}),
     })),
-    // Scenario 60 item 27. Rows are added as needed rather than being three
+    // Scenario 64 item 27. Rows are added as needed rather than being three
     // fixed slots, so `position` is renumbered over the FILLED rows: blanks
     // are dropped first, then 1..n. Numbering over the form's own indices
     // would leave a gap whenever a middle row was cleared rather than
@@ -64,7 +64,7 @@ export async function createCreditApplication(
       }))
       .filter((r) => r.name || r.mobileNumber || r.relationship)
       .map((r, index) => ({ ...r, position: index + 1 })),
-    // Scenario 60 item 27 — untouched rows are dropped, the same way the
+    // Scenario 64 item 27 — untouched rows are dropped, the same way the
     // references above are. A row is only sent once it has both a role and
     // a name: the DTO requires them, and neither a nameless role nor a
     // mobile with nobody attached to it is a person. There is no `position`

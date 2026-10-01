@@ -106,7 +106,7 @@ type Props = {
 }
 
 /**
- * Scenario 60 item 27 — the mockup's RELATED PEOPLE block: "store each person
+ * Scenario 64 item 27 — the mockup's RELATED PEOPLE block: "store each person
  * separately with relationship and mobile".
  *
  * One row to start, added as needed up to three, each removable. The role is

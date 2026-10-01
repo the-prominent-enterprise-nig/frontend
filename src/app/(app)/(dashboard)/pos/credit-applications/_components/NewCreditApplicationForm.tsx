@@ -198,7 +198,7 @@ export default function NewCreditApplicationForm({
     if (!applicant) return
     setValue('applicantPhone', applicant.phone ?? '')
     setValue('applicantEmail', applicant.email ?? '')
-    // Scenario 60 item 27 — "prefill for returning customers, then confirm
+    // Scenario 64 item 27 — "prefill for returning customers, then confirm
     // or edit". These all came back on this same query long before they were
     // rendered; seeding them is what makes the block a confirmation step
     // rather than a second data-entry form.
@@ -268,7 +268,7 @@ export default function NewCreditApplicationForm({
       // the customer's real record — independent of whether the credit
       // application below ends up saving successfully.
       if (applicant) {
-        // Scenario 60 item 27 — the whole CUSTOMER PROFILE block is diffed,
+        // Scenario 64 item 27 — the whole CUSTOMER PROFILE block is diffed,
         // not just phone and email. Each entry is [what the form holds, what
         // the customer record holds]; only a genuine change is sent, so an
         // application raised without touching the block issues no PATCH at
@@ -336,7 +336,7 @@ export default function NewCreditApplicationForm({
         }
       }
 
-      // Scenario 60 item 27 — the co-maker is a Related People row now, not
+      // Scenario 64 item 27 — the co-maker is a Related People row now, not
       // its own section, and the row works exactly like the others: pick
       // "Co-maker" under Relationship and type the person in. There is no
       // picker of saved co-makers, so this resolves the row by matching what

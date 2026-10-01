@@ -165,7 +165,7 @@ test.describe('POS Checkout — Payment Method Options', () => {
 
     await page.getByLabel('Item Payment Mode').selectOption({ label: 'Debit/Credit Card' })
 
-    // Scenario 60 — this was a native <select> labelled "POS Terminal". It
+    // Scenario 64 — this was a native <select> labelled "POS Terminal". It
     // was renamed to "Card Acquirer" (its options are the acquirers that
     // provide the terminal and settle the money, not the terminal), and
     // development then replaced the control itself with PillCombobox, which

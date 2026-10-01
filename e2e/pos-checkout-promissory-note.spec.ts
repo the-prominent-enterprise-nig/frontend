@@ -137,7 +137,7 @@ async function submitInstallmentSale(
   await page.getByRole('button', { name: new RegExp(applicantName) }).click()
 
   // Select the approved application and a financing term.
-  // Scenario 60 — shared Select: named by what it shows (the placeholder
+  // Scenario 64 — shared Select: named by what it shows (the placeholder
   // while unselected), options live in a popup, not as <option> children.
   const applicationSelect = page.getByRole('combobox', {
     name: 'Select an approved application…',
@@ -147,7 +147,7 @@ async function submitInstallmentSale(
   await page.getByRole('option').filter({ hasText: applicationNumber }).click()
   const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
   await expect(termSelect).toBeVisible({ timeout: 10_000 })
-  // Scenario 60 — shared Select, not a native <select>: no placeholder
+  // Scenario 64 — shared Select, not a native <select>: no placeholder
   // <option>, so the old selectOption({index:1}) is the first real option.
   await openCustomSelect(termSelect)
   await page.getByRole('option').first().click()

@@ -45,7 +45,7 @@ type Props<T extends FinancingScopedFormValues> = {
   setValue: UseFormSetValue<T>
   trigger: UseFormTrigger<T>
   errors: FieldErrors<T>
-  /** Scenario 60 item 27 (client, 2026-09-30) — PROPOSED PURCHASE AND
+  /** Scenario 64 item 27 (client, 2026-09-30) — PROPOSED PURCHASE AND
    *  INSTALLMENT is not optional, and Price Use and Term are part of it.
    *  Off by default: the Edit modal reuses this component on a `.partial()`
    *  schema, where demanding both would make every existing draft
@@ -169,7 +169,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // for an item that is on no active list under the chosen Price Use, so
   // switching Price Use appeared to leave some items unchanged when in fact
   // they had never been priced from a list at all. Worse, it showed a figure
-  // the server now refuses outright (Scenario 60 item 21), so the form
+  // the server now refuses outright (Scenario 64 item 21), so the form
   // promised a price the submit could not honour.
   const estimatedTotal = (items ?? []).reduce((sum, i) => {
     const resolved = i.itemId ? resolvedItems[i.itemId] : undefined
@@ -184,7 +184,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     : (items ?? []).filter((i) => i.itemId && !resolvedItems[i.itemId]).length
 
   // The curated per-SKU down payment is deliberately no longer summed or
-  // used — Scenario 60 item 22 (client, 2026-09-29): the down payment is 30%
+  // used — Scenario 64 item 22 (client, 2026-09-29): the down payment is 30%
   // of the sale amount, full stop. Those rate-card figures were priced
   // against the old 10% policy and now sit below the floor, so reading them
   // pre-filled a value the form then rejected. Only the down-payment column
@@ -237,7 +237,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // the term or the seed value changes, but never overwrites a figure
   // already entered — the collector is free to take more up front, and the
   // schema refuses less.
-  // Scenario 60 item 22 (client, 2026-09-29): the down payment is 30% of the
+  // Scenario 64 item 22 (client, 2026-09-29): the down payment is 30% of the
   // sale amount, and the rate card's own downPayment column is no longer
   // read. Those curated figures were priced against the old 10% policy, so
   // seeding from them pre-filled a value the 30% floor then rejected — on a
@@ -338,7 +338,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // including the WIP default, so a changed dropdown visibly changes the
   // number instead of silently doing nothing.
   const selectedPriceUse = priceUseTypes.find((t) => t.id === effectivePriceUseTypeId)
-  // Scenario 60 item 27 — the mockup shades PROPOSED PURCHASE AND
+  // Scenario 64 item 27 — the mockup shades PROPOSED PURCHASE AND
   // INSTALLMENT "read only from POS draft": the figures come from the system,
   // not from a transcriber re-keying them. Three of them already exist once
   // this block has resolved prices and a term, so they are filled in here.

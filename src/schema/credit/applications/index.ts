@@ -36,7 +36,7 @@ export const CREDIT_APPLICATION_STATUS_COLORS: Record<CreditApplicationStatus, s
 }
 
 /**
- * Scenario 60 Part 6 — an approved application with no applicant ID on file
+ * Scenario 64 Part 6 — an approved application with no applicant ID on file
  * is "approved but incomplete": still usable for a sale (the client's
  * explicit requirement — nothing here gates anything), but visibly not
  * finished. Derived, never stored, so it corrects itself the moment the ID
@@ -151,7 +151,7 @@ const CreateCreditApplicationBaseSchema = z.object({
   // the application itself.
   applicantPhone: z.string().max(50).optional().or(z.literal('')),
   applicantEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
-  // Scenario 60 item 27 — the rest of the mockup's CUSTOMER PROFILE block.
+  // Scenario 64 item 27 — the rest of the mockup's CUSTOMER PROFILE block.
   // All form-only: they are seeded from the applicant's customer record and
   // PATCHed back to it on submit, never sent in the credit application
   // payload. Nothing is required — the mockup marks none of it so, and a
@@ -219,7 +219,7 @@ const CreateCreditApplicationBaseSchema = z.object({
     )
     .optional(),
 
-  // Scenario 60 item 27 — PROPOSED PURCHASE AND INSTALLMENT. Transcribed
+  // Scenario 64 item 27 — PROPOSED PURCHASE AND INSTALLMENT. Transcribed
   // from paper, not derived: the mockup marks most of this block "read only
   // from POS draft", but until a draft/quote entity exists the honest shape
   // is a typed value.
@@ -229,7 +229,7 @@ const CreateCreditApplicationBaseSchema = z.object({
   ppdRebate: z.string().optional().or(z.literal('')),
   posDraftReference: z.string().max(100).optional().or(z.literal('')),
 
-  // Scenario 60 item 27 — PAPER RECORD AND CREDIT DECISION. The decision
+  // Scenario 64 item 27 — PAPER RECORD AND CREDIT DECISION. The decision
   // itself stays with decideItems(); these are the transcription facts.
   paperFormConfirmed: z.boolean().optional(),
   applicantIsUnitUser: z.enum(['yes', 'no']).optional().or(z.literal('')),
@@ -264,7 +264,7 @@ const CreateCreditApplicationBaseSchema = z.object({
         // looking dead. z.coerce would hide that but widens the schema's
         // input type to unknown, breaking useForm's generic.
         estimatedPrice: z.number().optional(),
-        /** Scenario 60 item 28 — the unit picked at the till when this
+        /** Scenario 64 item 28 — the unit picked at the till when this
          *  application was raised from a cart. Passed straight through to the
          *  API; nothing in the form edits it. */
         serialNumberId: z.string().optional(),
@@ -312,7 +312,7 @@ const CreateCreditApplicationBaseSchema = z.object({
 })
 
 /**
- * Scenario 60 item 27 (client, 2026-09-30): PROPOSED PURCHASE AND INSTALLMENT
+ * Scenario 64 item 27 (client, 2026-09-30): PROPOSED PURCHASE AND INSTALLMENT
  * and PAPER RECORD AND CREDIT DECISION are **not optional**.
  *
  * Applied on create only. The edit schema stays a `.partial()` — the Edit
@@ -456,7 +456,7 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
   (data, ctx) => {
     // A co-maker on a credit application is identified by first name, last
     // name and relationship, plus a contact number (client request,
-    // 2026-09-24 — Scenario 60). The number is not a nicety: a co-maker
+    // 2026-09-24 — Scenario 64). The number is not a nicety: a co-maker
     // exists to be reachable when the account goes bad, and CoMaker
     // .contactNumber is NOT NULL in the schema, so leaving it blank was
     // writing an empty string into a required column rather than failing.
@@ -477,7 +477,7 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
     // reason: a field that means one thing to the form and another to the
     // schema that re-checks the form's own output.
 
-    // Scenario 60 item 27 — a character reference row is all-or-nothing.
+    // Scenario 64 item 27 — a character reference row is all-or-nothing.
     // Nothing forces a row to exist (the minimum is "subject to NIG policy",
     // unstated), but a half-filled one is worse than none: a name with no
     // number cannot be called, and the backend requires the number whenever
@@ -505,7 +505,7 @@ export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSche
       }
     })
 
-    // Scenario 60 item 27 — a related-person row needs a role and a first
+    // Scenario 64 item 27 — a related-person row needs a role and a first
     // name. The mobile deliberately does not: the paper form offers "Father
     // mobile / unavailable", so a name with no number is a complete answer
     // here, unlike a character reference.
@@ -621,7 +621,7 @@ export interface CreditApplicationCustomerLite {
   customerCode: string
   phone?: string | null
   email?: string | null
-  /** Scenario 60 item 27 — the mockup's CUSTOMER PROFILE block, returned so
+  /** Scenario 64 item 27 — the mockup's CUSTOMER PROFILE block, returned so
    *  a reviewer can read the application without opening the customer
    *  elsewhere. All null for anyone captured before these fields existed. */
   altPhone?: string | null
@@ -662,7 +662,7 @@ export interface CreditApplicationItemLite {
 export interface CreditApplicationItemLine {
   id: string
   itemId: string
-  /** Scenario 60 item 28 — the physical unit the cashier had picked at the
+  /** Scenario 64 item 28 — the physical unit the cashier had picked at the
    *  till when this application was raised from a cart. A preference, not a
    *  hold: the till re-checks `status === 'in_stock'` before reusing it, and
    *  asks for a serial again when it is not. */
@@ -705,7 +705,7 @@ export interface CreditApplication {
   monthlyInstallment?: number | null
   totalPayable?: number | null
   status: CreditApplicationStatus
-  /** Scenario 60 item 27 — character references transcribed from the paper
+  /** Scenario 64 item 27 — character references transcribed from the paper
    * form, ordered by their row on it. Empty array when none were recorded. */
   references?: {
     id: string
@@ -714,7 +714,7 @@ export interface CreditApplication {
     relationship: string
     mobileNumber: string
   }[]
-  /** Scenario 60 item 27 — the mockup's RELATED PEOPLE block, one row per
+  /** Scenario 64 item 27 — the mockup's RELATED PEOPLE block, one row per
    * person. At most one of each role. `mobileNumber` is nullable on purpose:
    * the paper form offers "Father mobile / unavailable", so a blank is a
    * recorded answer rather than missing data. */
@@ -725,7 +725,7 @@ export interface CreditApplication {
     lastName?: string | null
     mobileNumber?: string | null
   }[]
-  /** Scenario 60 item 27 — PROPOSED PURCHASE AND INSTALLMENT, transcribed
+  /** Scenario 64 item 27 — PROPOSED PURCHASE AND INSTALLMENT, transcribed
    * from the paper form. `lcp` is hand-entered and feeds no calculation: the
    * mockup says `amount financed = LCP - downpayment`, but what LCP is has
    * not been confirmed, so the derived figures above still come from the
@@ -735,19 +735,19 @@ export interface CreditApplication {
   firstDueDate?: string | null
   ppdRebate?: number | null
   posDraftReference?: string | null
-  /** Scenario 60 item 27 — PAPER RECORD. The credit decision itself is not
+  /** Scenario 64 item 27 — PAPER RECORD. The credit decision itself is not
    * here; it stays with decideItems(). `applicantIsUnitUser` is tri-state —
    * null means the question was never asked, which is not the same as "no". */
   paperFormConfirmed?: boolean | null
   applicantIsUnitUser?: boolean | null
   transcribedById?: string | null
   transcribedAt?: string | null
-  /** Scenario 60 item 27 — set by checkout when the sale it backed produced
+  /** Scenario 64 item 27 — set by checkout when the sale it backed produced
    *  exactly one installment account. Null for a multi-term sale, where no
    *  single account is "the" one; posTransactionId still links the sale. */
   installmentAccountId?: string | null
   installmentAccount?: { id: string; accountNumber: string } | null
-  /** Scenario 60 Part 6 — list-only. Whether an `applicant_id` document is
+  /** Scenario 64 Part 6 — list-only. Whether an `applicant_id` document is
    * on file, so the queue can mark an approval as "ID pending" without
    * fetching every row's attachments. Set by findAll() alone; the detail
    * endpoint omits it and derives the same thing from the documents it

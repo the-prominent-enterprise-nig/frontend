@@ -159,7 +159,7 @@ export function useCreditApplication(id: string) {
     application: applicationQuery.data?.data,
     isLoading: applicationQuery.isLoading,
     error: applicationQuery.error,
-    /** Scenario 60 item 28 — the page polls every 10s, but a cashier watching
+    /** Scenario 64 item 28 — the page polls every 10s, but a cashier watching
      *  for an owner's approval should not have to wait out a poll or reload
      *  the page. Exposed so the detail view can offer a Refresh. */
     refetch: applicationQuery.refetch,

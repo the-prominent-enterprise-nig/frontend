@@ -42,7 +42,7 @@ type Props = {
 }
 
 /**
- * Scenario 60 item 27 — "CHARACTER REFERENCES: up to three to match paper
+ * Scenario 64 item 27 — "CHARACTER REFERENCES: up to three to match paper
  * form; minimum subject to NIG policy".
  *
  * One row to begin with, added as needed up to three — the same add/remove

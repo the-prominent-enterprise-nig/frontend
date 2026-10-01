@@ -38,7 +38,7 @@ type FormState = {
   businessCategory: string
   employeeNumber: string
   birthday: string
-  // Scenario 60 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
   // block. `isSelfEmployed` is a string here ('' / 'yes' / 'no') because
   // unanswered is a third state, not false.
   altPhone: string
@@ -516,7 +516,7 @@ export default function CustomerForm({
             {errors.phone && <p className="mt-1 text-[12px] text-red-600">{errors.phone}</p>}
           </div>
           <div>
-            {/* Scenario 60 item 27 — "Alt mobile (optional)". Sits beside the
+            {/* Scenario 64 item 27 — "Alt mobile (optional)". Sits beside the
                 main number rather than in the extra fields below, because
                 the two are only ever read together, and the duplicate check
                 above deliberately still looks at `phone` alone: a shared

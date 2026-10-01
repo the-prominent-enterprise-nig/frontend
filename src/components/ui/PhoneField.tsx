@@ -48,7 +48,7 @@ type Props = {
  * empty form value back in and the control visibly collapses to "+63",
  * discarding what the user saw themselves put in.
  *
- * That was invisible while every phone field was optional. Scenario 60 Part 4
+ * That was invisible while every phone field was optional. Scenario 64 Part 4
  * made the co-maker's number required, and it surfaced immediately as
  * "Contact number is required" over a filled-looking box — reproduced in an
  * e2e harness before this fix: typed input captured fine, autofilled input

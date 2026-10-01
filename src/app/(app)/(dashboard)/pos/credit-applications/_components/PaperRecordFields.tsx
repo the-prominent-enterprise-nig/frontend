@@ -30,7 +30,7 @@ function FieldError({ message }: { message?: string }) {
 }
 
 /**
- * Scenario 60 item 27 — the mockup's PROPOSED PURCHASE AND INSTALLMENT and
+ * Scenario 64 item 27 — the mockup's PROPOSED PURCHASE AND INSTALLMENT and
  * PAPER RECORD blocks.
  *
  * The mockup marks the purchase block "read only from POS draft, then linked

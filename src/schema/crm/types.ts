@@ -20,7 +20,7 @@ export const CustomerTypeEnum = z.enum([
   'individual',
   'business',
   'employee',
-  /** Scenario 60 item 27 (client, 2026-09-30) — how the applicant
+  /** Scenario 64 item 27 (client, 2026-09-30) — how the applicant
    *  earns, answered once here rather than in a second Self-employed
    *  Yes/No field beside it. Their own business name goes in
    *  `companyName`, the same column an employer would use. */
@@ -172,7 +172,7 @@ export interface Customer {
   middleName?: string | null
   lastName?: string | null
   customerType: CustomerType
-  /** Doubles as the mockup's "Employer" for an individual (Scenario 60 item
+  /** Doubles as the mockup's "Employer" for an individual (Scenario 64 item
    *  27): one column for "the organisation this person is attached to",
    *  rather than a second column holding the same kind of value. The form
    *  labels it Company name for a business and Employer otherwise. */
@@ -180,7 +180,7 @@ export interface Customer {
   businessCategory?: 'private' | 'government' | null
   employeeNumber?: string | null
   birthday?: string | null
-  // Scenario 60 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
   // block. Stored on the customer so an application can prefill from it,
   // which is what the mockup asks for ("prefill for returning customers,
   // then confirm or edit"). Null on every customer captured before 2026-09-30.
@@ -193,7 +193,7 @@ export interface Customer {
   taxExemptionRef?: string | null
   email?: string | null
   phone?: string | null
-  /** The CURRENT address. Scenario 60 items 9/10 kept it in these two
+  /** The CURRENT address. Scenario 64 items 9/10 kept it in these two
    *  columns rather than renaming them: `barangayCode` is the key collector
    *  assignment matches on, and a collector visits where the customer lives
    *  now. Home is the pair below, null before 2026-09-30. */

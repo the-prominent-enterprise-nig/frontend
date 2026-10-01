@@ -33,7 +33,7 @@ export const PAYMENT_TERMS_OPTIONS = [
  * Individual/Business/Employee per the 2026-07-17 decision). */
 export const BUSINESS_CATEGORY_OPTIONS = ['private', 'government'] as const
 
-/** Scenario 60 item 27 — "Civil status: Select" on the credit application
+/** Scenario 64 item 27 — "Civil status: Select" on the credit application
  *  mockup. These are the backend's MaritalStatus enum members exactly,
  *  capitalised as Prisma stores them, because the API rejects any other
  *  casing. The enum is shared with Employee rather than duplicated. */
@@ -87,7 +87,7 @@ export const createCustomerSchema = z.object({
   businessCategory: z.enum(['private', 'government']).optional().or(z.literal('')),
   employeeNumber: z.string().max(50).optional().or(z.literal('')),
   birthday: z.date().optional(),
-  // Scenario 60 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
   // block, captured here rather than on the application itself so a
   // returning customer's application prefills from their profile.
   altPhone: z.string().max(50).optional().or(z.literal('')),

@@ -795,7 +795,7 @@ export default function CheckoutPage() {
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
-  // Scenario 60 item 28 — an application arriving from "Continue to sale" on
+  // Scenario 64 item 28 — an application arriving from "Continue to sale" on
   // its own detail page. It cannot simply be selected on arrival: the picker's
   // list is only fetched once there is an installment line in the cart, and
   // there is no cart yet. So it is held here while the cart is built from the
@@ -1232,7 +1232,7 @@ export default function CheckoutPage() {
       if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
         setCart(handoff.lines)
       }
-      // Scenario 60 item 28. Carried instead of lines, never alongside them —
+      // Scenario 64 item 28. Carried instead of lines, never alongside them —
       // the cart is derived below from the application's own approved items,
       // here at the till where price, tax and UoM actually resolve.
       if (handoff.creditApplicationId) {
@@ -2180,7 +2180,7 @@ export default function CheckoutPage() {
           itemId: l.itemId,
           itemLabel: l.itemName,
           estimatedPrice: l.unitPrice,
-          // Scenario 60 item 28 — the physical unit already picked at the
+          // Scenario 64 item 28 — the physical unit already picked at the
           // till, remembered on the application so coming back to sell it
           // does not ask for a serial that has already been chosen.
           serialNumberId: l.serialNumberId,
@@ -2205,7 +2205,7 @@ export default function CheckoutPage() {
 
   // ─── Cart actions ──────────────────────────────────────────────────────────
 
-  // Scenario 60 item 28 — turn the arriving application into a cart.
+  // Scenario 64 item 28 — turn the arriving application into a cart.
   //
   // Two passes, because both halves depend on state this render does not have
   // yet: the items have to be in the cart before they can be switched to
@@ -2252,7 +2252,7 @@ export default function CheckoutPage() {
         // promising a customer what the owner refused.
         const approved = (application?.items ?? []).filter((i) => i.status === 'approved')
         const approvedPriceUseTypeId = application?.priceUseTypeId ?? null
-        // Scenario 60 item 28 — the unit the cashier had already picked when
+        // Scenario 64 item 28 — the unit the cashier had already picked when
         // this application was raised. A preference, never a hold: only reused
         // when that serial is STILL in stock, since nothing reserved it and it
         // may have been sold, transferred or written off while the application
@@ -3231,7 +3231,7 @@ export default function CheckoutPage() {
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
           // tpfApprovedAmount is deliberately not sent (client request,
-          // 2026-09-24 — Scenario 60). The column stays and stays null: it is
+          // 2026-09-24 — Scenario 64). The column stays and stays null: it is
           // optional in the DTO and nullable in the schema, and nothing reads
           // it back, so the financier's reference number is the only TPF
           // detail the cashier is asked for.
@@ -5057,7 +5057,7 @@ export default function CheckoutPage() {
                   // before a term has been picked yet (downPaymentInput still
                   // unset) so the shown figure doesn't disagree with what
                   // picking a term is about to fill in.
-                  // Scenario 60 item 22 (client, 2026-09-29): the down payment is 30%
+                  // Scenario 64 item 22 (client, 2026-09-29): the down payment is 30%
                   // of the sale amount, and the rate card's own downPayment column is
                   // no longer read — those figures were priced against the old 10%
                   // policy, so seeding from them pre-filled a value the 30% floor then

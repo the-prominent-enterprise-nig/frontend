@@ -1,4 +1,4 @@
-# Scenario 60 — POS Client Feedback Batch (Customer Creation, Credit Application, Delivery, TPF) — Gap Analysis & Closing Plan
+# Scenario 64 — POS Client Feedback Batch (Customer Creation, Credit Application, Delivery, TPF) — Gap Analysis & Closing Plan
 
 **Source**: client feedback relayed 2026-09-24, covering four POS surfaces in one pass — customer creation, the credit application form, Cancel Sale, and a net-new Delivery capture at checkout, plus one TPF cleanup.
 
@@ -249,7 +249,7 @@ None matched yet — to be identified before Phase 7.
 - **That demo item is deleted by the seed, by design — 25 specs depend on it.** `seed.ts:6149` creates it as `ACC-REMOTE-UNIV`; `cleanup-demo-business-data.ts` then deletes it, since `TN-ACC-REMOTE-UNIV` is in its `FICTIONAL_ITEM_SKUS`. Confirmed empirically: after a full clean seed this session, the POS catalog holds 1,399 items and zero matches for that name. **A reseed cannot fix these specs** — they only ever passed on a DB where someone had created the item by hand. The fix is either dropping the six `ACC-*`/`CLN-*`/`FAN-001` SKUs from that cleanup list, or making the specs create and stock their own item.
 - **`credit-application-intake.spec.ts` still fails, and it is not a test bug.** It logs in as a cashier and POSTs to `/crm/customers`, which returns `403 Missing required permissions: crm:customers:create` (reproduced directly against the API). Worth attention given `development` recently merged "create customer and raise applications inside checkout" for cashiers — if a cashier cannot create a customer, that feature does not work for the role it was built for. No permissions were changed here.
 - **"POS Terminal" still appears in Settings** — `PaymentMethodOptionsSection.tsx:113` and `BranchDetailClient.tsx:425`. An admin configures "POS Terminals" while the cashier now picks a "Card Acquirer". Left alone deliberately as out of scope; worth renaming for one vocabulary end to end.
-- **Nothing is committed**, and the branch `feat/scenario-60-pos-client-feedback-batch` (frontend only) also carries one unrelated pre-existing modification to `e2e/pos-checkout-selling-agent.spec.ts` that predates it.
+- **Nothing is committed**, and the branch `feat/scenario-64-pos-client-feedback-batch` (frontend only) also carries one unrelated pre-existing modification to `e2e/pos-checkout-selling-agent.spec.ts` that predates it.
 - **Gaps 5 and 6 remain open**, both awaiting decisions B and C, and both were in the confirmed "doable today" set — they were simply not part of the Parts 1–4 scope the developer approved. Gaps 7–14 are unchanged and still need migrations; 15 and 16 are still blocked on Elijah and the client.
 
 ---
@@ -257,7 +257,7 @@ None matched yet — to be identified before Phase 7.
 ## Implementation Log — 2026-09-28
 
 Second run on this scenario, on the same branch as the first
-(`feat/scenario-60-pos-client-feedback-batch`) so all six parts live together.
+(`feat/scenario-64-pos-client-feedback-batch`) so all six parts live together.
 
 **For this scenario, I have done:**
 
@@ -266,7 +266,7 @@ Second run on this scenario, on the same branch as the first
 
 **Worth flagging:**
 
-- **Part 6 was not frontend-only, contrary to this doc's own prediction.** The detail view needed no backend, as expected — but the queue did: `findAll()` builds from `detailInclude`, which carries no documents, and the list cannot fetch them per row without an N+1. So the backend now returns a `hasApplicantId` boolean, on its own branch `feat/scenario-60-credit-application-id-pending`. Still **no migration** — a service/DTO change only — but it makes this a two-repo part, and **the backend must land first** or the queue pill silently shows plain "Approved" for everything. `creditApplicationBadge()` checks `hasApplicantId === false` rather than falsy for exactly this reason: `undefined` means the caller doesn't know, and must not be read as "ID missing".
+- **Part 6 was not frontend-only, contrary to this doc's own prediction.** The detail view needed no backend, as expected — but the queue did: `findAll()` builds from `detailInclude`, which carries no documents, and the list cannot fetch them per row without an N+1. So the backend now returns a `hasApplicantId` boolean, on its own branch `feat/scenario-64-credit-application-id-pending`. Still **no migration** — a service/DTO change only — but it makes this a two-repo part, and **the backend must land first** or the queue pill silently shows plain "Approved" for everything. `creditApplicationBadge()` checks `hasApplicantId === false` rather than falsy for exactly this reason: `undefined` means the caller doesn't know, and must not be read as "ID missing".
 - **The role/relation pair is stored in one column** as `"Spouse"` or `"Co-maker — Parent"` (developer decision: keep the role rather than flatten to the relation, since a spouse co-signing is not the same instrument as a third-party guarantee). A real `role` column is the better shape and would be queryable; it needs a migration, so it was not done. Parsing is tolerant of legacy free text and of a plain hyphen, so existing or imported values round-trip.
 - **Choosing "Co-maker" with no relation yet composes to `''` deliberately**, so the existing "Relationship is required" rule fires and the second dropdown cannot be skipped. No new validation was added.
 - **Safe to constrain when it was done:** `co_makers` held zero rows, so no free-text value was orphaned. That will not be true again — a later change to this list needs a backfill question.

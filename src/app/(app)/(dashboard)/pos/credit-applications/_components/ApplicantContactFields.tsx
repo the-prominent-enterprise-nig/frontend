@@ -37,7 +37,7 @@ type Props = {
 }
 
 /**
- * Scenario 60 item 27 — the mockup's CUSTOMER PROFILE block, shown once an
+ * Scenario 64 item 27 — the mockup's CUSTOMER PROFILE block, shown once an
  * applicant is picked.
  *
  * "Prefill for returning customers, then confirm or edit": every box here is

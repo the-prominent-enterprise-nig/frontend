@@ -33,7 +33,7 @@ export type CheckoutHandoff<TLine = unknown> = {
    * (2026-09-19). A genuinely abandoned sale still exists server-side as a
    * parked sale, which is the durable copy and is branch-visible. */
   sessionId?: string
-  /** Scenario 60 item 28 — "Continue to sale" on an approved credit
+  /** Scenario 64 item 28 — "Continue to sale" on an approved credit
    * application. Checkout builds the cart from the application's own approved
    * items and pre-selects it, instead of the seller re-keying an order the
    * application already describes and then having to match it exactly.
@@ -42,7 +42,7 @@ export type CheckoutHandoff<TLine = unknown> = {
    * the till, where price, tax and UoM are resolved, rather than guessed on
    * the page that happens to hold the application. */
   creditApplicationId?: string
-  /** Scenario 60 item 28 — the two numbers a cashier reads off paper booklets
+  /** Scenario 64 item 28 — the two numbers a cashier reads off paper booklets
    * before leaving the till to raise a credit application: the Sales Invoice
    * No., and the collection-receipt (CR) number on each payment row.
    *
