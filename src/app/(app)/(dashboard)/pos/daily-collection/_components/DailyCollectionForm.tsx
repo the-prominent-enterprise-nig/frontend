@@ -3,6 +3,7 @@
 import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
 import { checkedByOf, type SheetDraftController } from '../_hooks/useSheetDraft'
 import {
+  buildCaravanRecapLines,
   buildCollectionRecapLines,
   buildFormDenominationLines,
   buildFormLines,
@@ -76,7 +77,7 @@ export default function DailyCollectionForm({
 }: Props): React.JSX.Element {
   const draft = edit?.draft ?? null
   const lines = buildFormLines(report)
-  const recap = buildCollectionRecapLines(report)
+  const recap = [...buildCollectionRecapLines(report), ...buildCaravanRecapLines(report)]
   // While editing, the blocks add up what is being typed, so TOTAL and CASH
   // COLLECTED move as the cashier counts rather than only after a save.
   const denominations = buildFormDenominationLines(

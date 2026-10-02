@@ -67,13 +67,8 @@ test.describe('Inventory — Stock Transfer serial-tracked requesting', () => {
     await pickWarehouses(page)
     await addSerialTrackedItem(page)
 
-    // The card says once — not per row — that the source decides which units
-    // leave, and no serial picker is offered anywhere in the form.
-    await expect(
-      page.getByText(
-        'Serial-tracked — the source picks which exact units leave when they dispatch.'
-      )
-    ).toBeVisible({ timeout: 10_000 })
+    // The line asks for a quantity only — no serial picker anywhere in the form.
+    await expect(page.getByText('Serial-tracked', { exact: false })).toHaveCount(0)
     await expect(page.getByTestId('serial-pick-panel')).toHaveCount(0)
     await expect(page.getByTestId('serial-pick-card')).toHaveCount(0)
 

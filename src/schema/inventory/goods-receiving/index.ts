@@ -232,6 +232,11 @@ const BranchSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string().optional().nullable(),
+  // Scenario 60 — set on a caravan, so a receipt for stock coming back from
+  // one can name where it was set up and the event.
+  isTemporary: z.boolean().optional(),
+  eventName: z.string().optional().nullable(),
+  addressLine1: z.string().optional().nullable(),
 })
 
 const LedgerWarehouseSchema = z.object({

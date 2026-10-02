@@ -11,6 +11,7 @@ import {
   type Uds,
 } from '@/src/schema/inventory/uds'
 import DocumentTrail from './DocumentTrail'
+import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 
 function formatCurrency(value?: number | null): string {
   if (value == null) return '—'
@@ -233,7 +234,10 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
                   {uds.lines.map((line) => (
                     <tr key={line.id}>
                       <td className="px-3 py-2 font-mono text-xs text-zinc-800">
-                        {line.serialNumber.serialNumber}
+                        <SerialLink
+                          serialId={line.serialNumber.id}
+                          serialNumber={line.serialNumber.serialNumber}
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <p className="font-medium text-zinc-900">{line.item.name}</p>

@@ -2,6 +2,7 @@
 
 import {
   receivingReportSourceName,
+  receivingReportSourceSubtitle,
   receivingReportSourceRef,
 } from '@/src/libs/format/receiving-report'
 import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
@@ -46,7 +47,12 @@ export interface ReceivingReportDocument {
        * sent the goods. */
       fromWarehouse?: {
         name?: string | null
-        branch?: { name?: string | null } | null
+        branch?: {
+          name?: string | null
+          isTemporary?: boolean | null
+          eventName?: string | null
+          addressLine1?: string | null
+        } | null
       } | null
     } | null
     lines?: {
@@ -134,6 +140,9 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
           <p className="font-bold text-prominent-purple-900">
             {receivingReportSourceName(rr) ?? '—'}
           </p>
+          {receivingReportSourceSubtitle(rr) && (
+            <p className="text-gray-700">{receivingReportSourceSubtitle(rr)}</p>
+          )}
           {/* Scenario 55 (Stock-side Manual RR parity, follow-up) — omitted
               rather than printed as "Driver/Helper: —": the standalone
               Create RR screen no longer collects either name at all, so

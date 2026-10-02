@@ -13,6 +13,9 @@ export interface BranchDetail {
   isActive: boolean
   createdAt: string
   employeeCount: number
+  // Scenario 60 — set on a caravan (a temporary branch).
+  isTemporary?: boolean
+  eventName?: string | null
   manager: {
     id: string
     name: string | null

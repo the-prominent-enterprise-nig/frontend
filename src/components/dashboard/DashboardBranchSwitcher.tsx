@@ -9,6 +9,7 @@ import {
   type BranchDetail,
 } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { branchDisplayName } from '@/src/libs/format/locationLabel'
 
 // Shares its store with the POS module's own branch switcher (see the store
 // file's doc comment) so picking a branch here also scopes POS screens, and
@@ -42,12 +43,15 @@ export function DashboardBranchSwitcher() {
       // does — if it no longer matches a real branch, fall back to "All
       // Branches" instead of every widget silently filtering by a dead id.
       getBranches().then((res) => {
-        const list = res.data ?? []
+        // A caravan reads by its place ("Caravan · Lemery"), not its event.
+        const list = (res.data ?? []).map((b) => ({ ...b, name: branchDisplayName(b) }))
         if (privileged) setBranches(list)
         const currentBranchId = usePosBranchContext.getState().branchId
-        if (currentBranchId && !list.some((b) => b.id === currentBranchId)) {
-          usePosBranchContext.getState().setBranch(null)
-        }
+        if (!currentBranchId) return
+        // Also refreshes the persisted name, so a renamed branch doesn't
+        // keep its old label.
+        const current = list.find((b) => b.id === currentBranchId)
+        usePosBranchContext.getState().setBranch(current ?? null)
       })
     })
   }, [])

@@ -44,6 +44,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import SessionSummaryCard, { type CashRow } from './_components/SessionSummaryCard'
+import { terminalPlaceId, terminalPlaceName } from '@/src/libs/format/locationLabel'
 
 function formatCurrency(n: number) {
   // Coerced explicitly: Prisma Decimal fields arrive as strings over JSON, and
@@ -81,7 +82,11 @@ export default function SessionsPage() {
 
   if (status !== 'authorized' || !session) return null
 
-  const sessions: PosSession[] = data?.data ?? []
+  // A caravan's register is stored on its host, so the host's list includes
+  // it — shown only under the caravan itself, not under the host.
+  const sessions: PosSession[] = (data?.data ?? []).filter(
+    (s) => !branchId || terminalPlaceId(s.terminal) === branchId
+  )
 
   async function handleOpen(form: OpenSessionInput) {
     setError('')
@@ -251,7 +256,11 @@ export default function SessionsPage() {
                     setError('')
                     setModal({ type: 'close', session: s })
                   }}
-                  onViewCollectionReport={() => handleViewCollectionReport(s)}
+                  // A caravan has no Daily Collection of its own — its cash is
+                  // counted on the host's — so its closed shift offers no report.
+                  onViewCollectionReport={
+                    s.terminal?.caravanBranchId ? undefined : () => handleViewCollectionReport(s)
+                  }
                 />
               ))}
             </>
@@ -312,7 +321,11 @@ function OpenSessionModal({
 }) {
   const { branchId } = usePosBranchContext()
   const { data: terminalsData } = useTerminals(branchId ? { branchId } : undefined)
-  const terminals = terminalsData?.data ?? []
+  // Same rule as the session list: a caravan's terminal is offered under the
+  // caravan, not under its host.
+  const terminals = (terminalsData?.data ?? []).filter(
+    (t) => !branchId || terminalPlaceId(t) === branchId
+  )
 
   // Opening cash is held as a string so the field can show a real "0.00" —
   // a till legitimately opens empty, and a blank box left cashiers unsure
@@ -519,6 +532,7 @@ function OpenSessionModal({
               <option value="">Select a terminal…</option>
               {terminals.map((t) => (
                 <option key={t.id} value={t.id}>
+                  {t.caravanBranch ? `${terminalPlaceName(t)} · ` : ''}
                   {t.terminalCode} — {t.name}
                 </option>
               ))}
@@ -662,14 +676,15 @@ function SessionRow({
   onToggle: () => void
   onHandover: () => void
   onCloseSession: () => void
-  onViewCollectionReport: () => void
+  /** Absent for a caravan's session — see the caller. */
+  onViewCollectionReport?: () => void
 }) {
   const isOpen = session.status === 'open'
   const status = STATUS_CHIP[session.status] ?? STATUS_CHIP.closed
   const length = shiftLength(session.openedAt, session.closedAt)
   const terminal = session.terminal?.name ?? session.terminalId
   const cashier = session.cashier?.name || session.cashierId
-  const branch = session.terminal?.branch?.name
+  const branch = terminalPlaceName(session.terminal)
 
   const subline = [
     session.closedAt ? `closed ${shiftTime(session.closedAt)}` : 'still open',
@@ -714,6 +729,7 @@ function SessionRow({
     // the report is where the posted variance and its GL entry live, so it
     // gets a button of its own rather than only existing behind the close
     // flow that a cashier already walked past.
+    if (!isOpen && !onViewCollectionReport) return null
     if (!isOpen)
       return (
         <button
@@ -1410,7 +1426,7 @@ function CloseSessionModal({
           <h2 className="text-[20px] font-semibold tracking-[-.02em]">Close session</h2>
           <p className="text-[12.5px] text-[#5b5b6b]">
             {[
-              session.terminal?.branch?.name,
+              terminalPlaceName(session.terminal),
               session.terminal?.name ?? session.terminalId,
               session.cashier?.name,
             ]
@@ -2113,13 +2129,16 @@ function ReconciliationModal({
 
         {/* Scenario 53 — "Create daily collection report upon closing". The
             report is a branch+day document, so the close hands off to it
-            rather than generating a per-session copy. */}
-        <a
-          href="/pos/daily-collection"
-          className="block rounded-xl border border-prominent-purple-200 bg-prominent-purple-50 px-4 py-2.5 text-sm font-medium text-prominent-purple-900 hover:bg-prominent-purple-100"
-        >
-          View today&apos;s Daily Collection Report →
-        </a>
+            rather than generating a per-session copy. Not for a caravan's
+            session: it has no report of its own, its cash is the host's. */}
+        {!session.terminal?.caravanBranchId && (
+          <a
+            href="/pos/daily-collection"
+            className="block rounded-xl border border-prominent-purple-200 bg-prominent-purple-50 px-4 py-2.5 text-sm font-medium text-prominent-purple-900 hover:bg-prominent-purple-100"
+          >
+            View today&apos;s Daily Collection Report →
+          </a>
+        )}
 
         {Number(data.totalCollectionsCash ?? 0) > 0 && (
           <div className="rounded-xl border border-gray-200 px-4 py-2">

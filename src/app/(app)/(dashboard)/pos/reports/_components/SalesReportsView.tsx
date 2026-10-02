@@ -7,6 +7,7 @@ import {
 } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
 import { getBrands } from '@/src/app/(app)/(dashboard)/inventory/brands/_actions/get-brands'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { branchDisplayName } from '@/src/libs/format/locationLabel'
 import type { ItemClassification } from '@/src/schema/inventory/classification'
 import ExportButton from '@/src/components/common/ExportButton'
 import ReportDateRange from '@/src/components/common/ReportDateRange'
@@ -94,7 +95,7 @@ export default function SalesReportsView(): React.JSX.Element {
           <SearchableSelect
             value={report.branchId}
             onChange={report.setBranchId}
-            options={branches.map((b) => ({ value: b.id, label: b.name }))}
+            options={branches.map((b) => ({ value: b.id, label: branchDisplayName(b) }))}
             placeholder="All branches"
             clearable
             portal

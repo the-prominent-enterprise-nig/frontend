@@ -61,6 +61,8 @@ export interface FormLine {
    * above", which is how one customer's DP and DC lines share a single name
    * cell on the paper form. */
   span: number
+  /** Scenario 60 Part 4 — the caravan this sale's units came out of, if any. */
+  caravan?: string
 }
 
 function collectionLines(report: DailyCollectionReport): {
@@ -85,6 +87,7 @@ function collectionLines(report: DailyCollectionReport): {
       credit: null,
       balance: running,
       span: 1,
+      caravan: r.caravan ?? undefined,
     }
   })
   return { lines, running }
@@ -212,6 +215,28 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
     line('CHECK', nonCash.CHECK),
     ...(nonCash.CARD ? [line('CARD', nonCash.CARD)] : []),
     ...(nonCash['OTHER NON-CASH'] ? [line('OTHER NON-CASH', nonCash['OTHER NON-CASH'])] : []),
+  ]
+}
+
+/**
+ * Scenario 60 Part 4 — the caravans this branch hosted that day, printed under
+ * the recap. Informational only: caravan sales ring up on this branch's
+ * terminal, so the money is already in the lines above. Kept out of
+ * `buildCollectionRecapLines` because the screen draws its own caravan block.
+ */
+export function buildCaravanRecapLines(report: DailyCollectionReport): FooterLine[] {
+  if (report.caravanSales.length === 0) return []
+  const blank = { negate: false, emphasis: false }
+  return [
+    { ...blank, label: '', amount: null },
+    { ...blank, label: 'CARAVAN SALES (INCLUDED ABOVE)', amount: null, emphasis: true },
+    ...report.caravanSales.map((c) => ({
+      ...blank,
+      label: `${c.caravanName} (${c.units} ${c.units === 1 ? 'unit' : 'units'})`,
+      amount: c.amount,
+      indent: true,
+    })),
+    { ...blank, label: 'CARAVAN TOTAL', amount: report.caravanSalesTotal, emphasis: true },
   ]
 }
 

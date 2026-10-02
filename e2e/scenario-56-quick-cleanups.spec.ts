@@ -51,12 +51,16 @@ test.describe('Scenario 56 Part 1 — quick cleanups', () => {
     await expect(table.getByRole('columnheader', { name: 'Lines' })).toHaveCount(0)
   })
 
-  test('Serials metric band labels pulled-out units as Pulled Out, not In Transit', async ({
+  test('Serials metric band counts pulled-out units under Service, apart from In Transit', async ({
     page,
   }) => {
     await gotoReady(page, '/inventory/stock?tab=serials')
-    await expect(page.getByText('repossessed', { exact: true })).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByText('on stock transfer', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('repair, defective, pulled out', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(page.getByText('on a transfer', { exact: true })).toBeVisible()
+    // "Returned" is never set by any flow, so the band no longer carries it.
+    await expect(page.getByText('Sold / Returned', { exact: true })).toHaveCount(0)
   })
 
   test('PO line description is internal: on the detail and form, not on the PO document', async ({

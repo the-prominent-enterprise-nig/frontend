@@ -1,6 +1,17 @@
 import { create } from 'zustand'
 
-export type Panel = {
+export type Panel = Item360Panel | SerialHistoryPanel
+
+/** One physical unit's own history — opened from anywhere a serial number
+ *  appears (Serial Numbers list, Stock Balance search, Item 360, UDS and
+ *  transfer lines), so finding a unit's past is one click wherever you are. */
+export type SerialHistoryPanel = {
+  type: 'serial'
+  serialId: string
+  serialNumber?: string
+}
+
+export type Item360Panel = {
   type: 'item360'
   itemId: string
   itemName?: string

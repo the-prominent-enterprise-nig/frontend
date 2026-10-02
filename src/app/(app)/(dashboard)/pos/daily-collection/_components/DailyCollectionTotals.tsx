@@ -92,6 +92,29 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
           <RecapRow key={line.label} label={line.label} amount={line.amount} />
         )
       )}
+
+      {/* Scenario 60 Part 4 — how much of the day came from the caravans this
+          branch hosts. Already inside the total above, so it sits below it. */}
+      {report.caravanSales.length > 0 && (
+        <>
+          <p className={`${PANE_HEAD} border-t bg-gray-50`}>Caravan sales (included above)</p>
+          {report.caravanSales.map((c) => (
+            <div key={c.caravanId} className={`${ROW} border-b border-gray-100`}>
+              <span className="min-w-0 truncate pl-3 text-gray-600">
+                {c.caravanName}
+                <span className="ml-2 text-xs text-gray-400">
+                  {c.units} {c.units === 1 ? 'unit' : 'units'}
+                </span>
+              </span>
+              <span className={FIGURE}>{peso(c.amount)}</span>
+            </div>
+          ))}
+          <div className={ROW}>
+            <span className="text-gray-600">Caravan total</span>
+            <span className={`${FIGURE} font-medium`}>{peso(report.caravanSalesTotal)}</span>
+          </div>
+        </>
+      )}
     </div>
   )
 }

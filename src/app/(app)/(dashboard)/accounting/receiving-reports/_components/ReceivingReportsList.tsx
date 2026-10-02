@@ -6,7 +6,10 @@ import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import ReceivingReportSheet, { type ReceivingReportDocument } from './ReceivingReportSheet'
 import { locationLabel } from '@/src/libs/format/locationLabel'
-import { receivingReportSourceName } from '@/src/libs/format/receiving-report'
+import {
+  receivingReportSourceName,
+  receivingReportSourceSubtitle,
+} from '@/src/libs/format/receiving-report'
 
 interface ReceivingReportRow {
   id: string
@@ -136,7 +139,14 @@ export default function ReceivingReportsList() {
                   className="cursor-pointer hover:bg-gray-50"
                 >
                   <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
-                  <td className="px-3 py-2">{receivingReportSourceName(r) ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    {receivingReportSourceName(r) ?? '—'}
+                    {receivingReportSourceSubtitle(r) && (
+                      <div className="text-xs text-gray-500">
+                        {receivingReportSourceSubtitle(r)}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-xs">{locationLabel(r.warehouse)}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(r.receivedAt)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(r.total)}</td>

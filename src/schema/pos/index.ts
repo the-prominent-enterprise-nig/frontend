@@ -11,6 +11,15 @@ export interface PosTerminal {
   createdAt: string
   updatedAt: string
   branch?: { id: string; name: string }
+  /** Scenario 60 — set when this terminal sells at a caravan; `branchId` is then its host. */
+  caravanBranchId?: string | null
+  caravanBranch?: {
+    id: string
+    name: string
+    isTemporary?: boolean
+    eventName?: string | null
+    addressLine1?: string | null
+  } | null
 }
 
 // Cashier Terminal Access
