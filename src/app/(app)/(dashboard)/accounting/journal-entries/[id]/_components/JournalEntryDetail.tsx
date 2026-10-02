@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Printer } from 'lucide-react'
 import { getJournalEntryById, type JournalEntry } from '@/src/libs/data/AccountingData'
+import { JournalVouchers } from '@/src/libs/data/AccountingV2Data'
+import { printJournalVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-amber-50 text-amber-700 border border-amber-200',
@@ -82,6 +84,16 @@ export default function JournalEntryDetail({ id }: { id: string }) {
       </Link>
 
       <header>
+        {/* Scenario 61 Part C — a printable Journal Voucher for any entry. */}
+        <button
+          onClick={async () => {
+            const res = await JournalVouchers.getDocument(entry.id)
+            if (res.success && res.data) printJournalVoucherDocument(res.data)
+          }}
+          className="float-right inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          <Printer className="h-4 w-4" /> Print Voucher
+        </button>
         {/* The description, not the reference. One sale raises two entries —
             "Installment Plan …" and "Installment Down Payment …" — and both
             carry the SAME source document number, so a reference heading made
@@ -116,6 +128,14 @@ export default function JournalEntryDetail({ id }: { id: string }) {
               <span className="text-gray-500">Source document</span>
               <span className="text-left font-medium tabular-nums text-gray-800">
                 {entry.sourceDocumentNo}
+              </span>
+            </>
+          )}
+          {entry.voucherControlNo && (
+            <>
+              <span className="text-gray-500">Voucher Control No.</span>
+              <span className="text-left font-medium tabular-nums text-gray-800">
+                {entry.voucherControlNo}
               </span>
             </>
           )}
