@@ -50,6 +50,8 @@ export interface FormLine {
    * above", which is how one customer's DP and DC lines share a single name
    * cell on the paper form. */
   span: number
+  /** Scenario 60 Part 4 — the caravan this sale's units came out of, if any. */
+  caravan?: string
 }
 
 function collectionLines(report: DailyCollectionReport): {
@@ -74,6 +76,7 @@ function collectionLines(report: DailyCollectionReport): {
       credit: null,
       balance: running,
       span: 1,
+      caravan: r.caravan ?? undefined,
     }
   })
   return { lines, running }
@@ -187,6 +190,24 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
           })),
           line('SUBTOTAL', report.nonCashCollection, { emphasis: true }),
           line('GRAND TOTAL COLLECTED', report.grandTotalCollection, { emphasis: true }),
+        ]),
+    // Scenario 60 Part 4 — informational only: caravan sales ring up on this
+    // branch's terminal, so the money is already in the lines above.
+    ...(report.caravanSales.length === 0
+      ? []
+      : [
+          { label: '', amount: null, negate: false, emphasis: false },
+          {
+            label: 'CARAVAN SALES (INCLUDED ABOVE)',
+            amount: null,
+            negate: false,
+            emphasis: true,
+          },
+          ...report.caravanSales.map((c) => ({
+            ...line(`${c.caravanName} (${c.units} ${c.units === 1 ? 'unit' : 'units'})`, c.amount),
+            indent: true,
+          })),
+          line('CARAVAN TOTAL', report.caravanSalesTotal, { emphasis: true }),
         ]),
   ]
 }

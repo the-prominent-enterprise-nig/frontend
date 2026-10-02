@@ -120,7 +120,10 @@ import type {
   FinancingTerm,
   TpfProvider,
   InstallmentPreview,
+  PosSession,
 } from '@/src/schema/pos'
+import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
+import { caravanPlaceLabel, terminalPlaceId } from '@/src/libs/format/locationLabel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -420,6 +423,24 @@ const fmt = (n: number) =>
  * itemName is resolved server-side (PosTransactionLine has no name column);
  * a line whose item has since been deleted falls back to "Item" rather than
  * rendering an empty row. */
+// A caravan's register (stored on its host) reads as the caravan, so it
+// can't be mistaken for one of the host's own: "Caravan · Lemery · TN-01".
+function sessionTerminalLabel(s: {
+  terminalId: string
+  terminal?: PosSession['terminal']
+}): string {
+  const code = s.terminal?.terminalCode ?? s.terminalId
+  const caravan = s.terminal?.caravanBranch
+  if (caravan) return `${caravanPlaceLabel({ ...caravan, isTemporary: true })} · ${code}`
+  const branch = s.terminal?.branch?.name
+  return branch ? `${branch} · ${code}` : code
+}
+
+// Where a session's register physically is: its caravan, else its branch.
+function sessionPlaceId(s: { terminal?: PosSession['terminal'] }): string | undefined {
+  return terminalPlaceId(s.terminal)
+}
+
 function summariseItems(
   lines: { itemName?: string | null; quantity: number }[] | undefined
 ): string {
@@ -493,7 +514,16 @@ export default function CheckoutPage() {
     ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
   })
   const rawSessions = sessionsData?.data
-  const openSessions = useMemo(() => rawSessions ?? [], [rawSessions])
+  // A caravan's register is stored on its host, so the host's session list
+  // includes it — but checkout only offers registers that are at the
+  // switcher's place: Ajuy's own under Ajuy, the caravan's under the caravan.
+  const openSessions = useMemo(
+    () =>
+      (rawSessions ?? []).filter(
+        (s) => !switcherBranchId || sessionPlaceId(s) === switcherBranchId
+      ),
+    [rawSessions, switcherBranchId]
+  )
 
   // Session
   const [sessionId, setSessionId] = useState('')
@@ -565,6 +595,14 @@ export default function CheckoutPage() {
     const session = openSessions.find((s) => s.id === sessionId)
     return session?.terminal?.branchId ?? (session?.terminal as any)?.branch?.id ?? null
   }, [openSessions, sessionId, isBranchManager, authBranchId])
+
+  // Scenario 60 — a caravan's terminal sells the stock physically at the
+  // caravan, so stock lookups ask for the caravan. Everything else (prices,
+  // payment methods, the daily collection) stays on activeBranchId, the host.
+  const stockBranchId = useMemo(() => {
+    const session = openSessions.find((s) => s.id === sessionId)
+    return session?.terminal?.caravanBranchId ?? activeBranchId
+  }, [openSessions, sessionId, activeBranchId])
 
   // Cart
   useEffect(() => {
@@ -996,8 +1034,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!sessionsData) return
     const currentSession = openSessions.find((s) => s.id === sessionId)
-    const currentSessionBranchId =
-      currentSession?.terminal?.branchId ?? currentSession?.terminal?.branch?.id
+    const currentSessionBranchId = currentSession ? sessionPlaceId(currentSession) : undefined
     const isStale =
       sessionId &&
       (!currentSession || (switcherBranchId && currentSessionBranchId !== switcherBranchId))
@@ -1012,7 +1049,10 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!sessionsData) return
     const session = openSessions.find((s) => s.id === sessionId)
-    const branchId = session?.terminal?.branchId ?? session?.terminal?.branch?.id
+    const branchId =
+      session?.terminal?.caravanBranchId ??
+      session?.terminal?.branchId ??
+      session?.terminal?.branch?.id
     setCatalogLoading(true)
     setCatalogError('')
 
@@ -1105,19 +1145,17 @@ export default function CheckoutPage() {
     setSerialSearchQuery('')
     setSerialRequestStatus({})
     setExpandedBranch(null)
-    getAvailableSerialNumbers(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
-      (res) => {
-        if (res.success && Array.isArray(res.data)) {
-          setSerialNumbers(res.data)
-        } else if (!res.success) {
-          // A failed fetch (e.g. missing permission) must not look like
-          // "zero serials in stock" — that's a data state, this is an error.
-          setSerialError(res.error || 'Failed to load serial numbers.')
-        }
-        setSerialLoading(false)
+    getAvailableSerialNumbers(serialPickerTarget.itemId, stockBranchId ?? undefined).then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setSerialNumbers(res.data)
+      } else if (!res.success) {
+        // A failed fetch (e.g. missing permission) must not look like
+        // "zero serials in stock" — that's a data state, this is an error.
+        setSerialError(res.error || 'Failed to load serial numbers.')
       }
-    )
-  }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
+      setSerialLoading(false)
+    })
+  }, [serialPickerTarget?.itemId, serialPickerStage, stockBranchId])
 
   // Read-only "also available elsewhere" lookup — purely informational, so a
   // failure here stays silent rather than surfacing as a picker-blocking
@@ -1128,7 +1166,7 @@ export default function CheckoutPage() {
       setElsewhereSerials([])
       return
     }
-    getCompanyWideSerialAvailability(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
+    getCompanyWideSerialAvailability(serialPickerTarget.itemId, stockBranchId ?? undefined).then(
       (res) => {
         if (res.success && Array.isArray(res.data)) {
           setElsewhereSerials(res.data)
@@ -1138,7 +1176,7 @@ export default function CheckoutPage() {
         }
       }
     )
-  }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
+  }, [serialPickerTarget?.itemId, serialPickerStage, stockBranchId])
 
   // Restores a sale that was handed here DELIBERATELY: resumed from Parked
   // Sales, carried across by the credit-application detour, or a QMS tab.
@@ -1324,7 +1362,7 @@ export default function CheckoutPage() {
     }
     let cancelled = false
     const timer = setTimeout(() => {
-      searchSerialsAcrossItems(q, activeBranchId ?? undefined).then((res) => {
+      searchSerialsAcrossItems(q, stockBranchId ?? undefined).then((res) => {
         if (!cancelled && res.success && Array.isArray(res.data)) setSerialSearchResults(res.data)
       })
     }, 300)
@@ -1332,7 +1370,7 @@ export default function CheckoutPage() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [searchQuery, activeBranchId])
+  }, [searchQuery, stockBranchId])
 
   const displayItems = useMemo(() => {
     // A plain (non-serialized) bundle has no single sellable unit and stays
@@ -3579,8 +3617,7 @@ export default function CheckoutPage() {
               <option value="">Select session…</option>
               {openSessions.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.terminal?.branch?.name ? `${s.terminal.branch.name} · ` : ''}
-                  {s.terminal?.terminalCode ?? s.terminalId} — {s.cashier?.name || 'Cashier'}
+                  {sessionTerminalLabel(s)} — {s.cashier?.name || 'Cashier'}
                 </option>
               ))}
             </select>
@@ -3591,7 +3628,9 @@ export default function CheckoutPage() {
           </div>
         ) : activeSession ? (
           <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
-            {activeSession.terminal?.name ?? activeSession.terminalId}
+            {activeSession.terminal?.caravanBranch
+              ? sessionTerminalLabel(activeSession)
+              : (activeSession.terminal?.name ?? activeSession.terminalId)}
           </span>
         ) : null}
 
@@ -3621,6 +3660,11 @@ export default function CheckoutPage() {
           </div>
         )}
       </div>
+
+      {/* Scenario 60 Part 3 — a caravan this branch hosts has ended with
+          stock still in it. Those units no longer sell here; say so rather
+          than let them just vanish from the serial picker. */}
+      <EndedCaravansBanner variant="pos" hostBranchId={activeBranchId} enabled={!!activeBranchId} />
 
       {/* Cancellation pending banner */}
       {cancellationReqId && (
@@ -5758,7 +5802,10 @@ export default function CheckoutPage() {
                 : true
             )
             .reduce<Record<string, SerialNumberRecord[]>>((groups, sn) => {
-              const branchLabel = sn.currentWarehouse?.name ?? 'Another branch'
+              const home = sn.currentWarehouse?.branch
+              const branchLabel = home?.isTemporary
+                ? caravanPlaceLabel(home)
+                : (sn.currentWarehouse?.name ?? 'Another branch')
               groups[branchLabel] = [...(groups[branchLabel] ?? []), sn]
               return groups
             }, {})

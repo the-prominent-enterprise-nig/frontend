@@ -21,6 +21,8 @@ export const DailyCollectionRowSchema = z.object({
   tender: z.string(),
   amount: z.number(),
   isCash: z.boolean(),
+  /** Scenario 60 Part 4 — the caravan(s) this sale's units came out of. */
+  caravan: z.string().nullable().optional(),
 })
 export type DailyCollectionRow = z.infer<typeof DailyCollectionRowSchema>
 
@@ -33,6 +35,18 @@ export const NonCashTenderSchema = z.object({
   amount: z.number(),
 })
 export type NonCashTender = z.infer<typeof NonCashTenderSchema>
+
+/** Scenario 60 Part 4 — one hosted caravan's sales for the day. Already in the
+ * collections (a caravan rings up on the host's terminal); this only says how
+ * much of the day came from it. */
+export const CaravanSalesLineSchema = z.object({
+  caravanId: z.string(),
+  caravanName: z.string(),
+  transactionCount: z.number(),
+  units: z.number(),
+  amount: z.number(),
+})
+export type CaravanSalesLine = z.infer<typeof CaravanSalesLineSchema>
 
 export const DailyCollectionDepositSchema = z.object({
   bankName: z.string(),
@@ -70,6 +84,8 @@ export const DailyCollectionReportSchema = z.object({
   nonCashCollection: z.number(),
   /** Cash plus non-cash: everything the branch took that day. */
   grandTotalCollection: z.number().default(0),
+  caravanSales: z.array(CaravanSalesLineSchema).default([]),
+  caravanSalesTotal: z.number().default(0),
   /** Sessions still open that took part of their shift on this date. Their
    * collections are already on the form; their drawer count is not, so the
    * count cannot be reconciled until they close. */

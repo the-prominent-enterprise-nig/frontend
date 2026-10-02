@@ -4,7 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { CreateTransferFormSchema } from '@/src/schema/inventory/transfers'
 
-export async function createTransfer(input: unknown): Promise<ApiResponse<{ id: string }>> {
+export async function createTransfer(
+  input: unknown
+): Promise<ApiResponse<{ id: string; transferNumber?: string }>> {
   const parsed = CreateTransferFormSchema.safeParse(input)
   if (!parsed.success) {
     return {
@@ -23,9 +25,14 @@ export async function createTransfer(input: unknown): Promise<ApiResponse<{ id: 
   // useForm<CreateTransferFormValues>() (the transform makes the field's
   // inferred type mandatory-but-possibly-undefined instead of omittable,
   // which the resolver's generic can't reconcile without extra ceremony).
-  const result = await api.post<{ id: string }>('/inventory/transfers', {
-    ...parsed.data,
-    expectedArrival: parsed.data.expectedArrival || undefined,
+  // destinationType/newCaravan are form-only (Scenario 60): the modal has
+  // already created any new caravan and put its warehouse in toWarehouseId.
+  const data = { ...parsed.data }
+  delete data.destinationType
+  delete data.newCaravan
+  const result = await api.post<{ id: string; transferNumber?: string }>('/inventory/transfers', {
+    ...data,
+    expectedArrival: data.expectedArrival || undefined,
   })
 
   if (!result.success) {

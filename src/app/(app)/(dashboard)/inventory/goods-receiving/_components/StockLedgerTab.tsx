@@ -184,7 +184,6 @@ export default function StockLedgerTab({
     isLoading,
     isFetching,
     error,
-    refetch,
     locationFilter,
     transactionType,
     startDate,
@@ -231,18 +230,6 @@ export default function StockLedgerTab({
               New adjustment
             </button>
           )}
-          <Tooltip label="Refresh">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              aria-label="Refresh"
-              className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-          </Tooltip>
         </div>
       </div>
 
