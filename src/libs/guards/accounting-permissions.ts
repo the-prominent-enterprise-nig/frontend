@@ -115,6 +115,8 @@ export const ACCOUNTING_PERMISSIONS = {
   // the Accountant. These keep the Accountant accounting-only.
   CASH_IN_TRANSIT_READ: 'accounting:cash-in-transit:read',
   CASH_IN_TRANSIT_MANAGE: 'accounting:cash-in-transit:manage',
+  /** Scenario 61 Part 5 — clear (post) a POS deposit draft. Accounting only. */
+  CASH_IN_TRANSIT_VERIFY: 'accounting:cash-in-transit:verify',
 
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
@@ -255,6 +257,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:bank-accounts:reconcile': 'Create and complete a bank reconciliation',
   'accounting:cash-in-transit:read': 'View outstanding Cash-in-Transit from Accounting',
   'accounting:cash-in-transit:manage': 'Deposit Cash-in-Transit into a bank account',
+  'accounting:cash-in-transit:verify':
+    "Check a POS deposit draft's attachments and clear (post) it",
   'accounting:bank-accounts:adjust':
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
   'accounting:bank-accounts:transfer':

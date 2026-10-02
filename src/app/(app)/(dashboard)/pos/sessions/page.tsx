@@ -43,6 +43,7 @@ import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
+import SessionSummaryCard, { type CashRow } from './_components/SessionSummaryCard'
 import { terminalPlaceId, terminalPlaceName } from '@/src/libs/format/locationLabel'
 
 function formatCurrency(n: number) {
@@ -1310,13 +1311,7 @@ function CloseSessionModal({
   // (see computeExpectedCash), so on a shift that had either, these four will
   // not visibly add up to the total below — the total stays correct, it is
   // the explanation that is partial.
-  const expectedRows: {
-    key: string
-    label: string
-    note: string
-    amount: number
-    strong?: boolean
-  }[] = [
+  const expectedRows: CashRow[] = [
     {
       key: 'opening',
       label: 'Opening float',
@@ -1325,7 +1320,7 @@ function CloseSessionModal({
     },
     {
       key: 'sales',
-      label: 'Cash sales',
+      label: 'Cash collected',
       note: 'cash tendered at this terminal',
       amount: Number(tenderSummary?.totalCash ?? 0),
     },
@@ -1353,6 +1348,11 @@ function CloseSessionModal({
       strong: true,
     },
   ]
+  // Scenario 61 — the client's close lists sales, invoices and cash
+  // collected; drops and petty cash only earn a line on a shift that had one.
+  const cashRows = expectedRows.filter(
+    (row) => row.amount !== 0 || (row.key !== 'drops' && row.key !== 'pettyOut')
+  )
 
   // Non-cash grouped by method, with each provider underneath: a shift is
   // settled per provider, so 'QR / Online — Maya' is checkable against a Maya
@@ -1389,7 +1389,7 @@ function CloseSessionModal({
         : { text: 'text-[#b42318]', bg: 'bg-[#fffbfb]', border: 'border-[#f3c9c5]' }
 
   const verdictTitle = !hasCount
-    ? 'Count the drawer to reconcile'
+    ? 'Do the cash count to reconcile'
     : !isOff
       ? 'Drawer balances'
       : variance > 0
@@ -1456,64 +1456,14 @@ function CloseSessionModal({
         <div className="mx-auto grid w-full max-w-[1500px] items-start gap-3.5 px-4 py-4 lg:grid-cols-[minmax(0,.82fr)_minmax(0,1.18fr)] lg:px-5">
           {/* ── Left: what should be in the drawer ─────────────────────── */}
           <div className="flex min-w-0 flex-col gap-3">
-            <div className="overflow-hidden rounded-[11px] border border-[#e4e4e9] bg-white">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
-                <span className="text-[13.5px] font-semibold">What should be in the drawer</span>
-                <span className="text-[11px] text-[#5b5b6b]">System figures — not editable</span>
-              </div>
-              {figuresLoading ? (
-                <div className="space-y-2 px-4 py-3">
-                  <Skeleton className="h-4 w-52" />
-                  <Skeleton className="h-4 w-44" />
-                  <Skeleton className="h-4 w-40" />
-                </div>
-              ) : reconciliation ? (
-                expectedRows.map((row) => (
-                  <div
-                    key={row.key}
-                    className={`flex items-start justify-between gap-4 border-t border-[#f4f4f6] px-4 ${
-                      row.strong ? 'border-[#e4e4e9] bg-[#fbfbfc] py-3' : 'py-2.5'
-                    }`}
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span
-                        className={`${row.strong ? 'text-[13px] font-semibold' : 'text-[12.5px]'}`}
-                      >
-                        {row.label}
-                      </span>
-                      <span className="text-[10.5px] text-[#5b5b6b]">{row.note}</span>
-                    </div>
-                    <span
-                      className={`shrink-0 tabular-nums ${
-                        row.strong
-                          ? 'text-[17px] font-semibold tracking-[-.01em]'
-                          : `text-[12.5px] font-medium ${
-                              row.amount === 0
-                                ? 'text-[#5b5b6b]'
-                                : row.amount < 0
-                                  ? 'text-[#8a4b06]'
-                                  : ''
-                            }`
-                      }`}
-                    >
-                      {row.strong
-                        ? `₱${peso(row.amount)}`
-                        : row.amount === 0
-                          ? '—'
-                          : row.amount < 0
-                            ? `−${peso(-row.amount)}`
-                            : peso(row.amount)}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="px-4 py-3 text-[12.5px] text-[#5b5b6b]">
-                  Unable to load what the drawer should hold. Close without it and the variance is
-                  still computed by the backend — but count carefully, this screen cannot check it
-                  for you.
-                </p>
-              )}
-            </div>
+            <SessionSummaryCard
+              loading={figuresLoading}
+              loaded={!!reconciliation}
+              netSales={Number(reconciliation?.netSales ?? 0)}
+              totalRefunds={Number(reconciliation?.totalRefunds ?? 0)}
+              invoiceNumbers={reconciliation?.invoiceNumbers ?? []}
+              cashRows={cashRows}
+            />
 
             {/* Non-cash — deliberately outside the comparison above: none of
                 it is in the drawer, and folding it in is how a cashier ends
@@ -1604,7 +1554,7 @@ function CloseSessionModal({
             <div className="overflow-hidden rounded-[11px] border border-[#e4e4e9] bg-white">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-[13.5px] font-semibold">Count the drawer</span>
+                  <span className="text-[13.5px] font-semibold">Cash count</span>
                   <span className="text-[11px] text-[#5b5b6b]">
                     Pieces per denomination. Tab moves down the list.
                   </span>

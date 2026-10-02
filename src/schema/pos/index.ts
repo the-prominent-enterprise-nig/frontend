@@ -129,6 +129,8 @@ export interface SessionReconciliation {
   totalRefunds: number
   netSales: number
   transactionCount: number
+  /** Scenario 61 — SI numbers of the session's completed sales, in order. */
+  invoiceNumbers?: string[]
   totalCashDrops: number
   totalPettyCashIn: number
   totalPettyCashOut: number

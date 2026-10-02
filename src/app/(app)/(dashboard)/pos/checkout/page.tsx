@@ -3885,11 +3885,6 @@ export default function CheckoutPage() {
                         {selectedCustomer.phone && (
                           <p className="text-xs text-gray-700">{selectedCustomer.phone}</p>
                         )}
-                        {loyaltyAccount && (
-                          <p className="text-xs font-medium text-purple-500">
-                            {loyaltyAccount.currentPoints} pts
-                          </p>
-                        )}
                       </div>
                     </div>
                   </div>
