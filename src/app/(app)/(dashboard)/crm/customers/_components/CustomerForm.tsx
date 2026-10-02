@@ -324,7 +324,7 @@ export default function CustomerForm({
     // asked for it again (PR #199 review).
     if (form.birthdayIncomplete) {
       setServerError(
-        'The birthday is incomplete — pick the month, day and year, or clear them to leave it blank.'
+        'The birthday is incomplete — pick the month, day and year, or clear the birthday to leave it blank.'
       )
       return
     }

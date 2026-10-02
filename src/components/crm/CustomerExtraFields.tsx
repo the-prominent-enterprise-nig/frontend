@@ -129,8 +129,9 @@ function BirthdayPicker({
     //
     // commitOnBlur: what was typed counts when the user moves on, not only on
     // Enter — "21", Tab used to be thrown away. matchFrom="start": "2" offers
-    // 2 and 20–29, and "19" offers the 1900s, not 2019 first. clearable: an
-    // unfinished birthday needs a way back to blank.
+    // 2 and 20–29, and "19" offers the 1900s, not 2019 first. No per-box ×:
+    // it sat in the tab order between the boxes, so Tab from Month landed on
+    // Month's × instead of Day. One Clear link after the row replaces it.
     <div>
       <div ref={rowRef} className="mt-1 grid grid-cols-3 gap-2">
         <SearchableSelect
@@ -143,7 +144,6 @@ function BirthdayPicker({
           placeholder="Month"
           commitOnBlur
           matchFrom="start"
-          clearable
           options={MONTH_LABELS.map((label, i) => ({
             value: String(i + 1),
             label,
@@ -160,7 +160,6 @@ function BirthdayPicker({
           commitOnBlur
           matchFrom="start"
           inputMode="numeric"
-          clearable
           options={Array.from({ length: daysInMonth(year, month) }, (_, i) => ({
             value: String(i + 1),
             label: String(i + 1),
@@ -174,16 +173,37 @@ function BirthdayPicker({
           commitOnBlur
           matchFrom="start"
           inputMode="numeric"
-          clearable
           options={years.map((y) => ({ value: String(y), label: String(y) }))}
         />
       </div>
       {isIncompleteBirthday(parts) ? (
         <p className="mt-1 text-xs text-red-600">
-          Pick the month, day and year — or clear them to leave the birthday blank.
+          Pick the month, day and year — or{' '}
+          <button
+            type="button"
+            onClick={() => emit(0, 0, 0)}
+            className="underline underline-offset-2"
+          >
+            clear the birthday
+          </button>
+          .
         </p>
       ) : (
-        <p className="mt-1 text-xs text-gray-400">Type or pick — e.g. sep, 21, 1990.</p>
+        <p className="mt-1 text-xs text-gray-400">
+          Type or pick — e.g. sep, 21, 1990.
+          {(year || month || day) > 0 && (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={() => emit(0, 0, 0)}
+                className="underline underline-offset-2 hover:text-gray-600"
+              >
+                Clear
+              </button>
+            </>
+          )}
+        </p>
       )}
     </div>
   )
