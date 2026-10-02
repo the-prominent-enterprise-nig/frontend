@@ -55,6 +55,7 @@ type FormState = {
   homeAddress: string
   homeBarangayCode: string
   homeSameAsCurrent: boolean
+  birthdayIncomplete: boolean
   creditLimit: string
   groupId: string
   branchId: string
@@ -105,6 +106,7 @@ const empty: FormState = {
   homeBarangayCode: '',
   // Most customers live where they are — the box starts ticked.
   homeSameAsCurrent: true,
+  birthdayIncomplete: false,
   creditLimit: '',
   groupId: '',
   branchId: '',
@@ -240,6 +242,7 @@ export default function CustomerForm({
             (!c.homeAddress && !c.homeBarangayCode) ||
             ((c.homeAddress ?? '') === (c.address ?? '') &&
               (c.homeBarangayCode ?? '') === (c.barangayCode ?? '')),
+          birthdayIncomplete: false,
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
           groupId: c.groupId ?? '',
           branchId: c.branchId ?? '',
@@ -315,6 +318,16 @@ export default function CustomerForm({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setServerError(null)
+
+    // A half-picked birthday composes to nothing, so saving now would store
+    // no birthday while the form showed one — the credit application then
+    // asked for it again (PR #199 review).
+    if (form.birthdayIncomplete) {
+      setServerError(
+        'The birthday is incomplete — pick the month, day and year, or clear them to leave it blank.'
+      )
+      return
+    }
 
     const shared = {
       name: `${form.firstName} ${form.lastName}`.trim(),

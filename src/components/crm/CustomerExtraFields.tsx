@@ -37,6 +37,11 @@ function parseBirthday(value: string): BirthdayParts {
   return { year: Number(y) || 0, month: Number(m) || 0, day: Number(d) || 0 }
 }
 
+/** Some parts picked, but not all three — which saves as no birthday. */
+function isIncompleteBirthday({ year, month, day }: BirthdayParts): boolean {
+  return !!(year || month || day) && !(year && month && day)
+}
+
 function composeBirthday({ year, month, day }: BirthdayParts): string {
   if (!year || !month || !day) return ''
   // Clamp so switching Jan 31 -> February can't produce the 31st.
@@ -54,9 +59,18 @@ function composeBirthday({ year, month, day }: BirthdayParts): string {
  * not the start of a migration.
  *
  * Emits the same 'YYYY-MM-DD' string the field always stored, and '' until
- * all three parts are chosen, so nothing downstream changes.
+ * all three parts are chosen, so nothing downstream changes — plus whether
+ * the parts picked so far are an unfinished birthday, so the form can stop
+ * one being saved as no birthday at all (PR #199 review: a customer created
+ * with a birthday reached the credit application with none).
  */
-function BirthdayPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function BirthdayPicker({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string, incomplete: boolean) => void
+}) {
   // The parent only stores a complete 'YYYY-MM-DD', so the three
   // in-progress picks have to live here. Deriving them from `value` alone
   // meant the first two selections composed to '' and the dropdowns snapped
@@ -87,7 +101,7 @@ function BirthdayPicker({ value, onChange }: { value: string; onChange: (value: 
     setParts(next)
     const composed = composeBirthday(next)
     lastEmitted.current = composed
-    onChange(composed)
+    onChange(composed, isIncompleteBirthday(next))
   }
 
   // Moves focus along Month -> Day -> Year as each is picked, so the whole
@@ -95,6 +109,10 @@ function BirthdayPicker({ value, onChange }: { value: string; onChange: (value: 
   // Enter "1990". Kept local rather than pushed into SearchableSelect —
   // advancing to a sibling field is this picker's concern, not something
   // every dropdown in the app should start doing.
+  //
+  // Only on a pick. A part kept from typed text as the user left (Tab, or a
+  // click on another field) must not pull focus back here — Tab already
+  // moves along this row by itself.
   const rowRef = useRef<HTMLDivElement>(null)
   function focusField(index: number) {
     const inputs = rowRef.current?.querySelectorAll('input')
@@ -108,40 +126,65 @@ function BirthdayPicker({ value, onChange }: { value: string; onChange: (value: 
     // a month by typing "mar". Native <select> gave this for free via
     // type-to-jump; the custom Select does not, which is why the searchable
     // variant is the right one here.
-    <div ref={rowRef} className="mt-1 grid grid-cols-3 gap-2">
-      <SearchableSelect
-        className="min-w-0"
-        value={month ? String(month) : ''}
-        onChange={(v) => {
-          emit(year, Number(v), day)
-          focusField(1)
-        }}
-        placeholder="Month"
-        options={MONTH_LABELS.map((label, i) => ({
-          value: String(i + 1),
-          label,
-        }))}
-      />
-      <SearchableSelect
-        className="min-w-0"
-        value={day ? String(day) : ''}
-        onChange={(v) => {
-          emit(year, month, Number(v))
-          focusField(2)
-        }}
-        placeholder="Day"
-        options={Array.from({ length: daysInMonth(year, month) }, (_, i) => ({
-          value: String(i + 1),
-          label: String(i + 1),
-        }))}
-      />
-      <SearchableSelect
-        className="min-w-0"
-        value={year ? String(year) : ''}
-        onChange={(v) => emit(Number(v), month, day)}
-        placeholder="Year"
-        options={years.map((y) => ({ value: String(y), label: String(y) }))}
-      />
+    //
+    // commitOnBlur: what was typed counts when the user moves on, not only on
+    // Enter — "21", Tab used to be thrown away. matchFrom="start": "2" offers
+    // 2 and 20–29, and "19" offers the 1900s, not 2019 first. clearable: an
+    // unfinished birthday needs a way back to blank.
+    <div>
+      <div ref={rowRef} className="mt-1 grid grid-cols-3 gap-2">
+        <SearchableSelect
+          className="min-w-0"
+          value={month ? String(month) : ''}
+          onChange={(v, reason) => {
+            emit(year, Number(v), day)
+            if (reason === 'select' && v) focusField(1)
+          }}
+          placeholder="Month"
+          commitOnBlur
+          matchFrom="start"
+          clearable
+          options={MONTH_LABELS.map((label, i) => ({
+            value: String(i + 1),
+            label,
+          }))}
+        />
+        <SearchableSelect
+          className="min-w-0"
+          value={day ? String(day) : ''}
+          onChange={(v, reason) => {
+            emit(year, month, Number(v))
+            if (reason === 'select' && v) focusField(2)
+          }}
+          placeholder="Day"
+          commitOnBlur
+          matchFrom="start"
+          inputMode="numeric"
+          clearable
+          options={Array.from({ length: daysInMonth(year, month) }, (_, i) => ({
+            value: String(i + 1),
+            label: String(i + 1),
+          }))}
+        />
+        <SearchableSelect
+          className="min-w-0"
+          value={year ? String(year) : ''}
+          onChange={(v) => emit(Number(v), month, day)}
+          placeholder="Year"
+          commitOnBlur
+          matchFrom="start"
+          inputMode="numeric"
+          clearable
+          options={years.map((y) => ({ value: String(y), label: String(y) }))}
+        />
+      </div>
+      {isIncompleteBirthday(parts) ? (
+        <p className="mt-1 text-xs text-red-600">
+          Pick the month, day and year — or clear them to leave the birthday blank.
+        </p>
+      ) : (
+        <p className="mt-1 text-xs text-gray-400">Type or pick — e.g. sep, 21, 1990.</p>
+      )}
     </div>
   )
 }
@@ -168,6 +211,9 @@ export interface CustomerExtraFieldsValues {
    *  home block is hidden and the home address is saved empty — which every
    *  reader already treats as "same as current". */
   homeSameAsCurrent: boolean
+  /** Some birthday parts picked but not all three. Not saved — the form
+   *  refuses to submit while it is true, since it would save as no birthday. */
+  birthdayIncomplete: boolean
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -336,7 +382,10 @@ export default function CustomerExtraFields({
           above and below them — the row is short, not wide. */}
       <div>
         <label className={labelClass}>Birthday</label>
-        <BirthdayPicker value={values.birthday} onChange={(v) => onChange({ birthday: v })} />
+        <BirthdayPicker
+          value={values.birthday}
+          onChange={(birthday, birthdayIncomplete) => onChange({ birthday, birthdayIncomplete })}
+        />
       </div>
 
       <div>
