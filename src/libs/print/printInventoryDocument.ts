@@ -1,5 +1,4 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
-import { AGING_BUCKET_LABELS } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   receivingReportSourceName,
@@ -1391,7 +1390,13 @@ export function buildAgingReportHtml(report: AgingReportResponse): string {
         .map((collector) => {
           let n = 0
           const rows = collector.rows.map((r) => row(r, ++n)).join('')
-          return `<tr class="group-header"><td colspan="${columns.length}">Collector: ${esc(collector.collectorLabel)}</td></tr>${rows}${subtotalRow('Collector subtotal', collector.subtotal)}`
+          const heading = [collector.areaCode ?? collector.area, collector.collectorLabel]
+            .filter(Boolean)
+            .join(' - ')
+          const supervisor = collector.supervisorName
+            ? ` · Supervisor: ${esc(collector.supervisorName)}`
+            : ''
+          return `<tr class="group-header"><td colspan="${columns.length}">Collector: ${esc(heading)}${supervisor}</td></tr>${rows}${subtotalRow('Collector subtotal', collector.subtotal)}`
         })
         .join('')
       return `<tr class="group-header branch"><td colspan="${columns.length}">AREA: ${esc(branch.branchName)}</td></tr>${collectorSections}${subtotalRow('Branch subtotal', branch.subtotal)}`
@@ -1450,6 +1455,124 @@ export function printAgingReportDocument(report: AgingReportResponse): void {
 }
 
 /**
+ * "Print per collector" — one page per collector in the shape of the client's
+ * collector aging sheet: a CAT / Area / customer table sorted by category
+ * then area, a Grand Total row, and blank ONE ON ONE / ACTION TAKEN / PTP
+ * columns the collector fills in by hand in the field.
+ *
+ * Area is the account's own stored area (InstallmentAccount.area). The sheet's
+ * "COUNTA of Last OR Date" column is reproduced as 1/0 (has a last OR or not).
+ */
+export function buildCollectorAgingHtml(report: AgingReportResponse): string {
+  const fmt = (n: number | null) =>
+    n === null
+      ? ''
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  type Row = AgingReportResponse['branches'][number]['collectors'][number]['rows'][number]
+  const barangay = (r: Row) => (r.accountArea ?? '').trim().toUpperCase()
+  const headers = [
+    'CAT',
+    'Area',
+    'Customer Name',
+    'SI No.',
+    'Term',
+    'MI',
+    'OB',
+    'MI DUE',
+    'LCP',
+    "TOTAL PAY'T",
+    'Last OR Count',
+    'Last OR Amt',
+    'NOT MVG',
+    'NO ARS',
+    'ONE ON ONE',
+    'ACTION TAKEN',
+    'PTP DATE',
+    'PTP AMT',
+  ]
+  const numeric = new Set([4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+
+  const pages = report.branches.flatMap((branch) =>
+    branch.collectors.map((collector) => {
+      const rows = collector.categories.flatMap((cat) =>
+        [...cat.rows]
+          .sort(
+            (a, b) =>
+              barangay(a).localeCompare(barangay(b)) || a.customerName.localeCompare(b.customerName)
+          )
+          .map(
+            (r) => `<tr>
+    <td>${cat.category ?? ''}</td>
+    <td>${esc(barangay(r))}</td>
+    <td>${esc(r.customerName)}</td>
+    <td>${esc(r.siNo)}</td>
+    <td class="right">${r.term ?? ''}</td>
+    <td class="right">${fmt(r.mi)}</td>
+    <td class="right">${fmt(r.ob)}</td>
+    <td class="right">${fmt(r.miDue)}</td>
+    <td class="right">${fmt(r.lcp)}</td>
+    <td class="right">${fmt(r.totalPayt)}</td>
+    <td class="right">${r.lastOrDate ? 1 : 0}</td>
+    <td class="right">${fmt(r.lastOrAmt)}</td>
+    <td class="right">${r.notMvg}</td>
+    <td class="right">${r.noArs ?? ''}</td>
+    <td></td><td></td><td></td><td></td>
+  </tr>`
+          )
+      )
+      const s = collector.subtotal
+      const lastOrCount = collector.rows.filter((r) => r.lastOrDate).length
+      const title = [collector.areaCode ?? collector.area, collector.collectorLabel]
+        .filter(Boolean)
+        .join(' - ')
+      return `<section>
+    <div class="letterhead">
+      <h1>${esc(title)}</h1>
+      <span class="doc-label">${esc(branch.branchName)}${collector.supervisorName ? ` · Supervisor: ${esc(collector.supervisorName)}` : ''}</span>
+    </div>
+    <table class="aging">
+      <thead><tr>${headers.map((h, i) => `<th${numeric.has(i) ? ' class="right"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.join('')}
+        <tr class="subtotal"><td colspan="6">Grand Total (${s.count})</td>
+          <td class="right">${fmt(s.ob)}</td><td class="right">${fmt(s.miDue)}</td>
+          <td class="right">${fmt(s.lcp)}</td><td class="right">${fmt(s.totalPayt)}</td>
+          <td class="right">${lastOrCount}</td><td colspan="8"></td></tr>
+      </tbody>
+    </table>
+  </section>`
+    })
+  )
+
+  return `<!DOCTYPE html><html><head><title>AR Aging — Per Collector</title><style>
+    body { font-family: Arial, sans-serif; padding: 14px; color: #111; font-size: 9.5px; }
+    section { page-break-after: always; }
+    section:last-of-type { page-break-after: auto; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .letterhead h1 { font-size: 15px; margin: 0; }
+    .letterhead .doc-label { font-size: 11px; font-weight: 700; }
+    table.aging { width: 100%; border-collapse: collapse; }
+    table.aging th, table.aging td { border: 1px solid #999; padding: 3px 4px; line-height: 1.2; white-space: nowrap; height: 14px; }
+    table.aging th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 8px; }
+    td.right, th.right { text-align: right; }
+    tr.subtotal td { background: #fafafa; font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } @page { size: landscape; } }
+  </style></head><body>
+    ${pages.join('') || '<p style="text-align:center;color:#999">No active accounts.</p>'}
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printCollectorAgingDocument(report: AgingReportResponse): void {
+  const win = window.open('', '_blank', 'width=1400,height=850')
+  if (!win) return
+  win.document.write(buildCollectorAgingHtml(report))
+  win.document.close()
+}
+
+/**
  * "Print raw data" — the flat, one-row-per-account counterpart to
  * buildAgingReportHtml's grouped legacy form. Same row set as the export's
  * Detail sheet (aging-report.workbook.ts), just rendered for the browser:
@@ -1466,69 +1589,217 @@ export function buildAgingRawDataHtml(report: AgingReportResponse): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Same columns, same order as the client's RAW aging sheet. Columns this
+  // system has no data for (Operation, UNIT, BILLING, penp, MI PAY, TNA, TNAC,
+  // item, status, Serial Number, Rebate, Agent, Co Maker and the account
+  // classification columns) are kept so the sheet lines up, but print blank.
   const columns = [
-    'Branch',
+    'CAT',
+    'Year/Month',
     'Collector',
-    'Source',
-    'Account/Invoice No.',
-    'Customer',
+    'Area',
+    'Coll_Code_IAS',
+    'Coll_Code',
+    'Coll_Code_collector',
+    'Operation',
+    'Area Supervisor',
+    'br',
     'SI No.',
     'SI Date',
+    'Customer Name',
+    'Address',
+    'UNIT',
+    'Type',
     'Term',
     'MI',
+    'FMI Date',
     'DP',
-    'DP Balance',
-    'Outstanding',
-    'MI Due',
-    'Penalty',
-    'Days Overdue',
-    'Bucket',
-    'Total Paid',
-    'Total Price',
+    'DP Bal',
+    'PNV',
+    'OB',
+    'NYD',
+    'totdue',
+    'UNCOLL',
+    'MI DUE',
+    'BILLING',
+    'pnlty',
+    'penp',
+    'current',
+    'day30',
+    'day60',
+    'day90',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'LCP %',
+    'MI PAY',
+    'TNA',
+    'TNAC',
+    'item',
+    'status',
+    'NOT MVG',
     'Last OR Date',
-    'Last OR Amt',
+    'Last ORlastnum',
+    'Last ORAmt',
+    'OVER 30',
+    'Serial Number',
+    'Rebate',
+    'Agent',
+    'Co Maker',
+    'Months Run',
+    '',
+    'Acct Classification Official',
+    'Acct Class Arrears',
+    'Acct Class Not Moving',
   ]
   const rightAlignedColumns = new Set([
     'Term',
     'MI',
     'DP',
-    'DP Balance',
-    'Outstanding',
-    'MI Due',
-    'Penalty',
-    'Days Overdue',
-    'Total Paid',
-    'Total Price',
-    'Last OR Amt',
+    'DP Bal',
+    'PNV',
+    'OB',
+    'NYD',
+    'totdue',
+    'UNCOLL',
+    'MI DUE',
+    'pnlty',
+    'current',
+    'day30',
+    'day60',
+    'day90',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'LCP %',
+    'NOT MVG',
+    'Last ORAmt',
+    'OVER 30',
+    'Months Run',
   ])
+  const fmtDash = (v: string | null | undefined) =>
+    v
+      ? new Date(v)
+          .toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+          .replace(/\//g, '-')
+      : ''
+  const money = (n: number | null | undefined) =>
+    n === null || n === undefined
+      ? ''
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  // The sheet's MOS RUN / "Months Run" pair: time elapsed from the SI date to
+  // the report date, as "1 Years 9 Months 24 Days", with MOS RUN that same
+  // span rounded UP to whole months (16 Days → 1, 1y 9m 24d → 22).
+  const elapsedSince = (from: string | null | undefined, to: string) => {
+    if (!from) return { label: '', mosRun: '' as string | number }
+    const a = new Date(from)
+    const b = new Date(to)
+    let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())
+    let days = b.getDate() - a.getDate()
+    if (days < 0) {
+      months -= 1
+      days += new Date(b.getFullYear(), b.getMonth(), 0).getDate()
+    }
+    if (months < 0) return { label: '', mosRun: 0 as string | number }
+    const parts = [
+      Math.floor(months / 12) > 0 ? `${Math.floor(months / 12)} Years` : '',
+      months % 12 > 0 ? `${months % 12} Months` : '',
+      days > 0 ? `${days} Days` : '',
+    ].filter(Boolean)
+    return {
+      label: parts.join(' ') || '0 Days',
+      mosRun: (months + (days > 0 ? 1 : 0)) as string | number,
+    }
+  }
+  const yearMonth = (() => {
+    const d = new Date(report.asOf)
+    return `${d.getFullYear()}_${String(d.getMonth() + 1).padStart(2, '0')}`
+  })()
 
   const rows = report.branches.flatMap((branch) =>
-    branch.collectors.flatMap((collector) =>
-      collector.rows.map(
-        (r) => `<tr>
-    <td>${esc(branch.branchName)}</td>
-    <td>${esc(collector.collectorLabel)}</td>
-    <td>${r.source === 'installment' ? 'Installment' : 'Invoice'}</td>
-    <td class="mono">${esc(r.accountNumber)}</td>
-    <td>${esc(r.customerName)}</td>
-    <td class="mono">${esc(r.siNo)}</td>
-    <td>${fmtDate(r.siDate)}</td>
-    <td class="right">${r.term ?? '—'}</td>
-    <td class="right">${fmt(r.mi)}</td>
-    <td class="right">${fmt(r.dp)}</td>
-    <td class="right">${fmt(r.dpBal)}</td>
-    <td class="right">${fmt(r.ob)}</td>
-    <td class="right">${fmt(r.miDue)}</td>
-    <td class="right">${fmt(r.pnlty)}</td>
-    <td class="right">${r.daysOverdue ?? '—'}</td>
-    <td>${r.bucket ? esc(AGING_BUCKET_LABELS[r.bucket]) : 'Unknown'}</td>
-    <td class="right">${fmt(r.totalPayt)}</td>
-    <td class="right">${fmt(r.totalPrice)}</td>
-    <td>${fmtDate(r.lastOrDate)}</td>
-    <td class="right">${fmt(r.lastOrAmt)}</td>
-  </tr>`
-      )
-    )
+    branch.collectors.flatMap((collector) => {
+      // collectorLabel is "COL-0001 — Gallendo Edgardo"; the sheet wants the bare name.
+      const name = collector.collectorLabel.split(' — ').pop() ?? ''
+      const underscored = name.replace(/ /g, '_')
+      return collector.rows.map((r) => {
+        const elapsed = elapsedSince(r.siDate, report.asOf)
+        const bucketCol = (...b: (typeof r.bucket)[]) => (b.includes(r.bucket) ? money(r.ob) : '')
+        const cells: (string | number)[] = [
+          r.category ?? '',
+          yearMonth,
+          underscored,
+          r.accountArea ?? '',
+          collector.areaCode ?? '',
+          collector.area ?? '',
+          collector.area ? `${collector.area}_${underscored}` : underscored,
+          r.operation ?? '',
+          (collector.supervisorName ?? '').replace(/ /g, '_'),
+          r.branchCode,
+          r.siNo,
+          fmtDash(r.siDate),
+          r.customerName,
+          r.address ?? '',
+          r.sheet?.unit ?? '',
+          r.type ?? '',
+          r.term ?? '',
+          money(r.mi),
+          fmtDash(r.fmiDate),
+          money(r.dp),
+          money(r.dpBal),
+          money(r.pnv),
+          money(r.ob),
+          money(r.notYetDue),
+          money(r.totalDue),
+          money(r.uncollected),
+          money(r.miDue),
+          money(r.miDue),
+          money(r.pnlty),
+          money(r.sheet?.penp),
+          bucketCol('current'),
+          bucketCol('1_30'),
+          bucketCol('31_60'),
+          bucketCol('61_90', '90_plus'),
+          r.noArs ?? '',
+          elapsed.mosRun,
+          money(r.totalPayt),
+          money(r.totalPrice),
+          `${r.totPricePercent}%`,
+          money(r.lcp),
+          r.lcp && r.lcp > 0 ? `${Math.round((r.totalPayt / r.lcp) * 100)}%` : '',
+          money(r.sheet?.miPay),
+          r.sheet?.tna ?? '',
+          r.sheet?.tnac ?? '',
+          r.sheet?.itemGroup ?? '',
+          r.sheet?.statusLabel ?? '',
+          r.notMvg,
+          fmtDash(r.lastOrDate),
+          r.lastOrLastnum ?? '',
+          money(r.lastOrAmt),
+          r.over ?? '',
+          r.sheet?.serialNumber ?? '',
+          money(r.sheet?.rebate),
+          r.sheet?.agentName ?? '',
+          r.sheet?.coMakerName ?? '',
+          elapsed.label,
+          '',
+          r.sheet?.acctClassOfficial ?? '',
+          r.sheet?.acctClassArrears ?? '',
+          r.sheet?.acctClassNotMoving ?? '',
+        ]
+        return `<tr>${cells
+          .map(
+            (v, i) =>
+              `<td${rightAlignedColumns.has(columns[i]) ? ' class="right"' : ''}>${esc(v)}</td>`
+          )
+          .join('')}</tr>`
+      })
+    })
   )
 
   return `<!DOCTYPE html><html><head><title>AR Aging — Raw Data</title><style>

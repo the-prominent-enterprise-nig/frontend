@@ -283,6 +283,8 @@ export interface Collector {
   branchId?: string | null
   userId?: string | null
   status: CollectorStatus
+  /** Free-text supervisor name from the client's collector list. */
+  supervisorName?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -535,13 +537,36 @@ export interface CustomerLedger {
 // nextDueDate hasn't been backfilled yet — render as "needs review", not a
 // fabricated value; for a standalone invoice row it's always computed from
 // the invoice's own dueDate, never null.
+export interface AgingSheetExtras {
+  unit: string | null
+  itemGroup: string | null
+  serialNumber: string | null
+  agentName: string | null
+  coMakerName: string | null
+  rebate: number | null
+  statusLabel: string
+  penp: number | null
+  miPay: number | null
+  tna: number | null
+  tnac: number | null
+  acctClassOfficial: string | null
+  acctClassArrears: string | null
+  acctClassNotMoving: string | null
+}
+
 export interface AgingReportRow {
   accountId: string
   accountNumber: string
   branchId: string | null
   branchName: string
+  /** Short branch code (the sheet's "br" column). */
+  branchCode: string
+  /** Branch region ("Panay" / "Negros") — the raw sheet's Operation column. */
+  operation: string | null
   collectorId: string | null
   collectorLabel: string
+  /** The account's own (barangay-level) area; null for invoice rows or accounts imported without one. */
+  accountArea?: string | null
   /** The collector's own coverage area — same value the legacy sheet
    * labels "AREA:". One per collector, so it's a display label on the
    * collector group, not a separate nesting level. */
@@ -573,6 +598,12 @@ export interface AgingReportRow {
   lastOrLastnum: string | null
   lastOrAmt: number | null
   over: number | null
+  pnv?: number | null
+  notYetDue?: number | null
+  totalDue?: number | null
+  uncollected?: number | null
+  /** The raw sheet's remaining columns; null on an invoice-sourced row. */
+  sheet?: AgingSheetExtras | null
   /** Scenario 47 — which kind of receivable this row is. */
   source: 'installment' | 'invoice'
   /** Scenario 47 — days past due as of the report date, and its bucket.
@@ -622,6 +653,9 @@ export interface AgingReportCollectorGroup {
   collectorId: string | null
   collectorLabel: string
   area: string | null
+  /** The client's short area code (e.g. "AJUY") — collectors sort by it. */
+  areaCode: string | null
+  supervisorName: string | null
   rows: AgingReportRow[]
   categories: AgingReportCategoryGroup[]
   subtotal: AgingReportSubtotal
