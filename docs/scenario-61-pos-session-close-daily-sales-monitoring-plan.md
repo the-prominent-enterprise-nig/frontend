@@ -50,6 +50,11 @@ The sheet's own figures tie: categories = Agent + Office = Cash + Charge invoice
 5. **Total MI = monthly installment collections** for the day.
 6. **The sheet is per branch per day**, not per session. It belongs alongside the Daily Collection Report (`/pos/daily-collection`), which is already branch + business date, not in `CloseSessionModal`.
 
+7. **Who deposits** (2026-10-02): accounting only. Accountant and Business Owner record and clear a deposit (`accounting:cash-in-transit:manage` to record, new `accounting:cash-in-transit:verify` to clear); the Branch Manager and Cashier read balances and statuses only.
+8. **An attachment is required to clear** a deposit; recording a draft does not need one.
+9. **Sales Monitoring is sales only** — the "For accounting" half and its signatures were removed; collections, recap and sign-offs live on the Daily Collection Report, which was relaid to the client's Alimodian paper form (print and Excel).
+10. **Sales count at the invoice total**; the owner sees Sales Monitoring for a branch-day whether or not the branch has filed its collection report.
+
 ## Category mapping
 
 Item Master **Type** (`ItemType.name`) lines up with the sheet almost one-to-one (counts from the client's Item Master CSV):
@@ -65,7 +70,7 @@ Item Master **Type** (`ItemType.name`) lines up with the sheet almost one-to-one
 | Split Types                   | `Split_Type`                                                                                 | 588   |
 | **unmapped**                  | rest of `Gadgets` (speakers, tablets, power banks, watches), `Bid_Items`, `CCTV`, 4 one-offs | ~190  |
 
-Unmapped sales must still land somewhere or the categories stop tying to Total Sales — see open question 1.
+Unmapped sales must still land somewhere or the categories stop tying to Total Sales. **Resolved (developer, 2026-09-30):** every unmapped type — non-cellphone Gadgets, Bid Items, CCTV, the one-offs — counts under **I.T A: Com/Laptop/Accessories**. Cellphone is matched by the item's primary category or any category assignment named Cellphone.
 
 ## What's already done ✅
 
@@ -77,74 +82,67 @@ Unmapped sales must still land somewhere or the categories stop tying to Total S
 - **Generic attachment storage** — `FileAttachment{entityType, entityId}` + `POST /files/upload`, already used by expenses and AP vouchers.
 - **Selling agent** and **per-line cash/charge invoice type** are captured on every POS transaction.
 
-## What's not done / gaps ❌
+## Parts — as built
 
-1. ~~"Count the drawer" wording~~ — done in Part 1.
-2. ~~Over/short JE dated at close time~~ — done in Part 1. (`sessions.service.ts` posted the variance JE on `new Date()`, so a session closed after midnight booked it on the wrong day.)
-3. **No Daily Sales Monitoring view.** Nothing reports sales per category, Agent vs Office, or Cash vs Charge invoice totals per branch per day.
-4. **No Cashier / Branch Manager signed printable.** The DCR's lines are Prepared / Checked / Certified.
-5. **No cheque at POS.** `PosPaymentMethod` has no cheque; `CHECK` exists only on AR/AP.
-6. **E-money doesn't go to Undeposited.** GCash/QR → `POS_EWALLET`, card → `POS_CARD`, transfer → `POS_BANK_TRANSFER` clearing accounts.
-7. **Deposits have no attachments and no draft state.** The deposit form has only a reference-number text field and posts immediately.
-8. **POS deposits aren't bank-reconciliation sources.** Reconciliation candidates are AR/AP payments and `ClearingSettlement`s only.
-9. **Collection description text** — blocked on NIG.
-10. **Final layout** — blocked on Bem (format as presented by Elijah). Parts 2–3 build to the paper sheet above and adjust when it arrives.
-
-## Closing the gaps — proposed parts
+Numbering below is the order built. The plan's original Part 5 (all e-money to Undeposited) is **held** pending accounting sign-off; the original Parts 6–7 became Parts 5–6.
 
 ### Part 1 — Cash Count wording + variance JE date ✅ (2026-09-30)
 
-- FE `pos/sessions/page.tsx`: "Count the drawer" → "Cash count"; "Count the drawer to reconcile" → "Do the cash count to reconcile".
-- BE `sessions.service.ts` `close()`: over/short JE dated `session.openedAt` instead of `new Date()`. `closedAt` itself stays the real close time.
+- FE `pos/sessions/page.tsx`: "Count the drawer" → "Cash count".
+- BE `sessions.service.ts` `close()`: over/short JE dated `session.openedAt` instead of `new Date()`. `closedAt` stays the real close time.
 
-### Part 2 — Daily Sales Monitoring data (backend)
+### Part 2 — Daily Sales Monitoring data ✅ (2026-10-01)
 
-New endpoint beside the DCR, `GET /pos/reports/daily-sales-monitoring?branchId&date`, same business-date and branch scoping as `daily-collection.service.ts`. Returns:
+- `GET /pos/reports/daily-sales-monitoring?branchId&date` (`daily-sales-monitoring.service.ts`): sales per category (Item Type mapping above), Agent / Office (`sellingAgentId`), Cash / Charge invoice, units per category, invoice numbers. Invoice totals are allocated across lines so categories tie to Total Sales.
+- The Daily Collection Report consolidates **all of a branch's sessions for the day**: sales by `occurredAt` day; session counts, float and deposits to the day of the session's last sale (or its open day). Cancelled receipts listed at 0.00; FP (full payment) is its own DESC and counts under MI.
 
-- **Sales per category** — sum of posted line totals grouped by the Item Type mapping above, plus an "Other" bucket so the rows always tie.
-- **Agent / Office** — split on `sellingAgentId`.
-- **Cash / Charge invoice** — split on `PosTransactionLine.invoiceType`.
-- **Invoice range** — first/last SI number and count for the day.
-- **Accounting summary** — Total Collections, GCash/Direct Deposit, Cheque for Deposit (0 until Part 4), Swipe (card tenders by provider), Cash for Deposit, Total MI (DCR rows of kind `MI` + `MI-PARTIAL`).
+### Part 3 — Printables ✅ (2026-10-01)
 
-Tie-outs asserted in the service: categories = Agent + Office = Cash + Charge = Total Sales; tender lines = Total Collections.
+- **Sales monitoring** tab first on `/pos/daily-collection` (the page opens on Collection report), A4 portrait, one page, no browser header/footer.
+- **Collection report** print and Excel follow the client's paper form exactly: `DAILY COLLECTION REPORT / BRANCH / M-D-YY` header, CASH RECEIPT (Office/Field/Others) + INVOICE columns, recap COD / DP / MI / OTHERS-DC / TOTAL COLLECTION / GCASH / CHECK (CARD and OTHER only when nonzero), yellow DENOMINATION block, PREPARED BY and CHECK BY (pre-filled with the branch manager, BRANCH MANAGER beneath). The filing form pre-fills denominations from every session's cash count.
+- Session close shows total sales, invoice numbers and cash collected.
 
-### Part 3 — Daily Sales Monitoring printable (frontend)
+### Part 4 — Check as a POS tender ✅ (2026-10-01)
 
-A **Sales Monitoring** tab on `/pos/daily-collection` (same branch + date stepper), laid out like the paper sheet, `print:` styles, with **Cashier** and **Branch Manager** signature lines. Reachable from a closed session's row the same way the DCR link is (`handleViewCollectionReport`). Relayout when Bem's format arrives.
+Not a new enum value: a Cash payment with the option "Check" (or a check number) is keyed `check` (`tender-key.ts`). Checks are excluded from expected drawer cash, but included in the session's undeposited amount, and shown as CHECK on the report.
 
-### Part 4 — Cheque as a POS tender
+### Part 5 — Deposits: draft → cleared → posted ✅ (2026-10-02)
 
-Add `cheque` to `PosPaymentMethod` (migration), capture bank / cheque no. / cheque date at checkout, post to Undeposited (Part 5 rule). Shows as "Cheque for deposit" in Part 2.
+- New `PosDeposit` model and `/pos-deposits` API: record a draft (bank, deposit date, reference, sessions), clear (posts Dr Bank / Cr Undeposited Funds **dated the deposit date**, needs ≥1 attachment), cancel (sessions return to Undeposited). Compare-and-set transitions; branch-scoped 404s.
+- Undeposited Funds page (POS and Accounting, accounting's renamed from Cash-in-Transit, Banknote icon) redesigned as **one session table** with a status column (To deposit / Awaiting / Deposited), branch picker, summary cards, search and date range. Record Deposit in the header; the modal keeps its footer pinned however many files are attached. Shared `AttachmentsPanel` for the proof.
+- Permissions delivered by `scripts/backfill-pos-deposit-permissions.ts` (grants verify to Business Owner + Accountant, revokes manage from Branch Manager), as `seed.ts` is a destructive reseed.
 
-### Part 5 — All branch collections to Undeposited
+### Part 6 — POS deposits in bank reconciliation ✅ (2026-10-02)
 
-Re-map GCash/QR, bank transfer, card swipe and cheque to `POS_UNDEPOSITED_FUNDS` at sale time, per the notes. **Accounting impact**: the e-wallet/card/transfer `ClearingSettlement` path stops receiving new POS tenders (fees are then booked at deposit instead). Confirm with accounting before building; existing open clearing balances are left to settle through the old path.
+A cleared deposit is a reconciliation candidate (`POS_DEPOSIT` line, direction DEPOSIT) on its bank once the statement date is on or after its deposit date. Completing a reconciliation stamps `reconciledAt` / `reconciledInReconciliationId`; deleting it releases the deposit. Migration `20261002090000_scenario_61_pos_deposit_reconciliation`.
 
-### Part 6 — Deposit with attachments, draft → cleared → posted
+### Held — all e-money to Undeposited
 
-- `clearCashInTransit` splits into **record** (draft: amount, deposit date, bank, reference, 1+ attachments — deposit slip, cheque images, transfer screenshots) and **verify** (checker confirms cleared → posts Dr Bank / Cr Undeposited dated on the **deposit date**, not the verify date).
-- Session close is **not** blocked by a draft deposit (already true — close no longer sweeps).
-- New shared upload component under `src/components/` (none exists; expenses/AP each roll their own) — build once, reuse.
-
-### Part 7 — POS deposits in bank reconciliation
-
-Add posted POS deposits as a reconciliation source type, matched on the deposit date.
-
-## Manual testing (Part 1)
-
-1. Open a session as a cashier, ring a cash sale, close the session. The section header reads **Cash count**; with an empty grid the verdict line reads "Do the cash count to reconcile".
-2. Close with a deliberate short (manager override). In Accounting → Journal Entries, the Cash Shortage JE's date is the session's **opened** date. To see the difference, open a session before midnight and close it after (or temporarily back-date `openedAt` in the DB).
+GCash/QR, card and transfer still post to their clearing accounts. Needs accounting to confirm, and where card/e-wallet fees are booked, before building.
 
 ## Open questions
 
-1. **Unmapped item types** — where do non-cellphone Gadgets (speakers, tablets, power banks, smart watches), Bid Items and CCTV go on the sheet? Default until answered: an "Other" row so totals still tie.
-2. **Who verifies a deposit** as cleared in Part 6 — Branch Manager, accounting, or either? Determines the permission.
-3. **Part 5 accounting sign-off** — confirm e-money and card go to Undeposited rather than their clearing accounts, and where card/e-wallet fees get booked.
-4. **Signatories on a per-branch sheet** — with several cashiers in a branch-day, one Cashier line, or one per cashier?
+1. ~~Unmapped item types~~ — all to I.T A.
+2. ~~Who verifies a deposit~~ — accounting (Accountant, Business Owner).
+3. **E-money to Undeposited** — awaiting accounting sign-off (held item above).
+4. ~~Signatories~~ — on the Collection report only: Prepared by (cashier) and Check by (branch manager).
 5. **Collection description** text — pending NIG.
-6. **Layout** — pending Bem's format.
+6. **Layout** — built to the client's paper forms; adjust if Bem's format differs.
 
-## Implementation Log — 2026-09-30
+## Verification
 
-- Part 1 done (FE rename, BE variance JE date). Backend `tsc` clean for `sessions.service.ts`; frontend Prettier clean. Not yet committed.
+- Backend e2e: `test/pos-deposits.e2e-spec.ts` (S61P5-01..05, S61P6-01) 6/6; `test/daily-sales-monitoring.e2e-spec.ts`; S61 cases in `test/closing-session-record.e2e-spec.ts`. Unit: `tender-key.spec.ts`, `src/pos/reports/*.spec.ts`, `bank-accounts.service.spec.ts` 19/19.
+- Playwright: `e2e/undeposited-funds-deposit.spec.ts` (record → awaiting → clear & post → deposited; Branch Manager read-only) 3/3; `e2e/cit-monitor.spec.ts` updated to the redesigned page, 8/8; `e2e/daily-sales-monitoring.spec.ts`.
+- **Known pre-existing failure:** `test/bank-reconciliation-worksheet.e2e-spec.ts` fails 8/8 on the current test DB with or without these changes — its fixture needs an AR invoice the DB no longer has. Reseed the test DB.
+
+## Deployment
+
+1. `npx prisma migrate deploy` — two migrations: `20261001090000_scenario_61_pos_deposits`, `20261002090000_scenario_61_pos_deposit_reconciliation`.
+2. `npx ts-node --project tsconfig.json ./scripts/backfill-pos-deposit-permissions.ts` (backend) — once per environment.
+3. Restart the backend.
+
+## Implementation Log
+
+- **2026-09-30** — Part 1 built. Decisions 1–6 taken.
+- **2026-10-01** — Parts 2–4. Collection report relaid to the paper form after review; Sales Monitoring cut to sales only; consolidation across a day's sessions fixed after a two-session test day showed the report reading one session only. A GRAND TOTAL line was added then reverted; centavo rounding of totals kept.
+- **2026-10-02** — Part 5, then a redesign of Undeposited Funds from three tabs to one table after review ("checking 3 tabs after every action"). Fixed: Record Deposit sending no sessions (the modal now snapshots its selection), deposit lists not refreshing (per-query `staleTime: 0` + one invalidation root). Part 6 built. Playwright spec added; the old `cit-monitor` spec was updated, as it asserted the removed "Deposit Selected to Bank", "Monitor All Branches" and History UI.
