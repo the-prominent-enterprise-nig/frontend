@@ -16,7 +16,7 @@ import { useCreateCreditApplication } from '../_hooks/useCreateCreditApplication
 import { ApplicantSearchCombobox } from './ApplicantSearchCombobox'
 import { ApplicantContactFields } from './ApplicantContactFields'
 import { CharacterReferenceFields } from './CharacterReferenceFields'
-import { RelatedPeopleFields } from './RelatedPeopleFields'
+import { RelatedPeopleFields, sameCoMakerRelation } from './RelatedPeopleFields'
 import { PaperRecordFields } from './PaperRecordFields'
 import {
   CreditApplicationItemFields,
@@ -369,10 +369,13 @@ export default function NewCreditApplicationForm({
         // hard cap of 5. There is deliberately no rollback: CoMaker has no
         // delete endpoint, and CreditApplication.coMakerId is SET NULL, so
         // deleting one would silently detach it from other applications.
+        // Relations compared as parsed, not raw: a co-maker saved under the
+        // old "Co-maker — Parent" convention is the same person as one typed
+        // as "Parent" now, and comparing the raw strings added a duplicate.
         const existing = coMakers.find(
           (cm) =>
             cm.name.trim().toLowerCase() === newName.toLowerCase() &&
-            cm.relationship.trim().toLowerCase() === newRelationship.toLowerCase()
+            sameCoMakerRelation(cm.relationship, newRelationship)
         )
 
         if (existing) {
@@ -425,10 +428,13 @@ export default function NewCreditApplicationForm({
           .map((v) => (v ?? '').trim())
           .filter(Boolean)
           .join(' ')
+        // The relationship counts as a change too — leaving it out meant a
+        // corrected relationship on its own was silently never saved.
         const changed =
           !!selected &&
           (joinedName !== selected.name ||
-            (coMakerRow.mobileNumber || '') !== selected.contactNumber)
+            (coMakerRow.mobileNumber || '') !== selected.contactNumber ||
+            !sameCoMakerRelation(selected.relationship, coMakerRow.relationship ?? ''))
         if (changed) {
           const updateRes = await posCustomersApi.updateCoMaker(
             data.applicantCustomerId,

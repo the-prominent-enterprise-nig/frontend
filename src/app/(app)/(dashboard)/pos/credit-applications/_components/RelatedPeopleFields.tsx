@@ -83,9 +83,17 @@ const CO_MAKER_RELATION_OPTIONS = CO_MAKER_RELATIONS.map((r) => ({ value: r, lab
  * Anything still unrecognised returns null, and the field is left for the
  * user to answer rather than guessed at.
  */
-function parseCoMakerRelation(stored: string): (typeof CO_MAKER_RELATIONS)[number] | null {
+export function parseCoMakerRelation(stored: string): (typeof CO_MAKER_RELATIONS)[number] | null {
   const relation = stored.split('—').pop()?.trim() ?? ''
   return CO_MAKER_RELATIONS.find((r) => r.toLowerCase() === relation.toLowerCase()) ?? null
+}
+
+/** Whether two co-maker relations mean the same thing, the old
+ *  "Co-maker — Parent" convention included. Anything unrecognised is
+ *  compared as written. */
+export function sameCoMakerRelation(a: string, b: string): boolean {
+  const normalise = (v: string) => (parseCoMakerRelation(v) ?? v.trim()).toLowerCase()
+  return normalise(a) === normalise(b)
 }
 
 type RowError = {
@@ -310,7 +318,13 @@ function RelatedPersonRow({
               )}
 
               <div className="min-w-0">
-                <label className="mb-1 block text-xs font-medium text-zinc-600">Relationship</label>
+                {/* "Role", not "Relationship": this picks which of the paper
+                    form's people the row is. It sat beside "Relationship to
+                    applicant" under the same word and read as the same
+                    question asked twice (PR #199 review). */}
+                <label className="mb-1 block text-xs font-medium text-zinc-600">
+                  Role <span className="text-red-500">*</span>
+                </label>
                 <Select
                   value={role}
                   onChange={roleField.onChange}

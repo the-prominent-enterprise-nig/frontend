@@ -9,6 +9,7 @@ import { useCreditApplication } from '../_hooks/useCreditApplication'
 import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
 import { CreditApplicationFinancingFields } from './CreditApplicationFinancingFields'
+import { parseCoMakerRelation } from './RelatedPeopleFields'
 import { Select } from '@/src/components/ui/Select'
 import { readCheckoutHandoff, writeCheckoutHandoff } from '@/src/libs/pos/checkout-handoff'
 import { useSessions } from '../../_hooks/usePos'
@@ -400,8 +401,13 @@ export default function CreditApplicationDetail({
             name: application.coMaker.name,
             mobileNumber: application.coMaker.contactNumber,
             // A co-maker carries its own relationship, because unlike the
-            // other three the role does not say how they relate.
-            label: `Co-maker · ${application.coMaker.relationship}`,
+            // other three the role does not say how they relate. Parsed, so a
+            // record from the old "Co-maker — Parent" convention reads
+            // "Co-maker · Parent" rather than naming the role twice.
+            label: `Co-maker · ${
+              parseCoMakerRelation(application.coMaker.relationship) ??
+              application.coMaker.relationship
+            }`,
           },
         ]
       : []),
