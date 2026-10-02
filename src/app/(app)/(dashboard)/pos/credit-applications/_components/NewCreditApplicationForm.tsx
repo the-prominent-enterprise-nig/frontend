@@ -479,6 +479,7 @@ export default function NewCreditApplicationForm({
         // anyway, but sending a field the API never declares is noise.
         resolvedItemTotal: undefined,
         downPaymentFloor: undefined,
+        downPaymentFixed: undefined,
       })
       if (!result.success) {
         setServerError(result.message)

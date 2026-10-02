@@ -24,7 +24,7 @@ import {
 import { DEFAULT_VAT_RATE } from '../../_actions/pos-constants'
 import { Select } from '@/src/components/ui/Select'
 import type { FinancingTerm, InstallmentPreview } from '@/src/schema/pos'
-import { DOWN_PAYMENT_FLOOR_RATE } from '@/src/libs/constants/financing'
+import { DOWN_PAYMENT_FLOOR_RATE, isCardTerm } from '@/src/libs/constants/financing'
 
 function formatPeso(n: number): string {
   return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -199,14 +199,30 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     ? 0
     : (items ?? []).filter((i) => i.itemId && !resolvedItems[i.itemId]).length
 
-  // The curated per-SKU down payment is deliberately no longer summed or
-  // used — Scenario 64 item 22 (client, 2026-09-29): the down payment is 30%
-  // of the sale amount, full stop. Those rate-card figures were priced
-  // against the old 10% policy and now sit below the floor, so reading them
-  // pre-filled a value the form then rejected. Only the down-payment column
-  // is ignored; priceListItemId still drives the monthly-installment
-  // preview below and the real figures saved on submit.
+  // The curated per-SKU down payment, summed, when every item in the bundle
+  // resolved to one — a partial mix (some items curated, some not) falls
+  // back to the floor, same as the server's resolveFinancing().
+  //
+  // Scenario 64 item 22 had stopped reading it, in favour of a flat 30%.
+  // Reversed 2026-10-02 (PR #199 review): the card's monthly installment is
+  // calculated from the card's own down payment, so 30% down with the card's
+  // monthly overcharged the customer by the difference.
   const resolvedItemsList = itemIds.map((id) => resolvedItems[id])
+  const allItemsCurated =
+    resolvedItemsList.length > 0 &&
+    resolvedItemsList.every((r) => r && r.priceListItemId && r.downPayment != null)
+  const curatedDownPaymentSum = allItemsCurated
+    ? resolvedItemsList.reduce((sum, r) => sum + Number(r!.downPayment), 0)
+    : null
+  // And when the card also quotes the chosen term for every item, that sum
+  // IS the down payment — fixed, not a minimum. The server holds it to the
+  // same figure.
+  const selectedTermMonths = financingTerms.find((t) => t.id === financingTermId)?.termMonths
+  const fixedDownPayment =
+    curatedDownPaymentSum != null &&
+    resolvedItemsList.every((r) => isCardTerm(r, selectedTermMonths))
+      ? Math.round(curatedDownPaymentSum * 100) / 100
+      : null
   // The live preview's single previewInstallment() call only takes one
   // priceListItemId, so curation there is scoped to the common single-item
   // application — a multi-item bundle keeps the generic preview on screen,
@@ -241,7 +257,10 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   useEffect(() => {
     setValue('resolvedItemTotal' as Path<T>, estimatedTotal as never, { shouldDirty: false })
     setValue('downPaymentFloor' as Path<T>, downPaymentFloor as never, { shouldDirty: false })
-  }, [estimatedTotal, downPaymentFloor, setValue])
+    setValue('downPaymentFixed' as Path<T>, (fixedDownPayment ?? undefined) as never, {
+      shouldDirty: false,
+    })
+  }, [estimatedTotal, downPaymentFloor, fixedDownPayment, setValue])
 
   // Seed Down Payment with the curated rate-card down payment when the
   // whole bundle resolved to one (real NIG rate card figure, e.g. ₱3,590 —
@@ -253,15 +272,10 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // the term or the seed value changes, but never overwrites a figure
   // already entered — the collector is free to take more up front, and the
   // schema refuses less.
-  // Scenario 64 item 22 (client, 2026-09-29): the down payment is 30% of the
-  // sale amount, and the rate card's own downPayment column is no longer
-  // read. Those curated figures were priced against the old 10% policy, so
-  // seeding from them pre-filled a value the 30% floor then rejected — on a
-  // 21,010 item the form offered 4,620 (22%) and immediately called it wrong.
-  // The rate card's monthlyInstallment still drives the schedule; only its
-  // down-payment column is ignored. Checkout does the same, so the figure
-  // approved here is the figure the till will ask for.
-  const seedDownPayment = downPaymentFloor
+  //
+  // A down payment the card fixes for this term is written whatever the
+  // field holds — there is nothing to choose — and the field is read-only.
+  const seedDownPayment = fixedDownPayment ?? curatedDownPaymentSum ?? downPaymentFloor
   const seededForRef = useRef<string | null>(null)
   // The exact string this component last wrote. Changing the Price Use moves
   // the item total, and therefore the floor — a figure we seeded should
@@ -276,12 +290,12 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
 
     const current = downPaymentInput?.trim()
     const isOurs = !current || current === lastSeededValueRef.current
-    if (!isOurs) return
+    if (!isOurs && fixedDownPayment == null) return
 
     const seeded = seedDownPayment.toFixed(2)
     lastSeededValueRef.current = seeded
     setValue('downPayment' as Path<T>, seeded as never, { shouldValidate: true })
-  }, [financingTermId, seedDownPayment, downPaymentInput, setValue])
+  }, [financingTermId, seedDownPayment, fixedDownPayment, downPaymentInput, setValue])
 
   // Validate this one field as it is typed. The form's default mode only
   // validates on submit, so a too-low figure sat there looking accepted
@@ -512,11 +526,21 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
                 value={(field.value as string | undefined) ?? ''}
                 type="text"
                 inputMode="decimal"
-                placeholder={downPaymentFloor > 0 ? `Min. ${formatPeso(downPaymentFloor)}` : '0.00'}
-                className={fieldClass}
+                readOnly={fixedDownPayment != null}
+                placeholder={
+                  fixedDownPayment == null && downPaymentFloor > 0
+                    ? `Min. ${formatPeso(downPaymentFloor)}`
+                    : '0.00'
+                }
+                className={`${fieldClass} ${fixedDownPayment != null ? 'bg-zinc-50 text-zinc-700' : ''}`}
               />
             )}
           />
+          {fixedDownPayment != null && (
+            <p className="mt-1 text-xs text-zinc-500">
+              Set by the price list for this term — the monthly installment is calculated from it.
+            </p>
+          )}
           {downPaymentError && <p className="mt-1 text-xs text-red-600">{downPaymentError}</p>}
         </div>
       )}

@@ -39,10 +39,12 @@ function FieldError({ message }: { message?: string }) {
  * The financing figures that ARE derived (amount financed, monthly, total
  * payable) stay in the Price Use & Financing section and are not repeated.
  *
- * LCP is hand-entered and deliberately not wired into any calculation: the
- * mockup states `amount financed = LCP - downpayment`, but the client has
- * never confirmed what LCP is or how it relates to the item total, so
- * computing from it would bake in a guess about money.
+ * LCP is the List Cash Price — the client's own AR aging file defines it so,
+ * with "AF = LCP − Down payment" and "Total Price = PNV + Down payment". It
+ * is filled in from the price the item resolved to under the chosen Price
+ * Use (CreditApplicationFinancingFields) and stays editable, since the
+ * signed paper is the source of truth; nothing is computed from what is
+ * typed here.
  */
 export function PaperRecordFields({ control, errors }: Props) {
   return (

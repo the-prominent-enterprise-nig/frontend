@@ -91,6 +91,7 @@ import {
   DOWN_PAYMENT_FLOOR_RATE,
   DOWN_PAYMENT_FLOOR_LABEL,
   DOWN_PAYMENT_FLOOR_TOLERANCE,
+  isCardTerm,
 } from '@/src/libs/constants/financing'
 import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
@@ -191,8 +192,12 @@ interface CartLine {
   priceListItemId?: string | null
   /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
    * rate card, resolved alongside priceListItemId. Preferred over the
-   * generic 10%-floor auto-fill when set. */
+   * generic 10%-floor auto-fill when set — and, for a term the card quotes
+   * (priceListCardTermMonths), the down payment itself: see
+   * lineCardDownPayment(). */
   priceListDownPayment?: number | null
+  /** The terms, in months, this line's rate card quotes a monthly for. */
+  priceListCardTermMonths?: number[] | null
   /** True once unitPrice reflects either a real Price Use resolution or a
    * manual override — false means still pending / no match, and checkout
    * submission should be blocked on this line. */
@@ -780,6 +785,25 @@ export default function CheckoutPage() {
   // not one global selection, so a cart can finance different items under
   // different terms. Keyed by CartLine.lineId.
   const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
+
+  /**
+   * The rate card's own down payment for a line under its chosen term, or
+   * null when the card does not price the line for that term. Where it
+   * exists it IS the down payment — fixed, per unit, not a minimum (PR #199
+   * review): the card's monthly was calculated from exactly that amount, so
+   * anything else mis-states what the customer owes. Mirrors the server's
+   * PriceListsService.resolveCardDownPayment(). Callers apply it to in-house
+   * lines only — never TPF, never an Employee Appliance Loan.
+   */
+  function lineCardDownPayment(l: CartLine): number | null {
+    const termMonths = financingTerms.find((t) => t.id === l.financingTermId)?.termMonths
+    const onCard = isCardTerm(
+      { downPayment: l.priceListDownPayment, cardTermMonths: l.priceListCardTermMonths },
+      termMonths
+    )
+    return onCard ? Math.round(Number(l.priceListDownPayment) * l.quantity * 100) / 100 : null
+  }
+
   // TPF financing — one financier/reference covers however many TPF-mode
   // lines are in the cart, mirroring how one creditApplicationId already
   // covers however many inhouse installment lines.
@@ -950,6 +974,7 @@ export default function CheckoutPage() {
                 priceResolved: false,
                 priceListItemId: null,
                 priceListDownPayment: null,
+                priceListCardTermMonths: null,
                 ...(isStaleAutoDownPayment(null)
                   ? { downPaymentInput: undefined, downPaymentAutoForPriceListItemId: undefined }
                   : {}),
@@ -960,7 +985,7 @@ export default function CheckoutPage() {
         const recomputedDownPayment = isStaleAutoDownPayment(resolved.priceListItemId)
           ? {
               downPaymentInput: (resolved.downPayment != null
-                ? Number(resolved.downPayment)
+                ? Number(resolved.downPayment) * line.quantity
                 : Math.ceil(
                     effectiveUnitPrice(
                       { ...line, unitPrice: resolved.price },
@@ -969,7 +994,7 @@ export default function CheckoutPage() {
                       isTaxExempt
                     ) *
                       line.quantity *
-                      0.1
+                      DOWN_PAYMENT_FLOOR_RATE
                   )
               ).toFixed(2),
               downPaymentAutoForPriceListItemId: resolved.priceListItemId,
@@ -980,6 +1005,7 @@ export default function CheckoutPage() {
           unitPrice: resolved.price,
           priceListItemId: resolved.priceListItemId,
           priceListDownPayment: resolved.downPayment,
+          priceListCardTermMonths: resolved.cardTermMonths ?? null,
           priceResolved: true,
           ...recomputedDownPayment,
         }
@@ -1595,6 +1621,33 @@ export default function CheckoutPage() {
   // than automatically on every sale to that customer.
   const isEmployeeCustomer = selectedCustomer?.customerType === 'employee'
   const employeeApplianceLoanActive = isEmployeeCustomer && employeeApplianceLoanChecked
+
+  // A line the rate card prices for its term carries exactly the card's down
+  // payment (lineCardDownPayment). Whatever left another figure in the field —
+  // one typed before a Price Use change, a restored or resumed cart — it is
+  // brought back in line here, so the field, the installment preview, the
+  // submit check and the sale itself all say the same amount.
+  useEffect(() => {
+    if (employeeApplianceLoanActive) return
+    setCart((prev) => {
+      let changed = false
+      const next = prev.map((l) => {
+        if (l.invoiceType !== 'installment' || l.installmentProvider === 'tpf') return l
+        const fixed = lineCardDownPayment(l)
+        if (fixed == null || l.downPaymentInput === fixed.toFixed(2)) return l
+        changed = true
+        return {
+          ...l,
+          downPaymentInput: fixed.toFixed(2),
+          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+        }
+      })
+      return changed ? next : prev
+    })
+    // lineCardDownPayment reads only the line and financingTerms, both deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, financingTerms, employeeApplianceLoanActive])
+
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -2655,17 +2708,35 @@ export default function CheckoutPage() {
     // under the floor.
     const lineFloor = (l: CartLine) =>
       Math.ceil(lineAmount(l) * DOWN_PAYMENT_FLOOR_RATE * 100) / 100
-    const total = lines.reduce((sum, l) => sum + lineAmount(l), 0)
     const approvedDp = application.downPayment ?? null
+    // A line the rate card prices for the application's term takes exactly
+    // its card down payment — fixed, see lineCardDownPayment(). The rest of
+    // the approved figure is shared out over the other lines as before.
+    const termFor = (l: CartLine) => ({
+      ...l,
+      financingTermId: application.financingTermId ?? l.financingTermId,
+    })
+    const cardDpByLine = new Map<string, number>()
+    for (const l of lines) {
+      const fixed = lineCardDownPayment(termFor(l))
+      if (fixed != null) cardDpByLine.set(l.lineId, fixed)
+    }
+    const shared = lines.filter((l) => !cardDpByLine.has(l.lineId))
+    const total = shared.reduce((sum, l) => sum + lineAmount(l), 0)
+    const sharedDp =
+      approvedDp != null
+        ? approvedDp - [...cardDpByLine.values()].reduce((sum, v) => sum + v, 0)
+        : null
 
     let allocated = 0
     const dpByLine = new Map<string, string>()
-    if (approvedDp != null && total > 0) {
-      lines.forEach((l, idx) => {
-        const isLast = idx === lines.length - 1
+    for (const [lineId, fixed] of cardDpByLine) dpByLine.set(lineId, fixed.toFixed(2))
+    if (sharedDp != null && total > 0) {
+      shared.forEach((l, idx) => {
+        const isLast = idx === shared.length - 1
         const rawShare = isLast
-          ? approvedDp - allocated
-          : Math.round(approvedDp * (lineAmount(l) / total) * 100) / 100
+          ? sharedDp - allocated
+          : Math.round(sharedDp * (lineAmount(l) / total) * 100) / 100
         allocated += rawShare
         // The approved down payment is a MINIMUM for the application as a
         // whole, not a per-line cap. A line whose share falls under its own
@@ -2688,9 +2759,12 @@ export default function CheckoutPage() {
         // drop the line under its floor.
         const typed = parseFloat(l.downPaymentInput ?? '') || 0
         const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
-        const downPaymentInput = dpByLine.has(l.lineId)
-          ? Math.max(typed, apportioned).toFixed(2)
-          : l.downPaymentInput
+        // A card line's figure is exact, typed or not.
+        const downPaymentInput = cardDpByLine.has(l.lineId)
+          ? cardDpByLine.get(l.lineId)!.toFixed(2)
+          : dpByLine.has(l.lineId)
+            ? Math.max(typed, apportioned).toFixed(2)
+            : l.downPaymentInput
         return {
           ...l,
           financingTermId: application.financingTermId ?? l.financingTermId,
@@ -2717,17 +2791,29 @@ export default function CheckoutPage() {
         // collect" but can't actually be submitted that way. Scenario 15,
         // Part 5 — a curated per-SKU down payment from the real NIG rate
         // card wins over the generic 10%-floor fallback when one exists.
+        //
+        // A term the card quotes fixes the down payment outright, so it is
+        // set even over a typed figure (PR #199 review).
+        const fixed = lineCardDownPayment({ ...l, financingTermId })
+        if (fixed != null) {
+          return {
+            ...l,
+            financingTermId,
+            downPaymentInput: fixed.toFixed(2),
+            downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+          }
+        }
         if (l.downPaymentInput) return { ...l, financingTermId }
         const downPaymentInput =
           l.priceListDownPayment != null
-            ? Number(l.priceListDownPayment).toFixed(2)
+            ? (Number(l.priceListDownPayment) * l.quantity).toFixed(2)
             : // Whole pesos, rounded UP — never centavos, and never below the
-              // 10% floor (ceil instead of round guarantees that even if the
-              // exact 10% has a fractional remainder).
+              // floor (ceil instead of round guarantees that even if the
+              // exact figure has a fractional remainder).
               Math.ceil(
                 effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) *
                   l.quantity *
-                  0.1
+                  DOWN_PAYMENT_FLOOR_RATE
               ).toFixed(2)
         return {
           ...l,
@@ -3105,9 +3191,8 @@ export default function CheckoutPage() {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
-        // Both sides of the merge: development's Employee Appliance Loan
-        // waiver, and the floor raised from a hard-coded 10% to the shared
-        // DOWN_PAYMENT_FLOOR_RATE (30%, client 2026-09-28).
+        // Waived for an Employee Appliance Loan. A TPF line's monthly is the
+        // financier's, so only the floor applies — never the card's figure.
         if (
           !employeeApplianceLoanActive &&
           downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
@@ -3129,12 +3214,23 @@ export default function CheckoutPage() {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
         return
       }
+      // A line the rate card prices for its term must carry exactly the
+      // card's down payment — the same rule the server applies.
+      const fixed = employeeApplianceLoanActive ? null : lineCardDownPayment(l)
+      if (fixed != null) {
+        if (Math.abs(downPayment - fixed) > DOWN_PAYMENT_FLOOR_TOLERANCE) {
+          setError(
+            `${l.itemName}'s down payment is fixed by the price list at ${fmt(fixed)} for this term.`
+          )
+          return
+        }
+        continue
+      }
       // 0.005 (half a centavo) tolerance absorbs float noise from the
       // tax-inclusive/exclusive price conversion above — without it, typing
       // the exact rounded-to-centavo value shown by the "Min" hint below
       // can land a hair under the true unrounded floor and be rejected.
-      // Waived entirely for an Employee Appliance Loan (development), and the
-      // floor itself is the shared 30% rate rather than a hard-coded 10%.
+      // Waived entirely for an Employee Appliance Loan (development).
       if (
         !employeeApplianceLoanActive &&
         downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
@@ -5103,19 +5199,25 @@ export default function CheckoutPage() {
                   // before a term has been picked yet (downPaymentInput still
                   // unset) so the shown figure doesn't disagree with what
                   // picking a term is about to fill in.
-                  // Scenario 64 item 22 (client, 2026-09-29): the down payment is 30%
-                  // of the sale amount, and the rate card's own downPayment column is
-                  // no longer read — those figures were priced against the old 10%
-                  // policy, so seeding from them pre-filled a value the 30% floor then
-                  // rejected. The rate card's monthlyInstallment still drives the
-                  // schedule; only its down-payment column is ignored.
                   // Waived entirely for an Employee Appliance Loan (development).
+                  const curatedDownPaymentWhole =
+                    line.priceListDownPayment != null
+                      ? Math.round(Number(line.priceListDownPayment) * line.quantity)
+                      : null
+                  // Set when the card quotes this line's term: the down payment
+                  // is then the card's, and there is nothing to change.
+                  const fixedDownPayment =
+                    groupProvider === 'inhouse' && !employeeApplianceLoanActive
+                      ? lineCardDownPayment(line)
+                      : null
                   const downPaymentValue = employeeApplianceLoanActive
                     ? 0
-                    : line.downPaymentInput
-                      ? parseFloat(line.downPaymentInput) || 0
-                      : minDownPaymentWhole
-                  const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
+                    : (fixedDownPayment ??
+                      (line.downPaymentInput
+                        ? parseFloat(line.downPaymentInput) || 0
+                        : (curatedDownPaymentWhole ?? minDownPaymentWhole)))
+                  const downPaymentEditingThisLine =
+                    !!downPaymentEditOpen[line.lineId] && fixedDownPayment == null
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
                       {/* Name only, as a label for the config below — price
@@ -5222,27 +5324,35 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {`${DOWN_PAYMENT_FLOOR_LABEL} min`}
+                                      {curatedDownPaymentWhole !== null
+                                        ? 'Rate card'
+                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
                                     <span className="text-[15px] font-bold text-prominent-purple-800">
                                       {fmt(downPaymentValue)}
                                     </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Change amount
-                                    </button>
+                                    {fixedDownPayment == null && (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                        className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                      >
+                                        Change amount
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               )}
                               {!employeeApplianceLoanActive && (
                                 <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                   <span className="text-prominent-purple-400">●</span>
-                                  {`Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
+                                  {fixedDownPayment != null
+                                    ? 'Set by the rate card for this term — its monthly installment is calculated from this down payment.'
+                                    : curatedDownPaymentWhole !== null
+                                      ? `From the rate card — the minimum accepted is ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount.`
+                                      : `Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
                                 </p>
                               )}
                               {line.financingTermId && (
@@ -5333,7 +5443,9 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {`${DOWN_PAYMENT_FLOOR_LABEL} min`}
+                                      {curatedDownPaymentWhole !== null
+                                        ? 'Rate card'
+                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">

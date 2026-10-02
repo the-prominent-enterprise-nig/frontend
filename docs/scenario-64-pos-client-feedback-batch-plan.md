@@ -10,35 +10,35 @@ Unlike most scenarios in this series, this one is not a single feature. It is a 
 
 Verified against `development` on 2026-09-24 (both repos freshly pulled; frontend `cb7b48e8`, backend `f8dc9ee`).
 
-| #   | Client note                                                  | Verdict                   | Why                                                                |
-| --- | ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------ |
-| 1   | Region 6 default on the first dropdown                       | ✅ **Today**              | Frontend only — one `useState` seed                                |
-| 2   | "Raise one for this cart" → New Credit Application Form      | ✅ **Today**              | One string                                                         |
-| 3   | Remove "Approved amount (optional)" from TPF                 | ✅ **Today**              | Field is nullable end-to-end, nothing reads it                     |
-| 4   | Co-maker **number** required                                 | ✅ **Today**              | Frontend only — and it fixes a real drift (see gap 4)              |
-| 5   | "Spouse or Co-maker" wording                                 | ✅ **Shipped** 2026-09-28 | Built as a two-level picker, not a relabel — see the log           |
-| 6   | Approved-but-incomplete when ID is missing                   | ✅ **Shipped** 2026-09-28 | Derived; the list surface needed a backend field after all         |
-| 7   | Co-maker **address** required                                | ❌ Migration              | `CoMaker` has no address column at all                             |
-| 8   | Collector on the credit application                          | ❌ Migration              | No FK exists; `Collector` does                                     |
-| 9   | Address on the New Credit Application                        | ❌ Migration              | **Clarified 2026-09-28** — it is the CURRENT address, read-only    |
-| 10  | Home + current address, current synced                       | ❌ Migration              | **Clarified 2026-09-28** — "synced" is now resolved, see below     |
-| 11  | Deliver to / Delivery Address / delivery fee                 | ❌ Migration              | Half the columns exist and are never written; two don't exist      |
-| 12  | Delivery fee excluded from the total                         | ➖ Already designed for   | Schema already keeps it out of `subtotal`/`totalAmount`            |
-| 13  | Delivery fee GL mapping                                      | ❌ Depends on 11          | No migration needed, but nothing to post until 11 lands            |
-| 14  | Separate CR for down payment and delivery fee                | ➖ Already built          | The report already emits it as its own CR line                     |
-| 15  | Cancel Sale → dropdown                                       | 🚧 **Blocked**            | Elijah owes the list of cancellation reasons                       |
-| 16  | Friends-and-family price override                            | 🚧 **Parked by client**   | "format is not finalized with client"                              |
-| 17  | Reference lives on the hard copy; TPE is lite                | ➖ No build               | Informational — it is a decision _not_ to add a field              |
-| 18  | Down payment is 30%, not 10%                                 | ✅ **Shipped** 2026-09-28 | Was 10% at 15 sites across both repos, incl. user-facing copy      |
-| 19  | Application number, auto-generated                           | ✅ **Shipped** 2026-09-28 | Already existed; was unlabelled, so it did not read as one         |
-| 20  | Supporting docs optional / approve but incomplete            | ✅ **Shipped** 2026-09-28 | Same work as gap 6 — see the second 2026-09-28 log                 |
-| 21  | Item price must come from the Inventory price list           | ✅ **Shipped** 2026-09-28 | No application had EVER been priced from a price list — see log    |
-| 22  | Curated rate-card down payment now falls below the 30% floor | 🚧 **Blocked on client**  | Raised 2026-09-28. The form seeds a value its own rule rejects     |
-| 23  | Work address + company, required on the credit application   | ❌ Migration              | `Customer.companyName` exists; no address, none on the application |
-| 24  | Source of income — allotment / own business / employed       | ❌ Migration              | Net-new. A type plus a different field set per branch              |
-| 25  | Cancel Sale must be a dropdown                               | 🚧 **Blocked**            | Duplicate of item 15 — still waiting on Elijah's reason list       |
-| 26  | Credit application must use the uploaded Price Use           | ✅ **Shipped** 2026-09-28 | Same work as item 21 — priced from the Inventory price list        |
-| 27  | Simplified Credit Application v2 — the full mockup           | ❌ Large / migration      | 29 Sep mockup. ~45 fields, 3 new tables. Supersedes 7, 9, 23, 24   |
+| #   | Client note                                                  | Verdict                    | Why                                                                |
+| --- | ------------------------------------------------------------ | -------------------------- | ------------------------------------------------------------------ |
+| 1   | Region 6 default on the first dropdown                       | ✅ **Today**               | Frontend only — one `useState` seed                                |
+| 2   | "Raise one for this cart" → New Credit Application Form      | ✅ **Today**               | One string                                                         |
+| 3   | Remove "Approved amount (optional)" from TPF                 | ✅ **Today**               | Field is nullable end-to-end, nothing reads it                     |
+| 4   | Co-maker **number** required                                 | ✅ **Today**               | Frontend only — and it fixes a real drift (see gap 4)              |
+| 5   | "Spouse or Co-maker" wording                                 | ✅ **Shipped** 2026-09-28  | Built as a two-level picker, not a relabel — see the log           |
+| 6   | Approved-but-incomplete when ID is missing                   | ✅ **Shipped** 2026-09-28  | Derived; the list surface needed a backend field after all         |
+| 7   | Co-maker **address** required                                | ❌ Migration               | `CoMaker` has no address column at all                             |
+| 8   | Collector on the credit application                          | ❌ Migration               | No FK exists; `Collector` does                                     |
+| 9   | Address on the New Credit Application                        | ❌ Migration               | **Clarified 2026-09-28** — it is the CURRENT address, read-only    |
+| 10  | Home + current address, current synced                       | ❌ Migration               | **Clarified 2026-09-28** — "synced" is now resolved, see below     |
+| 11  | Deliver to / Delivery Address / delivery fee                 | ❌ Migration               | Half the columns exist and are never written; two don't exist      |
+| 12  | Delivery fee excluded from the total                         | ➖ Already designed for    | Schema already keeps it out of `subtotal`/`totalAmount`            |
+| 13  | Delivery fee GL mapping                                      | ❌ Depends on 11           | No migration needed, but nothing to post until 11 lands            |
+| 14  | Separate CR for down payment and delivery fee                | ➖ Already built           | The report already emits it as its own CR line                     |
+| 15  | Cancel Sale → dropdown                                       | 🚧 **Blocked**             | Elijah owes the list of cancellation reasons                       |
+| 16  | Friends-and-family price override                            | 🚧 **Parked by client**    | "format is not finalized with client"                              |
+| 17  | Reference lives on the hard copy; TPE is lite                | ➖ No build                | Informational — it is a decision _not_ to add a field              |
+| 18  | Down payment is 30%, not 10%                                 | ↩️ **Reversed** 2026-10-02 | Back to development's 10% — see "PR #199 review" at the end        |
+| 19  | Application number, auto-generated                           | ✅ **Shipped** 2026-09-28  | Already existed; was unlabelled, so it did not read as one         |
+| 20  | Supporting docs optional / approve but incomplete            | ✅ **Shipped** 2026-09-28  | Same work as gap 6 — see the second 2026-09-28 log                 |
+| 21  | Item price must come from the Inventory price list           | ✅ **Shipped** 2026-09-28  | No application had EVER been priced from a price list — see log    |
+| 22  | Curated rate-card down payment now falls below the 30% floor | ↩️ **Reversed** 2026-10-02 | The card's down payment is the down payment — see "PR #199 review" |
+| 23  | Work address + company, required on the credit application   | ❌ Migration               | `Customer.companyName` exists; no address, none on the application |
+| 24  | Source of income — allotment / own business / employed       | ❌ Migration               | Net-new. A type plus a different field set per branch              |
+| 25  | Cancel Sale must be a dropdown                               | 🚧 **Blocked**             | Duplicate of item 15 — still waiting on Elijah's reason list       |
+| 26  | Credit application must use the uploaded Price Use           | ✅ **Shipped** 2026-09-28  | Same work as item 21 — priced from the Inventory price list        |
+| 27  | Simplified Credit Application v2 — the full mockup           | ❌ Large / migration       | 29 Sep mockup. ~45 fields, 3 new tables. Supersedes 7, 9, 23, 24   |
 
 **Doable today: items 1, 2, 3, 4, 5, 6.** Two of those need a one-line answer first (5 and 6) — both are under _Decisions needed_ below, and both have a safe reading that ships today either way.
 
@@ -1155,3 +1155,49 @@ lights up.
 Part 1 alone removes the re-entry. Parts 2 and 3 are the same action from
 the two other places someone might start. Part 4 only if the split-person
 case proves real.
+
+## PR #199 review — 2026-10-02
+
+Chloe reviewed PR #199 (changes requested, two reviews). Six points, each fixed
+in its own commit on this branch (plus backend PR #185 for the down payment):
+
+| #   | Review point                                       | Cause                                                                                                                                                                                                                                | Fix                                                                                                            |
+| --- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| 1   | Let the user type/search the birthday number       | `SearchableSelect` only took a value on Enter or a click; Tab or clicking away threw typed text away                                                                                                                                 | Opt-in `commitOnBlur`, `matchFrom="start"`, `inputMode` on `SearchableSelect`; the birthday row uses all three |
+| 2   | "Home address is same as current address" checkbox | Not built                                                                                                                                                                                                                            | Checkbox on the customer form, ticked by default; ticked saves the home address as empty ("same as current")   |
+| 3   | Birthdate blank on the credit application          | Same as 1 — a half-committed birthday composes to `''`, so the customer saved with none                                                                                                                                              | Fixed by 1, and the form now refuses to save an unfinished birthday                                            |
+| 4   | Two "relationship to applicant" fields             | Two different fields (role on the paper form; a co-maker's relation) under near-identical labels                                                                                                                                     | First field relabelled "Role"; three co-maker relationship bugs fixed alongside                                |
+| 5   | "Merge with development … calculations are wrong"  | Not the data: the price list is identical on development. Item 22's flat 30% kept the rate card's monthly, which is calculated from the card's own down payment, so the total came out ₱1,234 high on her SHARP 2TC32GH3000X example | Development merged in. Items 18 and 22 reversed — see below                                                    |
+| 6   | Changing the item keeps the old serial             | The serial remembered from the till was never cleared on an item change                                                                                                                                                              | Cleared on item change; LCP/PPD/first due date now follow the item and term too                                |
+
+### The down payment rule now (supersedes items 18 and 22)
+
+Decided by the developer 2026-10-02, following the review and development:
+
+- **Where the price-list row quotes a down payment AND a monthly for the
+  chosen term, that down payment is the down payment — fixed.** Read-only on
+  the credit application and at checkout; the server requires it exactly
+  (`PriceListsService.resolveCardDownPayment()`), per unit at checkout and
+  summed over the bundle on an application.
+- **Everywhere else, development's 10% minimum** (`DOWN_PAYMENT_FLOOR_RATE`
+  in both repos). That covers rows with no card down payment, terms the card
+  does not quote (priced by the factor rate, which works from any down
+  payment), and TPF lines.
+- Refunds and Employee Appliance Loans are unaffected.
+
+Why "fixed" rather than "at least the card's figure": across all 676 WIP rows
+of the AUG_07_26 price list, PNV ÷ (price − card down payment) is the same for
+every row at a given term (≈1.21 / 1.33 / 1.45 / 1.57 at 3/6/9/12 months). The
+card's monthly only fits the card's down payment; more down with the same
+monthly overcharges, less under-finances. The client's own AR aging file
+agrees: "LCP — List Cash Price", "AF = LCP − Down payment",
+"Total Price = PNV + Down payment".
+
+Her example under the rule (WIP, 3 months): LCP 15,380 · down payment 3,380 ·
+amount financed 12,000 · monthly 4,845 · PNV 14,535 · total price 17,915.
+
+### Not yet verified end to end
+
+Typecheck, lint and the backend unit suite (814 tests) pass. The Playwright
+specs and the backend e2e specs touched here have not been run: the dev and
+test databases need this branch's migrations (and development's) first.

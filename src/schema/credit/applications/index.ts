@@ -309,6 +309,11 @@ const CreateCreditApplicationBaseSchema = z.object({
   // payment the server had already accepted. The form computes the stricter
   // figure and passes it here. (Rate itself: DOWN_PAYMENT_FLOOR_RATE.)
   downPaymentFloor: z.number().optional(),
+  // Also client-only. Set when the rate card prices every item for the chosen
+  // term: the down payment is then the sum of the card's own down payments,
+  // fixed (PR #199 review — the card's monthly is calculated from exactly
+  // that amount). Checked instead of the floor while set.
+  downPaymentFixed: z.number().optional(),
 })
 
 /**
@@ -393,6 +398,7 @@ export function refineDownPayment(
     downPayment?: string
     resolvedItemTotal?: number
     downPaymentFloor?: number
+    downPaymentFixed?: number
   },
   ctx: z.RefinementCtx
 ) {
@@ -411,6 +417,18 @@ export function refineDownPayment(
   const downPayment = Number(raw)
   if (Number.isNaN(downPayment)) {
     ctx.addIssue({ code: 'custom', path: ['downPayment'], message: 'Enter a valid amount' })
+    return
+  }
+
+  // The rate card's own figure for this term — not a minimum, the amount.
+  if (data.downPaymentFixed != null) {
+    if (Math.abs(downPayment - data.downPaymentFixed) > 0.005) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['downPayment'],
+        message: `The down payment is fixed by the price list at ${pesos(data.downPaymentFixed)} for this term`,
+      })
+    }
     return
   }
 
@@ -726,10 +744,10 @@ export interface CreditApplication {
     mobileNumber?: string | null
   }[]
   /** Scenario 64 item 27 — PROPOSED PURCHASE AND INSTALLMENT, transcribed
-   * from the paper form. `lcp` is hand-entered and feeds no calculation: the
-   * mockup says `amount financed = LCP - downpayment`, but what LCP is has
-   * not been confirmed, so the derived figures above still come from the
-   * price list and the rate card. */
+   * from the paper form. `lcp` is the List Cash Price (the client's AR aging
+   * file: "AF = LCP − Down payment"). It is pre-filled from the resolved
+   * price and stored as recorded; the derived figures above come from the
+   * price list and the rate card, never from what was typed here. */
   lcp?: number | null
   downPaymentCollection?: 'online' | 'branch' | 'delivery' | null
   firstDueDate?: string | null

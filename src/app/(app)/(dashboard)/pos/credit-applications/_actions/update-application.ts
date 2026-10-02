@@ -47,6 +47,10 @@ export async function updateCreditApplication(
     // payment and the rate-card instalment figures hang off. estimatedPrice
     // stays in the form for the on-screen financing preview only.
     items: parsed.data.items?.map(({ itemId }) => ({ itemId })),
+    // Form-only figures behind the down-payment check — not API fields.
+    resolvedItemTotal: undefined,
+    downPaymentFloor: undefined,
+    downPaymentFixed: undefined,
   }
 
   const result = await api.patch<CreditApplication>(`/credit/applications/${id}`, payload)
