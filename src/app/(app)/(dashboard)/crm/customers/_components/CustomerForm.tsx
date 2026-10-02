@@ -54,6 +54,7 @@ type FormState = {
   barangayCode: string
   homeAddress: string
   homeBarangayCode: string
+  homeSameAsCurrent: boolean
   creditLimit: string
   groupId: string
   branchId: string
@@ -102,6 +103,8 @@ const empty: FormState = {
   barangayCode: '',
   homeAddress: '',
   homeBarangayCode: '',
+  // Most customers live where they are — the box starts ticked.
+  homeSameAsCurrent: true,
   creditLimit: '',
   groupId: '',
   branchId: '',
@@ -230,6 +233,13 @@ export default function CustomerForm({
           barangayCode: c.barangayCode ?? '',
           homeAddress: c.homeAddress ?? '',
           homeBarangayCode: c.homeBarangayCode ?? '',
+          // Ticked when there is no separate home address, or the one on file
+          // is a copy of the current one. Set on both form and initialForm
+          // below, so opening the page is not itself an unsaved change.
+          homeSameAsCurrent:
+            (!c.homeAddress && !c.homeBarangayCode) ||
+            ((c.homeAddress ?? '') === (c.address ?? '') &&
+              (c.homeBarangayCode ?? '') === (c.barangayCode ?? '')),
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
           groupId: c.groupId ?? '',
           branchId: c.branchId ?? '',
@@ -336,8 +346,12 @@ export default function CustomerForm({
       phone: form.phone,
       address: form.address || undefined,
       barangayCode: form.barangayCode || undefined,
-      homeAddress: form.homeAddress || undefined,
-      homeBarangayCode: form.homeBarangayCode || undefined,
+      // Ticked sends '' rather than leaving the fields out: an update only
+      // touches the fields it is sent, so omitting them could never clear a
+      // home address already on file. Every reader treats '' as "same as
+      // current".
+      homeAddress: form.homeSameAsCurrent ? '' : form.homeAddress || undefined,
+      homeBarangayCode: form.homeSameAsCurrent ? '' : form.homeBarangayCode || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
       groupId: form.groupId || undefined,
       branchId: form.branchId || undefined,

@@ -164,6 +164,10 @@ export interface CustomerExtraFieldsValues {
   barangayCode: string
   homeAddress: string
   homeBarangayCode: string
+  /** "Home address is same as current address" (PR #199 review). Ticked, the
+   *  home block is hidden and the home address is saved empty — which every
+   *  reader already treats as "same as current". */
+  homeSameAsCurrent: boolean
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -408,14 +412,34 @@ export default function CustomerExtraFields({
           initialAddress={values.address || undefined}
         />
 
-        <label className="mt-3 mb-1 block text-[13px] font-medium text-gray-700">
-          Home address <span className="font-normal text-gray-400">(if different)</span>
+        <label className="mt-3 flex items-center gap-2 text-[13px] text-gray-700">
+          <input
+            type="checkbox"
+            checked={values.homeSameAsCurrent}
+            onChange={(e) => onChange({ homeSameAsCurrent: e.target.checked })}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+          Home address is same as current address
         </label>
-        <PhilippineAddressPicker
-          onChange={(v) => onChange({ homeAddress: v.address, homeBarangayCode: v.barangayCode })}
-          initialBarangayCode={values.homeBarangayCode || undefined}
-          initialAddress={values.homeAddress || undefined}
-        />
+
+        {/* Removed rather than greyed out while ticked: the picker reads its
+            starting values once, when it mounts, so a disabled copy of the
+            current address would go stale the moment the current address
+            changed. Unticking mounts it fresh with the saved home address. */}
+        {!values.homeSameAsCurrent && (
+          <div role="group" aria-label="Home address">
+            <label className="mt-3 mb-1 block text-[13px] font-medium text-gray-700">
+              Home address
+            </label>
+            <PhilippineAddressPicker
+              onChange={(v) =>
+                onChange({ homeAddress: v.address, homeBarangayCode: v.barangayCode })
+              }
+              initialBarangayCode={values.homeBarangayCode || undefined}
+              initialAddress={values.homeAddress || undefined}
+            />
+          </div>
+        )}
 
         <label className="mt-3 mb-1 block text-[13px] font-medium text-gray-700">Notes</label>
         <textarea
