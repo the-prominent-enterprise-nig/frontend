@@ -19,6 +19,7 @@ const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
   AR_PAYMENT: 'AR Collection',
   AP_PAYMENT: 'AP Check Payment',
   CLEARING_SETTLEMENT: 'Clearing Settlement',
+  POS_DEPOSIT: 'POS Deposit',
 }
 
 // Scenario 42 — the reconciliation worksheet. Statement Balance and System
