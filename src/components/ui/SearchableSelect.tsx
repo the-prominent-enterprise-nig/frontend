@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Check, X } from 'lucide-react'
 
@@ -15,6 +15,13 @@ export type SearchableSelectOption = {
   /** Options sharing a group sit under one small heading. Pass them already
    * ordered by group — a heading is drawn wherever the group changes. */
   group?: string
+}
+
+/** Same label ignoring case; and for numbers, the same number ("09" = "9"). */
+function sameLabel(label: string, typed: string): boolean {
+  const l = label.trim().toLowerCase()
+  if (l === typed) return true
+  return /^\d+$/.test(l) && /^\d+$/.test(typed) && Number(l) === Number(typed)
 }
 
 type BaseProps = {
@@ -43,12 +50,32 @@ type BaseProps = {
    * floating over it. Same technique SearchCombobox and CategorySelect use.
    * Off by default so the 20-odd existing usages are untouched. */
   portal?: boolean
+  /** On Tab or a click elsewhere, keep what was TYPED when it names exactly
+   * one option: an exact label (ignoring case, and "09" = "9" for numbers),
+   * or the only option the filter has left. Without it, typed text only
+   * counts once Enter or a click picks an option, and leaving the field
+   * throws it away without a word — a birthday typed "21", Tab, "1990" was
+   * saved as no birthday at all. Single-select only; off by default so the
+   * existing usages are untouched. */
+  commitOnBlur?: boolean
+  /** 'start' keeps options whose label BEGINS with the typed text, so "2"
+   * offers 2 and 20–29 instead of also 12 and 22, and "19" in a list of years
+   * offers 1900–1999 rather than leading with 2019. Defaults to 'anywhere'. */
+  matchFrom?: 'anywhere' | 'start'
+  /** Passed to the input: 'numeric' brings up the number pad on a tablet. */
+  inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
 }
+
+/** Why a single-select changed: picked from the list (a click, or Enter), or
+ * kept from typed text as the user left the field (commitOnBlur). A caller
+ * that moves focus on a pick should not do it on a blur — the user is
+ * already going somewhere else. */
+export type SearchableSelectChangeReason = 'select' | 'blur'
 
 type SingleProps = BaseProps & {
   multiple?: false
   value: string
-  onChange: (value: string) => void
+  onChange: (value: string, reason: SearchableSelectChangeReason) => void
 }
 
 /** Scenario 50 — the Stock Balance "Branches" filter needs several locations
@@ -78,6 +105,9 @@ export default function SearchableSelect(props: Props) {
     className = '',
     clearable = false,
     portal = false,
+    commitOnBlur = false,
+    matchFrom = 'anywhere',
+    inputMode,
     chrome = {
       idle: 'border-gray-200',
       focused: 'border-prominent-purple-500 ring-1 ring-prominent-purple-500',
@@ -124,7 +154,7 @@ export default function SearchableSelect(props: Props) {
       setQuery('')
       return
     }
-    props.onChange(optValue)
+    props.onChange(optValue, 'select')
     setQuery('')
     setQuerySeeded(false)
     setOpen(false)
@@ -132,7 +162,7 @@ export default function SearchableSelect(props: Props) {
 
   function clear() {
     if (props.multiple) props.onChange([])
-    else props.onChange('')
+    else props.onChange('', 'select')
     setQuery('')
     setQuerySeeded(false)
     setOpen(false)
@@ -145,9 +175,7 @@ export default function SearchableSelect(props: Props) {
       // no longer a descendant of the trigger, so checking only the trigger
       // would close it on its own options.
       if (!containerRef.current?.contains(target) && !dropdownRef.current?.contains(target)) {
-        setOpen(false)
-        setQuery('')
-        setQuerySeeded(false)
+        closeOnLeaveRef.current()
       }
     }
     document.addEventListener('mousedown', handleMouseDown)
@@ -200,8 +228,43 @@ export default function SearchableSelect(props: Props) {
     if (querySeeded) return options
     const q = query.trim().toLowerCase()
     if (!q) return options
+    if (matchFrom === 'start') {
+      // Leading zeros dropped for a number, so "09" still finds 9.
+      const prefix = /^\d+$/.test(q) ? q.replace(/^0+(?=\d)/, '') : q
+      return options.filter((o) => o.label.toLowerCase().startsWith(prefix))
+    }
     return options.filter((o) => o.label.toLowerCase().includes(q))
-  }, [options, query, querySeeded])
+  }, [options, query, querySeeded, matchFrom])
+
+  /** The option the typed text unambiguously names, if any — see
+   * commitOnBlur. Never for seeded text: that is the current selection
+   * redisplayed, not something the user typed. */
+  function typedMatch(): SearchableSelectOption | undefined {
+    if (multiple || querySeeded) return undefined
+    const q = query.trim().toLowerCase()
+    if (!q) return undefined
+    const exact = options.find((o) => sameLabel(o.label, q))
+    if (exact) return exact
+    return filtered.length === 1 ? filtered[0] : undefined
+  }
+
+  /** Leaving the field — Tab, or a click outside it. Closes the list, and
+   * with commitOnBlur keeps what was typed when it names one option. */
+  function closeOnLeave() {
+    if (open && commitOnBlur && !props.multiple) {
+      const match = typedMatch()
+      if (match && match.value !== props.value) props.onChange(match.value, 'blur')
+    }
+    setOpen(false)
+    setQuery('')
+    setQuerySeeded(false)
+  }
+  // The outside-click listener is registered once, so it reaches the latest
+  // render's closeOnLeave (and the query it closes over) through this ref.
+  const closeOnLeaveRef = useRef(closeOnLeave)
+  useEffect(() => {
+    closeOnLeaveRef.current = closeOnLeave
+  })
 
   // With several picked there is no single label to show, so summarise.
   const summaryLabel =
@@ -222,6 +285,7 @@ export default function SearchableSelect(props: Props) {
           ref={inputRef}
           value={displayValue}
           disabled={disabled}
+          inputMode={inputMode}
           placeholder={loading ? loadingLabel : placeholder}
           onFocus={(e) => {
             // Reopening after a value is already picked used to blank the
@@ -271,7 +335,17 @@ export default function SearchableSelect(props: Props) {
                 setQuerySeeded(false)
                 return
               }
-              if (filtered.length > 0) toggle(filtered[0].value)
+              // With commitOnBlur, an exact label wins over whichever option
+              // happens to be listed first.
+              const pick = (commitOnBlur ? typedMatch() : undefined) ?? filtered[0]
+              if (pick) toggle(pick.value)
+              return
+            }
+            // Tab leaves the field: keep what was typed (commitOnBlur only —
+            // other usages keep their existing behaviour) and close the list
+            // rather than leaving it open over the next field.
+            if (e.key === 'Tab' && commitOnBlur) {
+              closeOnLeave()
               return
             }
             if (e.key === 'ArrowDown' && !open) setOpen(true)

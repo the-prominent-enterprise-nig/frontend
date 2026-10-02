@@ -28,7 +28,12 @@ function formatPeso(n: number): string {
 // declared optional here since the edit form's .partial() makes the array
 // itself optional (though each present element still requires an itemId).
 type ItemScopedFormValues = FieldValues & {
-  items?: { itemId?: string; estimatedPrice?: number; itemLabel?: string }[]
+  items?: {
+    itemId?: string
+    estimatedPrice?: number
+    itemLabel?: string
+    serialNumberId?: string
+  }[]
 }
 
 export type InitialCreditApplicationItem = {
@@ -58,6 +63,7 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
 }: RowProps<T>) {
   const itemIdPath = `items.${index}.itemId` as Path<T>
   const estimatedPricePath = `items.${index}.estimatedPrice` as Path<T>
+  const serialNumberIdPath = `items.${index}.serialNumberId` as Path<T>
 
   const [itemMeta, setItemMeta] = useState<CreditApplicationItemMeta | null>(
     initialItem?.itemMeta ?? null
@@ -118,7 +124,18 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
             render={({ field }) => (
               <CreditApplicationItemSearchCombobox
                 value={(field.value as string | undefined) ?? ''}
-                onChange={field.onChange}
+                onChange={(id) => {
+                  // A unit remembered from the till (Scenario 64 item 28)
+                  // belongs to the item it was picked for. Once the row holds
+                  // a different item — or none — it must not ride along: the
+                  // server refuses a serial recorded against another item.
+                  // The form has no serial picker, so it is simply dropped and
+                  // the till asks for a unit at the sale.
+                  if (id !== field.value) {
+                    setValue(serialNumberIdPath, undefined as never)
+                  }
+                  field.onChange(id)
+                }}
                 onSelectItem={(meta, label) => handleSelectItem(meta, label)}
                 error={itemError}
                 initialLabel={initialItem?.itemLabel ?? restoredLabel}

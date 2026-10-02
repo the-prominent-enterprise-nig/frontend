@@ -33,6 +33,13 @@ export const PAYMENT_TERMS_OPTIONS = [
  * Individual/Business/Employee per the 2026-07-17 decision). */
 export const BUSINESS_CATEGORY_OPTIONS = ['private', 'government'] as const
 
+/** Scenario 64 item 27 — "Civil status: Select" on the credit application
+ *  mockup. These are the backend's MaritalStatus enum members exactly,
+ *  capitalised as Prisma stores them, because the API rejects any other
+ *  casing. The enum is shared with Employee rather than duplicated. */
+export const CIVIL_STATUS_OPTIONS = ['Single', 'Married', 'Widowed', 'Separated'] as const
+const CIVIL_STATUS_OPTIONS_ENUM = z.enum(CIVIL_STATUS_OPTIONS)
+
 export const ID_TYPE_OPTIONS = [
   "Driver's License",
   'Passport',
@@ -80,13 +87,24 @@ export const createCustomerSchema = z.object({
   businessCategory: z.enum(['private', 'government']).optional().or(z.literal('')),
   employeeNumber: z.string().max(50).optional().or(z.literal('')),
   birthday: z.date().optional(),
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // block, captured here rather than on the application itself so a
+  // returning customer's application prefills from their profile.
+  altPhone: z.string().max(50).optional().or(z.literal('')),
+  civilStatus: CIVIL_STATUS_OPTIONS_ENUM.optional().or(z.literal('')),
+  gender: z.enum(['M', 'F']).optional().or(z.literal('')),
+  facebookName: z.string().max(255).optional().or(z.literal('')),
   taxId: z.string().max(50).optional().or(z.literal('')),
   isTaxExempt: z.boolean().optional(),
   taxExemptionRef: z.string().max(100).optional().or(z.literal('')),
   email: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   phone: z.string().min(1, 'Phone number is required').max(50),
+  // The CURRENT address — see the Customer type for why it kept these
+  // column names rather than being renamed.
   address: z.string().max(1000).optional().or(z.literal('')),
   barangayCode: z.string().max(20).optional().or(z.literal('')),
+  homeAddress: z.string().max(1000).optional().or(z.literal('')),
+  homeBarangayCode: z.string().max(20).optional().or(z.literal('')),
   paymentTerms: z.string().max(50).optional().or(z.literal('')),
   creditLimit: z.coerce.number().min(0).optional(),
   groupId: z.string().max(50).optional().or(z.literal('')),

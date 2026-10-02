@@ -3,7 +3,6 @@
 import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import {
   Search,
-  CreditCard,
   Plus,
   Minus,
   X,
@@ -88,6 +87,13 @@ import {
 } from '../_actions/pos-actions'
 import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import {
+  DOWN_PAYMENT_FLOOR_RATE,
+  DOWN_PAYMENT_FLOOR_LABEL,
+  DOWN_PAYMENT_FLOOR_TOLERANCE,
+  isCardTerm,
+} from '@/src/libs/constants/financing'
+import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
@@ -186,8 +192,12 @@ interface CartLine {
   priceListItemId?: string | null
   /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
    * rate card, resolved alongside priceListItemId. Preferred over the
-   * generic 10%-floor auto-fill when set. */
+   * generic 10%-floor auto-fill when set — and, for a term the card quotes
+   * (priceListCardTermMonths), the down payment itself: see
+   * lineCardDownPayment(). */
   priceListDownPayment?: number | null
+  /** The terms, in months, this line's rate card quotes a monthly for. */
+  priceListCardTermMonths?: number[] | null
   /** True once unitPrice reflects either a real Price Use resolution or a
    * manual override — false means still pending / no match, and checkout
    * submission should be blocked on this line. */
@@ -397,6 +407,14 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   qr: 'QR',
   custom: 'Custom',
 }
+
+/** Payment methods withheld from the till (client, 2026-10-01 — "just hide
+ *  the point system"). Hidden, not removed: the loyalty account still loads
+ *  and still earns, the enum and the backend path are untouched, and taking a
+ *  method out of this list puts it back. Any payment row already saved under
+ *  one of these still renders and still settles — this only governs what can
+ *  be chosen from here on. */
+const HIDDEN_PAYMENT_METHODS: PosPaymentMethod[] = ['loyalty_points']
 
 const REF_METHODS: PosPaymentMethod[] = [
   'card',
@@ -767,13 +785,31 @@ export default function CheckoutPage() {
   // not one global selection, so a cart can finance different items under
   // different terms. Keyed by CartLine.lineId.
   const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
+
+  /**
+   * The rate card's own down payment for a line under its chosen term, or
+   * null when the card does not price the line for that term. Where it
+   * exists it IS the down payment — fixed, per unit, not a minimum (PR #199
+   * review): the card's monthly was calculated from exactly that amount, so
+   * anything else mis-states what the customer owes. Mirrors the server's
+   * PriceListsService.resolveCardDownPayment(). Callers apply it to in-house
+   * lines only — never TPF, never an Employee Appliance Loan.
+   */
+  function lineCardDownPayment(l: CartLine): number | null {
+    const termMonths = financingTerms.find((t) => t.id === l.financingTermId)?.termMonths
+    const onCard = isCardTerm(
+      { downPayment: l.priceListDownPayment, cardTermMonths: l.priceListCardTermMonths },
+      termMonths
+    )
+    return onCard ? Math.round(Number(l.priceListDownPayment) * l.quantity * 100) / 100 : null
+  }
+
   // TPF financing — one financier/reference covers however many TPF-mode
   // lines are in the cart, mirroring how one creditApplicationId already
   // covers however many inhouse installment lines.
   const [tpfProviders, setTpfProviders] = useState<TpfProvider[]>([])
   const [tpfProviderId, setTpfProviderId] = useState('')
   const [tpfReferenceNumber, setTpfReferenceNumber] = useState('')
-  const [tpfApprovedAmount, setTpfApprovedAmount] = useState('')
   const [installmentPreviews, setInstallmentPreviews] = useState<
     Record<string, InstallmentPreview | null>
   >({})
@@ -807,7 +843,11 @@ export default function CheckoutPage() {
       id: string
       applicationNumber: string
       requestedAmount: number
-      items: { itemName: string }[]
+      // itemId as well as the name: the backend requires the sale's
+      // installment lines to match this set EXACTLY, so the picker has to be
+      // able to tell which applications can actually be used with the cart
+      // in front of the cashier.
+      items: { itemId: string; itemName: string }[]
       // The terms the customer agreed to and the owner approved. Carried so
       // selecting an application can fill the cart's own term/down payment
       // in, rather than the cashier re-keying figures that were already
@@ -817,6 +857,38 @@ export default function CheckoutPage() {
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
+  // Scenario 64 item 28 — an application arriving from "Continue to sale" on
+  // its own detail page. It cannot simply be selected on arrival: the picker's
+  // list is only fetched once there is an installment line in the cart, and
+  // there is no cart yet. So it is held here while the cart is built from the
+  // application's own items, and selected once those lines exist.
+  const [arrivingCreditApplication, setArrivingCreditApplication] = useState<{
+    id: string
+    stage: 'fetching' | 'adding'
+    expectedLines?: number
+    /** The Price Use the application was approved under. Every new cart line
+     *  otherwise defaults to WIP, so an application approved under any other
+     *  Price Use would be priced at the till off a different list than the
+     *  one the owner approved — different unit price, different totals, and a
+     *  down payment that can land under the floor for the sale it becomes. */
+    priceUseTypeId?: string | null
+    /** itemId -> the unit this application remembered, when that serial is
+     *  still in stock. Empty when there is nothing reusable. */
+    rememberedSerials?: Map<string, { id: string; label: string }>
+  } | null>(null)
+  /** The application whose lines have already been put in the cart. Survives
+   *  re-renders, unlike the state above, which is what makes it the guard. */
+  const arrivalBuiltRef = useRef<string | null>(null)
+  /** The application an arrival wants selected in the picker, held until the
+   *  picker's own list has actually loaded it.
+   *
+   *  Setting `creditApplicationId` straight after building the cart does not
+   *  survive: switching the new lines to installment changes
+   *  creditAppsContextKey, and the effect watching that key clears the
+   *  selection — correctly, since a real context change must not carry a
+   *  stale choice over. So the intent is kept here and reasserted below once
+   *  the list contains it. */
+  const arrivalSelectRef = useRef<string | null>(null)
   const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
 
   // Scenario 60 — Employee Appliance Loan: waives the down-payment floor
@@ -902,6 +974,7 @@ export default function CheckoutPage() {
                 priceResolved: false,
                 priceListItemId: null,
                 priceListDownPayment: null,
+                priceListCardTermMonths: null,
                 ...(isStaleAutoDownPayment(null)
                   ? { downPaymentInput: undefined, downPaymentAutoForPriceListItemId: undefined }
                   : {}),
@@ -912,7 +985,7 @@ export default function CheckoutPage() {
         const recomputedDownPayment = isStaleAutoDownPayment(resolved.priceListItemId)
           ? {
               downPaymentInput: (resolved.downPayment != null
-                ? Number(resolved.downPayment)
+                ? Number(resolved.downPayment) * line.quantity
                 : Math.ceil(
                     effectiveUnitPrice(
                       { ...line, unitPrice: resolved.price },
@@ -921,7 +994,7 @@ export default function CheckoutPage() {
                       isTaxExempt
                     ) *
                       line.quantity *
-                      0.1
+                      DOWN_PAYMENT_FLOOR_RATE
                   )
               ).toFixed(2),
               downPaymentAutoForPriceListItemId: resolved.priceListItemId,
@@ -932,6 +1005,7 @@ export default function CheckoutPage() {
           unitPrice: resolved.price,
           priceListItemId: resolved.priceListItemId,
           priceListDownPayment: resolved.downPayment,
+          priceListCardTermMonths: resolved.cardTermMonths ?? null,
           priceResolved: true,
           ...recomputedDownPayment,
         }
@@ -1222,6 +1296,34 @@ export default function CheckoutPage() {
       if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
         setCart(handoff.lines)
       }
+      // Scenario 64 item 28. Carried instead of lines, never alongside them —
+      // the cart is derived below from the application's own approved items,
+      // here at the till where price, tax and UoM actually resolve.
+      if (handoff.creditApplicationId) {
+        const restoredCart = Array.isArray(handoff.lines) && handoff.lines.length > 0
+        if (restoredCart) {
+          // The cart came back with the handoff — serials, quantities and
+          // prices as the cashier left them. Rebuilding it from the
+          // application's items would discard all of that and re-ask for a
+          // serial already chosen, so only the picker selection is wanted.
+          arrivalSelectRef.current = handoff.creditApplicationId
+        } else {
+          setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
+        }
+      }
+      // The booklet numbers, back as they were typed.
+      if (handoff.salesInvoiceNumber) setInvoiceNumberInput(handoff.salesInvoiceNumber)
+      if (handoff.paymentReferences?.length) {
+        const refs = handoff.paymentReferences
+        // By row order, and only onto rows that came back with the cart — a
+        // reference belongs to the payment it was issued for, so it is never
+        // applied to a row that did not exist when it was typed.
+        setPayments((prev) =>
+          prev.map((row, index) =>
+            refs[index] && !row.referenceNumber ? { ...row, referenceNumber: refs[index] } : row
+          )
+        )
+      }
       clearCheckoutHandoff()
     }
 
@@ -1455,6 +1557,57 @@ export default function CheckoutPage() {
   const inhouseInstallmentCartLines = installmentCartLines.filter(
     (l) => l.installmentProvider !== 'tpf'
   )
+
+  /**
+   * The picker used to list every approved, unconsumed application for the
+   * customer, regardless of what is in the cart — so a cashier could pick one
+   * that TransactionsService.validateAndPrepare() is certain to reject, and
+   * only find out at submit. The rule there is an EXACT match: every approved
+   * item must be an installment line, and no installment line may sit outside
+   * the application.
+   *
+   * Mismatched applications are labelled rather than hidden: a cashier who
+   * knows the customer has an approved application needs to see that it
+   * exists and why it cannot be used here, not an empty list. Usable ones are
+   * listed first so the common case stays a single glance.
+   */
+  // How many of this customer's approved applications actually fit the cart.
+  // Zero is a different situation from "none exist": the cashier has
+  // applications but none usable here, so raising one is the way forward
+  // rather than picking from a list where every row is marked as not matching.
+  const matchingCreditApplicationCount = (() => {
+    const cartItemIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
+    if (cartItemIds.size === 0) return 0
+    return approvedCreditApplications.filter((a) => {
+      const appItemIds = new Set(a.items.map((i) => i.itemId))
+      return (
+        appItemIds.size === cartItemIds.size && [...appItemIds].every((id) => cartItemIds.has(id))
+      )
+    }).length
+  })()
+
+  const creditApplicationOptions = (() => {
+    const cartItemIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
+    const decorated = approvedCreditApplications.map((a) => {
+      const appItemIds = new Set(a.items.map((i) => i.itemId))
+      const matches =
+        cartItemIds.size > 0 &&
+        appItemIds.size === cartItemIds.size &&
+        [...appItemIds].every((id) => cartItemIds.has(id))
+      const scope = a.items.map((i) => i.itemName).join(', ')
+      const amount = a.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })
+      return {
+        matches,
+        value: a.id,
+        label: `${a.applicationNumber} · ${scope} · ₱${amount}${
+          matches ? '' : ' — does not match this cart'
+        }`,
+      }
+    })
+    return [...decorated.filter((o) => o.matches), ...decorated.filter((o) => !o.matches)].map(
+      ({ value, label }) => ({ value, label })
+    )
+  })()
   // Institutional (business) customers under the government sub-category
   // skip the credit application requirement entirely — a private business
   // or an individual customer still needs one for every installment sale.
@@ -1468,6 +1621,33 @@ export default function CheckoutPage() {
   // than automatically on every sale to that customer.
   const isEmployeeCustomer = selectedCustomer?.customerType === 'employee'
   const employeeApplianceLoanActive = isEmployeeCustomer && employeeApplianceLoanChecked
+
+  // A line the rate card prices for its term carries exactly the card's down
+  // payment (lineCardDownPayment). Whatever left another figure in the field —
+  // one typed before a Price Use change, a restored or resumed cart — it is
+  // brought back in line here, so the field, the installment preview, the
+  // submit check and the sale itself all say the same amount.
+  useEffect(() => {
+    if (employeeApplianceLoanActive) return
+    setCart((prev) => {
+      let changed = false
+      const next = prev.map((l) => {
+        if (l.invoiceType !== 'installment' || l.installmentProvider === 'tpf') return l
+        const fixed = lineCardDownPayment(l)
+        if (fixed == null || l.downPaymentInput === fixed.toFixed(2)) return l
+        changed = true
+        return {
+          ...l,
+          downPaymentInput: fixed.toFixed(2),
+          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+        }
+      })
+      return changed ? next : prev
+    })
+    // lineCardDownPayment reads only the line and financingTerms, both deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, financingTerms, employeeApplianceLoanActive])
+
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -1477,7 +1657,7 @@ export default function CheckoutPage() {
   // Scenario 37 — whether the cash bucket's one tender method (paymentMode,
   // set via the transaction-wide Payment Mode toggle — there's no per-item
   // choice anymore) is Credit Card. One card swipe covers whatever's being
-  // paid by card in this sale, so the POS Terminal/Straight-Installment/Term
+  // paid by card in this sale, so the Card Acquirer/Straight-Installment/Term
   // fields render once, not per line.
   const hasCreditCardLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
@@ -1678,7 +1858,6 @@ export default function CheckoutPage() {
       // so it can't silently carry over into a later, unrelated TPF line.
       setTpfProviderId('')
       setTpfReferenceNumber('')
-      setTpfApprovedAmount('')
       return
     }
     getActiveTpfProviders().then((res) => {
@@ -1807,6 +1986,7 @@ export default function CheckoutPage() {
               // of addition.
               requestedAmount: approvedOnly.reduce((sum, i) => sum + Number(i.requestedAmount), 0),
               items: approvedOnly.map((i) => ({
+                itemId: i.itemId,
                 itemName: i.item?.name ?? '—',
               })),
               financingTermId: a.financingTermId ?? null,
@@ -2076,6 +2256,11 @@ export default function CheckoutPage() {
         lines: cart,
         customerId: selectedCustomer?.id,
         sessionId: sessionId || undefined,
+        // Both are read off physical booklets, so losing them on this detour
+        // meant finding the same two booklets and copying the same numbers
+        // again on the way back.
+        salesInvoiceNumber: invoiceNumberInput.trim() || undefined,
+        paymentReferences: payments.map((p) => p.referenceNumber ?? ''),
       })
     }
     localStorage.setItem(
@@ -2086,6 +2271,10 @@ export default function CheckoutPage() {
           itemId: l.itemId,
           itemLabel: l.itemName,
           estimatedPrice: l.unitPrice,
+          // Scenario 64 item 28 — the physical unit already picked at the
+          // till, remembered on the application so coming back to sell it
+          // does not ask for a serial that has already been chosen.
+          serialNumberId: l.serialNumberId,
         })),
       })
     )
@@ -2106,6 +2295,196 @@ export default function CheckoutPage() {
   }
 
   // ─── Cart actions ──────────────────────────────────────────────────────────
+
+  // Scenario 64 item 28 — turn the arriving application into a cart.
+  //
+  // Two passes, because both halves depend on state this render does not have
+  // yet: the items have to be in the cart before they can be switched to
+  // installment, and the picker's own list is not fetched until an installment
+  // line exists. `stage` walks it through rather than a chain of booleans.
+  useEffect(() => {
+    if (!arrivingCreditApplication || arrivingCreditApplication.stage !== 'fetching') return
+    if (!selectedCustomer || catalogItems.length === 0) return
+    // Once per application, and enforced with a ref rather than the `stage`
+    // above, because `stage` only advances after the fetch resolves. The
+    // customer and the catalogue both arrive asynchronously, so a dep landing
+    // mid-flight re-entered this and added every line a second time — which
+    // the till showed as being asked for a serial twice for one item, and for
+    // a serial-tracked item with one serial on hand, the second was
+    // unanswerable. (React's dev double-invoke reproduces the same thing.)
+    if (arrivalBuiltRef.current === arrivingCreditApplication.id) return
+    arrivalBuiltRef.current = arrivingCreditApplication.id
+
+    let cancelled = false
+    // Set only once the cart has actually been built. The ref guard above
+    // stops a second run adding the lines twice — but an attempt that gets
+    // CANCELLED must release the guard, or the next run returns at it and the
+    // arrival is stranded forever. That deadlock is exactly what happened:
+    // the catalogue reloads when the session auto-selects, this effect
+    // re-runs, its cleanup cancels the in-flight attempt, and the new run
+    // finds the guard already claimed. The till sat empty with the last
+    // diagnostic still on screen.
+    let completed = false
+    void (async () => {
+      try {
+        const res = await getCreditApplications({
+          checkoutEligible: true,
+          applicantCustomerId: selectedCustomer.id,
+          unconsumed: true,
+          limit: 50,
+        })
+        if (cancelled) return
+
+        const application = (res.data?.data ?? []).find(
+          (a) => a.id === arrivingCreditApplication.id
+        )
+        // Only the approved items: a partially approved application's declined
+        // items are never sellable, and silently carting one would have someone
+        // promising a customer what the owner refused.
+        const approved = (application?.items ?? []).filter((i) => i.status === 'approved')
+        const approvedPriceUseTypeId = application?.priceUseTypeId ?? null
+        // Scenario 64 item 28 — the unit the cashier had already picked when
+        // this application was raised. A preference, never a hold: only reused
+        // when that serial is STILL in stock, since nothing reserved it and it
+        // may have been sold, transferred or written off while the application
+        // waited for approval.
+        const rememberedSerials = new Map<string, { id: string; label: string }>()
+        for (const line of approved) {
+          const sn = line.serialNumber
+          if (sn?.status === 'in_stock') {
+            rememberedSerials.set(line.itemId, { id: sn.id, label: sn.serialNumber })
+          }
+        }
+
+        // `catalogItems` is the page's own lookup, and itemLookup caps at 500
+        // rows against a catalogue of ~1,400 — so an application's item is very
+        // often simply not in it, which showed up as arriving at an empty till.
+        // Anything missing is fetched by its own SKU rather than assumed absent.
+        const found: LookupItem[] = []
+        for (const line of approved) {
+          const local = catalogItems.find((c) => c.id === line.itemId)
+          if (local) {
+            found.push(local)
+            continue
+          }
+          const sku = line.item?.sku
+          if (!sku) continue
+          // stockBranchId, like the catalog load: at a caravan's register the
+          // stock is the caravan's, not the host's.
+          const lookup = await itemLookup(sku, stockBranchId ?? undefined)
+          if (cancelled) return
+          const match = ((lookup.data ?? []) as LookupItem[]).find((c) => c.id === line.itemId)
+          if (match) found.push(match)
+        }
+
+        if (found.length === 0) {
+          // Say why, rather than landing on an empty till. Silently clearing the
+          // arrival left the seller looking at a blank screen with no idea
+          // whether the click had even registered.
+          setError(
+            application
+              ? 'None of this application’s approved items could be loaded for this branch, so the cart could not be built. Add them by hand, then pick the application below.'
+              : 'That credit application could not be loaded — it may already have been used for a sale.'
+          )
+          arrivalBuiltRef.current = null
+          setArrivingCreditApplication(null)
+          return
+        }
+        // A short cart is worth saying out loud rather than letting the seller
+        // notice at payment.
+        if (found.length < approved.length) {
+          setError(
+            `${found.length} of ${approved.length} approved items were added — the rest could not be loaded for this branch.`
+          )
+        }
+
+        // Last gate before touching the cart. Cancellation was checked inside
+        // the lookup loop but not here, so an attempt cancelled after its
+        // final lookup still added its lines — and the retry, which now
+        // correctly reclaims the released guard, added them again. Two lines
+        // for one item, and a serial prompt for each.
+        if (cancelled) return
+        completed = true
+        found.forEach((item) => addToCart(item))
+        setArrivingCreditApplication({
+          id: arrivingCreditApplication.id,
+          stage: 'adding',
+          expectedLines: found.length,
+          priceUseTypeId: approvedPriceUseTypeId,
+          rememberedSerials,
+        })
+      } catch (e) {
+        // Without this the arrival died silently. An unhandled rejection in a
+        // void async IIFE leaves the page on whatever it last rendered — which
+        // is precisely the "nothing at the till" this was reported as, with
+        // the last diagnostic still on screen and no clue why.
+        if (cancelled) return
+        arrivalBuiltRef.current = null
+        setArrivingCreditApplication(null)
+        setError(
+          `Could not build the cart from this application: ${
+            e instanceof Error ? e.message : String(e)
+          }`
+        )
+      }
+    })()
+    return () => {
+      cancelled = true
+      // Hand the guard back so a re-run can finish the job.
+      if (!completed) arrivalBuiltRef.current = null
+    }
+    // addToCart is stable enough for this one-shot arrival; re-running on every
+    // cart change would re-add the lines it just added.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately catalogItems.length, not catalogItems: the array's identity
+    // changes on every catalogue reload, and each change cancelled an attempt
+    // that was already in flight. Only whether it has loaded matters here —
+    // anything missing from it is fetched by SKU above anyway.
+  }, [arrivingCreditApplication, selectedCustomer, catalogItems.length])
+
+  useEffect(() => {
+    if (arrivingCreditApplication?.stage !== 'adding') return
+    if (cart.length < (arrivingCreditApplication.expectedLines ?? 0)) return
+    // Installment is the whole point of an application — leaving the lines on
+    // cash would show the cashier a picker with nothing in it.
+    const lineIds = cart.map((l) => l.lineId)
+    // Put back the unit that was already chosen, so returning to sell an
+    // application does not ask for a serial picked before it was even raised.
+    // Only onto a line that has none — anything picked since is the cashier's
+    // own, more recent, choice.
+    const remembered = arrivingCreditApplication.rememberedSerials
+    if (remembered && remembered.size > 0) {
+      setCart((prev) =>
+        prev.map((l) => {
+          if (l.serialNumberId || !l.isSerialTracked) return l
+          const hit = remembered.get(l.itemId)
+          return hit ? { ...l, serialNumberId: hit.id, serialNumberLabel: hit.label } : l
+        })
+      )
+    }
+    // Price Use before the term and down payment: changing it re-resolves the
+    // line's price, and the down payment the application approved is measured
+    // against that price.
+    if (arrivingCreditApplication.priceUseTypeId) {
+      setLinePriceUseTypeId(lineIds, arrivingCreditApplication.priceUseTypeId)
+    }
+    setLineInvoiceType(lineIds, 'installment')
+    arrivalSelectRef.current = arrivingCreditApplication.id
+    setCreditApplicationId(arrivingCreditApplication.id)
+    setArrivingCreditApplication(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingCreditApplication, cart.length])
+
+  // Reasserts the arrival's application once the picker's list has loaded it.
+  // Runs at most once per arrival: the ref is cleared as soon as it takes, so
+  // this can never fight a cashier who then picks a different application.
+  useEffect(() => {
+    const wanted = arrivalSelectRef.current
+    if (!wanted) return
+    if (!approvedCreditApplications.some((a) => a.id === wanted)) return
+    arrivalSelectRef.current = null
+    if (creditApplicationId !== wanted) setCreditApplicationId(wanted)
+  }, [approvedCreditApplications, creditApplicationId])
 
   function addToCart(item: LookupItem, qty = 1) {
     // Reserve mode (Scenario 03, Part 3): a SkuReservation is one item +
@@ -2277,7 +2656,7 @@ export default function CheckoutPage() {
         const fallbackDownPayment =
           l.priceListDownPayment != null
             ? Number(l.priceListDownPayment).toFixed(2)
-            : Math.ceil(lineAmount * 0.1).toFixed(2)
+            : Math.ceil(lineAmount * DOWN_PAYMENT_FLOOR_RATE).toFixed(2)
         return {
           ...l,
           installmentProvider: provider,
@@ -2322,23 +2701,42 @@ export default function CheckoutPage() {
     // effectiveUnitPrice × quantity, tax included. Splitting on the raw
     // unitPrice instead left every share about 12% short under exclusive
     // pricing, so a sale built from an approved application was refused
-    // with "down payment must be at least 10% of its sale amount".
+    // with "down payment must be at least the floor % of its sale amount".
     const lineAmount = (l: CartLine) =>
       effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
     // Whole centavos, rounded UP, so a fractional 10% can't land a hair
     // under the floor.
-    const lineFloor = (l: CartLine) => Math.ceil(lineAmount(l) * 0.1 * 100) / 100
-    const total = lines.reduce((sum, l) => sum + lineAmount(l), 0)
+    const lineFloor = (l: CartLine) =>
+      Math.ceil(lineAmount(l) * DOWN_PAYMENT_FLOOR_RATE * 100) / 100
     const approvedDp = application.downPayment ?? null
+    // A line the rate card prices for the application's term takes exactly
+    // its card down payment — fixed, see lineCardDownPayment(). The rest of
+    // the approved figure is shared out over the other lines as before.
+    const termFor = (l: CartLine) => ({
+      ...l,
+      financingTermId: application.financingTermId ?? l.financingTermId,
+    })
+    const cardDpByLine = new Map<string, number>()
+    for (const l of lines) {
+      const fixed = lineCardDownPayment(termFor(l))
+      if (fixed != null) cardDpByLine.set(l.lineId, fixed)
+    }
+    const shared = lines.filter((l) => !cardDpByLine.has(l.lineId))
+    const total = shared.reduce((sum, l) => sum + lineAmount(l), 0)
+    const sharedDp =
+      approvedDp != null
+        ? approvedDp - [...cardDpByLine.values()].reduce((sum, v) => sum + v, 0)
+        : null
 
     let allocated = 0
     const dpByLine = new Map<string, string>()
-    if (approvedDp != null && total > 0) {
-      lines.forEach((l, idx) => {
-        const isLast = idx === lines.length - 1
+    for (const [lineId, fixed] of cardDpByLine) dpByLine.set(lineId, fixed.toFixed(2))
+    if (sharedDp != null && total > 0) {
+      shared.forEach((l, idx) => {
+        const isLast = idx === shared.length - 1
         const rawShare = isLast
-          ? approvedDp - allocated
-          : Math.round(approvedDp * (lineAmount(l) / total) * 100) / 100
+          ? sharedDp - allocated
+          : Math.round(sharedDp * (lineAmount(l) / total) * 100) / 100
         allocated += rawShare
         // The approved down payment is a MINIMUM for the application as a
         // whole, not a per-line cap. A line whose share falls under its own
@@ -2361,9 +2759,12 @@ export default function CheckoutPage() {
         // drop the line under its floor.
         const typed = parseFloat(l.downPaymentInput ?? '') || 0
         const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
-        const downPaymentInput = dpByLine.has(l.lineId)
-          ? Math.max(typed, apportioned).toFixed(2)
-          : l.downPaymentInput
+        // A card line's figure is exact, typed or not.
+        const downPaymentInput = cardDpByLine.has(l.lineId)
+          ? cardDpByLine.get(l.lineId)!.toFixed(2)
+          : dpByLine.has(l.lineId)
+            ? Math.max(typed, apportioned).toFixed(2)
+            : l.downPaymentInput
         return {
           ...l,
           financingTermId: application.financingTermId ?? l.financingTermId,
@@ -2390,17 +2791,29 @@ export default function CheckoutPage() {
         // collect" but can't actually be submitted that way. Scenario 15,
         // Part 5 — a curated per-SKU down payment from the real NIG rate
         // card wins over the generic 10%-floor fallback when one exists.
+        //
+        // A term the card quotes fixes the down payment outright, so it is
+        // set even over a typed figure (PR #199 review).
+        const fixed = lineCardDownPayment({ ...l, financingTermId })
+        if (fixed != null) {
+          return {
+            ...l,
+            financingTermId,
+            downPaymentInput: fixed.toFixed(2),
+            downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+          }
+        }
         if (l.downPaymentInput) return { ...l, financingTermId }
         const downPaymentInput =
           l.priceListDownPayment != null
-            ? Number(l.priceListDownPayment).toFixed(2)
+            ? (Number(l.priceListDownPayment) * l.quantity).toFixed(2)
             : // Whole pesos, rounded UP — never centavos, and never below the
-              // 10% floor (ceil instead of round guarantees that even if the
-              // exact 10% has a fractional remainder).
+              // floor (ceil instead of round guarantees that even if the
+              // exact figure has a fractional remainder).
               Math.ceil(
                 effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) *
                   l.quantity *
-                  0.1
+                  DOWN_PAYMENT_FLOOR_RATE
               ).toFixed(2)
         return {
           ...l,
@@ -2778,8 +3191,15 @@ export default function CheckoutPage() {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
-        if (!employeeApplianceLoanActive && downPayment < 0.1 * lineAmount - 0.005) {
-          setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
+        // Waived for an Employee Appliance Loan. A TPF line's monthly is the
+        // financier's, so only the floor applies — never the card's figure.
+        if (
+          !employeeApplianceLoanActive &&
+          downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
+        ) {
+          setError(
+            `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
+          )
           return
         }
       }
@@ -2794,13 +3214,30 @@ export default function CheckoutPage() {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
         return
       }
+      // A line the rate card prices for its term must carry exactly the
+      // card's down payment — the same rule the server applies.
+      const fixed = employeeApplianceLoanActive ? null : lineCardDownPayment(l)
+      if (fixed != null) {
+        if (Math.abs(downPayment - fixed) > DOWN_PAYMENT_FLOOR_TOLERANCE) {
+          setError(
+            `${l.itemName}'s down payment is fixed by the price list at ${fmt(fixed)} for this term.`
+          )
+          return
+        }
+        continue
+      }
       // 0.005 (half a centavo) tolerance absorbs float noise from the
       // tax-inclusive/exclusive price conversion above — without it, typing
       // the exact rounded-to-centavo value shown by the "Min" hint below
       // can land a hair under the true unrounded floor and be rejected.
-      // Waived entirely for an Employee Appliance Loan (Scenario 60).
-      if (!employeeApplianceLoanActive && downPayment < 0.1 * lineAmount - 0.005) {
-        setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
+      // Waived entirely for an Employee Appliance Loan (development).
+      if (
+        !employeeApplianceLoanActive &&
+        downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
+      ) {
+        setError(
+          `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
+        )
         return
       }
     }
@@ -2929,10 +3366,11 @@ export default function CheckoutPage() {
           salesInvoiceNumber: invoiceNumberInput.trim(),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
-          tpfApprovedAmount:
-            tpfInstallmentCartLines.length > 0 && tpfApprovedAmount
-              ? parseFloat(tpfApprovedAmount)
-              : undefined,
+          // tpfApprovedAmount is deliberately not sent (client request,
+          // 2026-09-24 — Scenario 64). The column stays and stays null: it is
+          // optional in the DTO and nullable in the schema, and nothing reads
+          // it back, so the financier's reference number is the only TPF
+          // detail the cashier is asked for.
           // Which register account the TPF down payment debits — the same
           // Cash/Debit-Credit choice (and Cash's own sub-mode) the cashier
           // made for the down payment above, not a separate control.
@@ -3346,7 +3784,6 @@ export default function CheckoutPage() {
     setSaleMode('sale')
     setTpfProviderId('')
     setTpfReferenceNumber('')
-    setTpfApprovedAmount('')
     setInstallmentPreviews({})
     setInstallmentPreviewErrors({})
     setInstallmentPreviewLoading({})
@@ -3885,6 +4322,13 @@ export default function CheckoutPage() {
                         {selectedCustomer.phone && (
                           <p className="text-xs text-gray-700">{selectedCustomer.phone}</p>
                         )}
+                        {/* The points balance that sat here is hidden (client,
+                            2026-10-01). Only the display is gone — the loyalty
+                            account is still loaded and still earns and redeems,
+                            so nothing is lost if it comes back. Deleting the
+                            data path would have taken the Loyalty Points
+                            payment method with it, which was not what was
+                            asked for. */}
                       </div>
                     </div>
                   </div>
@@ -4561,42 +5005,83 @@ export default function CheckoutPage() {
                           <label className="mb-1 block text-[13px] text-prominent-purple-700">
                             Approved Credit Application
                           </label>
-                          <div className="relative">
-                            <select
+                          {/* The picker only exists once there is something to
+                            pick. With none on file it was a control whose
+                            every state said "nothing here" — and the one
+                            action available was buried in its dropdown. The
+                            button below replaces it outright until an
+                            application exists. */}
+                          {/* "Raise a new application" is an extraAction on the
+                            picker, not a button hidden inside the empty state
+                            — same shape as the co-maker Select's "Add a new
+                            co-maker". It used to appear ONLY when the customer
+                            had no approved application at all, which made a
+                            second purchase impossible from the till: a
+                            CreditApplication's posTransactionId is unique, so
+                            one approved application backs exactly one sale and
+                            every repeat installment customer needs a fresh
+                            one. The same applies when the approved one covers
+                            different items than the cart, or the customer
+                            wants different terms. Previously the only way out
+                            was to abandon the cart and start in Credit
+                            Applications. */}
+                          {(creditApplicationsLoading || approvedCreditApplications.length > 0) && (
+                            <Select
                               value={creditApplicationId}
-                              onChange={(e) => {
-                                setCreditApplicationId(e.target.value)
-                                if (e.target.value) applyCreditApplicationTerms(e.target.value)
+                              onChange={(v) => {
+                                setCreditApplicationId(v)
+                                if (v) applyCreditApplicationTerms(v)
                               }}
-                              disabled={creditApplicationsLoading}
-                              className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
-                            >
-                              <option value="">
-                                {creditApplicationsLoading
+                              options={creditApplicationOptions}
+                              placeholder={
+                                creditApplicationsLoading
                                   ? 'Loading…'
-                                  : approvedCreditApplications.length === 0
-                                    ? 'No approved application on file'
-                                    : 'Select an approved application…'}
-                              </option>
-                              {approvedCreditApplications.map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  {a.applicationNumber} ·{' '}
-                                  {a.items.map((i) => i.itemName).join(', ')} · ₱
-                                  {a.requestedAmount.toLocaleString('en-PH', {
-                                    minimumFractionDigits: 2,
-                                  })}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown
-                              size={12}
-                              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
+                                  : 'Select an approved application…'
+                              }
+                              // Only genuinely dead while loading. With no
+                              // applications the picker still opens, because the
+                              // extraAction below is the way out of that state.
+                              disabled={creditApplicationsLoading}
+                              extraAction={
+                                creditApplicationsLoading
+                                  ? undefined
+                                  : {
+                                      label: 'New application for this cart',
+                                      onClick: goToRaiseCreditApplication,
+                                    }
+                              }
+                              compact
                             />
-                          </div>
+                          )}
+                          {/* Three states, because they need different things
+                            from the cashier:
+
+                            1. No applications at all — the picker has nothing
+                               to offer, so raising one is the ONLY way
+                               forward and gets a real button. It lived inside
+                               the picker's extraAction for a while, which
+                               meant the one action available was hidden
+                               behind opening a dropdown that looked empty.
+                            2. Applications exist but none fit this cart —
+                               every row is labelled "does not match", so
+                               picking one cannot work either. Same button,
+                               plus a line saying why the list is no help.
+                            3. At least one fits — the picker is the action.
+                               Raising another stays available as a quiet
+                               link, because a cashier can legitimately need a
+                               second application (client, 2026-09-29) without
+                               it competing with the obvious choice. */}
                           {!creditApplicationsLoading &&
                             approvedCreditApplications.length === 0 && (
-                              <div className="mt-1">
-                                <p className="text-[13px] text-amber-700">
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={goToRaiseCreditApplication}
+                                  className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
+                                >
+                                  New credit application
+                                </button>
+                                <p className="mt-2 text-[13px] text-amber-700">
                                   Every installment sale requires an approved credit application.
                                 </p>
                                 {/* Approval happens in the Business Owner's own
@@ -4608,24 +5093,41 @@ export default function CheckoutPage() {
                                   Waiting on an approval? This refreshes when you come back to this
                                   tab.
                                 </p>
-                                {/* Was a dead sentence telling the cashier to go
-                                do it themselves. Carries the customer and
-                                these installment lines straight into the
-                                form, and brings the cart back afterwards. */}
-                                <button
-                                  type="button"
-                                  onClick={goToRaiseCreditApplication}
-                                  className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
-                                >
-                                  <CreditCard size={12} />
-                                  Raise one for this cart
-                                </button>
                                 <p className="mt-1 text-[11px] text-amber-600">
                                   Your cart is kept — it still needs the owner&apos;s approval
                                   before this sale can be completed.
                                 </p>
                               </div>
                             )}
+
+                          {!creditApplicationsLoading &&
+                            approvedCreditApplications.length > 0 &&
+                            matchingCreditApplicationCount === 0 && (
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={goToRaiseCreditApplication}
+                                  className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
+                                >
+                                  New application for this cart
+                                </button>
+                                <p className="mt-2 text-[12px] text-amber-600">
+                                  {approvedCreditApplications.length === 1
+                                    ? 'The approved application on file is for different items, so it cannot be used with this cart.'
+                                    : `None of the ${approvedCreditApplications.length} approved applications on file match this cart's items.`}
+                                </p>
+                              </div>
+                            )}
+
+                          {!creditApplicationsLoading && matchingCreditApplicationCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={goToRaiseCreditApplication}
+                              className="mt-1.5 text-[12px] font-medium text-prominent-purple-700 hover:underline"
+                            >
+                              + New application for this cart
+                            </button>
+                          )}
                         </div>
                       )}
                   </div>
@@ -4680,7 +5182,7 @@ export default function CheckoutPage() {
                   const lineSaleAmount =
                     effectiveUnitPrice(line, activeTaxRate, inclusivePricing, isTaxExempt) *
                     line.quantity
-                  const minDownPayment = 0.1 * lineSaleAmount
+                  const minDownPayment = DOWN_PAYMENT_FLOOR_RATE * lineSaleAmount
                   // Whole pesos, rounded up — matches the auto-fill in
                   // setLineFinancingTermId() so the displayed floor is never
                   // a centavo amount the field itself won't accept.
@@ -4697,16 +5199,25 @@ export default function CheckoutPage() {
                   // before a term has been picked yet (downPaymentInput still
                   // unset) so the shown figure doesn't disagree with what
                   // picking a term is about to fill in.
+                  // Waived entirely for an Employee Appliance Loan (development).
                   const curatedDownPaymentWhole =
                     line.priceListDownPayment != null
-                      ? Math.round(Number(line.priceListDownPayment))
+                      ? Math.round(Number(line.priceListDownPayment) * line.quantity)
+                      : null
+                  // Set when the card quotes this line's term: the down payment
+                  // is then the card's, and there is nothing to change.
+                  const fixedDownPayment =
+                    groupProvider === 'inhouse' && !employeeApplianceLoanActive
+                      ? lineCardDownPayment(line)
                       : null
                   const downPaymentValue = employeeApplianceLoanActive
                     ? 0
-                    : line.downPaymentInput
-                      ? parseFloat(line.downPaymentInput) || 0
-                      : (curatedDownPaymentWhole ?? minDownPaymentWhole)
-                  const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
+                    : (fixedDownPayment ??
+                      (line.downPaymentInput
+                        ? parseFloat(line.downPaymentInput) || 0
+                        : (curatedDownPaymentWhole ?? minDownPaymentWhole)))
+                  const downPaymentEditingThisLine =
+                    !!downPaymentEditOpen[line.lineId] && fixedDownPayment == null
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
                       {/* Name only, as a label for the config below — price
@@ -4739,26 +5250,16 @@ export default function CheckoutPage() {
                           </div>
                           {groupProvider === 'inhouse' && (
                             <>
-                              <div className="relative">
-                                <select
-                                  value={line.financingTermId ?? ''}
-                                  onChange={(e) =>
-                                    setLineFinancingTermId(groupLineIds, e.target.value)
-                                  }
-                                  className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                >
-                                  <option value="">Select a term…</option>
-                                  {financingTerms.map((t) => (
-                                    <option key={t.id} value={t.id}>
-                                      {t.termMonths} months
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown
-                                  size={11}
-                                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                                />
-                              </div>
+                              <Select
+                                value={line.financingTermId ?? ''}
+                                onChange={(v) => setLineFinancingTermId(groupLineIds, v)}
+                                options={financingTerms.map((t) => ({
+                                  value: t.id,
+                                  label: `${t.termMonths} months`,
+                                }))}
+                                placeholder="Select a term…"
+                                compact
+                              />
                               {employeeApplianceLoanActive ? (
                                 <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
                                   <div className="flex items-center justify-between gap-2">
@@ -4823,29 +5324,35 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
+                                      {curatedDownPaymentWhole !== null
+                                        ? 'Rate card'
+                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
                                     <span className="text-[15px] font-bold text-prominent-purple-800">
                                       {fmt(downPaymentValue)}
                                     </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Change amount
-                                    </button>
+                                    {fixedDownPayment == null && (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                        className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                      >
+                                        Change amount
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               )}
                               {!employeeApplianceLoanActive && (
                                 <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                   <span className="text-prominent-purple-400">●</span>
-                                  {curatedDownPaymentWhole !== null
-                                    ? 'From the rate card for this term — the minimum accepted is still 10% of the sale amount.'
-                                    : 'Fixed at 10% of the sale amount — the same for every term.'}
+                                  {fixedDownPayment != null
+                                    ? 'Set by the rate card for this term — its monthly installment is calculated from this down payment.'
+                                    : curatedDownPaymentWhole !== null
+                                      ? `From the rate card — the minimum accepted is ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount.`
+                                      : `Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
                                 </p>
                               )}
                               {line.financingTermId && (
@@ -4936,7 +5443,9 @@ export default function CheckoutPage() {
                                       Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null ? 'Rate card' : '10% min'}
+                                      {curatedDownPaymentWhole !== null
+                                        ? 'Rate card'
+                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
@@ -4982,28 +5491,23 @@ export default function CheckoutPage() {
                         <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           TPF Provider *
                         </label>
-                        <div className="relative">
-                          <select
-                            value={tpfProviderId}
-                            onChange={(e) => setTpfProviderId(e.target.value)}
-                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                          >
-                            <option value="">
-                              {tpfProviders.length === 0
-                                ? 'No TPF providers on file'
-                                : 'Select a TPF provider…'}
-                            </option>
-                            {tpfProviders.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={12}
-                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
-                          />
-                        </div>
+                        {/* The shared Select rather than a native <select> +
+                            hand-placed chevron: the open list is styleable,
+                            which the native popup never is, and it matches
+                            the Selling Agent picker above. `compact` keeps
+                            the dense sizing this panel already had. */}
+                        <Select
+                          value={tpfProviderId}
+                          onChange={setTpfProviderId}
+                          options={tpfProviders.map((p) => ({ value: p.id, label: p.name }))}
+                          placeholder={
+                            tpfProviders.length === 0
+                              ? 'No TPF providers on file'
+                              : 'Select a TPF provider…'
+                          }
+                          disabled={tpfProviders.length === 0}
+                          compact
+                        />
                         {tpfProviders.length === 0 && (
                           <p className="mt-1 text-[13px] text-amber-700">
                             Add a TPF provider under POS Settings first.
@@ -5015,15 +5519,6 @@ export default function CheckoutPage() {
                         placeholder="Financier's reference number *"
                         value={tpfReferenceNumber}
                         onChange={(e) => setTpfReferenceNumber(e.target.value)}
-                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        placeholder="Approved amount (optional)"
-                        value={tpfApprovedAmount}
-                        onChange={(e) => setTpfApprovedAmount(e.target.value)}
                         className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                       />
                     </div>
@@ -5147,7 +5642,17 @@ export default function CheckoutPage() {
                     data-testid="card-txn-mode-toggle"
                     className="rounded-lg border border-purple-100 p-2.5"
                   >
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select POS Terminal</p>
+                    {/* "Card Acquirer", not "POS Terminal" (2026-09-24):
+                        these options — BDO/BPI/Metrobank/Maya — are the
+                        institutions that provide the terminal and settle the
+                        money, not the terminal itself. "Acquirer" rather
+                        than "bank" deliberately: Maya is a non-bank acquirer,
+                        so any bank-flavoured label is wrong for it. Not to be
+                        confused with the ISSUING bank (the customer's own
+                        card) or the network (Visa/Mastercard) — neither is
+                        what's picked here. bank_transfer keeps its own plain
+                        "Bank" label; both can be on screen at once. */}
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select Card Acquirer</p>
                     {(() => {
                       const cardConfig = configuredMethods.find((m) => m.key === 'card')
                       const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
@@ -5155,9 +5660,9 @@ export default function CheckoutPage() {
                         <>
                           {terminalOptions.length > 0 && (
                             <PillCombobox
-                              ariaLabel="POS Terminal"
+                              ariaLabel="Card Acquirer"
                               wrapperClassName="mb-1.5"
-                              placeholder="Select pos terminal…"
+                              placeholder="Select card acquirer…"
                               options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
                               value={cardTerminalOptionId}
                               onChange={setCardTerminalOptionId}
@@ -5312,6 +5817,11 @@ export default function CheckoutPage() {
                               ? configuredMethods
                                   .filter((m) => {
                                     if (isOffline) return m.key === 'cash'
+                                    if (
+                                      m.key &&
+                                      HIDDEN_PAYMENT_METHODS.includes(m.key as PosPaymentMethod)
+                                    )
+                                      return false
                                     return m.key === null
                                       ? enabledPaymentMethods.includes('custom')
                                       : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
@@ -5324,6 +5834,8 @@ export default function CheckoutPage() {
                               : Object.entries(PAYMENT_LABELS)
                                   .filter(([v]) => {
                                     if (isOffline) return v === 'cash'
+                                    if (HIDDEN_PAYMENT_METHODS.includes(v as PosPaymentMethod))
+                                      return false
                                     return enabledPaymentMethods.includes(v as PosPaymentMethod)
                                   })
                                   .map(([v, l]) => (
@@ -5398,7 +5910,7 @@ export default function CheckoutPage() {
                       // here, just a pointer back so it doesn't read as missing.
                       const optionPointer =
                         p.method === 'card'
-                          ? 'Terminal/Straight-Installment/Term'
+                          ? 'Card Acquirer/Straight-Installment/Term'
                           : p.method === 'bank_transfer'
                             ? 'Bank'
                             : p.method === 'qr'
