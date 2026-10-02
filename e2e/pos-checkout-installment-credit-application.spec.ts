@@ -19,26 +19,48 @@ import { gotoReady, clickStable, fillStable, openCustomSelect } from './utils'
 // No afterAll cleanup — same permanent-workflow-record tradeoff as the other
 // credit e2e specs (CreditApplication rows are never hard-deleted).
 
+/** A real, WIP-priced, serial-tracked item stocked at Bago in the dev data.
+ * This used to be the demo "Universal Remote Control", which the seed deletes
+ * again (cleanup-demo-business-data.ts), so the spec could never get past
+ * adding it to the cart on a seeded database. */
+const ITEM_QUERY = 'STF3238'
+
 /** Adds one WIP-priced item to the cart and switches its line to Installment
- * mode, matching pos-checkout-promissory-note.spec.ts's item choice. */
+ * mode. */
 async function addInstallmentLine(page: Page): Promise<void> {
   const searchInput = page.getByPlaceholder('Search by name or serial')
   await expect(searchInput).toBeVisible({ timeout: 15_000 })
-  await searchInput.fill('Universal Remote Control')
-  const remoteCard = page
-    .getByRole('button')
-    .filter({ has: page.getByText('Universal Remote Control', { exact: true }) })
-  await expect(remoteCard.first()).toBeVisible({ timeout: 10_000 })
-  await remoteCard.first().click()
-  await page.getByLabel('Price Use').selectOption({ label: 'WIP' })
+  const card = page.getByRole('button').filter({ hasText: ITEM_QUERY }).first()
+  await expect(async () => {
+    await searchInput.fill(ITEM_QUERY)
+    await expect(card).toBeVisible({ timeout: 3_000 })
+  }).toPass({ timeout: 20_000 })
+  await card.click()
+
+  // A serial-tracked item opens the serial picker straight away.
+  const heading = page.getByRole('heading', { name: 'Select Serial Number' })
+  if (await heading.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await page
+      .getByText('In this branch', { exact: true })
+      .locator('xpath=following-sibling::*[1]')
+      .getByRole('button')
+      .first()
+      .click()
+    await expect(heading).toHaveCount(0, { timeout: 10_000 })
+  }
+  await page.getByLabel('Price Use').first().selectOption({ label: 'WIP' })
 
   await clickStable(
     page.getByRole('button', { name: 'Installment', exact: true }),
-    page.getByPlaceholder('Down payment')
+    page.getByRole('button', { name: 'Inhouse Installment' })
   )
 }
 
 test.describe('POS Checkout — Installment requires an approved Credit Application', () => {
+  // Logging in, building a cart and waiting on the customer's applications
+  // regularly runs past the 60s default on a cold dev server.
+  test.describe.configure({ timeout: 120_000 })
+
   test('a customer with no approved application shows the warning and an empty picker', async ({
     page,
   }) => {
@@ -63,10 +85,14 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     // the application inline, but this assertion kept the old sentence and
     // had been failing ever since. Asserted against the live copy now, plus
     // the button itself, whose label the client renamed in the same pass.
+    // Shown once the customer's applications have loaded — the picker reads
+    // "Loading…" until then, which can take a while on a cold dev server.
     await expect(
       page.getByText('Every installment sale requires an approved credit application.')
-    ).toBeVisible()
-    await expect(page.getByRole('button', { name: 'New Credit Application Form' })).toBeVisible()
+    ).toBeVisible({ timeout: 30_000 })
+    // "New Credit Application Form" in Scenario 64 Part 1, then "New credit
+    // application" — the panel's own button for raising one inline.
+    await expect(page.getByRole('button', { name: 'New credit application' })).toBeVisible()
 
     // The empty picker (still "") keeps submit disabled via
     // installmentMissingCreditApplication, even once a term is picked.
@@ -76,7 +102,12 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     // <select>: no placeholder <option>, so the old selectOption({index:1})
     // (index 0 being the placeholder) is simply the first real option.
     await openCustomSelect(termSelect)
-    await page.getByRole('option').first().click()
+    // By name: the cart row's native Price Use <select> has role=option
+    // children too, and the first of those cannot be clicked.
+    await page
+      .getByRole('option', { name: /months/ })
+      .first()
+      .click()
     await expect(
       page.getByRole('button', { name: 'Select an approved credit application' })
     ).toBeVisible()
@@ -101,9 +132,17 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     const branchId = branches.find((b) => b.name === 'Bago')!.id
 
     const itemsRes = await page.request.get('/api/inventory/items', {
-      params: { search: 'Universal Remote Control', limit: '1' },
+      params: { search: ITEM_QUERY, limit: '1' },
     })
     const items = ((await itemsRes.json()).data ?? []) as { id: string }[]
+
+    // Scenario 64 item 21 — an application is priced from the Price Use's
+    // price list and nothing else, so it has to name one.
+    const priceUseRes = await page.request.get('/api/pos/catalog/price-use-types')
+    type PriceUse = { id: string; name: string }
+    const priceUseBody = (await priceUseRes.json()) as PriceUse[] | { data?: PriceUse[] }
+    const priceUses = Array.isArray(priceUseBody) ? priceUseBody : (priceUseBody.data ?? [])
+    const wip = priceUses.find((t) => t.name === 'WIP')!
 
     const appRes = await page.request.post('/api/credit/applications', {
       data: {
@@ -111,8 +150,10 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
         applicantCustomerId: customer.id,
         coMakerId: customer.coMakers[0].id,
         items: [{ itemId: items[0].id }],
+        priceUseTypeId: wip.id,
       },
     })
+    expect(appRes.ok(), await appRes.text()).toBeTruthy()
     const application = await appRes.json()
     const creditApplicationItemId = application.items[0].id as string
 
@@ -143,24 +184,22 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     await fillStable(customerInput, applicantName)
     await page.getByRole('button', { name: new RegExp(applicantName) }).click()
 
-    // Scenario 64 — the application picker is the shared Select now. Its
-    // accessible name is whatever it currently shows, so while unselected
-    // that's the placeholder; the application itself is an option in the
-    // popup rather than an <option> child.
-    const picker = page.getByRole('combobox', { name: 'Select an approved application…' })
-    await expect(picker).toBeVisible({ timeout: 10_000 })
-    // Same stale sentence as above, and here it made the assertion vacuous:
-    // a string that matches nothing always has count 0, so this proved
-    // nothing. Against the live copy it actually tests what it claims —
-    // that the "no approved application" panel is gone once one exists.
+    // One approved application that matches the cart is now picked for the
+    // cashier (with its agreed term), so the picker shows it rather than its
+    // "Select an approved application…" placeholder.
+    const picker = page.getByRole('combobox', { name: new RegExp(application.applicationNumber) })
+    await expect(picker).toBeVisible({ timeout: 30_000 })
+    // The "no approved application" panel is gone once one exists. (Against
+    // the old copy this matched nothing and proved nothing.)
     await expect(
       page.getByText('Every installment sale requires an approved credit application.')
     ).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'New Credit Application Form' })).toHaveCount(0)
-
-    // Selecting it clears the submit-blocking label.
-    await openCustomSelect(picker)
-    await page.getByRole('option').filter({ hasText: application.applicationNumber }).click()
+    await expect(page.getByRole('button', { name: 'New credit application' })).toHaveCount(0)
+    // Raising another one for the same cart stays possible.
+    await expect(
+      page.getByRole('button', { name: '+ New application for this cart' })
+    ).toBeVisible()
+    // And nothing is blocking submit on the application's account.
     await expect(
       page.getByRole('button', { name: 'Select an approved credit application' })
     ).toHaveCount(0)

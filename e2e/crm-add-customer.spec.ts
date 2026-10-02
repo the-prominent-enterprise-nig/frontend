@@ -99,7 +99,7 @@ test.describe('CRM — Add Customer', () => {
     // whatever's typed, so it can't go through fillAllStable's exact-value
     // check and gets its own stable-fill helper instead.
     await fillPhoneStable(
-      page.locator('.phone-input-field'),
+      page.locator('.phone-input-field').first(),
       `9${uniqueSuffix.toString().slice(-9)}`
     )
 
