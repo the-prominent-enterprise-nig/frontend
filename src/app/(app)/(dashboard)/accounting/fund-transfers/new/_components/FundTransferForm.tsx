@@ -3,16 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, Printer } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import {
   BankAccounts,
   BankTransfers,
   type BankAccount,
-  type FundTransfer,
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
-import { Modal } from '@/src/components/ui/Modal'
-import { printInterAccountTransferVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 
 const today = () => new Date().toISOString().slice(0, 10)
 const emptyForm = () => ({
@@ -31,16 +28,15 @@ const emptyForm = () => ({
 // feedback that moved the Expense form off a modal (2026-08-31).
 //
 // Scenario 61 — renamed from "Fund Transfer", gains a Clearing Date, and on
-// success opens a summary pop-up with a printable voucher instead of
-// bouncing back to Bank Accounts.
+// success lands on the new transfer's own page with a "Transfer recorded"
+// banner and its printable voucher — a page, not a pop-up (client UI/UX
+// direction: no modals).
 export default function FundTransferForm() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<BankAccount[]>([])
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [created, setCreated] = useState<FundTransfer | null>(null)
-  const [printing, setPrinting] = useState(false)
 
   const loadAccounts = () =>
     BankAccounts.list().then((res) => {
@@ -88,21 +84,7 @@ export default function FundTransferForm() {
       setError(res.message || res.error || 'Transfer failed — check Account Mapping settings')
       return
     }
-    setCreated(res.data)
-  }
-
-  const printVoucher = async () => {
-    if (!created) return
-    setPrinting(true)
-    const res = await BankTransfers.getDocument(created.id)
-    setPrinting(false)
-    if (res.success && res.data) printInterAccountTransferVoucherDocument(res.data)
-  }
-
-  const startAnother = () => {
-    setCreated(null)
-    setForm(emptyForm())
-    loadAccounts()
+    router.push(`/accounting/fund-transfers/${res.data.id}?created=1`)
   }
 
   return (
@@ -242,64 +224,6 @@ export default function FundTransferForm() {
           </button>
         </div>
       </form>
-
-      <Modal
-        open={!!created}
-        title="Transfer recorded"
-        description={created?.transferNumber}
-        onClose={() => created && router.push(`/accounting/fund-transfers/${created.id}`)}
-        footer={
-          <div className="flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              onClick={startAnother}
-              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg text-gray-700"
-            >
-              New transfer
-            </button>
-            <Link
-              href={created ? `/accounting/fund-transfers/${created.id}` : '#'}
-              className="px-4 py-2 text-sm border border-gray-200 bg-white hover:bg-gray-50 rounded-lg text-gray-700"
-            >
-              View transfer
-            </Link>
-            <button
-              type="button"
-              onClick={printVoucher}
-              disabled={printing}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
-            >
-              <Printer className="h-4 w-4" />
-              {printing ? 'Preparing...' : 'Print Voucher'}
-            </button>
-          </div>
-        }
-      >
-        {created && (
-          <div className="space-y-3 text-sm">
-            <p className="flex items-center gap-2 text-green-700">
-              <CheckCircle2 className="h-5 w-5" />
-              Posted to the general ledger. Both balances have been updated.
-            </p>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
-              <dt className="text-gray-500">From</dt>
-              <dd className="font-medium text-gray-900">{created.sourceBankAccount.name}</dd>
-              <dt className="text-gray-500">To</dt>
-              <dd className="font-medium text-gray-900">{created.destinationBankAccount.name}</dd>
-              <dt className="text-gray-500">Amount</dt>
-              <dd className="font-semibold text-gray-900 tabular-nums">
-                {fmtMoney(created.amount)}
-              </dd>
-              <dt className="text-gray-500">Date</dt>
-              <dd>{created.date.slice(0, 10)}</dd>
-              <dt className="text-gray-500">Clearing date</dt>
-              <dd>{created.clearingDate?.slice(0, 10) ?? '—'}</dd>
-              <dt className="text-gray-500">Reference</dt>
-              <dd>{created.reference ?? '—'}</dd>
-            </dl>
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }

@@ -163,3 +163,28 @@ It now follows the textbook rule, which is also the client's printed sample: **c
   - Journal entry page: Print Voucher shows the control number.
 - All test data was deleted afterwards. The two account mappings borrowed for the test (`BANK_CHARGES`, `UNIDENTIFIED_BANK_CREDITS`) were restored to unset. **Locally they are unset, so Adjusting Entry and Unidentified Credit fail with "mapping not configured" until they are set in Settings → Account Mapping.**
 - **Worth flagging:** reconciliations already completed under the old math may have "cleared" items that were really outstanding. Re-check any completed reconciliation whose statement didn't include every ticked item, and delete and redo it if needed; Delete un-clears its items.
+
+## Revision — no modals (2026-09-30)
+
+Client UI/UX direction: **no modals**. This is the same rule that earlier moved the Expense and Fund Transfer forms onto full pages. Every modal in these screens is now a page:
+
+| Was a modal                           | Now a page                                                                                                                 |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Adjusting Entry                       | `/accounting/bank-reconciliation/adjusting-entry`                                                                          |
+| Record Unidentified Bank Credit       | `/accounting/bank-reconciliation/unidentified-credit`                                                                      |
+| Settle Clearing Account               | `/accounting/bank-reconciliation/settle-clearing`                                                                          |
+| Reclassify Credit                     | `/accounting/bank-reconciliation/unidentified-credit/[id]/reclassify`                                                      |
+| Discrepancy drill-down (Transactions) | `/accounting/bank-reconciliation/[id]/transactions`. The list's Difference and the worksheet's Discrepancy tile link here. |
+| Reconciliation print preview          | `/accounting/bank-reconciliation/[id]/print`, with Download PDF                                                            |
+| "Transfer recorded" pop-up            | The new transfer's own page (`?created=1`), with a **Transfer recorded** banner, **Print Voucher** and **New transfer**    |
+
+- Posting an Adjusting Entry or Unidentified Credit shows the "Posted" state with **Print Voucher** in the page itself. **Done** returns to the list.
+- Delete confirmations still use the browser's own confirm box. That is not a modal screen.
+- The forms moved from `BankRecon.tsx` into `_components/BankReconForms.tsx` (with page wrappers in `BankReconFormPages.tsx`). The worksheet sub-pages live in `[id]/_components/ReconciliationSubPages.tsx`.
+- `e2e/fund-transfer.spec.ts` was updated for the redirect.
+- Verified in the browser:
+  - each page renders, with no visible overlays;
+  - an Adjusting Entry posts, shows Print Voucher, and Done returns to the list;
+  - the Transactions page shows Cleared/Outstanding;
+  - the Print page shows the RECONCILED stamp;
+  - New Transfer lands on the detail page with the banner.

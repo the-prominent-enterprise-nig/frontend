@@ -53,16 +53,16 @@ test.describe('Accounting — Inter-Account Transfer (Scenario 40 Part 3 / Scena
     await page.getByLabel('Amount *').fill('250')
     await page.getByRole('button', { name: 'Transfer' }).click()
 
-    // Pop-up with the printable voucher instead of a bounce to Bank Accounts.
-    await expect(page.getByRole('heading', { name: 'Transfer recorded' })).toBeVisible({
+    // Lands on the new transfer's own page (no pop-up — client UI/UX
+    // direction) with a "Transfer recorded" banner and its printable voucher.
+    await page.waitForURL(/\/accounting\/fund-transfers\/[0-9a-f-]{36}\?created=1$/, {
       timeout: 10_000,
     })
-    await expect(page.getByRole('button', { name: 'Print Voucher' })).toBeVisible()
+    await expect(page.getByText('Transfer recorded.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Print Voucher' }).first()).toBeVisible()
     const voucherNumber = (await page.getByText(/^IAT-\d{8}-\d{4}$/).textContent())?.trim()
     expect(voucherNumber).toBeTruthy()
 
-    await page.getByRole('link', { name: 'View transfer' }).click()
-    await page.waitForURL(/\/accounting\/fund-transfers\/[0-9a-f-]{36}$/)
     await expect(page.getByText('Not yet cleared')).toBeVisible()
 
     // Only clearing date and reference are editable.

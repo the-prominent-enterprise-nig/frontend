@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Pencil, Printer } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { ArrowLeft, CheckCircle2, Pencil, Printer } from 'lucide-react'
 import { BankTransfers, type FundTransfer, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { printInterAccountTransferVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 
@@ -20,6 +21,9 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [printing, setPrinting] = useState(false)
+  // Arrived straight from New Transfer: show the "recorded" confirmation and
+  // its voucher up front (this replaced a pop-up — no modals).
+  const justCreated = useSearchParams().get('created') === '1'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -135,6 +139,33 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
           </button>
         </div>
       </div>
+
+      {justCreated && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-green-200 bg-green-50 px-5 py-4">
+          <p className="flex items-center gap-2 text-sm text-green-800">
+            <CheckCircle2 className="h-5 w-5" />
+            <span>
+              <span className="font-semibold">Transfer recorded.</span> Posted to the general
+              ledger, and both balances have been updated.
+            </span>
+          </p>
+          <div className="flex gap-2">
+            <Link
+              href="/accounting/fund-transfers/new"
+              className="px-3 py-2 text-sm border border-green-300 bg-white hover:bg-green-100 rounded-lg text-green-800"
+            >
+              New transfer
+            </Link>
+            <button
+              onClick={printVoucher}
+              disabled={printing}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            >
+              <Printer className="h-4 w-4" /> {printing ? 'Preparing...' : 'Print Voucher'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6">
         <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 text-sm">
