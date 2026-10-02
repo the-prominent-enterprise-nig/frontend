@@ -2316,7 +2316,9 @@ export default function CheckoutPage() {
           }
           const sku = line.item?.sku
           if (!sku) continue
-          const lookup = await itemLookup(sku, activeBranchId ?? undefined)
+          // stockBranchId, like the catalog load: at a caravan's register the
+          // stock is the caravan's, not the host's.
+          const lookup = await itemLookup(sku, stockBranchId ?? undefined)
           if (cancelled) return
           const match = ((lookup.data ?? []) as LookupItem[]).find((c) => c.id === line.itemId)
           if (match) found.push(match)
