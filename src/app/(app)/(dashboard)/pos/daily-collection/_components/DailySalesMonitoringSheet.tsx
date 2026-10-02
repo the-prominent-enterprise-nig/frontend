@@ -10,7 +10,7 @@ import { peso } from './form-model'
  * Scenario 61 Part 3 — the client's DAILY SALES & COLLECTION MONITORING sheet,
  * and the page's one printable region while it is on screen.
  *
- * Sales only: per category (units and amount), then Office/Agent and Cash
+ * Sales only: per category, then Office/Agent and Cash
  * (COD)/Charge invoice — two more cuts of the same sales, each coming to
  * TOTAL SALES. No sign-offs: those are the collection report's.
  */
@@ -43,12 +43,12 @@ const CATEGORY_TREE: CategoryGroup[] = [
       { name: 'Cellphones', category: 'IT_CELLPHONE' },
     ],
   },
-  { name: 'Split type aircon', category: 'SPLIT_TYPE' },
+  { name: 'Split type', category: 'SPLIT_TYPE' },
 ]
 
 const COLUMN_HEAD =
   'border-b border-gray-900 pb-1.5 font-mono text-[10px] uppercase tracking-[0.09em] text-gray-500'
-const GRID = 'grid grid-cols-[minmax(0,1fr)_60px_130px] items-baseline gap-x-3.5'
+const GRID = 'grid grid-cols-[minmax(0,1fr)_130px] items-baseline gap-x-3.5'
 
 export default function DailySalesMonitoringSheet({ report }: Props): React.JSX.Element {
   const { sales } = report
@@ -114,41 +114,26 @@ function CategoryTable({
   sales: DailySalesMonitoringReport['sales']
 }): React.JSX.Element {
   const amount = (c: SalesCategory): number => sales.byCategory[c] ?? 0
-  const units = (c: SalesCategory): number => sales.unitsByCategory?.[c] ?? 0
-  const totalUnits = CATEGORY_TREE.reduce((sum, g) => sum + groupSum(g, units), 0)
 
   return (
     <div className="flex flex-col">
       <div className={`${GRID} ${COLUMN_HEAD}`}>
         <span>For sales · per category</span>
-        <span className="text-right">Units</span>
         <span className="text-right">Amount</span>
       </div>
       {CATEGORY_TREE.map((group) => (
         <div key={group.name}>
           <CategoryRow
             label={group.name}
-            units={groupSum(group, units)}
             amount={groupSum(group, amount)}
             emphasis={group.subs ? 'group' : 'none'}
           />
           {group.subs?.map((sub) => (
-            <CategoryRow
-              key={sub.category}
-              label={sub.name}
-              units={units(sub.category)}
-              amount={amount(sub.category)}
-              sub
-            />
+            <CategoryRow key={sub.category} label={sub.name} amount={amount(sub.category)} sub />
           ))}
         </div>
       ))}
-      <CategoryRow
-        label="Total sales"
-        units={totalUnits}
-        amount={sales.totalSales}
-        emphasis="total"
-      />
+      <CategoryRow label="Total sales" amount={sales.totalSales} emphasis="total" />
     </div>
   )
 }
@@ -160,7 +145,6 @@ function groupSum(group: CategoryGroup, of: (c: SalesCategory) => number): numbe
 
 interface CategoryRowProps {
   label: string
-  units: number
   amount: number
   sub?: boolean
   /** 'group' bolds a heading row's amount; 'total' is the TOTAL SALES line. */
@@ -169,7 +153,6 @@ interface CategoryRowProps {
 
 function CategoryRow({
   label,
-  units,
   amount,
   sub,
   emphasis = 'none',
@@ -187,13 +170,6 @@ function CategoryRow({
   return (
     <div className={`${GRID} ${rowClass}`}>
       <span className={labelClass}>{label}</span>
-      <span
-        className={`text-right font-mono text-xs tabular-nums ${total ? 'font-semibold' : ''} ${
-          units ? '' : 'text-gray-400'
-        }`}
-      >
-        {units ? formatUnits(units) : '—'}
-      </span>
       <span
         className={`text-right font-mono tabular-nums ${total ? 'text-sm' : 'text-[12.5px]'} ${
           emphasis !== 'none' ? 'font-semibold' : ''
@@ -217,13 +193,6 @@ function TieOut({ title, lines }: { title: string; lines: [string, number][] }):
       ))}
     </div>
   )
-}
-
-/** Whole units print bare; a fractional quantity keeps up to three places. */
-function formatUnits(units: number): string {
-  return Number.isInteger(units)
-    ? String(units)
-    : units.toLocaleString('en-PH', { maximumFractionDigits: 3 })
 }
 
 /** '2026-09-21' -> '09/21/26', the way the branch writes it on the paper. */

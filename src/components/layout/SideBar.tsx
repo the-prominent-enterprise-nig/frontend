@@ -54,6 +54,7 @@ import {
   Users,
   UsersRound,
   UserPlus,
+  Banknote,
   Wallet,
   Warehouse,
   Network,
@@ -396,10 +397,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
       },
       {
         // Scenario 53 — the same screen POS shows read-only, but this is the
-        // one where the cash actually gets banked.
-        label: 'Cash-in-Transit',
+        // one where the cash actually gets banked. Scenario 61: labelled
+        // Undeposited Funds here too (the URL and permissions keep the old
+        // cash-in-transit name), with its own icon rather than Bank Accounts'
+        // Wallet just above it.
+        label: 'Undeposited Funds',
         href: '/accounting/cash-in-transit',
-        icon: Wallet,
+        icon: Banknote,
         requiredPermission: ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },
       // Its own entry, not a button on Bank Reconciliation: moving money
@@ -504,7 +508,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // the Cash-in-Transit name for the GL account it reconciles against.
         label: 'Undeposited Funds',
         href: '/pos/undeposited-funds',
-        icon: Wallet,
+        icon: Banknote,
         requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },
       {

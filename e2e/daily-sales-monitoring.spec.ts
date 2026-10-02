@@ -49,7 +49,7 @@ test.describe('POS — Daily Sales Monitoring sheet', () => {
       'IT products',
       'Computers, laptops & accessories',
       'Cellphones',
-      'Split type aircon',
+      'Split type',
       'Total sales',
       'By channel',
       'Office sales',
