@@ -173,6 +173,11 @@ export const ACCOUNTING_PERMISSIONS = {
   SUPPLIER_DEBIT_MEMOS_FINALIZE: 'accounting:supplier-debit-memos:finalize',
   SUPPLIER_DEBIT_MEMOS_VOID: 'accounting:supplier-debit-memos:void',
 
+  // Scenario 62 — Business Owner only. Checked with hasExactPermission(),
+  // never can()/hasPermission(): the Accountant's 'accounting:*' wildcard
+  // must not reach it (the backend's QueryCenterGuard enforces the same).
+  QUERY_CENTER_READ: 'accounting:query-center:read',
+
   WILDCARD: 'accounting:*',
 } as const
 
@@ -305,6 +310,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:supplier-debit-memos:finalize':
     'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
   'accounting:supplier-debit-memos:void': 'Void a supplier debit memo',
+  'accounting:query-center:read':
+    'Data Query Center — browse and export raw data from every module (Business Owner only)',
   'accounting:*': 'Wildcard full accounting access',
 }
 

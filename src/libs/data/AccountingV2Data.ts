@@ -210,8 +210,14 @@ export const Reports = {
     }),
   balanceSheet: (asOf?: string) =>
     api.get<any>('/reports/balance-sheet', asOf ? { asOf } : undefined),
-  generalLedger: (params: { accountId?: string; startDate?: string; endDate?: string }) =>
-    api.get<any>('/reports/general-ledger', params as any),
+  generalLedger: (params: {
+    accountId?: string
+    startDate?: string
+    endDate?: string
+    // Scenario 62 — same scoping as the P&L a drill-down came from.
+    branchId?: string
+    view?: string
+  }) => api.get<any>('/reports/general-ledger', params as any),
   cashFlow: (startDate: string, endDate: string) =>
     api.get<any>('/reports/cash-flow', { startDate, endDate }),
   aging: (type: 'ar' | 'ap', asOf?: string) =>
