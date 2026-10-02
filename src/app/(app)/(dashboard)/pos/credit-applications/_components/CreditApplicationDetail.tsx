@@ -35,6 +35,14 @@ import {
   type UpdateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 
+/** The slice of checkout's CartLine that "Continue to sale" reads from a
+ * stashed cart. CartLine itself is declared inside the checkout page. */
+type StashedCartLine = {
+  itemId: string
+  invoiceType?: string
+  installmentProvider?: string
+}
+
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
@@ -309,6 +317,9 @@ export default function CreditApplicationDetail({
 
   const sellableApplicationId = application.id
   const sellableCustomerId = application.applicantCustomerId
+  const sellableItemIds = application.items
+    .filter((i) => i.status === 'approved')
+    .map((i) => i.itemId)
 
   function continueToSale() {
     // The handoff is ONE slot. If this application was raised from a till that
@@ -321,11 +332,30 @@ export default function CreditApplicationDetail({
     // Anything already stashed for THIS customer is kept and simply gains the
     // application. A stash for someone else is not merged — that cart belongs
     // to a different sale.
-    const stashed = readCheckoutHandoff()
+    //
+    // Its cart lines are kept only while they still are the application's
+    // items. The items can be changed on the application after it was raised
+    // from the till, and a restored cart wins over rebuilding one at checkout
+    // — so the old cart came back with the new application, which checkout
+    // then labelled "does not match this cart" and could not sell. The test
+    // is checkout's own: the in-house installment lines are exactly the
+    // approved items. On a mismatch the lines are dropped and checkout builds
+    // the cart from the application instead.
+    const stashed = readCheckoutHandoff<StashedCartLine>()
     const keepStashed = !!stashed && stashed.customerId === sellableCustomerId
+    const approvedItemIds = new Set(sellableItemIds)
+    const stashedInstallmentItemIds = new Set(
+      (stashed?.lines ?? [])
+        .filter((l) => l.invoiceType === 'installment' && l.installmentProvider !== 'tpf')
+        .map((l) => l.itemId)
+    )
+    const stashedCartMatches =
+      stashedInstallmentItemIds.size === approvedItemIds.size &&
+      [...approvedItemIds].every((id) => stashedInstallmentItemIds.has(id))
 
     writeCheckoutHandoff({
       ...(keepStashed ? stashed : {}),
+      ...(keepStashed && !stashedCartMatches ? { lines: undefined } : {}),
       customerId: sellableCustomerId,
       creditApplicationId: sellableApplicationId,
       // Named only when there is exactly one session it could mean. With

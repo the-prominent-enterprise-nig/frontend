@@ -30,6 +30,22 @@ function formatPeso(n: number): string {
   return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+type PaperRecordField = 'lcp' | 'ppdRebate' | 'firstDueDate'
+const PAPER_RECORD_FIELDS: PaperRecordField[] = ['lcp', 'ppdRebate', 'firstDueDate']
+// Form-only: what the system last wrote into each paper-record field.
+const PAPER_AUTO_FILL = 'paperRecordAutoFill'
+
+// The preview's due dates are full timestamps — the sale time plus N months.
+// Cutting the ISO string at 10 characters takes the UTC date, which before
+// 8am in the Philippines is still yesterday's. The local date is the one the
+// customer is told.
+function toDateInputValue(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 10)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
@@ -356,31 +372,60 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   //                  quote one — left blank there rather than filled with 0,
   //                  which would claim a rebate of nothing.
   //
-  // Only ever fills a field that is empty: a transcriber who typed a figure
-  // off the paper has overridden the system on purpose, and the paper is the
-  // source of truth.
+  // A filled-in figure follows the item and term it came from, but only
+  // while it is still the system's: a transcriber who typed a figure off the
+  // paper has overridden the system on purpose, and the paper is the source
+  // of truth. Filling only EMPTY fields, as this used to, left the first
+  // figure behind for good — change the item and LCP kept the old item's
+  // price; change the term and the PPD rebate kept the old term's.
+  //
+  // So the value last written into each field is remembered, and a field
+  // that is empty or still holds it is the system's to refresh — or to clear,
+  // when the new item or term has no such figure. The memory lives in form
+  // state rather than a ref because the whole form is stashed and restored
+  // around "+ New customer"; a ref would come back empty and treat every
+  // restored figure as typed. It is not in the schema, so validation strips
+  // it and it never reaches the server.
   const lcpValue = useWatch({ control, name: 'lcp' as Path<T> }) as string | undefined
   const ppdValue = useWatch({ control, name: 'ppdRebate' as Path<T> }) as string | undefined
   const firstDueValue = useWatch({ control, name: 'firstDueDate' as Path<T> }) as string | undefined
+  const autoFilled = useWatch({ control, name: PAPER_AUTO_FILL as Path<T> }) as
+    | Partial<Record<PaperRecordField, string>>
+    | undefined
 
   useEffect(() => {
     // `required` is true only on the create form, the only schema that has
     // these fields at all.
     if (!required) return
-    if (!lcpValue && estimatedTotal > 0) {
-      setValue('lcp' as Path<T>, String(estimatedTotal) as never, { shouldDirty: false })
+    const current: Record<PaperRecordField, string> = {
+      lcp: lcpValue ?? '',
+      ppdRebate: ppdValue ?? '',
+      firstDueDate: firstDueValue ?? '',
     }
-    if (!firstDueValue && preview?.lines?.[0]?.dueDate) {
-      setValue('firstDueDate' as Path<T>, preview.lines[0].dueDate.slice(0, 10) as never, {
-        shouldDirty: false,
-      })
+    const system: Record<PaperRecordField, string> = {
+      lcp: estimatedTotal > 0 ? String(estimatedTotal) : '',
+      ppdRebate: preview?.ppd != null ? String(preview.ppd) : '',
+      firstDueDate: preview?.lines?.[0]?.dueDate ? toDateInputValue(preview.lines[0].dueDate) : '',
     }
-    if (!ppdValue && preview?.ppd != null) {
-      setValue('ppdRebate' as Path<T>, String(preview.ppd) as never, { shouldDirty: false })
+    const nextAutoFilled = { ...autoFilled }
+    let autoFilledChanged = false
+    for (const field of PAPER_RECORD_FIELDS) {
+      const isSystems = current[field] === '' || current[field] === (autoFilled?.[field] ?? '')
+      if (!isSystems) continue
+      if (current[field] !== system[field]) {
+        setValue(field as Path<T>, system[field] as never, { shouldDirty: false })
+      }
+      if ((autoFilled?.[field] ?? '') !== system[field]) {
+        nextAutoFilled[field] = system[field]
+        autoFilledChanged = true
+      }
     }
-    // Deliberately not depending on the three current values: this runs when
-    // the system's own figures change, not on every keystroke in the fields
-    // it fills.
+    if (autoFilledChanged) {
+      setValue(PAPER_AUTO_FILL as Path<T>, nextAutoFilled as never, { shouldDirty: false })
+    }
+    // Deliberately not depending on the current values: this runs when the
+    // system's own figures change, not on every keystroke in the fields it
+    // fills.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [required, estimatedTotal, preview, setValue])
 
