@@ -836,7 +836,7 @@ export const AcknowledgementReceipts = {
 
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
-export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill'
+export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill' | 'x_deal'
 export interface CreditMemoLine {
   id: string
   itemId: string
@@ -871,6 +871,8 @@ export interface CreditMemo {
   /** Set when this memo was auto-created from an approved POS return/refund
    * (Scenario 13 Part 3) rather than issued by hand. */
   sourceReturnRequestId?: string | null
+  /** Scenario 65 — set on an x_deal memo: the X-Deal sale it cleared. */
+  posTransactionId?: string | null
 }
 export interface CreateCreditMemoLineInput {
   itemId: string
@@ -897,6 +899,43 @@ export const CreditMemos = {
     memoDate?: string
   }) => api.post<CreditMemo>('/credit-memos', body),
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/${id}/void`, {}),
+}
+
+// ============ X-Deal memos (Scenario 65) ============
+/** An open X-Deal sale an X-Deal memo can clear. */
+export interface XDealCandidate {
+  posTransactionId: string
+  transactionNumber: string
+  salesInvoiceNumber: string | null
+  saleDate: string
+  xDealReference: string | null
+  customer: { id: string; name: string }
+  branchName: string | null
+  installmentAccountId: string
+  accountNumber: string
+  arInvoiceId: string
+  invoiceNumber: string
+  outstanding: number
+}
+/** The journal entry an X-Deal memo would post. Debits: clearing +
+ * unearnedInterest; credits: outstanding (A/R) + financingIncome. */
+export interface XDealPreview {
+  posTransactionId: string
+  transactionNumber: string
+  invoiceNumber: string
+  xDealReference: string | null
+  outstanding: number
+  clearing: number
+  unearnedInterest: number
+  financingIncome: number
+}
+export const XDealMemos = {
+  candidates: () => api.get<XDealCandidate[]>('/credit-memos/x-deal/candidates'),
+  preview: (posTransactionId: string) =>
+    api.get<XDealPreview>('/credit-memos/x-deal/preview', { posTransactionId }),
+  issue: (body: { posTransactionId: string; reason?: string; memoDate?: string }) =>
+    api.post<CreditMemo>('/credit-memos/x-deal', body),
+  void: (id: string) => api.post<CreditMemo>(`/credit-memos/x-deal/${id}/void`, {}),
 }
 
 // ============ Debit Memos ============

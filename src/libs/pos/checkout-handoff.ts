@@ -33,6 +33,10 @@ export type CheckoutHandoff<TLine = unknown> = {
    * (2026-09-19). A genuinely abandoned sale still exists server-side as a
    * parked sale, which is the durable copy and is branch-visible. */
   sessionId?: string
+  /** Scenario 65 — a parked X-Deal comes back as one, reference included,
+   * instead of as a plain installment sale needing a credit application. */
+  isXDeal?: boolean
+  xDealReference?: string
 }
 
 /** Never throws: localStorage can be unavailable (private windows, blocked

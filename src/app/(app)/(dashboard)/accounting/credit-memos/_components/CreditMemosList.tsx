@@ -3,9 +3,10 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Ban } from 'lucide-react'
+import { Ban, Handshake } from 'lucide-react'
 import {
   CreditMemos,
+  XDealMemos,
   type CreditMemo,
   type CreditMemoType,
   fmtMoney,
@@ -17,6 +18,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import type { SessionUser } from '@/src/libs/guards/permission'
 import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import { showToast } from '@/src/components/ui/toast'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { ListShell } from '../../_shared/ListShell'
 import { MemoStatusBadge, MemoTable, type MemoColumn } from '@/src/components/accounting/MemoTable'
 
@@ -24,6 +26,7 @@ const TYPE_LABELS: Record<CreditMemoType, string> = {
   sales_return: 'Sales Return',
   billing_adjustment: 'Billing Adjustment',
   goodwill: 'Goodwill',
+  x_deal: 'X-Deal',
 }
 
 /**
@@ -32,8 +35,12 @@ const TYPE_LABELS: Record<CreditMemoType, string> = {
  */
 export default function CreditMemosList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, ACCOUNTING_PERMISSIONS.CREDIT_MEMOS_CREATE)
+  // Scenario 65 — its own permission: Branch Manager can issue and void
+  // ordinary credit memos but not X-Deal ones.
+  const canXDeal = hasPermission(session, ACCOUNTING_PERMISSIONS.X_DEAL_MEMOS_ISSUE)
   const [search, setSearch] = useState('')
   const [voiding, setVoiding] = useState<string | null>(null)
+  const [confirmingVoid, setConfirmingVoid] = useState<CreditMemo | null>(null)
   const [raising, setRaising] = useState(false)
 
   const query = useQuery({
@@ -43,17 +50,13 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
   })
   const memos = query.data?.data?.items ?? []
 
-  async function voidMemo(id: string) {
-    if (
-      !confirm(
-        'Void this credit memo? This reverses its journal entry and restores the invoice balance.'
-      )
-    ) {
-      return
-    }
+  async function voidMemo(memo: CreditMemo) {
+    const isXDeal = memo.type === 'x_deal'
+    const id = memo.id
     setVoiding(id)
-    const res = await CreditMemos.void(id)
+    const res = isXDeal ? await XDealMemos.void(id) : await CreditMemos.void(id)
     setVoiding(null)
+    setConfirmingVoid(null)
     if (!res.success) {
       showToast({
         title: 'Could not void',
@@ -95,7 +98,9 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
       key: 'origin',
       header: 'Origin',
       render: (m) =>
-        m.sourceReturnRequestId ? (
+        m.type === 'x_deal' ? (
+          <span className="text-xs text-amber-700">X-Deal offset</span>
+        ) : m.sourceReturnRequestId ? (
           <span className="text-xs text-amber-700" title={m.sourceReturnRequestId}>
             Auto — POS return
           </span>
@@ -125,6 +130,17 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
       onAdd={() => setRaising(true)}
       addLabel="New Credit Memo"
       canAdd={canCreate}
+      actions={
+        canXDeal ? (
+          <Link
+            href="/accounting/credit-memos/x-deal"
+            className="flex cursor-pointer items-center gap-2 rounded-lg border border-prominent-purple-200 bg-white px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+          >
+            <Handshake className="h-4 w-4" />
+            X-Deal offset
+          </Link>
+        ) : null
+      }
     >
       <MemoTable
         rows={memos}
@@ -173,11 +189,12 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
           </>
         )}
         renderActions={(memo) =>
-          memo.status === 'ISSUED' ? (
+          // An X-Deal memo is only voidable by whoever can issue one.
+          memo.status === 'ISSUED' && (memo.type !== 'x_deal' || canXDeal) ? (
             <Tooltip label="Void credit memo">
               <button
                 type="button"
-                onClick={() => voidMemo(memo.id)}
+                onClick={() => setConfirmingVoid(memo)}
                 disabled={voiding === memo.id}
                 aria-label="Void credit memo"
                 className="rounded p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-50"
@@ -188,8 +205,6 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
           ) : null
         }
       />
-      {/* No invoice is chosen up front — the dialog asks for it as its first
-          field, so the form is visible while the choice is being made. */}
       {raising && (
         <CreditMemoDialog
           onClose={() => setRaising(false)}
@@ -199,6 +214,32 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
           }}
         />
       )}
+      <ConfirmDialog
+        open={!!confirmingVoid}
+        title={
+          confirmingVoid?.type === 'x_deal'
+            ? `Void X-Deal memo ${confirmingVoid.memoNumber}?`
+            : `Void credit memo ${confirmingVoid?.memoNumber ?? ''}?`
+        }
+        message={
+          confirmingVoid?.type === 'x_deal' ? (
+            <>
+              <p>
+                This reverses its journal entry and reopens the installment account with its
+                balance.
+              </p>
+              <p>The sale can be cleared again later with X-Deal offset.</p>
+            </>
+          ) : (
+            <p>This reverses its journal entry and restores the invoice balance.</p>
+          )
+        }
+        confirmLabel="Void memo"
+        destructive
+        loading={!!confirmingVoid && voiding === confirmingVoid.id}
+        onConfirm={() => confirmingVoid && voidMemo(confirmingVoid)}
+        onCancel={() => setConfirmingVoid(null)}
+      />
     </ListShell>
   )
 }

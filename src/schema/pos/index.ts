@@ -314,6 +314,13 @@ export interface PosTransaction {
   /** HR's own approval reference for the employee appliance loan — set
    * whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string | null
+  /** Scenario 65 — true when this sale is an X-Deal (barter): inhouse
+   * installment, no down payment, no credit application; accounting clears
+   * its balance with an X-Deal credit memo. */
+  isXDeal?: boolean | null
+  /** The barter agreement / counterparty reference, set whenever isXDeal is
+   * true. */
+  xDealReference?: string | null
   /** Present on create()/findOne() — one per distinct financing term used in
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
@@ -444,6 +451,12 @@ export interface CreateTransactionInput {
   /** HR's own approval reference for the employee appliance loan —
    * required whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string
+  /** Scenario 65 — marks this sale as an X-Deal (barter). Every line must
+   * be inhouse installment on one financing term with a ₱0 down payment,
+   * and no creditApplicationId may be sent. */
+  isXDeal?: boolean
+  /** Required whenever isXDeal is true, rejected otherwise. */
+  xDealReference?: string
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string

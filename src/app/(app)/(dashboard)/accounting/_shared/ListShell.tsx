@@ -12,6 +12,8 @@ interface ListShellProps {
   onAdd?: () => void
   addLabel?: string
   canAdd?: boolean
+  /** Extra header buttons, rendered before the Add button. */
+  actions?: ReactNode
   onRefresh?: () => void
   isFetching?: boolean
   filters?: ReactNode
@@ -27,6 +29,7 @@ export function ListShell({
   onAdd,
   addLabel = 'Add',
   canAdd,
+  actions,
   onRefresh,
   isFetching,
   filters,
@@ -52,6 +55,7 @@ export function ListShell({
                 <span className="hidden sm:inline">Refresh</span>
               </button>
             )}
+            {actions}
             {canAdd && onAdd && (
               <button
                 type="button"
