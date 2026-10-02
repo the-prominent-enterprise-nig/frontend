@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { WarehouseBranchSchema } from '@/src/schema/inventory/warehouses'
 
 export const TransferStatusSchema = z.enum([
   'pending_manager_approval',
@@ -21,24 +22,62 @@ export const TransferStatusSchema = z.enum([
 // satisfied by splitting that line into N single-unit lines at submit (see
 // CreateTransferModal's handleFormSubmit), rather than making the requester
 // add the same item N times themselves.
-export const CreateTransferLineSchema = z.object({
-  itemId: z.string().min(1, 'Item is required'),
-  quantity: z.number().positive('Quantity must be greater than 0'),
-  // Form-only — never sent to the server. Tells handleFormSubmit which
-  // lines to split, and drives the row's own serial-tracked note.
-  isSerialTracked: z.boolean().optional(),
-  // Form-only display context, captured from the search result that added
-  // this line — the row renders the item as plain text (it's only ever
-  // added through the card's own "Add item" search), so it needs the name
-  // and SKU without a second lookup per row.
-  itemLabel: z.string().optional(),
-  itemSku: z.string().optional(),
-})
+export const CreateTransferLineSchema = z
+  .object({
+    itemId: z.string().min(1, 'Item is required'),
+    quantity: z.number().positive('Quantity must be greater than 0'),
+    // Set only by Serial Numbers' "Consign to Caravan": the units were
+    // ticked there, so the line is pinned to that exact serial (quantity 1)
+    // instead of the source picking one at dispatch.
+    serialNumberId: z.string().optional(),
+    // Form-only — never sent to the server. Tells handleFormSubmit which
+    // lines to split, and drives the row's own serial-tracked note.
+    isSerialTracked: z.boolean().optional(),
+    // Form-only — what the source has free right now (free serial units for a
+    // serial-tracked item), filled in by the row once it has looked it up.
+    // Unset while loading, so a slow lookup never blocks the form; the
+    // backend's assertSourceHasStock makes the same check authoritatively.
+    availableQty: z.number().optional(),
+    // Form-only display context, captured from the search result that added
+    // this line — the row renders the item as plain text (it's only ever
+    // added through the card's own "Add item" search), so it needs the name
+    // and SKU without a second lookup per row.
+    itemLabel: z.string().optional(),
+    itemSku: z.string().optional(),
+  })
+  .refine((l) => l.availableQty === undefined || l.quantity <= l.availableQty, {
+    message: 'More than the source has available',
+    path: ['quantity'],
+  })
+
+// Scenario 60 Part 2 — a caravan created inline from New Stock Transfer:
+// a temporary branch parked at a real host branch for an event. Every field
+// is required; there is no "somewhere else" venue option any more.
+export const NewCaravanFormSchema = z
+  .object({
+    hostBranchId: z.string().min(1, 'Select the host branch'),
+    eventName: z.string().trim().min(1, 'Enter the event name').max(150),
+    // Where the caravan is physically set up — not required.
+    location: z.string().trim().max(255, 'Keep the location under 255 characters').optional(),
+    startDate: z.string().min(1, 'Enter the start date'),
+    endDate: z.string().min(1, 'Enter the end date'),
+  })
+  .refine((d) => !d.startDate || !d.endDate || d.endDate >= d.startDate, {
+    message: 'End date cannot be before the start date',
+    path: ['endDate'],
+  })
+export type NewCaravanFormValues = z.infer<typeof NewCaravanFormSchema>
 
 export const CreateTransferFormSchema = z
   .object({
     fromWarehouseId: z.string().min(1, 'Source warehouse is required'),
-    toWarehouseId: z.string().min(1, 'Destination warehouse is required'),
+    // Required unless a new caravan is being created — see superRefine below.
+    toWarehouseId: z.string(),
+    // Form-only — whether the destination is a branch or a caravan. Never sent.
+    destinationType: z.enum(['branch', 'caravan']).optional(),
+    // Form-only — set while creating a caravan inline; it is created first
+    // and its warehouse becomes toWarehouseId. Never sent with the transfer.
+    newCaravan: NewCaravanFormSchema.optional(),
     transferDate: z.string().min(1, 'Transfer date is required'),
     expectedArrival: z.string().optional(),
     reason: z.string().max(500).optional(),
@@ -56,6 +95,30 @@ export const CreateTransferFormSchema = z
   .refine((d) => !d.expectedArrival || d.expectedArrival >= d.transferDate, {
     message: 'Expected arrival cannot be before the transfer date',
     path: ['expectedArrival'],
+  })
+  .superRefine((d, ctx) => {
+    if (!d.newCaravan && !d.toWarehouseId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          d.destinationType === 'caravan'
+            ? 'Select a caravan'
+            : 'Destination warehouse is required',
+        path: ['toWarehouseId'],
+      })
+    }
+    // Mirrors the backend: a caravan carries serial-tracked units only,
+    // since the host's POS sells caravan stock by serial.
+    if (d.destinationType !== 'caravan') return
+    d.lines.forEach((line, i) => {
+      if (line.isSerialTracked === false) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Only serial-tracked items can be transferred to a caravan',
+          path: ['lines', i, 'itemId'],
+        })
+      }
+    })
   })
 
 // One entry per serial-tracked line being dispatched — itemId/itemLabel are
@@ -189,7 +252,7 @@ const TransferWarehouseSchema = z.object({
   // branch-local one. For a branch-local warehouse the UI shows `branch`'s
   // name instead of the warehouse's own "{branch} Warehouse" name.
   region: z.enum(['panay', 'negros']).nullable().optional(),
-  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  branch: WarehouseBranchSchema.nullable().optional(),
 })
 
 const TransferLineSchema = z.object({
@@ -242,7 +305,7 @@ export const TransferSummarySchema = z.object({
   reason: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   dispatchedAt: z.string().nullable().optional(),
-  receivedAt: z.string().nullable().optional(),
+  receivedDate: z.string().nullable().optional(),
   cancelledAt: z.string().nullable().optional(),
   driverName: z.string().nullable().optional(),
   driverPhone: z.string().nullable().optional(),

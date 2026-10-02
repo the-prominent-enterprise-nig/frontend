@@ -12,7 +12,8 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
-import { STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
+import { LocationName, STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
+import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 
 // The five stages the design tracks: the three live ones plus both terminal
 // outcomes, so the band reads as the whole life of a transfer rather than
@@ -148,6 +149,9 @@ function DirectionTag({
 
 export default function TransferList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
+  // Scenario 60 — starting a new caravan stays gated on caravan:manage, so
+  // holding transfers:create alone doesn't grant it.
+  const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   const canAccept = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_ACCEPT)
   const canReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_REJECT)
   const canDispatch = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DISPATCH)
@@ -188,8 +192,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
     createTransfer,
     updateTransfer,
     isUpdating,
-    consignUnits,
-    isConsigning,
+    createCaravan,
+    isCreatingCaravan,
+    updateCaravan,
+    isUpdatingCaravan,
     isCreating,
     approveHqTransfer,
     isApprovingHq,
@@ -390,6 +396,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
             )}
           </div>
         </div>
+
+        {/* Scenario 60 Part 3 — ended caravans still holding stock, for the
+            people who can transfer it out. */}
+        <EndedCaravansBanner variant="inventory" enabled={canCreate} />
 
         {/* Pipeline band */}
         <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#e4e4e9] bg-white lg:grid-cols-5">
@@ -658,13 +668,15 @@ export default function TransferList({ session }: { session: SessionUser }) {
                         </td>
                         <td className="px-[18px] py-[13px]">
                           <div className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-[12.5px] text-[#5b5b6b]">
-                              {branchLabel(tr.fromWarehouse)}
-                            </span>
+                            <LocationName
+                              wh={tr.fromWarehouse}
+                              className="text-[12.5px] text-[#5b5b6b]"
+                            />
                             <ArrowRight className="h-3 w-3 shrink-0 text-[#c9c9d3]" />
-                            <span className="truncate text-[12.5px] font-semibold">
-                              {branchLabel(tr.toWarehouse)}
-                            </span>
+                            <LocationName
+                              wh={tr.toWarehouse}
+                              className="text-[12.5px] font-semibold"
+                            />
                             <DirectionTag direction={directionFor(tr, session.branchId)} />
                           </div>
                         </td>
@@ -761,8 +773,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
         }
         isSubmitting={editingTransfer ? isUpdating : isCreating}
         editing={editingTransfer}
-        onConsign={consignUnits}
-        isConsigning={isConsigning}
+        onCreateCaravan={createCaravan}
+        onUpdateCaravan={updateCaravan}
+        isCreatingCaravan={isCreatingCaravan || isUpdatingCaravan}
+        canCreateCaravan={canManageCaravan}
         warehouses={warehouseOptions}
         currentUserBranchId={session.branchId}
         canSkipApproval={canSkipApproval}

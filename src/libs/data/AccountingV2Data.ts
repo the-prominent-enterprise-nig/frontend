@@ -1932,7 +1932,12 @@ export interface BankAccount {
 }
 // Scenario 42 — the itemized worksheet. sourceType/direction mirror the
 // backend's BankReconciliationLineSourceType/Direction enums.
-export type BankReconciliationLineSourceType = 'AR_PAYMENT' | 'AP_PAYMENT' | 'CLEARING_SETTLEMENT'
+export type BankReconciliationLineSourceType =
+  | 'AR_PAYMENT'
+  | 'AP_PAYMENT'
+  | 'CLEARING_SETTLEMENT'
+  /** Scenario 61 Part 6 — a cleared POS deposit, on its deposit date. */
+  | 'POS_DEPOSIT'
 export type BankReconciliationLineDirection = 'DEPOSIT' | 'WITHDRAWAL'
 export interface BankReconciliationLine {
   id: string
