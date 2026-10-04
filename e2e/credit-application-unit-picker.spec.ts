@@ -30,6 +30,8 @@ import {
 // on the form never had one, so the cashier always picked it at the sale.
 // Now a serial item's row offers this branch's in-stock units — optional,
 // never a hold — and "Continue to sale" brings the picked unit into the cart.
+// The Edit Financing Request form offers it too, and its save no longer drops
+// the unit already recorded (backend update() keeps it; #185).
 //
 // Runs as the Bago cashier against the dev servers' data: it needs the
 // SHARP 2TC32GH3000X and the DOWELL STF3238 fan in stock at Bago, and the
@@ -344,28 +346,91 @@ test.describe('Scenario 64 item 29 — the unit on a credit application (cashier
     })
   })
 
-  test('editing an application on its page offers no unit — that save does not carry one', async ({
-    page,
-  }) => {
-    const applicant = await createApplicant(page)
-    const res = await page.request.post('/api/credit/applications', {
-      data: {
-        applicantCustomerId: applicant.id,
-        coMakerId: applicant.coMakerId,
-        items: [{ itemId: await itemId(page, SHARP) }],
-        priceUseTypeId: await wipPriceUseId(page),
-      },
-    })
-    expect(res.ok(), await res.text()).toBeTruthy()
-    const created = await res.json()
+  test.describe('the Edit Financing Request form', () => {
+    /** An application for the SHARP with `unit` recorded, open in the edit form. */
+    async function openEditWithUnit(page: Page, unit: Unit | null): Promise<string> {
+      const applicant = await createApplicant(page)
+      const res = await page.request.post('/api/credit/applications', {
+        data: {
+          applicantCustomerId: applicant.id,
+          coMakerId: applicant.coMakerId,
+          items: [
+            { itemId: await itemId(page, SHARP), ...(unit ? { serialNumberId: unit.id } : {}) },
+          ],
+          priceUseTypeId: await wipPriceUseId(page),
+        },
+      })
+      expect(res.ok(), await res.text()).toBeTruthy()
+      const created = await res.json()
+      const id = (created.data ?? created).id as string
 
-    await gotoReady(page, `/pos/credit-applications/${(created.data ?? created).id}`)
-    await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Edit Financing Request' })).toBeVisible({
-      timeout: 15_000,
+      await gotoReady(page, `/pos/credit-applications/${id}`)
+      await page.getByRole('button', { name: 'Edit', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Edit Financing Request' })).toBeVisible({
+        timeout: 15_000,
+      })
+      await expect(page.getByText('Estimated amount')).toBeVisible({ timeout: 15_000 })
+      return id
+    }
+
+    async function save(page: Page): Promise<void> {
+      await page.getByRole('button', { name: 'Save Changes' }).click()
+      await expect(page.getByRole('heading', { name: 'Edit Financing Request' })).toHaveCount(0, {
+        timeout: 20_000,
+      })
+    }
+
+    test('shows the unit on record, and saving without touching it keeps it', async ({ page }) => {
+      // Before: the form had no unit, and its save replaced the items without
+      // one — so the unit picked at the till was lost on any edit.
+      const [unit] = await bagoUnits(page, await itemId(page, SHARP))
+      const id = await openEditWithUnit(page, unit)
+
+      await expect(unitTrigger(page)).toHaveText(unit.serialNumber, { timeout: 15_000 })
+      await save(page)
+      const app = await getApplication(page, id)
+      expect(app.items[0].serialNumberId).toBe(unit.id)
     })
-    await expect(page.getByText('Estimated amount')).toBeVisible({ timeout: 15_000 })
-    await expect(unitField(page)).toHaveCount(0)
+
+    test("changing the item clears the unit, and the new item's unit is saved", async ({
+      page,
+    }) => {
+      const [sharpUnit] = await bagoUnits(page, await itemId(page, SHARP))
+      const fanId = await itemId(page, FAN)
+      const [fanUnit] = await bagoUnits(page, fanId)
+      const id = await openEditWithUnit(page, sharpUnit)
+
+      await pickItem(page, FAN)
+      await expect(unitTrigger(page)).toHaveText(UNIT_PLACEHOLDER, { timeout: 15_000 })
+      await pickUnit(page, page, fanUnit.serialNumber)
+      await save(page)
+
+      const app = await getApplication(page, id)
+      expect(app.items).toHaveLength(1)
+      expect(app.items[0].itemId).toBe(fanId)
+      expect(app.items[0].serialNumberId).toBe(fanUnit.id)
+    })
+
+    test('a unit picked for an item that had none is saved; clearing it again removes it', async ({
+      page,
+    }) => {
+      const [unit] = await bagoUnits(page, await itemId(page, SHARP))
+      const id = await openEditWithUnit(page, null)
+
+      await expect(unitTrigger(page)).toHaveText(UNIT_PLACEHOLDER, { timeout: 15_000 })
+      await pickUnit(page, page, unit.serialNumber)
+      await save(page)
+      expect((await getApplication(page, id)).items[0].serialNumberId).toBe(unit.id)
+
+      await page.getByRole('button', { name: 'Edit', exact: true }).click()
+      await expect(unitTrigger(page)).toHaveText(unit.serialNumber, { timeout: 15_000 })
+      await unitClear(page).click()
+      // Click away — the page behind has its own "Items / Models" heading.
+      await page.getByRole('heading', { name: 'Edit Financing Request' }).click()
+      await expect(unitTrigger(page)).toHaveText(UNIT_PLACEHOLDER)
+      await save(page)
+      expect((await getApplication(page, id)).items[0].serialNumberId).toBeNull()
+    })
   })
 
   test('"Continue to sale" brings the unit on the application into the cart', async ({
@@ -419,5 +484,42 @@ test.describe('Scenario 64 item 29 — a user with no branch', () => {
     await pickItem(page, SHARP)
     await expect(itemRow(page).getByText('Estimated amount')).toBeVisible({ timeout: 15_000 })
     await expect(unitField(page)).toHaveCount(0)
+  })
+
+  test("is offered one when editing — the application's own branch is known", async ({ page }) => {
+    const branchId = await bagoBranchId(page)
+    const customer = await page.request.post('/api/crm/customers', {
+      data: {
+        name: `${NAME_PREFIX} Owner ${Date.now()}`,
+        customerType: 'individual',
+        phone: `+63917${Date.now().toString().slice(-7)}`,
+        coMakers: [
+          { name: 'E2E Unit Co-Maker', relationship: 'Sibling', contactNumber: '+639171117778' },
+        ],
+      },
+    })
+    expect(customer.ok(), await customer.text()).toBeTruthy()
+    const body = await customer.json()
+    const res = await page.request.post('/api/credit/applications', {
+      data: {
+        branchId,
+        applicantCustomerId: (body.data ?? body).id,
+        coMakerId: (body.data ?? body).coMakers[0].id,
+        items: [{ itemId: await itemId(page, SHARP) }],
+        priceUseTypeId: await wipPriceUseId(page),
+      },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    const created = await res.json()
+
+    await gotoReady(page, `/pos/credit-applications/${(created.data ?? created).id}`)
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    await expect(unitField(page)).toBeVisible({ timeout: 15_000 })
+    // Bago's units — the application's branch, not the owner's (none).
+    const [unit] = await bagoUnits(page, await itemId(page, SHARP))
+    await unitTrigger(page).click()
+    await expect(page.getByRole('button', { name: unit.serialNumber, exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
   })
 })
