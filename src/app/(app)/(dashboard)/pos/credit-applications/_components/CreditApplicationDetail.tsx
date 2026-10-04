@@ -195,6 +195,11 @@ export default function CreditApplicationDetail({
         // Seeds the financing preview's fallback total so it has a figure to
         // work with before /resolve-prices comes back.
         estimatedPrice: i.requestedAmount != null ? Number(i.requestedAmount) : undefined,
+        // Scenario 64 item 29 — the unit already recorded, shown in the row's
+        // unit picker and sent back on save so the edit does not drop it.
+        serialNumberId: i.serialNumberId ?? undefined,
+        serialNumberLabel: i.serialNumber?.serialNumber,
+        isSerialTracked: i.item?.isSerialTracked === true,
       })),
       itemDescription: application.itemDescription ?? '',
       // Financing is editable after intake (2026-09-18) — a mistyped down
@@ -1414,6 +1419,8 @@ export default function CreditApplicationDetail({
                       modelNumber: i.item?.modelNumber ?? null,
                     },
                   }))}
+                  // The application's own branch: that is where it is sold.
+                  unitBranchId={application.branchId}
                 />
 
                 <CreditApplicationFinancingFields

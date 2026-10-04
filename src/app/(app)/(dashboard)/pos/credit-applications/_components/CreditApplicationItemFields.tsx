@@ -262,9 +262,9 @@ type Props<T extends ItemScopedFormValues> = {
    * mode only, indexed to match the initial `items` array passed to reset(). */
   initialItems?: InitialCreditApplicationItem[]
   /** Scenario 64 item 29 — the branch whose in-stock units a serial item's
-   * row offers. Left unset, no unit is offered: the edit form (whose save
-   * does not carry serials), and a user with no branch, who cannot be told
-   * which branch's units will be at the till that sells it. */
+   * row offers: the session's branch on a new application, the application's
+   * own on the edit form. Left unset, no unit is offered — a user with no
+   * branch raising one cannot be told which branch's till will sell it. */
   unitBranchId?: string | null
 }
 

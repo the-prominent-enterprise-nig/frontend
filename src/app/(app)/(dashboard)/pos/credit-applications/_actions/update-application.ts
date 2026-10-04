@@ -46,7 +46,13 @@ export async function updateCreditApplication(
     // number AND lost its priceListItemId, which is what the curated down
     // payment and the rate-card instalment figures hang off. estimatedPrice
     // stays in the form for the on-screen financing preview only.
-    items: parsed.data.items?.map(({ itemId }) => ({ itemId })),
+    // Scenario 64 item 29 — the unit goes back every time, null when there is
+    // none: the items are replaced on save, and an explicit null is what tells
+    // the server "no unit" rather than "keep whatever was there".
+    items: parsed.data.items?.map(({ itemId, serialNumberId }) => ({
+      itemId,
+      serialNumberId: serialNumberId ?? null,
+    })),
     // Form-only figures behind the down-payment check — not API fields.
     resolvedItemTotal: undefined,
     downPaymentFloor: undefined,

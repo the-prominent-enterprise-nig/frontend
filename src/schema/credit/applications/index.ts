@@ -682,6 +682,8 @@ export interface CreditApplicationItemLite {
   sku?: string | null
   modelNumber?: string | null
   sellingPrice?: number | null
+  /** Scenario 64 item 29 — the edit form offers a unit only for a serial item. */
+  isSerialTracked?: boolean
 }
 
 export interface CreditApplicationItemLine {
