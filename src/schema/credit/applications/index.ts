@@ -265,14 +265,21 @@ const CreateCreditApplicationBaseSchema = z.object({
         // input type to unknown, breaking useForm's generic.
         estimatedPrice: z.number().optional(),
         /** Scenario 64 item 28 — the unit picked at the till when this
-         *  application was raised from a cart. Passed straight through to the
-         *  API; nothing in the form edits it. */
+         *  application was raised from a cart. Item 29 — or picked on the
+         *  form itself, from this branch's in-stock units of a serial item.
+         *  Optional either way: the till asks for one when it is missing. */
         serialNumberId: z.string().optional(),
         // Also client-only. The combobox shows a label, not an id, and it
         // has no way to look one up from an id alone — so without this a
         // restored draft kept its itemId but rendered an empty picker, and
         // the item looked lost. Stripped server-side by the DTO whitelist.
         itemLabel: z.string().optional(),
+        // Client-only, item 29, for the same reason as itemLabel: whether the
+        // row offers a unit picker, and the label that picker shows, have to
+        // survive a draft round trip. Never sent — the create action picks
+        // the fields it sends.
+        isSerialTracked: z.boolean().optional(),
+        serialNumberLabel: z.string().optional(),
       })
     )
     .min(1, 'At least one item is required'),

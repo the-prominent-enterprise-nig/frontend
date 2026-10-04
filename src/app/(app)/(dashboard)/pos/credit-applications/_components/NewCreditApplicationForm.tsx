@@ -599,6 +599,9 @@ export default function NewCreditApplicationForm({
               setValue={setValue}
               errors={errors}
               initialItems={restoredItems ?? undefined}
+              // The till that sells it is this branch's, so these are the
+              // units worth offering.
+              unitBranchId={sessionBranchId}
             />
 
             <CreditApplicationFinancingFields
