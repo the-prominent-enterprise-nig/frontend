@@ -1231,33 +1231,49 @@ the item:
   serial item). A serial line whose unit was not picked shows the picker
   empty.
 
-**Where it is not offered**
+**The Edit Financing Request form too** (added the same day). It shows the
+unit on record and behaves the same: changing the item clears it, the × clears
+it, and a unit can be picked for an item that had none. It lists the
+**application's own branch's** units, so it is offered to the owner here, where
+the branch is known.
 
-- **The edit form on the application's page.** `update()` replaces the items
-  without their serials (unchanged here), so a unit picked there would be
-  dropped without a word.
-- **A user with no branch** (the owner). The units are branch-scoped, and
-  nothing on the form says which branch's till will sell it.
+Its save used to drop units. `update()` replaces the item rows wholesale and
+re-created them without `serialNumberId`, so any unit — picked at the till or
+on the form — was lost on any edit, even to an item nobody touched, and on a
+Price Use change that touched no item at all. Now (backend #185) an item's
+unit is kept through the replace: a `serialNumberId` sent is recorded, `null`
+clears it, and one left out keeps the unit already recorded **for that same
+item** (never carried to a different one). A unit belonging to another item is
+refused, as on create. The form always sends the unit, `null` when there is
+none.
 
-**No backend change.** `create()` already accepts `serialNumberId` and refuses
-one belonging to another item (`assertItemSerialsUsable`, covered by
-`credit-application-v2.e2e-spec.ts`).
+**Where it is not offered:** a **new** application raised by a user with no
+branch (the owner). The units are branch-scoped, and nothing on that form says
+which branch's till will sell it.
+
+**Backend (#185).** `create()` already accepted `serialNumberId` and refused
+one belonging to another item (`assertItemSerialsUsable`). The edit form needed
+`update()` to keep units (above), and the application's items now say
+`isSerialTracked`, so the edit form knows when to offer one.
 
 **Files**
 
-| File                                                                      | Change                                                            |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `credit-applications/_components/CreditApplicationItemFields.tsx`         | `CreditApplicationUnitField`; `unitBranchId` turns it on          |
-| `credit-applications/_components/CreditApplicationItemSearchCombobox.tsx` | `isSerialTracked` on the picked item                              |
-| `credit-applications/_components/NewCreditApplicationForm.tsx`            | Passes the session's branch                                       |
-| `pos/checkout/page.tsx`                                                   | The draft carries `serialNumberLabel` and `isSerialTracked`       |
-| `schema/credit/applications/index.ts`                                     | The two client-only fields                                        |
-| `service-jobs/_components/SerialNumberSearchCombobox.tsx`                 | Optional `placeholder` / `noUnitsMessage`; service jobs unchanged |
+| File                                                                      | Change                                                                    |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `credit-applications/_components/CreditApplicationItemFields.tsx`         | `CreditApplicationUnitField`; `unitBranchId` turns it on                  |
+| `credit-applications/_components/CreditApplicationItemSearchCombobox.tsx` | `isSerialTracked` on the picked item                                      |
+| `credit-applications/_components/NewCreditApplicationForm.tsx`            | Passes the session's branch                                               |
+| `pos/checkout/page.tsx`                                                   | The draft carries `serialNumberLabel` and `isSerialTracked`               |
+| `schema/credit/applications/index.ts`                                     | The two client-only fields                                                |
+| `service-jobs/_components/SerialNumberSearchCombobox.tsx`                 | Optional `placeholder` / `noUnitsMessage`; service jobs unchanged         |
+| `credit-applications/_components/CreditApplicationDetail.tsx`             | Edit form: loads each item's unit; passes the application's branch        |
+| `credit-applications/_actions/update-application.ts`                      | Sends each item's unit, `null` when none                                  |
+| backend `credit-application.service.ts` / `.dto.ts`                       | `update()` keeps units; `isSerialTracked` on the items; DTO allows `null` |
 
 ### Tests
 
-`e2e/credit-application-unit-picker.spec.ts`, 10 tests, as the Bago cashier
-(plus one as the owner):
+`e2e/credit-application-unit-picker.spec.ts`, 12 tests, as the Bago cashier
+(plus two as the owner):
 
 - a serial item lists exactly Bago's in-stock units (not sold ones), and typing
   narrows them; a non-serial item shows no picker;
@@ -1267,22 +1283,41 @@ one belonging to another item (`assertItemSerialsUsable`, covered by
 - raised from the till: the till's unit is filled in, and a serial line
   without one shows the picker empty;
 - a draft from before the label was carried still shows that a unit is set;
-- the edit form on the application's page shows no picker;
+- the edit form shows the unit on record, and saving untouched keeps it;
+- changing the item in the edit form clears the unit, and the new item's unit
+  is saved;
+- in the edit form, a unit picked for an item that had none is saved, and
+  clearing it removes it;
 - "Continue to sale" puts the application's unit in the cart ("SN: …", not
   "⚠ Select serial");
-- the owner (no branch) gets no picker.
+- the owner (no branch) gets no picker on a new application, but does in the
+  edit form, listing the application's branch's units.
+
+Backend, `test/credit-application-v2.e2e-spec.ts` — 8 new tests on an edit:
+the unit is kept on an untouched item and through a Price Use change, a unit
+sent is recorded, `null` clears it, it is not carried to a different item (and
+that item's own unit is taken), another item's unit is refused with the old one
+kept, and the items report `isSerialTracked`. The suite checks it has real
+serial items to work with, so it cannot pass empty.
 
 The form helpers it shares with `pr199-credit-application.spec.ts` moved to
 `e2e/credit-application-form.ts`.
 
 Run 2026-10-04 against the dev servers, together with
 `pr199-credit-application`, `credit-application-intake`,
-`credit-application-ux`, `pos-checkout-installment-credit-application`,
-`pr199-checkout-down-payment` and `pos-service-draft-serial-number`: **25 of
-26 pass**. The one failure, `pos-service-draft-serial-number`, already failed
-before this change. It types into the material search before any serial field
-appears, but since 2026-09-04 (`08b39218`) that search shows as a button until
-it is clicked.
+`credit-application-ux`, `pos-checkout-installment-credit-application` and
+`pr199-checkout-down-payment`: **all pass**. Three older specs fail before
+reaching anything changed here:
+
+- `pos-service-draft-serial-number` types into the material search, which since
+  2026-09-04 (`08b39218`) shows as a button until it is clicked.
+- `credit-approval` builds its application from the demo items "Universal
+  Remote Control" and "LED Bulb", which the seed deletes.
+- `credit-investigation` posts `requestedAmount` with no items, which the API
+  stopped accepting when applications became item bundles (2026-08-15).
+
+Backend: credit application e2e suites 11/11 (123 tests, test database); unit
+suite 824/824.
 
 ### Manual test
 
@@ -1303,3 +1338,11 @@ Log in as the Bago cashier (`technova.b1.cashier@test.com`), Counter 1 open.
 6. Log in as the owner, **New Application**, pick the SHARP. _Expect:_ no
    **Unit (serial)** field. The owner has no branch, so the unit is picked at
    the till.
+7. Open a **Draft** application with a unit on the SHARP, **Edit** under
+   Financing Request. _Expect:_ the **Unit (serial)** field shows that unit.
+   **Save Changes** without touching it. _Expect:_ the unit is still there
+   (open Edit again). _Before:_ no field, and saving dropped the unit.
+8. **Edit** again, change the item to the DOWELL STF3238. _Expect:_ the unit
+   clears and lists fan units. Pick one, **Save Changes**, reopen. _Expect:_ the
+   fan with that unit.
+9. **Edit**, clear the unit with ×, **Save Changes**, reopen. _Expect:_ blank.
