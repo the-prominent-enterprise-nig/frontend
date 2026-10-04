@@ -39,6 +39,7 @@ Verified against `development` on 2026-09-24 (both repos freshly pulled; fronten
 | 25  | Cancel Sale must be a dropdown                               | 🚧 **Blocked**             | Duplicate of item 15 — still waiting on Elijah's reason list       |
 | 26  | Credit application must use the uploaded Price Use           | ✅ **Shipped** 2026-09-28  | Same work as item 21 — priced from the Inventory price list        |
 | 27  | Simplified Credit Application v2 — the full mockup           | ❌ Large / migration       | 29 Sep mockup. ~45 fields, 3 new tables. Supersedes 7, 9, 23, 24   |
+| 29  | Pick the unit (serial) on the credit application             | ✅ **Built** 2026-10-04    | Optional; the branch's in-stock units — see "Item 29" at the end   |
 
 **Doable today: items 1, 2, 3, 4, 5, 6.** Two of those need a one-line answer first (5 and 6) — both are under _Decisions needed_ below, and both have a safe reading that ships today either way.
 
@@ -1201,3 +1202,104 @@ amount financed 12,000 · monthly 4,845 · PNV 14,535 · total price 17,915.
 Typecheck, lint and the backend unit suite (814 tests) pass. The Playwright
 specs and the backend e2e specs touched here have not been run: the dev and
 test databases need this branch's migrations (and development's) first.
+
+## Item 29 — pick the unit on the credit application (2026-10-04)
+
+Raised by the developer after the PR #199 review (point 6), not from the
+client list.
+
+**Before.** The form had no serial picker. A unit only reached an application
+when it was raised from a till cart that already had one picked. An item added
+on the form, or changed (which since point 6 clears the till's unit), never had
+one, so the cashier always picked it at the sale.
+
+**Now.** A serial item's row shows an optional **Unit (serial)** picker under
+the item:
+
+- It lists **this branch's in-stock units of that item**: the same query as
+  the till's serial picker (`getAvailableSerialNumbers`, `forSale`), through
+  the service jobs' `SerialNumberSearchCombobox`. With none in stock it says
+  so and points to the till.
+- **Optional.** Left blank, the till asks for a unit at the sale, as before.
+- **Never a hold.** Approval can take days. "Continue to sale" (item 28)
+  re-checks that the unit is still `in_stock`, and the till asks for another
+  when it is not.
+- **Changing the item** clears it and lists the new item's units; the × clears
+  it.
+- **Raised from the till**, the cart's unit shows already filled in (the
+  checkout draft now carries the serial's label and whether the line is a
+  serial item). A serial line whose unit was not picked shows the picker
+  empty.
+
+**Where it is not offered**
+
+- **The edit form on the application's page.** `update()` replaces the items
+  without their serials (unchanged here), so a unit picked there would be
+  dropped without a word.
+- **A user with no branch** (the owner). The units are branch-scoped, and
+  nothing on the form says which branch's till will sell it.
+
+**No backend change.** `create()` already accepts `serialNumberId` and refuses
+one belonging to another item (`assertItemSerialsUsable`, covered by
+`credit-application-v2.e2e-spec.ts`).
+
+**Files**
+
+| File                                                                      | Change                                                            |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `credit-applications/_components/CreditApplicationItemFields.tsx`         | `CreditApplicationUnitField`; `unitBranchId` turns it on          |
+| `credit-applications/_components/CreditApplicationItemSearchCombobox.tsx` | `isSerialTracked` on the picked item                              |
+| `credit-applications/_components/NewCreditApplicationForm.tsx`            | Passes the session's branch                                       |
+| `pos/checkout/page.tsx`                                                   | The draft carries `serialNumberLabel` and `isSerialTracked`       |
+| `schema/credit/applications/index.ts`                                     | The two client-only fields                                        |
+| `service-jobs/_components/SerialNumberSearchCombobox.tsx`                 | Optional `placeholder` / `noUnitsMessage`; service jobs unchanged |
+
+### Tests
+
+`e2e/credit-application-unit-picker.spec.ts`, 10 tests, as the Bago cashier
+(plus one as the owner):
+
+- a serial item lists exactly Bago's in-stock units (not sold ones), and typing
+  narrows them; a non-serial item shows no picker;
+- the picked unit is saved on the application;
+- changing the item clears the unit and lists the new item's units;
+- the × clears it, and the application saves without one;
+- raised from the till: the till's unit is filled in, and a serial line
+  without one shows the picker empty;
+- a draft from before the label was carried still shows that a unit is set;
+- the edit form on the application's page shows no picker;
+- "Continue to sale" puts the application's unit in the cart ("SN: …", not
+  "⚠ Select serial");
+- the owner (no branch) gets no picker.
+
+The form helpers it shares with `pr199-credit-application.spec.ts` moved to
+`e2e/credit-application-form.ts`.
+
+Run 2026-10-04 against the dev servers, together with
+`pr199-credit-application`, `credit-application-intake`,
+`credit-application-ux`, `pos-checkout-installment-credit-application`,
+`pr199-checkout-down-payment` and `pos-service-draft-serial-number`: **25 of
+26 pass**. The one failure, `pos-service-draft-serial-number`, already failed
+before this change. It types into the material search before any serial field
+appears, but since 2026-09-04 (`08b39218`) that search shows as a button until
+it is clicked.
+
+### Manual test
+
+Log in as the Bago cashier (`technova.b1.cashier@test.com`), Counter 1 open.
+
+1. **Credit Applications → New Application**, pick a non-serial item (for
+   example a Capacitor). _Expect:_ no **Unit (serial)** field.
+2. Change it to **SHARP 2TC32GH3000X**. _Expect:_ **Unit (serial) — optional**
+   appears, blank. Open it: Bago's in-stock SHARP units only. Pick one.
+   _Before:_ there was no field; the unit was always picked at the till.
+3. Change the item to **DOWELL STF3238**. _Expect:_ the unit is blank again,
+   and the list now shows fan units only.
+4. Pick a unit, fill in the rest, **Submit Application**. Approve it as the
+   owner or manager, then **Continue to sale** as the cashier. _Expect:_ the
+   cart line reads **SN: (that unit)** in green, with no **⚠ Select serial**.
+5. At the till, add a SHARP with a unit, switch it to installment, then **New
+   credit application**. _Expect:_ the form shows that unit already filled in.
+6. Log in as the owner, **New Application**, pick the SHARP. _Expect:_ no
+   **Unit (serial)** field. The owner has no branch, so the unit is picked at
+   the till.
