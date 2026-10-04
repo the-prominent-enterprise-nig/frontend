@@ -1,12 +1,24 @@
-import { test, expect, type Page, type Locator } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import {
   clickStable,
   deleteCustomers,
   fillPhoneStable,
   gotoReady,
-  openCustomSelect,
   sweepE2ECustomers,
 } from './utils'
+import {
+  fillTheRest,
+  getApplication,
+  input,
+  itemId,
+  openNewApplication,
+  pickItem,
+  pickOption,
+  priceUse,
+  seedDraft,
+  submit,
+  term,
+} from './credit-application-form'
 
 // PR #199 review (Chloe, 2026-10-02) — the credit application.
 //
@@ -31,17 +43,8 @@ const NAME_PREFIX = 'E2E PR199'
 const SHARP = '2TC32GH3000X'
 const ASTRON = 'LED3277'
 const FAN = 'STF3238'
-const DRAFT_KEY = 'credit_application_draft'
 
-// ── Field helpers ──────────────────────────────────────────────────────────
-// Most labels on this form are siblings of their control rather than
-// associated with it, so a field is found through its label's container.
-
-const fieldBox = (scope: Page | Locator, label: RegExp) =>
-  scope.locator('label', { hasText: label }).locator('..')
-
-const input = (scope: Page | Locator, label: RegExp) =>
-  fieldBox(scope, label).locator('input').first()
+// Field helpers live in ./credit-application-form.
 
 const downPayment = (page: Page) => input(page, /^Down Payment\s*\*?$/)
 const lcp = (page: Page) => input(page, /^LCP/)
@@ -54,14 +57,6 @@ const breakdown = (page: Page, label: string) =>
     .locator('div.flex')
     .filter({ hasText: new RegExp(`^${label}`) })
     .last()
-
-async function pickOption(trigger: Locator, page: Page, option: string) {
-  await openCustomSelect(trigger)
-  await page.getByRole('option', { name: option, exact: true }).click()
-}
-
-const priceUse = (page: Page) => fieldBox(page, /^Price Use/).getByRole('combobox')
-const term = (page: Page) => fieldBox(page, /^Financing Term/).getByRole('combobox')
 
 async function createApplicant(page: Page, extra: Record<string, unknown> = {}) {
   // Two applicants made in the same millisecond must still differ.
@@ -79,105 +74,6 @@ async function createApplicant(page: Page, extra: Record<string, unknown> = {}) 
   expect(res.ok()).toBeTruthy()
   const body = await res.json()
   return { id: (body.data ?? body).id as string, name }
-}
-
-async function pickApplicant(page: Page, name: string) {
-  const box = page.getByPlaceholder('Search customer by name or phone…')
-  // The closed picker is a button that swaps to the input on click; a click
-  // that lands before hydration does nothing, so retry until the input shows.
-  await clickStable(page.getByRole('button', { name: 'Search customer by name or phone…' }), box)
-  const result = page.getByRole('button', { name: new RegExp(name) })
-  await expect(async () => {
-    await box.fill(name)
-    await expect(result).toBeVisible({ timeout: 3_000 })
-  }).toPass({ timeout: 20_000 })
-  await result.click()
-}
-
-/** Picks (or replaces) the item in the first item row. Once an item is
- * picked, the search box's placeholder becomes that item's label, so the box
- * is found inside the row rather than by its default placeholder. */
-async function pickItem(page: Page, query: string) {
-  const row = page
-    .getByText('Item / Model', { exact: false })
-    .first()
-    .locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]')
-  await row.getByRole('button').first().click()
-  const box = row.locator('input').first()
-  const result = page.getByRole('button', { name: new RegExp(query) }).first()
-  await expect(async () => {
-    await box.fill(query)
-    await expect(result).toBeVisible({ timeout: 3_000 })
-  }).toPass({ timeout: 20_000 })
-  await result.click()
-}
-
-async function openNewApplication(page: Page, applicantName: string) {
-  await gotoReady(page, '/pos/credit-applications/new')
-  await pickApplicant(page, applicantName)
-}
-
-/** Everything else the form requires before it will submit. */
-async function fillTheRest(page: Page) {
-  // Related people — row 1 is the co-maker.
-  const coMaker = page.locator('div.rounded-lg', { has: page.getByText(/^Role/) }).first()
-  await fillPhoneStable(coMaker.locator('.phone-input-field'), '9171234560')
-  await input(coMaker, /^First name/).fill('Ramon')
-  await pickOption(
-    fieldBox(coMaker, /^Relationship to applicant/).getByRole('combobox'),
-    page,
-    'Sibling'
-  )
-
-  // Character reference, row 1.
-  const reference = page
-    .locator('div.rounded-lg', { has: page.getByText('Mobile number', { exact: true }) })
-    .first()
-  await input(reference, /^Name$/).fill('Ana Reyes')
-  await fillPhoneStable(reference.locator('.phone-input-field'), '9171234561')
-  await pickOption(fieldBox(reference, /^Relationship$/).getByRole('combobox'), page, 'Neighbor')
-
-  // Paper record.
-  await pickOption(fieldBox(page, /^Down payment collection/).getByRole('combobox'), page, 'Branch')
-  await input(page, /^POS draft/).fill(`QT-E2E-${Date.now()}`)
-  await pickOption(fieldBox(page, /^Applicant is unit user/).getByRole('combobox'), page, 'Yes')
-  await page.getByRole('checkbox', { name: /Paper form fully complete and signed/ }).check()
-}
-
-/** Submits and returns the new application's id from the detail URL. */
-async function submit(page: Page): Promise<string> {
-  await expect(async () => {
-    await page.getByRole('button', { name: 'Submit Application' }).click()
-    await expect(page).toHaveURL(/\/pos\/credit-applications\/[a-f0-9-]{36}$/, { timeout: 8_000 })
-  }).toPass({ timeout: 40_000 })
-  return page.url().split('/').pop()!
-}
-
-async function getApplication(page: Page, id: string) {
-  const res = await page.request.get(`/api/credit/applications/${id}`)
-  expect(res.ok()).toBeTruthy()
-  const body = await res.json()
-  return (body.data ?? body) as {
-    downPayment: string | number | null
-    monthlyInstallment: string | number | null
-    totalPayable: string | number | null
-    amountFinanced: string | number | null
-    lcp: string | number | null
-    ppdRebate: string | number | null
-    items: { itemId: string; serialNumberId: string | null }[]
-  }
-}
-
-async function itemId(page: Page, query: string): Promise<string> {
-  const res = await page.request.get(
-    `/api/pos/transactions/items/lookup?q=${encodeURIComponent(query)}`
-  )
-  expect(res.ok()).toBeTruthy()
-  const body = await res.json()
-  const items = (body.data ?? body) as { id: string; name: string }[]
-  const match = items.find((i) => i.name.includes(query))
-  expect(match, `no item matching ${query}`).toBeTruthy()
-  return match!.id
 }
 
 function localDatePlusOneMonth(): string {
@@ -381,15 +277,7 @@ test.describe('PR #199 — credit application', () => {
         applicantCustomerId: applicant.id,
         items: [{ itemId: sharpId, itemLabel: SHARP, serialNumberId: serialId }],
       }
-      await page.addInitScript(
-        ([key, value]) => {
-          if (!sessionStorage.getItem('pr199-draft-seeded')) {
-            localStorage.setItem(key, value)
-            sessionStorage.setItem('pr199-draft-seeded', '1')
-          }
-        },
-        [DRAFT_KEY, JSON.stringify(draft)] as const
-      )
+      await seedDraft(page, draft)
       await gotoReady(page, `/pos/credit-applications/new?applicantCustomerId=${applicant.id}`)
       await expect(page.getByRole('button', { name: new RegExp(SHARP) }).first()).toBeVisible({
         timeout: 15_000,
