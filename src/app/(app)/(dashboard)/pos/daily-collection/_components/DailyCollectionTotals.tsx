@@ -28,7 +28,6 @@ const LINE_NOTES: Record<string, string> = {
   DP: 'Down payment',
   MI: 'Monthly instalment, incl. partial and full payments (FP)',
   OTHERS: 'DC — delivery charge',
-  GCASH: 'GCash, QR and bank transfer',
   CHECK: 'Cheque',
   CARD: 'Card swipe',
   'OTHER NON-CASH': 'Gift card, store credit, TPF',
@@ -82,14 +81,20 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
       <p className={PANE_HEAD}>Collection by type</p>
-      {buildCollectionRecapLines(report).map((line) =>
+      {buildCollectionRecapLines(report).map((line, i) =>
         line.highlight ? (
           <div key={line.label} className={`${ROW} border-y border-yellow-200 bg-yellow-50 py-3`}>
             <span className="font-semibold text-gray-900">Total collection</span>
             <span className={`${FIGURE} text-base font-semibold`}>{peso(line.amount ?? 0)}</span>
           </div>
         ) : (
-          <RecapRow key={line.label} label={line.label} amount={line.amount} />
+          <RecapRow
+            key={`${i}-${line.label}`}
+            label={line.label}
+            amount={line.amount}
+            note={line.note}
+            indent={line.indent}
+          />
         )
       )}
 
@@ -119,10 +124,20 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
   )
 }
 
-function RecapRow({ label, amount }: { label: string; amount: number | null }): React.JSX.Element {
+function RecapRow({
+  label,
+  amount,
+  note,
+  indent,
+}: {
+  label: string
+  amount: number | null
+  note?: string
+  indent?: boolean
+}): React.JSX.Element {
   return (
     <div className={`${ROW} border-b border-gray-100`}>
-      <span className="flex min-w-0 items-baseline gap-2">
+      <span className={`flex min-w-0 items-baseline gap-2 ${indent ? 'pl-4' : ''}`}>
         <span
           className={`font-mono text-xs font-semibold ${
             amount ? 'text-prominent-purple-900' : 'text-gray-400'
@@ -130,7 +145,7 @@ function RecapRow({ label, amount }: { label: string; amount: number | null }): 
         >
           {label}
         </span>
-        <span className="truncate text-xs text-gray-500">{LINE_NOTES[label]}</span>
+        <span className="truncate text-xs text-gray-500">{note ?? LINE_NOTES[label]}</span>
       </span>
       <span className={`${FIGURE} ${amount ? 'text-gray-900' : 'text-gray-400'}`}>
         {amount ? peso(amount) : '—'}

@@ -51,9 +51,9 @@ export function StockHub({ session }: { session: SessionUser }) {
     <div className="flex min-h-screen flex-col bg-zinc-50">
       <InventoryTabNav tabs={TABS} />
       {tab === 'serials' ? (
-        <SerialNumberList session={session} />
+        <SerialNumberList key="stockbook" session={session} />
       ) : tab === 'locator' ? (
-        <SerialNumberList session={session} mode="locator" />
+        <SerialNumberList key="locator" session={session} mode="locator" />
       ) : tab === 'reservations' ? (
         <ReservationsPageView session={session} />
       ) : tab === 'negative' ? (

@@ -23,9 +23,9 @@ import {
  * Columns, header grouping, merged customer cells, the in-grid subtotal and
  * denomination blocks and the signature strip all follow the printed form
  * they handed over, so a branch can file our output in the same binder. The
- * ledger is cash only, as their form is — the service filters non-cash
- * collections out of it — and the non-cash take is printed per provider in
- * its own block under the cash recap. The backend's form sheet
+ * ledger lists cash and non-cash sales, each non-cash line marked with its
+ * payment mode; only cash moves the BALANCE, and the non-cash take is printed
+ * per provider in its own block under the cash recap. The backend's form sheet
  * (daily-collection.form-sheet.ts) reproduces the same layout in Excel —
  * change one, change the other.
  *
@@ -35,15 +35,13 @@ import {
  * is chrome, and chrome has no place on a form two people sign.
  */
 
-const CELL = 'border border-black px-1.5 py-[3px] leading-tight'
+const CELL = 'border border-black px-1.5 py-px leading-tight'
 const HEAD = `${CELL} text-center text-[10px] font-bold uppercase`
 const NUM = `${CELL} text-right tabular-nums`
 
-/** Blank ledger lines so a short day still prints a full-height grid, exactly
- * as the pre-ruled paper form does. Sized so a fully filled-in form — remarks
- * line, correction notice and both signatures — still lands on one
- * landscape page, which is the whole point of a form people sign. */
-const MIN_LEDGER_ROWS = 11
+/** Blank ledger lines added to a short day's grid. None on print: the grid is
+ * kept as short as the day allows so the form can fill the printed page. */
+const MIN_LEDGER_ROWS = 0
 
 /** The cash recap's own height: five DESC subtotals, TOTAL, LESS: DEPOSITED
  * and BALANCE. Anything past it is the non-cash block, which takes its rows
@@ -96,14 +94,14 @@ export default function DailyCollectionForm({
   return (
     <div className="print-sheet rounded-2xl border border-gray-200 bg-white p-6">
       {/* The client's three header lines, as on their form. */}
-      <header className="mb-1 text-[11px] font-bold uppercase leading-snug text-black">
+      <header className="mb-1 text-[9.5px] font-bold uppercase leading-snug text-black">
         <p>Daily Collection Report</p>
         <p>Branch: {report.branchName}</p>
         <p>{formatFormDate(report.date)}</p>
       </header>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[11px] text-black">
+      <div className="overflow-x-auto print:overflow-visible">
+        <table className="w-full border-collapse text-[9.5px] text-black">
           <FormHeader />
           <tbody>
             <LedgerBody report={report} lines={lines} />
@@ -220,11 +218,12 @@ function LedgerBody({
 }
 
 /** DEPOSIT, then the bank and date written across SI# to CASH RECEIPT, as the
- * client's form has it; the amount credits the balance down. */
+ * client's form has it; the amount credits the balance down. An undeposited
+ * line has no credit, so its DEPOSIT label stays blank. */
 function DepositRow({ line }: { line: FormLine }): React.JSX.Element {
   return (
     <tr>
-      <td className={CELL}>DEPOSIT</td>
+      <td className={CELL}>{line.credit === null ? '' : 'DEPOSIT'}</td>
       <td colSpan={6} className={`${CELL} uppercase`}>
         {line.customer}
       </td>
@@ -285,7 +284,11 @@ function FooterBlocks({
               </td>
             ) : (
               <>
-                <td className={`${CELL} whitespace-nowrap ${left?.emphasis ? 'font-bold' : ''}`}>
+                <td
+                  className={`${CELL} whitespace-nowrap ${left?.emphasis ? 'font-bold' : ''} ${
+                    left?.indent ? 'pl-6' : ''
+                  }`}
+                >
                   {left?.label ?? ''}
                 </td>
                 <td className={CELL}>{left?.sub ?? ''}</td>
@@ -409,7 +412,7 @@ function SignatureStrip({
   edit: SheetDraftController | null
 }): React.JSX.Element {
   return (
-    <div className="mt-4 break-inside-avoid text-[11px] uppercase text-black">
+    <div className="mt-4 break-inside-avoid text-[9.5px] uppercase text-black">
       {(edit || report.sheet?.remarks) && (
         <p className="mb-4 flex gap-2">
           <span className="font-semibold">Remarks:</span>
@@ -426,7 +429,7 @@ function SignatureStrip({
         </p>
       )}
 
-      <div className="flex items-start justify-between gap-10 font-semibold">
+      <div className="flex items-start justify-between gap-10 pt-6 font-semibold">
         <p className="min-w-70">
           Prepared by: <span className="font-normal">{preparedBy}</span>
         </p>

@@ -619,7 +619,17 @@ export default function SerialNumberList({
                                   locationLabel(serial.warehouse ?? serial.currentWarehouse)}
                               </div>
                               <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
-                                {serial.goodsReceiptLine?.goodsReceipt?.code ?? '—'}
+                                {serial.goodsReceiptLine?.goodsReceipt ? (
+                                  <Link
+                                    href={`/accounting/receiving-reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="underline-offset-2 hover:underline"
+                                  >
+                                    {serial.goodsReceiptLine.goodsReceipt.code}
+                                  </Link>
+                                ) : (
+                                  '—'
+                                )}
                               </div>
                               <div className="text-[12.5px] text-[#8b8b9b]">
                                 {serial.goodsReceiptLine?.goodsReceipt?.receivedAt

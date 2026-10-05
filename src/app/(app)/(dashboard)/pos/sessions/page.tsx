@@ -130,10 +130,10 @@ export default function SessionsPage() {
   }
 
   /**
-   * Straight to the branch's Daily Collection Report for the day this shift
-   * traded — a whole page, not a dialog. It is the document a supervisor is
-   * actually after once a shift is closed, and it is printed, exported and
-   * deep-linked, none of which a modal does well.
+   * Straight to the branch's Daily Collection page for the day this shift
+   * traded — a whole page, not a dialog. It opens on the Sales monitoring
+   * sheet; the Collection report is one tab across. Both are printed,
+   * exported and deep-linked, none of which a modal does well.
    *
    * The session's own closing reconciliation stays one button to the left:
    * the posted variance and its GL entry live there, and the collection
@@ -142,7 +142,7 @@ export default function SessionsPage() {
   function handleViewCollectionReport(target: PosSession) {
     const date = isoDateOf(target.openedAt)
     const branch = target.terminal?.branch
-    const query = new URLSearchParams({ date })
+    const query = new URLSearchParams({ date, view: 'sales' })
     if (branch) {
       query.set('branchId', branch.id)
       query.set('branchName', branch.name)
