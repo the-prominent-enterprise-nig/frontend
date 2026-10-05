@@ -12,7 +12,9 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
-import { STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
+import { consumeStockTransferDraft } from './stockTransferDraft'
+import { LocationName, STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
+import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 
 // The five stages the design tracks: the three live ones plus both terminal
 // outcomes, so the band reads as the whole life of a transfer rather than
@@ -148,6 +150,9 @@ function DirectionTag({
 
 export default function TransferList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
+  // Scenario 60 — starting a new caravan stays gated on caravan:manage, so
+  // holding transfers:create alone doesn't grant it.
+  const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   const canAccept = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_ACCEPT)
   const canReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_REJECT)
   const canDispatch = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DISPATCH)
@@ -188,8 +193,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
     createTransfer,
     updateTransfer,
     isUpdating,
-    consignUnits,
-    isConsigning,
+    createCaravan,
+    isCreatingCaravan,
+    updateCaravan,
+    isUpdatingCaravan,
     isCreating,
     approveHqTransfer,
     isApprovingHq,
@@ -257,9 +264,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const [searchFocused, setSearchFocused] = useState(false)
   const [createDraft, setCreateDraft] = useState<{
     fromWarehouseId: string
-    itemId: string
+    itemId?: string
     itemLabel?: string
-    quantity: number
+    quantity?: number
+    pinnedLines?: { itemId: string; itemLabel?: string; serialNumberId: string }[]
   } | null>(null)
 
   // Item 360's Stock tab "Request transfer" deep-links here with a source
@@ -271,6 +279,15 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   useEffect(() => {
+    const stockDraft = consumeStockTransferDraft()
+    if (stockDraft) {
+      setCreateDraft({
+        fromWarehouseId: stockDraft.fromWarehouseId,
+        pinnedLines: stockDraft.pinnedLines,
+      })
+      setIsCreateOpen(true)
+      return
+    }
     const fromWarehouseId = searchParams.get('prefillFromWarehouseId')
     const itemId = searchParams.get('prefillItemId')
     const quantity = Number(searchParams.get('prefillQty') ?? '1')
@@ -359,11 +376,11 @@ export default function TransferList({ session }: { session: SessionUser }) {
 
   return (
     <div className={`${PLEX} min-h-full w-full bg-zinc-50 text-[#17171c] antialiased`}>
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-[14px] px-[22px] pb-[26px] pt-[18px]">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-[14px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">Stock Transfers</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Transfers</h1>
             <p className="text-[13px] text-[#5b5b6b]">
               Move stock between branches with full ledger traceability.
             </p>
@@ -390,6 +407,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
             )}
           </div>
         </div>
+
+        {/* Scenario 60 Part 3 — ended caravans still holding stock, for the
+            people who can transfer it out. */}
+        <EndedCaravansBanner variant="inventory" enabled={canCreate} />
 
         {/* Pipeline band */}
         <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#e4e4e9] bg-white lg:grid-cols-5">
@@ -658,13 +679,15 @@ export default function TransferList({ session }: { session: SessionUser }) {
                         </td>
                         <td className="px-[18px] py-[13px]">
                           <div className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-[12.5px] text-[#5b5b6b]">
-                              {branchLabel(tr.fromWarehouse)}
-                            </span>
+                            <LocationName
+                              wh={tr.fromWarehouse}
+                              className="text-[12.5px] text-[#5b5b6b]"
+                            />
                             <ArrowRight className="h-3 w-3 shrink-0 text-[#c9c9d3]" />
-                            <span className="truncate text-[12.5px] font-semibold">
-                              {branchLabel(tr.toWarehouse)}
-                            </span>
+                            <LocationName
+                              wh={tr.toWarehouse}
+                              className="text-[12.5px] font-semibold"
+                            />
                             <DirectionTag direction={directionFor(tr, session.branchId)} />
                           </div>
                         </td>
@@ -761,8 +784,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
         }
         isSubmitting={editingTransfer ? isUpdating : isCreating}
         editing={editingTransfer}
-        onConsign={consignUnits}
-        isConsigning={isConsigning}
+        onCreateCaravan={createCaravan}
+        onUpdateCaravan={updateCaravan}
+        isCreatingCaravan={isCreatingCaravan || isUpdatingCaravan}
+        canCreateCaravan={canManageCaravan}
         warehouses={warehouseOptions}
         currentUserBranchId={session.branchId}
         canSkipApproval={canSkipApproval}

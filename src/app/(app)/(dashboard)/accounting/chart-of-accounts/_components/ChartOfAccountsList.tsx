@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, RefreshCw, Pencil, Trash2, Search, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, X, ChevronRight, ChevronDown } from 'lucide-react'
+import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import {
   getAccounts,
@@ -38,13 +39,14 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [editing, setEditing] = useState<Account | null>(null)
   const [creating, setCreating] = useState(false)
+  const [open, setOpen] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     setLoading(true)
     const res = await getAccounts({
       search: search || undefined,
       type: typeFilter || undefined,
-      limit: 200,
+      limit: 1000,
     })
     if (res.success && res.data) {
       const items = Array.isArray(res.data) ? res.data : ((res.data as any).items ?? [])
@@ -62,6 +64,29 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
       load()
     }
   }
+  // With no search/type filter the list is a tree: parents expand to show the
+  // accounts filed beneath them. A filter flattens it so matches are never hidden.
+  const flat = !!search || !!typeFilter
+  const ids = new Set(accounts.map((a: any) => a.id))
+  const kidsOf = (id: string) => accounts.filter((a: any) => a.parentAccountId === id)
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  const rows: { a: any; depth: number; kids: number }[] = []
+  const walk = (a: any, depth: number) => {
+    const kids = kidsOf(a.id)
+    rows.push({ a, depth, kids: kids.length })
+    if (open.has(a.id)) kids.forEach((k) => walk(k, depth + 1))
+  }
+  if (flat) accounts.forEach((a: any) => rows.push({ a, depth: 0, kids: 0 }))
+  else
+    accounts
+      .filter((a: any) => !a.parentAccountId || !ids.has(a.parentAccountId))
+      .forEach((a: any) => walk(a, 0))
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-4">
@@ -70,12 +95,6 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
           <p className="text-sm text-gray-500">All accounts used to categorize transactions.</p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
           <button
             onClick={() => setCreating(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
@@ -114,7 +133,7 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-left">Category</th>
               <th className="px-3 py-2 text-right">Balance</th>
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th className="px-3 py-2 w-10" aria-label="Actions" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -131,28 +150,48 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
                 </td>
               </tr>
             ) : (
-              accounts.map((a: any) => (
-                <tr key={a.id}>
+              rows.map(({ a, depth, kids }) => (
+                <tr
+                  key={a.id}
+                  className={kids ? 'cursor-pointer hover:bg-gray-50' : undefined}
+                  onClick={kids ? () => toggle(a.id) : undefined}
+                >
                   <td className="px-3 py-2 font-mono text-xs">{a.number ?? a.code}</td>
-                  <td className="px-3 py-2 font-medium">{a.name}</td>
+                  <td className="px-3 py-2 font-medium">
+                    <span
+                      className="inline-flex items-center gap-1"
+                      style={{ paddingLeft: depth * 20 }}
+                    >
+                      {kids ? (
+                        open.has(a.id) ? (
+                          <ChevronDown className="w-4 h-4 text-gray-500" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-gray-500" />
+                        )
+                      ) : (
+                        <span className="w-4" />
+                      )}
+                      {a.name}
+                      {kids > 0 && (
+                        <span className="text-xs font-normal text-gray-400">({kids})</span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-3 py-2 text-xs">{a.type}</td>
                   <td className="px-3 py-2 text-xs text-gray-500">{a.category || '—'}</td>
                   <td className="px-3 py-2 text-right">{a.balance ?? 0}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => setEditing(a)}
-                        className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => del(a.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <RowActionsMenu
+                      items={[
+                        { label: 'Edit', icon: Pencil, onClick: () => setEditing(a) },
+                        {
+                          label: 'Delete',
+                          icon: Trash2,
+                          variant: 'danger',
+                          onClick: () => del(a.id),
+                        },
+                      ]}
+                    />
                   </td>
                 </tr>
               ))

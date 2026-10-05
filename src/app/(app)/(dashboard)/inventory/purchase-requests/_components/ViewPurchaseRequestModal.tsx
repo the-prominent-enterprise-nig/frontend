@@ -109,7 +109,7 @@ export function ViewPurchaseRequestModal({
       <div className="sticky top-0 z-40 flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] bg-white px-5 py-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
-            Purchase Request
+            Stock Request
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>{pr.code}</h2>

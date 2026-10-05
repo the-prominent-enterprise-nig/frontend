@@ -32,9 +32,16 @@ function denominationDraft(counts: Record<string, number>): Record<string, strin
   return Object.fromEntries(faces.map((face) => [face, String(counts[face] ?? '')]))
 }
 
+/** A saved CHECKED BY, else the branch's assigned manager. */
+export function checkedByOf(report: DailyCollectionReport): string {
+  return report.sheet?.checkedBy || report.branchManagerName || ''
+}
+
 function draftFrom(report: DailyCollectionReport): SheetDraft {
   return {
-    checkedBy: report.sheet?.checkedBy ?? '',
+    // The branch manager checks the count, so their name is the default —
+    // still editable, and a saved name always wins.
+    checkedBy: checkedByOf(report),
     certifiedCorrectBy: report.sheet?.certifiedCorrectBy ?? '',
     remarks: report.sheet?.remarks ?? '',
     denominations: denominationDraft(report.denominations),

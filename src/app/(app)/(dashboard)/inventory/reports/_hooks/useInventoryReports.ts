@@ -7,6 +7,7 @@ import { getTurnoverReport } from '../_actions/get-turnover-report'
 import { getAgingReport } from '../_actions/get-aging-report'
 import { getReconciliationReport } from '../_actions/get-reconciliation-report'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
+import { useBrands } from '../../brands/_hooks/useBrands'
 import { getCategories } from '../../items/_actions/get-lookup-data'
 import type { SerialAgingBucket } from '@/src/schema/inventory/reports'
 
@@ -15,7 +16,7 @@ export type ReportTab = 'valuation' | 'turnover' | 'aging' | 'reconciliation'
 const PAGE_SIZE = 20
 
 export function useInventoryReports() {
-  const [tab, setTab] = useState<ReportTab>('valuation')
+  const [tab, setTab] = useState<ReportTab>('aging')
 
   // Shared filters
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
@@ -33,6 +34,12 @@ export function useInventoryReports() {
   const [agingBucketFilter, setAgingBucketFilter] = useState<SerialAgingBucket | undefined>(
     undefined
   )
+  const [agingSerial, setAgingSerial] = useState<string | undefined>(undefined)
+  const [agingBrandId, setAgingBrandId] = useState<string | undefined>(undefined)
+  const [agingModel, setAgingModel] = useState<string | undefined>(undefined)
+  const [agingReceivedFrom, setAgingReceivedFrom] = useState<string | undefined>(undefined)
+  const [agingReceivedTo, setAgingReceivedTo] = useState<string | undefined>(undefined)
+  const { brands: agingBrands } = useBrands()
 
   // Reconciliation-specific — no pagination (backend caps each section at
   // 50 sample rows server-side), just an optional date range.
@@ -89,10 +96,26 @@ export function useInventoryReports() {
       categoryId: categoryFilter,
       search: search || undefined,
       bucket: agingBucketFilter,
+      serialNumber: agingSerial || undefined,
+      brandId: agingBrandId,
+      model: agingModel || undefined,
+      receivedFrom: agingReceivedFrom,
+      receivedTo: agingReceivedTo,
       page,
       limit: PAGE_SIZE,
     }),
-    [warehouseFilter, categoryFilter, search, agingBucketFilter, page]
+    [
+      warehouseFilter,
+      categoryFilter,
+      search,
+      agingBucketFilter,
+      agingSerial,
+      agingBrandId,
+      agingModel,
+      agingReceivedFrom,
+      agingReceivedTo,
+      page,
+    ]
   )
 
   const agingQuery = useQuery({
@@ -156,6 +179,11 @@ export function useInventoryReports() {
       setSearch('')
       setStatusFilter(undefined)
       setAgingBucketFilter(undefined)
+      setAgingSerial(undefined)
+      setAgingBrandId(undefined)
+      setAgingModel(undefined)
+      setAgingReceivedFrom(undefined)
+      setAgingReceivedTo(undefined)
       setReconStartDate(undefined)
       setReconEndDate(undefined)
       resetPage()
@@ -191,6 +219,28 @@ export function useInventoryReports() {
       setAgingBucketFilter(v)
       resetPage()
     },
+    agingFilters: {
+      serial: agingSerial,
+      brandId: agingBrandId,
+      model: agingModel,
+      receivedFrom: agingReceivedFrom,
+      receivedTo: agingReceivedTo,
+    },
+    setAgingFilter: (
+      key: 'serial' | 'brandId' | 'model' | 'receivedFrom' | 'receivedTo',
+      value: string | undefined
+    ) => {
+      const setters = {
+        serial: setAgingSerial,
+        brandId: setAgingBrandId,
+        model: setAgingModel,
+        receivedFrom: setAgingReceivedFrom,
+        receivedTo: setAgingReceivedTo,
+      }
+      setters[key](value || undefined)
+      resetPage()
+    },
+    agingBrands,
     agingData: agingQuery.data?.data,
     isAgingLoading: agingQuery.isLoading,
     isAgingFetching: agingQuery.isFetching,

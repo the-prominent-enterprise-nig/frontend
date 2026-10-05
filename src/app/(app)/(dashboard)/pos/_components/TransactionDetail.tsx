@@ -4,7 +4,17 @@ import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVoidRequests, useSubmitVoidRequest, useSessions } from '../_hooks/usePos'
 import Link from 'next/link'
-import { X, Loader2, FileText, Clock, CheckCircle, XCircle, Undo2, Receipt } from 'lucide-react'
+import {
+  X,
+  Loader2,
+  FileText,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Undo2,
+  Receipt,
+  MapPin,
+} from 'lucide-react'
 import { getTransaction, getCustomerById, createTransaction } from '../_actions/pos-actions'
 import type { PosTransaction, PosTransactionInvoice, PosVoidRequest } from '@/src/schema/pos'
 import { isRefundPendingApproval } from '@/src/schema/pos'
@@ -15,6 +25,8 @@ import { Skeleton } from '@/src/components/ui/Skeleton'
 import { type SessionUser, can, canAccessModule } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
+import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import { deliveryFeeReceiptTenderLabel } from '../checkout/_utils/delivery'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -116,8 +128,9 @@ export function TransactionDetail({
             {tx.salesInvoiceNumber ?? tx.transactionNumber}
           </h2>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-500 capitalize">
+            <p className="flex items-center gap-2 text-sm text-gray-500 capitalize">
               {tx.transactionType} · {tx.status}
+              {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
             </p>
             {/* Client-requested: the receipt is where someone notices a
                 figure they want to trace, and until now there was no way
@@ -283,6 +296,9 @@ export function TransactionDetail({
                 {tx.deliveryReceiptNumber && (
                   <Row label="Delivery Receipt No." value={tx.deliveryReceiptNumber} />
                 )}
+                {tx.isXDeal && tx.xDealReference && (
+                  <Row label="X-Deal Reference" value={tx.xDealReference} />
+                )}
                 {/* Only when it isn't already the heading above. */}
                 {tx.salesInvoiceNumber && (
                   <Row label="Transaction No." value={tx.transactionNumber} muted />
@@ -313,6 +329,53 @@ export function TransactionDetail({
                 </div>
               )}
 
+              {/* Scenario 66 — who and where, and the delivery fee on its own
+                  collection receipt: below the Total and the Payments,
+                  neither of which ever includes it. */}
+              {tx.deliverTo && (
+                <div className="mt-4 space-y-1 text-sm" data-testid="transaction-delivery">
+                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Delivery</p>
+                  <Row label="Deliver to" value={tx.deliverTo} />
+                  {/* Its own two-line layout: a full address is too long for
+                      Row's label-left / value-right line and ran into the label. */}
+                  {tx.deliveryAddress && (
+                    <div className="text-gray-600">
+                      <span>Address</span>
+                      <p className="mt-0.5 flex items-start gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5 text-[13px] leading-snug text-gray-700">
+                        <MapPin size={13} className="mt-0.5 shrink-0 text-gray-400" />
+                        <span>{tx.deliveryAddress}</span>
+                      </p>
+                    </div>
+                  )}
+                  {Number(tx.deliveryFee ?? 0) > 0 ? (
+                    <>
+                      <Row label="Delivery fee" value={formatCurrency(Number(tx.deliveryFee))} />
+                      {tx.deliveryFeeCollectionReceipt &&
+                        deliveryFeeReceiptTenderLabel(tx.deliveryFeeCollectionReceipt) && (
+                          <Row
+                            label="Paid with"
+                            value={deliveryFeeReceiptTenderLabel(tx.deliveryFeeCollectionReceipt)!}
+                            muted
+                          />
+                        )}
+                      {tx.deliveryFeeReferenceNumber && (
+                        <Row
+                          label="Delivery fee CR#"
+                          value={
+                            tx.deliveryFeeCollectionReceipt?.cancelledAt
+                              ? `${tx.deliveryFeeReferenceNumber} (cancelled)`
+                              : tx.deliveryFeeReferenceNumber
+                          }
+                          muted
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <Row label="Delivery fee" value="Free delivery" muted />
+                  )}
+                </div>
+              )}
+
               {/* Scenario 23 Gap 1 — invoice(s) this transaction produced,
                   one row per invoice (developer-confirmed UI convention). A
                   charge sale has exactly one; an installment sale has one
@@ -322,29 +385,52 @@ export function TransactionDetail({
                   invoices of their own. */}
               {tx.invoices && tx.invoices.length > 0 && (
                 <div className="mt-4">
-                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Invoices</p>
+                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">
+                    {tx.invoices.some((inv) => inv.source !== 'charge')
+                      ? 'Statement of Account'
+                      : 'Invoices'}
+                  </p>
                   <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
-                    {tx.invoices.map((inv) => (
-                      <div
-                        key={inv.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
-                      >
-                        <div>
-                          <p className="font-mono text-xs text-gray-700">{inv.invoiceNumber}</p>
-                          <p className="text-[11px] text-gray-400">
-                            {inv.source === 'charge'
-                              ? 'Charge invoice'
-                              : installmentInvoiceLabel(inv)}
-                          </p>
+                    {tx.invoices.map((inv) => {
+                      const rowClass = 'flex items-center justify-between gap-2 px-3 py-2 text-sm'
+                      const content = (
+                        <>
+                          <div>
+                            <p className="font-mono text-xs text-gray-700">{inv.invoiceNumber}</p>
+                            <p className="text-[11px] text-gray-400">
+                              {inv.source === 'charge'
+                                ? 'Charge invoice'
+                                : installmentInvoiceLabel(inv)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">
+                              {formatCurrency(inv.totalAmount)}
+                            </span>
+                            <InvoiceStatusBadge status={inv.status} />
+                          </div>
+                        </>
+                      )
+                      // A due opens on the Collections screen (same deep link as
+                      // Customer 360's plan modal) so it can be paid from here.
+                      return inv.scheduleId && tx.customerId ? (
+                        <Link
+                          key={inv.id}
+                          href={`/pos/collections?${new URLSearchParams({
+                            customerId: tx.customerId,
+                            customerName: customerName ?? '',
+                            scheduleId: inv.scheduleId,
+                          }).toString()}`}
+                          className={`${rowClass} hover:bg-gray-50`}
+                        >
+                          {content}
+                        </Link>
+                      ) : (
+                        <div key={inv.id} className={rowClass}>
+                          {content}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">
-                            {formatCurrency(inv.totalAmount)}
-                          </span>
-                          <InvoiceStatusBadge status={inv.status} />
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}

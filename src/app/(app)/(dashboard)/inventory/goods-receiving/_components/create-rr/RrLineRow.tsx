@@ -10,13 +10,13 @@
  * column or a toggle button. What's additive on top, kept because Manual RR
  * simply has no reason to need it, is a PO-outstanding chip and a
  * quality-hold reason. (A repossession line no longer renders through this
- * component at all — see RepossessedItemsPanel.tsx/RepossessedUnitRow.tsx,
+ * component at all — see ReturnedUnitsPanel.tsx,
  * developer-confirmed 2026-09-28: a repossessed unit isn't a purchase line
  * and carries none of this row's pricing/tax machinery.)
  */
 
 import { useState } from 'react'
-import { Controller, useWatch, type Control } from 'react-hook-form'
+import { Controller, useFormState, useWatch, type Control } from 'react-hook-form'
 import { ChevronDown, ChevronUp, Copy, Trash2, X } from 'lucide-react'
 import Tooltip from '@/src/components/ui/Tooltip'
 import type { ReceiveStockFormValues } from '@/src/schema/inventory/goods-receiving'
@@ -34,7 +34,7 @@ import type {
 } from '../../../purchase-orders/_components/receive-po/receiveIssues'
 import { INPUT, INPUT_BAD } from './rrTokens'
 import { RR_LINE_GRID } from './rrTokens'
-import { lineTotal as computeLineTotal, type Discount, type RrLine } from './rrTotals'
+import { lineTotal as computeLineTotal, lineWithheld, type Discount, type RrLine } from './rrTotals'
 
 // Scenario 55 (Stock-side Manual RR parity, follow-up) — mirrors
 // ManualRrLineRow.tsx's own local fmtPeso exactly: no currency symbol, only
@@ -144,8 +144,13 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
   } = props
 
   const watched = useWatch({ control, name: `lines.${lineIndex}` })
+  // Field-level resolver errors for this row, so SRP / discounts / unit cost
+  // turn red like Qty and Item do instead of failing the post with only a toast.
+  const { errors: formErrors } = useFormState({ control })
+  const rowErrors = showErrors ? formErrors.lines?.[lineIndex] : undefined
   const qty = Number(watched?.quantityReceived) || 0
   const total = computeLineTotal(line)
+  const withheld = lineWithheld(line)
   const hasError = issues.some((issue) => issue.kind === 'error')
   const [taxOpen, setTaxOpen] = useState(false)
   const [discountsOpen, setDiscountsOpen] = useState(false)
@@ -243,7 +248,9 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
               type="number"
               min="0"
               step="1"
-              value={field.value ?? ''}
+              // 0 shows as empty so the leading zero can be cleared and
+              // retyped instead of turning "2" into "02".
+              value={field.value ? field.value : ''}
               onChange={(e) => onQtyChange(e.target.valueAsNumber)}
               onBlur={field.onBlur}
               aria-label="Quantity received"
@@ -269,7 +276,8 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
                   onBlur={field.onBlur}
                   placeholder="—"
                   aria-label="SRP"
-                  className={`${INPUT} text-right ${MONO} text-[12.5px]`}
+                  aria-invalid={!!rowErrors?.srp}
+                  className={`${rowErrors?.srp ? INPUT_BAD : INPUT} text-right ${MONO} text-[12.5px]`}
                 />
               )}
             />
@@ -284,7 +292,9 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
                     if (discountCount === 0) field.onChange([{ type: 'percentage', value: 0 }])
                     setDiscountsOpen(true)
                   }}
-                  className="flex w-full items-center justify-between gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-2.5 py-1.5 text-[12px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+                  className={`flex w-full items-center justify-between gap-1 rounded-[7px] border ${
+                    rowErrors?.discounts ? 'border-[#b42318]' : 'border-[#ddd0f7]'
+                  } bg-[#f1ebfb] px-2.5 py-1.5 text-[12px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]`}
                 >
                   {discountCount > 0
                     ? `${discountCount} discount${discountCount === 1 ? '' : 's'}`
@@ -315,7 +325,8 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
                   readOnly={!!line.isFreebie}
                   placeholder="0.00"
                   aria-label="Unit cost"
-                  className={`${INPUT} text-right ${MONO} text-[12.5px] ${
+                  aria-invalid={!!rowErrors?.unitCost}
+                  className={`${rowErrors?.unitCost ? INPUT_BAD : INPUT} text-right ${MONO} text-[12.5px] ${
                     line.isFreebie ? 'bg-[#f5f5f7] text-[#a3a3b2]' : ''
                   }`}
                 />
@@ -323,7 +334,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
             />
 
             <span className={`${MONO} self-center text-right text-[12.5px] text-[#17171c]`}>
-              {fmtNum(total)}
+              {fmtNum(total - withheld)}
             </span>
           </>
         ) : (

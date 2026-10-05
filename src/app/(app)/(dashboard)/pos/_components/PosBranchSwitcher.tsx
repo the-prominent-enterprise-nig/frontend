@@ -37,9 +37,11 @@ export function PosBranchSwitcher() {
         const list = res.data ?? []
         if (privileged) setBranches(list)
         const currentBranchId = usePosBranchContext.getState().branchId
-        if (currentBranchId && !list.some((b) => b.id === currentBranchId)) {
-          usePosBranchContext.getState().setBranch(null)
-        }
+        if (!currentBranchId) return
+        // Also refreshes the persisted name, so a renamed branch (or a
+        // caravan now shown by its place) doesn't keep its old label.
+        const current = list.find((b) => b.id === currentBranchId)
+        usePosBranchContext.getState().setBranch(current ?? null)
       })
     })
   }, [])

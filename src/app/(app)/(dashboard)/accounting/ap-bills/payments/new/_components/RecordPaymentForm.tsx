@@ -522,8 +522,10 @@ export default function RecordPaymentForm() {
     setError(null)
     if (selectedIds.length === 0) return setError('Select at least one invoice to pay.')
     for (const src of sources) {
-      if (src.method !== 'cash' && !src.bankAccountId)
-        return setError(`Source of Fund is required for ${src.method.replace('_', ' ')} payments.`)
+      if (!src.bankAccountId)
+        return setError(
+          `Cash / bank account is required for ${src.method.replace('_', ' ')} payments.`
+        )
     }
     // Applies however many sources there are: an untouched single row defaults
     // to the full total, so this only fires on a figure someone actually typed.
@@ -1082,31 +1084,24 @@ export default function RecordPaymentForm() {
                         <Select
                           compact
                           value={src.method}
-                          onChange={(method) =>
-                            setSource(idx, {
-                              method,
-                              bankAccountId: method === 'cash' ? '' : src.bankAccountId,
-                            })
-                          }
+                          onChange={(method) => setSource(idx, { method })}
                           options={METHOD_OPTIONS}
                         />
                       </label>
-                      {src.method !== 'cash' && (
-                        <label className="block w-64">
-                          <span className="mb-1 block text-[11px] text-gray-500">
-                            Bank Account *
-                          </span>
-                          <CategorySelect
-                            compact
-                            aria-label={`Bank account for payment method ${idx + 1}`}
-                            noun="bank accounts"
-                            value={src.bankAccountId}
-                            onChange={(id) => setSource(idx, { bankAccountId: id ?? '' })}
-                            options={bankOptions}
-                            placeholder="— Select —"
-                          />
-                        </label>
-                      )}
+                      <label className="block w-64">
+                        <span className="mb-1 block text-[11px] text-gray-500">
+                          Bank and Cash Accounts *
+                        </span>
+                        <CategorySelect
+                          compact
+                          aria-label={`Bank and cash account for payment method ${idx + 1}`}
+                          noun="bank and cash accounts"
+                          value={src.bankAccountId}
+                          onChange={(id) => setSource(idx, { bankAccountId: id ?? '' })}
+                          options={bankOptions}
+                          placeholder="— Select —"
+                        />
+                      </label>
                       <label className="block w-48">
                         <span className="mb-1 block text-[11px] text-gray-500">Description</span>
                         <input

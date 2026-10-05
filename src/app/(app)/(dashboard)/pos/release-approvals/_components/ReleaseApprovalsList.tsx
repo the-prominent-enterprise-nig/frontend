@@ -30,6 +30,7 @@ import type { PosReleaseFormRequest, PosReleaseFormCartLine } from '@/src/schema
 import { PosDateTime } from '../../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
 interface Props {
   isManager: boolean
@@ -117,6 +118,18 @@ function customerLabel(req: PosReleaseFormRequest): string {
   return (
     req.cartSnapshot?.customer?.name ??
     (req.cartSnapshot?.customerId ? shortId(req.cartSnapshot.customerId) : 'Walk-in')
+  )
+}
+
+/** Scenario 67 — the customer, with the X-DEAL badge when the held sale is
+ * one, so the approver knows why it has no down payment and no credit
+ * application. */
+function CustomerCell({ req }: { req: PosReleaseFormRequest }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {customerLabel(req)}
+      {req.cartSnapshot?.isXDeal && <XDealBadge reference={req.cartSnapshot.xDealReference} />}
+    </span>
   )
 }
 
@@ -567,7 +580,9 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                           <td className="px-5 py-3 font-semibold text-gray-900">
                             {formatCurrency(req.cartSnapshot?.totalAmount ?? 0)}
                           </td>
-                          <td className="px-5 py-3 text-gray-600">{customerLabel(req)}</td>
+                          <td className="px-5 py-3 text-gray-600">
+                            <CustomerCell req={req} />
+                          </td>
                           <td className="px-5 py-3">
                             <span
                               className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
@@ -733,7 +748,9 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                           <td className="px-5 py-3 font-semibold text-gray-900">
                             {formatCurrency(req.cartSnapshot?.totalAmount ?? 0)}
                           </td>
-                          <td className="px-5 py-3 text-gray-600">{customerLabel(req)}</td>
+                          <td className="px-5 py-3 text-gray-600">
+                            <CustomerCell req={req} />
+                          </td>
                           <td className="px-5 py-3 text-gray-500">
                             <PosDateTime iso={req.createdAt} />
                           </td>
@@ -877,7 +894,9 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Customer</span>
-                  <span className="text-gray-900">{customerLabel(detailTarget)}</span>
+                  <span className="text-gray-900">
+                    <CustomerCell req={detailTarget} />
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Submitted</span>
@@ -958,6 +977,23 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                 </div>
                 <p className="font-mono text-xs text-gray-500 mt-0.5">{reviewTarget.id}</p>
               </div>
+
+              {reviewTarget.cartSnapshot?.isXDeal && (
+                <div
+                  data-testid="review-x-deal-note"
+                  className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                >
+                  <XDealBadge reference={reviewTarget.cartSnapshot.xDealReference} />
+                  <span>
+                    X-Deal
+                    {reviewTarget.cartSnapshot.xDealReference
+                      ? ` (ref. ${reviewTarget.cartSnapshot.xDealReference})`
+                      : ''}{' '}
+                    — no down payment and no credit application by design. Accounting clears the
+                    balance with an X-Deal memo.
+                  </span>
+                </div>
+              )}
 
               {(reviewTarget.creditWarnings?.length ?? 0) > 0 && (
                 <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">

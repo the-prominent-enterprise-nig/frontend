@@ -8,6 +8,7 @@ import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import PriceCheckModal from '@/src/components/crm/PriceCheckModal'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
+import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
 const CATEGORY_COLORS: Record<string, string> = {
   A: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -238,7 +239,12 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate font-medium text-gray-900">{a.accountNumber}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate font-medium text-gray-900">
+                          {a.accountNumber}
+                        </span>
+                        {a.isXDeal && <XDealBadge reference={a.xDealReference} />}
+                      </span>
                       <CategoryBadge category={a.category} />
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
@@ -278,7 +284,12 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                       onClick={() => router.push(`/crm/installment-accounts/${a.id}`)}
                       className="cursor-pointer transition-colors hover:bg-gray-50"
                     >
-                      <td className="px-4 py-3 font-medium text-gray-900">{a.accountNumber}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        <span className="inline-flex items-center gap-1.5">
+                          {a.accountNumber}
+                          {a.isXDeal && <XDealBadge reference={a.xDealReference} />}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-[13px] text-gray-700">
                         {a.customer ? a.customer.name : '—'}
                       </td>

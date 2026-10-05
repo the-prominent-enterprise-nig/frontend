@@ -11,6 +11,15 @@ export interface PosTerminal {
   createdAt: string
   updatedAt: string
   branch?: { id: string; name: string }
+  /** Scenario 60 — set when this terminal sells at a caravan; `branchId` is then its host. */
+  caravanBranchId?: string | null
+  caravanBranch?: {
+    id: string
+    name: string
+    isTemporary?: boolean
+    eventName?: string | null
+    addressLine1?: string | null
+  } | null
 }
 
 // Cashier Terminal Access
@@ -120,6 +129,8 @@ export interface SessionReconciliation {
   totalRefunds: number
   netSales: number
   transactionCount: number
+  /** Scenario 61 — SI numbers of the session's completed sales, in order. */
+  invoiceNumbers?: string[]
   totalCashDrops: number
   totalPettyCashIn: number
   totalPettyCashOut: number
@@ -299,6 +310,29 @@ export interface PosTransaction {
   /** Delivery Receipt number — same once-per-transaction convention as
    * salesInvoiceNumber above. */
   deliveryReceiptNumber?: string | null
+  /** Scenario 66 — who receives the delivery; set only on a sale for delivery. */
+  deliverTo?: string | null
+  deliveryAddress?: string | null
+  deliveryBarangayCode?: string | null
+  /** Never part of totalAmount — collected on its own collection receipt. */
+  deliveryFee?: number | string | null
+  deliveryFeeReferenceNumber?: string | null
+  /** The fee's own receipt: its tender, system number, and whether a void
+   * cancelled it. Null when there is no fee. */
+  deliveryFeeCollectionReceipt?: {
+    id?: string
+    number: string | null
+    reference: string | null
+    method: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR' | null
+    amount: number
+    cancelledAt: string | null
+    /** The tender's details, as the sale's payments carry them. */
+    checkNumber?: string | null
+    bankTransferVerifiedAtRegister?: boolean
+    cardTxnMode?: PosCardTxnMode | null
+    cardInstallmentTerm?: number | null
+    paymentMethodOption?: { name: string } | null
+  } | null
   sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
@@ -314,6 +348,13 @@ export interface PosTransaction {
   /** HR's own approval reference for the employee appliance loan — set
    * whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string | null
+  /** Scenario 67 — true when this sale is an X-Deal (barter): inhouse
+   * installment, no down payment, no credit application; accounting clears
+   * its balance with an X-Deal credit memo. */
+  isXDeal?: boolean | null
+  /** The barter agreement / counterparty reference, set whenever isXDeal is
+   * true. */
+  xDealReference?: string | null
   /** Present on create()/findOne() — one per distinct financing term used in
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
@@ -360,6 +401,9 @@ export interface PosTransactionInvoice {
   amountPaid: number
   status: string
   source: 'charge' | 'installment'
+  /** The installment schedule this due belongs to — what the Collections
+   * deep link needs to land on it. Absent on a charge invoice. */
+  scheduleId?: string
   lineNumber: number | null
   totalLines: number | null
   termMonths: number | null
@@ -444,6 +488,12 @@ export interface CreateTransactionInput {
   /** HR's own approval reference for the employee appliance loan —
    * required whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string
+  /** Scenario 67 — marks this sale as an X-Deal (barter). Every line must
+   * be inhouse installment on one financing term with a ₱0 down payment,
+   * and no creditApplicationId may be sent. */
+  isXDeal?: boolean
+  /** Required whenever isXDeal is true, rejected otherwise. */
+  xDealReference?: string
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -459,6 +509,23 @@ export interface CreateTransactionInput {
   /** Delivery Receipt number — same once-per-transaction convention as
    * salesInvoiceNumber above. */
   deliveryReceiptNumber?: string
+  /** Scenario 66 — sending deliverTo marks the sale for delivery;
+   * deliveryAddress is then required. The fee (0 = free delivery) is never
+   * part of subtotal/totalAmount; when it is above 0 its tender and its own
+   * CR number are required. */
+  deliverTo?: string
+  deliveryAddress?: string
+  deliveryBarangayCode?: string
+  deliveryFee?: number
+  deliveryFeeMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+  deliveryFeeReferenceNumber?: string
+  /** The fee's tender details, each only on its own tender (a check is cash
+   * with a check number) — the same ones addPayment takes for the sale. */
+  deliveryFeeCheckNumber?: string
+  deliveryFeePaymentMethodOptionId?: string
+  deliveryFeeBankTransferVerifiedAtRegister?: boolean
+  deliveryFeeCardTxnMode?: PosCardTxnMode
+  deliveryFeeCardInstallmentTerm?: number
   isTaxExempt?: boolean
   taxExemptionRef?: string
   /** Set when a manager has PIN-approved an override (receiptless return,
@@ -597,6 +664,10 @@ export interface CollectionsCustomer {
   phone: string | null
   outstandingCount: number
   outstandingAmount: number
+  /** An employee buyer — tagged on the row. */
+  isEmployee?: boolean
+  /** The part of outstandingAmount that is an Employee Appliance Loan. */
+  applianceOutstanding?: number
   // Scenario 29 ACC-05 — the collector's number: only installment lines
   // whose own due date has actually passed, unlike outstandingAmount
   // above (which counts every open line regardless of maturity).
@@ -1067,6 +1138,11 @@ export interface InstallmentPreview {
   totalPayable: number
   monthlyInstallment: number
   lines: InstallmentPreviewLine[]
+  /** Prompt-payment discount from the curated rate card
+   *  (`PriceListItemTerm.ppd`). Only present when a curated term was found
+   *  for this SKU and term — the generic factor-rate path has no PPD to
+   *  quote, so `undefined` means "no rate card said", not "zero". */
+  ppd?: number
 }
 
 export interface ComputeInstallmentPreviewInput {
@@ -1284,6 +1360,9 @@ export interface PosReleaseFormCartSnapshot {
   financingTermId?: string
   downPayment?: number
   creditApplicationId?: string
+  /** Scenario 67 — the snapshot is the submitted cart, X-Deal flags included. */
+  isXDeal?: boolean
+  xDealReference?: string | null
 }
 
 export interface PosReleaseFormRequest {

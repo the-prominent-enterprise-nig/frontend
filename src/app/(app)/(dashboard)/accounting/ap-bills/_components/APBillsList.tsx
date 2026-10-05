@@ -434,6 +434,7 @@ export default function APBillsList() {
                   supplier's payables), so "everything on this page" is never
                   the set someone actually wants. */}
               <th className="w-10 px-3 py-2" />
+              <th className="px-3 py-2 text-left">Control #</th>
               <th className="px-3 py-2 text-left">Bill #</th>
               <th className="px-3 py-2 text-left">Supplier</th>
               <th className="px-3 py-2 text-left">Bill Date</th>
@@ -518,6 +519,7 @@ export default function APBillsList() {
                         )
                       })()}
                     </td>
+                    <td className="px-3 py-2 font-mono text-xs">{b.controlNumber ?? '—'}</td>
                     <td className="px-3 py-2 font-mono text-xs">
                       {b.billNumber ?? (
                         <span

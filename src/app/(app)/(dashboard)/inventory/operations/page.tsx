@@ -30,7 +30,7 @@ export default async function OperationsPage({
   // shouldn't depend on holding an Operations permission the user may not
   // have once Receiving is no longer part of this hub.
   const { tab } = await searchParams
-  if (tab === 'receiving') redirect('/inventory/stock?tab=reports')
+  if (tab === 'receiving') redirect('/inventory/stock-transaction?tab=receiving')
 
   // RECEIVE_READ is deliberately absent: Receiving moved to the Stock hub,
   // so that permission alone would open a hub with no tab its holder can use.

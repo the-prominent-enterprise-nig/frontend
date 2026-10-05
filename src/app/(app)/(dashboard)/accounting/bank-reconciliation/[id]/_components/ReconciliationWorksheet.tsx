@@ -1,24 +1,28 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle, Download, Eye, Loader2, Pencil, Trash2, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Eye, Loader2, Pencil, Trash2 } from 'lucide-react'
 import {
   BankAccounts,
   fmtMoney,
   fmtDate,
+  adjustedStatementBalance,
+  reconStatus,
   type BankReconciliation,
   type BankReconciliationLine,
   type BankReconciliationLineSourceType,
   type BankLedgerWindow,
 } from '@/src/libs/data/AccountingV2Data'
-import { downloadElementAsPdf } from '@/src/libs/print/htmlToPdf'
 
 const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
   AR_PAYMENT: 'AR Collection',
   AP_PAYMENT: 'AP Check Payment',
   CLEARING_SETTLEMENT: 'Clearing Settlement',
+  FUND_TRANSFER_OUT: 'Inter-Account Transfer (out)',
+  FUND_TRANSFER_IN: 'Inter-Account Transfer (in)',
+  POS_DEPOSIT: 'POS Deposit',
 }
 
 // Scenario 42 — the reconciliation worksheet. Statement Balance and System
@@ -40,17 +44,6 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   })
   const [savingEdit, setSavingEdit] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [downloadingPdf, setDownloadingPdf] = useState(false)
-  // The PDF preview. Rendering the Sheet only while this is open (rather
-  // than always off-screen) means the Download button inside it can capture
-  // an already-on-screen node with downloadElementAsPdf() instead of the
-  // off-screen mount-and-wait dance downloadReactNodeAsPdf() needs.
-  const [showPdfPreview, setShowPdfPreview] = useState(false)
-  const sheetRef = useRef<HTMLDivElement>(null)
-  // The Discrepancy drill-down. Opening it is what triggers the first fetch,
-  // so an untouched worksheet never pays for a ledger it isn't showing.
-  const [showLedger, setShowLedger] = useState(false)
-
   const load = useCallback(async () => {
     setLoading(true)
     const res = await BankAccounts.getReconciliationWorksheet(id)
@@ -147,24 +140,6 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
     load()
   }
 
-  // A real .pdf file on disk, not the window.print() "Save as PDF" pattern
-  // most other documents in this app use — same ref-based
-  // downloadElementAsPdf() capture AcknowledgementReceiptDetail.tsx uses,
-  // since the Sheet is already on screen inside the preview modal by the
-  // time this can be clicked.
-  const downloadPdf = async () => {
-    if (!rec || !sheetRef.current) return
-    setDownloadingPdf(true)
-    try {
-      await downloadElementAsPdf(
-        sheetRef.current,
-        `bank-reconciliation-${rec.bankAccount?.name ?? 'account'}-${String(rec.statementDate).slice(0, 10)}`
-      )
-    } finally {
-      setDownloadingPdf(false)
-    }
-  }
-
   if (loading) {
     return <div className="p-6 text-sm text-gray-400">Loading worksheet...</div>
   }
@@ -185,13 +160,15 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 
   const pendingDeposits = rec.pendingDeposits ?? []
   const pendingWithdrawals = rec.pendingWithdrawals ?? []
-  const checkedDeposits = pendingDeposits.filter((l) => l.checked).reduce((s, l) => s + l.amount, 0)
-  const checkedWithdrawals = pendingWithdrawals
-    .filter((l) => l.checked)
-    .reduce((s, l) => s + l.amount, 0)
-  const adjustedBalance = rec.statementBalance + checkedDeposits - checkedWithdrawals
+  // Scenario 61 Part C — checked = cleared, unchecked = outstanding; only
+  // the outstanding items adjust the statement balance.
+  const adjustedBalance = adjustedStatementBalance(rec.statementBalance, [
+    ...pendingDeposits,
+    ...pendingWithdrawals,
+  ])
   const discrepancy = adjustedBalance - rec.systemBalance
   const isZero = Math.abs(discrepancy) < 0.01
+  const status = reconStatus(rec.reconciled, discrepancy)
 
   return (
     <div className="px-6 py-8 lg:px-10 max-w-5xl mx-auto">
@@ -216,13 +193,23 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
               <CheckCircle className="w-4 h-4" />
               Reconciled
             </span>
+          ) : status === 'For Review' ? (
+            <span
+              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-200"
+              title="Difference is zero — ready to be marked reconciled"
+            >
+              For Review
+            </span>
           ) : (
-            <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200">
-              Pending
+            <span
+              className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200"
+              title="Difference is not zero yet"
+            >
+              In Progress
             </span>
           )}
           <button
-            onClick={() => setShowPdfPreview(true)}
+            onClick={() => router.push(`/accounting/bank-reconciliation/${id}/print`)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             <Eye className="w-4 h-4" /> Preview
@@ -316,7 +303,11 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
       <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryTile label="Statement Balance" value={rec.statementBalance} />
         <SummaryTile label="System Balance" value={rec.systemBalance} hint="Computed from the GL" />
-        <SummaryTile label="Adjusted Balance" value={adjustedBalance} />
+        <SummaryTile
+          label="Adjusted Balance"
+          value={adjustedBalance}
+          hint="Statement + outstanding deposits − outstanding withdrawals"
+        />
         {/* The tile states the gap; clicking it shows the transactions the
             gap has to be hiding in. */}
         <SummaryTile
@@ -324,60 +315,9 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
           value={discrepancy}
           tone={isZero ? 'good' : 'bad'}
           hint="Click to see this bank's transactions"
-          onClick={() => setShowLedger(true)}
+          onClick={() => router.push(`/accounting/bank-reconciliation/${id}/transactions`)}
         />
       </div>
-
-      {showLedger && (
-        <BankLedgerModal
-          reconciliationId={id}
-          bankName={rec.bankAccount?.name ?? 'this bank'}
-          statementDate={rec.statementDate}
-          onClose={() => setShowLedger(false)}
-        />
-      )}
-
-      {showPdfPreview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setShowPdfPreview(false)}
-        >
-          <div
-            className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-              <h2 className="text-sm font-semibold text-gray-900">Bank Reconciliation — Preview</h2>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => void downloadPdf()}
-                  disabled={downloadingPdf}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {downloadingPdf ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
-                  {downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}
-                </button>
-                <button
-                  onClick={() => setShowPdfPreview(false)}
-                  aria-label="Close"
-                  className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-            <div className="max-h-[calc(90vh-56px)] overflow-y-auto bg-gray-100 p-5">
-              <div ref={sheetRef}>
-                <BankReconciliationSheet rec={rec} />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {error && (
         <div className="mt-4 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
@@ -387,14 +327,14 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 
       <LineSection
         title="Pending Deposits"
-        subtitle="AR collections and clearing settlements not yet confirmed cleared."
+        subtitle="Tick each one that appears on the bank statement (cleared). Unticked items are deposits in transit."
         lines={pendingDeposits}
         readOnly={rec.reconciled}
         onToggle={toggleLine}
       />
       <LineSection
         title="Pending Withdrawals"
-        subtitle="AP check payments not yet confirmed cleared."
+        subtitle="Tick each one that appears on the bank statement (cleared). Unticked items are outstanding checks/withdrawals."
         lines={pendingWithdrawals}
         readOnly={rec.reconciled}
         onToggle={toggleLine}
@@ -404,7 +344,8 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
         <div className="mt-6 flex items-center justify-end gap-3">
           {!isZero && (
             <p className="text-xs text-amber-700">
-              Check off every item that actually cleared until Discrepancy reaches ₱0.00.
+              Tick every item that cleared on the statement. Mark Reconciled unlocks only at a ₱0.00
+              discrepancy.
             </p>
           )}
           <button
@@ -470,16 +411,14 @@ function SummaryTile({
  * discrepancy is just as often something that landed outside the window as
  * something inside it.
  */
-function BankLedgerModal({
+export function BankLedgerView({
   reconciliationId,
   bankName,
   statementDate,
-  onClose,
 }: {
   reconciliationId: string
   bankName: string
   statementDate: string
-  onClose: () => void
 }) {
   const [data, setData] = useState<BankLedgerWindow | null>(null)
   const [loading, setLoading] = useState(true)
@@ -524,28 +463,21 @@ function BankLedgerModal({
   }, [load])
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+    <div className="px-6 py-8 lg:px-10 max-w-6xl mx-auto">
+      <Link
+        href={`/accounting/bank-reconciliation/${reconciliationId}`}
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
-        <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Transactions — {bankName}</h2>
-            <p className="mt-0.5 text-xs text-gray-500">
-              Everything posted to this bank in the period. Statement date {fmtDate(statementDate)}.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
+        <ArrowLeft className="h-4 w-4" />
+        Back to worksheet
+      </Link>
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-5 py-4">
+          <h1 className="text-xl font-semibold text-gray-900">Transactions — {bankName}</h1>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Everything posted to this bank in the period, and whether each reconciling item has
+            cleared. Statement date {fmtDate(statementDate)}.
+          </p>
         </div>
 
         <form
@@ -599,6 +531,7 @@ function BankLedgerModal({
                   <th className="px-4 py-2 text-left">Date</th>
                   <th className="px-4 py-2 text-left">Reference</th>
                   <th className="px-4 py-2 text-left">Description</th>
+                  <th className="px-4 py-2 text-left">Status</th>
                   <th className="px-4 py-2 text-right">In</th>
                   <th className="px-4 py-2 text-right">Out</th>
                   <th className="px-4 py-2 text-right">Balance</th>
@@ -607,14 +540,14 @@ function BankLedgerModal({
               <tbody className="divide-y divide-gray-100">
                 {loading && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                       Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && data?.transactions.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                       No transactions hit this bank in that period.
                     </td>
                   </tr>
@@ -625,6 +558,21 @@ function BankLedgerModal({
                       <td className="whitespace-nowrap px-4 py-2 text-xs">{fmtDate(t.date)}</td>
                       <td className="px-4 py-2 text-xs text-gray-500">{t.reference || '—'}</td>
                       <td className="px-4 py-2 text-xs">{t.description || '—'}</td>
+                      <td className="px-4 py-2 text-xs">
+                        {t.clearingStatus === 'CLEARED' ? (
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700">
+                            Cleared
+                          </span>
+                        ) : t.clearingStatus === 'OUTSTANDING' ? (
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">
+                            Outstanding
+                          </span>
+                        ) : (
+                          <span className="text-gray-400" title="Not a reconciling item">
+                            —
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-2 text-right">{t.debit ? fmtMoney(t.debit) : '—'}</td>
                       <td className="px-4 py-2 text-right">
                         {t.credit ? fmtMoney(t.credit) : '—'}
@@ -664,7 +612,7 @@ function LineSection({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
             <tr>
-              <th className="px-3 py-2 text-left w-10"></th>
+              <th className="px-3 py-2 text-left w-16">Cleared</th>
               <th className="px-3 py-2 text-left">Date</th>
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-left">Reference</th>
@@ -714,21 +662,20 @@ function LineSection({
  * hardcoded as the letterhead the same way the Customer Ledger print does —
  * there's no server-side document envelope for this view.
  *
- * Every pending item is itemized regardless of its checked state, matching
- * that reference workbook (it has no "confirmed cleared" checkbox concept).
- * That means Adjusted Balance/Discrepancy here can differ from the
- * worksheet's own tiles above while items are still unchecked — a non-issue
- * once reconciled, since markReconciled() guarantees the persisted
- * discrepancy is genuinely zero.
+ * Scenario 61 Part C — it itemizes what is still OUTSTANDING (unchecked):
+ * the statement balance plus those equals the books, exactly the client's
+ * own printed reconciliation. Cleared (checked) items are already inside the
+ * statement balance and aren't listed. The figures therefore match the
+ * worksheet's tiles above, reconciled or not.
  */
-function BankReconciliationSheet({ rec }: { rec: BankReconciliation }) {
-  const pendingDeposits = rec.pendingDeposits ?? rec.lines.filter((l) => l.direction === 'DEPOSIT')
-  const pendingWithdrawals =
-    rec.pendingWithdrawals ?? rec.lines.filter((l) => l.direction === 'WITHDRAWAL')
-  const depositsTotal = pendingDeposits.reduce((s, l) => s + l.amount, 0)
-  const withdrawalsTotal = pendingWithdrawals.reduce((s, l) => s + l.amount, 0)
-  const adjustedBalance = rec.statementBalance + depositsTotal - withdrawalsTotal
-  const discrepancy = rec.discrepancy ?? adjustedBalance - rec.systemBalance
+export function BankReconciliationSheet({ rec }: { rec: BankReconciliation }) {
+  const outstanding = (rec.lines ?? []).filter((l) => !l.checked)
+  const pendingDeposits = outstanding.filter((l) => l.direction === 'DEPOSIT')
+  const pendingWithdrawals = outstanding.filter((l) => l.direction === 'WITHDRAWAL')
+  const adjustedBalance = adjustedStatementBalance(rec.statementBalance, outstanding)
+  const discrepancy = rec.reconciled
+    ? (rec.discrepancy ?? adjustedBalance - rec.systemBalance)
+    : adjustedBalance - rec.systemBalance
 
   const bankLabel = rec.bankAccount
     ? `${

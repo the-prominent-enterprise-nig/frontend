@@ -293,12 +293,14 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
   const isFilteredEmpty = !isLoading && allPriceLists.length > 0 && priceLists.length === 0
 
   return (
-    <div className={`w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8 ${PLEX}`}>
+    <div
+      className={`w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px] ${PLEX}`}
+    >
       <div className="mx-auto max-w-7xl space-y-5">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-[#17171c] md:text-3xl">Price Lists</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Price Lists</h1>
             <p className="mt-1 text-sm text-[#5b5b6b]">
               One selling price per item, per price use type, per branch. Priority settles the
               overlaps.

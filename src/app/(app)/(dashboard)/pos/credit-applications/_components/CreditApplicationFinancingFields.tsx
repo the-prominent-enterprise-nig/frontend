@@ -24,9 +24,26 @@ import {
 import { DEFAULT_VAT_RATE } from '../../_actions/pos-constants'
 import { Select } from '@/src/components/ui/Select'
 import type { FinancingTerm, InstallmentPreview } from '@/src/schema/pos'
+import { DOWN_PAYMENT_FLOOR_RATE, isCardTerm } from '@/src/libs/constants/financing'
 
 function formatPeso(n: number): string {
   return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+type PaperRecordField = 'lcp' | 'ppdRebate' | 'firstDueDate'
+const PAPER_RECORD_FIELDS: PaperRecordField[] = ['lcp', 'ppdRebate', 'firstDueDate']
+// Form-only: what the system last wrote into each paper-record field.
+const PAPER_AUTO_FILL = 'paperRecordAutoFill'
+
+// The preview's due dates are full timestamps — the sale time plus N months.
+// Cutting the ISO string at 10 characters takes the UTC date, which before
+// 8am in the Philippines is still yesterday's. The local date is the one the
+// customer is told.
+function toDateInputValue(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 10)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 const fieldClass =
@@ -44,6 +61,12 @@ type Props<T extends FinancingScopedFormValues> = {
   setValue: UseFormSetValue<T>
   trigger: UseFormTrigger<T>
   errors: FieldErrors<T>
+  /** Scenario 64 item 27 (client, 2026-09-30) — PROPOSED PURCHASE AND
+   *  INSTALLMENT is not optional, and Price Use and Term are part of it.
+   *  Off by default: the Edit modal reuses this component on a `.partial()`
+   *  schema, where demanding both would make every existing draft
+   *  uneditable. */
+  required?: boolean
   /** Scopes the financing term list the same way checkout's own selector
    * does — a branch's own terms plus tenant-wide ones. */
   branchId?: string | null
@@ -64,6 +87,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   setValue,
   trigger,
   errors,
+  required = false,
   branchId,
 }: Props<T>) {
   const items = useWatch({ control, name: 'items' as Path<T> }) as
@@ -115,6 +139,19 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   const wipTypeId = priceUseTypes.find((t) => t.name === 'WIP')?.id
   const effectivePriceUseTypeId = priceUseTypeId || wipTypeId
 
+  // WIP is the default again. Making Price Use required removed the
+  // "WIP (default)" row that used to stand in for an unmade choice, which
+  // left the field blank on a form where almost every application uses WIP —
+  // required and empty, when it could be required and already right.
+  //
+  // Only ever fills a field that is empty, so a restored draft or an edit
+  // keeps whatever it already carries. `required` scopes this to the create
+  // form; the edit modal must not quietly re-point an application's pricing.
+  useEffect(() => {
+    if (!required || !wipTypeId || priceUseTypeId) return
+    setValue('priceUseTypeId' as Path<T>, wipTypeId as never, { shouldDirty: false })
+  }, [required, wipTypeId, priceUseTypeId, setValue])
+
   // Keeps the full resolved record (not just price) — priceListItemId and
   // downPayment are the curated rate-card fields (Scenario 15, Part 5),
   // needed below to seed Down Payment from the real rate card instead of a
@@ -143,16 +180,33 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectivePriceUseTypeId, itemIdsKey, branchId])
 
+  // Only price-list prices count. The old fallback to `estimatedPrice` — the
+  // flat Item.sellingPrice the item picker seeds — made the total look right
+  // for an item that is on no active list under the chosen Price Use, so
+  // switching Price Use appeared to leave some items unchanged when in fact
+  // they had never been priced from a list at all. Worse, it showed a figure
+  // the server now refuses outright (Scenario 64 item 21), so the form
+  // promised a price the submit could not honour.
   const estimatedTotal = (items ?? []).reduce((sum, i) => {
     const resolved = i.itemId ? resolvedItems[i.itemId] : undefined
-    return sum + (resolved ? Number(resolved.price) : (i.estimatedPrice ?? 0))
+    return sum + (resolved ? Number(resolved.price) : 0)
   }, 0)
 
-  // Only meaningful when every item in the bundle resolved to a real
-  // PriceListItem with a curated down payment — a partial mix (some items
-  // curated, some not) falls back to the generic 10% floor below, same as
-  // the backend's own all-or-nothing rule for the monthly-installment
-  // preview (CreditApplicationService.resolveFinancing()).
+  // Counted, not named — the row's own label lives in the item field above,
+  // and widening this component's generic just to read it is not worth it.
+  // Only meaningful once resolution has settled.
+  const unpricedCount = isResolvingPrices
+    ? 0
+    : (items ?? []).filter((i) => i.itemId && !resolvedItems[i.itemId]).length
+
+  // The curated per-SKU down payment, summed, when every item in the bundle
+  // resolved to one — a partial mix (some items curated, some not) falls
+  // back to the floor, same as the server's resolveFinancing().
+  //
+  // Scenario 64 item 22 had stopped reading it, in favour of a flat 30%.
+  // Reversed 2026-10-02 (PR #199 review): the card's monthly installment is
+  // calculated from the card's own down payment, so 30% down with the card's
+  // monthly overcharged the customer by the difference.
   const resolvedItemsList = itemIds.map((id) => resolvedItems[id])
   const allItemsCurated =
     resolvedItemsList.length > 0 &&
@@ -160,6 +214,15 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   const curatedDownPaymentSum = allItemsCurated
     ? resolvedItemsList.reduce((sum, r) => sum + Number(r!.downPayment), 0)
     : null
+  // And when the card also quotes the chosen term for every item, that sum
+  // IS the down payment — fixed, not a minimum. The server holds it to the
+  // same figure.
+  const selectedTermMonths = financingTerms.find((t) => t.id === financingTermId)?.termMonths
+  const fixedDownPayment =
+    curatedDownPaymentSum != null &&
+    resolvedItemsList.every((r) => isCardTerm(r, selectedTermMonths))
+      ? Math.round(curatedDownPaymentSum * 100) / 100
+      : null
   // The live preview's single previewInstallment() call only takes one
   // priceListItemId, so curation there is scoped to the common single-item
   // application — a multi-item bundle keeps the generic preview on screen,
@@ -176,7 +239,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // while these prices come straight off the price list. Under exclusive
   // pricing that makes the sale's floor ~12% higher than the application's,
   // so an application approved at exactly its own floor was rejected at the
-  // till ("down payment must be at least 10% of its sale amount") on an
+  // till ("down payment must be at least the floor % of its sale amount") on an
   // application the server had already accepted. Work the floor out on the
   // same basis the sale will use, so what is approved is sellable.
   //
@@ -187,14 +250,17 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   const floorBasis = inclusivePricing
     ? estimatedTotal
     : estimatedTotal * (1 + DEFAULT_VAT_RATE.rate / 100)
-  const downPaymentFloor = floorBasis * 0.1
+  const downPaymentFloor = floorBasis * DOWN_PAYMENT_FLOOR_RATE
 
   // The floor is checked in the schema, which can only see form state — so
   // both figures have to live there too, not just in this component.
   useEffect(() => {
     setValue('resolvedItemTotal' as Path<T>, estimatedTotal as never, { shouldDirty: false })
     setValue('downPaymentFloor' as Path<T>, downPaymentFloor as never, { shouldDirty: false })
-  }, [estimatedTotal, downPaymentFloor, setValue])
+    setValue('downPaymentFixed' as Path<T>, (fixedDownPayment ?? undefined) as never, {
+      shouldDirty: false,
+    })
+  }, [estimatedTotal, downPaymentFloor, fixedDownPayment, setValue])
 
   // Seed Down Payment with the curated rate-card down payment when the
   // whole bundle resolved to one (real NIG rate card figure, e.g. ₱3,590 —
@@ -206,7 +272,10 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // the term or the seed value changes, but never overwrites a figure
   // already entered — the collector is free to take more up front, and the
   // schema refuses less.
-  const seedDownPayment = curatedDownPaymentSum ?? downPaymentFloor
+  //
+  // A down payment the card fixes for this term is written whatever the
+  // field holds — there is nothing to choose — and the field is read-only.
+  const seedDownPayment = fixedDownPayment ?? curatedDownPaymentSum ?? downPaymentFloor
   const seededForRef = useRef<string | null>(null)
   // The exact string this component last wrote. Changing the Price Use moves
   // the item total, and therefore the floor — a figure we seeded should
@@ -221,12 +290,12 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
 
     const current = downPaymentInput?.trim()
     const isOurs = !current || current === lastSeededValueRef.current
-    if (!isOurs) return
+    if (!isOurs && fixedDownPayment == null) return
 
     const seeded = seedDownPayment.toFixed(2)
     lastSeededValueRef.current = seeded
     setValue('downPayment' as Path<T>, seeded as never, { shouldValidate: true })
-  }, [financingTermId, seedDownPayment, downPaymentInput, setValue])
+  }, [financingTermId, seedDownPayment, fixedDownPayment, downPaymentInput, setValue])
 
   // Validate this one field as it is typed. The form's default mode only
   // validates on submit, so a too-low figure sat there looking accepted
@@ -299,19 +368,98 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   // including the WIP default, so a changed dropdown visibly changes the
   // number instead of silently doing nothing.
   const selectedPriceUse = priceUseTypes.find((t) => t.id === effectivePriceUseTypeId)
+  // Scenario 64 item 27 — the mockup shades PROPOSED PURCHASE AND
+  // INSTALLMENT "read only from POS draft": the figures come from the system,
+  // not from a transcriber re-keying them. Three of them already exist once
+  // this block has resolved prices and a term, so they are filled in here.
+  //
+  //   LCP            the resolved item total. This is what the app has always
+  //                  called listedCashPrice — checkout passes the very same
+  //                  group total into InstallmentAccount.listedCashPrice — so
+  //                  what LCP means is answered by the codebase rather than
+  //                  guessed at.
+  //   First due date the first line of the installment schedule the preview
+  //                  already computes and shows below.
+  //   PPD rebate     the curated rate card's own PriceListItemTerm.ppd, which
+  //                  the preview endpoint already returns. Absent on the
+  //                  generic factor-rate path, where no rate card exists to
+  //                  quote one — left blank there rather than filled with 0,
+  //                  which would claim a rebate of nothing.
+  //
+  // A filled-in figure follows the item and term it came from, but only
+  // while it is still the system's: a transcriber who typed a figure off the
+  // paper has overridden the system on purpose, and the paper is the source
+  // of truth. Filling only EMPTY fields, as this used to, left the first
+  // figure behind for good — change the item and LCP kept the old item's
+  // price; change the term and the PPD rebate kept the old term's.
+  //
+  // So the value last written into each field is remembered, and a field
+  // that is empty or still holds it is the system's to refresh — or to clear,
+  // when the new item or term has no such figure. The memory lives in form
+  // state rather than a ref because the whole form is stashed and restored
+  // around "+ New customer"; a ref would come back empty and treat every
+  // restored figure as typed. It is not in the schema, so validation strips
+  // it and it never reaches the server.
+  const lcpValue = useWatch({ control, name: 'lcp' as Path<T> }) as string | undefined
+  const ppdValue = useWatch({ control, name: 'ppdRebate' as Path<T> }) as string | undefined
+  const firstDueValue = useWatch({ control, name: 'firstDueDate' as Path<T> }) as string | undefined
+  const autoFilled = useWatch({ control, name: PAPER_AUTO_FILL as Path<T> }) as
+    | Partial<Record<PaperRecordField, string>>
+    | undefined
+
+  useEffect(() => {
+    // `required` is true only on the create form, the only schema that has
+    // these fields at all.
+    if (!required) return
+    const current: Record<PaperRecordField, string> = {
+      lcp: lcpValue ?? '',
+      ppdRebate: ppdValue ?? '',
+      firstDueDate: firstDueValue ?? '',
+    }
+    const system: Record<PaperRecordField, string> = {
+      lcp: estimatedTotal > 0 ? String(estimatedTotal) : '',
+      ppdRebate: preview?.ppd != null ? String(preview.ppd) : '',
+      firstDueDate: preview?.lines?.[0]?.dueDate ? toDateInputValue(preview.lines[0].dueDate) : '',
+    }
+    const nextAutoFilled = { ...autoFilled }
+    let autoFilledChanged = false
+    for (const field of PAPER_RECORD_FIELDS) {
+      const isSystems = current[field] === '' || current[field] === (autoFilled?.[field] ?? '')
+      if (!isSystems) continue
+      if (current[field] !== system[field]) {
+        setValue(field as Path<T>, system[field] as never, { shouldDirty: false })
+      }
+      if ((autoFilled?.[field] ?? '') !== system[field]) {
+        nextAutoFilled[field] = system[field]
+        autoFilledChanged = true
+      }
+    }
+    if (autoFilledChanged) {
+      setValue(PAPER_AUTO_FILL as Path<T>, nextAutoFilled as never, { shouldDirty: false })
+    }
+    // Deliberately not depending on the current values: this runs when the
+    // system's own figures change, not on every keystroke in the fields it
+    // fills.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [required, estimatedTotal, preview, setValue])
+
   const downPaymentError = (errors.downPayment as { message?: string } | undefined)?.message
+  const priceUseError = (errors.priceUseTypeId as { message?: string } | undefined)?.message
+  const financingTermError = (errors.financingTermId as { message?: string } | undefined)?.message
 
   return (
     <div className="space-y-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3">
       <div className="flex items-center gap-2">
         <Calculator className="h-4 w-4 text-zinc-400" />
         <h3 className="text-sm font-medium text-zinc-700">Price Use &amp; Financing</h3>
-        <span className="text-xs text-zinc-400">(optional)</span>
+        {!required && <span className="text-xs text-zinc-400">(optional)</span>}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs font-medium text-zinc-600">Price Use</label>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">
+            Price Use {required && <span className="text-red-500">*</span>}
+          </label>
           <Controller
             name={'priceUseTypeId' as Path<T>}
             control={control}
@@ -319,17 +467,20 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
               <Select
                 value={(field.value as string | undefined) ?? ''}
                 onChange={field.onChange}
-                placeholder="WIP (default)"
+                placeholder={required ? 'Select a Price Use' : 'WIP (default)'}
                 options={[
-                  { value: '', label: 'WIP (default)' },
+                  ...(required ? [] : [{ value: '', label: 'WIP (default)' }]),
                   ...priceUseTypes.map((t) => ({ value: t.id, label: t.name })),
                 ]}
               />
             )}
           />
+          {priceUseError && <p className="mt-1 text-xs text-red-600">{priceUseError}</p>}
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-zinc-600">Financing Term</label>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">
+            Financing Term {required && <span className="text-red-500">*</span>}
+          </label>
           <Controller
             name={'financingTermId' as Path<T>}
             control={control}
@@ -337,9 +488,9 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
               <Select
                 value={(field.value as string | undefined) ?? ''}
                 onChange={field.onChange}
-                placeholder="No installment term"
+                placeholder={required ? 'Select a term' : 'No installment term'}
                 options={[
-                  { value: '', label: 'No installment term' },
+                  ...(required ? [] : [{ value: '', label: 'No installment term' }]),
                   ...financingTerms.map((t) => ({
                     value: t.id,
                     // Just the term. The factor is a financing multiplier
@@ -357,6 +508,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
               />
             )}
           />
+          {financingTermError && <p className="mt-1 text-xs text-red-600">{financingTermError}</p>}
         </div>
       </div>
 
@@ -374,11 +526,21 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
                 value={(field.value as string | undefined) ?? ''}
                 type="text"
                 inputMode="decimal"
-                placeholder={downPaymentFloor > 0 ? `Min. ${formatPeso(downPaymentFloor)}` : '0.00'}
-                className={fieldClass}
+                readOnly={fixedDownPayment != null}
+                placeholder={
+                  fixedDownPayment == null && downPaymentFloor > 0
+                    ? `Min. ${formatPeso(downPaymentFloor)}`
+                    : '0.00'
+                }
+                className={`${fieldClass} ${fixedDownPayment != null ? 'bg-zinc-50 text-zinc-700' : ''}`}
               />
             )}
           />
+          {fixedDownPayment != null && (
+            <p className="mt-1 text-xs text-zinc-500">
+              Set by the price list for this term — the monthly installment is calculated from it.
+            </p>
+          )}
           {downPaymentError && <p className="mt-1 text-xs text-red-600">{downPaymentError}</p>}
         </div>
       )}
@@ -399,6 +561,15 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
             {estimatedTotal > 0 ? formatPeso(estimatedTotal) : '—'}
           </span>
         </div>
+        {unpricedCount > 0 && (
+          <p className="mt-2 text-xs text-amber-700">
+            {unpricedCount === 1 ? 'An item is' : `${unpricedCount} items are`} not on an active
+            price list for{' '}
+            {selectedPriceUse ? `“${selectedPriceUse.name}”` : 'the default price list'} — price
+            {unpricedCount === 1 ? ' it' : ' them'} in Inventory, or choose a different Price Use.
+            Submitting will be rejected until then.
+          </p>
+        )}
         {financingTermId &&
           (previewLoading ? (
             <div className="mt-2 flex items-center gap-2 text-xs text-zinc-400">
@@ -418,10 +589,23 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
                 </span>
                 <span className="text-zinc-700">{formatPeso(preview.monthlyInstallment)}</span>
               </div>
+              {/* The app's own vocabulary, from InstallmentAccount: PNV is
+                  MI x term, and Total Price adds the down payment back.
+                  Every application becomes one of those contracts, and it
+                  used to stop at PNV under the name "Total payable" — so the
+                  figure quoted at intake was smaller than the one the
+                  customer's contract would show, by exactly the down payment
+                  they had just been asked for. Nothing is recomputed here:
+                  preview.totalPayable IS the PNV the backend already stores.
+                  (computeFinancing(): totalPrice = pnv + downPayment.) */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-500">PNV (monthly x term)</span>
+                <span className="text-zinc-700">{formatPeso(preview.totalPayable)}</span>
+              </div>
               <div className="flex items-center justify-between text-sm font-semibold">
-                <span className="text-zinc-700">Total payable</span>
+                <span className="text-zinc-700">Total price</span>
                 <span className="text-prominent-purple-700">
-                  {formatPeso(preview.totalPayable)}
+                  {formatPeso(preview.totalPayable + (parseFloat(downPaymentInput ?? '') || 0))}
                 </span>
               </div>
             </div>

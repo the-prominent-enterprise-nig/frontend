@@ -1,3 +1,5 @@
+import { caravanLabel } from '@/src/libs/format/locationLabel'
+
 /**
  * The purchase order a receiving report came from.
  *
@@ -99,23 +101,74 @@ export function receivingReportSourceRef(
  * Returns null when there is nothing to name, so callers render their own
  * placeholder rather than this inventing one.
  */
-export function receivingReportSourceName(
-  report:
-    | {
-        supplier?: { name?: string | null } | null
-        stockTransfer?: {
-          fromWarehouse?: {
+type ReceivingReportSource =
+  | {
+      supplier?: { name?: string | null } | null
+      /** The customer a repair/return or repossession receipt took units back
+       * from — such a receipt has no supplier. */
+      returnedBy?: { name?: string | null } | null
+      stockTransfer?: {
+        fromWarehouse?: {
+          name?: string | null
+          branch?: {
             name?: string | null
-            branch?: { name?: string | null } | null
+            isTemporary?: boolean | null
+            eventName?: string | null
+            addressLine1?: string | null
           } | null
         } | null
-      }
-    | null
-    | undefined
-): string | null {
+      } | null
+    }
+  | null
+  | undefined
+
+/** A caravan the stock came back from, by where it was set up. */
+function caravanSource(report: ReceivingReportSource): { place: string; event: string } | null {
+  const branch = report?.supplier?.name?.trim()
+    ? null
+    : report?.stockTransfer?.fromWarehouse?.branch
+  const place = branch?.addressLine1?.trim()
+  if (!branch?.isTemporary || !place) return null
+  return { place, event: (branch.eventName ?? branch.name ?? '').trim() }
+}
+
+export function receivingReportSourceName(report: ReceivingReportSource): string | null {
   const supplier = report?.supplier?.name?.trim()
   if (supplier) return supplier
+  const customer = report?.returnedBy?.name?.trim()
+  if (customer) return customer
   const from = report?.stockTransfer?.fromWarehouse
   if (!from) return null
+  // Scenario 60 — stock coming back from a caravan is named by where the
+  // caravan was set up ("Lemery"); the event goes on the line below it.
+  const caravan = caravanSource(report)
+  if (caravan) return caravan.place
+  if (from.branch?.isTemporary && from.branch.name) {
+    return caravanLabel({ name: from.branch.name, eventName: from.branch.eventName })
+  }
   return from.branch?.name?.trim() || from.name?.trim() || null
+}
+
+/** The line under the source name — a caravan's event, when the name above
+ * is the place it was set up. Null for every other receipt. */
+export function receivingReportSourceSubtitle(report: ReceivingReportSource): string | null {
+  return caravanSource(report)?.event || null
+}
+
+/** What a no-supplier receipt is for, as the sheet's heading names it. Null
+ * for an ordinary supplier or transfer receipt, which needs no label. */
+export function receivingReportReasonLabel(
+  report: { reason?: string | null; repairType?: string | null } | null | undefined
+): string | null {
+  if (report?.reason === 'repair_return') {
+    const where =
+      report.repairType === 'in_store'
+        ? ' — In-Store'
+        : report.repairType === 'home_service'
+          ? ' — Home Service'
+          : ''
+    return `Repair / Return${where}`
+  }
+  if (report?.reason === 'repossession') return 'Repossession'
+  return null
 }

@@ -3,7 +3,7 @@ import { requirePermission } from '@/src/libs/guards/require-permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import BankAccountsList from './_components/BankAccountsList'
 
-export const metadata = { title: 'Bank Accounts' }
+export const metadata = { title: 'Bank and Cash Accounts' }
 export default async function Page() {
   const session = await getSessionOrNull()
   requirePermission(session, ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ)

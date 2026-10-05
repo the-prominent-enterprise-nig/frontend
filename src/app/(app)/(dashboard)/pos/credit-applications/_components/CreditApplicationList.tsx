@@ -11,7 +11,7 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import {
   CREDIT_APPLICATION_STATUS_LABELS,
-  CREDIT_APPLICATION_STATUS_COLORS,
+  creditApplicationBadge,
   CreditApplicationStatusSchema,
   type CreditApplicationStatus,
 } from '@/src/schema/credit/applications'
@@ -177,16 +177,15 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                         <p className="truncate font-medium text-zinc-900">
                           {app.applicantCustomer.name}
                         </p>
-                        <p className="mt-0.5 font-mono text-xs text-zinc-500">
-                          {app.applicationNumber}
+                        {/* The desktop table has an "Application #" column
+                            header to explain this; the card had none, so the
+                            code read as an unlabelled reference. */}
+                        <p className="mt-0.5 text-xs text-zinc-500">
+                          Application No. <span className="font-mono">{app.applicationNumber}</span>
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
-                        <StatusBadge
-                          label={CREDIT_APPLICATION_STATUS_LABELS[app.status]}
-                          colorClassName={CREDIT_APPLICATION_STATUS_COLORS[app.status]}
-                          size="xs"
-                        />
+                        <StatusBadge {...creditApplicationBadge(app)} size="xs" />
                         {/* The desktop table shows this; the card was missing
                             it, so on a phone an already-consumed application
                             looked available. */}
@@ -267,10 +266,7 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-col items-center gap-1">
-                            <StatusBadge
-                              label={CREDIT_APPLICATION_STATUS_LABELS[app.status]}
-                              colorClassName={CREDIT_APPLICATION_STATUS_COLORS[app.status]}
-                            />
+                            <StatusBadge {...creditApplicationBadge(app)} />
                             {/* Was solid black, which read as an alert sitting
                                 under a soft status pill — it's a neutral fact,
                                 not a warning, so it's muted to match. It has

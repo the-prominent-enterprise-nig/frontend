@@ -23,7 +23,12 @@ import type {
   ReceiveStockFormValues,
   ReceivingReport,
 } from '@/src/schema/inventory/goods-receiving'
-import { receivingReportSourceRef } from '@/src/libs/format/receiving-report'
+import {
+  receivingReportReasonLabel,
+  receivingReportSourceName,
+  receivingReportSourceRef,
+  receivingReportSourceSubtitle,
+} from '@/src/libs/format/receiving-report'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
@@ -85,6 +90,14 @@ const DELIVERY_LABEL = { partial: 'Partial delivery', complete: 'PO complete' } 
  * the SI typed on the RR itself. Every supplier receipt gets a draft bill
  * straight away, so "has a bill" says nothing; "has an SI" is what tells
  * you the supplier has actually invoiced this delivery. */
+/** A receipt with nothing to invoice: a transfer from another branch, or
+ * units coming back from a customer (repair/return, repossession). */
+function hasNoSupplierInvoice(report: ReceivingReport): boolean {
+  return (
+    !!report.stockTransfer || report.reason === 'repair_return' || report.reason === 'repossession'
+  )
+}
+
 function invoiceNumberOf(report: ReceivingReport): string | null {
   return report.apBill?.billNumber || report.supplierInvoiceNumber || null
 }
@@ -106,7 +119,7 @@ function DeliveryBillCell({ report }: { report: ReceivingReport }): React.ReactE
           {DELIVERY_LABEL[delivery]}
         </span>
       )}
-      {!report.stockTransfer &&
+      {!hasNoSupplierInvoice(report) &&
         (si ? (
           <span className="rounded-[5px] bg-[#eaf0fb] px-1.5 py-0.5 text-[11px] font-medium text-[#1f4b99]">
             SI {si}
@@ -221,19 +234,11 @@ function CopyCodeButton({ code }: { code: string }) {
   )
 }
 
-/** Who the goods came from — the "Source / Ref." column's first line.
- *
- * A transfer-sourced receipt has no supplier at all: the stock came from
- * another branch, so the counterpart is the branch that sent it. This column
- * read a bare "—" on every such row, which said nothing about where a
- * delivery had actually come from. */
+/** Who the goods came from — the "Source / Ref." column's first line: the
+ * supplier, or the branch that sent a transfer (a caravan by where it was
+ * set up). Same resolver as the RR sheet and its printout. */
 function sourceName(report: ReceivingReport): string {
-  if (report.supplier?.name) return report.supplier.name
-  const from = report.stockTransfer?.fromWarehouse
-  // Every branch's warehouse is named "<Branch> Warehouse", so the branch is
-  // the name staff actually use for the place.
-  if (from) return from.branch?.name ?? from.name
-  return '—'
+  return receivingReportSourceName(report) ?? '—'
 }
 
 /** The reference under the source name — a PO code for a supplier receipt,
@@ -245,7 +250,12 @@ function sourceName(report: ReceivingReport): string {
 function PoLink({ report }: { report: ReceivingReport }) {
   const router = useRouter()
   const { code } = receivingReportSourceRef(report)
-  if (!code) return null
+  // A return/repossession has no PO or transfer behind it; its reason is the
+  // reference, under the customer's name.
+  const reason = receivingReportReasonLabel(report)
+  if (!code) {
+    return reason ? <p className="truncate text-[13px] text-[#8b8b9b]">{reason}</p> : null
+  }
 
   // Both references are deep-linkable, to different screens. A PO opens by
   // id; a transfer has no per-transfer route (its detail is a modal over the
@@ -451,7 +461,7 @@ export default function ReceivingReportsTab({
         r.warehouse?.branch?.name ?? r.warehouse?.name ?? '',
         reportUnits(r),
         r.deliveryStatus ? DELIVERY_LABEL[r.deliveryStatus] : '',
-        r.stockTransfer ? '' : (invoiceNumberOf(r) ?? 'Awaiting SI'),
+        hasNoSupplierInvoice(r) ? '' : (invoiceNumberOf(r) ?? 'Awaiting SI'),
         STATUS_META[r.status]?.label ?? r.status,
         ...(showAmounts ? [reportAmount(r) ?? ''] : []),
       ])
@@ -745,6 +755,11 @@ export default function ReceivingReportsTab({
                       <p className="truncate text-[14.5px] font-medium text-[#17171c]">
                         {sourceName(report)}
                       </p>
+                      {receivingReportSourceSubtitle(report) && (
+                        <p className="truncate text-[13px] text-[#8b8b9b]">
+                          {receivingReportSourceSubtitle(report)}
+                        </p>
+                      )}
                       <PoLink report={report} />
                     </div>
 

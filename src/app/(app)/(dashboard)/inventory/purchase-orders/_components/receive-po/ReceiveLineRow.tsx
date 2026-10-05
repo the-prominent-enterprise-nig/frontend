@@ -31,8 +31,6 @@ export type ReceiveLineRowProps = {
   onFillMax: () => void
   onOpenDrawer: (drawer: LineDrawer) => void
   onToggleEditPricing: () => void
-  onToggleQc: () => void
-  onQcReasonChange: (value: string) => void
   onSerialChange: (unitIndex: number, value: string) => void
   onClearSerials: () => void
   onFixIssue: (fix: IssueFix) => void
@@ -92,27 +90,6 @@ export function ReceiveLineRow(props: ReceiveLineRowProps) {
           )}
         </div>
       ))}
-
-      {line.qualityHold && !closed && (
-        <div className="mx-3.5 mb-3 flex flex-wrap items-center gap-2.5 rounded-[9px] border border-[#f7dfc0] bg-[#fffdf8] px-3 py-2.5 lg:ml-12 lg:mr-4.5">
-          <span
-            className={`${MONO} shrink-0 text-[9.5px] uppercase tracking-[.09em] text-[#8a4b06]`}
-          >
-            QC hold reason
-          </span>
-          <input
-            value={line.notes ?? ''}
-            onChange={(e) => props.onQcReasonChange(e.target.value)}
-            type="text"
-            maxLength={500}
-            placeholder="What should the inspector check?"
-            aria-label={`QC hold reason for ${props.title}`}
-            className={`w-full flex-1 rounded-[7px] border bg-white px-2.5 py-1.5 text-[12.5px] text-[#17171c] outline-none focus:border-[#b25e09] ${
-              (line.notes ?? '').trim() ? 'border-[#f7dfc0]' : 'border-[#e4e4e9]'
-            }`}
-          />
-        </div>
-      )}
 
       {drawer === 'serials' && (
         <div className="mx-3.5 mb-3.5 lg:ml-12 lg:mr-4.5">
@@ -195,13 +172,6 @@ function WideRow(props: InnerProps) {
         <TrackingButton {...props} />
       </div>
 
-      {/* Same h-[34px] self-start box as the stats: it centres the 17px
-          checkbox on the serial button beside it rather than on the whole
-          row, which is taller than either of them. */}
-      <div className="flex h-[34px] items-center justify-center self-start">
-        <QcToggle {...props} />
-      </div>
-
       <div className="flex flex-col items-end gap-px">
         {canViewCost ? (
           <>
@@ -273,7 +243,6 @@ function NarrowCard(props: InnerProps) {
 
       <div className="flex flex-wrap items-center gap-2">
         <TrackingButton {...props} large />
-        <QcToggle {...props} large />
         {canViewCost && (
           <button
             type="button"
@@ -470,52 +439,6 @@ function TrackingButton({
           <ChevronDown className="h-3 w-3 shrink-0" />
         ))}
     </button>
-  )
-}
-
-function QcToggle({ line, closed, onToggleQc, large }: InnerProps & { large?: boolean }) {
-  if (large) {
-    return (
-      <button
-        type="button"
-        onClick={onToggleQc}
-        disabled={closed}
-        aria-pressed={line.qualityHold}
-        className={`min-h-10 shrink-0 rounded-lg border px-3 py-2.5 text-[12.5px] font-medium ${
-          line.qualityHold
-            ? 'border-[#f7dfc0] bg-[#fdf3e7] text-[#8a4b06]'
-            : 'border-[#d3d3db] bg-white text-[#5b5b6b]'
-        }`}
-      >
-        {line.qualityHold ? 'QC hold on' : 'QC hold'}
-      </button>
-    )
-  }
-
-  return (
-    <Tooltip
-      label={
-        line.qualityHold ? 'On hold — lands in inspection, not sellable' : 'Hold for QC inspection'
-      }
-      side="top"
-      align="end"
-    >
-      <button
-        type="button"
-        onClick={onToggleQc}
-        disabled={closed}
-        role="checkbox"
-        aria-checked={line.qualityHold}
-        aria-label="Hold for QC inspection"
-        className={`flex h-[17px] w-[17px] items-center justify-center rounded-[4px] border text-[9px] font-bold ${
-          line.qualityHold
-            ? 'border-[#b25e09] bg-[#b25e09] text-white'
-            : 'border-[#d3d3db] bg-white text-transparent'
-        } disabled:opacity-40`}
-      >
-        !
-      </button>
-    </Tooltip>
   )
 }
 

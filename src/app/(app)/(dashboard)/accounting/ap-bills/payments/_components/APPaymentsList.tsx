@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Search, Plus, Printer, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Search, Plus, Printer, ChevronRight } from 'lucide-react'
 import { getApPaymentDocument } from '../../_actions/get-ap-payment-document'
 import { getApDisbursementDocument } from '../../_actions/get-ap-disbursement-document'
 import { printAPPaymentVoucherDocument } from '@/src/libs/print/printInventoryDocument'
@@ -122,12 +122,6 @@ export default function APPaymentsList() {
           >
             <Plus className="h-4 w-4" /> Record Payment
           </Link>
-          <button
-            onClick={() => load(search || undefined)}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
           <form onSubmit={onSearch} className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
             <input

@@ -10,15 +10,11 @@ import {
   BarChart2,
   Activity,
   ChevronRight,
-  Building2,
   CreditCard,
   Wallet,
   Clock,
-  Scale,
   BookOpen,
   ShieldAlert,
-  CalendarDays,
-  Repeat,
   LayoutGrid,
   PieChart,
 } from 'lucide-react'
@@ -553,20 +549,7 @@ export default function AccountingPage() {
                     icon: BarChart2,
                   },
                   { label: 'Bank Recon', href: '/accounting/bank-reconciliation', icon: Wallet },
-                  { label: 'Fixed Assets', href: '/accounting/fixed-assets', icon: Building2 },
-                  { label: 'Budgets', href: '/accounting/budgets', icon: Scale },
-                  {
-                    label: 'Fiscal Periods',
-                    href: '/accounting/fiscal-periods',
-                    icon: CalendarDays,
-                  },
-                  { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
                   { label: 'Reports', href: '/accounting/reports', icon: Clock },
-                  {
-                    label: 'Cash Flow Forecast',
-                    href: '/accounting/cash-forecast',
-                    icon: Activity,
-                  },
                 ] as const
               ).map(({ label, href, icon: Icon }, i) => (
                 <Link

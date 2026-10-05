@@ -10,7 +10,7 @@
  */
 
 import { useRouter } from 'next/navigation'
-import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw } from 'lucide-react'
+import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, Search } from 'lucide-react'
 import { useReceivingReports } from '../../../inventory/goods-receiving/_hooks/useReceivingReports'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
@@ -103,10 +103,12 @@ export default function ReceivingReportsTable({
     totalPages,
     isLoading,
     isFetching,
+    search,
     warehouseId,
     hasDiscrepancy,
     startDate,
     endDate,
+    setSearch,
     setHasDiscrepancy,
     setStartDate,
     setEndDate,
@@ -116,12 +118,23 @@ export default function ReceivingReportsTable({
     // separate Inventory ReceivingReportsTab still gets GoodsReceipts alone.
   } = useReceivingReports({ includeManual: true })
 
-  const hasFilters = warehouseId || hasDiscrepancy !== undefined || startDate || endDate
+  const hasFilters = search || warehouseId || hasDiscrepancy !== undefined || startDate || endDate
 
   return (
     <div className="space-y-4">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-60 flex-1 sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search RR no., PO no., supplier, or DR/invoice no…"
+            className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-prominent-purple-500"
+          />
+        </div>
+
         <select
           value={hasDiscrepancy === undefined ? '' : hasDiscrepancy ? 'true' : 'false'}
           onChange={(e) => {

@@ -19,18 +19,18 @@ type Params = {
   branchIds?: string[]
   warehouseIds?: string[]
   status?: string
+  // Stock classification — several are OR-ed server-side.
+  classification?: string[]
   search?: string
   // Scenario 55 Part 4 — auto-resolving which of this item's sold serials
   // belongs to a picked InstallmentAccount's customer, so a repossession
   // line's serial can be found from the account rather than the other way
   // around.
   soldToCustomerId?: string
-  // Scenario 08 (Caravan) Part 2 — "Caravan" view. Any value here
-  // signals "show what's consigned to my branch" — the backend always
-  // resolves the real branch server-side for a branch-restricted caller, so
-  // the value itself only matters for an unrestricted Business Owner
-  // explicitly checking a specific branch.
-  consignedToBranchId?: string
+  // Scenario 60 — the Caravan tab: one caravan's id, or 'caravan' for every
+  // caravan. Lists units sitting in caravan warehouses; a branch-restricted
+  // caller only ever sees caravans their own branch hosts (server-side).
+  caravanId?: string
   // "company": cross-branch availability, excludes the caller's own branch.
   // "override" (Scenario 29 SN-01): bypasses branch scoping entirely
   // (including the caller's own branch) — requires itemId and the
@@ -57,8 +57,9 @@ export async function getSerialNumbers(
     warehouseIds: params.warehouseIds?.length ? params.warehouseIds.join(',') : undefined,
     status: params.status,
     search: params.search,
+    classification: params.classification?.length ? params.classification.join(',') : undefined,
     soldToCustomerId: params.soldToCustomerId,
-    consignedToBranchId: params.consignedToBranchId,
+    caravanId: params.caravanId,
     scope: params.scope,
     freeForTransfer: params.freeForTransfer ? 'true' : undefined,
     region: params.region,

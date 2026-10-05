@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Check, Copy, Loader2, Plus, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, Loader2, Plus, Trash2, Upload } from 'lucide-react'
 import {
   Expenses,
   APBillSuppliers,
@@ -19,6 +19,7 @@ import {
   type PayeeType,
   type ClearedType,
   type BankAccount,
+  type SpecialAccountRow,
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
@@ -37,7 +38,7 @@ import {
   type Department,
 } from '@/src/libs/data/OrgStructureData'
 import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './ExpenseItemSearchCombobox'
-import { importSpreadsheetLines, type ImportResult } from './importSpreadsheetLines'
+import { importSpreadsheetLines, nameKeys, type ImportResult } from './importSpreadsheetLines'
 import { SpecialAccountPicker } from './SpecialAccountPicker'
 import { downloadCsv } from '@/src/libs/format/csv-export'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
@@ -71,7 +72,6 @@ const CLEARED_OPTIONS: { value: ClearedType; label: string }[] = [
 const VAT_RATE_PERCENT = 12
 
 const TAX_CODE_OPTIONS = [
-  { value: '', label: 'No Tax' },
   { value: 'VAT', label: 'Input VAT' },
   { value: 'NON_VAT', label: 'Non-VAT' },
   { value: 'EXEMPT', label: 'Exempt' },
@@ -120,7 +120,7 @@ const TAX_CODE_ALIASES: Record<string, string> = {
   NON_TAXABLE: 'NON_VAT',
 }
 function taxCodeFor(stored?: string | null): string {
-  if (!stored) return ''
+  if (!stored) return 'NON_VAT'
   return TAX_CODE_ALIASES[stored.toUpperCase()] ?? stored
 }
 
@@ -192,7 +192,7 @@ function emptyLine(): LineState {
     collectFromLabel: '',
     description: '',
     amount: '',
-    taxCode: '',
+    taxCode: 'NON_VAT',
     itemId: '',
     itemLabel: '',
     qty: '',
@@ -400,6 +400,7 @@ function ExpenseFormFields({
     payeeType: initialPayeeType,
     supplierId: initial?.supplierId ?? '',
     voucherNumber: initial?.voucherNumber ?? '',
+    sourceOfFundId: initial?.sourceOfFundId ?? '',
     customerId: initial?.customerId ?? '',
     customerLabel: initial?.customer?.name ?? '',
     arInvoiceId: initial?.arInvoiceId ?? '',
@@ -611,6 +612,81 @@ function ExpenseFormFields({
     () => new Set(postableAccounts.filter((a) => a.isSpecialAccountControl).map((a) => a.id)),
     [postableAccounts]
   )
+  // Deductions larger than what the person still owes. Advisory only — the
+  // balance stops at zero and the entry still records — but a payroll
+  // sheet deducting more than is owed is far likelier a mis-key than a
+  // refund, and the Special Accounts register is where it would otherwise
+  // go unseen. Balances come from that same register, so the figure shown
+  // here is the one on the Special Accounts page.
+  const [balancesByAccount, setBalancesByAccount] = useState<Record<string, SpecialAccountRow[]>>(
+    {}
+  )
+  const deductionAccountIds = useMemo(
+    () =>
+      [
+        ...new Set(
+          lines
+            .filter(
+              (l) =>
+                Number(l.amount) < 0 &&
+                l.payee.trim() &&
+                specialAccountControlIds.has(l.categoryAccountId)
+            )
+            .map((l) => l.categoryAccountId)
+        ),
+      ].sort(),
+    [lines, specialAccountControlIds]
+  )
+  const deductionAccountKey = deductionAccountIds.join(',')
+  useEffect(() => {
+    if (!isOtherMode || !deductionAccountKey) return
+    let cancelled = false
+    const t = setTimeout(async () => {
+      const entries = await Promise.all(
+        deductionAccountKey.split(',').map(async (accountId) => {
+          const res = await Expenses.specialAccounts({ accountId }).catch(() => null)
+          return [accountId, res?.data?.rows ?? []] as const
+        })
+      )
+      if (!cancelled) setBalancesByAccount(Object.fromEntries(entries))
+    }, 400)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [isOtherMode, deductionAccountKey])
+  const overDeductions = useMemo(() => {
+    if (!isOtherMode) return []
+    const groups = new Map<string, { name: string; accountId: string; total: number }>()
+    for (const l of lines) {
+      const amount = Number(l.amount)
+      const name = l.payee.trim()
+      if (!(amount < 0) || !name || !specialAccountControlIds.has(l.categoryAccountId)) continue
+      // Two lines for one person add up before they are compared with what
+      // they owe — each alone might fit.
+      const key = `${l.categoryAccountId}::${nameKeys(name)[0] ?? name}`
+      const g = groups.get(key) ?? { name, accountId: l.categoryAccountId, total: 0 }
+      g.total += -amount
+      groups.set(key, g)
+    }
+    const out: { name: string; deducting: number; balance: number }[] = []
+    for (const g of groups.values()) {
+      const rows = balancesByAccount[g.accountId]
+      // Until the balances load there is nothing honest to compare with.
+      if (!rows) continue
+      const keys = new Set(nameKeys(g.name))
+      const row = rows.find(
+        (r) =>
+          nameKeys(r.name).some((k) => keys.has(k)) ||
+          (r.employee && nameKeys(r.employee.name).some((k) => keys.has(k)))
+      )
+      const balance = Math.max(row?.balance ?? 0, 0)
+      if (g.total > balance + 0.005) {
+        out.push({ name: row?.name ?? g.name, deducting: g.total, balance })
+      }
+    }
+    return out
+  }, [isOtherMode, lines, specialAccountControlIds, balancesByAccount])
   // Supplier line-category default (Settings → Account Mapping) — used when
   // a picked Item has no inventory account of its own, or no Item is
   // picked yet at all.
@@ -757,30 +833,33 @@ function ExpenseFormFields({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines])
 
+  // A single payment can only be the whole entry, so its Amount follows the
+  // lines' total until the cashier types their own — a saved draft's amounts
+  // count as typed, and adding a second row (a split) stops the sync too.
+  const paymentAmountEditedRef = useRef((initial?.payments?.length ?? 0) > 0)
   const setPayment = (index: number, patch: Partial<PaymentState>) => {
+    if (patch.amount !== undefined) paymentAmountEditedRef.current = true
     setPayments((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)))
   }
   const addPayment = () => setPayments((prev) => [...prev, emptyPayment()])
   const removePayment = (index: number) => setPayments((prev) => prev.filter((_, i) => i !== index))
   const paymentsTotal = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-  // The figure every payment has to add up to, repeated beside the payment
-  // rows because that is where it gets typed — the totals block sits below
-  // hundreds of imported lines, well off screen by then. Rendered unformatted
-  // so it pastes straight into the Amount box, and `select-all` makes one
-  // click take the whole number.
-  const [copiedTotal, setCopiedTotal] = useState(false)
-  const copyTotal = async () => {
-    try {
-      await navigator.clipboard.writeText(total.toFixed(2))
-      setCopiedTotal(true)
-      setTimeout(() => setCopiedTotal(false), 1500)
-    } catch {
-      // Clipboard can be blocked; the number is selectable either way.
-    }
-  }
+  useEffect(() => {
+    if (paymentAmountEditedRef.current || payments.length !== 1 || total <= 0) return
+    const next = total.toFixed(2)
+    if (payments[0].amount !== next) setPayments([{ ...payments[0], amount: next }])
+  }, [total, payments])
 
   // Lets the sticky header's Save submit a form it sits outside of.
   const formRef = useRef<HTMLFormElement>(null)
+  // Which header button submitted: both go through the same <form> submit, so
+  // the choice rides in a ref rather than state (no re-render between the
+  // click and requestSubmit reading it).
+  const submitModeRef = useRef<'draft' | 'record'>('draft')
+  const submitAs = (mode: 'draft' | 'record') => {
+    submitModeRef.current = mode
+    formRef.current?.requestSubmit()
+  }
 
   const validate = (): string | null => {
     if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
@@ -823,6 +902,8 @@ function ExpenseFormFields({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const mode = submitModeRef.current
+    submitModeRef.current = 'draft'
     const validationError = validate()
     if (validationError) {
       setError(validationError)
@@ -845,6 +926,7 @@ function ExpenseFormFields({
     }))
     // The one document number for the whole entry, whoever it was paid to.
     payload.voucherNumber = form.voucherNumber || undefined
+    payload.sourceOfFundId = form.sourceOfFundId || undefined
     if (form.payeeType === 'CUSTOMER') {
       payload.customerId = form.customerId
       payload.arInvoiceId = form.arInvoiceId || undefined
@@ -861,9 +943,10 @@ function ExpenseFormFields({
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
-        // The API takes the net amount and derives the 12% itself; the
-        // Amount box is VAT-inclusive, so hand it the net.
-        amount: netFor(l),
+        // The API takes the VAT-inclusive amount and splits the 12% out
+        // itself, so send exactly what was typed — the payments (also
+        // VAT-inclusive) are checked against the sum of these.
+        amount: Number(l.amount) || 0,
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
       }
@@ -899,11 +982,25 @@ function ExpenseFormFields({
     const res = initial
       ? await Expenses.update(initial.id, payload)
       : await Expenses.create(payload)
-    setSaving(false)
     if (!res.success) {
+      setSaving(false)
       setError(res.message || res.error || 'Save failed')
       return
     }
+    if (mode === 'record') {
+      const saved = res.data as { id?: string } | undefined
+      const rec = await Expenses.record(saved?.id ?? initial!.id)
+      if (!rec.success) {
+        setSaving(false)
+        // The draft is saved; only posting failed. On a new form another
+        // click would create a second expense, so point at the list instead.
+        setError(
+          `Saved as a draft, but recording failed: ${rec.message || rec.error || 'unknown error'}. Fix it from the expenses list; don't submit this form again.`
+        )
+        return
+      }
+    }
+    setSaving(false)
     onSaved()
   }
 
@@ -946,12 +1043,20 @@ function ExpenseFormFields({
             </Link>
             <button
               type="button"
-              onClick={() => formRef.current?.requestSubmit()}
+              onClick={() => submitAs('draft')}
+              disabled={saving}
+              className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? 'Saving...' : 'Save draft'}
+            </button>
+            <button
+              type="button"
+              onClick={() => submitAs('record')}
               disabled={saving}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? 'Saving...' : 'Save'}
+              Record
             </button>
           </div>
         </div>
@@ -1030,7 +1135,7 @@ function ExpenseFormFields({
                     className={`mb-1 block text-xs font-medium ${i === 0 ? 'text-gray-600' : 'text-transparent select-none'}`}
                     aria-hidden={i > 0}
                   >
-                    Paid from
+                    Source
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 text-[13px] font-medium text-zinc-500">{i + 1}.</span>
@@ -1111,27 +1216,6 @@ function ExpenseFormFields({
                   Payments total: {fmtMoney(paymentsTotal)} / {fmtMoney(total)}
                 </span>
               )}
-              {total > 0 && (
-                <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                  Amount total
-                  <span className="select-all font-medium tabular-nums text-zinc-700">
-                    {total.toFixed(2)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={copyTotal}
-                    aria-label="Copy amount total"
-                    title="Copy — paste into Amount"
-                    className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
-                  >
-                    {copiedTotal ? (
-                      <Check className="h-3.5 w-3.5 text-green-600" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </span>
-              )}
             </div>
           </div>
         </div>
@@ -1193,17 +1277,15 @@ function ExpenseFormFields({
               </Field>
             </>
           )}
-          {/* The printed voucher's "VOUCHER #" — the one document number for
-              the whole entry, distinct from each payment's own Reference
-              (the client's payroll voucher carries UB#0826-P2 against a
-              reference of UB#0826-02P). Optional, and offered for every
-              payee type: any disbursement can be raised against a voucher,
-              not just a supplier's. */}
-          <Field label="Voucher #">
-            <input
-              value={form.voucherNumber}
-              onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })}
-              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+          <Field label="Source of fund">
+            <CategorySelect
+              compact
+              aria-label="Select source of fund"
+              noun="funds"
+              value={form.sourceOfFundId}
+              onChange={(id) => setForm({ ...form, sourceOfFundId: id ?? '' })}
+              options={bankAccountOptions}
+              placeholder="— Select —"
             />
           </Field>
         </div>
@@ -1508,13 +1590,16 @@ function ExpenseFormFields({
                       {fmtMoney(lineTotal)}
                     </div>
                     {isOtherMode && (
-                      <Select
+                      <CategorySelect
                         compact
-                        value={line.division}
-                        onChange={(division) => setLine(i, { division })}
+                        aria-label="Division"
+                        noun="divisions"
+                        value={line.division || undefined}
+                        onChange={(division) => setLine(i, { division: division ?? '' })}
                         options={divisionChoices.map((d) => ({
-                          value: d.value,
-                          label: d.label,
+                          id: d.value,
+                          name: d.label,
+                          depth: 0,
                         }))}
                         placeholder="— None —"
                       />
@@ -1635,6 +1720,30 @@ function ExpenseFormFields({
                   </div>
                 )}
               </>
+            )}
+
+            {overDeductions.length > 0 && (
+              <div
+                role="alert"
+                className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800"
+              >
+                <p className="font-medium">
+                  {overDeductions.length === 1
+                    ? 'A deduction is more than the balance owed.'
+                    : `${overDeductions.length} deductions are more than the balance owed.`}
+                </p>
+                <ul className="mt-0.5 space-y-0.5">
+                  {overDeductions.slice(0, 5).map((o) => (
+                    <li key={o.name}>
+                      {o.name} — deducting {fmtMoney(o.deducting)}, owes {fmtMoney(o.balance)}
+                    </li>
+                  ))}
+                  {overDeductions.length > 5 && <li>and {overDeductions.length - 5} more</li>}
+                </ul>
+                <p className="mt-0.5 text-amber-700">
+                  You can still record it; the balance stops at zero.
+                </p>
+              </div>
             )}
 
             <button

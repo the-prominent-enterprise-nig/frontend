@@ -129,6 +129,13 @@ export const ReceiveStockFormSchema = z
     // its own) — accepted here so the resolver doesn't reject an untouched
     // form, normalized to undefined only when building the submit payload.
     reason: z.union([z.enum(['repair_return', 'repossession', 'other']), z.literal('')]).optional(),
+    // Repair/Return only — where the unit is serviced. Decides which
+    // documents are required (UDS/RFS, see rrAttachments.ts).
+    repairType: z.enum(['in_store', 'home_service']).optional(),
+    // Already-uploaded UDS/RFS files, attached to the receipt server-side.
+    attachments: z
+      .array(z.object({ fileId: z.string().min(1), kind: z.enum(['UDS', 'RFS']) }))
+      .optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
   })
   .refine(
@@ -142,10 +149,18 @@ export const ReceiveStockFormSchema = z
       path: ['supplierId'],
     }
   )
-  .refine((data) => !!data.warehouseId || data.reason === 'repossession', {
-    message: 'Destination warehouse is required',
-    path: ['warehouseId'],
+  .refine((data) => data.reason !== 'repair_return' || !!data.repairType, {
+    message: 'Pick In-Store or Home Service',
+    path: ['repairType'],
   })
+  .refine(
+    (data) =>
+      !!data.warehouseId || data.reason === 'repossession' || data.reason === 'repair_return',
+    {
+      message: 'Destination warehouse is required',
+      path: ['warehouseId'],
+    }
+  )
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 
@@ -203,6 +218,8 @@ const StockBalanceSummarySchema = z.object({
   totalAvailableQty: z.number(),
   totalReservedQty: z.number(),
   totalSoldQty: z.number().optional(),
+  // Units in transit across the filtered set, summed server-side.
+  totalInTransitQty: z.number().optional(),
 })
 
 export const StockBalanceListResponseSchema = z
@@ -232,6 +249,11 @@ const BranchSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string().optional().nullable(),
+  // Scenario 60 — set on a caravan, so a receipt for stock coming back from
+  // one can name where it was set up and the event.
+  isTemporary: z.boolean().optional(),
+  eventName: z.string().optional().nullable(),
+  addressLine1: z.string().optional().nullable(),
 })
 
 const LedgerWarehouseSchema = z.object({
@@ -396,10 +418,22 @@ export const ReceivingReportSchema = z.object({
   sourceType: z.enum(['goods_receipt', 'manual_rr']).optional(),
   applicationType: z.string().optional(),
   modeOfTransfer: z.string().optional().nullable(),
+  // Why the stock came in. A repair_return / repossession receipt takes units
+  // back from a customer, so it has no supplier invoice behind it.
+  reason: z.string().optional().nullable(),
+  repairType: z.string().optional().nullable(),
   receivedAt: z.string(),
   notes: z.string().optional().nullable(),
   warehouse: ReceivingReportWarehouseSchema.optional().nullable(),
   supplier: ReceivingReportSupplierSchema.optional().nullable(),
+  // Single-receipt response only: the customer a return/repossession came from.
+  returnedBy: z
+    .object({ id: z.string(), name: z.string(), customerCode: z.string().optional() })
+    .optional()
+    .nullable(),
+  returnedInvoices: z
+    .array(z.object({ number: z.string(), date: z.string().nullable().optional() }))
+    .optional(),
   receivedById: z.string().optional().nullable(),
   receivedByName: z.string().optional().nullable(),
   poDate: z.string().optional().nullable(),

@@ -6,8 +6,9 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { CatalogHub } from './_components/CatalogHub'
 
 export const metadata = {
-  title: 'Catalog | NIG Central',
-  description: 'Manage items, categories, attributes, units of measure, and barcodes',
+  title: 'Item Master | NIG Central',
+  description:
+    'Manage categories, brands, types, attributes, units of measure, items, and barcodes',
 }
 
 export default async function CatalogPage() {

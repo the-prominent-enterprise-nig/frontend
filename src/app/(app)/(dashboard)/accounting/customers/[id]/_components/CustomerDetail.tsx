@@ -14,6 +14,7 @@ import { getCustomerById, Customer } from '@/src/libs/data/AccountingData'
 import { ARInvoices, fmtDate, fmtMoney, type ARInvoice } from '@/src/libs/data/AccountingV2Data'
 import { customersApi } from '@/src/libs/api/crm'
 import type { InstallmentSchedule } from '@/src/schema/pos'
+import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 
 const INSTALLMENT_PLAN_STATUS_LABELS: Record<string, string> = {
   active: 'Active',
@@ -186,7 +187,14 @@ export default function CustomerDetail({ id }: { id: string }) {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <DetailCard title="Contact">
-                <Row label="Type" value={customer.customerType ?? 'individual'} />
+                <Row
+                  label="Type"
+                  value={
+                    CUSTOMER_TYPE_LABELS[customer.customerType ?? 'individual'] ??
+                    customer.customerType ??
+                    'Individual'
+                  }
+                />
                 <Row label="Email" value={customer.email || '—'} />
                 <Row label="Phone" value={customer.phone || '—'} />
                 <Row label="Address" value={customer.address || '—'} />

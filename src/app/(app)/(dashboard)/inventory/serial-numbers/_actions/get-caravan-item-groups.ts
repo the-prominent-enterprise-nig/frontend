@@ -12,27 +12,27 @@ type Params = {
   categoryId?: string
   status?: string
   search?: string
-  // Same sentinel contract as getSerialNumbers: the backend resolves the real
-  // branch server-side for a branch-restricted caller, so this only matters
-  // for an unrestricted Business Owner checking a specific branch.
-  consignedToBranchId?: string
+  // One caravan's id, or 'caravan' for every caravan — same contract as
+  // getSerialNumbers. A branch-restricted caller only ever sees caravans
+  // their own branch hosts, enforced server-side.
+  caravanId?: string
 }
 
-// Scenario 08 (Caravan) — the "By Item" rollup. Counts come from the backend
-// rather than from grouping a page of serials client-side, so they cover every
-// consigned unit and not just the twenty currently on screen.
+// Scenario 60 — the Caravan tab's "By Item" rollup. Counts come from the
+// backend rather than from grouping a page of serials client-side, so they
+// cover every unit out at caravans and not just the twenty on screen.
 export async function getCaravanItemGroups(
   params: Params = {}
 ): Promise<ApiResponse<CaravanItemGroupListResponse>> {
   const result = await api.get<CaravanItemGroupListResponse>(
-    '/inventory/serial-numbers/consigned-summary',
+    '/inventory/serial-numbers/caravan-summary',
     {
       page: params.page,
       limit: params.limit,
       categoryId: params.categoryId,
       status: params.status,
       search: params.search,
-      consignedToBranchId: params.consignedToBranchId,
+      caravanId: params.caravanId,
     }
   )
 
