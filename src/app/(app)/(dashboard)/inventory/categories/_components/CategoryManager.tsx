@@ -65,10 +65,10 @@ export default function CategoryManager({ session }: { session: SessionUser | nu
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6">
+    <div className="mx-auto w-full max-w-[1560px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-zinc-900">Category Management</h1>
+          <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Category Management</h1>
           <p className="text-sm text-zinc-500">
             Organize items into a nested hierarchy for easy navigation and reporting.
           </p>
