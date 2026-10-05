@@ -59,9 +59,12 @@ type Props = {
   // carried through as a binding choice.
   initialDraft?: {
     fromWarehouseId: string
-    itemId: string
+    itemId?: string
     itemLabel?: string
-    quantity: number
+    quantity?: number
+    // Set by General Stockbook's "Stock Transfer": each ticked unit becomes
+    // one line pinned to that exact serial (quantity 1).
+    pinnedLines?: { itemId: string; itemLabel?: string; serialNumberId: string }[]
   } | null
   // Scenario 60 — a caravan can be created inline as the destination. It is
   // created first; its warehouse then becomes the transfer's toWarehouseId.
@@ -442,15 +445,23 @@ export default function CreateTransferModal({
               expectedArrival: '',
               reason: '',
               destinationType: 'branch',
-              lines: initialDraft
-                ? [
-                    {
-                      itemId: initialDraft.itemId,
-                      quantity: initialDraft.quantity,
-                      itemLabel: initialDraft.itemLabel,
-                    },
-                  ]
-                : [],
+              lines: initialDraft?.pinnedLines?.length
+                ? initialDraft.pinnedLines.map((pin) => ({
+                    itemId: pin.itemId,
+                    quantity: 1,
+                    itemLabel: pin.itemLabel,
+                    serialNumberId: pin.serialNumberId,
+                    isSerialTracked: true,
+                  }))
+                : initialDraft?.itemId
+                  ? [
+                      {
+                        itemId: initialDraft.itemId,
+                        quantity: initialDraft.quantity ?? 1,
+                        itemLabel: initialDraft.itemLabel,
+                      },
+                    ]
+                  : [],
             }
       )
       setAddItemKey((k) => k + 1)
@@ -561,6 +572,10 @@ export default function CreateTransferModal({
     // dispatch, but the requester shouldn't have to add the same item N
     // times to satisfy that.
     const lines = data.lines.flatMap((line) => {
+      // A pinned line already is one unit of one serial; it is never split.
+      if (line.serialNumberId) {
+        return [{ itemId: line.itemId, quantity: 1, serialNumberId: line.serialNumberId }]
+      }
       const quantity = Number(line.quantity) || 0
       if (line.isSerialTracked && quantity > 1) {
         return Array.from({ length: quantity }, () => ({ itemId: line.itemId, quantity: 1 }))

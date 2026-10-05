@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { saveStockTransferDraft } from '../../transfers/_components/stockTransferDraft'
 import Link from 'next/link'
 import { Hash, X, Truck, Search, ArrowRightLeft } from 'lucide-react'
 import { useSerialNumbers } from '../_hooks/useSerialNumbers'
@@ -187,8 +189,22 @@ export default function SerialNumberList({
   // caravan plus a stock transfer carrying exactly those units.
   const selection = useSerialSelection(serials)
   const [isConsignOpen, setIsConsignOpen] = useState(false)
+
+  // Ticked units go to the Transfers form as lines pinned to those serials.
+  const openStockTransfer = (): void => {
+    const source = selection.sourceWarehouse
+    if (!source) return
+    const pinnedLines = selection.selected.flatMap((s) =>
+      s.item ? [{ serialNumberId: s.id, itemId: s.item.id, itemLabel: s.item.name }] : []
+    )
+    saveStockTransferDraft({ fromWarehouseId: source.id, pinnedLines })
+    router.push('/inventory/stock-transaction?tab=transfers')
+  }
   const { consignToCaravan, isConsigning } = useConsignToCaravan(selection.clear)
   const showSelection = canConsign && !caravanView
+  // Stock Transfer needs only transfer rights; Consign also needs caravan rights.
+  const showTransfer = canTransfer && !caravanView
+  const router = useRouter()
 
   const inService = statusCounts.in_repair + statusCounts.defective + statusCounts.pulled_out
 
@@ -342,19 +358,30 @@ export default function SerialNumberList({
           )}
         </div>
 
-        {showSelection && selection.selected.length > 0 && (
+        {showTransfer && selection.selected.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb] p-3">
             <span className="text-[12.5px] font-medium text-[#3f1490]">
               {selection.selected.length} selected
             </span>
+            {showSelection && (
+              <button
+                type="button"
+                onClick={() => setIsConsignOpen(true)}
+                disabled={selection.mixedSources}
+                className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4c1a9b] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Truck className="h-3.5 w-3.5" />
+                Consign to Caravan
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setIsConsignOpen(true)}
+              onClick={openStockTransfer}
               disabled={selection.mixedSources}
-              className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4c1a9b] disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-[#5b21b6] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f7f3fd] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Truck className="h-3.5 w-3.5" />
-              Consign to Caravan
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Stock Transfer
             </button>
             <button
               type="button"
@@ -428,7 +455,7 @@ export default function SerialNumberList({
                       <tr
                         className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
                       >
-                        {showSelection && (
+                        {showTransfer && (
                           <th className="w-10 px-4 py-[9px]">
                             <input
                               type="checkbox"
@@ -469,7 +496,7 @@ export default function SerialNumberList({
                             selection.isSelected(serial.id) ? 'bg-[#f8f4fd]' : ''
                           }`}
                         >
-                          {showSelection && (
+                          {showTransfer && (
                             <td className="px-4 py-[11px]" onClick={(e) => e.stopPropagation()}>
                               {isConsignable(serial) && (
                                 <input

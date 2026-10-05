@@ -12,6 +12,7 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
+import { consumeStockTransferDraft } from './stockTransferDraft'
 import { LocationName, STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 
@@ -263,9 +264,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const [searchFocused, setSearchFocused] = useState(false)
   const [createDraft, setCreateDraft] = useState<{
     fromWarehouseId: string
-    itemId: string
+    itemId?: string
     itemLabel?: string
-    quantity: number
+    quantity?: number
+    pinnedLines?: { itemId: string; itemLabel?: string; serialNumberId: string }[]
   } | null>(null)
 
   // Item 360's Stock tab "Request transfer" deep-links here with a source
@@ -277,6 +279,15 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   useEffect(() => {
+    const stockDraft = consumeStockTransferDraft()
+    if (stockDraft) {
+      setCreateDraft({
+        fromWarehouseId: stockDraft.fromWarehouseId,
+        pinnedLines: stockDraft.pinnedLines,
+      })
+      setIsCreateOpen(true)
+      return
+    }
     const fromWarehouseId = searchParams.get('prefillFromWarehouseId')
     const itemId = searchParams.get('prefillItemId')
     const quantity = Number(searchParams.get('prefillQty') ?? '1')
