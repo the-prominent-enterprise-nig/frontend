@@ -1,11 +1,20 @@
 import type { Metadata } from 'next'
-import { IBM_Plex_Mono, IBM_Plex_Sans, Poppins } from 'next/font/google'
+import localFont from 'next/font/local'
 import './globals.css'
 import NumberInputScrollGuard from '@/src/components/common/NumberInputScrollGuard'
 
-const poppins = Poppins({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
+// Self-hosted (latin subset, ./fonts) instead of next/font/google: the Google
+// loader downloads at build time, and a failed download breaks the whole
+// Vercel/CI build with a cryptic Turbopack "module not found" on the font.
+const poppins = localFont({
+  src: [
+    { path: './fonts/Poppins-300.woff2', weight: '300', style: 'normal' },
+    { path: './fonts/Poppins-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/Poppins-500.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/Poppins-600.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/Poppins-700.woff2', weight: '700', style: 'normal' },
+    { path: './fonts/Poppins-800.woff2', weight: '800', style: 'normal' },
+  ],
   variable: '--font-poppins',
 })
 
@@ -21,15 +30,23 @@ const poppins = Poppins({
 // class candidates, so a placeholder or partial version of that syntax
 // compiles into invalid CSS and 500s every page in the app rather than
 // failing quietly on the one screen.
-const plexSans = IBM_Plex_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
+const plexSans = localFont({
+  src: [
+    {
+      path: './fonts/IBMPlexSans-Variable.woff2',
+      weight: '400 600',
+      style: 'normal',
+    },
+  ],
   variable: '--font-plex-sans',
 })
 
-const plexMono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
+const plexMono = localFont({
+  src: [
+    { path: './fonts/IBMPlexMono-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/IBMPlexMono-500.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/IBMPlexMono-600.woff2', weight: '600', style: 'normal' },
+  ],
   variable: '--font-plex-mono',
 })
 
