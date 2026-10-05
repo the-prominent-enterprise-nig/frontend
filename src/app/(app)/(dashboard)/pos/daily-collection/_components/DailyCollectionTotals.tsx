@@ -1,12 +1,9 @@
 'use client'
 
-import {
-  COLLECTION_KINDS,
-  type CollectionKind,
-  type DailyCollectionReport,
-} from '@/src/schema/pos/daily-collection'
+import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
 import type { SheetDraftController } from '../_hooks/useSheetDraft'
 import {
+  buildCollectionRecapLines,
   buildDenominationLines,
   cashPosition,
   footerAmount,
@@ -18,20 +15,23 @@ import {
  * The two blocks the paper form prints inside the bottom of its grid, given
  * room to breathe on screen.
  *
- * Left proves what was collected and where it went; right proves the drawer
- * holds what the left claims. They meet at CASH COLLECTED against TOTAL
- * COLLECTION (CASH), and the verdict box states the result in words rather
- * than leaving a reader to subtract two figures themselves.
+ * Left is the client form's recap of what was collected; right proves the
+ * drawer holds it. They meet at CASH COLLECTED against TOTAL COLLECTION, and
+ * the verdict box states the result in words rather than leaving a reader to
+ * subtract two figures themselves.
  */
 
-/** The DESC codes spelled out — the form assumes you already know them, a
- * screen has room not to. */
-const KIND_NOTES: Record<CollectionKind, string> = {
+/** The recap's labels spelled out — the form assumes you already know them,
+ * a screen has room not to. */
+const LINE_NOTES: Record<string, string> = {
   COD: 'Cash on delivery',
   DP: 'Down payment',
-  DC: 'Daily collection',
-  MI: 'Monthly instalment',
-  'MI-PARTIAL': 'Partial instalment',
+  MI: 'Monthly instalment, incl. partial and full payments (FP)',
+  OTHERS: 'DC — delivery charge',
+  GCASH: 'GCash, QR and bank transfer',
+  CHECK: 'Cheque',
+  CARD: 'Card swipe',
+  'OTHER NON-CASH': 'Gift card, store credit, TPF',
 }
 
 const PANE_HEAD =
@@ -72,73 +72,69 @@ export default function DailyCollectionTotals({ report, edit }: Props): React.JS
   )
 }
 
+/**
+ * The client form's recap (Alimodian sample): COD, DP, MI, OTHERS (DC), the
+ * highlighted TOTAL COLLECTION, then GCASH and CHECK — built by the same
+ * `buildCollectionRecapLines` the printed form uses, so screen and paper
+ * cannot disagree.
+ */
 function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.Element {
-  const nonCash = report.nonCash ?? []
-
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
       <p className={PANE_HEAD}>Collection by type</p>
-
-      {COLLECTION_KINDS.map((kind) => {
-        const amount = report.byKind[kind] ?? 0
-        return (
-          <div key={kind} className={`${ROW} border-b border-gray-100`}>
-            <span className="flex min-w-0 items-baseline gap-2">
-              <span
-                className={`font-mono text-xs font-semibold ${
-                  amount ? 'text-prominent-purple-900' : 'text-gray-400'
-                }`}
-              >
-                {kind}
-              </span>
-              <span className="truncate text-xs text-gray-500">{KIND_NOTES[kind]}</span>
-            </span>
-            <span className={`${FIGURE} ${amount ? 'text-gray-900' : 'text-gray-400'}`}>
-              {amount ? peso(amount) : '—'}
-            </span>
+      {buildCollectionRecapLines(report).map((line) =>
+        line.highlight ? (
+          <div key={line.label} className={`${ROW} border-y border-yellow-200 bg-yellow-50 py-3`}>
+            <span className="font-semibold text-gray-900">Total collection</span>
+            <span className={`${FIGURE} text-base font-semibold`}>{peso(line.amount ?? 0)}</span>
           </div>
+        ) : (
+          <RecapRow key={line.label} label={line.label} amount={line.amount} />
         )
-      })}
+      )}
 
-      <div className={`${ROW} border-b border-gray-100`}>
-        <span className="text-gray-600">Cash collections</span>
-        <span className={`${FIGURE} font-medium`}>{peso(report.totalCollection)}</span>
-      </div>
-      <div className={`${ROW} border-b border-gray-100`}>
-        <span className="text-gray-600">Less: deposited</span>
-        <span className={`${FIGURE} text-gray-600`}>({peso(report.totalDeposited)})</span>
-      </div>
-      <div className={`${ROW} border-b border-gray-100`}>
-        <span className="font-medium text-gray-900">Balance (undeposited)</span>
-        <span className={`${FIGURE} font-semibold`}>{peso(report.balance)}</span>
-      </div>
-
-      {/* A heading over nothing is worse than no heading: on a cash-only day
-          the pane stays exactly the client's own cash-only block. */}
-      {nonCash.length > 0 && (
+      {/* Scenario 60 Part 4 — how much of the day came from the caravans this
+          branch hosts. Already inside the total above, so it sits below it. */}
+      {report.caravanSales.length > 0 && (
         <>
-          <p className={`${PANE_HEAD} border-t bg-gray-50`}>Non-cash collections</p>
-          {nonCash.map((tender) => (
-            <div key={tender.tender} className={`${ROW} border-b border-gray-100`}>
-              <span className="min-w-0 truncate pl-3 text-gray-600">{tender.label}</span>
-              <span className={FIGURE}>{peso(tender.amount)}</span>
+          <p className={`${PANE_HEAD} border-t bg-gray-50`}>Caravan sales (included above)</p>
+          {report.caravanSales.map((c) => (
+            <div key={c.caravanId} className={`${ROW} border-b border-gray-100`}>
+              <span className="min-w-0 truncate pl-3 text-gray-600">
+                {c.caravanName}
+                <span className="ml-2 text-xs text-gray-400">
+                  {c.units} {c.units === 1 ? 'unit' : 'units'}
+                </span>
+              </span>
+              <span className={FIGURE}>{peso(c.amount)}</span>
             </div>
           ))}
-          <div className={`${ROW} border-b border-gray-100`}>
-            <span className="text-gray-600">Subtotal</span>
-            <span className={`${FIGURE} font-medium`}>{peso(report.nonCashCollection)}</span>
+          <div className={ROW}>
+            <span className="text-gray-600">Caravan total</span>
+            <span className={`${FIGURE} font-medium`}>{peso(report.caravanSalesTotal)}</span>
           </div>
         </>
       )}
+    </div>
+  )
+}
 
-      <div className={`${ROW} mt-auto border-t border-gray-200 bg-gray-50 py-3`}>
-        <span className="font-semibold text-gray-900">
-          {nonCash.length > 0 ? 'Grand total collected' : 'Total collection'}
+function RecapRow({ label, amount }: { label: string; amount: number | null }): React.JSX.Element {
+  return (
+    <div className={`${ROW} border-b border-gray-100`}>
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span
+          className={`font-mono text-xs font-semibold ${
+            amount ? 'text-prominent-purple-900' : 'text-gray-400'
+          }`}
+        >
+          {label}
         </span>
-        <span className={`${FIGURE} text-base font-semibold`}>
-          {peso(nonCash.length > 0 ? report.grandTotalCollection : report.totalCollection)}
-        </span>
-      </div>
+        <span className="truncate text-xs text-gray-500">{LINE_NOTES[label]}</span>
+      </span>
+      <span className={`${FIGURE} ${amount ? 'text-gray-900' : 'text-gray-400'}`}>
+        {amount ? peso(amount) : '—'}
+      </span>
     </div>
   )
 }

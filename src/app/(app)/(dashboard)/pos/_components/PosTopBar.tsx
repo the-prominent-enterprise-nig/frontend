@@ -22,7 +22,7 @@ export function PosTopBar({
   const showBranchSwitcher = isPosNavRoute(pathname)
 
   return (
-    <div className="flex items-center justify-between border-b border-gray-100">
+    <div className="flex items-center justify-between border-b border-gray-100 bg-white">
       <PosNav canConfigurePos={canConfigurePos} />
       <div className="flex items-center gap-2 pr-4 lg:pr-6">
         <PendingRefundIndicator userId={userId} />

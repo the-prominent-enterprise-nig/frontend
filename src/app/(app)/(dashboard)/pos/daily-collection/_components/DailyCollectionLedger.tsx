@@ -183,6 +183,7 @@ function WideLedger({
                     className={`${CELL} ${line.type === 'deposit' ? 'font-medium uppercase' : ''}`}
                   >
                     {line.customer}
+                    {line.caravan && <CaravanTag name={line.caravan} />}
                   </td>
                 </>
               )}
@@ -229,6 +230,7 @@ function CardLedger({ lines }: { lines: FormLine[] }): React.JSX.Element {
             <div className="min-w-0">
               <p className={`text-sm ${isDeposit ? 'font-semibold uppercase' : 'font-medium'}`}>
                 {isDeposit ? `Deposit: ${line.customer}` : line.customer || '↳ same customer'}
+                {line.caravan && <CaravanTag name={line.caravan} />}
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 {line.si && (
@@ -261,6 +263,16 @@ function DescChip({ desc }: { desc: string }): React.JSX.Element | null {
   return (
     <span className="inline-block rounded bg-prominent-purple-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-prominent-purple-900">
       {desc}
+    </span>
+  )
+}
+
+/** Scenario 60 Part 4 — marks a sale whose units came out of a caravan this
+ * branch hosts. The money is still this branch's collection. */
+function CaravanTag({ name }: { name: string }): React.JSX.Element {
+  return (
+    <span className="ml-2 inline-block rounded bg-[#f5f0fd] px-1.5 py-px align-middle text-[10.5px] font-medium text-[#3f1490] normal-case">
+      {name}
     </span>
   )
 }

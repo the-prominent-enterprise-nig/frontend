@@ -11,6 +11,15 @@ export interface PosTerminal {
   createdAt: string
   updatedAt: string
   branch?: { id: string; name: string }
+  /** Scenario 60 — set when this terminal sells at a caravan; `branchId` is then its host. */
+  caravanBranchId?: string | null
+  caravanBranch?: {
+    id: string
+    name: string
+    isTemporary?: boolean
+    eventName?: string | null
+    addressLine1?: string | null
+  } | null
 }
 
 // Cashier Terminal Access
@@ -120,6 +129,8 @@ export interface SessionReconciliation {
   totalRefunds: number
   netSales: number
   transactionCount: number
+  /** Scenario 61 — SI numbers of the session's completed sales, in order. */
+  invoiceNumbers?: string[]
   totalCashDrops: number
   totalPettyCashIn: number
   totalPettyCashOut: number
