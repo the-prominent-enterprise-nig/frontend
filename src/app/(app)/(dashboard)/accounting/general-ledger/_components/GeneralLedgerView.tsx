@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import ExportButton from '@/src/components/common/ExportButton'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { sourceDocumentLink } from '@/src/libs/format/sourceDocumentLink'
 
@@ -87,19 +88,15 @@ export default function GeneralLedgerView() {
         </div>
         <div>
           <label className="block text-xs text-gray-600 mb-1">Account</label>
-          <select
-            aria-label="Account"
+          <SearchableSelect
+            className="w-80"
             value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg min-w-56"
-          >
-            <option value="">— All accounts (no running balance) —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.number} {a.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setAccountId(v)}
+            placeholder="All accounts (no running balance)"
+            clearable
+            portal
+            options={accounts.map((a) => ({ value: a.id, label: `${a.number} ${a.name}` }))}
+          />
         </div>
         <button
           onClick={load}
@@ -149,16 +146,7 @@ export default function GeneralLedgerView() {
           <Table
             headers={
               showBalance
-                ? [
-                    'Date',
-                    'Reference',
-                    'Account',
-                    'Description',
-                    'Source',
-                    'Debit',
-                    'Credit',
-                    'Balance',
-                  ]
+                ? ['Date', 'Reference', 'Description', 'Source', 'Debit', 'Credit', 'Balance']
                 : ['Date', 'Reference', 'Account', 'Description', 'Source', 'Debit', 'Credit']
             }
           >
@@ -178,9 +166,11 @@ export default function GeneralLedgerView() {
                     t.reference || '—'
                   )}
                 </td>
-                <td className="px-3 py-2">
-                  {t.account?.number} {t.account?.name}
-                </td>
+                {!showBalance && (
+                  <td className="px-3 py-2">
+                    {t.account?.number} {t.account?.name}
+                  </td>
+                )}
                 <td className="px-3 py-2 text-gray-500">{t.description || '—'}</td>
                 <td className="px-3 py-2 text-xs">
                   <SourceCell line={t} />

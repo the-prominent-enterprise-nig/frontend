@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { Select } from '@/src/components/ui/Select'
 import { ArrowLeft } from 'lucide-react'
 import {
   BankAccounts,
@@ -11,9 +13,15 @@ import {
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
 
+const CLEARED_OPTIONS = [
+  { value: 'SAME_DATE', label: 'On the same date' },
+  { value: 'LATER_DATE', label: 'On a later date' },
+]
+
 const today = () => new Date().toISOString().slice(0, 10)
 const emptyForm = () => ({
   date: today(),
+  clearedType: 'SAME_DATE' as 'SAME_DATE' | 'LATER_DATE',
   clearingDate: '',
   sourceBankAccountId: '',
   destinationBankAccountId: '',
@@ -46,6 +54,10 @@ export default function FundTransferForm() {
     loadAccounts()
   }, [])
 
+  const accountOptions = accounts.map((a) => ({
+    value: a.id,
+    label: `${a.name} (${a.accountType})`,
+  }))
   const source = accounts.find((a) => a.id === form.sourceBankAccountId)
   const destination = accounts.find((a) => a.id === form.destinationBankAccountId)
   const amount = Number(form.amount) || 0
@@ -56,7 +68,9 @@ export default function FundTransferForm() {
     if (form.sourceBankAccountId === form.destinationBankAccountId)
       return 'Source and destination must be different accounts.'
     if (amount <= 0) return 'Enter an amount greater than 0.'
-    if (form.clearingDate && form.clearingDate < form.date)
+    if (form.clearedType === 'LATER_DATE' && !form.clearingDate)
+      return 'Pick the date this transfer is expected to clear.'
+    if (form.clearedType === 'LATER_DATE' && form.clearingDate < form.date)
       return 'Clearing date cannot be earlier than the transfer date.'
     return null
   }
@@ -75,7 +89,7 @@ export default function FundTransferForm() {
       destinationBankAccountId: form.destinationBankAccountId,
       amount,
       date: form.date,
-      clearingDate: form.clearingDate || undefined,
+      clearingDate: form.clearedType === 'LATER_DATE' ? form.clearingDate : form.date,
       reference: form.reference || undefined,
       description: form.description || undefined,
     })
@@ -107,7 +121,9 @@ export default function FundTransferForm() {
         onSubmit={submit}
         className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-6"
       >
-        <div className="grid max-w-xl grid-cols-2 gap-4">
+        <div
+          className={`grid gap-4 ${form.clearedType === 'LATER_DATE' ? 'max-w-2xl grid-cols-3' : 'max-w-md grid-cols-2'}`}
+        >
           <Field label="Date *">
             <input
               required
@@ -117,35 +133,43 @@ export default function FundTransferForm() {
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Clearing Date">
-            <input
-              type="date"
-              min={form.date}
-              value={form.clearingDate}
-              onChange={(e) => setForm({ ...form, clearingDate: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          <Field label="Cleared">
+            <Select
+              compact
+              value={form.clearedType}
+              onChange={(value) =>
+                setForm({
+                  ...form,
+                  clearedType: value as 'SAME_DATE' | 'LATER_DATE',
+                  clearingDate: value === 'LATER_DATE' ? form.clearingDate || form.date : '',
+                })
+              }
+              options={CLEARED_OPTIONS}
             />
-            <p className="mt-1 text-[12px] text-gray-500">
-              When it cleared the bank. Can be filled in later.
-            </p>
           </Field>
+          {form.clearedType === 'LATER_DATE' && (
+            <Field label="Cleared Date *">
+              <input
+                required
+                type="date"
+                min={form.date}
+                value={form.clearingDate}
+                onChange={(e) => setForm({ ...form, clearingDate: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </Field>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <Field label="From (source) *">
-            <select
-              required
+            <SearchableSelect
+              portal
               value={form.sourceBankAccountId}
-              onChange={(e) => setForm({ ...form, sourceBankAccountId: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Select —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.accountType})
-                </option>
-              ))}
-            </select>
+              onChange={(id) => setForm({ ...form, sourceBankAccountId: id })}
+              options={accountOptions}
+              placeholder="— Select —"
+            />
             {source && (
               <p className="mt-1 text-[12px] text-gray-500">
                 Current balance: {fmtMoney(source.currentBalance)}
@@ -153,19 +177,13 @@ export default function FundTransferForm() {
             )}
           </Field>
           <Field label="To (destination) *">
-            <select
-              required
+            <SearchableSelect
+              portal
               value={form.destinationBankAccountId}
-              onChange={(e) => setForm({ ...form, destinationBankAccountId: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Select —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.accountType})
-                </option>
-              ))}
-            </select>
+              onChange={(id) => setForm({ ...form, destinationBankAccountId: id })}
+              options={accountOptions}
+              placeholder="— Select —"
+            />
             {destination && (
               <p className="mt-1 text-[12px] text-gray-500">
                 Current balance: {fmtMoney(destination.currentBalance)}

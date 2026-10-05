@@ -27,6 +27,9 @@ import type {
 // more than one purchase is in view. Printing (see handlePrint below) still
 // reproduces the client's original paper ledger card when the ledger
 // narrows to one in-house plan, which is the common case.
+/** Tax Info card (TIN / tax-exempt) is hidden on the ledger by request; flip to bring it back. */
+const SHOW_TAX_INFO = false
+
 export default function CustomerLedgerView({
   customerId,
   backHref,
@@ -230,7 +233,9 @@ export default function CustomerLedgerView({
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Customer Ledger</h1>
                 <p className="mt-1 text-sm text-gray-600">{ledger.customer.name}</p>
-                <p className="font-mono text-xs text-gray-500">{ledger.customer.customerCode}</p>
+                <p className="font-mono text-xs text-gray-500">
+                  {ledger.customer.employeeNumber || ledger.customer.customerCode}
+                </p>
               </div>
               <button
                 type="button"
@@ -241,7 +246,7 @@ export default function CustomerLedgerView({
               </button>
             </div>
 
-            {customer && (
+            {SHOW_TAX_INFO && customer && (
               <section className="mb-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
                 <div className="flex items-center justify-between p-4 pb-2">
                   <h2 className="text-[14px] font-semibold text-gray-900">Tax Info</h2>

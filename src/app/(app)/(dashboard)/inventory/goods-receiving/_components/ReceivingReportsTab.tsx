@@ -24,6 +24,7 @@ import type {
   ReceivingReport,
 } from '@/src/schema/inventory/goods-receiving'
 import {
+  receivingReportReasonLabel,
   receivingReportSourceName,
   receivingReportSourceRef,
   receivingReportSourceSubtitle,
@@ -89,6 +90,14 @@ const DELIVERY_LABEL = { partial: 'Partial delivery', complete: 'PO complete' } 
  * the SI typed on the RR itself. Every supplier receipt gets a draft bill
  * straight away, so "has a bill" says nothing; "has an SI" is what tells
  * you the supplier has actually invoiced this delivery. */
+/** A receipt with nothing to invoice: a transfer from another branch, or
+ * units coming back from a customer (repair/return, repossession). */
+function hasNoSupplierInvoice(report: ReceivingReport): boolean {
+  return (
+    !!report.stockTransfer || report.reason === 'repair_return' || report.reason === 'repossession'
+  )
+}
+
 function invoiceNumberOf(report: ReceivingReport): string | null {
   return report.apBill?.billNumber || report.supplierInvoiceNumber || null
 }
@@ -110,7 +119,7 @@ function DeliveryBillCell({ report }: { report: ReceivingReport }): React.ReactE
           {DELIVERY_LABEL[delivery]}
         </span>
       )}
-      {!report.stockTransfer &&
+      {!hasNoSupplierInvoice(report) &&
         (si ? (
           <span className="rounded-[5px] bg-[#eaf0fb] px-1.5 py-0.5 text-[11px] font-medium text-[#1f4b99]">
             SI {si}
@@ -241,7 +250,12 @@ function sourceName(report: ReceivingReport): string {
 function PoLink({ report }: { report: ReceivingReport }) {
   const router = useRouter()
   const { code } = receivingReportSourceRef(report)
-  if (!code) return null
+  // A return/repossession has no PO or transfer behind it; its reason is the
+  // reference, under the customer's name.
+  const reason = receivingReportReasonLabel(report)
+  if (!code) {
+    return reason ? <p className="truncate text-[13px] text-[#8b8b9b]">{reason}</p> : null
+  }
 
   // Both references are deep-linkable, to different screens. A PO opens by
   // id; a transfer has no per-transfer route (its detail is a modal over the
@@ -447,7 +461,7 @@ export default function ReceivingReportsTab({
         r.warehouse?.branch?.name ?? r.warehouse?.name ?? '',
         reportUnits(r),
         r.deliveryStatus ? DELIVERY_LABEL[r.deliveryStatus] : '',
-        r.stockTransfer ? '' : (invoiceNumberOf(r) ?? 'Awaiting SI'),
+        hasNoSupplierInvoice(r) ? '' : (invoiceNumberOf(r) ?? 'Awaiting SI'),
         STATUS_META[r.status]?.label ?? r.status,
         ...(showAmounts ? [reportAmount(r) ?? ''] : []),
       ])

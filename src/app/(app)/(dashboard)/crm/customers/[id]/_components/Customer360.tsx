@@ -3,23 +3,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import {
-  ArrowLeft,
-  BellPlus,
-  ChevronRight,
-  CreditCard,
-  Download,
-  GitMerge,
-  Paperclip,
-  Pencil,
-  Receipt,
-  Trash2,
-  X,
-} from 'lucide-react'
+import { ArrowLeft, ChevronRight, Download, GitMerge, Paperclip, X } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import { getCustomerHistoryWithPayments } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import TablePagination from '@/src/components/common/TablePagination'
 import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
+import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
@@ -337,18 +326,8 @@ export default function Customer360({
             href={`${base}/${id}/ledger`}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
-            <Receipt className="h-4 w-4" />
             View Customer Ledger
           </Link>
-          {canScheduleReminder && (
-            <button
-              onClick={() => setReminderOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              <BellPlus className="h-4 w-4" />
-              Schedule reminder
-            </button>
-          )}
           {/* 2026-09-18 client request — apply for credit straight from the
               customer's profile, instead of opening the POS credit
               applications page and searching for them again. Carries the
@@ -360,21 +339,48 @@ export default function Customer360({
               )}`}
               className="inline-flex items-center gap-2 rounded-xl bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800"
             >
-              <CreditCard className="h-4 w-4" />
               Apply for Credit
             </Link>
           )}
-          {canEdit && (
-            <Link
-              href={`${base}/${id}/edit`}
-              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              <Pencil className="h-4 w-4" />
-              Edit
-            </Link>
+          {(canScheduleReminder || canEdit || canDelete) && (
+            <RowActionsMenu
+              horizontal
+              bordered
+              items={[
+                ...(canScheduleReminder
+                  ? [
+                      {
+                        label: 'Schedule reminder',
+                        onClick: () => setReminderOpen(true),
+                      },
+                    ]
+                  : []),
+                ...(canEdit
+                  ? [
+                      {
+                        label: 'Edit',
+                        onClick: () => router.push(`${base}/${id}/edit`),
+                      },
+                    ]
+                  : []),
+                ...(canDelete
+                  ? [
+                      {
+                        label: deleting ? 'Deleting…' : 'Delete customer',
+                        variant: 'danger' as const,
+                        onClick: handleDelete,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           )}
         </div>
       </header>
+
+      {deleteError && (
+        <p className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-800">{deleteError}</p>
+      )}
 
       {upcomingPayables.length > 0 && (
         <div
@@ -677,38 +683,6 @@ export default function Customer360({
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Bank Details</h2>
-          {!data.bankAccounts || data.bankAccounts.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No bank details on file. Add one from Edit.
-            </p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {data.bankAccounts.map((acc) => (
-                <li
-                  key={acc.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13px]"
-                >
-                  <span className="font-medium text-gray-800">
-                    {acc.bankName} — {acc.accountNumber}
-                  </span>
-                  <span className="flex items-center gap-2 text-gray-500">
-                    {acc.accountName && <span>{acc.accountName}</span>}
-                    {acc.isPrimary && (
-                      <span className="rounded-full bg-prominent-orange-50 px-2 py-0.5 text-[11px] font-medium text-prominent-orange-700">
-                        Primary
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Co-maker (Guarantor)</h2>
           {!data.coMakers || data.coMakers.length === 0 ? (
             <p className="py-4 text-center text-[13px] text-gray-400">
@@ -774,30 +748,6 @@ export default function Customer360({
           )}
         </section>
       </div>
-
-      {canDelete && (
-        <div className="mt-6 rounded-xl border border-red-200 bg-red-50/60 p-5">
-          <h2 className="text-[14px] font-semibold text-red-900">Danger Zone</h2>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-md text-[13px] text-red-700">
-              Deleting {data.name} is permanent and can&apos;t be undone from here.
-            </p>
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              <Trash2 className="h-4 w-4" />
-              {deleting ? 'Deleting…' : 'Delete customer'}
-            </button>
-          </div>
-          {deleteError && (
-            <p className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-800">
-              {deleteError}
-            </p>
-          )}
-        </div>
-      )}
 
       <ScheduleReminderModal
         open={reminderOpen}

@@ -72,7 +72,6 @@ const CLEARED_OPTIONS: { value: ClearedType; label: string }[] = [
 const VAT_RATE_PERCENT = 12
 
 const TAX_CODE_OPTIONS = [
-  { value: '', label: 'No Tax' },
   { value: 'VAT', label: 'Input VAT' },
   { value: 'NON_VAT', label: 'Non-VAT' },
   { value: 'EXEMPT', label: 'Exempt' },
@@ -121,7 +120,7 @@ const TAX_CODE_ALIASES: Record<string, string> = {
   NON_TAXABLE: 'NON_VAT',
 }
 function taxCodeFor(stored?: string | null): string {
-  if (!stored) return ''
+  if (!stored) return 'NON_VAT'
   return TAX_CODE_ALIASES[stored.toUpperCase()] ?? stored
 }
 
@@ -193,7 +192,7 @@ function emptyLine(): LineState {
     collectFromLabel: '',
     description: '',
     amount: '',
-    taxCode: '',
+    taxCode: 'NON_VAT',
     itemId: '',
     itemLabel: '',
     qty: '',
@@ -564,7 +563,6 @@ function ExpenseFormFields({
     () => suppliers.map((s) => ({ id: s.id, name: `${s.code} — ${s.name}`, depth: 0 })),
     [suppliers]
   )
-  const fundSeries = bankAccounts.find((a) => a.id === form.sourceOfFundId)?.voucherPrefix
   const bankAccountOptions = useMemo(
     () =>
       bankAccounts.map((a) => ({
@@ -854,6 +852,14 @@ function ExpenseFormFields({
 
   // Lets the sticky header's Save submit a form it sits outside of.
   const formRef = useRef<HTMLFormElement>(null)
+  // Which header button submitted: both go through the same <form> submit, so
+  // the choice rides in a ref rather than state (no re-render between the
+  // click and requestSubmit reading it).
+  const submitModeRef = useRef<'draft' | 'record'>('draft')
+  const submitAs = (mode: 'draft' | 'record') => {
+    submitModeRef.current = mode
+    formRef.current?.requestSubmit()
+  }
 
   const validate = (): string | null => {
     if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
@@ -896,6 +902,8 @@ function ExpenseFormFields({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const mode = submitModeRef.current
+    submitModeRef.current = 'draft'
     const validationError = validate()
     if (validationError) {
       setError(validationError)
@@ -935,9 +943,10 @@ function ExpenseFormFields({
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
-        // The API takes the net amount and derives the 12% itself; the
-        // Amount box is VAT-inclusive, so hand it the net.
-        amount: netFor(l),
+        // The API takes the VAT-inclusive amount and splits the 12% out
+        // itself, so send exactly what was typed — the payments (also
+        // VAT-inclusive) are checked against the sum of these.
+        amount: Number(l.amount) || 0,
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
       }
@@ -973,11 +982,25 @@ function ExpenseFormFields({
     const res = initial
       ? await Expenses.update(initial.id, payload)
       : await Expenses.create(payload)
-    setSaving(false)
     if (!res.success) {
+      setSaving(false)
       setError(res.message || res.error || 'Save failed')
       return
     }
+    if (mode === 'record') {
+      const saved = res.data as { id?: string } | undefined
+      const rec = await Expenses.record(saved?.id ?? initial!.id)
+      if (!rec.success) {
+        setSaving(false)
+        // The draft is saved; only posting failed. On a new form another
+        // click would create a second expense, so point at the list instead.
+        setError(
+          `Saved as a draft, but recording failed: ${rec.message || rec.error || 'unknown error'}. Fix it from the expenses list; don't submit this form again.`
+        )
+        return
+      }
+    }
+    setSaving(false)
     onSaved()
   }
 
@@ -1020,12 +1043,20 @@ function ExpenseFormFields({
             </Link>
             <button
               type="button"
-              onClick={() => formRef.current?.requestSubmit()}
+              onClick={() => submitAs('draft')}
+              disabled={saving}
+              className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? 'Saving...' : 'Save draft'}
+            </button>
+            <button
+              type="button"
+              onClick={() => submitAs('record')}
               disabled={saving}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? 'Saving...' : 'Save'}
+              Record
             </button>
           </div>
         </div>
@@ -1104,7 +1135,7 @@ function ExpenseFormFields({
                     className={`mb-1 block text-xs font-medium ${i === 0 ? 'text-gray-600' : 'text-transparent select-none'}`}
                     aria-hidden={i > 0}
                   >
-                    Paid from
+                    Source
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 text-[13px] font-medium text-zinc-500">{i + 1}.</span>
@@ -1246,12 +1277,6 @@ function ExpenseFormFields({
               </Field>
             </>
           )}
-          {/* The printed voucher's "VOUCHER #" — the one document number for
-              the whole entry, distinct from each payment's own Reference
-              (the client's payroll voucher carries UB#0826-P2 against a
-              reference of UB#0826-02P). Optional, and offered for every
-              payee type: any disbursement can be raised against a voucher,
-              not just a supplier's. */}
           <Field label="Source of fund">
             <CategorySelect
               compact
@@ -1261,16 +1286,6 @@ function ExpenseFormFields({
               onChange={(id) => setForm({ ...form, sourceOfFundId: id ?? '' })}
               options={bankAccountOptions}
               placeholder="— Select —"
-            />
-          </Field>
-          <Field label="Voucher #">
-            <input
-              value={form.voucherNumber}
-              placeholder={
-                fundSeries && !form.voucherNumber ? `Auto — ${fundSeries}NNN` : undefined
-              }
-              onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })}
-              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
           </Field>
         </div>

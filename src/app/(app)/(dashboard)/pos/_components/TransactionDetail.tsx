@@ -385,29 +385,52 @@ export function TransactionDetail({
                   invoices of their own. */}
               {tx.invoices && tx.invoices.length > 0 && (
                 <div className="mt-4">
-                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Invoices</p>
+                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">
+                    {tx.invoices.some((inv) => inv.source !== 'charge')
+                      ? 'Statement of Account'
+                      : 'Invoices'}
+                  </p>
                   <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
-                    {tx.invoices.map((inv) => (
-                      <div
-                        key={inv.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
-                      >
-                        <div>
-                          <p className="font-mono text-xs text-gray-700">{inv.invoiceNumber}</p>
-                          <p className="text-[11px] text-gray-400">
-                            {inv.source === 'charge'
-                              ? 'Charge invoice'
-                              : installmentInvoiceLabel(inv)}
-                          </p>
+                    {tx.invoices.map((inv) => {
+                      const rowClass = 'flex items-center justify-between gap-2 px-3 py-2 text-sm'
+                      const content = (
+                        <>
+                          <div>
+                            <p className="font-mono text-xs text-gray-700">{inv.invoiceNumber}</p>
+                            <p className="text-[11px] text-gray-400">
+                              {inv.source === 'charge'
+                                ? 'Charge invoice'
+                                : installmentInvoiceLabel(inv)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">
+                              {formatCurrency(inv.totalAmount)}
+                            </span>
+                            <InvoiceStatusBadge status={inv.status} />
+                          </div>
+                        </>
+                      )
+                      // A due opens on the Collections screen (same deep link as
+                      // Customer 360's plan modal) so it can be paid from here.
+                      return inv.scheduleId && tx.customerId ? (
+                        <Link
+                          key={inv.id}
+                          href={`/pos/collections?${new URLSearchParams({
+                            customerId: tx.customerId,
+                            customerName: customerName ?? '',
+                            scheduleId: inv.scheduleId,
+                          }).toString()}`}
+                          className={`${rowClass} hover:bg-gray-50`}
+                        >
+                          {content}
+                        </Link>
+                      ) : (
+                        <div key={inv.id} className={rowClass}>
+                          {content}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">
-                            {formatCurrency(inv.totalAmount)}
-                          </span>
-                          <InvoiceStatusBadge status={inv.status} />
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}

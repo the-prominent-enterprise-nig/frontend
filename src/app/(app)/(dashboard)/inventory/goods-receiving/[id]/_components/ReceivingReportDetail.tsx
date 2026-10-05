@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react'
+import { ArrowLeft, Loader2, Paperclip, Pencil, Printer } from 'lucide-react'
+import { FileAttachments } from '@/src/libs/data/AccountingV2Data'
 import ReceivingReportSheet, {
   type ReceivingReportDocument,
 } from '../../../../accounting/receiving-reports/_components/ReceivingReportSheet'
+import ReturnReceiptEditForm from '../../../../accounting/receiving-reports/_components/ReturnReceiptEditForm'
 import ReceivingReportEditForm from '../../../../accounting/receiving-reports/_components/ReceivingReportEditForm'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import { getReceivingDocument } from '../../_actions/get-receiving-document'
@@ -26,6 +28,65 @@ function fmtDate(v?: string | null): string {
         year: 'numeric',
       })
     : '—'
+}
+
+type ReceiptDocument = { id: string; kind: 'UDS' | 'RFS'; fileId: string; name: string }
+
+/** The UDS / RFS scans attached when a repossession or repair/return was
+ * received. Renders nothing for an ordinary receipt, or when the reader may
+ * not list attachments. */
+function ReceiptDocuments({ receiptId }: { receiptId: string }) {
+  const [docs, setDocs] = useState<ReceiptDocument[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all(
+      (['UDS', 'RFS'] as const).map(async (kind) => {
+        const res = await FileAttachments.listForEntity(`GoodsReceipt:${kind}`, receiptId)
+        return (res.data ?? []).map((a) => ({
+          id: a.id,
+          kind,
+          fileId: a.file.id,
+          name: a.file.originalName,
+        }))
+      })
+    )
+      .then((groups) => {
+        if (!cancelled) setDocs(groups.flat())
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [receiptId])
+
+  if (docs.length === 0) return null
+  return (
+    <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
+      <h2 className="mb-1 text-[14px] font-semibold text-prominent-purple-900">Attachments</h2>
+      <p className="mb-3 text-[12px] text-gray-500">
+        Supporting documents attached when this receipt was created.
+      </p>
+      <ul className="space-y-1.5">
+        {docs.map((d) => (
+          <li key={d.id} className="flex items-center gap-2 text-[13px]">
+            <span className="w-10 shrink-0 rounded bg-purple-50 px-1.5 py-0.5 text-center text-[11px] font-semibold text-purple-700">
+              {d.kind}
+            </span>
+            <a
+              href={`/api/files/${d.fileId}/download`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-purple-700 hover:underline"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              {d.name}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 export default function ReceivingReportDetail({
@@ -164,14 +225,25 @@ export default function ReceivingReportDetail({
       {/* Scenario 46 — correcting the report after the fact. Shared with the
           PO's Delivery Receipts drawer so a correction reads the same way
           from either screen. */}
-      {editing && record && (
-        <ReceivingReportEditForm
-          id={id}
-          record={record}
-          onCancel={() => setEditing(false)}
-          onSaved={refetchAfterSave}
-        />
-      )}
+      {editing &&
+        record &&
+        // A repair/return or repossession has no supplier paperwork to
+        // correct, so it gets its own form rather than the supplier one.
+        (record.reason === 'repair_return' || record.reason === 'repossession' ? (
+          <ReturnReceiptEditForm
+            id={id}
+            record={record}
+            onCancel={() => setEditing(false)}
+            onSaved={refetchAfterSave}
+          />
+        ) : (
+          <ReceivingReportEditForm
+            id={id}
+            record={record}
+            onCancel={() => setEditing(false)}
+            onSaved={refetchAfterSave}
+          />
+        ))}
 
       <div className="mt-2.5">
         <ReceivingReportSheet doc={doc} />
@@ -325,6 +397,8 @@ export default function ReceivingReportDetail({
           </div>
         </section>
       )}
+
+      {record && <ReceiptDocuments receiptId={id} />}
     </div>
   )
 }

@@ -42,19 +42,22 @@ export default function EmployeePicker({
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [])
 
-  const searchActive = open && search.trim().length >= 2
+  const searchActive = open
   const openUpward = useOpenUpward(searchActive, containerRef, popupRef)
 
   useEffect(() => {
     if (!searchActive) return
     const controller = new AbortController()
-    const t = setTimeout(async () => {
-      setLoading(true)
-      const res = await EmployeesApi.search(search)
-      if (controller.signal.aborted) return
-      if (res.success && res.data) setResults(res.data.slice(0, 20))
-      setLoading(false)
-    }, 250)
+    const t = setTimeout(
+      async () => {
+        setLoading(true)
+        const res = await EmployeesApi.search(search.trim() || undefined)
+        if (controller.signal.aborted) return
+        if (res.success && res.data) setResults(res.data.slice(0, 20))
+        setLoading(false)
+      },
+      search.trim() ? 250 : 0
+    )
     return () => {
       controller.abort()
       clearTimeout(t)

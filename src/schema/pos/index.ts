@@ -401,6 +401,9 @@ export interface PosTransactionInvoice {
   amountPaid: number
   status: string
   source: 'charge' | 'installment'
+  /** The installment schedule this due belongs to — what the Collections
+   * deep link needs to land on it. Absent on a charge invoice. */
+  scheduleId?: string
   lineNumber: number | null
   totalLines: number | null
   termMonths: number | null

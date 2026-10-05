@@ -104,6 +104,9 @@ export function receivingReportSourceRef(
 type ReceivingReportSource =
   | {
       supplier?: { name?: string | null } | null
+      /** The customer a repair/return or repossession receipt took units back
+       * from — such a receipt has no supplier. */
+      returnedBy?: { name?: string | null } | null
       stockTransfer?: {
         fromWarehouse?: {
           name?: string | null
@@ -132,6 +135,8 @@ function caravanSource(report: ReceivingReportSource): { place: string; event: s
 export function receivingReportSourceName(report: ReceivingReportSource): string | null {
   const supplier = report?.supplier?.name?.trim()
   if (supplier) return supplier
+  const customer = report?.returnedBy?.name?.trim()
+  if (customer) return customer
   const from = report?.stockTransfer?.fromWarehouse
   if (!from) return null
   // Scenario 60 — stock coming back from a caravan is named by where the
@@ -148,4 +153,22 @@ export function receivingReportSourceName(report: ReceivingReportSource): string
  * is the place it was set up. Null for every other receipt. */
 export function receivingReportSourceSubtitle(report: ReceivingReportSource): string | null {
   return caravanSource(report)?.event || null
+}
+
+/** What a no-supplier receipt is for, as the sheet's heading names it. Null
+ * for an ordinary supplier or transfer receipt, which needs no label. */
+export function receivingReportReasonLabel(
+  report: { reason?: string | null; repairType?: string | null } | null | undefined
+): string | null {
+  if (report?.reason === 'repair_return') {
+    const where =
+      report.repairType === 'in_store'
+        ? ' — In-Store'
+        : report.repairType === 'home_service'
+          ? ' — Home Service'
+          : ''
+    return `Repair / Return${where}`
+  }
+  if (report?.reason === 'repossession') return 'Repossession'
+  return null
 }

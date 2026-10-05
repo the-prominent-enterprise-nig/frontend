@@ -37,6 +37,13 @@ export function costFromPricing(
   return Math.max(0, round2(priced))
 }
 
+/** Tax withheld on one line — off its discounted, VAT-inclusive total. */
+export function lineWithheld(
+  line: Pick<RrLine, 'quantityReceived' | 'unitCost' | 'isFreebie' | 'withholdingClass'>
+): number {
+  return round2(lineTotal(line) * (WITHHOLDING_RATES[line.withholdingClass ?? ''] ?? 0))
+}
+
 /** What one line adds to the supplier's invoice. */
 export function lineTotal(
   line: Pick<RrLine, 'quantityReceived' | 'unitCost' | 'isFreebie'>
@@ -105,9 +112,8 @@ export function rrTotals(values: { lines?: RrLine[] }): RrTotals {
     lines.reduce((sum, line) => {
       const rate = WITHHOLDING_RATES[line.withholdingClass ?? ''] ?? 0
       if (rate === 0) return sum
-      const lineGross = lineTotal(line)
-      const lineNet = line.taxCode === 'VAT' ? round2(lineGross / (1 + VAT_RATE)) : lineGross
-      return sum + lineNet * rate
+      // Off the discounted, VAT-inclusive line total (accountant's confirmed computation).
+      return sum + lineTotal(line) * rate
     }, 0)
   )
 

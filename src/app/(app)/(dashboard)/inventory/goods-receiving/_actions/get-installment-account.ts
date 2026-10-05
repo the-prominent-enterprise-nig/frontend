@@ -36,7 +36,7 @@ export interface InstallmentAccountDetailOption {
   id: string
   accountNumber: string
   customerId: string
-  customer?: { name: string } | null
+  customer?: { name: string; customerCode?: string } | null
   /** Resolved from the linked InstallmentSchedule's PosTransactionLines —
    * always empty for a hand-entered/imported account (no linked schedule).
    * The repossession picker on Create RR reads this to auto-fill (or, when

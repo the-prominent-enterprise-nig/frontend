@@ -40,7 +40,10 @@ export function toIssueLines(
     selected: (line.quantityReceived || 0) > 0,
     quantityReceived: line.quantityReceived || 0,
     isSerialTracked: context(index).isSerialTracked,
-    serialNumbers: reason === 'repossession' ? line.existingSerialNumberIds : line.serialNumbers,
+    serialNumbers:
+      reason === 'repossession' || reason === 'repair_return'
+        ? line.existingSerialNumberIds
+        : line.serialNumbers,
     qualityHold: line.qualityHold ?? false,
     notes: line.notes,
   }))
