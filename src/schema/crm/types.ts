@@ -16,8 +16,27 @@ export type CustomerStatus = z.infer<typeof CustomerStatusEnum>
 export const CustomerAccountTypeEnum = z.enum(['cash', 'charge'])
 export type CustomerAccountType = z.infer<typeof CustomerAccountTypeEnum>
 
-export const CustomerTypeEnum = z.enum(['individual', 'business', 'employee'])
+export const CustomerTypeEnum = z.enum([
+  'individual',
+  'business',
+  'employee',
+  /** Scenario 64 item 27 (client, 2026-09-30) — how the applicant
+   *  earns, answered once here rather than in a second Self-employed
+   *  Yes/No field beside it. Their own business name goes in
+   *  `companyName`, the same column an employer would use. */
+  'self_employed',
+])
 export type CustomerType = z.infer<typeof CustomerTypeEnum>
+
+/** How each type reads on screen. `self_employed` is the reason this exists:
+ *  every list and detail view used to `capitalize` the raw value, which was
+ *  fine while the members were single words and gives "Self_employed" now. */
+export const CUSTOMER_TYPE_LABELS: Record<CustomerType, string> = {
+  individual: 'Individual',
+  self_employed: 'Self-employed',
+  business: 'Business',
+  employee: 'Employee',
+}
 
 export const CustomerLifecycleStatusEnum = z.enum(['alive', 'dead', 'employed'])
 export type CustomerLifecycleStatus = z.infer<typeof CustomerLifecycleStatusEnum>
@@ -144,6 +163,8 @@ export interface CoMaker {
 
 export interface Customer {
   id: string
+  /** Scenario 67 — X-Deal (barter) installment accounts; list responses only. */
+  xDealAccountCount?: number
   tenantId: string
   customerCode: string
   name: string
@@ -153,17 +174,35 @@ export interface Customer {
   middleName?: string | null
   lastName?: string | null
   customerType: CustomerType
+  /** Doubles as the mockup's "Employer" for an individual (Scenario 64 item
+   *  27): one column for "the organisation this person is attached to",
+   *  rather than a second column holding the same kind of value. The form
+   *  labels it Company name for a business and Employer otherwise. */
   companyName?: string | null
   businessCategory?: 'private' | 'government' | null
   employeeNumber?: string | null
   birthday?: string | null
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // block. Stored on the customer so an application can prefill from it,
+  // which is what the mockup asks for ("prefill for returning customers,
+  // then confirm or edit"). Null on every customer captured before 2026-09-30.
+  altPhone?: string | null
+  civilStatus?: 'Single' | 'Married' | 'Widowed' | 'Separated' | null
+  gender?: 'M' | 'F' | null
+  facebookName?: string | null
   taxId?: string | null
   isTaxExempt: boolean
   taxExemptionRef?: string | null
   email?: string | null
   phone?: string | null
+  /** The CURRENT address. Scenario 64 items 9/10 kept it in these two
+   *  columns rather than renaming them: `barangayCode` is the key collector
+   *  assignment matches on, and a collector visits where the customer lives
+   *  now. Home is the pair below, null before 2026-09-30. */
   address?: string | null
   barangayCode?: string | null
+  homeAddress?: string | null
+  homeBarangayCode?: string | null
   paymentTerms?: string | null
   creditLimit?: number | string | null
   groupId?: string | null
@@ -283,6 +322,8 @@ export interface Collector {
   branchId?: string | null
   userId?: string | null
   status: CollectorStatus
+  /** Free-text supervisor name from the client's collector list. */
+  supervisorName?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -342,6 +383,9 @@ export interface InstallmentAccount {
   legalEscalationNotes?: string | null
   legalEscalationUpdatedAt?: string | null
   status: InstallmentAccountStatus
+  /** Scenario 67 — set when this account came from an X-Deal (barter) sale. */
+  isXDeal?: boolean
+  xDealReference?: string | null
   createdAt: string
   customer?: { name: string } | null
   branch?: { name: string } | null
@@ -535,13 +579,36 @@ export interface CustomerLedger {
 // nextDueDate hasn't been backfilled yet — render as "needs review", not a
 // fabricated value; for a standalone invoice row it's always computed from
 // the invoice's own dueDate, never null.
+export interface AgingSheetExtras {
+  unit: string | null
+  itemGroup: string | null
+  serialNumber: string | null
+  agentName: string | null
+  coMakerName: string | null
+  rebate: number | null
+  statusLabel: string
+  penp: number | null
+  miPay: number | null
+  tna: number | null
+  tnac: number | null
+  acctClassOfficial: string | null
+  acctClassArrears: string | null
+  acctClassNotMoving: string | null
+}
+
 export interface AgingReportRow {
   accountId: string
   accountNumber: string
   branchId: string | null
   branchName: string
+  /** Short branch code (the sheet's "br" column). */
+  branchCode: string
+  /** Branch region ("Panay" / "Negros") — the raw sheet's Operation column. */
+  operation: string | null
   collectorId: string | null
   collectorLabel: string
+  /** The account's own (barangay-level) area; null for invoice rows or accounts imported without one. */
+  accountArea?: string | null
   /** The collector's own coverage area — same value the legacy sheet
    * labels "AREA:". One per collector, so it's a display label on the
    * collector group, not a separate nesting level. */
@@ -573,6 +640,12 @@ export interface AgingReportRow {
   lastOrLastnum: string | null
   lastOrAmt: number | null
   over: number | null
+  pnv?: number | null
+  notYetDue?: number | null
+  totalDue?: number | null
+  uncollected?: number | null
+  /** The raw sheet's remaining columns; null on an invoice-sourced row. */
+  sheet?: AgingSheetExtras | null
   /** Scenario 47 — which kind of receivable this row is. */
   source: 'installment' | 'invoice'
   /** Scenario 47 — days past due as of the report date, and its bucket.
@@ -622,6 +695,9 @@ export interface AgingReportCollectorGroup {
   collectorId: string | null
   collectorLabel: string
   area: string | null
+  /** The client's short area code (e.g. "AJUY") — collectors sort by it. */
+  areaCode: string | null
+  supervisorName: string | null
   rows: AgingReportRow[]
   categories: AgingReportCategoryGroup[]
   subtotal: AgingReportSubtotal

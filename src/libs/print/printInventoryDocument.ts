@@ -1,5 +1,4 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
-import { AGING_BUCKET_LABELS } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   receivingReportSourceName,
@@ -1391,7 +1390,13 @@ export function buildAgingReportHtml(report: AgingReportResponse): string {
         .map((collector) => {
           let n = 0
           const rows = collector.rows.map((r) => row(r, ++n)).join('')
-          return `<tr class="group-header"><td colspan="${columns.length}">Collector: ${esc(collector.collectorLabel)}</td></tr>${rows}${subtotalRow('Collector subtotal', collector.subtotal)}`
+          const heading = [collector.areaCode ?? collector.area, collector.collectorLabel]
+            .filter(Boolean)
+            .join(' - ')
+          const supervisor = collector.supervisorName
+            ? ` · Supervisor: ${esc(collector.supervisorName)}`
+            : ''
+          return `<tr class="group-header"><td colspan="${columns.length}">Collector: ${esc(heading)}${supervisor}</td></tr>${rows}${subtotalRow('Collector subtotal', collector.subtotal)}`
         })
         .join('')
       return `<tr class="group-header branch"><td colspan="${columns.length}">AREA: ${esc(branch.branchName)}</td></tr>${collectorSections}${subtotalRow('Branch subtotal', branch.subtotal)}`
@@ -1450,6 +1455,124 @@ export function printAgingReportDocument(report: AgingReportResponse): void {
 }
 
 /**
+ * "Print per collector" — one page per collector in the shape of the client's
+ * collector aging sheet: a CAT / Area / customer table sorted by category
+ * then area, a Grand Total row, and blank ONE ON ONE / ACTION TAKEN / PTP
+ * columns the collector fills in by hand in the field.
+ *
+ * Area is the account's own stored area (InstallmentAccount.area). The sheet's
+ * "COUNTA of Last OR Date" column is reproduced as 1/0 (has a last OR or not).
+ */
+export function buildCollectorAgingHtml(report: AgingReportResponse): string {
+  const fmt = (n: number | null) =>
+    n === null
+      ? ''
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  type Row = AgingReportResponse['branches'][number]['collectors'][number]['rows'][number]
+  const barangay = (r: Row) => (r.accountArea ?? '').trim().toUpperCase()
+  const headers = [
+    'CAT',
+    'Area',
+    'Customer Name',
+    'SI No.',
+    'Term',
+    'MI',
+    'OB',
+    'MI DUE',
+    'LCP',
+    "TOTAL PAY'T",
+    'Last OR Count',
+    'Last OR Amt',
+    'NOT MVG',
+    'NO ARS',
+    'ONE ON ONE',
+    'ACTION TAKEN',
+    'PTP DATE',
+    'PTP AMT',
+  ]
+  const numeric = new Set([4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+
+  const pages = report.branches.flatMap((branch) =>
+    branch.collectors.map((collector) => {
+      const rows = collector.categories.flatMap((cat) =>
+        [...cat.rows]
+          .sort(
+            (a, b) =>
+              barangay(a).localeCompare(barangay(b)) || a.customerName.localeCompare(b.customerName)
+          )
+          .map(
+            (r) => `<tr>
+    <td>${cat.category ?? ''}</td>
+    <td>${esc(barangay(r))}</td>
+    <td>${esc(r.customerName)}</td>
+    <td>${esc(r.siNo)}</td>
+    <td class="right">${r.term ?? ''}</td>
+    <td class="right">${fmt(r.mi)}</td>
+    <td class="right">${fmt(r.ob)}</td>
+    <td class="right">${fmt(r.miDue)}</td>
+    <td class="right">${fmt(r.lcp)}</td>
+    <td class="right">${fmt(r.totalPayt)}</td>
+    <td class="right">${r.lastOrDate ? 1 : 0}</td>
+    <td class="right">${fmt(r.lastOrAmt)}</td>
+    <td class="right">${r.notMvg}</td>
+    <td class="right">${r.noArs ?? ''}</td>
+    <td></td><td></td><td></td><td></td>
+  </tr>`
+          )
+      )
+      const s = collector.subtotal
+      const lastOrCount = collector.rows.filter((r) => r.lastOrDate).length
+      const title = [collector.areaCode ?? collector.area, collector.collectorLabel]
+        .filter(Boolean)
+        .join(' - ')
+      return `<section>
+    <div class="letterhead">
+      <h1>${esc(title)}</h1>
+      <span class="doc-label">${esc(branch.branchName)}${collector.supervisorName ? ` · Supervisor: ${esc(collector.supervisorName)}` : ''}</span>
+    </div>
+    <table class="aging">
+      <thead><tr>${headers.map((h, i) => `<th${numeric.has(i) ? ' class="right"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.join('')}
+        <tr class="subtotal"><td colspan="6">Grand Total (${s.count})</td>
+          <td class="right">${fmt(s.ob)}</td><td class="right">${fmt(s.miDue)}</td>
+          <td class="right">${fmt(s.lcp)}</td><td class="right">${fmt(s.totalPayt)}</td>
+          <td class="right">${lastOrCount}</td><td colspan="8"></td></tr>
+      </tbody>
+    </table>
+  </section>`
+    })
+  )
+
+  return `<!DOCTYPE html><html><head><title>AR Aging — Per Collector</title><style>
+    body { font-family: Arial, sans-serif; padding: 14px; color: #111; font-size: 9.5px; }
+    section { page-break-after: always; }
+    section:last-of-type { page-break-after: auto; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .letterhead h1 { font-size: 15px; margin: 0; }
+    .letterhead .doc-label { font-size: 11px; font-weight: 700; }
+    table.aging { width: 100%; border-collapse: collapse; }
+    table.aging th, table.aging td { border: 1px solid #999; padding: 3px 4px; line-height: 1.2; white-space: nowrap; height: 14px; }
+    table.aging th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 8px; }
+    td.right, th.right { text-align: right; }
+    tr.subtotal td { background: #fafafa; font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } @page { size: landscape; } }
+  </style></head><body>
+    ${pages.join('') || '<p style="text-align:center;color:#999">No active accounts.</p>'}
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printCollectorAgingDocument(report: AgingReportResponse): void {
+  const win = window.open('', '_blank', 'width=1400,height=850')
+  if (!win) return
+  win.document.write(buildCollectorAgingHtml(report))
+  win.document.close()
+}
+
+/**
  * "Print raw data" — the flat, one-row-per-account counterpart to
  * buildAgingReportHtml's grouped legacy form. Same row set as the export's
  * Detail sheet (aging-report.workbook.ts), just rendered for the browser:
@@ -1466,69 +1589,217 @@ export function buildAgingRawDataHtml(report: AgingReportResponse): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Same columns, same order as the client's RAW aging sheet. Columns this
+  // system has no data for (Operation, UNIT, BILLING, penp, MI PAY, TNA, TNAC,
+  // item, status, Serial Number, Rebate, Agent, Co Maker and the account
+  // classification columns) are kept so the sheet lines up, but print blank.
   const columns = [
-    'Branch',
+    'CAT',
+    'Year/Month',
     'Collector',
-    'Source',
-    'Account/Invoice No.',
-    'Customer',
+    'Area',
+    'Coll_Code_IAS',
+    'Coll_Code',
+    'Coll_Code_collector',
+    'Operation',
+    'Area Supervisor',
+    'br',
     'SI No.',
     'SI Date',
+    'Customer Name',
+    'Address',
+    'UNIT',
+    'Type',
     'Term',
     'MI',
+    'FMI Date',
     'DP',
-    'DP Balance',
-    'Outstanding',
-    'MI Due',
-    'Penalty',
-    'Days Overdue',
-    'Bucket',
-    'Total Paid',
-    'Total Price',
+    'DP Bal',
+    'PNV',
+    'OB',
+    'NYD',
+    'totdue',
+    'UNCOLL',
+    'MI DUE',
+    'BILLING',
+    'pnlty',
+    'penp',
+    'current',
+    'day30',
+    'day60',
+    'day90',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'LCP %',
+    'MI PAY',
+    'TNA',
+    'TNAC',
+    'item',
+    'status',
+    'NOT MVG',
     'Last OR Date',
-    'Last OR Amt',
+    'Last ORlastnum',
+    'Last ORAmt',
+    'OVER 30',
+    'Serial Number',
+    'Rebate',
+    'Agent',
+    'Co Maker',
+    'Months Run',
+    '',
+    'Acct Classification Official',
+    'Acct Class Arrears',
+    'Acct Class Not Moving',
   ]
   const rightAlignedColumns = new Set([
     'Term',
     'MI',
     'DP',
-    'DP Balance',
-    'Outstanding',
-    'MI Due',
-    'Penalty',
-    'Days Overdue',
-    'Total Paid',
-    'Total Price',
-    'Last OR Amt',
+    'DP Bal',
+    'PNV',
+    'OB',
+    'NYD',
+    'totdue',
+    'UNCOLL',
+    'MI DUE',
+    'pnlty',
+    'current',
+    'day30',
+    'day60',
+    'day90',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'LCP %',
+    'NOT MVG',
+    'Last ORAmt',
+    'OVER 30',
+    'Months Run',
   ])
+  const fmtDash = (v: string | null | undefined) =>
+    v
+      ? new Date(v)
+          .toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+          .replace(/\//g, '-')
+      : ''
+  const money = (n: number | null | undefined) =>
+    n === null || n === undefined
+      ? ''
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  // The sheet's MOS RUN / "Months Run" pair: time elapsed from the SI date to
+  // the report date, as "1 Years 9 Months 24 Days", with MOS RUN that same
+  // span rounded UP to whole months (16 Days → 1, 1y 9m 24d → 22).
+  const elapsedSince = (from: string | null | undefined, to: string) => {
+    if (!from) return { label: '', mosRun: '' as string | number }
+    const a = new Date(from)
+    const b = new Date(to)
+    let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())
+    let days = b.getDate() - a.getDate()
+    if (days < 0) {
+      months -= 1
+      days += new Date(b.getFullYear(), b.getMonth(), 0).getDate()
+    }
+    if (months < 0) return { label: '', mosRun: 0 as string | number }
+    const parts = [
+      Math.floor(months / 12) > 0 ? `${Math.floor(months / 12)} Years` : '',
+      months % 12 > 0 ? `${months % 12} Months` : '',
+      days > 0 ? `${days} Days` : '',
+    ].filter(Boolean)
+    return {
+      label: parts.join(' ') || '0 Days',
+      mosRun: (months + (days > 0 ? 1 : 0)) as string | number,
+    }
+  }
+  const yearMonth = (() => {
+    const d = new Date(report.asOf)
+    return `${d.getFullYear()}_${String(d.getMonth() + 1).padStart(2, '0')}`
+  })()
 
   const rows = report.branches.flatMap((branch) =>
-    branch.collectors.flatMap((collector) =>
-      collector.rows.map(
-        (r) => `<tr>
-    <td>${esc(branch.branchName)}</td>
-    <td>${esc(collector.collectorLabel)}</td>
-    <td>${r.source === 'installment' ? 'Installment' : 'Invoice'}</td>
-    <td class="mono">${esc(r.accountNumber)}</td>
-    <td>${esc(r.customerName)}</td>
-    <td class="mono">${esc(r.siNo)}</td>
-    <td>${fmtDate(r.siDate)}</td>
-    <td class="right">${r.term ?? '—'}</td>
-    <td class="right">${fmt(r.mi)}</td>
-    <td class="right">${fmt(r.dp)}</td>
-    <td class="right">${fmt(r.dpBal)}</td>
-    <td class="right">${fmt(r.ob)}</td>
-    <td class="right">${fmt(r.miDue)}</td>
-    <td class="right">${fmt(r.pnlty)}</td>
-    <td class="right">${r.daysOverdue ?? '—'}</td>
-    <td>${r.bucket ? esc(AGING_BUCKET_LABELS[r.bucket]) : 'Unknown'}</td>
-    <td class="right">${fmt(r.totalPayt)}</td>
-    <td class="right">${fmt(r.totalPrice)}</td>
-    <td>${fmtDate(r.lastOrDate)}</td>
-    <td class="right">${fmt(r.lastOrAmt)}</td>
-  </tr>`
-      )
-    )
+    branch.collectors.flatMap((collector) => {
+      // collectorLabel is "COL-0001 — Gallendo Edgardo"; the sheet wants the bare name.
+      const name = collector.collectorLabel.split(' — ').pop() ?? ''
+      const underscored = name.replace(/ /g, '_')
+      return collector.rows.map((r) => {
+        const elapsed = elapsedSince(r.siDate, report.asOf)
+        const bucketCol = (...b: (typeof r.bucket)[]) => (b.includes(r.bucket) ? money(r.ob) : '')
+        const cells: (string | number)[] = [
+          r.category ?? '',
+          yearMonth,
+          underscored,
+          r.accountArea ?? '',
+          collector.areaCode ?? '',
+          collector.area ?? '',
+          collector.area ? `${collector.area}_${underscored}` : underscored,
+          r.operation ?? '',
+          (collector.supervisorName ?? '').replace(/ /g, '_'),
+          r.branchCode,
+          r.siNo,
+          fmtDash(r.siDate),
+          r.customerName,
+          r.address ?? '',
+          r.sheet?.unit ?? '',
+          r.type ?? '',
+          r.term ?? '',
+          money(r.mi),
+          fmtDash(r.fmiDate),
+          money(r.dp),
+          money(r.dpBal),
+          money(r.pnv),
+          money(r.ob),
+          money(r.notYetDue),
+          money(r.totalDue),
+          money(r.uncollected),
+          money(r.miDue),
+          money(r.miDue),
+          money(r.pnlty),
+          money(r.sheet?.penp),
+          bucketCol('current'),
+          bucketCol('1_30'),
+          bucketCol('31_60'),
+          bucketCol('61_90', '90_plus'),
+          r.noArs ?? '',
+          elapsed.mosRun,
+          money(r.totalPayt),
+          money(r.totalPrice),
+          `${r.totPricePercent}%`,
+          money(r.lcp),
+          r.lcp && r.lcp > 0 ? `${Math.round((r.totalPayt / r.lcp) * 100)}%` : '',
+          money(r.sheet?.miPay),
+          r.sheet?.tna ?? '',
+          r.sheet?.tnac ?? '',
+          r.sheet?.itemGroup ?? '',
+          r.sheet?.statusLabel ?? '',
+          r.notMvg,
+          fmtDash(r.lastOrDate),
+          r.lastOrLastnum ?? '',
+          money(r.lastOrAmt),
+          r.over ?? '',
+          r.sheet?.serialNumber ?? '',
+          money(r.sheet?.rebate),
+          r.sheet?.agentName ?? '',
+          r.sheet?.coMakerName ?? '',
+          elapsed.label,
+          '',
+          r.sheet?.acctClassOfficial ?? '',
+          r.sheet?.acctClassArrears ?? '',
+          r.sheet?.acctClassNotMoving ?? '',
+        ]
+        return `<tr>${cells
+          .map(
+            (v, i) =>
+              `<td${rightAlignedColumns.has(columns[i]) ? ' class="right"' : ''}>${esc(v)}</td>`
+          )
+          .join('')}</tr>`
+      })
+    })
   )
 
   return `<!DOCTYPE html><html><head><title>AR Aging — Raw Data</title><style>
@@ -2279,6 +2550,11 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  const prettyMethod = (m: unknown) =>
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
+
   const isOther = l.borrowerType === 'OTHER'
   const principal = Number(l.principal ?? 0)
   const totalInterest = Number(l.totalInterest ?? 0)
@@ -2293,23 +2569,15 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
       : []),
   ].join('')
 
-  const scheduleLines = (l.scheduleLines ?? []) as {
-    lineNumber: number
-    dueDate: string
-    principalAmount: number
-    interestAmount: number
-    totalAmount: number
-  }[]
   const payments = (l.payments ?? []) as {
     paymentDate: string
     amount: number
     referenceNumber?: string | null
   }[]
 
-  const addendumLabel = isOther ? 'Ledger' : 'Schedule'
-  const addendumHead = isOther
-    ? '<tr><th>Date</th><th>Description</th><th class="right">Amount</th><th class="right">Balance</th></tr>'
-    : '<tr><th>#</th><th>Due Date</th><th class="right">Principal</th><th class="right">Interest</th><th class="right">Total</th></tr>'
+  const addendumLabel = 'Ledger'
+  const addendumHead =
+    '<tr><th>Date</th><th>Description</th><th class="right">Amount</th><th class="right">Balance</th></tr>'
   const addendumRows = isOther
     ? (() => {
         let running = totalReceivable
@@ -2324,33 +2592,34 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
         }
         return rows.join('')
       })()
-    : scheduleLines
-        .map(
-          (s) =>
-            `<tr><td>${s.lineNumber}</td><td>${fmtDate(s.dueDate)}</td><td class="right">${fmt(Number(s.principalAmount))}</td><td class="right">${fmt(Number(s.interestAmount))}</td><td class="right">${fmt(Number(s.totalAmount))}</td></tr>`
-        )
-        .join('')
+    : ''
 
   return `<!DOCTYPE html><html><head><title>${esc(l.loanNumber)}</title><style>
-    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    h1 { font-size: 26px; margin: 0; }
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+    body { font-family: 'Poppins', Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; color: #1e1b4b; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 16px; }
     .info > div { flex: 1; }
+    .info .meta { text-align: right; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
-    .party-name { font-weight: 700; margin: 0 0 4px; }
-    .party-address { margin: 0; color: #333; }
-    .meta { text-align: right; }
-    .meta-label { font-weight: 700; margin: 0 0 2px; }
-    .meta-value { margin: 0 0 12px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; color: #1e1b4b; }
+    .party-address { margin: 0; color: #374151; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; color: #1e1b4b; }
+    .meta-value { margin: 0 0 12px; color: #374151; }
     .description { font-weight: 700; margin: 0 0 16px; }
-    .section-label { font-weight: 700; margin: 16px 0 8px; }
+    .section-label { font-weight: 700; margin: 24px 0 8px; color: #1e1b4b; }
+    .kv { display: flex; gap: 16px; padding: 2px 0; }
+    .kv .k { width: 128px; flex-shrink: 0; font-weight: 700; color: #1e1b4b; }
+    .kv .v { color: #374151; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
-    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    th, td { border: 1px solid #d1d5db; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f3f4f6; text-align: left; font-weight: 700; color: #1e1b4b; }
     td.right, th.right { text-align: right; }
-    tr.total-row td { font-weight: 700; }
+    .totals { margin: 12px 0 0 auto; width: 280px; }
+    .totals td { border: 0; border-bottom: 1px solid #f3f4f6; text-align: right; padding: 5px 10px; }
+    .totals tr.grand td { border-top: 1px solid #9ca3af; border-bottom: 0; font-weight: 700; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -2387,30 +2656,21 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
 
     ${l.note ? `<p class="description">${esc(l.note)}</p>` : ''}
 
+    <p class="section-label" style="margin-top:20px">Source of Funds</p>
+    <div class="kv"><span class="k">Method</span><span class="v">${esc(prettyMethod(l.disbursementMethod))}</span></div>
+    ${l.bankAccountName ? `<div class="kv"><span class="k">Bank / Cash Account</span><span class="v">${esc(l.bankAccountName)}</span></div>` : ''}
+    ${l.referenceNumber ? `<div class="kv"><span class="k">Reference</span><span class="v">${esc(l.referenceNumber)}</span></div>` : ''}
+
+    <p class="section-label">Account Details</p>
     <table>
       <thead>
         <tr><th>Account</th><th>Description</th><th class="right">Total</th></tr>
       </thead>
-      <tbody>
-        ${accountRows}
-        <tr class="total-row">
-          <td colspan="2">Total Amount Receivable</td>
-          <td class="right">${fmt(totalReceivable)}</td>
-        </tr>
-      </tbody>
+      <tbody>${accountRows}</tbody>
     </table>
-
-    <p class="section-label">Disbursement</p>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Bank / Cash Account</th><th>Reference</th></tr>
-      </thead>
+    <table class="totals">
       <tbody>
-        <tr>
-          <td>${esc(String(l.disbursementMethod ?? '').replace(/_/g, ' '))}</td>
-          <td>${l.bankAccountName ? esc(l.bankAccountName) : '—'}</td>
-          <td>${l.referenceNumber ? esc(l.referenceNumber) : '—'}</td>
-        </tr>
+        <tr class="grand"><td>Total Amount Receivable</td><td>${fmt(totalReceivable)}</td></tr>
       </tbody>
     </table>
 
@@ -2449,6 +2709,282 @@ export function printEmployeeCashLoanVoucherDocument(data: unknown): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
   win.document.write(buildEmployeeCashLoanVoucherHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 61 — the Inter-Account Transfer voucher. Same letterhead/
+ * signature family as buildExpenseVoucherHtml() above; the body is the one
+ * thing a transfer has that an expense doesn't: a From and a To account,
+ * each with its own amount leg, instead of a payee and N expense lines.
+ */
+export function buildInterAccountTransferVoucherHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const t = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  // Zero-padded MM/DD/YYYY, same as the expense voucher's paper original.
+  const fmtDate = (v: unknown) =>
+    v
+      ? new Date(v as string).toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
+      : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  type Bank = { name?: string; bankName?: string; accountNumber?: string; accountType?: string }
+  const source = (t.source ?? {}) as Bank
+  const destination = (t.destination ?? {}) as Bank
+  const amount = Number(t.amount ?? 0)
+  const bankLine = (b: Bank) =>
+    [b.bankName, b.accountNumber ? `Acct # ${b.accountNumber}` : null, b.accountType]
+      .filter(Boolean)
+      .map((v) => esc(v))
+      .join(' · ')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    .sub { color: #666; font-size: 11.5px; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Inter-Account Transfer</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="meta-label">From</p>
+        <p class="party-name">${esc(source.name) || '—'}</p>
+        <p class="party-address">${bankLine(source)}</p>
+        <p class="meta-label" style="margin-top:12px">To</p>
+        <p class="party-name">${esc(destination.name) || '—'}</p>
+        <p class="party-address">${bankLine(destination)}</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(t.date)}</p>
+        <p class="meta-label">Clearing Date</p>
+        <p class="meta-value">${fmtDate(t.clearingDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${t.reference ? esc(t.reference) : '—'}</p>
+        <p class="meta-label">VOUCHER #</p>
+        <p class="meta-value">${esc(t.transferNumber)}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${t.description ? `<p class="description">${esc(t.description)}</p>` : ''}
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Debit</th><th class="right">Credit</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${esc(destination.name)}<div class="sub">${bankLine(destination)}</div></td>
+          <td>Transfer in from ${esc(source.name)}</td>
+          <td class="right">${fmt(amount)}</td>
+          <td class="right"></td>
+        </tr>
+        <tr>
+          <td>${esc(source.name)}<div class="sub">${bankLine(source)}</div></td>
+          <td>Transfer out to ${esc(destination.name)}</td>
+          <td class="right"></td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="2">Total</td>
+          <td class="right">${fmt(amount)}</td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+      </tbody>
+    </table>
+    ${t.journalEntryCode ? `<p class="sub" style="margin-top:8px">Journal entry: ${esc(t.journalEntryCode)}</p>` : ''}
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printInterAccountTransferVoucherDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildInterAccountTransferVoucherHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 61 Part C — a Journal Voucher for any posted journal entry: the
+ * bank adjusting entry and unidentified bank credit vouchers the client asked
+ * for (each with its Voucher Control No.), and a reprint from any entry's
+ * detail page. Same letterhead/signature family as the expense and
+ * inter-account transfer vouchers above; the body is the entry's own
+ * Account / Description / Debit / Credit lines.
+ */
+export function buildJournalVoucherHtml(data: unknown, title = 'Journal Voucher'): string {
+  const doc = data as PrintDocumentEnvelope
+  const e = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) =>
+    v
+      ? new Date(v as string).toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
+      : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+  const lines = (e.lines ?? []) as {
+    account?: string | null
+    description?: string | null
+    debit?: number
+    credit?: number
+  }[]
+  const cell = (n?: number) => (n ? fmt(Number(n)) : '')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>${esc(title)}</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="meta-label">Particulars</p>
+        <p class="party-address">${esc(e.description) || '—'}</p>
+        ${e.sourceDocumentNo ? `<p class="meta-label" style="margin-top:12px">Source</p><p class="party-address">${esc(e.sourceDocumentNo)}</p>` : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(e.date)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${e.reference ? esc(e.reference) : '—'}</p>
+        <p class="meta-label">VOUCHER CONTROL NO.</p>
+        <p class="meta-value">${e.voucherControlNo ? esc(e.voucherControlNo) : '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Debit</th><th class="right">Credit</th></tr>
+      </thead>
+      <tbody>
+        ${lines
+          .map(
+            (l) => `<tr>
+          <td>${l.account ? esc(l.account) : '—'}</td>
+          <td>${l.description ? esc(l.description) : ''}</td>
+          <td class="right">${cell(l.debit)}</td>
+          <td class="right">${cell(l.credit)}</td>
+        </tr>`
+          )
+          .join('')}
+        <tr class="total-row">
+          <td colspan="2">Total</td>
+          <td class="right">${fmt(Number(e.totalDebit ?? 0))}</td>
+          <td class="right">${fmt(Number(e.totalCredit ?? 0))}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printJournalVoucherDocument(data: unknown, title?: string): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildJournalVoucherHtml(data, title))
   win.document.close()
 }
 

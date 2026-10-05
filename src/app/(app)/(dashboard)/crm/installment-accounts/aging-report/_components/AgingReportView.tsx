@@ -1,13 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Printer, Table2 } from 'lucide-react'
+import { Printer } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../../_actions/get-branches'
-import {
-  printAgingReportDocument,
-  printAgingRawDataDocument,
-} from '@/src/libs/print/printInventoryDocument'
+import { printAgingRawDataDocument } from '@/src/libs/print/printInventoryDocument'
 import ExportButton from '@/src/components/common/ExportButton'
 import TablePagination from '@/src/components/common/TablePagination'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -43,14 +40,16 @@ function todayIso(): string {
 export default function AgingReportView() {
   const [report, setReport] = useState<AgingReportResponse | null>(null)
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
-  const [collectors, setCollectors] = useState<{ id: string; name: string; stubNumber: string }[]>(
-    []
-  )
+  const [collectors, setCollectors] = useState<
+    { id: string; name: string; stubNumber: string; supervisorName?: string | null }[]
+  >([])
   const [asOf, setAsOf] = useState(todayIso())
   const [page, setPage] = useState(1)
   const [branchFilter, setBranchFilter] = useState('')
   const [collectorFilter, setCollectorFilter] = useState('')
+  const [supervisorFilter, setSupervisorFilter] = useState('')
   const [loading, setLoading] = useState(true)
+  const [printing, setPrinting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -73,6 +72,7 @@ export default function AgingReportView() {
         asOf: asOf || undefined,
         branchId: branchFilter || undefined,
         collectorId: collectorFilter || undefined,
+        supervisorName: supervisorFilter || undefined,
       })
       .then((res) => {
         if (controller.signal.aborted) return
@@ -81,7 +81,26 @@ export default function AgingReportView() {
         setLoading(false)
       })
     return () => controller.abort()
-  }, [asOf, branchFilter, collectorFilter])
+  }, [asOf, branchFilter, collectorFilter, supervisorFilter])
+
+  // Print always re-fetches with the current filters, so it can never print
+  // data that was loaded before the filters (or the backend) changed.
+  const handlePrint = async () => {
+    setPrinting(true)
+    const res = await installmentAccountsApi.agingReport({
+      asOf: asOf || undefined,
+      branchId: branchFilter || undefined,
+      collectorId: collectorFilter || undefined,
+      supervisorName: supervisorFilter || undefined,
+    })
+    setPrinting(false)
+    if (res.success && res.data) printAgingRawDataDocument(res.data)
+    else setError(res.error ?? 'Failed to load the aging report')
+  }
+
+  const supervisors = [
+    ...new Set(collectors.map((c) => c.supervisorName).filter((v): v is string => !!v)),
+  ].sort()
 
   // Term/MI/DP/MI-DUE only ever have values on installment rows. When the
   // current filter returns none, those five columns are dashes on every row —
@@ -117,20 +136,13 @@ export default function AgingReportView() {
               asOf: asOf || undefined,
               branchId: branchFilter || undefined,
               collectorId: collectorFilter || undefined,
+              supervisorName: supervisorFilter || undefined,
             }}
             disabled={!report || report.branches.length === 0}
           />
           <button
-            onClick={() => report && printAgingRawDataDocument(report)}
-            disabled={!report}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Table2 className="h-4 w-4" />
-            Print Raw Data
-          </button>
-          <button
-            onClick={() => report && printAgingReportDocument(report)}
-            disabled={!report}
+            onClick={handlePrint}
+            disabled={!report || printing}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Printer className="h-4 w-4" />
@@ -158,6 +170,18 @@ export default function AgingReportView() {
           {branches.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={supervisorFilter}
+          onChange={(e) => setSupervisorFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">All supervisors</option>
+          {supervisors.map((s) => (
+            <option key={s} value={s}>
+              {s}
             </option>
           ))}
         </select>
@@ -259,7 +283,13 @@ export default function AgingReportView() {
                 >
                   <div className="flex items-center justify-between bg-gray-50 px-4 py-1.5">
                     <span className="text-xs font-medium text-gray-600">
-                      Collector: {collector.collectorLabel}
+                      Collector: {collector.areaCode ? `${collector.areaCode} - ` : ''}
+                      {collector.collectorLabel}
+                      {collector.supervisorName && (
+                        <span className="ml-2 font-normal text-gray-400">
+                          Supervisor: {collector.supervisorName}
+                        </span>
+                      )}
                       {collector.area && (
                         <span className="ml-2 font-normal text-gray-400">
                           Area: {collector.area}

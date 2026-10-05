@@ -116,12 +116,10 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     )
     reset({
       warehouseId: po.warehouseId ?? '',
-      receivedAt: '',
+      receivedAt: nowLocalInputValue(),
       notes: '',
       deliveryReceiptNumber: '',
       supplierInvoiceNumber: '',
-      driverName: '',
-      helperName: '',
       lines: po.lines.map((l) => {
         const remaining = remainingOf(l)
         return {
@@ -263,14 +261,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     setValue(`lines.${index}.serialNumbers`, next, { shouldValidate: showErrors })
   }
 
-  const toggleQualityHold = (index: number) => {
-    const next = !lines[index]?.qualityHold
-    setValue(`lines.${index}.qualityHold`, next, { shouldValidate: false })
-    // Dropping the hold drops its reason with it — a stale explanation on an
-    // un-held line would post as a plain line note saying the opposite.
-    if (!next) setValue(`lines.${index}.notes`, '', { shouldValidate: false })
-  }
-
   const openDrawer = (index: number, drawer: LineDrawer) =>
     setDrawers((prev) => ({ ...prev, [index]: drawer }))
 
@@ -350,8 +340,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       supplierInvoiceNumber: data.supplierInvoiceNumber || undefined,
       // Left off entirely when blank, so the printed Driver/Helper line falls
       // back to its blank rather than to an empty string.
-      driverName: data.driverName?.trim() || undefined,
-      helperName: data.helperName?.trim() || undefined,
       supplierId: po.supplier.id,
       // Unit costs are what the supplier charges per unit, i.e. VAT-inclusive,
       // so the amount is carved out of them rather than added on top. Always
@@ -564,10 +552,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
                       onToggleEditPricing={() =>
                         setEditingPricing((prev) => ({ ...prev, [index]: !prev[index] }))
                       }
-                      onToggleQc={() => toggleQualityHold(index)}
-                      onQcReasonChange={(value) =>
-                        setValue(`lines.${index}.notes`, value, { shouldValidate: false })
-                      }
                       onSerialChange={(unit, value) => setSerial(index, unit, value)}
                       onClearSerials={() =>
                         setValue(
@@ -609,6 +593,13 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   )
 }
 
+/** Current local date+time in the `datetime-local` input format (YYYY-MM-DDTHH:mm). */
+function nowLocalInputValue() {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().slice(0, 16)
+}
+
 function LineTableHead() {
   return (
     <div
@@ -623,7 +614,6 @@ function LineTableHead() {
       <span className="pr-3 text-center">Remaining</span>
       <span className="text-center">Qty to receive</span>
       <span>Tracking</span>
-      <span className="text-center">QC</span>
       <span className="text-right">Line total</span>
     </div>
   )

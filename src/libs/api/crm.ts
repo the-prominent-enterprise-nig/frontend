@@ -373,8 +373,12 @@ export const installmentAccountsApi = {
     ),
   updateLegalEscalation: (id: string, body: { status: LegalEscalationStatus; notes?: string }) =>
     api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/legal-escalation`, body),
-  agingReport: (filters?: { asOf?: string; branchId?: string; collectorId?: string }) =>
-    api.get<AgingReportResponse>('/crm/installment-accounts/reports/aging', filters),
+  agingReport: (filters?: {
+    asOf?: string
+    branchId?: string
+    collectorId?: string
+    supervisorName?: string
+  }) => api.get<AgingReportResponse>('/crm/installment-accounts/reports/aging', filters),
 }
 
 // ─── Accounting Customers (used to link installment accounts) ──

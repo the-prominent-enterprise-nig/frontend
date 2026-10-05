@@ -4,8 +4,6 @@ import React, { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Plus, Search, RefreshCw, Trash2, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
-import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import {
   getCustomers,
   createCustomer,
@@ -16,23 +14,8 @@ import {
 import { SessionUser, can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
-
-/**
- * PhoneInput's own `value` prop must always be E.164 (a leading `+`) or
- * `undefined` — some existing customer records predate this component
- * (imported/seeded data entered in a local format) and break it otherwise.
- * Mirrors CRM's own CustomerForm.toDisplayPhoneValue().
- */
-function toDisplayPhoneValue(raw: string): string | undefined {
-  if (!raw) return undefined
-  if (raw.startsWith('+')) return raw
-  try {
-    const parsed = parsePhoneNumber(raw, 'PH')
-    return parsed?.isValid() ? parsed.number : undefined
-  } catch {
-    return undefined
-  }
-}
+import { PhoneField } from '@/src/components/ui/PhoneField'
+import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 
 const FIELD_LIMITS = {
   firstName: 150,
@@ -183,8 +166,8 @@ export default function CustomersList({ session }: Props) {
                         <Link href={`/accounting/customers/${c.id}`} className="hover:underline">
                           {c.name}
                         </Link>
-                        <span className="ml-2 text-xs font-normal capitalize text-zinc-400">
-                          {c.customerType ?? 'individual'}
+                        <span className="ml-2 text-xs font-normal text-zinc-400">
+                          {CUSTOMER_TYPE_LABELS[c.customerType ?? 'individual'] ?? c.customerType}
                         </span>
                         {c.lifecycleStatus && c.lifecycleStatus !== 'alive' && (
                           <span
@@ -306,9 +289,13 @@ function CustomerFormDialog({
               onChange={(e) => set('customerType', e.target.value as CustomerInput['customerType'])}
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
             >
-              <option value="individual">Individual</option>
-              <option value="business">Business</option>
-              <option value="employee">Employee</option>
+              {(Object.keys(CUSTOMER_TYPE_LABELS) as (keyof typeof CUSTOMER_TYPE_LABELS)[]).map(
+                (t) => (
+                  <option key={t} value={t}>
+                    {CUSTOMER_TYPE_LABELS[t]}
+                  </option>
+                )
+              )}
             </select>
           </Field>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -364,15 +351,7 @@ function CustomerFormDialog({
             </Field>
             <div>
               <span className="mb-1 block text-xs font-medium text-zinc-600">Phone Number</span>
-              <PhoneInput
-                value={toDisplayPhoneValue(form.phoneNumber ?? '')}
-                defaultCountry="PH"
-                international
-                countryCallingCodeEditable={false}
-                onChange={(v) => set('phoneNumber', v ?? '')}
-                numberInputProps={{ className: 'phone-input-field' }}
-                className="ph-phone-input"
-              />
+              <PhoneField value={form.phoneNumber ?? ''} onChange={(v) => set('phoneNumber', v)} />
             </div>
           </div>
           <Field label="Group ID" count={[form.groupId?.length ?? 0, FIELD_LIMITS.groupId]}>

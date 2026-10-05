@@ -304,8 +304,13 @@ function CollectionsCustomerRow({
             {customer.name.charAt(0).toUpperCase()}
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-[13px] font-medium text-zinc-900">
-              {customer.name}
+            <span className="flex items-center gap-1.5 text-[13px] font-medium text-zinc-900">
+              <span className="truncate">{customer.name}</span>
+              {customer.isEmployee && (
+                <span className="shrink-0 rounded-full bg-prominent-purple-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
+                  Employee
+                </span>
+              )}
             </span>
             {customer.phone && (
               <span className="block text-[12px] text-zinc-500">{customer.phone}</span>
@@ -317,6 +322,11 @@ function CollectionsCustomerRow({
             {fmtMoney(customer.outstandingAmount)}
             <span className="ml-1 text-[11px] font-normal text-zinc-400">outstanding</span>
           </span>
+          {!!customer.applianceOutstanding && (
+            <span className="block text-[12px] text-prominent-purple-700">
+              {fmtMoney(customer.applianceOutstanding)} appliance loan
+            </span>
+          )}
           <span
             className={`block text-[12px] ${customer.dueAmount > 0 ? 'font-medium text-red-600' : 'text-zinc-500'}`}
           >
