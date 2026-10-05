@@ -102,6 +102,19 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
+import DeliverySection from './_components/DeliverySection'
+import { PillCombobox, PillSelect } from './_components/PillInputs'
+import {
+  EMPTY_DELIVERY,
+  deliveryFeeOptions,
+  deliveryFeeTenderLabel,
+  deliveryPayload,
+  deliveryProblem,
+  parseDeliveryFee,
+  resolveDeliveryAddress,
+  type CustomerAddress,
+  type DeliveryState,
+} from './_utils/delivery'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import {
@@ -133,6 +146,16 @@ import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravan
 import { caravanPlaceLabel, terminalPlaceId } from '@/src/libs/format/locationLabel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/** Scenario 66 — what the success screen shows of a sale's delivery. */
+type SuccessDelivery = {
+  deliverTo: string
+  address: string
+  fee: number
+  /** How the fee was paid, with its details — "Check #0012", "Bank Transfer — BDO". */
+  tenderLabel: string | null
+  feeCr: string | null
+}
 
 interface LookupItem {
   id: string
@@ -243,165 +266,6 @@ interface PaymentRow {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-// Dropdown that reads as clickable: white field, purple border, visible
-// chevron. Tinted purple once a value is chosen.
-function PillSelect({
-  filled,
-  wrapperClassName = '',
-  className = '',
-  children,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement> & {
-  filled: boolean
-  wrapperClassName?: string
-}) {
-  return (
-    <div className={`relative ${wrapperClassName}`}>
-      <select
-        {...props}
-        className={`w-full cursor-pointer appearance-none rounded-lg border-2 py-2.5 pl-3 pr-10 text-[13px] font-semibold shadow-sm outline-none transition-colors hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 ${
-          filled
-            ? 'border-purple-300 bg-purple-50 text-purple-800'
-            : 'border-purple-200 bg-white text-gray-600'
-        } ${className}`}
-      >
-        {children}
-      </select>
-      <ChevronDown
-        aria-hidden
-        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-500"
-      />
-    </div>
-  )
-}
-
-// Searchable version of PillSelect: type to filter, arrows + Enter to pick.
-function PillCombobox({
-  options,
-  value,
-  onChange,
-  placeholder,
-  ariaLabel,
-  wrapperClassName = '',
-}: {
-  options: { value: string; label: string }[]
-  value: string | undefined
-  onChange: (value: string | undefined) => void
-  placeholder: string
-  ariaLabel: string
-  wrapperClassName?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const [active, setActive] = useState(0)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const selected = options.find((o) => o.value === value)
-  const q = query.trim().toLowerCase()
-  const filtered = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) {
-        setOpen(false)
-        setQuery('')
-      }
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
-  function pick(v: string | undefined) {
-    onChange(v)
-    setOpen(false)
-    setQuery('')
-  }
-
-  return (
-    <div ref={rootRef} className={`relative ${wrapperClassName}`}>
-      <input
-        type="text"
-        role="combobox"
-        aria-label={ariaLabel}
-        aria-expanded={open}
-        autoComplete="off"
-        value={open ? query : (selected?.label ?? '')}
-        placeholder={open && selected ? selected.label : placeholder}
-        onFocus={() => {
-          setOpen(true)
-          setActive(0)
-        }}
-        // After picking, the input keeps focus, so a second click fires no
-        // onFocus — reopen on click as well.
-        onClick={() => {
-          if (!open) {
-            setOpen(true)
-            setActive(0)
-          }
-        }}
-        onChange={(e) => {
-          setQuery(e.target.value)
-          setActive(0)
-          setOpen(true)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setOpen(true)
-            setActive((a) => Math.min(a + 1, filtered.length - 1))
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setActive((a) => Math.max(a - 1, 0))
-          } else if (e.key === 'Enter' && open) {
-            e.preventDefault()
-            if (filtered[active]) pick(filtered[active].value)
-          } else if (e.key === 'Escape') {
-            setOpen(false)
-            setQuery('')
-          }
-        }}
-        className={`w-full cursor-pointer rounded-lg border-2 py-2.5 pl-3 pr-10 text-[13px] font-semibold shadow-sm outline-none transition-colors placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 ${
-          selected && !open
-            ? 'border-purple-300 bg-purple-50 text-purple-800'
-            : 'border-purple-200 bg-white text-gray-800'
-        }`}
-      />
-      <ChevronDown
-        aria-hidden
-        className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-500 transition-transform ${open ? 'rotate-180' : ''}`}
-      />
-      {open && (
-        <ul
-          role="listbox"
-          className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-purple-200 bg-white py-1 shadow-lg"
-        >
-          {filtered.length === 0 ? (
-            <li className="px-3 py-2 text-[13px] text-gray-400">No matches</li>
-          ) : (
-            filtered.map((o, i) => (
-              <li
-                key={o.value}
-                role="option"
-                aria-selected={o.value === value}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  pick(o.value)
-                }}
-                onMouseEnter={() => setActive(i)}
-                className={`cursor-pointer px-3 py-2 text-[13px] font-medium ${
-                  i === active ? 'bg-purple-100 text-purple-800' : 'text-gray-700'
-                } ${o.value === value ? 'font-semibold' : ''}`}
-              >
-                {o.label}
-              </li>
-            ))
-          )}
-        </ul>
-      )}
-    </div>
-  )
-}
 
 const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   cash: 'Cash',
@@ -727,6 +591,17 @@ export default function CheckoutPage() {
   // Sales Invoice No. — required on every sale, typed in from the physical
   // invoice booklet (maps to PosTransaction.salesInvoiceNumber).
   const [invoiceNumberInput, setInvoiceNumberInput] = useState('')
+
+  // Scenario 66 — Deliver to / Delivery Address / delivery fee. The fee is
+  // collected on its own collection receipt and never enters the Total, the
+  // tender, the change or the loyalty points below.
+  const [delivery, setDelivery] = useState<DeliveryState>(EMPTY_DELIVERY)
+  // The selected customer's own address, fetched in full when delivery is
+  // turned on — customer search results carry no address.
+  const [deliveryCustomerAddress, setDeliveryCustomerAddress] = useState<CustomerAddress | null>(
+    null
+  )
+  const [deliveryAddressLoading, setDeliveryAddressLoading] = useState(false)
 
   // Promo
   const [promoInput, setPromoInput] = useState('')
@@ -1072,6 +947,8 @@ export default function CheckoutPage() {
       financedBalance?: number | null
     }[]
     invoices?: PosTransactionInvoice[]
+    /** Scenario 66 — shown beside the sale, never inside its totals. */
+    delivery?: SuccessDelivery | null
     /** Scenario 67 */
     isXDeal?: boolean
     xDealReference?: string | null
@@ -1085,6 +962,8 @@ export default function CheckoutPage() {
     /** Scenario 17 Part 7 — set only for installment sales, so
      * PendingApprovalScreen knows whether to show the Promissory Note card. */
     creditApplicationId?: string
+    /** Scenario 66 — the held sale's delivery, recorded when it is approved. */
+    delivery?: { deliverTo: string; fee: number; feeCr: string | null } | null
     /** Scenario 67 */
     isXDeal?: boolean
     xDealReference?: string | null
@@ -2211,6 +2090,46 @@ export default function CheckoutPage() {
     await selectCustomer(res.data)
   }
 
+  // Scenario 66 — the delivery's pre-fill, re-run when delivery is turned on
+  // or the customer changes. Deliver to follows the customer's name until the
+  // cashier types in it; the address follows the customer's own unless the
+  // cashier picked another one in the address picker.
+  useEffect(() => {
+    if (!delivery.enabled) return
+    const name = selectedCustomer?.name ?? ''
+    setDelivery((d) => ({
+      ...d,
+      deliverTo: d.deliverToEdited ? d.deliverTo : name,
+      // A picker following the customer starts over for the new one; one the
+      // cashier picked in is left exactly as it is.
+      pickerKey: d.addressSource === 'customer' ? d.pickerKey + 1 : d.pickerKey,
+    }))
+
+    const customerId = selectedCustomer?.id
+    if (!customerId) {
+      setDeliveryCustomerAddress(null)
+      setDeliveryAddressLoading(false)
+      return
+    }
+    let cancelled = false
+    setDeliveryAddressLoading(true)
+    getCustomerById(customerId).then((res) => {
+      if (cancelled) return
+      // Typed PosCustomer, but the endpoint returns the whole CRM customer.
+      const full = res.success
+        ? (res.data as { address?: string | null; barangayCode?: string | null } | undefined)
+        : undefined
+      const address = full?.address?.trim()
+      setDeliveryCustomerAddress(
+        address ? { address, barangayCode: full?.barangayCode ?? null } : null
+      )
+      setDeliveryAddressLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [delivery.enabled, selectedCustomer?.id, selectedCustomer?.name])
+
   async function selectCustomer(customer: PosCustomer) {
     setSelectedCustomer(customer)
     setCustomerSearch('')
@@ -3157,6 +3076,17 @@ export default function CheckoutPage() {
 
   // ─── Confirm sale ──────────────────────────────────────────────────────────
 
+  // Scenario 66 — the delivery fee as entered (0 while blank or not yet a
+  // valid amount). Shown beside the Totals, never added to them.
+  const deliveryFeeAmount = delivery.enabled ? (parseDeliveryFee(delivery.fee) ?? 0) : 0
+  // The offline queue drops sale-level fields (plan decision D9), and a sale
+  // resumed from a table tab already exists — neither can carry a delivery.
+  const deliveryUnavailableReason = isOffline
+    ? 'Delivery needs a connection — add it once the POS is back online.'
+    : fromTab?.posTransactionId
+      ? "This sale was opened from a table tab, so a delivery can't be added to it."
+      : null
+
   async function handleConfirm() {
     // Survives a park/resume or any remount, unlike the override state set
     // when the PIN was approved — see the payload below.
@@ -3223,6 +3153,25 @@ export default function CheckoutPage() {
     if (!invoiceNumberInput.trim()) {
       setError('Enter the Sales Invoice No. for this sale.')
       return
+    }
+
+    // Scenario 66 — the delivery, checked the way the server will (R1–R6).
+    // The fee's CR is compared with the payment rows' CR, which the down
+    // payment shares, so the two stay separate receipts.
+    if (delivery.enabled) {
+      if (deliveryUnavailableReason) {
+        setError(deliveryUnavailableReason)
+        return
+      }
+      const problem = deliveryProblem(
+        delivery,
+        deliveryCustomerAddress,
+        payments.filter((p) => p.amount > 0).map((p) => p.referenceNumber)
+      )
+      if (problem) {
+        setError(problem)
+        return
+      }
     }
 
     if (employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()) {
@@ -3467,6 +3416,8 @@ export default function CheckoutPage() {
               ? creditApplicationId
               : undefined,
           salesInvoiceNumber: invoiceNumberInput.trim(),
+          // Scenario 66 — nothing at all when delivery is off.
+          ...deliveryPayload(delivery, deliveryCustomerAddress),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
           // tpfApprovedAmount is deliberately not sent (client request,
@@ -3655,6 +3606,13 @@ export default function CheckoutPage() {
                 : undefined,
             isXDeal: xDealActive,
             xDealReference: xDealActive ? xDealReference.trim() : null,
+            delivery: delivery.enabled
+              ? {
+                  deliverTo: delivery.deliverTo.trim(),
+                  fee: deliveryFeeAmount,
+                  feeCr: deliveryFeeAmount > 0 ? delivery.feeCr.trim() : null,
+                }
+              : null,
           })
           return
         }
@@ -3674,9 +3632,10 @@ export default function CheckoutPage() {
       }
 
       if (tenderTarget > 0) {
-        // The merged payments pool covers cash/TPF + delivery fee first,
-        // then whatever's left over goes to the down payment below — same
-        // rows can straddle both if the cashier tendered it all in one go.
+        // The merged payments pool covers cash/TPF first, then whatever's
+        // left over goes to the down payment below — same rows can straddle
+        // both if the cashier tendered it all in one go. (A delivery fee is
+        // never in this pool: it has its own receipt, recorded at create.)
         const rows = payments.filter((p) => p.amount > 0)
         const consumed: number[] = rows.map(() => 0)
         const payRowPortion = async (
@@ -3837,6 +3796,23 @@ export default function CheckoutPage() {
         isXDeal: xDealActive,
         xDealReference: xDealActive ? xDealReference.trim() : null,
         invoices: txData?.invoices ?? [],
+        delivery: delivery.enabled
+          ? {
+              deliverTo: delivery.deliverTo.trim(),
+              address: resolveDeliveryAddress(delivery, deliveryCustomerAddress).address,
+              fee: deliveryFeeAmount,
+              tenderLabel:
+                deliveryFeeAmount > 0
+                  ? deliveryFeeTenderLabel(
+                      delivery,
+                      deliveryFeeOptions(delivery.tender, configuredMethods).find(
+                        (o) => o.id === delivery.optionId
+                      )?.name
+                    )
+                  : null,
+              feeCr: deliveryFeeAmount > 0 ? delivery.feeCr.trim() : null,
+            }
+          : null,
         lineOutcomes: cart.map((l) => ({
           lineId: l.lineId,
           itemName: l.itemName,
@@ -3887,6 +3863,8 @@ export default function CheckoutPage() {
     setIsTaxExempt(false)
     setTaxExemptionRef('')
     setInvoiceNumberInput('')
+    setDelivery(EMPTY_DELIVERY)
+    setDeliveryCustomerAddress(null)
     setSearchQuery('')
     setManagerOverrideApproved(false)
     setOverrideManagerName('')
@@ -4077,6 +4055,7 @@ export default function CheckoutPage() {
         totalAmount={pendingApproval.totalAmount}
         serialLines={pendingApproval.serialLines}
         creditApplicationId={pendingApproval.creditApplicationId}
+        delivery={pendingApproval.delivery ?? null}
         isXDeal={pendingApproval.isXDeal}
         xDealReference={pendingApproval.xDealReference}
         canSignPromissoryNote={canSignPromissoryNote}
@@ -4716,6 +4695,21 @@ export default function CheckoutPage() {
             </div>
           )}
 
+          {/* Scenario 66 — beside the other once-per-sale details, above the
+              Order Summary, so the fee is never read as part of the Total. */}
+          {saleMode === 'sale' && (
+            <DeliverySection
+              state={delivery}
+              setState={setDelivery}
+              customerName={selectedCustomer?.name ?? null}
+              customerAddress={deliveryCustomerAddress}
+              customerAddressLoading={deliveryAddressLoading}
+              unavailableReason={deliveryUnavailableReason}
+              configuredMethods={configuredMethods}
+              fmt={fmt}
+            />
+          )}
+
           {/* QMS tab origin banner */}
           {fromTab && (
             <div className="flex items-center gap-2 px-5 py-2 bg-amber-50 border-b border-amber-200">
@@ -4988,8 +4982,20 @@ export default function CheckoutPage() {
             </div>
             <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
               <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-2xl font-bold text-gray-900">{fmt(totalAmount)}</span>
+              <span className="text-2xl font-bold text-gray-900" data-testid="order-summary-total">
+                {fmt(totalAmount)}
+              </span>
             </div>
+            {/* Scenario 66 — below the Total, never in it. */}
+            {deliveryFeeAmount > 0 && (
+              <div
+                className="mt-2 flex items-center justify-between rounded-lg bg-purple-50 px-2.5 py-1.5 text-xs text-purple-700"
+                data-testid="order-summary-delivery-fee"
+              >
+                <span>Delivery fee — on its own CR, not in the Total</span>
+                <span className="font-semibold">{fmt(deliveryFeeAmount)}</span>
+              </div>
+            )}
 
             {/* Tax exempt toggle */}
             <div className="mt-3 flex items-center justify-between border-t border-purple-200 pt-3">
@@ -5971,6 +5977,14 @@ export default function CheckoutPage() {
                     <span>Total</span>
                     <span>{fmt(tenderTarget)}</span>
                   </div>
+                )}
+                {/* Scenario 66 — collected too, but on the fee's own CR (in
+                    the Delivery section), so it is not tendered here. */}
+                {saleMode === 'sale' && deliveryFeeAmount > 0 && (
+                  <p className="text-xs text-purple-700" data-testid="payment-delivery-fee">
+                    Also collect the delivery fee of {fmt(deliveryFeeAmount)} on its own CR — not
+                    part of this total.
+                  </p>
                 )}
                 {payments.map((p, i) => {
                   if (saleMode === 'sale') {
@@ -7047,6 +7061,7 @@ function SuccessScreen({
       financedBalance?: number | null
     }[]
     invoices?: PosTransactionInvoice[]
+    delivery?: SuccessDelivery | null
     /** Scenario 67 */
     isXDeal?: boolean
     xDealReference?: string | null
@@ -7396,6 +7411,49 @@ function SuccessScreen({
             )}
           </div>
 
+          {/* Scenario 66 — the delivery, and its fee on its own receipt:
+              apart from Paid Now / Sale total above, which never include it. */}
+          {success.delivery && (
+            <div
+              className="space-y-1 border-t border-dashed border-gray-200 px-6 py-3"
+              data-testid="success-delivery"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Delivery
+              </p>
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">Deliver to</span>
+                <span className="text-right text-gray-700">{success.delivery.deliverTo}</span>
+              </div>
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">Address</span>
+                <span className="text-right text-gray-700">{success.delivery.address}</span>
+              </div>
+              {success.delivery.fee > 0 ? (
+                <>
+                  <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                    <span className="shrink-0">Delivery fee</span>
+                    <span className="text-right font-medium text-gray-700">
+                      {fmt(success.delivery.fee)}
+                      {success.delivery.tenderLabel && ` · ${success.delivery.tenderLabel}`}
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                    <span className="shrink-0">Delivery fee CR#</span>
+                    <span className="break-all text-right font-mono text-[10px]">
+                      {success.delivery.feeCr}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    On its own collection receipt — not part of the sale total.
+                  </p>
+                </>
+              ) : (
+                <p className="text-[11px] text-gray-500">Free delivery</p>
+              )}
+            </div>
+          )}
+
           {success.journalEntryId && (
             <p className="px-6 pt-3 text-center font-mono text-[10px] text-gray-400">
               JE: {success.journalEntryId}
@@ -7491,6 +7549,7 @@ function PendingApprovalScreen({
   totalAmount,
   serialLines,
   creditApplicationId,
+  delivery,
   isXDeal,
   xDealReference,
   canSignPromissoryNote,
@@ -7501,6 +7560,7 @@ function PendingApprovalScreen({
   totalAmount: number
   serialLines: { itemName: string; serialNumberLabel?: string }[]
   creditApplicationId?: string
+  delivery: { deliverTo: string; fee: number; feeCr: string | null } | null
   isXDeal?: boolean
   xDealReference?: string | null
   canSignPromissoryNote: boolean
@@ -7587,6 +7647,15 @@ function PendingApprovalScreen({
             <span className="text-sm font-semibold text-gray-700">Total</span>
             <span className="text-lg font-bold text-gray-900">{fmt(totalAmount)}</span>
           </div>
+          {/* Scenario 66 — nothing is recorded for the delivery until the
+              sale is made (plan decision D5): approval creates it. */}
+          {delivery && (
+            <p className="pt-1 text-xs text-gray-500" data-testid="pending-delivery">
+              {delivery.fee > 0
+                ? `Delivery fee ${fmt(delivery.fee)} on CR# ${delivery.feeCr} is recorded when the sale is approved.`
+                : `Free delivery to ${delivery.deliverTo}, recorded when the sale is approved.`}
+            </p>
+          )}
         </div>
 
         {creditApplicationId && (

@@ -4,7 +4,17 @@ import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVoidRequests, useSubmitVoidRequest, useSessions } from '../_hooks/usePos'
 import Link from 'next/link'
-import { X, Loader2, FileText, Clock, CheckCircle, XCircle, Undo2, Receipt } from 'lucide-react'
+import {
+  X,
+  Loader2,
+  FileText,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Undo2,
+  Receipt,
+  MapPin,
+} from 'lucide-react'
 import { getTransaction, getCustomerById, createTransaction } from '../_actions/pos-actions'
 import type { PosTransaction, PosTransactionInvoice, PosVoidRequest } from '@/src/schema/pos'
 import { isRefundPendingApproval } from '@/src/schema/pos'
@@ -16,6 +26,7 @@ import { type SessionUser, can, canAccessModule } from '@/src/libs/guards/permis
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import { deliveryFeeReceiptTenderLabel } from '../checkout/_utils/delivery'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -315,6 +326,53 @@ export function TransactionDetail({
                       </span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Scenario 66 — who and where, and the delivery fee on its own
+                  collection receipt: below the Total and the Payments,
+                  neither of which ever includes it. */}
+              {tx.deliverTo && (
+                <div className="mt-4 space-y-1 text-sm" data-testid="transaction-delivery">
+                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Delivery</p>
+                  <Row label="Deliver to" value={tx.deliverTo} />
+                  {/* Its own two-line layout: a full address is too long for
+                      Row's label-left / value-right line and ran into the label. */}
+                  {tx.deliveryAddress && (
+                    <div className="text-gray-600">
+                      <span>Address</span>
+                      <p className="mt-0.5 flex items-start gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5 text-[13px] leading-snug text-gray-700">
+                        <MapPin size={13} className="mt-0.5 shrink-0 text-gray-400" />
+                        <span>{tx.deliveryAddress}</span>
+                      </p>
+                    </div>
+                  )}
+                  {Number(tx.deliveryFee ?? 0) > 0 ? (
+                    <>
+                      <Row label="Delivery fee" value={formatCurrency(Number(tx.deliveryFee))} />
+                      {tx.deliveryFeeCollectionReceipt &&
+                        deliveryFeeReceiptTenderLabel(tx.deliveryFeeCollectionReceipt) && (
+                          <Row
+                            label="Paid with"
+                            value={deliveryFeeReceiptTenderLabel(tx.deliveryFeeCollectionReceipt)!}
+                            muted
+                          />
+                        )}
+                      {tx.deliveryFeeReferenceNumber && (
+                        <Row
+                          label="Delivery fee CR#"
+                          value={
+                            tx.deliveryFeeCollectionReceipt?.cancelledAt
+                              ? `${tx.deliveryFeeReferenceNumber} (cancelled)`
+                              : tx.deliveryFeeReferenceNumber
+                          }
+                          muted
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <Row label="Delivery fee" value="Free delivery" muted />
+                  )}
                 </div>
               )}
 
