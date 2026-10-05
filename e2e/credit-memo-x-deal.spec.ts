@@ -280,7 +280,7 @@ test.describe.serial('Credit Memos — X-Deal offset (Scenario 67)', () => {
       await (
         await page.request.get('/api/credit-memos', { params: { customerId: fx.xDeal.customerId } })
       ).json()
-    ).items as { memoNumber: string; type: string; status: string }[]
+    ).items as { memoNumber: string; type: string; status: string; arInvoiceId: string }[]
     const xDealMemos = memos.filter((m) => m.type === 'x_deal')
     expect(xDealMemos).toHaveLength(1)
     const memoNumber = xDealMemos[0].memoNumber
@@ -306,6 +306,13 @@ test.describe.serial('Credit Memos — X-Deal offset (Scenario 67)', () => {
       { timeout: 15_000 }
     )
     await expect(page.getByText('X-Deal credit memo', { exact: true })).toBeVisible()
+
+    // The invoice's own page names the memo type, not the raw `x_deal`.
+    await gotoReady(page, `/accounting/ar-invoices/${xDealMemos[0].arInvoiceId}`)
+    const memoRow = page.locator('li', { hasText: memoNumber })
+    await expect(memoRow).toBeVisible({ timeout: 15_000 })
+    await expect(memoRow.getByText('X-Deal', { exact: true })).toBeVisible()
+    await expect(memoRow.getByText('x_deal')).toHaveCount(0)
   })
 
   test('XD-F16: voiding the X-Deal memo from the list reopens the account', async ({ page }) => {
@@ -337,6 +344,15 @@ test.describe.serial('Credit Memos — X-Deal offset (Scenario 67)', () => {
     // The X-Deal dialog isn't open, so any X-Deal option would be the
     // ordinary dialog's own type list.
     await expect(page.locator('option', { hasText: /X-Deal/ })).toHaveCount(0)
+  })
+
+  test('XD-F20: the memo date defaults to today in Philippine time, not the UTC day', async ({
+    page,
+  }) => {
+    // 07:30 on 5 Oct in Manila is still 4 Oct in UTC.
+    await page.clock.setFixedTime(new Date('2026-10-04T23:30:00Z'))
+    await openXDealPage(page)
+    await expect(page.getByLabel('Memo date')).toHaveValue('2026-10-05')
   })
 })
 

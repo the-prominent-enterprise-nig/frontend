@@ -29,7 +29,7 @@ export default function BankAccountsList() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-2xl font-bold">Bank Accounts</h2>
+          <h2 className="text-2xl font-bold">Bank and Cash Accounts</h2>
           <p className="text-sm text-gray-500">Operating, payroll, and savings accounts.</p>
         </div>
         <div className="flex gap-2">

@@ -97,6 +97,14 @@ export function PillCombobox({
           setOpen(true)
           setActive(0)
         }}
+        // After picking, the input keeps focus, so a second click fires no
+        // onFocus — reopen on click as well.
+        onClick={() => {
+          if (!open) {
+            setOpen(true)
+            setActive(0)
+          }
+        }}
         onChange={(e) => {
           setQuery(e.target.value)
           setActive(0)

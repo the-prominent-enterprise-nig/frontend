@@ -7,7 +7,7 @@ export function XDealBadge({ reference }: { reference?: string | null }) {
   return (
     <span
       data-testid="x-deal-badge"
-      title={reference ? `X-Deal reference: ${reference}` : 'X-Deal (barter)'}
+      title={reference ? `X-Deal reference: ${reference}` : 'X-Deal'}
       className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800"
     >
       X-DEAL

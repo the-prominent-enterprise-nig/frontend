@@ -661,6 +661,10 @@ export interface CollectionsCustomer {
   phone: string | null
   outstandingCount: number
   outstandingAmount: number
+  /** An employee buyer — tagged on the row. */
+  isEmployee?: boolean
+  /** The part of outstandingAmount that is an Employee Appliance Loan. */
+  applianceOutstanding?: number
   // Scenario 29 ACC-05 — the collector's number: only installment lines
   // whose own due date has actually passed, unlike outstandingAmount
   // above (which counts every open line regardless of maturity).
@@ -1353,6 +1357,9 @@ export interface PosReleaseFormCartSnapshot {
   financingTermId?: string
   downPayment?: number
   creditApplicationId?: string
+  /** Scenario 67 — the snapshot is the submitted cart, X-Deal flags included. */
+  isXDeal?: boolean
+  xDealReference?: string | null
 }
 
 export interface PosReleaseFormRequest {

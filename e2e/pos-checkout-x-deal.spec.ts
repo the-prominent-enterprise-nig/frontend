@@ -13,6 +13,7 @@ import {
   sweepE2EPriceUseTypes,
   deleteCustomers,
   openCustomSelect,
+  loginAs,
 } from './utils'
 
 // Scenario 67 — X-Deal (barter) at POS checkout. The backend rules (cart
@@ -30,6 +31,9 @@ import {
 const PREFIX = 'E2E XDeal'
 const BRANCH = 'Bago'
 const ITEM_PRICE = 12000
+const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
+const BAGO_CASHIER_EMAIL = 'technova.b1.cashier@test.com'
+const OWNER_EMAIL = 'technova.owner@test.com'
 
 type Fixtures = {
   itemId: string
@@ -281,7 +285,12 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
 
     await pickFirstTerm(page)
     await expect(page.getByText('Waived', { exact: true })).toBeVisible()
-    await expect(page.getByText('X-Deal', { exact: true })).toBeVisible()
+    // The down-payment row's "X-Deal" tag — the panel's own label reads the same.
+    await expect(
+      page
+        .getByText('X-Deal', { exact: true })
+        .and(page.locator(':not([data-testid="x-deal-panel"] *)'))
+    ).toBeVisible()
   })
 
   test('XD-F03: Confirm is blocked without a reference, including a whitespace-only one', async ({
@@ -330,6 +339,18 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await expect(page.getByText('Waived', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Delivery Receipt', exact: true })).toBeEnabled()
     await expect(page.getByRole('button', { name: 'TPF Installment', exact: true })).toBeEnabled()
+
+    // A down-payment method picked before ticking X-Deal stops showing its
+    // pickers while X-Deal is on, and is still chosen once it's unticked.
+    await page
+      .getByTestId('dp-payment-mode-toggle')
+      .getByRole('button', { name: 'Cash', exact: true })
+      .click()
+    await expect(page.getByTestId('cash-sub-mode-toggle')).toBeVisible()
+    await xDealCheckbox(page).check()
+    await expect(page.getByTestId('cash-sub-mode-toggle')).toHaveCount(0)
+    await xDealCheckbox(page).uncheck()
+    await expect(page.getByTestId('cash-sub-mode-toggle')).toBeVisible()
   })
 
   test('XD-F05: X-Deal and Employee Appliance Loan cannot both be on', async ({ page }) => {
@@ -492,5 +513,53 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
       timeout: 45_000,
     })
     await expect(page.getByTestId('x-deal-badge')).toBeVisible()
+  })
+
+  test('XD-F19: an X-Deal held for approval is marked as one in Release Approvals and its Review dialog', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F19')
+    const reference = `XD-F19-${Date.now()}`
+
+    // A cashier's installment sale is held for approval; the owner's isn't.
+    await page.context().clearCookies()
+    await loginAs(page, BAGO_CASHIER_EMAIL, DEV_PASSWORD)
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, customer.name)
+    await xDealCheckbox(page).check()
+    await pickFirstTerm(page)
+    await xDealReference(page).fill(reference)
+    await fillStable(page.getByLabel('Sales Invoice No.'), `SI-XDF19-${Date.now()}`)
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    await expect(page.getByText('Pending Approval', { exact: true })).toBeVisible({
+      timeout: 45_000,
+    })
+
+    await page.context().clearCookies()
+    await loginAs(page, OWNER_EMAIL, DEV_PASSWORD)
+    await gotoReady(page, '/pos/release-approvals')
+    const row = page.locator('tr', { hasText: customer.name })
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await expect(row.getByTestId('x-deal-badge')).toBeVisible()
+    await row.getByRole('button', { name: 'Review' }).click()
+    await expect(page.getByTestId('review-x-deal-note')).toContainText(reference)
+    await expect(page.getByTestId('review-x-deal-note')).toContainText(
+      'no down payment and no credit application by design'
+    )
+
+    // Leave nothing pending for the next run.
+    const pending = (await (
+      await page.request.get('/api/pos/release-form-requests/pending')
+    ).json()) as { id: string; cartSnapshot?: { xDealReference?: string } }[] | { data: never[] }
+    const list = Array.isArray(pending) ? pending : ((pending as { data?: unknown[] }).data ?? [])
+    for (const r of list as { id: string; cartSnapshot?: { xDealReference?: string } }[]) {
+      // Any XD-F19 hold, including one an earlier failed run left behind.
+      if (r.cartSnapshot?.xDealReference?.startsWith('XD-F19-')) {
+        await page.request.post(`/api/pos/release-form-requests/${r.id}/reject`, {
+          data: { reviewNotes: 'E2E XD-F19 cleanup' },
+        })
+      }
+    }
   })
 })

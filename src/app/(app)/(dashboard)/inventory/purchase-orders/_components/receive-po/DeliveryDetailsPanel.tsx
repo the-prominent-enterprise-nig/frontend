@@ -153,40 +153,6 @@ export function DeliveryDetailsPanel({
           />
         </Field>
 
-        {/* The report's "Driver/Helper" line. Neither is required — a
-            delivery often arrives with a driver and no helper. */}
-        <Field label="Driver" hint="optional">
-          <Controller
-            name="driverName"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="text"
-                placeholder="Name of whoever drove it in"
-                className={INPUT}
-              />
-            )}
-          />
-        </Field>
-
-        <Field label="Helper" hint="optional">
-          <Controller
-            name="helperName"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="text"
-                placeholder="Blank if the driver came alone"
-                className={INPUT}
-              />
-            )}
-          />
-        </Field>
-
         <div className="sm:col-span-2">
           <Field label="Notes">
             <Controller
