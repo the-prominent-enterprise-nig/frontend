@@ -18,6 +18,7 @@ import type { DailySalesMonitoringReport } from '@/src/schema/pos/daily-sales-mo
 import DailyCollectionActionBar from './DailyCollectionActionBar'
 import DailyCollectionForm from './DailyCollectionForm'
 import DailyCollectionLedger from './DailyCollectionLedger'
+import DailyCollectionPrintPages from './DailyCollectionPrintPages'
 import DailyCollectionRollup from './DailyCollectionRollup'
 import DailyCollectionSignoffs from './DailyCollectionSignoffs'
 import DailyCollectionTotals from './DailyCollectionTotals'
@@ -121,13 +122,17 @@ export default function DailyCollectionView({
   const salesQuery = useQuery({
     queryKey: ['pos-daily-sales-monitoring', date, scopedBranchId],
     queryFn: () => getDailySalesMonitoring({ date, branchId: scopedBranchId ?? undefined }),
-    enabled: !showRollup && sheetView === 'sales',
+    enabled: !showRollup,
   })
   const salesReport = salesQuery.data?.success ? salesQuery.data.data : undefined
   const onSalesView = !showRollup && sheetView === 'sales'
 
   const report: DailyCollectionReport | undefined = data?.success ? data.data : undefined
   const sheet = useSheetDraft(report, date)
+  // Both forms print in one job from either tab, so the sales sheet is fetched
+  // alongside the collection report rather than only on its own tab.
+  const canPrint =
+    !showRollup && (salesReport !== undefined || (report !== undefined && !report.withheld))
 
   const save = useMutation({
     mutationFn: () => saveDailyCollectionSheet(sheet.toPayload()),
@@ -170,143 +175,145 @@ export default function DailyCollectionView({
       : showRollup
         ? 'Every branch on one business day, and the cash each one counted against it.'
         : onSalesView
-          ? "The day's sales by category, channel and invoice type, in the Daily Collection Report's format."
+          ? "The day's sales by category, channel and invoice type."
           : 'Every collection taken at this branch on one business day, with the denomination count that reconciles the cash.'
 
   return (
-    <div className="mx-auto max-w-[1400px] p-6">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4 print:hidden">
-        <div>
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.09em] text-gray-500">
-            Point of Sale &middot; {sessionBranchName ?? branchName ?? 'All branches'}
-          </p>
-          <h1 className="mt-1 text-2xl font-bold text-prominent-purple-900">
-            {showRollup ? SHEET_TITLES.collection : SHEET_TITLES[sheetView]}
-          </h1>
-          <p className="mt-0.5 text-sm text-gray-500">{subhead}</p>
-        </div>
-        <div className="flex items-end gap-3">
-          {!showRollup && (
-            <SheetTabs value={sheetView} onChange={setSheetView} disabled={editing} />
-          )}
-          <DateStepper value={date} onChange={setDate} disabled={editing} />
-          {/* Both act on one branch's form: there is no sheet to print and no
-              workbook to pull while the roll-up is what is on screen. */}
-          {onSalesView && salesReport && (
-            <button onClick={() => window.print()} className="btn-secondary">
-              Print
-            </button>
-          )}
-          {!showRollup && !onSalesView && !report?.withheld && (
-            <>
+    <>
+      <div className="mx-auto max-w-[1400px] p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4 print:hidden">
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.09em] text-gray-500">
+              Point of Sale &middot; {sessionBranchName ?? branchName ?? 'All branches'}
+            </p>
+            <h1 className="mt-1 text-2xl font-bold text-prominent-purple-900">
+              {showRollup ? SHEET_TITLES.collection : SHEET_TITLES[sheetView]}
+            </h1>
+            {/* Two lines tall whichever tab is open, so the toggle below it stays put. */}
+            <p className="mt-0.5 min-h-10 text-sm text-gray-500">{subhead}</p>
+            {!showRollup && (
+              <div className="mt-3">
+                <SheetTabs value={sheetView} onChange={setSheetView} disabled={editing} />
+              </div>
+            )}
+          </div>
+          <div className="flex shrink-0 items-start gap-3">
+            <DateStepper value={date} onChange={setDate} disabled={editing} />
+            {/* Prints the day's two forms together, from either tab. Nothing to
+              print while the roll-up is what is on screen. */}
+            {canPrint && (
               <button onClick={() => window.print()} className="btn-secondary">
                 Print
               </button>
+            )}
+            {!showRollup && !onSalesView && !report?.withheld && (
               <ExportButton
                 endpoint="/pos/reports/daily-collection/export"
                 params={{ date, branchId: scopedBranchId ?? undefined }}
                 // A day that took only cards still has a form worth exporting.
                 disabled={!report || (report.rows.length === 0 && report.nonCash.length === 0)}
               />
-            </>
-          )}
+            )}
+          </div>
         </div>
-      </div>
 
-      {onSalesView ? (
-        <SalesMonitoringBody
-          isLoading={salesQuery.isLoading}
-          report={salesReport}
-          showAllBranchesLink={sessionBranchId === null}
-          onAllBranches={() => setBranch(null)}
-        />
-      ) : showRollup ? (
-        rollupQuery.isLoading ? (
+        {onSalesView ? (
+          <SalesMonitoringBody
+            isLoading={salesQuery.isLoading}
+            report={salesReport}
+            showAllBranchesLink={sessionBranchId === null}
+            onAllBranches={() => setBranch(null)}
+          />
+        ) : showRollup ? (
+          rollupQuery.isLoading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : rollupQuery.isError || !rollup ? (
+            <LoadError />
+          ) : (
+            <DailyCollectionRollup rollup={rollup} onOpenBranch={(branch) => setBranch(branch)} />
+          )
+        ) : isLoading ? (
           <Skeleton className="h-64 w-full" />
-        ) : rollupQuery.isError || !rollup ? (
+        ) : isError || !report ? (
           <LoadError />
         ) : (
-          <DailyCollectionRollup rollup={rollup} onOpenBranch={(branch) => setBranch(branch)} />
-        )
-      ) : isLoading ? (
-        <Skeleton className="h-64 w-full" />
-      ) : isError || !report ? (
-        <LoadError />
-      ) : (
-        <>
-          {sessionBranchId === null && (
-            <button
-              onClick={() => setBranch(null)}
-              className="mb-3 text-sm text-prominent-purple-700 hover:underline"
-            >
-              ← All branches
-            </button>
-          )}
-          {report.withheld ? (
-            <NotSubmitted report={report} />
-          ) : (
-            <>
-              {editing && <EditingNote />}
-              {/* Above the figures, not below them: the caveat has to land before
+          <>
+            {sessionBranchId === null && (
+              <button
+                onClick={() => setBranch(null)}
+                className="mb-3 text-sm text-prominent-purple-700 hover:underline"
+              >
+                ← All branches
+              </button>
+            )}
+            {report.withheld ? (
+              <NotSubmitted report={report} />
+            ) : (
+              <>
+                {editing && <EditingNote />}
+                {/* Above the figures, not below them: the caveat has to land before
               someone reads them, not after. */}
-              <OpenSessionNote report={report} />
+                <OpenSessionNote report={report} />
 
-              {/* The report carries the letterhead so the screen, the print sheet
+                {/* The report carries the letterhead so the screen, the print sheet
               and the exported workbook can never disagree; the session's own
               copy is only a fallback for an enterprise with no trading name
               set. */}
-              <DailyCollectionLedger report={report} companyName={reportCompanyName} />
-              <DailyCollectionTotals report={report} edit={editing ? sheet : null} />
-              <DailyCollectionSignoffs
-                report={report}
-                preparedBy={preparedBy}
-                edit={editing ? sheet : null}
-              />
-
-              {/* A missing bar is a question — "why can't I file this?" — and an
-              unanswered one sends someone hunting through a form they cannot
-              change. Say it instead. */}
-              {!canEdit && (
-                <p className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 print:hidden">
-                  You can view, print and export this report. Filing it — the signatories, the
-                  remarks and the denomination count — needs the Daily Collection update permission.
-                </p>
-              )}
-
-              {canEdit && report.editable && position && (
-                <DailyCollectionActionBar
-                  editing={editing}
-                  filed={report.sheet !== null}
-                  saving={save.isPending}
-                  missingReason={missingReason}
-                  position={position}
-                  totalCollection={report.totalCollection}
-                  onFill={() => setEditing(true)}
-                  onCancel={() => {
-                    sheet.reset()
-                    setEditing(false)
-                  }}
-                  onSave={() => save.mutate()}
-                />
-              )}
-
-              {/* Screen-hidden, and the only thing that prints: the facsimile of
-              the client's own paper form, which a branch files in the same
-              binder as the original. The global `.print-sheet` rules force
-              every ancestor of the sheet back to a plain block, so `hidden`
-              here costs the printout nothing. */}
-              <div className="hidden print:block">
-                <DailyCollectionForm
+                <DailyCollectionLedger report={report} companyName={reportCompanyName} />
+                <DailyCollectionTotals report={report} edit={editing ? sheet : null} />
+                <DailyCollectionSignoffs
                   report={report}
                   preparedBy={preparedBy}
                   edit={editing ? sheet : null}
                 />
-              </div>
-            </>
-          )}
-        </>
+
+                {/* A missing bar is a question — "why can't I file this?" — and an
+              unanswered one sends someone hunting through a form they cannot
+              change. Say it instead. */}
+                {!canEdit && (
+                  <p className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 print:hidden">
+                    You can view, print and export this report. Filing it — the signatories, the
+                    remarks and the denomination count — needs the Daily Collection update
+                    permission.
+                  </p>
+                )}
+
+                {canEdit && report.editable && position && (
+                  <DailyCollectionActionBar
+                    editing={editing}
+                    filed={report.sheet !== null}
+                    saving={save.isPending}
+                    missingReason={missingReason}
+                    position={position}
+                    totalCollection={report.totalCollection}
+                    onFill={() => setEditing(true)}
+                    onCancel={() => {
+                      sheet.reset()
+                      setEditing(false)
+                    }}
+                    onSave={() => save.mutate()}
+                  />
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Off-screen, and the only thing that prints: the sales monitoring sheet
+          on page one and the client's paper facsimile on page two. Kept outside
+          the padded page container so the print page starts at the paper's edge. */}
+      {canPrint && (
+        <DailyCollectionPrintPages
+          pages={[
+            salesReport ? <DailySalesMonitoringSheet key="sales" report={salesReport} /> : null,
+            report && !report.withheld ? (
+              <DailyCollectionForm key="collection" report={report} preparedBy={preparedBy} />
+            ) : null,
+          ]}
+        />
       )}
-    </div>
+    </>
   )
 }
 
@@ -367,7 +374,7 @@ function SheetTabs({
   disabled: boolean
 }): React.JSX.Element {
   return (
-    <div role="tablist" className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+    <div role="tablist" className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
       {SHEET_TABS.map((view) => (
         <button
           key={view}
@@ -418,7 +425,7 @@ function SalesMonitoringBody({
         </button>
       )}
       <OpenSessionNote report={report} />
-      <DailySalesMonitoringSheet report={report} />
+      <DailySalesMonitoringSheet report={report} printable={false} />
     </>
   )
 }

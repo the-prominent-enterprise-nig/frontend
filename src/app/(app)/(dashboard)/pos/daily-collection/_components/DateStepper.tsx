@@ -31,7 +31,6 @@ export default function DateStepper({ value, onChange, disabled = false }: Props
   return (
     <div className="flex items-end gap-2">
       <label className="text-xs font-semibold text-gray-600">
-        <span className="mb-1 block">Business date</span>
         <div className="flex items-center overflow-hidden rounded-lg border border-gray-300 bg-white">
           <Tooltip label="Previous day">
             <button

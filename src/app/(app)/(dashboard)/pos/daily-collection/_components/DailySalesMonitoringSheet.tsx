@@ -7,8 +7,8 @@ import type {
 import { peso } from './form-model'
 
 /**
- * Scenario 61 Part 3 — the client's DAILY SALES & COLLECTION MONITORING sheet,
- * and the page's one printable region while it is on screen.
+ * Scenario 61 Part 3 — the client's DAILY SALES & COLLECTION MONITORING sheet.
+ * It prints beside the collection report, in the page's print region.
  *
  * Sales only: per category, then Office/Agent and Cash
  * (COD)/Charge invoice — two more cuts of the same sales, each coming to
@@ -17,6 +17,9 @@ import { peso } from './form-model'
 
 interface Props {
   report: DailySalesMonitoringReport
+  /** False for the on-screen copy: it must not carry `print-sheet`, or the
+   * print rules would force it visible and print the sheet twice. */
+  printable?: boolean
 }
 
 interface CategoryGroup {
@@ -50,12 +53,16 @@ const COLUMN_HEAD =
   'border-b border-gray-900 pb-1.5 font-mono text-[10px] uppercase tracking-[0.09em] text-gray-500'
 const GRID = 'grid grid-cols-[minmax(0,1fr)_130px] items-baseline gap-x-3.5'
 
-export default function DailySalesMonitoringSheet({ report }: Props): React.JSX.Element {
+export default function DailySalesMonitoringSheet({
+  report,
+  printable = true,
+}: Props): React.JSX.Element {
   const { sales } = report
   return (
     <>
-      <PortraitPrintPage />
-      <div className="print-sheet print-sheet-portrait flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 text-gray-900 print:rounded-none print:border-0">
+      <div
+        className={`${printable ? 'print-sheet print-sheet-compact ' : ''}flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 text-gray-900 print:rounded-none print:border-0`}
+      >
         <SheetHeader report={report} />
         <CategoryTable sales={sales} />
         <div className="grid grid-cols-1 gap-7 sm:grid-cols-2 print:grid-cols-2">
@@ -77,18 +84,6 @@ export default function DailySalesMonitoringSheet({ report }: Props): React.JSX.
       </div>
     </>
   )
-}
-
-/**
- * Prints the page A4 portrait with no margin — the wide ledgers keep the
- * landscape default from globals.css. A <style> element because an @page rule
- * cannot be scoped by selector or expressed as a utility class; it exists only
- * while this sheet is mounted, and comes after globals.css so it wins. The
- * zero margin is what stops the browser printing its header/footer (URL,
- * title, date); `.print-sheet-portrait` pads the sheet back in.
- */
-function PortraitPrintPage(): React.JSX.Element {
-  return <style>{'@media print { @page { size: A4 portrait; margin: 0; } }'}</style>
 }
 
 function SheetHeader({ report }: { report: DailySalesMonitoringReport }): React.JSX.Element {
@@ -159,8 +154,8 @@ function CategoryRow({
 }: CategoryRowProps): React.JSX.Element {
   const total = emphasis === 'total'
   const rowClass = total
-    ? 'border-t-[1.5px] border-gray-900 pt-2.5 pb-1'
-    : `border-b border-gray-100 py-1.5 ${sub ? 'pl-5.5' : ''}`
+    ? 'border-t-[1.5px] border-gray-900 pt-2.5 pb-1 print-tight-total'
+    : `border-b border-gray-100 py-1.5 print-tight ${sub ? 'pl-5.5' : ''}`
   const labelClass = total
     ? 'text-[13px] font-semibold'
     : sub
@@ -186,7 +181,10 @@ function TieOut({ title, lines }: { title: string; lines: [string, number][] }):
     <div className="flex flex-col">
       <span className={COLUMN_HEAD}>{title}</span>
       {lines.map(([name, amount]) => (
-        <div key={name} className="flex justify-between gap-3 border-b border-gray-100 py-1.75">
+        <div
+          key={name}
+          className="print-tight flex justify-between gap-3 border-b border-gray-100 py-1.75"
+        >
           <span className="text-[12.5px]">{name}</span>
           <span className="font-mono text-[12.5px] tabular-nums">{peso(amount)}</span>
         </div>
