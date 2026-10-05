@@ -113,7 +113,10 @@ Customer **Rosa**, SI `S66-SI-02`, CR `S66-CR-03`. Tick **For delivery**, leave 
 Customer **Rosa**, SI `S66-SI-03`, CR `S66-CR-04`. Tick **For delivery** → **Change address**.
 
 - The picker opens already on Rosa's address (Region VI → Negros Occidental → Bago City → Bagroy, street "Purok 3").
-- Change the barangay to **Alianza** → street `Purok 1` → the link **Use the customer's address** is under the picker (don't click it).
+- Change the barangay to **Alianza** → street `Purok 1` → the link **Use the customer's address** is under the picker (don't click it), with a **Save address** button beside it.
+- **Checkout** without saving → red **"Save the delivery address first."** Nothing is posted.
+- **Save address** → the picker closes into a lilac card headed **✓ Edited address saved** with the Alianza address, and **Change address** / **Use the customer's address** under it. [DF-F16]
+- **Change address** → the picker reopens on **Alianza / Purok 1** (not Rosa's Bagroy) → **Save address** again.
 - **Checkout** → success **Address** shows the **Alianza** address.
 - CRM → Customers → Rosa Villanueva: her address is **still Bagroy**.
 

@@ -507,6 +507,53 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     expect(tx.deliveryFeeCollectionReceipt).toBeNull()
   })
 
+  test('DF-F16: an edited address must be saved — it then closes into a card the sale carries (PR #201 review)', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F16', withAddress)
+    const salesInvoiceNumber = `SI-DFF16-${Date.now()}`
+    const edited = ADDRESS.replace('12 Rizal St.', 'Purok 1')
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await page
+      .getByTestId('delivery-customer-address')
+      .getByRole('button', { name: 'Change address' })
+      .click({ timeout: 15_000 })
+
+    const picker = page.getByTestId('delivery-address-picker')
+    const street = picker.getByPlaceholder('e.g. Blk 3 Lot 12, Mabuhay St.')
+    await expect(picker).toContainText('Barangay selected: Abuanan', { timeout: 15_000 })
+    await expect(street).toHaveValue('12 Rizal St.')
+    await fillStable(street, 'Purok 1')
+    await fillPayment(page, `CR-DFF16-SALE-${Date.now()}`)
+
+    await confirm(page).click()
+    await expect(page.getByText('Save the delivery address first.')).toBeVisible()
+    expect(await salesBySalesInvoice(page.request, salesInvoiceNumber)).toHaveLength(0)
+
+    await page.getByTestId('delivery-save-address').click()
+    const saved = page.getByTestId('delivery-saved-address')
+    await expect(saved).toContainText('Edited address saved')
+    await expect(saved).toContainText(edited)
+    await expect(picker).toHaveCount(0)
+
+    // Reopening starts from the saved pick, not the customer's address.
+    await saved.getByRole('button', { name: 'Change address' }).click()
+    await expect(picker).toContainText('Barangay selected: Abuanan', { timeout: 15_000 })
+    await expect(street).toHaveValue('Purok 1')
+    await page.getByTestId('delivery-save-address').click()
+
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    expect(tx.deliveryAddress).toBe(edited)
+    expect(tx.deliveryBarangayCode).toBe(BARANGAY_CODE)
+  })
+
   test('DF-F12: delivery is unavailable offline', async ({ page }) => {
     const customer = await createCustomer(page.request, 'F12', withAddress)
     await openCheckout(page)

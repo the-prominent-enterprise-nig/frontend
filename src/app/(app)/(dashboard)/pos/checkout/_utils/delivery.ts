@@ -34,6 +34,14 @@ export interface DeliveryState {
   addressSource: 'customer' | 'picked'
   pickedAddress: string
   pickedBarangayCode: string
+  /** The cashier pressed Save on the picked address: the picker closes into
+   * a card, and Confirm accepts it. Any further pick clears it. */
+  addressSaved: boolean
+  /** What the picker opens with when it isn't the customer's own address —
+   * the saved pick, frozen at "Change address". Kept apart from
+   * pickedAddress because the picker re-hydrates whenever its initial
+   * values change, so it can't be fed the address it is reporting. */
+  pickerSeed: CustomerAddress | null
   /** The address picker reads its initial values once, so it is re-mounted
    * (this bumped) only when it should start over — never just because the
    * cashier picked something in it. */
@@ -51,6 +59,8 @@ export const EMPTY_DELIVERY: DeliveryState = {
   addressSource: 'customer',
   pickedAddress: '',
   pickedBarangayCode: '',
+  addressSaved: false,
+  pickerSeed: null,
   pickerKey: 0,
   fee: '',
   method: 'cash',
@@ -109,6 +119,9 @@ export function deliveryProblem(
   if (!state.deliverTo.trim()) return 'Enter who receives the delivery (Deliver to).'
   if (!resolveDeliveryAddress(state, customerAddress).address) {
     return 'Enter the delivery address.'
+  }
+  if (state.addressSource === 'picked' && !state.addressSaved) {
+    return 'Save the delivery address first.'
   }
   const fee = parseDeliveryFee(state.fee)
   if (fee === null) {

@@ -1,7 +1,7 @@
 'use client'
 
 import type { Dispatch, SetStateAction } from 'react'
-import { MapPin, Truck } from 'lucide-react'
+import { Check, MapPin, Truck } from 'lucide-react'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 import { Select } from '@/src/components/ui/Select'
 import {
@@ -18,6 +18,8 @@ import {
 
 const INPUT_CLASS =
   'w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100'
+const LINK_CLASS =
+  'mt-1 text-xs font-medium text-purple-600 underline decoration-dotted underline-offset-2 hover:text-purple-800'
 
 /**
  * Scenario 66 — Deliver to, Delivery Address and the delivery fee, captured
@@ -45,6 +47,13 @@ export default function DeliverySection({
   const fee = parseDeliveryFee(state.fee)
   const hasFee = fee !== null && fee > 0
   const showCustomerAddress = state.addressSource === 'customer' && !!customerAddress?.address
+  const showSavedAddress = state.addressSource === 'picked' && state.addressSaved
+  // The picker opens on the saved pick when reopened from it, otherwise on
+  // the customer's own address.
+  const pickerSeed = state.pickerSeed ?? customerAddress
+
+  const switchToCustomerAddress = () =>
+    setState((s) => ({ ...s, addressSource: 'customer', addressSaved: false, pickerSeed: null }))
 
   return (
     <div className="border-b border-purple-200 p-5" data-testid="delivery-section">
@@ -114,12 +123,52 @@ export default function DeliverySection({
                       addressSource: 'picked',
                       pickedAddress: customerAddress!.address,
                       pickedBarangayCode: customerAddress!.barangayCode ?? '',
+                      addressSaved: false,
+                      pickerSeed: null,
                     }))
                   }
-                  className="mt-1 text-xs font-medium text-purple-600 underline decoration-dotted underline-offset-2 hover:text-purple-800"
+                  className={LINK_CLASS}
                 >
                   Change address
                 </button>
+              </div>
+            ) : showSavedAddress ? (
+              <div
+                className="rounded-lg border border-purple-100 bg-purple-50 px-3 py-2"
+                data-testid="delivery-saved-address"
+              >
+                <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-green-700">
+                  <Check size={12} />
+                  {customerAddress?.address ? 'Edited address saved' : 'Address saved'}
+                </p>
+                <p className="flex items-start gap-1.5 text-xs text-gray-800">
+                  <MapPin size={13} className="mt-0.5 shrink-0 text-purple-500" />
+                  <span>{state.pickedAddress}</span>
+                </p>
+                <div className="mt-1 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setState((s) => ({
+                        ...s,
+                        addressSaved: false,
+                        pickerSeed: {
+                          address: s.pickedAddress,
+                          barangayCode: s.pickedBarangayCode || null,
+                        },
+                        pickerKey: s.pickerKey + 1,
+                      }))
+                    }
+                    className={LINK_CLASS}
+                  >
+                    Change address
+                  </button>
+                  {customerAddress?.address && (
+                    <button type="button" onClick={switchToCustomerAddress} className={LINK_CLASS}>
+                      Use the customer&apos;s address
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div data-testid="delivery-address-picker">
@@ -128,8 +177,8 @@ export default function DeliverySection({
                   // DeliveryState.pickerKey) — a key that changed on every
                   // pick would wipe what the cashier just chose.
                   key={state.pickerKey}
-                  initialAddress={customerAddress?.address || undefined}
-                  initialBarangayCode={customerAddress?.barangayCode || undefined}
+                  initialAddress={pickerSeed?.address || undefined}
+                  initialBarangayCode={pickerSeed?.barangayCode || undefined}
                   onChange={({ address, barangayCode }) =>
                     setState((s) =>
                       // The picker reports '' while it is still blank —
@@ -141,19 +190,29 @@ export default function DeliverySection({
                             addressSource: 'picked',
                             pickedAddress: address,
                             pickedBarangayCode: barangayCode,
+                            addressSaved: false,
                           }
                     )
                   }
                 />
-                {state.addressSource === 'picked' && customerAddress?.address && (
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  {state.addressSource === 'picked' && customerAddress?.address ? (
+                    <button type="button" onClick={switchToCustomerAddress} className={LINK_CLASS}>
+                      Use the customer&apos;s address
+                    </button>
+                  ) : (
+                    <span />
+                  )}
                   <button
                     type="button"
-                    onClick={() => setState((s) => ({ ...s, addressSource: 'customer' }))}
-                    className="mt-1 text-xs font-medium text-purple-600 underline decoration-dotted underline-offset-2 hover:text-purple-800"
+                    data-testid="delivery-save-address"
+                    disabled={state.addressSource !== 'picked' || !state.pickedAddress.trim()}
+                    onClick={() => setState((s) => ({ ...s, addressSaved: true }))}
+                    className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                   >
-                    Use the customer&apos;s address
+                    Save address
                   </button>
-                )}
+                </div>
               </div>
             )}
           </div>
@@ -201,7 +260,7 @@ export default function DeliverySection({
                   aria-label="Delivery fee CR No."
                   value={state.feeCr}
                   onChange={(e) => setState((s) => ({ ...s, feeCr: e.target.value }))}
-                  placeholder="Its own receipt"
+                  placeholder="Delivery CR Number"
                   maxLength={DELIVERY_FEE_CR_MAX}
                   className={INPUT_CLASS}
                 />
