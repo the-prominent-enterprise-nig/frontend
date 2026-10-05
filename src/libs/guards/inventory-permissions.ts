@@ -21,6 +21,11 @@ export const INVENTORY_PERMISSIONS = {
   WAREHOUSES_CREATE: 'inventory:warehouses:create',
   WAREHOUSES_UPDATE: 'inventory:warehouses:update',
 
+  // ── Drivers (Master Data → Drivers; read uses TRANSFERS_READ) ──────────────
+  DRIVERS_CREATE: 'inventory:drivers:create',
+  DRIVERS_UPDATE: 'inventory:drivers:update',
+  DRIVERS_DELETE: 'inventory:drivers:delete',
+
   // ── Units of Measure ───────────────────────────────────────────────────────
   UOM_READ: 'inventory:uom:read',
   UOM_CREATE: 'inventory:uom:create',
@@ -197,6 +202,9 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:warehouses:read': 'View warehouses and sub-locations',
   'inventory:warehouses:create': 'Create warehouses and sub-locations',
   'inventory:warehouses:update': 'Edit warehouses and sub-locations',
+  'inventory:drivers:create': 'Add a driver to the fleet roster',
+  'inventory:drivers:update': 'Edit a driver on the fleet roster',
+  'inventory:drivers:delete': 'Remove a driver from the fleet roster',
   'inventory:uom:read': 'View units of measure',
   'inventory:uom:create': 'Create units of measure and conversion rates',
   'inventory:uom:update': 'Edit units of measure and conversion rates',

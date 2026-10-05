@@ -5,7 +5,7 @@ import { MasterDataHub } from './_components/MasterDataHub'
 
 export const metadata = {
   title: 'Master Data | NIG Central',
-  description: 'Warehouses, suppliers, price lists, and inventory settings',
+  description: 'Warehouses, suppliers, drivers, price lists, and inventory settings',
 }
 
 export default async function MasterDataPage() {
