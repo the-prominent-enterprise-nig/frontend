@@ -75,7 +75,9 @@ export function PriceTierModal({
               <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                 Available Stock
               </dt>
-              <dd className="mt-1 text-sm text-zinc-800">{item.stockQty ?? 0} units</dd>
+              <dd className="mt-1 text-sm text-zinc-800">
+                {item.stockQty ?? 0} {(item.stockQty ?? 0) === 1 ? 'unit' : 'units'}
+              </dd>
             </div>
           </dl>
 
@@ -143,7 +145,7 @@ function TierRow({ entry, termMonths }: { entry: ItemPriceGuideEntry; termMonths
       <td className="px-2 py-1.5">
         <div className="font-medium text-zinc-800">{entry.priceUseType.name}</div>
         {entry.priceUseType.description && (
-          <div className="text-xs text-zinc-400">{entry.priceUseType.description}</div>
+          <div className="text-[10px] text-zinc-400">{entry.priceUseType.description}</div>
         )}
       </td>
       <td className="px-2 py-1.5 text-right font-medium text-zinc-900">{money(entry.price)}</td>

@@ -62,12 +62,10 @@ const INPUT =
 function Metric({
   label,
   count,
-  value,
   highlight = false,
 }: {
   label: string
   count: number
-  value: number
   highlight?: boolean
 }) {
   return (
@@ -78,7 +76,6 @@ function Metric({
       <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em]`}>
         {count.toLocaleString()}
       </span>
-      <span className="text-[12px] text-[#8b8b9b]">₱{value.toLocaleString()}</span>
     </div>
   )
 }
@@ -125,7 +122,6 @@ export default function AgingReport({
               key={bucket}
               label={SERIAL_AGING_BUCKET_LABELS[bucket]}
               count={summary[bucket]?.count ?? 0}
-              value={summary[bucket]?.totalValue ?? 0}
               highlight={bucket === '0_30'}
             />
           ))}

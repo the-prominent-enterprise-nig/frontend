@@ -1,7 +1,7 @@
 'use client'
 
 import ExportButton from '@/src/components/common/ExportButton'
-import { TrendingUp, Package, DollarSign } from 'lucide-react'
+import { TrendingUp, Package } from 'lucide-react'
 import type { ValuationReportResponse } from '@/src/schema/inventory/reports'
 
 interface Props {
@@ -36,7 +36,7 @@ export default function ValuationReport({
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
@@ -60,20 +60,6 @@ export default function ValuationReport({
               <p className="text-xs text-zinc-500">Total Qty on Hand</p>
               <p className="text-xl font-bold text-zinc-800">
                 {isLoading ? '—' : (summary?.totalQty ?? 0).toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-prominent-purple-100">
-              <DollarSign className="h-5 w-5 text-prominent-purple-700" />
-            </div>
-            <div>
-              <p className="text-xs text-zinc-500">Total Inventory Value</p>
-              <p className="text-xl font-bold text-zinc-800">
-                {isLoading ? '—' : formatCurrency(summary?.totalValue ?? 0)}
               </p>
             </div>
           </div>
