@@ -9,12 +9,13 @@ import type {
  * Report, kept beside the form component so the screen, the print sheet and
  * the exported workbook can be checked against one shape.
  *
- * Everything here mirrors the client's own paper form: a cash-only running
- * ledger whose SI#/CUSTOMER cell merges down a customer's several DESC lines,
+ * Everything here mirrors the client's own paper form: a running ledger of
+ * cash and non-cash sales (the BALANCE counts cash only) whose SI#/CUSTOMER cell
+ * merges down a customer's several DESC lines,
  * a deposit line that credits the balance back to nil, a DESC-type subtotal
- * block and a denomination count. The service hands over cash rows only, so
- * nothing here has to filter by tender — the day's non-cash take arrives
- * pre-aggregated per provider, as its own block below the cash recap.
+ * block and a denomination count. The service hands over cash and non-cash
+ * rows separately; the day's non-cash take also arrives pre-aggregated per
+ * provider, as its own block below the cash recap.
  */
 
 /** `9-23-26` — the form's own date style, not ISO. */
@@ -111,9 +112,31 @@ function mergeCustomerRuns(lines: FormLine[]): void {
   }
 }
 
+/** A non-cash sale or down payment as a ledger line: DESC says COD or DP, and
+ * the BALANCE is left blank because the money never went into the drawer. */
+function nonCashLine(r: DailyCollectionRow): FormLine {
+  return {
+    type: 'collection',
+    si: r.siNumber ?? '',
+    customer: r.customerName,
+    desc: formKind(r),
+    office: r.channel === 'OFFICE' ? (r.crNumber ?? '') : '',
+    field: r.channel === 'FIELD' ? (r.crNumber ?? '') : '',
+    others: '',
+    cashInvoice: r.cashInvoiceNumber ?? '',
+    ppd: r.ppd,
+    penalty: r.penalty,
+    debit: r.amount,
+    credit: null,
+    balance: null,
+    span: 1,
+  }
+}
+
 export function buildFormLines(report: DailyCollectionReport): FormLine[] {
   const { lines, running: afterCollections } = collectionLines(report)
   mergeCustomerRuns(lines)
+  lines.push(...(report.nonCashRows ?? []).map(nonCashLine))
 
   let running = afterCollections
   for (const d of report.deposits) {

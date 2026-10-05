@@ -83,6 +83,9 @@ export const DailyCollectionReportSchema = z.object({
   branchManagerName: z.string().nullable().default(null),
   date: z.string(),
   rows: z.array(DailyCollectionRowSchema),
+  /** Non-cash sales and down payments, listed in the ledger with their payment
+   * mode but never moving its BALANCE. */
+  nonCashRows: z.array(DailyCollectionRowSchema).default([]),
   deposits: z.array(DailyCollectionDepositSchema),
   byKind: z.record(CollectionKindSchema, z.number()),
   /** Cash only — the ledger, the BALANCE column and the denomination count

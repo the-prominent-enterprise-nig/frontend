@@ -52,9 +52,10 @@ interface Props {
  * Scenario 53 Part 6 — the client's own Daily Collection Report.
  *
  * The toolbar is screen-only; what prints is DailyCollectionForm, a facsimile
- * of the paper form they handed over. Its ledger is cash only, as theirs is,
- * so the running BALANCE stays countable against the drawer; the day's
- * non-cash take is printed per provider in its own block below it.
+ * of the paper form they handed over. Its ledger lists cash and non-cash
+ * sales, with the running BALANCE counting cash only, so it stays countable
+ * against the drawer; the day's non-cash take is printed per provider in its
+ * own block below it.
  *
  * The derived half of the form is read-only by definition. The handwritten
  * half — signatories, remarks, and a corrected denomination count — is edited

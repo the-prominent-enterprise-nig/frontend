@@ -23,9 +23,9 @@ import {
  * Columns, header grouping, merged customer cells, the in-grid subtotal and
  * denomination blocks and the signature strip all follow the printed form
  * they handed over, so a branch can file our output in the same binder. The
- * ledger is cash only, as their form is — the service filters non-cash
- * collections out of it — and the non-cash take is printed per provider in
- * its own block under the cash recap. The backend's form sheet
+ * ledger lists cash and non-cash sales, each non-cash line marked with its
+ * payment mode; only cash moves the BALANCE, and the non-cash take is printed
+ * per provider in its own block under the cash recap. The backend's form sheet
  * (daily-collection.form-sheet.ts) reproduces the same layout in Excel —
  * change one, change the other.
  *
