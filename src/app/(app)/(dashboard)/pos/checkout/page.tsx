@@ -5261,19 +5261,6 @@ export default function CheckoutPage() {
                                 <p className="mt-2 text-[13px] text-amber-700">
                                   Every installment sale requires an approved credit application.
                                 </p>
-                                {/* Approval happens in the Business Owner's own
-                                session, so the cashier is usually waiting on
-                                someone else. This list refreshes when the tab
-                                regains focus; saying so stops the wait looking
-                                like a dead screen. */}
-                                <p className="mt-1 text-[12px] text-amber-600">
-                                  Waiting on an approval? This refreshes when you come back to this
-                                  tab.
-                                </p>
-                                <p className="mt-1 text-[11px] text-amber-600">
-                                  Your cart is kept — it still needs the owner&apos;s approval
-                                  before this sale can be completed.
-                                </p>
                               </div>
                             )}
 
