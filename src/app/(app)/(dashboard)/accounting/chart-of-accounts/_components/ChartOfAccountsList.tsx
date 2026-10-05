@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, Search, X, ChevronRight, ChevronDown } from 'lucide-react'
+import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import {
   getAccounts,
@@ -132,7 +133,7 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-left">Category</th>
               <th className="px-3 py-2 text-right">Balance</th>
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th className="px-3 py-2 w-10" aria-label="Actions" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -179,27 +180,18 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
                   <td className="px-3 py-2 text-xs">{a.type}</td>
                   <td className="px-3 py-2 text-xs text-gray-500">{a.category || '—'}</td>
                   <td className="px-3 py-2 text-right">{a.balance ?? 0}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setEditing(a)
-                        }}
-                        className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          del(a.id)
-                        }}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <RowActionsMenu
+                      items={[
+                        { label: 'Edit', icon: Pencil, onClick: () => setEditing(a) },
+                        {
+                          label: 'Delete',
+                          icon: Trash2,
+                          variant: 'danger',
+                          onClick: () => del(a.id),
+                        },
+                      ]}
+                    />
                   </td>
                 </tr>
               ))
