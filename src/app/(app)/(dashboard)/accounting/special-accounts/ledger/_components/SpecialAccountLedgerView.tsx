@@ -159,23 +159,32 @@ export default function SpecialAccountLedgerView({
             )}
             {!loading &&
               entries.map((e, i) => (
-                <tr key={`${e.expenseId ?? e.reference}-${i}`} className="hover:bg-gray-50">
+                <tr
+                  key={`${e.expenseId ?? e.loanId ?? e.reference}-${i}`}
+                  className="hover:bg-gray-50"
+                >
                   <td className="px-4 py-2.5 text-xs text-gray-500">
                     {e.date ? fmtDate(e.date) : '—'}
                   </td>
                   <td className="px-4 py-2.5">
                     {/* The entry itself is where the full detail lives — the
-                        other lines it paid, the payment, the voucher. */}
-                    {e.expenseId ? (
+                        other lines it paid, the payment, the voucher. A loan
+                        release or a Pay-action payment has no expense, so it
+                        opens the loan instead (Scenario 63). */}
+                    {e.expenseId || e.loanId ? (
                       <Link
-                        href={`/accounting/expenses/${e.expenseId}`}
+                        href={
+                          e.expenseId
+                            ? `/accounting/expenses/${e.expenseId}`
+                            : `/accounting/employee-cash-loans/${e.loanId}`
+                        }
                         className="text-purple-700 hover:underline"
                       >
                         {e.reference || 'View entry'}
                       </Link>
                     ) : (
-                      // A loan disbursement, an appliance sale or a
-                      // collection has no expense entry behind it.
+                      // An appliance sale or a collection has neither an
+                      // expense nor a loan page behind it.
                       <span className="text-gray-700">{e.reference || '—'}</span>
                     )}
                   </td>

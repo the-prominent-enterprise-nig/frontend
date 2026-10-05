@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AlertTriangle, ArrowLeft, Paperclip, X } from 'lucide-react'
-import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
 import { posCustomersApi } from '@/src/libs/api/pos-customers'
 import { showToast } from '@/src/components/ui/toast'
@@ -26,6 +24,9 @@ import type {
 } from '@/src/schema/crm/types'
 import CustomerExtraFields from '@/src/components/crm/CustomerExtraFields'
 import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
+import { PhoneField } from '@/src/components/ui/PhoneField'
+import { Select } from '@/src/components/ui/Select'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type FormState = {
   customerCode: string
@@ -37,6 +38,13 @@ type FormState = {
   businessCategory: string
   employeeNumber: string
   birthday: string
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // block. `isSelfEmployed` is a string here ('' / 'yes' / 'no') because
+  // unanswered is a third state, not false.
+  altPhone: string
+  civilStatus: string
+  gender: string
+  facebookName: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -44,6 +52,10 @@ type FormState = {
   phone: string
   address: string
   barangayCode: string
+  homeAddress: string
+  homeBarangayCode: string
+  homeSameAsCurrent: boolean
+  birthdayIncomplete: boolean
   creditLimit: string
   groupId: string
   branchId: string
@@ -57,6 +69,18 @@ type FormState = {
   consentGiven: boolean
 }
 
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'charge', label: 'Charge' },
+]
+
+const SOURCE_CHANNEL_OPTIONS = [
+  { value: 'pos_walkin', label: 'POS Walk-in' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'crm_lead', label: 'CRM Lead' },
+  { value: 'online', label: 'Online' },
+]
+
 const empty: FormState = {
   customerCode: '',
   firstName: '',
@@ -67,6 +91,10 @@ const empty: FormState = {
   businessCategory: '',
   employeeNumber: '',
   birthday: '',
+  altPhone: '',
+  civilStatus: '',
+  gender: '',
+  facebookName: '',
   taxId: '',
   isTaxExempt: false,
   taxExemptionRef: '',
@@ -74,6 +102,11 @@ const empty: FormState = {
   phone: '',
   address: '',
   barangayCode: '',
+  homeAddress: '',
+  homeBarangayCode: '',
+  // Most customers live where they are — the box starts ticked.
+  homeSameAsCurrent: true,
+  birthdayIncomplete: false,
   creditLimit: '',
   groupId: '',
   branchId: '',
@@ -85,28 +118,6 @@ const empty: FormState = {
   idNumber: '',
   idDocumentFileId: '',
   consentGiven: false,
-}
-
-/**
- * PhoneInput's own `value` prop must always be E.164 (a leading `+`) or
- * `undefined` — some existing customer records predate this component
- * (imported/seeded data entered in a local format like "(656) 929-6118")
- * and break it otherwise, logging a console error every time that record's
- * edit form mounts. Best-effort re-parses a legacy value assuming PH as the
- * default country and returns its real E.164 form when that succeeds;
- * `undefined` otherwise (PhoneInput just renders empty — the underlying
- * `form.phone` state keeps the original raw string either way, so an
- * unrelated edit-and-save never silently overwrites/loses it).
- */
-function toDisplayPhoneValue(raw: string): string | undefined {
-  if (!raw) return undefined
-  if (raw.startsWith('+')) return raw
-  try {
-    const parsed = parsePhoneNumber(raw, 'PH')
-    return parsed?.isValid() ? parsed.number : undefined
-  } catch {
-    return undefined
-  }
 }
 
 /**
@@ -211,6 +222,10 @@ export default function CustomerForm({
           businessCategory: c.businessCategory ?? '',
           employeeNumber: c.employeeNumber ?? '',
           birthday: c.birthday ? c.birthday.slice(0, 10) : '',
+          altPhone: c.altPhone ?? '',
+          civilStatus: c.civilStatus ?? '',
+          gender: c.gender ?? '',
+          facebookName: c.facebookName ?? '',
           taxId: c.taxId ?? '',
           isTaxExempt: c.isTaxExempt,
           taxExemptionRef: c.taxExemptionRef ?? '',
@@ -218,6 +233,16 @@ export default function CustomerForm({
           phone: c.phone ?? '',
           address: c.address ?? '',
           barangayCode: c.barangayCode ?? '',
+          homeAddress: c.homeAddress ?? '',
+          homeBarangayCode: c.homeBarangayCode ?? '',
+          // Ticked when there is no separate home address, or the one on file
+          // is a copy of the current one. Set on both form and initialForm
+          // below, so opening the page is not itself an unsaved change.
+          homeSameAsCurrent:
+            (!c.homeAddress && !c.homeBarangayCode) ||
+            ((c.homeAddress ?? '') === (c.address ?? '') &&
+              (c.homeBarangayCode ?? '') === (c.barangayCode ?? '')),
+          birthdayIncomplete: false,
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
           groupId: c.groupId ?? '',
           branchId: c.branchId ?? '',
@@ -294,13 +319,26 @@ export default function CustomerForm({
     e.preventDefault()
     setServerError(null)
 
+    // A half-picked birthday composes to nothing, so saving now would store
+    // no birthday while the form showed one — the credit application then
+    // asked for it again (PR #199 review).
+    if (form.birthdayIncomplete) {
+      setServerError(
+        'The birthday is incomplete — pick the month, day and year, or clear the birthday to leave it blank.'
+      )
+      return
+    }
+
     const shared = {
       name: `${form.firstName} ${form.lastName}`.trim(),
       firstName: form.firstName,
       middleName: form.middleName || undefined,
       lastName: form.lastName,
       customerType: form.customerType,
-      companyName: form.customerType === 'business' ? form.companyName || undefined : undefined,
+      // Sent for every customer type since 2026-09-30, not business-only:
+      // the credit application mockup asks for an individual's employer, and
+      // this is the column that holds it (see the Customer type's comment).
+      companyName: form.companyName || undefined,
       businessCategory:
         form.customerType === 'business' && form.businessCategory
           ? (form.businessCategory as 'private' | 'government')
@@ -308,6 +346,12 @@ export default function CustomerForm({
       employeeNumber:
         form.customerType === 'employee' ? form.employeeNumber || undefined : undefined,
       birthday: form.birthday ? new Date(form.birthday) : undefined,
+      altPhone: form.altPhone || undefined,
+      civilStatus: form.civilStatus
+        ? (form.civilStatus as 'Single' | 'Married' | 'Widowed' | 'Separated')
+        : undefined,
+      gender: form.gender ? (form.gender as 'M' | 'F') : undefined,
+      facebookName: form.facebookName || undefined,
       taxId: form.taxId || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.taxExemptionRef || undefined,
@@ -315,6 +359,12 @@ export default function CustomerForm({
       phone: form.phone,
       address: form.address || undefined,
       barangayCode: form.barangayCode || undefined,
+      // Ticked sends '' rather than leaving the fields out: an update only
+      // touches the fields it is sent, so omitting them could never clear a
+      // home address already on file. Every reader treats '' as "same as
+      // current".
+      homeAddress: form.homeSameAsCurrent ? '' : form.homeAddress || undefined,
+      homeBarangayCode: form.homeSameAsCurrent ? '' : form.homeBarangayCode || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
       groupId: form.groupId || undefined,
       branchId: form.branchId || undefined,
@@ -474,9 +524,9 @@ export default function CustomerForm({
         </div>
         {errors.name && <p className="-mt-3 text-[12px] text-red-600">{errors.name}</p>}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Field
-            label="Email"
+            label="Email (optional)"
             error={errors.email}
             value={form.email}
             maxLength={255}
@@ -485,16 +535,27 @@ export default function CustomerForm({
           />
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Phone *</label>
-            <PhoneInput
-              value={toDisplayPhoneValue(form.phone ?? '')}
-              defaultCountry="PH"
-              international
-              countryCallingCodeEditable={false}
-              onChange={(v) => setField('phone', v ?? '')}
-              numberInputProps={{ className: 'phone-input-field' }}
-              className="ph-phone-input mt-1"
+            <PhoneField
+              value={form.phone ?? ''}
+              onChange={(v) => setField('phone', v)}
+              className="mt-1"
             />
             {errors.phone && <p className="mt-1 text-[12px] text-red-600">{errors.phone}</p>}
+          </div>
+          <div>
+            {/* Scenario 64 item 27 — "Alt mobile (optional)". Sits beside the
+                main number rather than in the extra fields below, because
+                the two are only ever read together, and the duplicate check
+                above deliberately still looks at `phone` alone: a shared
+                second number is not the same person. */}
+            <label className="block text-[13px] font-medium text-gray-700">
+              Alt mobile <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <PhoneField
+              value={form.altPhone ?? ''}
+              onChange={(v) => setField('altPhone', v)}
+              className="mt-1"
+            />
           </div>
         </div>
 
@@ -545,29 +606,28 @@ export default function CustomerForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-[13px] font-medium text-gray-700">Branch</label>
-              <select
+              {/* SearchableSelect, not Select: this tenant runs 25-odd
+                  branches, so the list is one to type into rather than
+                  scroll. Clearable, because "— None —" is a real state a
+                  customer can go back to. */}
+              <SearchableSelect
+                className="mt-1"
                 value={form.branchId}
-                onChange={(e) => setField('branchId', e.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">— None —</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setField('branchId', v)}
+                options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                placeholder="— None —"
+                clearable
+              />
             </div>
             <div>
               <label className="block text-[13px] font-medium text-gray-700">Cash or charge</label>
-              <select
-                value={form.accountType}
-                onChange={(e) => setField('accountType', e.target.value as CustomerAccountType)}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="cash">Cash</option>
-                <option value="charge">Charge</option>
-              </select>
+              <div className="mt-1">
+                <Select
+                  value={form.accountType}
+                  onChange={(v) => setField('accountType', v as CustomerAccountType)}
+                  options={ACCOUNT_TYPE_OPTIONS}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -575,16 +635,13 @@ export default function CustomerForm({
         {isEdit && (
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Source channel</label>
-            <select
-              value={form.sourceChannel ?? 'pos_walkin'}
-              onChange={(e) => setField('sourceChannel', e.target.value as CustomerSourceChannel)}
-              className="mt-1 w-full max-w-xs rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="pos_walkin">POS Walk-in</option>
-              <option value="sales">Sales</option>
-              <option value="crm_lead">CRM Lead</option>
-              <option value="online">Online</option>
-            </select>
+            <div className="mt-1 max-w-xs">
+              <Select
+                value={form.sourceChannel ?? 'pos_walkin'}
+                onChange={(v) => setField('sourceChannel', v as CustomerSourceChannel)}
+                options={SOURCE_CHANNEL_OPTIONS}
+              />
+            </div>
           </div>
         )}
 
@@ -600,18 +657,17 @@ export default function CustomerForm({
           <div className="mt-2 grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[12px] font-medium text-gray-600">ID Type</label>
-              <select
-                value={form.idType}
-                onChange={(e) => setField('idType', e.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-              >
-                <option value="">Select ID type</option>
-                {ID_TYPE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+              {/* compact to match the ID Number input beside it, which is
+                  py-1.5 rather than the form's usual py-2. */}
+              <div className="mt-1">
+                <Select
+                  value={form.idType}
+                  onChange={(v) => setField('idType', v)}
+                  options={ID_TYPE_OPTIONS.map((t) => ({ value: t, label: t }))}
+                  placeholder="Select ID type"
+                  compact
+                />
+              </div>
             </div>
             <div>
               <label className="block text-[12px] font-medium text-gray-600">ID Number</label>

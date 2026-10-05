@@ -2713,6 +2713,282 @@ export function printEmployeeCashLoanVoucherDocument(data: unknown): void {
 }
 
 /**
+ * Scenario 61 — the Inter-Account Transfer voucher. Same letterhead/
+ * signature family as buildExpenseVoucherHtml() above; the body is the one
+ * thing a transfer has that an expense doesn't: a From and a To account,
+ * each with its own amount leg, instead of a payee and N expense lines.
+ */
+export function buildInterAccountTransferVoucherHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const t = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  // Zero-padded MM/DD/YYYY, same as the expense voucher's paper original.
+  const fmtDate = (v: unknown) =>
+    v
+      ? new Date(v as string).toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
+      : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  type Bank = { name?: string; bankName?: string; accountNumber?: string; accountType?: string }
+  const source = (t.source ?? {}) as Bank
+  const destination = (t.destination ?? {}) as Bank
+  const amount = Number(t.amount ?? 0)
+  const bankLine = (b: Bank) =>
+    [b.bankName, b.accountNumber ? `Acct # ${b.accountNumber}` : null, b.accountType]
+      .filter(Boolean)
+      .map((v) => esc(v))
+      .join(' · ')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    .sub { color: #666; font-size: 11.5px; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Inter-Account Transfer</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="meta-label">From</p>
+        <p class="party-name">${esc(source.name) || '—'}</p>
+        <p class="party-address">${bankLine(source)}</p>
+        <p class="meta-label" style="margin-top:12px">To</p>
+        <p class="party-name">${esc(destination.name) || '—'}</p>
+        <p class="party-address">${bankLine(destination)}</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(t.date)}</p>
+        <p class="meta-label">Clearing Date</p>
+        <p class="meta-value">${fmtDate(t.clearingDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${t.reference ? esc(t.reference) : '—'}</p>
+        <p class="meta-label">VOUCHER #</p>
+        <p class="meta-value">${esc(t.transferNumber)}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${t.description ? `<p class="description">${esc(t.description)}</p>` : ''}
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Debit</th><th class="right">Credit</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${esc(destination.name)}<div class="sub">${bankLine(destination)}</div></td>
+          <td>Transfer in from ${esc(source.name)}</td>
+          <td class="right">${fmt(amount)}</td>
+          <td class="right"></td>
+        </tr>
+        <tr>
+          <td>${esc(source.name)}<div class="sub">${bankLine(source)}</div></td>
+          <td>Transfer out to ${esc(destination.name)}</td>
+          <td class="right"></td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="2">Total</td>
+          <td class="right">${fmt(amount)}</td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+      </tbody>
+    </table>
+    ${t.journalEntryCode ? `<p class="sub" style="margin-top:8px">Journal entry: ${esc(t.journalEntryCode)}</p>` : ''}
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printInterAccountTransferVoucherDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildInterAccountTransferVoucherHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 61 Part C — a Journal Voucher for any posted journal entry: the
+ * bank adjusting entry and unidentified bank credit vouchers the client asked
+ * for (each with its Voucher Control No.), and a reprint from any entry's
+ * detail page. Same letterhead/signature family as the expense and
+ * inter-account transfer vouchers above; the body is the entry's own
+ * Account / Description / Debit / Credit lines.
+ */
+export function buildJournalVoucherHtml(data: unknown, title = 'Journal Voucher'): string {
+  const doc = data as PrintDocumentEnvelope
+  const e = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) =>
+    v
+      ? new Date(v as string).toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
+      : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+  const lines = (e.lines ?? []) as {
+    account?: string | null
+    description?: string | null
+    debit?: number
+    credit?: number
+  }[]
+  const cell = (n?: number) => (n ? fmt(Number(n)) : '')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>${esc(title)}</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="meta-label">Particulars</p>
+        <p class="party-address">${esc(e.description) || '—'}</p>
+        ${e.sourceDocumentNo ? `<p class="meta-label" style="margin-top:12px">Source</p><p class="party-address">${esc(e.sourceDocumentNo)}</p>` : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(e.date)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${e.reference ? esc(e.reference) : '—'}</p>
+        <p class="meta-label">VOUCHER CONTROL NO.</p>
+        <p class="meta-value">${e.voucherControlNo ? esc(e.voucherControlNo) : '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Debit</th><th class="right">Credit</th></tr>
+      </thead>
+      <tbody>
+        ${lines
+          .map(
+            (l) => `<tr>
+          <td>${l.account ? esc(l.account) : '—'}</td>
+          <td>${l.description ? esc(l.description) : ''}</td>
+          <td class="right">${cell(l.debit)}</td>
+          <td class="right">${cell(l.credit)}</td>
+        </tr>`
+          )
+          .join('')}
+        <tr class="total-row">
+          <td colspan="2">Total</td>
+          <td class="right">${fmt(Number(e.totalDebit ?? 0))}</td>
+          <td class="right">${fmt(Number(e.totalCredit ?? 0))}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printJournalVoucherDocument(data: unknown, title?: string): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildJournalVoucherHtml(data, title))
+  win.document.close()
+}
+
+/**
  * The Collection Receipt as the customer receives it.
  *
  * A receipt records MONEY RECEIVED, so every figure here is about the

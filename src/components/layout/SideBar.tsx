@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
-import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
+import { hasExactPermission, hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import {
@@ -21,6 +21,7 @@ import {
   Contact,
   CreditCard,
   FileBarChart,
+  Database,
   FileCheck2,
   FilePlus,
   PackageX,
@@ -72,6 +73,8 @@ type NavItem = {
   href: string
   icon: LucideIcon
   requiredPermission?: string | string[]
+  /** Must hold this exact permission row — wildcards don't count. */
+  exactPermission?: string
   badge?: { text: string; variant: 'count' | 'new'; color?: string }
   subItems?: Array<{ label: string; href: string; icon: LucideIcon }>
   section?: string
@@ -345,6 +348,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: FileBarChart,
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
+      // Scenario 62 — raw data from every module, read-only. Business Owner
+      // only; exact permission so the Accountant's accounting:* can't reach.
+      {
+        label: 'Data Query Center',
+        href: '/accounting/query-center',
+        icon: Database,
+        exactPermission: ACCOUNTING_PERMISSIONS.QUERY_CENTER_READ,
+      },
       {
         label: 'Fiscal Periods',
         href: '/accounting/fiscal-periods',
@@ -409,11 +420,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
       // Its own entry, not a button on Bank Reconciliation: moving money
       // between two fund accounts is a disbursement, not part of agreeing a
       // statement to the books.
+      // Scenario 61 — renamed from "Fund Transfer"; now lands on the
+      // transfer history, readable by anyone who can see bank accounts.
       {
-        label: 'Fund Transfer',
+        label: 'Inter-Account Transfer',
         href: '/accounting/fund-transfers',
         icon: Landmark,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
+        requiredPermission: [
+          ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
+          ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
+        ],
       },
     ],
     bottom: [],
@@ -1100,6 +1116,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   }
 
   const filterItem = (item: NavItem) => {
+    if (item.exactPermission) return hasExactPermission(session, item.exactPermission)
     if (!item.requiredPermission) return true
     const required = Array.isArray(item.requiredPermission)
       ? item.requiredPermission

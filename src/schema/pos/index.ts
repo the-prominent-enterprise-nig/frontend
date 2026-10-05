@@ -325,6 +325,13 @@ export interface PosTransaction {
   /** HR's own approval reference for the employee appliance loan — set
    * whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string | null
+  /** Scenario 67 — true when this sale is an X-Deal (barter): inhouse
+   * installment, no down payment, no credit application; accounting clears
+   * its balance with an X-Deal credit memo. */
+  isXDeal?: boolean | null
+  /** The barter agreement / counterparty reference, set whenever isXDeal is
+   * true. */
+  xDealReference?: string | null
   /** Present on create()/findOne() — one per distinct financing term used in
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
@@ -455,6 +462,12 @@ export interface CreateTransactionInput {
   /** HR's own approval reference for the employee appliance loan —
    * required whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string
+  /** Scenario 67 — marks this sale as an X-Deal (barter). Every line must
+   * be inhouse installment on one financing term with a ₱0 down payment,
+   * and no creditApplicationId may be sent. */
+  isXDeal?: boolean
+  /** Required whenever isXDeal is true, rejected otherwise. */
+  xDealReference?: string
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -1082,6 +1095,11 @@ export interface InstallmentPreview {
   totalPayable: number
   monthlyInstallment: number
   lines: InstallmentPreviewLine[]
+  /** Prompt-payment discount from the curated rate card
+   *  (`PriceListItemTerm.ppd`). Only present when a curated term was found
+   *  for this SKU and term — the generic factor-rate path has no PPD to
+   *  quote, so `undefined` means "no rate card said", not "zero". */
+  ppd?: number
 }
 
 export interface ComputeInstallmentPreviewInput {

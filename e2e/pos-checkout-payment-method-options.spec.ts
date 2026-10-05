@@ -157,7 +157,7 @@ test.describe('POS Checkout — Payment Method Options', () => {
     await cleanup(page, cartRow)
   })
 
-  test('marking Credit/Debit Card in Item Payment Mode shows a POS Terminal dropdown, and the tender section no longer duplicates it', async ({
+  test('marking Credit/Debit Card in Item Payment Mode shows a Card Acquirer dropdown, and the tender section no longer duplicates it', async ({
     page,
   }) => {
     await ensureManilaSession(page)
@@ -165,17 +165,28 @@ test.describe('POS Checkout — Payment Method Options', () => {
 
     await page.getByLabel('Item Payment Mode').selectOption({ label: 'Debit/Credit Card' })
 
-    const terminalSelect = page.getByLabel('POS Terminal')
-    await expect(terminalSelect).toBeVisible({ timeout: 10_000 })
-    const optionTexts = await terminalSelect.locator('option').allTextContents()
+    // Scenario 64 — this was a native <select> labelled "POS Terminal". It
+    // was renamed to "Card Acquirer" (its options are the acquirers that
+    // provide the terminal and settle the money, not the terminal), and
+    // development then replaced the control itself with PillCombobox, which
+    // is searchable. Both kept: their control, our wording.
+    //
+    // PillCombobox is a role=combobox named by its aria-label, with
+    // role=option items in a popup rather than <option> children — so the
+    // options only exist once it is opened.
+    const cardAcquirerSelect = page.getByRole('combobox', { name: 'Card Acquirer' })
+    await expect(cardAcquirerSelect).toBeVisible({ timeout: 10_000 })
+    await cardAcquirerSelect.click()
+    const optionTexts = await page.getByRole('option').allTextContents()
     expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'MBTC', 'Maya']))
+    await page.keyboard.press('Escape')
 
     await page.getByLabel('Payment method', { exact: true }).first().selectOption({ label: 'Card' })
     await page.getByPlaceholder('0.00').first().fill('100')
     await expect(
-      page.getByText('Terminal/Straight-Installment/Term set via Item Payment Mode above.')
+      page.getByText('Card Acquirer/Straight-Installment/Term set via Item Payment Mode above.')
     ).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByLabel('POS Terminal')).toHaveCount(1) // still just the one, above
+    await expect(page.getByRole('combobox', { name: 'Card Acquirer' })).toHaveCount(1) // still just the one, above
 
     await cleanup(page, cartRow)
   })
@@ -244,7 +255,9 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const cartRow = await addAnyItemToCart(page)
 
     await page.getByLabel('Item Payment Mode').selectOption({ label: 'Debit/Credit Card' })
-    await expect(page.getByLabel('POS Terminal')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('combobox', { name: 'Card Acquirer' })).toBeVisible({
+      timeout: 10_000,
+    })
 
     // No Term dropdown yet — Straight is the default, no term needed.
     await expect(page.getByLabel('Term', { exact: true })).toHaveCount(0)

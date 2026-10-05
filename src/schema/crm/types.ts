@@ -16,8 +16,27 @@ export type CustomerStatus = z.infer<typeof CustomerStatusEnum>
 export const CustomerAccountTypeEnum = z.enum(['cash', 'charge'])
 export type CustomerAccountType = z.infer<typeof CustomerAccountTypeEnum>
 
-export const CustomerTypeEnum = z.enum(['individual', 'business', 'employee'])
+export const CustomerTypeEnum = z.enum([
+  'individual',
+  'business',
+  'employee',
+  /** Scenario 64 item 27 (client, 2026-09-30) — how the applicant
+   *  earns, answered once here rather than in a second Self-employed
+   *  Yes/No field beside it. Their own business name goes in
+   *  `companyName`, the same column an employer would use. */
+  'self_employed',
+])
 export type CustomerType = z.infer<typeof CustomerTypeEnum>
+
+/** How each type reads on screen. `self_employed` is the reason this exists:
+ *  every list and detail view used to `capitalize` the raw value, which was
+ *  fine while the members were single words and gives "Self_employed" now. */
+export const CUSTOMER_TYPE_LABELS: Record<CustomerType, string> = {
+  individual: 'Individual',
+  self_employed: 'Self-employed',
+  business: 'Business',
+  employee: 'Employee',
+}
 
 export const CustomerLifecycleStatusEnum = z.enum(['alive', 'dead', 'employed'])
 export type CustomerLifecycleStatus = z.infer<typeof CustomerLifecycleStatusEnum>
@@ -144,6 +163,8 @@ export interface CoMaker {
 
 export interface Customer {
   id: string
+  /** Scenario 67 — X-Deal (barter) installment accounts; list responses only. */
+  xDealAccountCount?: number
   tenantId: string
   customerCode: string
   name: string
@@ -153,17 +174,35 @@ export interface Customer {
   middleName?: string | null
   lastName?: string | null
   customerType: CustomerType
+  /** Doubles as the mockup's "Employer" for an individual (Scenario 64 item
+   *  27): one column for "the organisation this person is attached to",
+   *  rather than a second column holding the same kind of value. The form
+   *  labels it Company name for a business and Employer otherwise. */
   companyName?: string | null
   businessCategory?: 'private' | 'government' | null
   employeeNumber?: string | null
   birthday?: string | null
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // block. Stored on the customer so an application can prefill from it,
+  // which is what the mockup asks for ("prefill for returning customers,
+  // then confirm or edit"). Null on every customer captured before 2026-09-30.
+  altPhone?: string | null
+  civilStatus?: 'Single' | 'Married' | 'Widowed' | 'Separated' | null
+  gender?: 'M' | 'F' | null
+  facebookName?: string | null
   taxId?: string | null
   isTaxExempt: boolean
   taxExemptionRef?: string | null
   email?: string | null
   phone?: string | null
+  /** The CURRENT address. Scenario 64 items 9/10 kept it in these two
+   *  columns rather than renaming them: `barangayCode` is the key collector
+   *  assignment matches on, and a collector visits where the customer lives
+   *  now. Home is the pair below, null before 2026-09-30. */
   address?: string | null
   barangayCode?: string | null
+  homeAddress?: string | null
+  homeBarangayCode?: string | null
   paymentTerms?: string | null
   creditLimit?: number | string | null
   groupId?: string | null
@@ -344,6 +383,9 @@ export interface InstallmentAccount {
   legalEscalationNotes?: string | null
   legalEscalationUpdatedAt?: string | null
   status: InstallmentAccountStatus
+  /** Scenario 67 — set when this account came from an X-Deal (barter) sale. */
+  isXDeal?: boolean
+  xDealReference?: string | null
   createdAt: string
   customer?: { name: string } | null
   branch?: { name: string } | null

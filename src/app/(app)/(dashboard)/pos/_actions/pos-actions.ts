@@ -1959,6 +1959,10 @@ export interface ResolvedPosPrice {
   /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
    * rate card, when one exists for this item's price list. */
   downPayment: number | null
+  /** The terms (in months) the rate card quotes a monthly for. With
+   * downPayment, decides whether the down payment is fixed for a term — see
+   * isCardTerm() in libs/constants/financing. */
+  cardTermMonths?: number[]
 }
 
 /** Bulk-resolves every itemId's price under one Price Use in a single call —

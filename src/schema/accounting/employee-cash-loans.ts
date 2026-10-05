@@ -22,10 +22,13 @@ export type EmployeeCashLoanPayment = {
   id: string
   amount: number
   paymentDate: string
-  bankAccountId: string
+  /** Null for a payroll deduction — no bank involved. */
+  bankAccountId: string | null
   bankAccount?: { id: string; name: string; bankName: string } | null
   referenceNumber?: string | null
   note?: string | null
+  /** Scenario 63 — the payroll expense this payment was deducted in. */
+  expenseId?: string | null
   createdAt: string
 }
 

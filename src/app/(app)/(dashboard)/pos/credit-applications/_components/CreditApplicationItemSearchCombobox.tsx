@@ -6,6 +6,10 @@ import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/g
 export type CreditApplicationItemMeta = {
   sellingPrice: number | null
   modelNumber: string | null
+  /** Scenario 64 item 29 — a serial item's row offers its in-stock units.
+   * Optional: rows seeded without a search (edit mode, restored drafts) carry
+   * the flag in form state instead. */
+  isSerialTracked?: boolean
 }
 
 type Props = {
@@ -53,6 +57,7 @@ export function CreditApplicationItemSearchCombobox({
             meta: {
               sellingPrice: item.sellingPrice ?? null,
               modelNumber: item.modelNumber ?? null,
+              isSerialTracked: item.isSerialTracked === true,
             } satisfies CreditApplicationItemMeta,
           }))
       }}

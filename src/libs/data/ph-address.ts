@@ -47,3 +47,11 @@ export function fetchBarangays(): Promise<PhBarangay[]> {
   barangaysCache ??= fetch('/data/ph-address/barangay.json').then((r) => r.json())
   return barangaysCache
 }
+
+/** Region VI (Western Visayas) — the PSGC region_code the business operates
+ * in, pre-selected on fresh address forms so a cashier isn't picking the
+ * same region on every new customer (client request, 2026-09-24). Lives
+ * here rather than in PhilippineAddressPicker so the collector-coverage
+ * picker and any future consumer share one definition; the code itself is
+ * from public/data/ph-address/region.json. */
+export const PH_DEFAULT_REGION_CODE = '06'

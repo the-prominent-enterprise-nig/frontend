@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DOWN_PAYMENT_FLOOR_RATE, DOWN_PAYMENT_FLOOR_LABEL } from '@/src/libs/constants/financing'
 
 export const CreditApplicationStatusSchema = z.enum([
   'draft',
@@ -32,6 +33,32 @@ export const CREDIT_APPLICATION_STATUS_COLORS: Record<CreditApplicationStatus, s
   partially_approved: 'bg-orange-100 text-orange-700',
   declined: 'bg-red-100 text-red-600',
   cancelled: 'bg-red-100 text-red-600',
+}
+
+/**
+ * Scenario 64 Part 6 — an approved application with no applicant ID on file
+ * is "approved but incomplete": still usable for a sale (the client's
+ * explicit requirement — nothing here gates anything), but visibly not
+ * finished. Derived, never stored, so it corrects itself the moment the ID
+ * is attached.
+ *
+ * `hasApplicantId === false` is checked explicitly rather than falsy: only
+ * findAll() sets the flag, so `undefined` means "this caller doesn't know"
+ * (the detail endpoint, which loads documents separately) and must fall
+ * through to the plain Approved badge rather than wrongly claiming the ID
+ * is missing.
+ */
+export function creditApplicationBadge(app: {
+  status: CreditApplicationStatus
+  hasApplicantId?: boolean
+}): { label: string; colorClassName: string } {
+  if (app.status === 'approved' && app.hasApplicantId === false) {
+    return { label: 'Approved — ID pending', colorClassName: 'bg-amber-100 text-amber-700' }
+  }
+  return {
+    label: CREDIT_APPLICATION_STATUS_LABELS[app.status],
+    colorClassName: CREDIT_APPLICATION_STATUS_COLORS[app.status],
+  }
 }
 
 // Scenario 29 POS-02 — per-item status, independent of the application's
@@ -105,8 +132,9 @@ export interface CreditInvestigation {
   updatedAt: string
 }
 
-// Sentinel `coMakerId` value meaning "fill in a brand-new co-maker below"
-// instead of picking one already on file for the applicant.
+/** @deprecated Sentinel from the deleted co-maker section. Nothing sets or
+ *  reads it since the co-maker became a Related People row (2026-09-30);
+ *  kept only so an older client posting it does not break. */
 export const NEW_CO_MAKER_VALUE = '__new__'
 
 const CreateCreditApplicationBaseSchema = z.object({
@@ -123,8 +151,38 @@ const CreateCreditApplicationBaseSchema = z.object({
   // the application itself.
   applicantPhone: z.string().max(50).optional().or(z.literal('')),
   applicantEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
-  // Holds an existing co-maker's id, the NEW_CO_MAKER_VALUE sentinel (fill
-  // in a brand-new co-maker below), or '' (no co-maker).
+  // Scenario 64 item 27 — the rest of the mockup's CUSTOMER PROFILE block.
+  // All form-only: they are seeded from the applicant's customer record and
+  // PATCHed back to it on submit, never sent in the credit application
+  // payload. Nothing is required — the mockup marks none of it so, and a
+  // returning customer captured before these existed has none on file.
+  applicantFirstName: z.string().max(150).optional().or(z.literal('')),
+  applicantMiddleName: z.string().max(150).optional().or(z.literal('')),
+  applicantLastName: z.string().max(150).optional().or(z.literal('')),
+  applicantAltPhone: z.string().max(50).optional().or(z.literal('')),
+  applicantBirthday: z.string().optional().or(z.literal('')),
+  applicantCivilStatus: z
+    .enum(['Single', 'Married', 'Widowed', 'Separated'])
+    .optional()
+    .or(z.literal('')),
+  applicantGender: z.enum(['M', 'F']).optional().or(z.literal('')),
+  applicantFacebookName: z.string().max(255).optional().or(z.literal('')),
+  /** Employer, company name or own business name depending on the type
+   *  below — all three are `Customer.companyName`. */
+  applicantEmployer: z.string().max(255).optional().or(z.literal('')),
+  applicantCustomerType: z
+    .enum(['individual', 'self_employed', 'business', 'employee'])
+    .optional()
+    .or(z.literal('')),
+  /** The CURRENT address — `Customer.address`/`barangayCode`. */
+  applicantAddress: z.string().max(1000).optional().or(z.literal('')),
+  applicantBarangayCode: z.string().max(20).optional().or(z.literal('')),
+  // The home address is NOT captured here. It lives on the customer and is
+  // offered as a one-tick fill for the current address above — see
+  // ApplicantContactFields. Editing it is the customer form's job.
+  // The co-maker this application is backed by, resolved from its Related
+  // People row on submit — either a CoMaker already on the customer, or one
+  // created from what the row holds. Not typed directly by anyone.
   coMakerId: z.string().optional(),
   // Editable details for whichever existing co-maker is selected above —
   // same "diff and PATCH separately" treatment as applicantPhone/Email,
@@ -141,21 +199,50 @@ const CreateCreditApplicationBaseSchema = z.object({
   // with a single space on save — the same fallback CustomerForm already
   // uses for records predating its own firstName/lastName columns. Lossless
   // on round-trip apart from collapsing repeated whitespace.
-  coMakerFirstName: z.string().max(120).optional().or(z.literal('')),
-  coMakerLastName: z.string().max(120).optional().or(z.literal('')),
-  coMakerRelationship: z.string().max(100).optional().or(z.literal('')),
-  coMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
-  coMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
-  // Only used when coMakerId === NEW_CO_MAKER_VALUE — creates a co-maker on
-  // the applicant's profile via customersApi.addCoMaker() before the
-  // application itself is submitted.
-  // First/last are captured separately here and joined into the single
-  // CoMaker.name column on submit — the table has no split name columns.
-  newCoMakerFirstName: z.string().max(120).optional().or(z.literal('')),
-  newCoMakerLastName: z.string().max(120).optional().or(z.literal('')),
-  newCoMakerRelationship: z.string().max(100).optional().or(z.literal('')),
-  newCoMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
-  newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
+  relatedPeople: z
+    .array(
+      z.object({
+        role: z.enum(['spouse', 'father', 'mother', 'co_maker']).optional().or(z.literal('')),
+        firstName: z.string().max(150).optional().or(z.literal('')),
+        lastName: z.string().max(150).optional().or(z.literal('')),
+        mobileNumber: z.string().max(50).optional().or(z.literal('')),
+        /** Co-maker rows only — "Relationship" on the mockup's co-maker row,
+         *  and a required column on the CoMaker record this row writes to.
+         *  The other three roles ARE the relationship. */
+        relationship: z.string().max(100).optional().or(z.literal('')),
+        /** Co-maker rows only — set when the row was filled from a co-maker
+         *  already on the customer. Two jobs: submit reuses that exact record
+         *  instead of matching on name, and the picker hides anyone already
+         *  taken so the same person cannot be attached twice. */
+        coMakerId: z.string().optional().or(z.literal('')),
+      })
+    )
+    .optional(),
+
+  // Scenario 64 item 27 — PROPOSED PURCHASE AND INSTALLMENT. Transcribed
+  // from paper, not derived: the mockup marks most of this block "read only
+  // from POS draft", but until a draft/quote entity exists the honest shape
+  // is a typed value.
+  lcp: z.string().optional().or(z.literal('')),
+  downPaymentCollection: z.enum(['online', 'branch', 'delivery']).optional().or(z.literal('')),
+  firstDueDate: z.string().optional().or(z.literal('')),
+  ppdRebate: z.string().optional().or(z.literal('')),
+  posDraftReference: z.string().max(100).optional().or(z.literal('')),
+
+  // Scenario 64 item 27 — PAPER RECORD AND CREDIT DECISION. The decision
+  // itself stays with decideItems(); these are the transcription facts.
+  paperFormConfirmed: z.boolean().optional(),
+  applicantIsUnitUser: z.enum(['yes', 'no']).optional().or(z.literal('')),
+
+  references: z
+    .array(
+      z.object({
+        name: z.string().max(255).optional().or(z.literal('')),
+        relationship: z.string().max(100).optional().or(z.literal('')),
+        mobileNumber: z.string().max(50).optional().or(z.literal('')),
+      })
+    )
+    .optional(),
   // An application can cover a bundle of models (2026-08-15, second pass) —
   // checkout enforces an exact match against the sale's installment lines.
   // estimatedPrice is the flat catalog price the item combobox's search
@@ -177,11 +264,22 @@ const CreateCreditApplicationBaseSchema = z.object({
         // looking dead. z.coerce would hide that but widens the schema's
         // input type to unknown, breaking useForm's generic.
         estimatedPrice: z.number().optional(),
+        /** Scenario 64 item 28 — the unit picked at the till when this
+         *  application was raised from a cart. Item 29 — or picked on the
+         *  form itself, from this branch's in-stock units of a serial item.
+         *  Optional either way: the till asks for one when it is missing. */
+        serialNumberId: z.string().optional(),
         // Also client-only. The combobox shows a label, not an id, and it
         // has no way to look one up from an id alone — so without this a
         // restored draft kept its itemId but rendered an empty picker, and
         // the item looked lost. Stripped server-side by the DTO whitelist.
         itemLabel: z.string().optional(),
+        // Client-only, item 29, for the same reason as itemLabel: whether the
+        // row offers a unit picker, and the label that picker shows, have to
+        // survive a draft round trip. Never sent — the create action picks
+        // the fields it sends.
+        isSerialTracked: z.boolean().optional(),
+        serialNumberLabel: z.string().optional(),
       })
     )
     .min(1, 'At least one item is required'),
@@ -210,15 +308,88 @@ const CreateCreditApplicationBaseSchema = z.object({
   // in the catalog differs by PHP 4,009 between the two).
   resolvedItemTotal: z.number().optional(),
   // Also client-only. The down-payment floor the SALE will demand, which is
-  // not simply 10% of the total above: checkout measures its 10% against
-  // the tax-effective line amount, while an application is priced from the
-  // ex-tax price list. With exclusive pricing and 12% VAT that makes
-  // checkout's floor ~12% higher, so an application approved at exactly its
-  // own floor could never be sold — "down payment must be at least 10% of
-  // its sale amount" at the till, on an application the server had already
-  // accepted. The form computes the stricter figure and passes it here.
+  // not simply the floor rate applied to the total above: checkout measures
+  // its floor against the tax-effective line amount, while an application is
+  // priced from the ex-tax price list. With exclusive pricing and 12% VAT
+  // that makes checkout's floor ~12% higher, so an application approved at
+  // exactly its own floor could never be sold — the till would reject a down
+  // payment the server had already accepted. The form computes the stricter
+  // figure and passes it here. (Rate itself: DOWN_PAYMENT_FLOOR_RATE.)
   downPaymentFloor: z.number().optional(),
+  // Also client-only. Set when the rate card prices every item for the chosen
+  // term: the down payment is then the sum of the card's own down payments,
+  // fixed (PR #199 review — the card's monthly is calculated from exactly
+  // that amount). Checked instead of the floor while set.
+  downPaymentFixed: z.number().optional(),
 })
+
+/**
+ * Scenario 64 item 27 (client, 2026-09-30): PROPOSED PURCHASE AND INSTALLMENT
+ * and PAPER RECORD AND CREDIT DECISION are **not optional**.
+ *
+ * Applied on create only. The edit schema stays a `.partial()` — the Edit
+ * modal exposes items and terms alone, and demanding the paper record there
+ * would make every existing draft uneditable.
+ *
+ * What is deliberately NOT required, because no one can type it at intake:
+ *
+ * - **Amount financed, monthly installment, total price** — derived by
+ *   `resolveFinancing()` from the term, the price list and the down payment.
+ * - **Item summary** — the items themselves, already required above.
+ * - **Final decision, decision date, CIC/CICS name** — a decision is
+ *   `decideItems()`, made later and by a Business Owner. `transcribedById`
+ *   is stamped by the server.
+ * - **Reason if disapproved** — only exists on a decline.
+ * - **Linked invoice ID, installment account ID** — the mockup itself marks
+ *   both "after posting".
+ */
+export function refinePurchaseAndPaperRecord(
+  data: {
+    priceUseTypeId?: string
+    financingTermId?: string
+    lcp?: string
+    downPaymentCollection?: string
+    firstDueDate?: string
+    ppdRebate?: string
+    posDraftReference?: string
+    paperFormConfirmed?: boolean
+    applicantIsUnitUser?: string
+  },
+  ctx: z.RefinementCtx
+) {
+  const required: [keyof typeof data, string][] = [
+    ['priceUseTypeId', 'Price Use is required'],
+    ['financingTermId', 'Financing term is required'],
+    ['lcp', 'LCP is required'],
+    ['downPaymentCollection', 'Down payment collection is required'],
+    ['firstDueDate', 'First due date is required'],
+    // A rebate of zero is a real answer; an empty box is not. Typing 0 is
+    // what says "the form shows no rebate", and that reads differently from
+    // nobody having looked.
+    ['ppdRebate', 'PPD rebate is required — enter 0 if the form shows none'],
+    ['posDraftReference', 'POS draft / quote ID is required'],
+  ]
+  for (const [field, message] of required) {
+    if (!String(data[field] ?? '').trim()) {
+      ctx.addIssue({ code: 'custom', path: [field], message })
+    }
+  }
+
+  if (!data.paperFormConfirmed) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paperFormConfirmed'],
+      message: 'Confirm the paper form is complete and signed',
+    })
+  }
+  if (!data.applicantIsUnitUser) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['applicantIsUnitUser'],
+      message: 'Answer whether the applicant is the unit user',
+    })
+  }
+}
 
 /** Mirrors CreditApplicationService.resolveFinancing()'s own rules so a bad
  * down payment is caught under the field, at the moment it is typed, rather
@@ -234,6 +405,7 @@ export function refineDownPayment(
     downPayment?: string
     resolvedItemTotal?: number
     downPaymentFloor?: number
+    downPaymentFixed?: number
   },
   ctx: z.RefinementCtx
 ) {
@@ -255,6 +427,18 @@ export function refineDownPayment(
     return
   }
 
+  // The rate card's own figure for this term — not a minimum, the amount.
+  if (data.downPaymentFixed != null) {
+    if (Math.abs(downPayment - data.downPaymentFixed) > 0.005) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['downPayment'],
+        message: `The down payment is fixed by the price list at ${pesos(data.downPaymentFixed)} for this term`,
+      })
+    }
+    return
+  }
+
   // No resolved total yet (prices still loading) — the server still has the
   // final say, so don't invent a floor from a number we don't have.
   const total = data.resolvedItemTotal ?? 0
@@ -263,7 +447,7 @@ export function refineDownPayment(
   // Prefer the floor the form worked out from the tax-effective amount;
   // fall back to a plain 10% when it hasn't been supplied (an API caller,
   // or prices still resolving).
-  const floor = data.downPaymentFloor ?? total * 0.1
+  const floor = data.downPaymentFloor ?? total * DOWN_PAYMENT_FLOOR_RATE
   if (downPayment < floor - 0.005) {
     // Name the basis the figure was actually worked out on. The panel below
     // this field shows the ex-tax item total, so "10% of the item total"
@@ -275,8 +459,8 @@ export function refineDownPayment(
       path: ['downPayment'],
       message:
         data.downPaymentFloor != null
-          ? `Down payment must be at least ${pesos(floor)} — 10% of the sale amount incl. VAT, which is what the till will require`
-          : `Down payment must be at least ${pesos(floor)} (10% of the item total)`,
+          ? `Down payment must be at least ${pesos(floor)} — ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount incl. VAT, which is what the till will require`
+          : `Down payment must be at least ${pesos(floor)} (${DOWN_PAYMENT_FLOOR_LABEL} of the item total)`,
     })
     return
   }
@@ -296,33 +480,126 @@ function pesos(n: number): string {
 export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.superRefine(
   (data, ctx) => {
     // A co-maker on a credit application is identified by first name, last
-    // name and relationship — contact details stay capturable but optional,
-    // since the branch often has only the name and relationship at intake.
-    if (data.coMakerId === NEW_CO_MAKER_VALUE) {
-      if (!data.newCoMakerFirstName?.trim()) {
+    // name and relationship, plus a contact number (client request,
+    // 2026-09-24 — Scenario 64). The number is not a nicety: a co-maker
+    // exists to be reachable when the account goes bad, and CoMaker
+    // .contactNumber is NOT NULL in the schema, so leaving it blank was
+    // writing an empty string into a required column rather than failing.
+    // Email stays optional.
+    // A co-maker's rules live with its Related People row now: that row
+    // needs a first name, a contact number and a relationship.
+    //
+    // What stood here was a second set of rules keyed on the top-level
+    // `coMakerId`, from when the co-maker had a section of its own. It
+    // outlived that section by a few hours and broke every application
+    // carrying a co-maker: handleFormSubmit resolves the row to a real
+    // CoMaker id and puts it in `coMakerId`, the server action re-validates
+    // the payload against this very schema, the "existing co-maker" branch
+    // fired, and it demanded a `coMakerContactNumber` the form no longer
+    // captures anywhere.
+    //
+    // The same failure Part 4 hit on 2026-09-28, for the same underlying
+    // reason: a field that means one thing to the form and another to the
+    // schema that re-checks the form's own output.
+
+    // Scenario 64 item 27 — a character reference row is all-or-nothing.
+    // Nothing forces a row to exist (the minimum is "subject to NIG policy",
+    // unstated), but a half-filled one is worse than none: a name with no
+    // number cannot be called, and the backend requires the number whenever
+    // a row is sent at all, so a partial row would 400 on submit rather than
+    // here.
+    ;(data.references ?? []).forEach((ref, index) => {
+      const name = (ref?.name ?? '').trim()
+      const mobile = (ref?.mobileNumber ?? '').trim()
+      const relationship = (ref?.relationship ?? '').trim()
+      const anyFilled = !!name || !!mobile || !!relationship
+      if (!anyFilled) return
+      if (!name) {
         ctx.addIssue({
           code: 'custom',
-          path: ['newCoMakerFirstName'],
+          path: ['references', index, 'name'],
+          message: 'Name is required',
+        })
+      }
+      if (!mobile) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['references', index, 'mobileNumber'],
+          message: 'Mobile number is required',
+        })
+      }
+    })
+
+    // Scenario 64 item 27 — a related-person row needs a role and a first
+    // name. The mobile deliberately does not: the paper form offers "Father
+    // mobile / unavailable", so a name with no number is a complete answer
+    // here, unlike a character reference.
+    //
+    // Duplicate roles are caught here as well as on the backend. The unique
+    // (application, role) index means a second "father" cannot be stored,
+    // and the API answers 400 — but pointing at the offending row is far
+    // more use than a banner above the form.
+    const seenRoles = new Set<string>()
+    ;(data.relatedPeople ?? []).forEach((person, index) => {
+      const role = person?.role ?? ''
+      const firstName = (person?.firstName ?? '').trim()
+      const lastName = (person?.lastName ?? '').trim()
+      const mobile = (person?.mobileNumber ?? '').trim()
+      // The role deliberately does not count towards "filled": the first row
+      // arrives pre-set to Co-maker, and a row nobody typed into is still an
+      // empty row that gets dropped on submit, not a co-maker with missing
+      // details.
+      const anyFilled =
+        !!firstName || !!lastName || !!mobile || !!(person?.relationship ?? '').trim()
+      if (!anyFilled) return
+      if (!role) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['relatedPeople', index, 'role'],
+          message: 'Pick who this is',
+        })
+      } else if (seenRoles.has(role)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['relatedPeople', index, 'role'],
+          message: `Only one ${role} can be recorded`,
+        })
+      } else {
+        seenRoles.add(role)
+      }
+      if (!firstName) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['relatedPeople', index, 'firstName'],
           message: 'First name is required',
         })
       }
-      if (!data.newCoMakerLastName?.trim()) {
+      // Required on every row (client, 2026-09-30). This overrides the paper
+      // form's own "Father mobile / unavailable" option, which the first
+      // build honoured — a related person is recorded to be called, and one
+      // nobody can reach is not worth the row.
+      if (!mobile) {
         ctx.addIssue({
           code: 'custom',
-          path: ['newCoMakerLastName'],
-          message: 'Last name is required',
+          path: ['relatedPeople', index, 'mobileNumber'],
+          message: 'Contact number is required',
         })
       }
-      if (!data.newCoMakerRelationship?.trim()) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['newCoMakerRelationship'],
-          message: 'Relationship is required',
-        })
+      // A co-maker also needs a relationship; the other three roles already
+      // are one.
+      if (role === 'co_maker') {
+        if (!(person?.relationship ?? '').trim()) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['relatedPeople', index, 'relationship'],
+            message: 'Relationship is required for a co-maker',
+          })
+        }
       }
-    }
+    })
 
     refineDownPayment(data, ctx)
+    refinePurchaseAndPaperRecord(data, ctx)
   }
 )
 export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditApplicationBaseSchema>
@@ -369,6 +646,20 @@ export interface CreditApplicationCustomerLite {
   customerCode: string
   phone?: string | null
   email?: string | null
+  /** Scenario 64 item 27 — the mockup's CUSTOMER PROFILE block, returned so
+   *  a reviewer can read the application without opening the customer
+   *  elsewhere. All null for anyone captured before these fields existed. */
+  altPhone?: string | null
+  birthday?: string | null
+  civilStatus?: string | null
+  gender?: string | null
+  facebookName?: string | null
+  customerType?: 'individual' | 'self_employed' | 'business' | 'employee' | null
+  companyName?: string | null
+  address?: string | null
+  barangayCode?: string | null
+  homeAddress?: string | null
+  homeBarangayCode?: string | null
 }
 
 export interface CreditApplicationCoMakerLite {
@@ -391,11 +682,24 @@ export interface CreditApplicationItemLite {
   sku?: string | null
   modelNumber?: string | null
   sellingPrice?: number | null
+  /** Scenario 64 item 29 — the edit form offers a unit only for a serial item. */
+  isSerialTracked?: boolean
 }
 
 export interface CreditApplicationItemLine {
   id: string
   itemId: string
+  /** Scenario 64 item 28 — the physical unit the cashier had picked at the
+   *  till when this application was raised from a cart. A preference, not a
+   *  hold: the till re-checks `status === 'in_stock'` before reusing it, and
+   *  asks for a serial again when it is not. */
+  serialNumberId?: string | null
+  serialNumber?: {
+    id: string
+    serialNumber: string
+    status: string
+    currentWarehouseId?: string | null
+  } | null
   item?: CreditApplicationItemLite | null
   requestedAmount: number
   status: CreditApplicationItemStatus
@@ -428,6 +732,54 @@ export interface CreditApplication {
   monthlyInstallment?: number | null
   totalPayable?: number | null
   status: CreditApplicationStatus
+  /** Scenario 64 item 27 — character references transcribed from the paper
+   * form, ordered by their row on it. Empty array when none were recorded. */
+  references?: {
+    id: string
+    position: number
+    name: string
+    relationship: string
+    mobileNumber: string
+  }[]
+  /** Scenario 64 item 27 — the mockup's RELATED PEOPLE block, one row per
+   * person. At most one of each role. `mobileNumber` is nullable on purpose:
+   * the paper form offers "Father mobile / unavailable", so a blank is a
+   * recorded answer rather than missing data. */
+  relatedPeople?: {
+    id: string
+    role: 'spouse' | 'father' | 'mother'
+    firstName: string
+    lastName?: string | null
+    mobileNumber?: string | null
+  }[]
+  /** Scenario 64 item 27 — PROPOSED PURCHASE AND INSTALLMENT, transcribed
+   * from the paper form. `lcp` is the List Cash Price (the client's AR aging
+   * file: "AF = LCP − Down payment"). It is pre-filled from the resolved
+   * price and stored as recorded; the derived figures above come from the
+   * price list and the rate card, never from what was typed here. */
+  lcp?: number | null
+  downPaymentCollection?: 'online' | 'branch' | 'delivery' | null
+  firstDueDate?: string | null
+  ppdRebate?: number | null
+  posDraftReference?: string | null
+  /** Scenario 64 item 27 — PAPER RECORD. The credit decision itself is not
+   * here; it stays with decideItems(). `applicantIsUnitUser` is tri-state —
+   * null means the question was never asked, which is not the same as "no". */
+  paperFormConfirmed?: boolean | null
+  applicantIsUnitUser?: boolean | null
+  transcribedById?: string | null
+  transcribedAt?: string | null
+  /** Scenario 64 item 27 — set by checkout when the sale it backed produced
+   *  exactly one installment account. Null for a multi-term sale, where no
+   *  single account is "the" one; posTransactionId still links the sale. */
+  installmentAccountId?: string | null
+  installmentAccount?: { id: string; accountNumber: string } | null
+  /** Scenario 64 Part 6 — list-only. Whether an `applicant_id` document is
+   * on file, so the queue can mark an approval as "ID pending" without
+   * fetching every row's attachments. Set by findAll() alone; the detail
+   * endpoint omits it and derives the same thing from the documents it
+   * loads separately, hence optional. */
+  hasApplicantId?: boolean
   createdById: string
   submittedAt?: string | null
   submittedById?: string | null

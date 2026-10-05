@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Printer } from 'lucide-react'
 import { getJournalEntryById, type JournalEntry } from '@/src/libs/data/AccountingData'
+import { JournalVouchers } from '@/src/libs/data/AccountingV2Data'
+import { printJournalVoucherDocument } from '@/src/libs/print/printInventoryDocument'
+import { sourceDocumentLink } from '@/src/libs/format/sourceDocumentLink'
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-amber-50 text-amber-700 border border-amber-200',
@@ -57,6 +60,13 @@ export default function JournalEntryDetail({ id }: { id: string }) {
   }
 
   const transactions = entry.transactions ?? []
+  const source = sourceDocumentLink({
+    sourceModule: entry.sourceModule,
+    sourceDocumentId: entry.sourceDocumentId,
+    sourceDocumentNo: entry.sourceDocumentNo,
+    code: entry.reference,
+    description: entry.description,
+  })
   // Most entries are not about items at all — a collection is cash in and a
   // receivable down, a VAT accrual is one account against another. Showing
   // Item/Qty/Unit Price/Subtotal on those printed four columns of dashes on
@@ -82,6 +92,16 @@ export default function JournalEntryDetail({ id }: { id: string }) {
       </Link>
 
       <header>
+        {/* Scenario 61 Part C — a printable Journal Voucher for any entry. */}
+        <button
+          onClick={async () => {
+            const res = await JournalVouchers.getDocument(entry.id)
+            if (res.success && res.data) printJournalVoucherDocument(res.data)
+          }}
+          className="float-right inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          <Printer className="h-4 w-4" /> Print Voucher
+        </button>
         {/* The description, not the reference. One sale raises two entries —
             "Installment Plan …" and "Installment Down Payment …" — and both
             carry the SAME source document number, so a reference heading made
@@ -111,11 +131,31 @@ export default function JournalEntryDetail({ id }: { id: string }) {
           </span>
         </div>
         <div className="mt-2 grid max-w-lg grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-sm">
-          {entry.sourceDocumentNo && (
+          {(entry.sourceDocumentNo || source) && (
             <>
               <span className="text-gray-500">Source document</span>
+              {/* Scenario 62 — the last hop of a report drill-down:
+                  figure → ledger line → this entry → the document itself. */}
+              {source ? (
+                <Link
+                  href={source.href}
+                  className="text-left font-medium tabular-nums text-purple-700 hover:underline"
+                >
+                  {entry.sourceDocumentNo || `Open ${source.kind}`}
+                  <span className="ml-2 text-xs font-normal text-gray-500">{source.kind}</span>
+                </Link>
+              ) : (
+                <span className="text-left font-medium tabular-nums text-gray-800">
+                  {entry.sourceDocumentNo}
+                </span>
+              )}
+            </>
+          )}
+          {entry.voucherControlNo && (
+            <>
+              <span className="text-gray-500">Voucher Control No.</span>
               <span className="text-left font-medium tabular-nums text-gray-800">
-                {entry.sourceDocumentNo}
+                {entry.voucherControlNo}
               </span>
             </>
           )}
