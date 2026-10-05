@@ -43,9 +43,14 @@ const toggleBtnClass = (active: boolean) =>
 // picked" and shows its placeholder — so the option carries this sentinel
 // and it is mapped to/from '' at the field boundary below.
 const REGULAR_DELIVERY = 'regular'
+const REPAIR_TYPE_OPTIONS: SearchableSelectOption[] = [
+  { value: 'in_store', label: 'In-Store' },
+  { value: 'home_service', label: 'Home Service' },
+]
 const REASON_OPTIONS: SearchableSelectOption[] = [
   { value: REGULAR_DELIVERY, label: 'Regular Supplier Delivery' },
   { value: 'repossession', label: 'Repossession' },
+  { value: 'repair_return', label: 'Repair/Return' },
   { value: 'other', label: 'Other' },
 ]
 
@@ -110,6 +115,11 @@ export function RrDeliveryPanel({
     })),
   ]
 
+  // Repossession and Repair/Return share one layout: no Source, Location or
+  // Reference # — the unit comes back from a customer's invoice, and the
+  // destination is silently the receiver's own branch.
+  const isUnitReturn = reason === 'repossession' || reason === 'repair_return'
+
   return (
     <div className={`${PANEL} flex flex-col overflow-hidden`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-2.5">
@@ -138,8 +148,8 @@ export function RrDeliveryPanel({
               hint="optional"
               footer={
                 <Hint>
-                  Getting your own stock back — a repossession — rather than a purchase. Drops the
-                  supplier requirement below.
+                  Getting your own stock back — a repossession or a repair/return — rather than a
+                  purchase. Drops the supplier requirement below.
                 </Hint>
               }
             >
@@ -159,6 +169,38 @@ export function RrDeliveryPanel({
           </div>
         )}
 
+        {/* Repair/Return only: where the unit is being serviced. Decides which
+            documents the receipt has to carry (see rrAttachments.ts). */}
+        {!linkedPo && reason === 'repair_return' && (
+          <div className="sm:col-span-2 xl:col-span-3">
+            <Field
+              label="Repair Type"
+              required
+              footer={
+                showErrors && errors.repairType ? (
+                  <FieldError text="Pick In-Store or Home Service." />
+                ) : (
+                  <Hint>In-Store needs a UDS and an RFS. Home Service needs an RFS only.</Hint>
+                )
+              }
+            >
+              <Controller
+                name="repairType"
+                control={control}
+                render={({ field }) => (
+                  <SearchableSelect
+                    value={field.value ?? ''}
+                    onChange={(v) => field.onChange(v || undefined)}
+                    chrome={showErrors && errors.repairType ? INVALID_CHROME : CONTROL_CHROME}
+                    options={REPAIR_TYPE_OPTIONS}
+                    placeholder="Select repair type…"
+                  />
+                )}
+              />
+            </Field>
+          </div>
+        )}
+
         {/* Scenario 55 (Stock-side Manual RR parity) — always visible now,
             mirroring ManualRrForm.tsx's own "Source" field exactly: a
             Registered/Other toggle rather than a single Supplier combobox,
@@ -167,14 +209,14 @@ export function RrDeliveryPanel({
             PO is linked — getting your own stock back, or fulfilling a PO
             that already names its supplier, genuinely has no separate source
             to require. */}
-        {/* Repossession drops Source, Location and Delivery Receipt No.
+        {/* Repossession drops Source, Location and Reference #
             entirely (developer-confirmed 2026-09-28) — none of the three
             genuinely apply to taking a unit back from a customer: there is
             no source to name beyond the account it's picked from below, and
             the destination is always the receiver's own branch, silently
             (see ReceiveStockModal's own auto-default effect), never asked
             for. */}
-        {reason !== 'repossession' && (
+        {!isUnitReturn && (
           <Field
             label="Source"
             required={!linkedPo && !reason}
@@ -234,7 +276,7 @@ export function RrDeliveryPanel({
           </Field>
         )}
 
-        {reason !== 'repossession' && (
+        {!isUnitReturn && (
           <Field
             label="Location"
             required
@@ -281,15 +323,15 @@ export function RrDeliveryPanel({
           />
         </Field>
 
-        {reason !== 'repossession' && (
+        {!isUnitReturn && (
           <Field
-            label="Delivery Receipt No."
+            label="Reference #"
             hint="optional"
             footer={
               showErrors && errors.deliveryReceiptNumber ? (
                 <FieldError text={errors.deliveryReceiptNumber.message} />
               ) : (
-                <Hint>The supplier&rsquo;s own DR, as it came with the goods.</Hint>
+                <Hint>Capital letters and numbers only, e.g. DR0003.</Hint>
               )
             }
           >
@@ -300,8 +342,11 @@ export function RrDeliveryPanel({
                 <input
                   {...field}
                   value={field.value ?? ''}
+                  onChange={(e) =>
+                    field.onChange(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))
+                  }
                   type="text"
-                  placeholder="e.g. DR-00123"
+                  placeholder="e.g. DR0003"
                   className={showErrors && errors.deliveryReceiptNumber ? INPUT_BAD : INPUT}
                 />
               )}
@@ -324,6 +369,7 @@ export function RrDeliveryPanel({
                 <input
                   {...field}
                   value={field.value ?? ''}
+                  onChange={(e) => field.onChange(e.target.value.toUpperCase())}
                   type="text"
                   placeholder="e.g. SI-00456"
                   className={INPUT}
@@ -356,6 +402,7 @@ export function RrDeliveryPanel({
                   <input
                     {...field}
                     value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value.toUpperCase())}
                     readOnly={!!linkedPo}
                     type="text"
                     placeholder="e.g. PO-20260910-0001"

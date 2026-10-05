@@ -543,6 +543,7 @@ export interface CustomerLedger {
   customer: {
     id: string
     customerCode: string
+    employeeNumber?: string | null
     name: string
     email: string | null
     phone: string | null

@@ -12,7 +12,6 @@ import {
   BarChart3,
   BellRing,
   BookOpen,
-  CalendarDays,
   ChevronLeft,
   ChevronUp,
   ClipboardList,
@@ -22,7 +21,6 @@ import {
   CreditCard,
   FileBarChart,
   Database,
-  FileCheck2,
   FilePlus,
   PackageX,
   ClipboardCheck,
@@ -35,18 +33,14 @@ import {
   Library,
   Monitor,
   MoreHorizontal,
-  TrendingUp,
   Package,
   PackageCheck,
-  Percent,
   Receipt,
   ReceiptText,
   PhilippinePeso,
-  RefreshCcw,
   ScrollText,
   Settings,
   ShieldCheck,
-  ShoppingBag,
   ShoppingCart,
   Tag,
   Tags,
@@ -217,17 +211,33 @@ const navItemsBySegment: Record<string, NavConfig> = {
     bottom: [],
   },
   accounting: {
-    // Reordered per developer request (2026-09-01): most-used screens first,
-    // down to screens touched rarely (setup/configuration) last. This is an
-    // inferred usage ranking (no telemetry backs it) — adjust if it doesn't
-    // match actual usage. Same items, same permissions — order only.
+    // Grouped by workflow: books (journal, ledger, chart, mapping) → receivables
+    // → payables → expenses/special accounts → memos → banking → reporting.
+    // Same items, same permissions — order only.
     main: [
-      // ── Daily / most used ──
       {
         label: 'Journal Entries',
         href: '/accounting/journal-entries',
         icon: ReceiptText,
         requiredPermission: ACCOUNTING_PERMISSIONS.JOURNAL_ENTRY_READ,
+      },
+      {
+        label: 'General Ledger',
+        href: '/accounting/general-ledger',
+        icon: Library,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
+      },
+      {
+        label: 'Chart of Accounts',
+        href: '/accounting/chart-of-accounts',
+        icon: BookOpen,
+        requiredPermission: ACCOUNTING_PERMISSIONS.ACCOUNT_READ,
+      },
+      {
+        label: 'Account Mapping',
+        href: '/accounting/account-mapping',
+        icon: Key,
+        requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
       },
       {
         label: 'AR Invoices',
@@ -240,6 +250,28 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/customers',
         icon: Users,
         requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
+      },
+      {
+        label: 'AP Invoices',
+        href: '/accounting/ap-bills',
+        icon: ReceiptText,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
+      },
+      {
+        // Scenario 46 Part F — the disbursement register existed since
+        // Scenario 43 but had no nav entry, reachable only via a secondary
+        // button on AP Invoices. It is the record of everything that left the
+        // bank, so it sits at the same level rather than nested under AP.
+        label: 'Payments',
+        href: '/accounting/ap-bills/payments',
+        icon: PhilippinePeso,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
+      },
+      {
+        label: 'Receiving Reports',
+        href: '/accounting/receiving-reports',
+        icon: Receipt,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
       {
         label: 'Expenses',
@@ -264,41 +296,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // reason Credit Applications/AP Invoices set this.
         usePrefix: true,
       },
-      {
-        label: 'Unapplied Collections',
-        href: '/accounting/unapplied-collections',
-        icon: Wallet,
-        requiredPermission: ACCOUNTING_PERMISSIONS.UNAPPLIED_COLLECTIONS_READ,
-      },
-      {
-        label: 'AP Invoices',
-        href: '/accounting/ap-bills',
-        icon: ReceiptText,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
-      },
-      {
-        // Scenario 46 Part F — the disbursement register existed since
-        // Scenario 43 but had no nav entry, reachable only via a secondary
-        // button on AP Invoices. It is the record of everything that left the
-        // bank, so it sits at the same level rather than nested under AP.
-        label: 'Payments',
-        href: '/accounting/ap-bills/payments',
-        icon: PhilippinePeso,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
-      },
-      {
-        label: 'General Ledger',
-        href: '/accounting/general-ledger',
-        icon: Library,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      {
-        label: 'Receiving Reports',
-        href: '/accounting/receiving-reports',
-        icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      // ── Regular / weekly ──
       // Two entries, not four. Credit and debit stay separate — that is the
       // split accounting actually thinks in — while customer and supplier
       // debit memos share one table, told apart by a Party column.
@@ -316,89 +313,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
           ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
           ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
         ],
-      },
-      {
-        label: 'Withholding Tax (CWT)',
-        href: '/accounting/withholding-tax',
-        icon: FileCheck2,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
-      },
-      {
-        label: 'Interest Release',
-        href: '/accounting/installment-interest-release',
-        icon: Percent,
-        requiredPermission: ACCOUNTING_PERMISSIONS.INSTALLMENT_INTEREST_RELEASE,
-      },
-      // ── Periodic / monthly ──
-      {
-        label: 'Bank Reconciliation',
-        href: '/accounting/bank-reconciliation',
-        icon: HandCoins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
-      },
-      {
-        label: 'Recurring Entries',
-        href: '/accounting/recurring-entries',
-        icon: RefreshCcw,
-        requiredPermission: ACCOUNTING_PERMISSIONS.RECURRING_ENTRIES_READ,
-      },
-      {
-        label: 'Reports',
-        href: '/accounting/reports',
-        icon: FileBarChart,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      // Scenario 62 — raw data from every module, read-only. Business Owner
-      // only; exact permission so the Accountant's accounting:* can't reach.
-      {
-        label: 'Data Query Center',
-        href: '/accounting/query-center',
-        icon: Database,
-        exactPermission: ACCOUNTING_PERMISSIONS.QUERY_CENTER_READ,
-      },
-      {
-        label: 'Fiscal Periods',
-        href: '/accounting/fiscal-periods',
-        icon: CalendarDays,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
-      },
-      // ── Occasional / planning ──
-      {
-        label: 'Cash Forecast',
-        href: '/accounting/cash-forecast',
-        icon: TrendingUp,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_FORECAST_READ,
-      },
-      {
-        label: 'Budgets',
-        href: '/accounting/budgets',
-        icon: BarChart3,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BUDGET_READ,
-      },
-      {
-        label: 'Fixed Assets',
-        href: '/accounting/fixed-assets',
-        icon: ShoppingBag,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FIXED_ASSET_READ,
-      },
-      // ── Setup / configuration (touched rarely) ──
-      {
-        label: 'Chart of Accounts',
-        href: '/accounting/chart-of-accounts',
-        icon: BookOpen,
-        requiredPermission: ACCOUNTING_PERMISSIONS.ACCOUNT_READ,
-      },
-      {
-        label: 'Account Mapping',
-        href: '/accounting/account-mapping',
-        icon: Key,
-        requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
-      },
-      {
-        label: 'AP Payment Methods',
-        href: '/accounting/ap-payment-methods',
-        icon: CreditCard,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_PAYMENT_METHODS_READ,
       },
       {
         label: 'Bank and Cash Accounts',
@@ -430,6 +344,26 @@ const navItemsBySegment: Record<string, NavConfig> = {
           ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
           ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
         ],
+      },
+      {
+        label: 'Bank Reconciliation',
+        href: '/accounting/bank-reconciliation',
+        icon: HandCoins,
+        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
+      },
+      {
+        label: 'Reports',
+        href: '/accounting/reports',
+        icon: FileBarChart,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
+      },
+      // Scenario 62 — raw data from every module, read-only. Business Owner
+      // only; exact permission so the Accountant's accounting:* can't reach.
+      {
+        label: 'Data Query Center',
+        href: '/accounting/query-center',
+        icon: Database,
+        exactPermission: ACCOUNTING_PERMISSIONS.QUERY_CENTER_READ,
       },
     ],
     bottom: [],

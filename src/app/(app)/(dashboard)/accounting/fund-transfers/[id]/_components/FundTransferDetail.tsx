@@ -107,7 +107,7 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
     )
 
   return (
-    <div className="px-6 py-8 lg:px-10 max-w-4xl">
+    <div className="px-6 py-8 lg:px-10">
       <Link
         href="/accounting/fund-transfers"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
@@ -168,7 +168,7 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
       )}
 
       <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6">
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 text-sm">
+        <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 text-sm">
           <Item label="From (source)">
             <div className="font-medium text-gray-900">{transfer.sourceBankAccount.name}</div>
             <div className="text-xs text-gray-500">
@@ -207,7 +207,7 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
               <p className="text-xs text-gray-500">
                 Only the clearing date and reference can be changed on a posted transfer.
               </p>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="block">
                   <span className="block text-xs font-medium text-gray-600 mb-1">
                     Clearing Date
@@ -253,7 +253,7 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
               </div>
             </form>
           ) : (
-            <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 text-sm">
+            <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 text-sm">
               <Item label="Clearing Date">
                 {transfer.clearingDate ? (
                   d(transfer.clearingDate)
@@ -270,7 +270,7 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
           <h2 className="text-xs font-semibold uppercase text-gray-500 mb-2">
             Bank reconciliation
           </h2>
-          <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2 text-sm">
+          <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-3 text-sm">
             <Item label={`Out of ${transfer.sourceBankAccount.name}`}>
               {cleared(transfer.sourceClearedAt, transfer.sourceClearedInReconciliation)}
             </Item>

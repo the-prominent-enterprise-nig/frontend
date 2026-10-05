@@ -129,6 +129,13 @@ export const ReceiveStockFormSchema = z
     // its own) — accepted here so the resolver doesn't reject an untouched
     // form, normalized to undefined only when building the submit payload.
     reason: z.union([z.enum(['repair_return', 'repossession', 'other']), z.literal('')]).optional(),
+    // Repair/Return only — where the unit is serviced. Decides which
+    // documents are required (UDS/RFS, see rrAttachments.ts).
+    repairType: z.enum(['in_store', 'home_service']).optional(),
+    // Already-uploaded UDS/RFS files, attached to the receipt server-side.
+    attachments: z
+      .array(z.object({ fileId: z.string().min(1), kind: z.enum(['UDS', 'RFS']) }))
+      .optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
   })
   .refine(
@@ -142,10 +149,18 @@ export const ReceiveStockFormSchema = z
       path: ['supplierId'],
     }
   )
-  .refine((data) => !!data.warehouseId || data.reason === 'repossession', {
-    message: 'Destination warehouse is required',
-    path: ['warehouseId'],
+  .refine((data) => data.reason !== 'repair_return' || !!data.repairType, {
+    message: 'Pick In-Store or Home Service',
+    path: ['repairType'],
   })
+  .refine(
+    (data) =>
+      !!data.warehouseId || data.reason === 'repossession' || data.reason === 'repair_return',
+    {
+      message: 'Destination warehouse is required',
+      path: ['warehouseId'],
+    }
+  )
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 

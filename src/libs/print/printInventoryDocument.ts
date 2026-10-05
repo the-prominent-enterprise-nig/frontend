@@ -2392,7 +2392,14 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     paymentMethod?: string
     reference?: string | null
     amount?: number
+    bankAccount?: string | null
   }[]
+  const sourceOfFund = e.sourceOfFund as { name?: string; accountNumber?: string } | null
+  const sourceOfFundLabel = sourceOfFund?.name
+    ? sourceOfFund.accountNumber
+      ? `${sourceOfFund.name} — ${sourceOfFund.accountNumber}`
+      : sourceOfFund.name
+    : null
   const paidFor = (e.paidFor ?? []) as string[]
 
   // Every payment method's reference, so a split payment prints each
@@ -2410,6 +2417,27 @@ export function buildExpenseVoucherHtml(data: unknown): string {
       })
       .filter(Boolean)
       .join(split ? '<br />' : ', ') || '—'
+
+  // Where the money came from: one block per payment method, so a split
+  // payment lists each funding source. Mirrors the AP voucher's layout.
+  const prettyMethod = (m: unknown) =>
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
+  const sourceBlocks = payments
+    .map((p) => {
+      const rows: [string, string][] = [['Method', prettyMethod(p.paymentMethod)]]
+      const bank = sourceOfFundLabel ?? p.bankAccount
+      if (bank) rows.push(['Bank Account', bank])
+      if (split) rows.push(['Amount', fmt(Number(p.amount ?? 0))])
+      return `<div class="kv-group">${rows
+        .map(
+          ([k, v]) =>
+            `<div class="kv"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>`
+        )
+        .join('')}</div>`
+    })
+    .join('')
 
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
@@ -2430,6 +2458,14 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
     tr.total-row td { font-weight: 700; }
+    .section-label { font-weight: 700; margin: 24px 0 8px; color: #1e1b4b; }
+    .kv { display: flex; gap: 16px; padding: 2px 0; }
+    .kv .k { width: 128px; flex-shrink: 0; font-weight: 700; }
+    .kv .v { color: #374151; }
+    .kv-group + .kv-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f3f4f6; }
+    table.totals { margin: 12px 0 0 auto; width: 280px; }
+    table.totals td { border: 0; border-bottom: 1px solid #f3f4f6; text-align: right; padding: 5px 10px; }
+    table.totals tr.grand td { border-top: 1px solid #999; border-bottom: 0; font-weight: 700; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -2477,6 +2513,9 @@ export function buildExpenseVoucherHtml(data: unknown): string {
           : ''
     }
 
+    ${sourceBlocks ? `<p class="section-label">Source of Funds</p>${sourceBlocks}` : ''}
+
+    <p class="section-label">Account Details</p>
     <table>
       <thead>
         <tr><th>Account</th><th>Description</th><th class="right">Total</th></tr>
@@ -2491,10 +2530,12 @@ export function buildExpenseVoucherHtml(data: unknown): string {
         </tr>`
           )
           .join('')}
-        <tr class="total-row">
-          <td colspan="2">Total</td>
-          <td class="right">${fmt(Number(e.totalAmount ?? 0))}</td>
-        </tr>
+      </tbody>
+    </table>
+    <table class="totals">
+      <tbody>
+        <tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+        <tr class="grand"><td>Total</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
       </tbody>
     </table>
 

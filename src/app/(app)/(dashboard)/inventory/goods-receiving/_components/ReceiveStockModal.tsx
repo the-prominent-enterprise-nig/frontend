@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { PackagePlus, Plus, X } from 'lucide-react'
@@ -20,6 +20,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { showToast } from '@/src/components/ui/toast'
 import type { RepossessedSerialMeta } from '@/src/components/inventory/RepossessedSerialSearchCombobox'
 import type { InstallmentAccountMeta } from '@/src/components/inventory/InstallmentAccountSearchCombobox'
+import { uploadRrAttachment } from '../_actions/upload-rr-attachment'
 import {
   getInstallmentAccount,
   type InstallmentAccountUnitItem,
@@ -34,9 +35,11 @@ import {
   type IssueFix,
 } from '../../purchase-orders/_components/receive-po/receiveIssues'
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
-import { RepossessedItemsPanel } from './create-rr/RepossessedItemsPanel'
+import { ReturnedUnitsPanel, type ReturnBlock } from './create-rr/ReturnedUnitsPanel'
+import { RrAttachmentsPanel } from './create-rr/RrAttachmentsPanel'
 import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPanel'
 import { RrLineRow } from './create-rr/RrLineRow'
+import { requiredAttachmentKinds, type RrAttachmentKind } from './create-rr/rrAttachments'
 import { collectRrBlockers, rrLineIssues, toIssueLines } from './create-rr/rrChecks'
 import { costFromPricing, rrTotals, type RrLine } from './create-rr/rrTotals'
 import { PANEL, RR_LINE_GRID } from './create-rr/rrTokens'
@@ -100,6 +103,16 @@ const defaultValues: ReceiveStockFormValues = {
   lines: [{ quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }],
 }
 
+let returnBlockSeq = 0
+const newReturnBlock = (): ReturnBlock => ({
+  key: `return-block-${returnBlockSeq++}`,
+  accountId: '',
+  customerId: '',
+  customerLabel: '',
+  loading: false,
+  exhausted: false,
+})
+
 const emptyLine = (itemId: string): RrLine => ({
   itemId,
   quantityReceived: 1,
@@ -108,6 +121,28 @@ const emptyLine = (itemId: string): RrLine => ({
   batchNumber: '',
   notes: '',
 })
+
+const ISSUE_FIELD_LABELS: Record<string, string> = {
+  supplierId: 'Source',
+  warehouseId: 'Location',
+  quantityReceived: 'Qty',
+  unitCost: 'Unit price',
+  srp: 'SRP',
+  discounts: 'Discounts',
+  serialNumbers: 'Serial numbers',
+  itemId: 'Item',
+  taxAmount: 'Tax',
+  lines: 'Items',
+}
+
+/** "Line 2 · Unit price: …" from a zod issue path, so the toast names the
+ * field instead of leaving the receiver to hunt for it. */
+function describeIssue(path: PropertyKey[], message: string): string {
+  const lineAt = path[0] === 'lines' && typeof path[1] === 'number' ? path[1] : null
+  const key = String(path[lineAt == null ? 0 : 2] ?? '')
+  const label = ISSUE_FIELD_LABELS[key] ?? key
+  return `${lineAt != null ? `Line ${lineAt + 1} · ` : ''}${label}: ${message}`
+}
 
 /**
  * Create Receiving Report — the standalone half of receiving, for a delivery
@@ -144,13 +179,14 @@ export default function ReceiveStockModal({
     setValue,
     watch,
     trigger,
+    getValues,
     formState: { errors },
   } = useForm<ReceiveStockFormValues>({
     resolver: zodResolver(ReceiveStockFormSchema),
     defaultValues,
   })
 
-  const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
+  const { fields, append, insert, remove, replace } = useFieldArray({ control, name: 'lines' })
 
   const [submitted, setSubmitted] = useState(false)
   // Scenario 55 (Stock-side Manual RR parity) — this and the maps below are
@@ -165,42 +201,17 @@ export default function ReceiveStockModal({
   // tracked is its own explicit toggle instead, mirroring ManualRrForm.tsx's
   // own lineTrackSerial exactly.
   const [otherLineTrackSerial, setOtherLineTrackSerial] = useState<Record<string, boolean>>({})
-  const [installmentAccountLabels, setInstallmentAccountLabels] = useState<Record<string, string>>(
-    {}
-  )
-  // Repossessed-from-account (developer-confirmed 2026-09-28) — who a
-  // repossession line's unit is coming from, picked before the account
-  // (which is then scoped to them). Local-only, like the other display maps
-  // here: never submitted, just narrows the account search.
-  const [repossessionCustomerIds, setRepossessionCustomerIds] = useState<Record<string, string>>({})
-  const [repossessionCustomerLabels, setRepossessionCustomerLabels] = useState<
-    Record<string, string>
-  >({})
-  // The picked account's own sold units (resolved via installmentSchedule ->
-  // posTransactionLines), fetched once an account is selected. undefined =
-  // nothing picked yet or still loading; [] = a hand-entered/imported
-  // account with no linked schedule to resolve from (the fallback path).
-  const [unitItemsByField, setUnitItemsByField] = useState<
-    Record<string, InstallmentAccountUnitItem[] | undefined>
-  >({})
-  const [unitItemsLoadingByField, setUnitItemsLoadingByField] = useState<Record<string, boolean>>(
-    {}
-  )
-  // True when the picked account DID have a linked schedule but every one
-  // of its units has already been repossessed — distinct from a
-  // hand-entered/imported account, which never had one at all. Both read as
-  // "unitItemsByField[key] is []", so the fallback message needs this to
-  // say the right thing instead of "no linked catalog sale" for an account
-  // that very much had one.
-  const [accountExhaustedByField, setAccountExhaustedByField] = useState<Record<string, boolean>>(
-    {}
-  )
-  // Repossession, fallback path only (a hand-entered/imported account with
-  // no unitItems to resolve from) — the manually-searched serial's display
-  // label. One per line, not per unit: a repossession row is always exactly
-  // one unit (developer-confirmed 2026-09-28), unlike a purchase line's
-  // quantity-many serial slots.
-  const [fallbackSerialLabels, setFallbackSerialLabels] = useState<Record<string, string>>({})
+  // Repossession and Repair/Return share one panel: a list of invoices the
+  // units are coming back from. What's checked under each is the receipt's
+  // lines (linked by installmentAccountId), so this holds display state only.
+  const [returnBlocks, setReturnBlocks] = useState<ReturnBlock[]>(() => [newReturnBlock()])
+  // UDS/RFS scans picked so far, uploaded when the receipt is posted.
+  const [stagedFiles, setStagedFiles] = useState<Record<RrAttachmentKind, File[]>>({
+    UDS: [],
+    RFS: [],
+  })
+  // File -> uploaded id, so a retry after a failed post doesn't upload twice.
+  const uploadedIds = useRef(new Map<File, string>())
   const [linkedPo, setLinkedPo] = useState<PurchaseOrderSummary | null>(null)
   const [poPickerOpen, setPoPickerOpen] = useState(false)
   const [supplierName, setSupplierName] = useState<string | undefined>(undefined)
@@ -221,13 +232,9 @@ export default function ReceiveStockModal({
     setPickedItems({})
     setLineModes({})
     setOtherLineTrackSerial({})
-    setInstallmentAccountLabels({})
-    setRepossessionCustomerIds({})
-    setRepossessionCustomerLabels({})
-    setUnitItemsByField({})
-    setUnitItemsLoadingByField({})
-    setAccountExhaustedByField({})
-    setFallbackSerialLabels({})
+    setReturnBlocks([newReturnBlock()])
+    setStagedFiles({ UDS: [], RFS: [] })
+    uploadedIds.current.clear()
     setLinkedPo(null)
     setPoPickerOpen(false)
     setSupplierName(undefined)
@@ -244,6 +251,12 @@ export default function ReceiveStockModal({
   // checks card comes to report serials as missing that are typed and visible.
   // Every derivation below is a plain expression over a handful of rows.
   const lines = (watched.lines ?? []) as RrLine[]
+  // Repossession and Repair/Return share one layout: units picked off a
+  // customer's invoice, no Source / Location / Reference #.
+  const isRepo = watched.reason === 'repossession'
+  const isUnitReturn = isRepo || watched.reason === 'repair_return'
+  const returnBlocksRef = useRef(returnBlocks)
+  returnBlocksRef.current = returnBlocks
 
   const metaFor = (itemId?: string): ItemMeta | undefined => {
     if (!itemId) return undefined
@@ -337,7 +350,7 @@ export default function ReceiveStockModal({
   // stored 0, not just "blank" — see get-installment-account.ts's own
   // unitCost, which can genuinely be a recorded zero for a historical sale).
   // Caught here rather than left for the server to reject after the fact:
-  // RepossessedUnitRow already offers a Cost field the moment this applies.
+  // ReturnedUnitsPanel already offers a Cost field the moment this applies.
   if (watched.reason === 'repossession') {
     lines.forEach((line, index) => {
       if (!line.itemId || Number(line.unitCost) > 0) return
@@ -348,6 +361,28 @@ export default function ReceiveStockModal({
         text: `${labelFor(index)}: needs a cost before it can be received.`,
       } satisfies Blocker)
     })
+  }
+
+  const requiredKinds = requiredAttachmentKinds(watched.reason, watched.repairType)
+  if (isUnitReturn) {
+    const linesBlocker = blockers.find((b) => b.key === 'lines')
+    if (linesBlocker) linesBlocker.text = 'Check at least one unit that is coming back.'
+    if (watched.reason === 'repair_return' && !watched.repairType) {
+      blockers.push({
+        key: 'repair-type',
+        kind: 'error',
+        text: 'Pick the repair type: In-Store or Home Service.',
+      } satisfies Blocker)
+    }
+    requiredKinds
+      .filter((kind) => stagedFiles[kind].length === 0)
+      .forEach((kind) =>
+        blockers.push({
+          key: `attachment-${kind}`,
+          kind: 'error',
+          text: `Attach the ${kind} before creating the receipt.`,
+        } satisfies Blocker)
+      )
   }
 
   // Unit cost follows SRP through the discount chain, the same rule the PO
@@ -392,14 +427,14 @@ export default function ReceiveStockModal({
   // regardless of what's submitted. Never overwrites an already-set value —
   // a PO link, or a Location picked before switching Reason on, both stay.
   useEffect(() => {
-    if (watched.reason !== 'repossession' || watched.warehouseId) return
+    if (!isUnitReturn || watched.warehouseId) return
     const ownBranch = actorBranchId
       ? warehouses.find((w) => w.branchId === actorBranchId)
       : undefined
     const target = ownBranch ?? warehouses.find((w) => !w.branchId)
     if (target) setValue('warehouseId', target.id, { shouldValidate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watched.reason, watched.warehouseId, actorBranchId, warehouses])
+  }, [isUnitReturn, watched.warehouseId, actorBranchId, warehouses])
 
   const outstandingNotPulled = useMemo(() => {
     if (!linkedPo) return []
@@ -410,6 +445,41 @@ export default function ReceiveStockModal({
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedPo, lines.length])
+
+  // Switching into Repossession / Repair-Return swaps the purchase-style item
+  // rows for the invoice picker (so the blank starter line goes), and switching
+  // back drops whatever units were checked and restores a blank line.
+  const wasUnitReturn = useRef(false)
+  useEffect(() => {
+    if (isUnitReturn === wasUnitReturn.current) return
+    wasUnitReturn.current = isUnitReturn
+    setReturnBlocks([newReturnBlock()])
+    setStagedFiles({ UDS: [], RFS: [] })
+    if (isUnitReturn) {
+      replace(lines.filter((l) => !!l.installmentAccountId))
+      return
+    }
+    const keep = lines.filter((l) => !l.installmentAccountId && !l.existingSerialNumberIds?.length)
+    replace(
+      keep.length > 0 ? keep : [{ quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }]
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUnitReturn])
+
+  // Repossession → Repair/Return (or back) while units are checked: a repo cost
+  // only applies to a repossession.
+  useEffect(() => {
+    if (!isUnitReturn) return
+    const units = returnBlocksRef.current.flatMap((b) => b.units ?? [])
+    lines.forEach((line, index) => {
+      if (!line.installmentAccountId) return
+      const unit = units.find((u) => u.serialNumberId === line.existingSerialNumberIds?.[0])
+      const next = !isRepo ? undefined : unit && unit.repoCost > 0 ? unit.repoCost : line.unitCost
+      if (next === line.unitCost) return
+      setValue(`lines.${index}.unitCost`, next, { shouldValidate: false })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watched.reason])
 
   if (!isOpen) return null
 
@@ -443,118 +513,20 @@ export default function ReceiveStockModal({
     setValue(`lines.${index}.serialNumbers`, next, { shouldValidate: showErrors })
   }
 
-  /** Repossession, fallback path only (developer-confirmed 2026-09-28) — a
-   * hand-entered/imported account has no unitItems to resolve from, so the
-   * item and serial are searched manually instead. An account is always
-   * already picked by the time this fires (that's what put the row into
-   * this fallback in the first place), so there's nothing left to
-   * auto-resolve here, just the pick itself. Always the row's one and only
-   * unit (index 0) — a repossession row is never more than one unit. */
-  function setFallbackSerial(
-    index: number,
-    id: string,
-    _meta?: RepossessedSerialMeta,
-    label?: string
-  ): void {
-    const key = fields[index]?.id ?? ''
-    setValue(`lines.${index}.existingSerialNumberIds`, id ? [id] : undefined, {
-      shouldValidate: showErrors,
-    })
-    setFallbackSerialLabels((prev) => ({ ...prev, [key]: label ?? '' }))
+  // ─── Returned units (Repossession / Repair-Return) ────────────────────────
+
+  function patchBlock(key: string, patch: Partial<ReturnBlock>): void {
+    setReturnBlocks((prev) => prev.map((b) => (b.key === key ? { ...b, ...patch } : b)))
   }
 
-  /** Repossession — the cost typed in by hand, either because there's no
-   * original-sale record to pull one from (fallback path) or because there
-   * is one but it's not usable (missing or a recorded zero — see
-   * RepossessedUnitRow's own resolved-but-no-cost branch). */
-  function setUnitCost(index: number, value: number | undefined): void {
-    setValue(`lines.${index}.unitCost`, value, { shouldValidate: false })
+  /** What a unit re-enters stock at: Repo Cost for a repossession (the
+   * client's formula), nothing for a repair/return — the unit is the
+   * customer's, coming in for service, same as the UDS return path. */
+  function costForUnit(unit: InstallmentAccountUnitItem): number | undefined {
+    return isRepo && unit.repoCost > 0 ? unit.repoCost : undefined
   }
 
-  /** Repossession, Part 1 — who a repossessed unit is coming from, picked
-   * before the account (InstallmentAccountSearchCombobox's own customerId
-   * prop scopes to them). Changing this clears whatever account/unit/cost
-   * were already resolved under a different customer, so a stale pick can't
-   * ride along pointing at someone no longer shown. */
-  function setRepossessionCustomer(index: number, id: string, label?: string): void {
-    const key = fields[index]?.id ?? ''
-    setRepossessionCustomerIds((prev) => ({ ...prev, [key]: id }))
-    setRepossessionCustomerLabels((prev) => ({ ...prev, [key]: label ?? '' }))
-    if (!lines[index]?.installmentAccountId) return
-    setValue(`lines.${index}.installmentAccountId`, undefined, { shouldValidate: false })
-    setValue(`lines.${index}.itemId`, undefined, { shouldValidate: false })
-    setValue(`lines.${index}.existingSerialNumberIds`, undefined, { shouldValidate: false })
-    setValue(`lines.${index}.unitCost`, undefined, { shouldValidate: false })
-    setInstallmentAccountLabels((prev) => ({ ...prev, [key]: '' }))
-    setUnitItemsByField((prev) => ({ ...prev, [key]: undefined }))
-    setAccountExhaustedByField((prev) => ({ ...prev, [key]: false }))
-  }
-
-  /** Repossession, Part 2 — picking the account (whether via the
-   * "Installment" field itself or the "Invoice #" one — both are the same
-   * search, just framed differently) fetches its own sold unit(s)
-   * (installmentSchedule -> posTransactionLines) so the item, serial, AND
-   * cost can be shown rather than asked for: exactly one unit auto-fills
-   * outright (cost = what it was actually sold at, so a real cost layer gets
-   * created on receiving — a blank/zero cost silently created none at all),
-   * several are left for the row's own unit picker (a shared-term account
-   * can span more than one DIFFERENT item — Scenario 23), and none at all (a
-   * hand-entered/imported account has no linked schedule to resolve from)
-   * falls back to the old manual item+serial+cost entry.
-   *
-   * Also fills in "Repossessed From" from meta.customerName when the
-   * account was found some other way than searching for the customer first
-   * (by invoice #, item, or serial) — resolving the account this way is
-   * just as authoritative about who it belongs to. */
-  function setInstallmentAccount(
-    index: number,
-    id: string,
-    meta?: InstallmentAccountMeta,
-    label?: string
-  ): void {
-    const key = fields[index]?.id ?? ''
-    setValue(`lines.${index}.installmentAccountId`, id || undefined, { shouldValidate: false })
-    setValue(`lines.${index}.itemId`, undefined, { shouldValidate: false })
-    setValue(`lines.${index}.existingSerialNumberIds`, undefined, { shouldValidate: false })
-    setValue(`lines.${index}.unitCost`, undefined, { shouldValidate: false })
-    setInstallmentAccountLabels((prev) => ({ ...prev, [key]: label ?? '' }))
-    setUnitItemsByField((prev) => ({ ...prev, [key]: undefined }))
-    setAccountExhaustedByField((prev) => ({ ...prev, [key]: false }))
-    if (meta?.customerId) {
-      setRepossessionCustomerIds((prev) => ({ ...prev, [key]: meta.customerId }))
-      setRepossessionCustomerLabels((prev) => ({ ...prev, [key]: meta.customerName ?? '' }))
-    }
-    if (!id) return
-
-    setUnitItemsLoadingByField((prev) => ({ ...prev, [key]: true }))
-    void (async () => {
-      const res = await getInstallmentAccount(id)
-      const allUnitItems = res.data?.unitItems ?? []
-      // Only a unit still actually out with the customer (serialStatus
-      // 'sold') is available to repossess again — one already brought back
-      // by an earlier receipt (status now in_stock) has nothing left to
-      // resolve and must not be offered a second time. allUnitItems.length
-      // vs this filtered count is also how "genuinely no linked sale"
-      // (hand-entered/imported account) is told apart from "linked, but
-      // every unit already repossessed" below — the fallback message reads
-      // differently for each.
-      const unitItems = allUnitItems.filter((u) => u.serialNumberId && u.serialStatus === 'sold')
-      setUnitItemsByField((prev) => ({ ...prev, [key]: unitItems }))
-      setAccountExhaustedByField((prev) => ({
-        ...prev,
-        [key]: allUnitItems.length > 0 && unitItems.length === 0,
-      }))
-      setUnitItemsLoadingByField((prev) => ({ ...prev, [key]: false }))
-      if (unitItems.length !== 1) return
-      applyRepossessionUnit(index, unitItems[0])
-    })()
-  }
-
-  /** Shared by the auto-fill-on-single-match path above and the row's own
-   * unit picker (>1-unit case) below — resolves a picked unit into the
-   * line's itemId/existingSerialNumberIds/unitCost, and remembers the item's
-   * display meta the same way a catalog pick would. */
-  function applyRepossessionUnit(index: number, unit: InstallmentAccountUnitItem): void {
+  function addUnitLine(accountId: string, unit: InstallmentAccountUnitItem): void {
     if (!unit.serialNumberId) return
     rememberItem(unit.itemId, {
       name: unit.itemName ?? unit.itemId,
@@ -562,39 +534,145 @@ export default function ReceiveStockModal({
       modelNumber: unit.modelNumber,
       brand: unit.brand ? { name: unit.brand } : null,
     })
-    setValue(`lines.${index}.itemId`, unit.itemId, { shouldValidate: false })
-    setValue(`lines.${index}.existingSerialNumberIds`, [unit.serialNumberId], {
-      shouldValidate: false,
-    })
-    // Repo Cost, not the original sale cost — the client's formula.
-    setValue(`lines.${index}.unitCost`, unit.repoCost > 0 ? unit.repoCost : undefined, {
-      shouldValidate: false,
+    append({
+      quantityReceived: 1,
+      itemId: unit.itemId,
+      existingSerialNumberIds: [unit.serialNumberId],
+      installmentAccountId: accountId,
+      unitCost: costForUnit(unit),
     })
   }
 
-  /** The form only ever stores a picked serial's id — this resolves its
-   * display string back out of the account's own unitItems, so the summary
-   * row can show which serial was picked, not just the item. */
-  function serialLabelFor(fieldId: string, serialNumberId?: string): string | undefined {
-    if (!serialNumberId) return undefined
-    return (
-      unitItemsByField[fieldId]?.find((u) => u.serialNumberId === serialNumberId)?.serialNumber ??
-      undefined
+  /** Picking an invoice lists its units for checking. The customer fills in
+   * from the invoice; a single-unit invoice is pre-checked since there is
+   * nothing to choose between. */
+  function pickInvoice(
+    key: string,
+    id: string,
+    meta?: InstallmentAccountMeta,
+    label?: string
+  ): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    if (id && returnBlocks.some((b) => b.key !== key && b.accountId === id)) {
+      showToast({ title: 'That invoice is already on this receipt', status: 'error' })
+      return
+    }
+    // A different invoice replaces the old one — its checked units go with it.
+    if (block.accountId && block.accountId !== id) {
+      replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+    }
+    patchBlock(key, {
+      accountId: id,
+      invoiceLabel: label ?? '',
+      units: undefined,
+      exhausted: false,
+      loading: !!id,
+      fallbackSerialLabel: '',
+      ...(meta?.customerId
+        ? { customerId: meta.customerId, customerLabel: meta.customerName ?? '' }
+        : {}),
+    })
+    if (!id) return
+
+    void (async () => {
+      const res = await getInstallmentAccount(id)
+      // The receiver moved on to another invoice while this was loading.
+      if (returnBlocksRef.current.find((b) => b.key === key)?.accountId !== id) return
+      const all = res.data?.unitItems ?? []
+      // Only a unit still out with the customer can be taken back.
+      const available = all.filter((u) => u.serialNumberId && u.serialStatus === 'sold')
+      patchBlock(key, {
+        units: available,
+        exhausted: all.length > 0 && available.length === 0,
+        loading: false,
+        ...(res.data?.customer
+          ? {
+              customerId: res.data.customerId,
+              customerLabel: res.data.customer.name,
+              customerCode: res.data.customer.customerCode,
+            }
+          : {}),
+      })
+      if (available.length === 1) addUnitLine(id, available[0])
+    })()
+  }
+
+  function pickCustomer(key: string, id: string, label?: string): void {
+    patchBlock(key, { customerId: id, customerLabel: label ?? '', customerCode: undefined })
+  }
+
+  function toggleUnit(key: string, unit: InstallmentAccountUnitItem, checked: boolean): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    if (checked) {
+      addUnitLine(block.accountId, unit)
+      return
+    }
+    replace(
+      lines.filter(
+        (l) =>
+          !(
+            l.installmentAccountId === block.accountId &&
+            l.existingSerialNumberIds?.[0] === unit.serialNumberId
+          )
+      )
     )
   }
 
-  /** Whether the RESOLVED unit itself had a usable recorded cost — read off
-   * unitItemsByField, never off the line's own (live-edited) unitCost. A
-   * row with no original cost still needs a Cost input once the receiver
-   * starts typing a positive number into it; deciding "editable or not" off
-   * the value being typed would yank the input away mid-keystroke the
-   * moment it crosses 0. */
-  function hasOriginalCost(fieldId: string, serialNumberId?: string): boolean {
-    if (!serialNumberId) return false
-    const repoCost = unitItemsByField[fieldId]?.find(
-      (u) => u.serialNumberId === serialNumberId
-    )?.repoCost
-    return repoCost != null && repoCost > 0
+  function removeBlock(key: string): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (block?.accountId) replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+    setReturnBlocks((prev) => prev.filter((b) => b.key !== key))
+  }
+
+  /** Hand-entered path (an invoice with no linked sale to list units from):
+   * one line per invoice, item then serial then cost. */
+  function manualLineIndex(accountId: string, serialNumberId?: string): number {
+    return lines.findIndex(
+      (l) =>
+        l.installmentAccountId === accountId &&
+        (!serialNumberId || l.existingSerialNumberIds?.[0] === serialNumberId)
+    )
+  }
+
+  function fallbackItem(key: string, option: SearchComboboxOption): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    rememberItem(option.id, { name: option.primary, sku: option.secondary, isSerialTracked: true })
+    const idx = manualLineIndex(block.accountId)
+    if (idx >= 0) {
+      setValue(`lines.${idx}.itemId`, option.id, { shouldValidate: false })
+      setValue(`lines.${idx}.existingSerialNumberIds`, undefined, { shouldValidate: false })
+    } else {
+      append({ quantityReceived: 1, itemId: option.id, installmentAccountId: block.accountId })
+    }
+    patchBlock(key, { fallbackSerialLabel: '' })
+  }
+
+  function fallbackSerial(
+    key: string,
+    id: string,
+    _meta?: RepossessedSerialMeta,
+    label?: string
+  ): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    const idx = manualLineIndex(block.accountId)
+    if (idx < 0) return
+    setValue(`lines.${idx}.existingSerialNumberIds`, id ? [id] : undefined, {
+      shouldValidate: showErrors,
+    })
+    patchBlock(key, { fallbackSerialLabel: label ?? '' })
+  }
+
+  /** A typed cost: either a checked unit whose sale recorded none, or the
+   * hand-entered line. receiveStock() rejects a cost that isn't positive. */
+  function setUnitCost(key: string, serialNumberId: string | undefined, value: number | undefined) {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    const idx = manualLineIndex(block.accountId, serialNumberId)
+    if (idx >= 0) setValue(`lines.${idx}.unitCost`, value, { shouldValidate: false })
   }
 
   function toggleFreebie(index: number): void {
@@ -699,29 +777,6 @@ export default function ReceiveStockModal({
     }
   }
 
-  /** Repossession, fallback path only — picking the item by hand (no
-   * account-resolved unit to derive it from). Unlike an ordinary catalog
-   * pick, this never touches unitCost: the catalog's current cost price
-   * means nothing for a unit re-entering stock from a customer, not a
-   * supplier — the receiver types the actual figure themselves (see
-   * setUnitCost). */
-  function onSelectFallbackItem(index: number, option: SearchComboboxOption): void {
-    rememberItem(option.id, {
-      name: option.primary,
-      sku: option.secondary,
-      isSerialTracked: true,
-    })
-    setValue(`lines.${index}.itemId`, option.id, { shouldValidate: false })
-    setValue(`lines.${index}.existingSerialNumberIds`, undefined, { shouldValidate: false })
-  }
-
-  /** Repossession rows have no quantity of their own (always exactly one
-   * unit) and none of the purchase-pricing/tax fields a normal line
-   * defaults — see addLine() below for the ordinary case this mirrors. */
-  function addRepossessionUnit(): void {
-    append({ quantityReceived: 1 })
-  }
-
   function pullPoLines(): void {
     if (!linkedPo) return
     let pulled = 0
@@ -811,21 +866,71 @@ export default function ReceiveStockModal({
     // resolver is what the post actually has to satisfy. Failing silently here
     // would look like a dead button.
     if (!(await trigger())) {
+      const issues = ReceiveStockFormSchema.safeParse(getValues()).error?.issues ?? []
+      const described = issues.slice(0, 3).map((issue) => describeIssue(issue.path, issue.message))
       showToast({
-        title: 'Some lines still need attention',
-        description: 'Check the highlighted quantities and serial numbers.',
+        title: 'Some fields still need attention',
+        description:
+          described.length > 0
+            ? `${described.join(' · ')}${issues.length > 3 ? ` · +${issues.length - 3} more` : ''}`
+            : 'Check the fields highlighted in red.',
         status: 'error',
       })
+      // Bring the first red field into view — the form is long enough that it
+      // is usually off-screen when Create is pressed.
+      setTimeout(() => {
+        document
+          .querySelector<HTMLElement>('[class*="border-[#b42318]"], [aria-invalid="true"]')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 50)
       return
     }
     void handleSubmit(post)()
   }
 
+  /** Uploads the required UDS/RFS scans (once each — a retry after a failed
+   * post reuses the ids) and returns what the receipt attaches, or null after
+   * telling the receiver which upload failed. */
+  async function uploadAttachments(
+    kinds: RrAttachmentKind[]
+  ): Promise<{ fileId: string; kind: RrAttachmentKind }[] | null> {
+    const out: { fileId: string; kind: RrAttachmentKind }[] = []
+    for (const kind of kinds) {
+      for (const file of stagedFiles[kind]) {
+        let fileId = uploadedIds.current.get(file)
+        if (!fileId) {
+          const form = new FormData()
+          form.set('file', file)
+          const uploaded = await uploadRrAttachment(form)
+          if (!uploaded.success || !uploaded.data) {
+            showToast({
+              title: `Could not upload ${file.name}`,
+              description: uploaded.message || uploaded.error,
+              status: 'error',
+            })
+            return null
+          }
+          fileId = uploaded.data.id
+          uploadedIds.current.set(file, fileId)
+        }
+        out.push({ fileId, kind })
+      }
+    }
+    return out
+  }
+
   async function post(data: ReceiveStockFormValues): Promise<void> {
     const reason = data.reason || undefined
+    const unitReturn = reason === 'repossession' || reason === 'repair_return'
+    const attachments = unitReturn
+      ? await uploadAttachments(requiredAttachmentKinds(reason, data.repairType))
+      : []
+    if (!attachments) return
     const result = await onSubmit({
       ...data,
       reason,
+      repairType: reason === 'repair_return' ? data.repairType : undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
       // Scenario 55 (Stock-side Manual RR parity) — mirrors
       // ManualRrForm.tsx's own handleSubmit: sourceMode decides which of the
       // two ever actually goes out, whatever the other field is still
@@ -848,13 +953,11 @@ export default function ReceiveStockModal({
         // sets both) — only one of these two is ever real per line, gated on
         // the same reason check.
         serialNumbers:
-          reason !== 'repossession' && line.serialNumbers && line.serialNumbers.length > 0
+          !unitReturn && line.serialNumbers && line.serialNumbers.length > 0
             ? line.serialNumbers
             : undefined,
         existingSerialNumberIds:
-          reason === 'repossession' &&
-          line.existingSerialNumberIds &&
-          line.existingSerialNumberIds.length > 0
+          unitReturn && line.existingSerialNumberIds && line.existingSerialNumberIds.length > 0
             ? line.existingSerialNumberIds
             : undefined,
         // Only meaningful for a repossession line — dropped otherwise so a
@@ -932,40 +1035,33 @@ export default function ReceiveStockModal({
           onUnlinkPo={unlinkPo}
         />
 
-        {watched.reason === 'repossession' ? (
-          <RepossessedItemsPanel
-            fields={fields}
-            lines={lines}
-            canViewCost={canViewCost}
-            showErrors={showErrors}
-            issuesFor={(index) =>
-              rrLineIssues(issueLines, index, contextFor(index), lines[index] ?? {}).filter(
-                (issue) => showErrors || issue.kind === 'warn'
-              )
-            }
-            itemNameFor={(itemId) => (itemId ? metaFor(itemId)?.name : undefined)}
-            serialLabelFor={serialLabelFor}
-            hasOriginalCostFor={hasOriginalCost}
-            customerIdFor={(fieldId) => repossessionCustomerIds[fieldId]}
-            customerLabelFor={(fieldId) => repossessionCustomerLabels[fieldId]}
-            onCustomerChange={(index, id, label) => setRepossessionCustomer(index, id, label)}
-            installmentAccountLabelFor={(fieldId) => installmentAccountLabels[fieldId]}
-            onInstallmentAccountChange={(index, id, meta, label) =>
-              setInstallmentAccount(index, id, meta, label)
-            }
-            unitItemsFor={(fieldId) => unitItemsByField[fieldId]}
-            unitItemsLoadingFor={(fieldId) => unitItemsLoadingByField[fieldId]}
-            accountExhaustedFor={(fieldId) => accountExhaustedByField[fieldId]}
-            onPickUnit={(index, unitItem) => applyRepossessionUnit(index, unitItem)}
-            onSelectFallbackItem={(index, option) => onSelectFallbackItem(index, option)}
-            fallbackSerialLabelFor={(fieldId) => fallbackSerialLabels[fieldId]}
-            onFallbackSerialChange={(index, id, meta, label) =>
-              setFallbackSerial(index, id, meta, label)
-            }
-            onCostChange={(index, value) => setUnitCost(index, value)}
-            onAdd={addRepossessionUnit}
-            onRemove={(index) => remove(index)}
-          />
+        {isUnitReturn ? (
+          <>
+            <ReturnedUnitsPanel
+              mode={isRepo ? 'repossession' : 'repair_return'}
+              blocks={returnBlocks}
+              lines={lines}
+              canViewCost={canViewCost}
+              showErrors={showErrors}
+              itemNameFor={(itemId) => (itemId ? metaFor(itemId)?.name : undefined)}
+              onPickInvoice={pickInvoice}
+              onPickCustomer={pickCustomer}
+              onToggleUnit={toggleUnit}
+              onFallbackItem={fallbackItem}
+              onFallbackSerial={fallbackSerial}
+              onUnitCost={setUnitCost}
+              onAddBlock={() => setReturnBlocks((prev) => [...prev, newReturnBlock()])}
+              onRemoveBlock={removeBlock}
+            />
+            {requiredKinds.length > 0 && (
+              <RrAttachmentsPanel
+                required={requiredKinds}
+                staged={stagedFiles}
+                onChange={(kind, files) => setStagedFiles((prev) => ({ ...prev, [kind]: files }))}
+                showErrors={showErrors}
+              />
+            )}
+          </>
         ) : (
           <div className={PANEL}>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-3.5">
@@ -1010,7 +1106,7 @@ export default function ReceiveStockModal({
               ManualRrForm.tsx's own Defaults bar exactly: applied to every
               new line going forward, not retroactively. */}
             <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
-              <span className="text-[11px] text-[#8b8b9b]">Defaults</span>
+              <span className="text-[11px] text-[#8b8b9b]">Input tax type</span>
               <select
                 value={defaultTaxCode}
                 onChange={(e) => setDefaultTaxCode(e.target.value)}
@@ -1023,6 +1119,7 @@ export default function ReceiveStockModal({
                   </option>
                 ))}
               </select>
+              <span className="ml-2 text-[11px] text-[#8b8b9b]">Withholding tax</span>
               <select
                 value={defaultWithholdingClass}
                 onChange={(e) => setDefaultWithholdingClass(e.target.value)}
@@ -1126,6 +1223,9 @@ export default function ReceiveStockModal({
                   </span>
                   <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
                     {totals.units} units{canViewCost && ` · ${fmtPeso(totals.invoice)} invoiced`}
+                    {canViewCost &&
+                      totals.withheld > 0 &&
+                      ` · ${fmtPeso(totals.withheld)} withheld · ${fmtPeso(totals.net)} net`}
                   </span>
                 </div>
               </>

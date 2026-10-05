@@ -51,15 +51,6 @@ const WITHHOLDING_RATES: Record<string, number> = {
   services: 0.02,
 }
 
-/** This line's own VAT-exclusive net cost — the base withholding applies
- * off, same as the server. */
-function lineNet(
-  line: Pick<ManualRrLine, 'quantityReceived' | 'unitCost' | 'isFreebie' | 'taxCode'>
-): number {
-  const gross = lineTotal(line)
-  return line.taxCode === 'VAT' ? round2(gross / 1.12) : gross
-}
-
 /**
  * Preview-only, mirrors the server's post()-time math exactly (developer
  * decision, 2026-09-20): both VAT and withholding are per line, not a
@@ -84,7 +75,7 @@ export function manualRrTotals(
   const withheld = round2(
     lines.reduce((sum, line) => {
       const rate = WITHHOLDING_RATES[line.withholdingClass ?? ''] ?? 0
-      return rate === 0 ? sum : sum + lineNet(line) * rate
+      return rate === 0 ? sum : sum + lineTotal(line) * rate
     }, 0)
   )
   const payable = round2(net + vat - withheld)

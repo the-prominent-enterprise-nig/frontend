@@ -852,6 +852,14 @@ function ExpenseFormFields({
 
   // Lets the sticky header's Save submit a form it sits outside of.
   const formRef = useRef<HTMLFormElement>(null)
+  // Which header button submitted: both go through the same <form> submit, so
+  // the choice rides in a ref rather than state (no re-render between the
+  // click and requestSubmit reading it).
+  const submitModeRef = useRef<'draft' | 'record'>('draft')
+  const submitAs = (mode: 'draft' | 'record') => {
+    submitModeRef.current = mode
+    formRef.current?.requestSubmit()
+  }
 
   const validate = (): string | null => {
     if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
@@ -894,6 +902,8 @@ function ExpenseFormFields({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const mode = submitModeRef.current
+    submitModeRef.current = 'draft'
     const validationError = validate()
     if (validationError) {
       setError(validationError)
@@ -972,11 +982,25 @@ function ExpenseFormFields({
     const res = initial
       ? await Expenses.update(initial.id, payload)
       : await Expenses.create(payload)
-    setSaving(false)
     if (!res.success) {
+      setSaving(false)
       setError(res.message || res.error || 'Save failed')
       return
     }
+    if (mode === 'record') {
+      const saved = res.data as { id?: string } | undefined
+      const rec = await Expenses.record(saved?.id ?? initial!.id)
+      if (!rec.success) {
+        setSaving(false)
+        // The draft is saved; only posting failed. On a new form another
+        // click would create a second expense, so point at the list instead.
+        setError(
+          `Saved as a draft, but recording failed: ${rec.message || rec.error || 'unknown error'}. Fix it from the expenses list; don't submit this form again.`
+        )
+        return
+      }
+    }
+    setSaving(false)
     onSaved()
   }
 
@@ -1019,12 +1043,20 @@ function ExpenseFormFields({
             </Link>
             <button
               type="button"
-              onClick={() => formRef.current?.requestSubmit()}
+              onClick={() => submitAs('draft')}
+              disabled={saving}
+              className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? 'Saving...' : 'Save draft'}
+            </button>
+            <button
+              type="button"
+              onClick={() => submitAs('record')}
               disabled={saving}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? 'Saving...' : 'Save'}
+              Record
             </button>
           </div>
         </div>
