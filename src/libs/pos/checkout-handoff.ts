@@ -52,6 +52,10 @@ export type CheckoutHandoff<TLine = unknown> = {
   salesInvoiceNumber?: string
   /** One per payment row, in row order. */
   paymentReferences?: string[]
+  /** Scenario 67 — a parked X-Deal comes back as one, reference included,
+   * instead of as a plain installment sale needing a credit application. */
+  isXDeal?: boolean
+  xDealReference?: string
 }
 
 /** Never throws: localStorage can be unavailable (private windows, blocked
