@@ -220,11 +220,12 @@ function LedgerBody({
 }
 
 /** DEPOSIT, then the bank and date written across SI# to CASH RECEIPT, as the
- * client's form has it; the amount credits the balance down. */
+ * client's form has it; the amount credits the balance down. An undeposited
+ * line has no credit, so its DEPOSIT label stays blank. */
 function DepositRow({ line }: { line: FormLine }): React.JSX.Element {
   return (
     <tr>
-      <td className={CELL}>DEPOSIT</td>
+      <td className={CELL}>{line.credit === null ? '' : 'DEPOSIT'}</td>
       <td colSpan={6} className={`${CELL} uppercase`}>
         {line.customer}
       </td>
@@ -285,7 +286,11 @@ function FooterBlocks({
               </td>
             ) : (
               <>
-                <td className={`${CELL} whitespace-nowrap ${left?.emphasis ? 'font-bold' : ''}`}>
+                <td
+                  className={`${CELL} whitespace-nowrap ${left?.emphasis ? 'font-bold' : ''} ${
+                    left?.indent ? 'pl-6' : ''
+                  }`}
+                >
                   {left?.label ?? ''}
                 </td>
                 <td className={CELL}>{left?.sub ?? ''}</td>

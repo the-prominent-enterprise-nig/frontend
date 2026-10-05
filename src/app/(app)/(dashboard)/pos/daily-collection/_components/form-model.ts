@@ -136,7 +136,30 @@ export function buildFormLines(report: DailyCollectionReport): FormLine[] {
       span: 1,
     })
   }
+  if (running > 0.005) lines.push(undepositedLine(running))
   return lines
+}
+
+/** Cash still in the drawer with no deposit against it yet: the balance the
+ * form has not yet credited back to nil. Shown so an undeposited day reads as
+ * open, not as a form someone forgot to finish. */
+function undepositedLine(balance: number): FormLine {
+  return {
+    type: 'deposit',
+    si: '',
+    customer: 'UNDEPOSITED FUNDS',
+    desc: '',
+    office: '',
+    field: '',
+    others: '',
+    cashInvoice: '',
+    ppd: 0,
+    penalty: 0,
+    debit: null,
+    credit: null,
+    balance,
+    span: 1,
+  }
 }
 
 export interface FooterLine {
@@ -154,6 +177,8 @@ export interface FooterLine {
   /** Sits under a block heading — the non-cash tender lines. A flag rather
    * than padding in the label, since HTML collapses leading spaces. */
   indent?: boolean
+  /** The on-screen explanation of the label. The printed form ignores it. */
+  note?: string
 }
 
 /** Accounting parentheses for a deduction: `(4,720.00)`. */
@@ -171,24 +196,66 @@ const TENDER_LINE_BY_METHOD: Record<string, TenderLine> = {
   qr: 'GCASH',
   gcash: 'GCASH',
   maya: 'GCASH',
-  bank_transfer: 'GCASH',
   cheque: 'CHECK',
   check: 'CHECK',
   card: 'CARD',
 }
 
+const BANK_METHOD = 'bank_transfer'
+
 function nonCashByLine(report: DailyCollectionReport): Record<TenderLine, number> {
-  const totals: Record<TenderLine, number> = { GCASH: 0, CHECK: 0, CARD: 0, 'OTHER NON-CASH': 0 }
+  const totals: Record<TenderLine, number> = {
+    GCASH: 0,
+    CHECK: 0,
+    CARD: 0,
+    'OTHER NON-CASH': 0,
+  }
   for (const t of report.nonCash ?? []) {
-    totals[TENDER_LINE_BY_METHOD[t.tender.split('::')[0]] ?? 'OTHER NON-CASH'] += t.amount
+    const method = t.tender.split('::')[0]
+    if (method === BANK_METHOD || t.kind === 'DP') continue
+    totals[TENDER_LINE_BY_METHOD[method] ?? 'OTHER NON-CASH'] += t.amount
   }
   return totals
+}
+
+/** The recap group a non-cash tender prints under. */
+function groupOf(tender: string): TenderLine | 'BANK' {
+  const method = tender.split('::')[0]
+  if (method === BANK_METHOD) return 'BANK'
+  return TENDER_LINE_BY_METHOD[method] ?? 'OTHER NON-CASH'
+}
+
+/** Non-cash down payments, one line each, named like the tender line they
+ * belong to: `GCASH`, or the bank's name. */
+function dpLines(report: DailyCollectionReport): FooterLine[] {
+  return (report.nonCash ?? [])
+    .filter((t) => t.kind === 'DP')
+    .map((t) => ({
+      label: groupOf(t.tender) === 'BANK' ? t.tender.split('::')[1] || 'BANK' : groupOf(t.tender),
+      amount: t.amount || null,
+      negate: false,
+      emphasis: false,
+    }))
+}
+
+/** One line per bank, labelled with the bank's name: `BDO`. A bank transfer with
+ * no bank recorded falls back to a bare `BANK`. */
+function bankLines(report: DailyCollectionReport): FooterLine[] {
+  return (report.nonCash ?? [])
+    .filter((t) => groupOf(t.tender) === 'BANK' && t.kind !== 'DP')
+    .map((t) => ({
+      label: t.tender.split('::')[1] || 'BANK',
+      amount: t.amount || null,
+      negate: false,
+      emphasis: false,
+    }))
 }
 
 /**
  * The bottom-left block as the client's form has it (Alimodian sample,
  * 2026-09-23): COD, DP, MI (part-payments included), OTHERS with DC, the
- * highlighted TOTAL COLLECTION, then GCASH and CHECK. A card swipe or other
+ * highlighted TOTAL COLLECTION, then GCASH (QR included), one BANK line per
+ * bank, and CHECK. A card swipe or other
  * non-cash tender has no line on their form, so it gets one only on a day
  * that took some — never silently dropped. Mirrored by the backend's Excel
  * form sheet.
@@ -212,6 +279,8 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
     line('OTHERS', kind('DC'), { sub: 'DC' }),
     line('TOTAL COLLECTION', report.totalCollection, { emphasis: true, highlight: true }),
     line('GCASH', nonCash.GCASH),
+    ...bankLines(report),
+    ...dpLines(report),
     line('CHECK', nonCash.CHECK),
     ...(nonCash.CARD ? [line('CARD', nonCash.CARD)] : []),
     ...(nonCash['OTHER NON-CASH'] ? [line('OTHER NON-CASH', nonCash['OTHER NON-CASH'])] : []),
