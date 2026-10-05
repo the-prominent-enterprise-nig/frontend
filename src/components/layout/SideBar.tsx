@@ -390,7 +390,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.AP_PAYMENT_METHODS_READ,
       },
       {
-        label: 'Bank Accounts',
+        label: 'Bank and Cash Accounts',
         href: '/accounting/bank-accounts',
         icon: Wallet,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,

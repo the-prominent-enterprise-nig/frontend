@@ -135,16 +135,6 @@ export function lineIssues(
   // matter.
   const out: LineIssue[] = [...serialIssues(line, lines, lineIndex)]
 
-  if (line.qualityHold) {
-    const reason = (line.notes ?? '').trim()
-    out.push({
-      kind: 'warn',
-      text: reason
-        ? `QC hold: ${reason}`
-        : 'Held for QC — stock lands on hold, not sellable on hand. Add a reason so the inspector knows what to check.',
-    })
-  }
-
   return out
 }
 

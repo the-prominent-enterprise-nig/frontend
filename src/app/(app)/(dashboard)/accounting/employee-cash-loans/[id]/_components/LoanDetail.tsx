@@ -53,7 +53,13 @@ function buildLedger(loan: EmployeeCashLoan): LedgerRow[] {
       debit: 0,
       credit: p.amount,
     })),
-  ]
+    ...(loan.deductions ?? []).map((d) => ({
+      date: d.deductedAt,
+      description: `Payroll deduction (${d.expenseNumber})`,
+      debit: 0,
+      credit: Number(d.amount),
+    })),
+  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
   let running = 0
   return rows.map((r) => {
     running = Math.round((running + r.debit - r.credit) * 100) / 100
@@ -146,10 +152,24 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
 
   const isOther = loan.borrowerType === 'OTHER'
   const ledger = isOther ? buildLedger(loan) : []
+  // Payroll takes whatever the sheet says, not the schedule's figure, so what
+  // each due shows as deducted is that money spread over the dues oldest
+  // first — a reading aid; the loan's balance is what was actually deducted.
+  const deductions = loan.deductions ?? []
+  const totalDeducted = deductions.reduce((sum, d) => sum + Number(d.amount), 0)
+  let toSpread = totalDeducted
+  const scheduleView = loan.scheduleLines.map((line) => {
+    const due = Number(line.totalAmount)
+    const deducted = Math.min(toSpread, due)
+    toSpread = Math.round((toSpread - deducted) * 100) / 100
+    const status: 'paid' | 'partial' | 'open' =
+      deducted >= due - 0.005 ? 'paid' : deducted > 0 ? 'partial' : 'open'
+    return { line, deducted, status }
+  })
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
-      <div className="mx-auto max-w-5xl">
+      <div className="w-full">
         <Link
           href="/accounting/employee-cash-loans"
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800"
@@ -169,11 +189,13 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLES[loan.status] ?? 'bg-prominent-purple-50 text-prominent-purple-700'}`}
-            >
-              {loan.status.replace('_', ' ')}
-            </span>
+            {loan.status !== 'ACTIVE' && (
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLES[loan.status] ?? 'bg-prominent-purple-50 text-prominent-purple-700'}`}
+              >
+                {loan.status.replace('_', ' ')}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => printVoucher(loan, businessProfile)}
@@ -200,10 +222,12 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-1 text-sm font-semibold text-zinc-700">Financing Terms</h3>
-            <dl className="space-y-1.5 text-sm">
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <h3 className="border-b border-zinc-100 px-4 py-2.5 text-sm font-semibold text-prominent-purple-900">
+              Financing Terms
+            </h3>
+            <dl className="divide-y divide-zinc-100 px-4">
               <Row label="Principal Amount" value={fmt(loan.principal)} />
               <Row
                 label="Interest Rate / Loan Factor"
@@ -233,11 +257,13 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
                 <Row label="Final Due Date" value={fmtDate(loan.finalDueDate)} />
               )}
             </dl>
-          </div>
+          </section>
 
-          <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-1 text-sm font-semibold text-zinc-700">Disbursement & Balance</h3>
-            <dl className="space-y-1.5 text-sm">
+          <section className="self-start rounded-xl border border-gray-200 bg-white shadow-sm">
+            <h3 className="border-b border-zinc-100 px-4 py-2.5 text-sm font-semibold text-prominent-purple-900">
+              Disbursement & Balance
+            </h3>
+            <dl className="divide-y divide-zinc-100 px-4">
               <Row label="Disbursement Method" value={loan.disbursementMethod.replace('_', ' ')} />
               {loan.bankAccount && (
                 <Row label="Bank / Cash Account" value={loan.bankAccount.name} />
@@ -248,20 +274,24 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
               <Row label="Opening Balance" value={fmt(loan.openingBalance)} />
               <Row label="Outstanding Balance" value={fmt(loan.currentBalance)} bold />
             </dl>
-            {loan.note && <p className="mt-3 text-sm text-zinc-500">Note: {loan.note}</p>}
-          </div>
+            {loan.note && (
+              <p className="border-t border-zinc-100 px-4 py-2.5 text-sm text-zinc-500">
+                Note: {loan.note}
+              </p>
+            )}
+          </section>
         </div>
 
         {isOther ? (
-          <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-zinc-200 px-4 py-3">
-              <h3 className="text-sm font-semibold text-zinc-700">Ledger</h3>
+          <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-zinc-100 px-4 py-2.5">
+              <h3 className="text-sm font-semibold text-prominent-purple-900">Ledger</h3>
               <p className="text-xs text-zinc-400">
                 No fixed schedule — paid back any amount, any time.
               </p>
             </div>
             <div className="scroll-fade-x overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm tabular-nums">
                 <thead>
                   <tr className="border-b border-zinc-200 bg-zinc-50">
                     <Th>Date</Th>
@@ -274,15 +304,15 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
                 <tbody>
                   {ledger.map((r, i) => (
                     <tr key={i} className="border-b border-zinc-100 last:border-0">
-                      <td className="px-4 py-2 text-prominent-purple-900">{fmtDate(r.date)}</td>
-                      <td className="px-4 py-2 text-prominent-purple-900">{r.description}</td>
-                      <td className="px-4 py-2 text-right text-prominent-purple-900">
+                      <td className="px-4 py-1.5 text-prominent-purple-900">{fmtDate(r.date)}</td>
+                      <td className="px-4 py-1.5 text-prominent-purple-900">{r.description}</td>
+                      <td className="px-4 py-1.5 text-right text-prominent-purple-900">
                         {r.debit ? fmt(r.debit) : ''}
                       </td>
-                      <td className="px-4 py-2 text-right text-prominent-purple-900">
+                      <td className="px-4 py-1.5 text-right text-prominent-purple-900">
                         {r.credit ? fmt(r.credit) : ''}
                       </td>
-                      <td className="px-4 py-2 text-right font-medium text-prominent-purple-900">
+                      <td className="px-4 py-1.5 text-right font-medium text-prominent-purple-900">
                         {fmt(r.balance)}
                       </td>
                     </tr>
@@ -292,15 +322,15 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
             </div>
           </div>
         ) : (
-          <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-zinc-200 px-4 py-3">
-              <h3 className="text-sm font-semibold text-zinc-700">Schedule</h3>
+          <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-zinc-100 px-4 py-2.5">
+              <h3 className="text-sm font-semibold text-prominent-purple-900">Schedule</h3>
               <p className="text-xs text-zinc-400">
-                Read-only — repayment recording isn&apos;t built into POS yet.
+                Payroll deducts whatever the sheet says; it is spread over the dues oldest first.
               </p>
             </div>
             <div className="scroll-fade-x overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm tabular-nums">
                 <thead>
                   <tr className="border-b border-zinc-200 bg-zinc-50">
                     <Th>#</Th>
@@ -308,29 +338,83 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
                     <Th align="right">Principal</Th>
                     <Th align="right">Interest</Th>
                     <Th align="right">Total</Th>
+                    <Th align="right">Deducted</Th>
+                    <Th>Status</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {loan.scheduleLines.map((line) => (
-                    <tr key={line.id} className="border-b border-zinc-100 last:border-0">
-                      <td className="px-4 py-2 text-zinc-500">{line.lineNumber}</td>
-                      <td className="px-4 py-2 text-prominent-purple-900">
+                  {scheduleView.map(({ line, deducted, status }) => (
+                    <tr
+                      key={line.id}
+                      className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/60"
+                    >
+                      <td className="px-4 py-1.5 text-zinc-500">{line.lineNumber}</td>
+                      <td className="px-4 py-1.5 text-prominent-purple-900">
                         {fmtDate(line.dueDate)}
                       </td>
-                      <td className="px-4 py-2 text-right text-prominent-purple-900">
+                      <td className="px-4 py-1.5 text-right text-prominent-purple-900">
                         {fmt(line.principalAmount)}
                       </td>
-                      <td className="px-4 py-2 text-right text-prominent-purple-900">
+                      <td className="px-4 py-1.5 text-right text-prominent-purple-900">
                         {fmt(line.interestAmount)}
                       </td>
-                      <td className="px-4 py-2 text-right font-medium text-prominent-purple-900">
+                      <td className="px-4 py-1.5 text-right font-medium text-prominent-purple-900">
                         {fmt(line.totalAmount)}
+                      </td>
+                      <td className="px-4 py-1.5 text-right text-emerald-700">
+                        {deducted ? fmt(deducted) : ''}
+                      </td>
+                      <td className="px-4 py-1.5 text-xs">
+                        {status === 'paid' ? (
+                          <span className="text-emerald-700">Deducted</span>
+                        ) : status === 'partial' ? (
+                          <span className="text-amber-700">Partly deducted</span>
+                        ) : (
+                          <span className="text-zinc-400">Upcoming</span>
+                        )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t border-zinc-200 bg-zinc-50 font-semibold text-prominent-purple-900">
+                    <td className="px-4 py-1.5" colSpan={2}>
+                      Total
+                    </td>
+                    <td className="px-4 py-1.5 text-right">
+                      {fmt(loan.scheduleLines.reduce((a, l) => a + Number(l.principalAmount), 0))}
+                    </td>
+                    <td className="px-4 py-1.5 text-right">
+                      {fmt(loan.scheduleLines.reduce((a, l) => a + Number(l.interestAmount), 0))}
+                    </td>
+                    <td className="px-4 py-1.5 text-right">
+                      {fmt(loan.scheduleLines.reduce((a, l) => a + Number(l.totalAmount), 0))}
+                    </td>
+                    <td className="px-4 py-1.5 text-right text-emerald-700">
+                      {totalDeducted ? fmt(totalDeducted) : ''}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
               </table>
             </div>
+            {deductions.length > 0 && (
+              <p className="border-t border-zinc-100 px-4 py-2.5 text-xs text-zinc-500">
+                Deducted from payroll:{' '}
+                {deductions.map((d, i) => (
+                  <span key={d.id}>
+                    {i > 0 && ', '}
+                    <Link
+                      href={`/accounting/expenses/${d.expenseId}`}
+                      className="text-prominent-purple-700 hover:underline"
+                    >
+                      {d.expenseNumber}
+                    </Link>{' '}
+                    ({fmtDate(d.deductedAt)}, {fmt(Number(d.amount))})
+                  </span>
+                ))}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -341,7 +425,7 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
 function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
   return (
     <th
-      className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 ${
+      className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500 ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >
@@ -352,12 +436,12 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className="flex justify-between">
+    <div className="flex items-center justify-between py-1.5 text-sm">
       <dt className="text-zinc-500">{label}</dt>
       <dd
-        className={
+        className={`tabular-nums ${
           bold ? 'font-semibold text-prominent-purple-700' : 'font-medium text-prominent-purple-900'
-        }
+        }`}
       >
         {value}
       </dd>

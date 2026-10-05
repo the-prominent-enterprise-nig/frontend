@@ -321,6 +321,14 @@ function PillCombobox({
           setOpen(true)
           setActive(0)
         }}
+        // After picking, the input keeps focus, so a second click fires no
+        // onFocus — reopen on click as well.
+        onClick={() => {
+          if (!open) {
+            setOpen(true)
+            setActive(0)
+          }
+        }}
         onChange={(e) => {
           setQuery(e.target.value)
           setActive(0)
@@ -397,6 +405,11 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   qr: 'QR',
   custom: 'Custom',
 }
+
+// GCash and Billers are their own Payment Method buttons but tender through
+// the 'qr' method; its one option list is split into the three groups by name.
+const GCASH_OPTION_NAMES = ['GCash Send Money', 'Soundpay']
+const BILLER_OPTION_NAMES = ['Ecpay', 'Palawan Pay']
 
 const REF_METHODS: PosPaymentMethod[] = [
   'card',
@@ -723,7 +736,7 @@ export default function CheckoutPage() {
   // Bank Transfer / QR), captured once via Item Payment Mode (transaction-
   // scoped, see hasCashLine), carried into whatever payment row gets added.
   const [cashSubMode, setCashSubMode] = useState<
-    'cash_on_hand' | 'check' | 'bank_transfer' | 'qr' | 'card'
+    'cash_on_hand' | 'check' | 'bank_transfer' | 'qr' | 'gcash' | 'billers' | 'card'
   >('cash_on_hand')
   const [cashPaymentOptionId, setCashPaymentOptionId] = useState<string | undefined>()
   // The check's own number, captured once for the transaction while the Check
@@ -773,7 +786,6 @@ export default function CheckoutPage() {
   const [tpfProviders, setTpfProviders] = useState<TpfProvider[]>([])
   const [tpfProviderId, setTpfProviderId] = useState('')
   const [tpfReferenceNumber, setTpfReferenceNumber] = useState('')
-  const [tpfApprovedAmount, setTpfApprovedAmount] = useState('')
   const [installmentPreviews, setInstallmentPreviews] = useState<
     Record<string, InstallmentPreview | null>
   >({})
@@ -1678,7 +1690,6 @@ export default function CheckoutPage() {
       // so it can't silently carry over into a later, unrelated TPF line.
       setTpfProviderId('')
       setTpfReferenceNumber('')
-      setTpfApprovedAmount('')
       return
     }
     getActiveTpfProviders().then((res) => {
@@ -2576,7 +2587,7 @@ export default function CheckoutPage() {
         ? 'cash'
         : cashSubMode === 'bank_transfer'
           ? 'bank_transfer'
-          : 'qr'
+          : 'qr' // qr, gcash and billers all tender through 'qr'
     }
     return null
   }
@@ -2929,10 +2940,6 @@ export default function CheckoutPage() {
           salesInvoiceNumber: invoiceNumberInput.trim(),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
-          tpfApprovedAmount:
-            tpfInstallmentCartLines.length > 0 && tpfApprovedAmount
-              ? parseFloat(tpfApprovedAmount)
-              : undefined,
           // Which register account the TPF down payment debits — the same
           // Cash/Debit-Credit choice (and Cash's own sub-mode) the cashier
           // made for the down payment above, not a separate control.
@@ -3346,7 +3353,6 @@ export default function CheckoutPage() {
     setSaleMode('sale')
     setTpfProviderId('')
     setTpfReferenceNumber('')
-    setTpfApprovedAmount('')
     setInstallmentPreviews({})
     setInstallmentPreviewErrors({})
     setInstallmentPreviewLoading({})
@@ -3977,7 +3983,14 @@ export default function CheckoutPage() {
                           >
                             <User size={11} className="shrink-0 text-gray-700" />
                             <div>
-                              <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
+                              <p className="flex items-center gap-1.5 font-medium text-gray-900">
+                                {customerDisplayName(c)}
+                                {c.customerType === 'employee' && (
+                                  <span className="rounded-full bg-prominent-purple-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
+                                    Employee
+                                  </span>
+                                )}
+                              </p>
                               {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
                             </div>
                           </button>
@@ -4529,7 +4542,7 @@ export default function CheckoutPage() {
             )}
             {saleMode === 'sale' && hasChargeOrInstallmentLine && !selectedCustomer && (
               <p className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                A customer must be selected — this cart has an installment item.
+                Select a customer for the installment item.
               </p>
             )}
             {saleMode === 'sale' && hasChargeOrInstallmentLine && (
@@ -4539,10 +4552,10 @@ export default function CheckoutPage() {
                     <p className="text-xs font-medium text-prominent-purple-700">
                       {inhouseInstallmentCartLines.length} item
                       {inhouseInstallmentCartLines.length !== 1 ? 's' : ''} on inhouse installment
-                    </p>
-                    <p className="mt-1 text-[13px] text-prominent-purple-500">
-                      Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
-                      financed into each item&apos;s own AR schedule.
+                      <span className="font-normal text-prominent-purple-500">
+                        {' '}
+                        · Down payment {fmt(installmentDownPaymentsTotal)}
+                      </span>
                     </p>
                     {selectedCustomer && isGovernmentInstitutionalCustomer && (
                       <p className="mt-2.5 text-[13px] text-prominent-purple-500">
@@ -4595,35 +4608,22 @@ export default function CheckoutPage() {
                           </div>
                           {!creditApplicationsLoading &&
                             approvedCreditApplications.length === 0 && (
-                              <div className="mt-1">
-                                <p className="text-[13px] text-amber-700">
-                                  Every installment sale requires an approved credit application.
+                              // Approval happens in the Business Owner's own
+                              // session; the list refreshes when this tab
+                              // regains focus.
+                              <div className="mt-1.5 flex items-center justify-between gap-2">
+                                <p className="text-[12px] text-gray-600">
+                                  Needs an approved credit application. Refreshes when you return to
+                                  this tab.
                                 </p>
-                                {/* Approval happens in the Business Owner's own
-                                session, so the cashier is usually waiting on
-                                someone else. This list refreshes when the tab
-                                regains focus; saying so stops the wait looking
-                                like a dead screen. */}
-                                <p className="mt-1 text-[12px] text-amber-600">
-                                  Waiting on an approval? This refreshes when you come back to this
-                                  tab.
-                                </p>
-                                {/* Was a dead sentence telling the cashier to go
-                                do it themselves. Carries the customer and
-                                these installment lines straight into the
-                                form, and brings the cart back afterwards. */}
                                 <button
                                   type="button"
                                   onClick={goToRaiseCreditApplication}
-                                  className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
+                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
                                 >
                                   <CreditCard size={12} />
-                                  Raise one for this cart
+                                  New Credit Application Form
                                 </button>
-                                <p className="mt-1 text-[11px] text-amber-600">
-                                  Your cart is kept — it still needs the owner&apos;s approval
-                                  before this sale can be completed.
-                                </p>
                               </div>
                             )}
                         </div>
@@ -5017,15 +5017,6 @@ export default function CheckoutPage() {
                         onChange={(e) => setTpfReferenceNumber(e.target.value)}
                         className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                       />
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        placeholder="Approved amount (optional)"
-                        value={tpfApprovedAmount}
-                        onChange={(e) => setTpfApprovedAmount(e.target.value)}
-                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                      />
                     </div>
                   </div>
                 )}
@@ -5071,8 +5062,23 @@ export default function CheckoutPage() {
                     <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
                     <div className="flex gap-1.5">
                       {(paymentMode === 'installment'
-                        ? (['cash_on_hand', 'check', 'bank_transfer', 'qr'] as const)
-                        : (['cash_on_hand', 'check', 'bank_transfer', 'qr', 'card'] as const)
+                        ? ([
+                            'cash_on_hand',
+                            'check',
+                            'bank_transfer',
+                            'gcash',
+                            'billers',
+                            'qr',
+                          ] as const)
+                        : ([
+                            'cash_on_hand',
+                            'check',
+                            'bank_transfer',
+                            'gcash',
+                            'billers',
+                            'qr',
+                            'card',
+                          ] as const)
                       ).map((mode) => (
                         <button
                           key={mode}
@@ -5096,7 +5102,11 @@ export default function CheckoutPage() {
                                 ? 'Bank Transfer'
                                 : mode === 'card'
                                   ? 'Debit/Credit Card'
-                                  : 'QR'}
+                                  : mode === 'gcash'
+                                    ? 'GCash'
+                                    : mode === 'billers'
+                                      ? 'Billers'
+                                      : 'QR'}
                         </button>
                       ))}
                     </div>
@@ -5104,10 +5114,30 @@ export default function CheckoutPage() {
                       cashSubMode !== 'check' &&
                       cashSubMode !== 'card' &&
                       (() => {
-                        const config = configuredMethods.find((m) => m.key === cashSubMode)
-                        const options = config?.options.filter((o) => o.isEnabled) ?? []
+                        const config = configuredMethods.find(
+                          (m) =>
+                            m.key ===
+                            (cashSubMode === 'gcash' || cashSubMode === 'billers'
+                              ? 'qr'
+                              : cashSubMode)
+                        )
+                        const options =
+                          config?.options.filter((o) => {
+                            if (!o.isEnabled) return false
+                            const inGcash = GCASH_OPTION_NAMES.includes(o.name)
+                            const inBillers = BILLER_OPTION_NAMES.includes(o.name)
+                            if (cashSubMode === 'gcash') return inGcash
+                            if (cashSubMode === 'billers') return inBillers
+                            if (cashSubMode === 'qr') return !inGcash && !inBillers
+                            return true
+                          }) ?? []
                         if (options.length === 0) return null
-                        const label = cashSubMode === 'bank_transfer' ? 'Bank' : 'Gateway'
+                        const label =
+                          cashSubMode === 'bank_transfer'
+                            ? 'Bank'
+                            : cashSubMode === 'billers'
+                              ? 'Biller'
+                              : 'Gateway'
                         return (
                           <PillCombobox
                             ariaLabel={label}
@@ -5392,31 +5422,19 @@ export default function CheckoutPage() {
                         saleMode === 'sale'
                           ? true
                           : (p.refRequired ?? REF_METHODS.includes(p.method))
-                      // Scenario 37 — POS Terminal (card) / Bank (bank_transfer) /
-                      // Gateway (qr) all live in Item Payment Mode now (transaction-
-                      // scoped, see hasCreditCardLine/hasCashLine) — not repeated
-                      // here, just a pointer back so it doesn't read as missing.
-                      const optionPointer =
-                        p.method === 'card'
-                          ? 'Terminal/Straight-Installment/Term'
-                          : p.method === 'bank_transfer'
-                            ? 'Bank'
-                            : p.method === 'qr'
-                              ? 'Gateway'
-                              : null
                       return needsRef ? (
-                        <div key={i} className="space-y-1.5">
+                        <div key={i}>
+                          <label className="mb-1 block text-xs font-medium text-gray-800">
+                            {label}
+                            {isRequired && <span className="text-red-500"> *</span>}
+                          </label>
                           <input
-                            className="w-full rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                            placeholder={`${label}${isRequired ? ' *' : ''}`}
+                            aria-label={label}
+                            className="w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                            placeholder={label}
                             value={p.referenceNumber}
                             onChange={(e) => updatePayment(i, { referenceNumber: e.target.value })}
                           />
-                          {optionPointer && (
-                            <p className="text-[11px] text-gray-400">
-                              {optionPointer} set via Payment Method above.
-                            </p>
-                          )}
                         </div>
                       ) : null
                     })}

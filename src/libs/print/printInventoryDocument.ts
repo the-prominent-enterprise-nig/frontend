@@ -2550,6 +2550,11 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  const prettyMethod = (m: unknown) =>
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
+
   const isOther = l.borrowerType === 'OTHER'
   const principal = Number(l.principal ?? 0)
   const totalInterest = Number(l.totalInterest ?? 0)
@@ -2564,23 +2569,15 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
       : []),
   ].join('')
 
-  const scheduleLines = (l.scheduleLines ?? []) as {
-    lineNumber: number
-    dueDate: string
-    principalAmount: number
-    interestAmount: number
-    totalAmount: number
-  }[]
   const payments = (l.payments ?? []) as {
     paymentDate: string
     amount: number
     referenceNumber?: string | null
   }[]
 
-  const addendumLabel = isOther ? 'Ledger' : 'Schedule'
-  const addendumHead = isOther
-    ? '<tr><th>Date</th><th>Description</th><th class="right">Amount</th><th class="right">Balance</th></tr>'
-    : '<tr><th>#</th><th>Due Date</th><th class="right">Principal</th><th class="right">Interest</th><th class="right">Total</th></tr>'
+  const addendumLabel = 'Ledger'
+  const addendumHead =
+    '<tr><th>Date</th><th>Description</th><th class="right">Amount</th><th class="right">Balance</th></tr>'
   const addendumRows = isOther
     ? (() => {
         let running = totalReceivable
@@ -2595,33 +2592,34 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
         }
         return rows.join('')
       })()
-    : scheduleLines
-        .map(
-          (s) =>
-            `<tr><td>${s.lineNumber}</td><td>${fmtDate(s.dueDate)}</td><td class="right">${fmt(Number(s.principalAmount))}</td><td class="right">${fmt(Number(s.interestAmount))}</td><td class="right">${fmt(Number(s.totalAmount))}</td></tr>`
-        )
-        .join('')
+    : ''
 
   return `<!DOCTYPE html><html><head><title>${esc(l.loanNumber)}</title><style>
-    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    h1 { font-size: 26px; margin: 0; }
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+    body { font-family: 'Poppins', Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; color: #1e1b4b; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 16px; }
     .info > div { flex: 1; }
+    .info .meta { text-align: right; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
-    .party-name { font-weight: 700; margin: 0 0 4px; }
-    .party-address { margin: 0; color: #333; }
-    .meta { text-align: right; }
-    .meta-label { font-weight: 700; margin: 0 0 2px; }
-    .meta-value { margin: 0 0 12px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; color: #1e1b4b; }
+    .party-address { margin: 0; color: #374151; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; color: #1e1b4b; }
+    .meta-value { margin: 0 0 12px; color: #374151; }
     .description { font-weight: 700; margin: 0 0 16px; }
-    .section-label { font-weight: 700; margin: 16px 0 8px; }
+    .section-label { font-weight: 700; margin: 24px 0 8px; color: #1e1b4b; }
+    .kv { display: flex; gap: 16px; padding: 2px 0; }
+    .kv .k { width: 128px; flex-shrink: 0; font-weight: 700; color: #1e1b4b; }
+    .kv .v { color: #374151; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
-    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    th, td { border: 1px solid #d1d5db; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f3f4f6; text-align: left; font-weight: 700; color: #1e1b4b; }
     td.right, th.right { text-align: right; }
-    tr.total-row td { font-weight: 700; }
+    .totals { margin: 12px 0 0 auto; width: 280px; }
+    .totals td { border: 0; border-bottom: 1px solid #f3f4f6; text-align: right; padding: 5px 10px; }
+    .totals tr.grand td { border-top: 1px solid #9ca3af; border-bottom: 0; font-weight: 700; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -2658,30 +2656,21 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
 
     ${l.note ? `<p class="description">${esc(l.note)}</p>` : ''}
 
+    <p class="section-label" style="margin-top:20px">Source of Funds</p>
+    <div class="kv"><span class="k">Method</span><span class="v">${esc(prettyMethod(l.disbursementMethod))}</span></div>
+    ${l.bankAccountName ? `<div class="kv"><span class="k">Bank / Cash Account</span><span class="v">${esc(l.bankAccountName)}</span></div>` : ''}
+    ${l.referenceNumber ? `<div class="kv"><span class="k">Reference</span><span class="v">${esc(l.referenceNumber)}</span></div>` : ''}
+
+    <p class="section-label">Account Details</p>
     <table>
       <thead>
         <tr><th>Account</th><th>Description</th><th class="right">Total</th></tr>
       </thead>
-      <tbody>
-        ${accountRows}
-        <tr class="total-row">
-          <td colspan="2">Total Amount Receivable</td>
-          <td class="right">${fmt(totalReceivable)}</td>
-        </tr>
-      </tbody>
+      <tbody>${accountRows}</tbody>
     </table>
-
-    <p class="section-label">Disbursement</p>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Bank / Cash Account</th><th>Reference</th></tr>
-      </thead>
+    <table class="totals">
       <tbody>
-        <tr>
-          <td>${esc(String(l.disbursementMethod ?? '').replace(/_/g, ' '))}</td>
-          <td>${l.bankAccountName ? esc(l.bankAccountName) : '—'}</td>
-          <td>${l.referenceNumber ? esc(l.referenceNumber) : '—'}</td>
-        </tr>
+        <tr class="grand"><td>Total Amount Receivable</td><td>${fmt(totalReceivable)}</td></tr>
       </tbody>
     </table>
 

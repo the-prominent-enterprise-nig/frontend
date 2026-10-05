@@ -22,4 +22,4 @@ export const CAPTION = 'text-[10px] uppercase tracking-[.09em] text-[#a3a3b2]'
  * conflicting display rules in the same Tailwind layer, where which one wins
  * is decided by stylesheet order rather than by anything at the call site. */
 export const LINE_GRID =
-  'grid-cols-[28px_minmax(150px,1fr)_58px_116px_86px_112px_128px_40px_104px] items-center gap-x-2.5'
+  'grid-cols-[28px_minmax(150px,1fr)_58px_116px_86px_112px_128px_104px] items-center gap-x-2.5'

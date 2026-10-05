@@ -159,19 +159,25 @@ export default function SpecialAccountLedgerView({
             )}
             {!loading &&
               entries.map((e, i) => (
-                <tr key={`${e.expenseId}-${i}`} className="hover:bg-gray-50">
+                <tr key={`${e.expenseId ?? e.reference}-${i}`} className="hover:bg-gray-50">
                   <td className="px-4 py-2.5 text-xs text-gray-500">
                     {e.date ? fmtDate(e.date) : '—'}
                   </td>
                   <td className="px-4 py-2.5">
                     {/* The entry itself is where the full detail lives — the
                         other lines it paid, the payment, the voucher. */}
-                    <Link
-                      href={`/accounting/expenses/${e.expenseId}`}
-                      className="text-purple-700 hover:underline"
-                    >
-                      {e.reference || 'View entry'}
-                    </Link>
+                    {e.expenseId ? (
+                      <Link
+                        href={`/accounting/expenses/${e.expenseId}`}
+                        className="text-purple-700 hover:underline"
+                      >
+                        {e.reference || 'View entry'}
+                      </Link>
+                    ) : (
+                      // A loan disbursement, an appliance sale or a
+                      // collection has no expense entry behind it.
+                      <span className="text-gray-700">{e.reference || '—'}</span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-gray-700">{e.description || '—'}</td>
                   <td className="px-4 py-2.5 text-xs text-gray-500">{e.divisionName || '—'}</td>

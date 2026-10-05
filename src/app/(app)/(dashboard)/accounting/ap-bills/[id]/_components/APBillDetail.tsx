@@ -425,6 +425,7 @@ export default function APBillDetail({ id }: { id: string }) {
           <div className="text-right">
             <MetaPair label="Invoice date" value={docDate(bill.billDate)} />
             <MetaPair label="Due date" value={docDate(bill.dueDate)} />
+            <MetaPair label="Control no." value={bill.controlNumber ?? '—'} />
             <MetaPair
               label="SI number"
               value={

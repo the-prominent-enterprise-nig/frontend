@@ -230,6 +230,28 @@ function parseAmount(value: unknown): number | null {
   return Number.isFinite(n) && n !== 0 ? n : null
 }
 
+/** Every spelling one name might be written in: as given, surname-first
+ * flipped, and both with middle initials dropped — the sheet writes
+ * "ADVENCULA, JUVY B." where a customer record says "Juvy Advencula",
+ * and a single stray initial should not defeat the match. */
+export function nameKeys(name: string): string[] {
+  const dropInitials = (v: string) =>
+    norm(v)
+      .split(' ')
+      .filter((w) => w.length > 1)
+      .join(' ')
+  const keys = [norm(name), dropInitials(name)]
+  const parts = name
+    .split(/[,.]/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (parts.length >= 2) {
+    const flipped = `${parts.slice(1).join(' ')} ${parts[0]}`
+    keys.push(norm(flipped), dropInitials(flipped))
+  }
+  return [...new Set(keys.filter(Boolean))]
+}
+
 export async function importSpreadsheetLines(
   file: File,
   accounts: Account[],
@@ -293,27 +315,6 @@ export async function importSpreadsheetLines(
   const remember = (key: string, c: { id: string; name: string }) => {
     if (!key) return
     customerByName.set(key, customerByName.has(key) ? null : c)
-  }
-  /** Every spelling one name might be written in: as given, surname-first
-   * flipped, and both with middle initials dropped — the sheet writes
-   * "ADVENCULA, JUVY B." where a customer record says "Juvy Advencula",
-   * and a single stray initial should not defeat the match. */
-  const nameKeys = (name: string): string[] => {
-    const dropInitials = (v: string) =>
-      norm(v)
-        .split(' ')
-        .filter((w) => w.length > 1)
-        .join(' ')
-    const keys = [norm(name), dropInitials(name)]
-    const parts = name
-      .split(/[,.]/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-    if (parts.length >= 2) {
-      const flipped = `${parts.slice(1).join(' ')} ${parts[0]}`
-      keys.push(norm(flipped), dropInitials(flipped))
-    }
-    return [...new Set(keys.filter(Boolean))]
   }
   for (const c of customers) for (const k of nameKeys(c.name)) remember(k, c)
 
