@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Search, UserPlus, Loader2, Pencil } from 'lucide-react'
 import { posCustomersApi } from '@/src/libs/api/pos-customers'
 import type { Customer } from '@/src/schema/crm/types'
+import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
 function initials(name: string): string {
   return (
@@ -135,8 +136,9 @@ export default function PosCustomersList({
                   them. min-w-0 so a long name truncates instead of pushing
                   the action off the row. */}
               <Link href={`/pos/customers/${c.id}`} className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-zinc-900 hover:text-prominent-purple-700">
-                  {c.name}
+                <p className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-zinc-900 hover:text-prominent-purple-700">
+                  <span className="truncate">{c.name}</span>
+                  {!!c.xDealAccountCount && <XDealBadge />}
                 </p>
                 <p className="truncate text-xs text-zinc-500">
                   {[c.customerCode, c.phone, c.email].filter(Boolean).join(' · ') || '—'}

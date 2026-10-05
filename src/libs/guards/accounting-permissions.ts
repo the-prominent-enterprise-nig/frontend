@@ -128,6 +128,9 @@ export const ACCOUNTING_PERMISSIONS = {
   CREDIT_MEMOS_READ: 'accounting:credit-memos:read',
   CREDIT_MEMOS_CREATE: 'accounting:credit-memos:create',
   CREDIT_MEMOS_VOID: 'accounting:credit-memos:void',
+  /** Scenario 67 — issue or void an X-Deal (barter) credit memo. Deliberately
+   * not covered by Branch Manager's accounting:credit-memos:*. */
+  X_DEAL_MEMOS_ISSUE: 'accounting:x-deal-memos:issue',
 
   DEBIT_MEMOS_READ: 'accounting:debit-memos:read',
   DEBIT_MEMOS_CREATE: 'accounting:debit-memos:create',
@@ -271,6 +274,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:credit-memos:read': 'View credit memos',
   'accounting:credit-memos:create': 'Issue a credit memo against an open invoice',
   'accounting:credit-memos:void': 'Void a credit memo',
+  'accounting:x-deal-memos:issue':
+    "Issue or void an X-Deal credit memo, clearing a barter sale's whole balance",
   'accounting:debit-memos:read': 'View debit memos',
   'accounting:debit-memos:create': 'Issue a debit memo against an invoice',
   'accounting:debit-memos:void': 'Void a debit memo',

@@ -15,6 +15,7 @@ import { Skeleton } from '@/src/components/ui/Skeleton'
 import { type SessionUser, can, canAccessModule } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
+import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -116,8 +117,9 @@ export function TransactionDetail({
             {tx.salesInvoiceNumber ?? tx.transactionNumber}
           </h2>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-500 capitalize">
+            <p className="flex items-center gap-2 text-sm text-gray-500 capitalize">
               {tx.transactionType} · {tx.status}
+              {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
             </p>
             {/* Client-requested: the receipt is where someone notices a
                 figure they want to trace, and until now there was no way
@@ -282,6 +284,9 @@ export function TransactionDetail({
                 {tx.sellingAgent && <Row label="Selling Agent" value={tx.sellingAgent.name} />}
                 {tx.deliveryReceiptNumber && (
                   <Row label="Delivery Receipt No." value={tx.deliveryReceiptNumber} />
+                )}
+                {tx.isXDeal && tx.xDealReference && (
+                  <Row label="X-Deal Reference" value={tx.xDealReference} />
                 )}
                 {/* Only when it isn't already the heading above. */}
                 {tx.salesInvoiceNumber && (
