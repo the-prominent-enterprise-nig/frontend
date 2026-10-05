@@ -8,6 +8,11 @@ type Params = {
   categoryId?: string
   itemId?: string
   search?: string
+  serialNumber?: string
+  brandId?: string
+  model?: string
+  receivedFrom?: string
+  receivedTo?: string
   bucket?: SerialAgingBucket
   page?: number
   limit?: number
@@ -19,6 +24,11 @@ export async function getAgingReport(params: Params = {}) {
     categoryId: params.categoryId,
     itemId: params.itemId,
     search: params.search,
+    serialNumber: params.serialNumber,
+    brandId: params.brandId,
+    model: params.model,
+    receivedFrom: params.receivedFrom,
+    receivedTo: params.receivedTo,
     bucket: params.bucket,
     page: params.page,
     limit: params.limit,

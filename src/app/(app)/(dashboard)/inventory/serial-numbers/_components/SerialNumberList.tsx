@@ -373,23 +373,25 @@ export default function SerialNumberList({
             </div>
           )}
 
-          <div
-            role="group"
-            aria-label="Stock classification"
-            className="flex h-[38px] items-center gap-3 rounded-lg border border-[#e4e4e9] bg-white px-3 text-[12.5px] text-[#3d3d4a]"
-          >
-            {STOCK_CLASSES.map((c) => (
-              <label key={c.id} className="flex cursor-pointer items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={effectiveClasses.includes(c.id)}
-                  onChange={() => toggleClass(c.id)}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
-                />
-                {c.label}
-              </label>
-            ))}
-          </div>
+          {!caravanView && (
+            <div
+              role="group"
+              aria-label="Stock classification"
+              className="flex h-[38px] items-center gap-3 rounded-lg border border-[#e4e4e9] bg-white px-3 text-[12.5px] text-[#3d3d4a]"
+            >
+              {STOCK_CLASSES.map((c) => (
+                <label key={c.id} className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={effectiveClasses.includes(c.id)}
+                    onChange={() => toggleClass(c.id)}
+                    className="h-3.5 w-3.5 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
+                  />
+                  {c.label}
+                </label>
+              ))}
+            </div>
+          )}
 
           {caravanView ? (
             <SearchableSelect

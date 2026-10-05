@@ -113,6 +113,11 @@ export const SERIAL_AGING_BUCKET_LABELS: Record<SerialAgingBucket, string> = {
 export const AgingReportItemSchema = z.object({
   serialNumberId: z.string(),
   serialNumber: z.string(),
+  brandName: z.string().nullable().optional(),
+  typeName: z.string().nullable().optional(),
+  modelNumber: z.string().nullable().optional(),
+  rrNumber: z.string().nullable().optional(),
+  origin: z.string().nullable().optional(),
   itemId: z.string(),
   sku: z.string(),
   name: z.string(),
