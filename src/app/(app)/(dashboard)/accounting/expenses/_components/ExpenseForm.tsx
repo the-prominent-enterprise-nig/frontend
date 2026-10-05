@@ -72,7 +72,6 @@ const CLEARED_OPTIONS: { value: ClearedType; label: string }[] = [
 const VAT_RATE_PERCENT = 12
 
 const TAX_CODE_OPTIONS = [
-  { value: '', label: 'No Tax' },
   { value: 'VAT', label: 'Input VAT' },
   { value: 'NON_VAT', label: 'Non-VAT' },
   { value: 'EXEMPT', label: 'Exempt' },
@@ -121,7 +120,7 @@ const TAX_CODE_ALIASES: Record<string, string> = {
   NON_TAXABLE: 'NON_VAT',
 }
 function taxCodeFor(stored?: string | null): string {
-  if (!stored) return ''
+  if (!stored) return 'NON_VAT'
   return TAX_CODE_ALIASES[stored.toUpperCase()] ?? stored
 }
 
@@ -193,7 +192,7 @@ function emptyLine(): LineState {
     collectFromLabel: '',
     description: '',
     amount: '',
-    taxCode: '',
+    taxCode: 'NON_VAT',
     itemId: '',
     itemLabel: '',
     qty: '',
@@ -564,7 +563,6 @@ function ExpenseFormFields({
     () => suppliers.map((s) => ({ id: s.id, name: `${s.code} — ${s.name}`, depth: 0 })),
     [suppliers]
   )
-  const fundSeries = bankAccounts.find((a) => a.id === form.sourceOfFundId)?.voucherPrefix
   const bankAccountOptions = useMemo(
     () =>
       bankAccounts.map((a) => ({
@@ -935,9 +933,10 @@ function ExpenseFormFields({
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
-        // The API takes the net amount and derives the 12% itself; the
-        // Amount box is VAT-inclusive, so hand it the net.
-        amount: netFor(l),
+        // The API takes the VAT-inclusive amount and splits the 12% out
+        // itself, so send exactly what was typed — the payments (also
+        // VAT-inclusive) are checked against the sum of these.
+        amount: Number(l.amount) || 0,
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
       }
@@ -1104,7 +1103,7 @@ function ExpenseFormFields({
                     className={`mb-1 block text-xs font-medium ${i === 0 ? 'text-gray-600' : 'text-transparent select-none'}`}
                     aria-hidden={i > 0}
                   >
-                    Paid from
+                    Source
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 text-[13px] font-medium text-zinc-500">{i + 1}.</span>
@@ -1246,12 +1245,6 @@ function ExpenseFormFields({
               </Field>
             </>
           )}
-          {/* The printed voucher's "VOUCHER #" — the one document number for
-              the whole entry, distinct from each payment's own Reference
-              (the client's payroll voucher carries UB#0826-P2 against a
-              reference of UB#0826-02P). Optional, and offered for every
-              payee type: any disbursement can be raised against a voucher,
-              not just a supplier's. */}
           <Field label="Source of fund">
             <CategorySelect
               compact
@@ -1261,16 +1254,6 @@ function ExpenseFormFields({
               onChange={(id) => setForm({ ...form, sourceOfFundId: id ?? '' })}
               options={bankAccountOptions}
               placeholder="— Select —"
-            />
-          </Field>
-          <Field label="Voucher #">
-            <input
-              value={form.voucherNumber}
-              placeholder={
-                fundSeries && !form.voucherNumber ? `Auto — ${fundSeries}NNN` : undefined
-              }
-              onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })}
-              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
           </Field>
         </div>
