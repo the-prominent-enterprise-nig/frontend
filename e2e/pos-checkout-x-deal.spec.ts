@@ -12,6 +12,7 @@ import {
   sweepE2EPriceLists,
   sweepE2EPriceUseTypes,
   deleteCustomers,
+  openCustomSelect,
 } from './utils'
 
 // Scenario 67 — X-Deal (barter) at POS checkout. The backend rules (cart
@@ -210,10 +211,13 @@ async function selectCustomer(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: new RegExp(name) }).click()
 }
 
+// The term picker is the custom <Select> (Scenario 64): a combobox button,
+// labelled with its placeholder until a term is picked.
 async function pickFirstTerm(page: Page): Promise<void> {
-  const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
-  await expect(termSelect).toBeVisible({ timeout: 10_000 })
-  await termSelect.selectOption({ index: 1 })
+  const termPicker = page.getByRole('combobox', { name: 'Select a term…' })
+  await expect(termPicker).toBeVisible({ timeout: 10_000 })
+  await openCustomSelect(termPicker)
+  await page.getByRole('listbox').getByRole('option').first().click()
 }
 
 const xDealCheckbox = (page: Page) => page.getByTestId('x-deal-checkbox')
