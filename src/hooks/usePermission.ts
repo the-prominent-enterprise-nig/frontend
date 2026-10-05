@@ -63,6 +63,16 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
  * @param permission - The permission string to check (e.g., 'hr:attendance:read')
  * @returns true if user has the permission, false otherwise
  */
+/**
+ * The permission row itself — no wildcard match and no Business Owner
+ * shortcut. For the few screens a wildcard grant must not reach (Scenario 62:
+ * the Data Query Center, where the Accountant's 'accounting:*' would
+ * otherwise qualify). Mirrors the backend's QueryCenterGuard.
+ */
+export function hasExactPermission(session: SessionUser | null, permission: string): boolean {
+  return !!session?.permissions.includes(permission)
+}
+
 export function hasPermission(session: SessionUser | null, permission: string): boolean {
   if (!session) return false
   if (session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner')) {
