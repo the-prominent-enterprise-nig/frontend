@@ -326,6 +326,12 @@ export interface PosTransaction {
     method: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR' | null
     amount: number
     cancelledAt: string | null
+    /** The tender's details, as the sale's payments carry them. */
+    checkNumber?: string | null
+    bankTransferVerifiedAtRegister?: boolean
+    cardTxnMode?: PosCardTxnMode | null
+    cardInstallmentTerm?: number | null
+    paymentMethodOption?: { name: string } | null
   } | null
   sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
@@ -510,6 +516,13 @@ export interface CreateTransactionInput {
   deliveryFee?: number
   deliveryFeeMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
   deliveryFeeReferenceNumber?: string
+  /** The fee's tender details, each only on its own tender (a check is cash
+   * with a check number) — the same ones addPayment takes for the sale. */
+  deliveryFeeCheckNumber?: string
+  deliveryFeePaymentMethodOptionId?: string
+  deliveryFeeBankTransferVerifiedAtRegister?: boolean
+  deliveryFeeCardTxnMode?: PosCardTxnMode
+  deliveryFeeCardInstallmentTerm?: number
   isTaxExempt?: boolean
   taxExemptionRef?: string
   /** Set when a manager has PIN-approved an override (receiptless return,

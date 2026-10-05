@@ -26,6 +26,7 @@ import { type SessionUser, can, canAccessModule } from '@/src/libs/guards/permis
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import { deliveryFeeReceiptTenderLabel } from '../checkout/_utils/delivery'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -349,6 +350,14 @@ export function TransactionDetail({
                   {Number(tx.deliveryFee ?? 0) > 0 ? (
                     <>
                       <Row label="Delivery fee" value={formatCurrency(Number(tx.deliveryFee))} />
+                      {tx.deliveryFeeCollectionReceipt &&
+                        deliveryFeeReceiptTenderLabel(tx.deliveryFeeCollectionReceipt) && (
+                          <Row
+                            label="Paid with"
+                            value={deliveryFeeReceiptTenderLabel(tx.deliveryFeeCollectionReceipt)!}
+                            muted
+                          />
+                        )}
                       {tx.deliveryFeeReferenceNumber && (
                         <Row
                           label="Delivery fee CR#"

@@ -3,21 +3,30 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Check, MapPin, Truck } from 'lucide-react'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
-import { Select } from '@/src/components/ui/Select'
+import type { PaymentMethodConfig } from '@/src/schema/pos'
 import {
+  CARD_INSTALLMENT_TERMS,
   DELIVER_TO_MAX,
+  DELIVERY_FEE_CHECK_NUMBER_MAX,
   DELIVERY_FEE_CR_MAX,
-  DELIVERY_FEE_METHOD_LABELS,
-  DELIVERY_FEE_METHODS,
+  DELIVERY_FEE_TENDER_LABELS,
+  DELIVERY_FEE_TENDERS,
   EMPTY_DELIVERY,
+  deliveryFeeOptions,
   parseDeliveryFee,
   type CustomerAddress,
-  type DeliveryFeeMethod,
   type DeliveryState,
 } from '../_utils/delivery'
+import { PillCombobox, PillSelect } from './PillInputs'
 
 const INPUT_CLASS =
   'w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100'
+/** The same pill buttons as the sale's Cash payment mode. */
+const tenderButtonClass = (active: boolean) =>
+  `flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+    active ? 'bg-purple-200 text-purple-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+  }`
+const OPTION_LABEL = { bank_transfer: 'Bank', qr: 'Gateway', card: 'Card Acquirer' } as const
 const LINK_CLASS =
   'mt-1 text-xs font-medium text-purple-600 underline decoration-dotted underline-offset-2 hover:text-purple-800'
 
@@ -33,6 +42,7 @@ export default function DeliverySection({
   customerAddress,
   customerAddressLoading,
   unavailableReason,
+  configuredMethods,
   fmt,
 }: {
   state: DeliveryState
@@ -42,6 +52,9 @@ export default function DeliverySection({
   customerAddressLoading: boolean
   /** Why delivery can't be taken right now (offline, a resumed tab), or null. */
   unavailableReason: string | null
+  /** The branch's payment methods — the fee's bank / gateway / acquirer
+   * lists are the sale's own. */
+  configuredMethods: PaymentMethodConfig[]
   fmt: (n: number) => string
 }) {
   const fee = parseDeliveryFee(state.fee)
@@ -51,6 +64,9 @@ export default function DeliverySection({
   // The picker opens on the saved pick when reopened from it, otherwise on
   // the customer's own address.
   const pickerSeed = state.pickerSeed ?? customerAddress
+
+  const tenderOptions = deliveryFeeOptions(state.tender, configuredMethods)
+  const optionLabel = OPTION_LABEL[state.tender as keyof typeof OPTION_LABEL]
 
   const switchToCustomerAddress = () =>
     setState((s) => ({ ...s, addressSource: 'customer', addressSaved: false, pickerSeed: null }))
@@ -237,18 +253,115 @@ export default function DeliverySection({
           </div>
 
           {hasFee && (
-            <div className="grid grid-cols-2 gap-2">
-              <div data-testid="delivery-fee-method">
-                <p className="mb-1 text-[13px] text-gray-700">Paid with *</p>
-                <Select
-                  compact
-                  value={state.method}
-                  onChange={(v) => setState((s) => ({ ...s, method: v as DeliveryFeeMethod }))}
-                  options={DELIVERY_FEE_METHODS.map((m) => ({
-                    value: m,
-                    label: DELIVERY_FEE_METHOD_LABELS[m],
-                  }))}
-                />
+            <div className="space-y-2">
+              <div
+                className="rounded-lg border border-purple-100 p-2.5"
+                data-testid="delivery-fee-method"
+              >
+                <p className="mb-1.5 text-xs font-medium text-gray-800">Paid with *</p>
+                <div className="flex gap-1.5">
+                  {DELIVERY_FEE_TENDERS.map((tender) => (
+                    <button
+                      key={tender}
+                      type="button"
+                      aria-pressed={state.tender === tender}
+                      onClick={() =>
+                        // A new tender starts its details over, as the sale's does.
+                        setState((s) => ({
+                          ...s,
+                          tender,
+                          checkNumber: '',
+                          optionId: undefined,
+                          bankVerified: false,
+                          cardTxnMode: 'straight',
+                          cardTerm: undefined,
+                        }))
+                      }
+                      className={tenderButtonClass(state.tender === tender)}
+                    >
+                      {DELIVERY_FEE_TENDER_LABELS[tender]}
+                    </button>
+                  ))}
+                </div>
+
+                {tenderOptions.length > 0 && optionLabel && (
+                  <PillCombobox
+                    ariaLabel={`Delivery fee ${optionLabel}`}
+                    wrapperClassName="mt-1.5"
+                    placeholder={`Select ${optionLabel.toLowerCase()}…`}
+                    options={tenderOptions.map((o) => ({ value: o.id, label: o.name }))}
+                    value={state.optionId}
+                    onChange={(optionId) => setState((s) => ({ ...s, optionId }))}
+                  />
+                )}
+
+                {state.tender === 'check' && (
+                  <input
+                    aria-label="Delivery fee check number"
+                    className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                    placeholder="Check Number (required)"
+                    maxLength={DELIVERY_FEE_CHECK_NUMBER_MAX}
+                    value={state.checkNumber}
+                    onChange={(e) => setState((s) => ({ ...s, checkNumber: e.target.value }))}
+                  />
+                )}
+
+                {state.tender === 'bank_transfer' && (
+                  <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={state.bankVerified}
+                      onChange={(e) => setState((s) => ({ ...s, bankVerified: e.target.checked }))}
+                      className="h-3.5 w-3.5 rounded border-gray-300"
+                    />
+                    Verified at register — the credit already landed, post straight to Cash in Bank
+                  </label>
+                )}
+
+                {state.tender === 'card' && (
+                  <>
+                    <div className="mt-1.5 flex gap-1.5">
+                      {(['straight', 'installment'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          aria-pressed={state.cardTxnMode === mode}
+                          onClick={() =>
+                            setState((s) => ({
+                              ...s,
+                              cardTxnMode: mode,
+                              cardTerm: mode === 'straight' ? undefined : s.cardTerm,
+                            }))
+                          }
+                          className={tenderButtonClass(state.cardTxnMode === mode)}
+                        >
+                          {mode === 'straight' ? 'Straight' : 'Installment'}
+                        </button>
+                      ))}
+                    </div>
+                    {state.cardTxnMode === 'installment' && (
+                      <PillSelect
+                        aria-label="Delivery fee card term"
+                        filled={!!state.cardTerm}
+                        wrapperClassName="mt-1.5"
+                        value={state.cardTerm ?? ''}
+                        onChange={(e) =>
+                          setState((s) => ({
+                            ...s,
+                            cardTerm: e.target.value ? Number(e.target.value) : undefined,
+                          }))
+                        }
+                      >
+                        <option value="">Select Term (required)</option>
+                        {CARD_INSTALLMENT_TERMS.map((m) => (
+                          <option key={m} value={m}>
+                            {m} months
+                          </option>
+                        ))}
+                      </PillSelect>
+                    )}
+                  </>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-[13px] text-gray-700" htmlFor="delivery-fee-cr">
