@@ -7,7 +7,6 @@ import { installmentAccountsApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
 import type { InstallmentLedger } from '@/src/schema/crm/types'
-import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
@@ -61,13 +60,6 @@ export default function InstallmentLedgerView({
     })
   }, [accountId])
 
-  // Scenario 67 — a closed X-Deal was settled by its memo, not by payments;
-  // the memo is the ledger's own credit row, so its number comes from there.
-  const xDealMemoRef =
-    ledger?.account.isXDeal && ledger.account.status === 'closed'
-      ? (ledger.rows.find((r) => r.description === 'X-Deal credit memo')?.ref ?? null)
-      : null
-
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
       <div>
@@ -95,15 +87,9 @@ export default function InstallmentLedgerView({
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                       STATUS_STYLES[ledger.account.status] ?? 'bg-gray-100 text-gray-600'
                     }`}
-                    data-testid="ledger-status"
                   >
-                    {xDealMemoRef
-                      ? `Settled — X-Deal credit memo ${xDealMemoRef}`
-                      : (STATUS_LABELS[ledger.account.status] ?? ledger.account.status)}
+                    {STATUS_LABELS[ledger.account.status] ?? ledger.account.status}
                   </span>
-                  {ledger.account.isXDeal && (
-                    <XDealBadge reference={ledger.account.xDealReference} />
-                  )}
                 </div>
                 <p className="mt-1 font-mono text-xs text-gray-500">
                   {ledger.account.accountNumber}

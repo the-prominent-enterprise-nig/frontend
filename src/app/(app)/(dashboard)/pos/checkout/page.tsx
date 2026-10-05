@@ -103,7 +103,6 @@ import {
   writeCheckoutHandoff,
   clearCheckoutHandoff,
 } from '@/src/libs/pos/checkout-handoff'
-import { XDealBadge } from '@/src/components/pos/XDealBadge'
 import type {
   PosPaymentMethod,
   PosCardTxnMode,
@@ -828,23 +827,6 @@ export default function CheckoutPage() {
   const [employeeApplianceLoanChecked, setEmployeeApplianceLoanChecked] = useState(false)
   const [hrApplianceLoanApplicationNumber, setHrApplianceLoanApplicationNumber] = useState('')
 
-  // Scenario 67 — X-Deal (barter): rung up as an inhouse installment sale
-  // with no down payment and no credit application, whose balance
-  // accounting later offsets in full with an X-Deal credit memo. Any
-  // customer, cashier-confirmed; mutually exclusive with the Employee
-  // Appliance Loan above.
-  const [xDealChecked, setXDealChecked] = useState(false)
-  const [xDealReference, setXDealReference] = useState('')
-  // Read by the credit-application loader, whose effect closure would
-  // otherwise see the value from when it was scheduled.
-  const xDealCheckedRef = useRef(false)
-  useEffect(() => {
-    xDealCheckedRef.current = xDealChecked
-  }, [xDealChecked])
-  // A resumed parked X-Deal, held until its customer has been re-selected —
-  // selecting a customer resets the X-Deal (see the customer-change effect).
-  const pendingResumedXDealRef = useRef<{ reference: string } | null>(null)
-
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
   const [parkLabel, setParkLabel] = useState('')
@@ -985,9 +967,6 @@ export default function CheckoutPage() {
       financedBalance?: number | null
     }[]
     invoices?: PosTransactionInvoice[]
-    /** Scenario 67 */
-    isXDeal?: boolean
-    xDealReference?: string | null
   } | null>(null)
 
   // Pending manager approval (installment sale awaiting Release Form review)
@@ -998,9 +977,6 @@ export default function CheckoutPage() {
     /** Scenario 17 Part 7 — set only for installment sales, so
      * PendingApprovalScreen knows whether to show the Promissory Note card. */
     creditApplicationId?: string
-    /** Scenario 67 */
-    isXDeal?: boolean
-    xDealReference?: string | null
   } | null>(null)
 
   // Reserve mode success (Scenario 03, Part 3) — separate from `success`
@@ -1245,11 +1221,6 @@ export default function CheckoutPage() {
     if (handoff && belongsToAnOpenSession) {
       if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
         setCart(handoff.lines)
-        // Scenario 67 — restored once the customer below is re-selected.
-        if (handoff.isXDeal) {
-          pendingResumedXDealRef.current = { reference: handoff.xDealReference ?? '' }
-          setPaymentMode('installment')
-        }
       }
       clearCheckoutHandoff()
     }
@@ -1497,11 +1468,6 @@ export default function CheckoutPage() {
   // than automatically on every sale to that customer.
   const isEmployeeCustomer = selectedCustomer?.customerType === 'employee'
   const employeeApplianceLoanActive = isEmployeeCustomer && employeeApplianceLoanChecked
-  const xDealActive = !!selectedCustomer && xDealChecked
-  // Both collect nothing at the register: every down payment is ₱0 and the
-  // credit-application requirement is skipped.
-  const downPaymentWaived = employeeApplianceLoanActive || xDealActive
-  const downPaymentWaivedLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -1557,7 +1523,7 @@ export default function CheckoutPage() {
   // Scenario 60 — both totals collapse to 0 for an Employee Appliance
   // Loan, overriding whatever's left in downPaymentInput from before the
   // checkbox was checked; nothing is collected at the register for it.
-  const installmentDownPaymentsTotal = downPaymentWaived
+  const installmentDownPaymentsTotal = employeeApplianceLoanActive
     ? 0
     : Math.round(
         inhouseInstallmentCartLines.reduce(
@@ -1565,7 +1531,7 @@ export default function CheckoutPage() {
           0
         ) * 100
       ) / 100
-  const tpfDownPaymentsTotal = downPaymentWaived
+  const tpfDownPaymentsTotal = employeeApplianceLoanActive
     ? 0
     : Math.round(
         tpfInstallmentCartLines.reduce(
@@ -1731,7 +1697,7 @@ export default function CheckoutPage() {
         (l) =>
           `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}`
       )
-      .join('|') + `|dpWaived:${downPaymentWaived}`
+      .join('|') + `|employeeLoan:${employeeApplianceLoanActive}`
 
   // Approval happens in someone ELSE's session — only Business Owner holds
   // pos:application:approve — so "approve in another tab, come back to the
@@ -1797,14 +1763,8 @@ export default function CheckoutPage() {
     const customerId = selectedCustomer?.id ?? null
     if (lastEmployeeLoanCustomerIdRef.current === customerId) return
     lastEmployeeLoanCustomerIdRef.current = customerId
+    setEmployeeApplianceLoanChecked(isEmployeeCustomer)
     setHrApplianceLoanApplicationNumber('')
-    // Scenario 67 — same reset for the X-Deal, except when this customer is
-    // the one a resumed parked X-Deal was waiting for.
-    const resumedXDeal = customerId ? pendingResumedXDealRef.current : null
-    pendingResumedXDealRef.current = null
-    setXDealChecked(!!resumedXDeal)
-    setXDealReference(resumedXDeal?.reference ?? '')
-    setEmployeeApplianceLoanChecked(isEmployeeCustomer && !resumedXDeal)
   }, [selectedCustomer?.id, isEmployeeCustomer])
 
   // Scenario 17 Part 6 — reload this customer's approved, unused credit
@@ -1864,8 +1824,7 @@ export default function CheckoutPage() {
         //
         // Two or more is a real choice — which application this sale should
         // consume changes what gets marked used — so that still asks.
-        // Never for an X-Deal, which must not consume an application.
-        if (list.length === 1 && !xDealCheckedRef.current) {
+        if (list.length === 1) {
           setCreditApplicationId(list[0].id)
           applyCreditApplicationTerms(list[0].id, list)
         }
@@ -1925,7 +1884,9 @@ export default function CheckoutPage() {
       }
       installmentPreviewTimers.current[line.lineId] = setTimeout(async () => {
         setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: true }))
-        const downPayment = downPaymentWaived ? 0 : parseFloat(line.downPaymentInput ?? '0') || 0
+        const downPayment = employeeApplianceLoanActive
+          ? 0
+          : parseFloat(line.downPaymentInput ?? '0') || 0
         const res = await previewInstallment({
           totalAmount: lineAmount,
           downPayment,
@@ -2072,8 +2033,6 @@ export default function CheckoutPage() {
           lines: cart,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
-          isXDeal: xDealActive || undefined,
-          xDealReference: xDealActive ? xDealReference.trim() : undefined,
         },
       })
       if (!res.success) {
@@ -2330,25 +2289,6 @@ export default function CheckoutPage() {
         }
       })
     )
-  }
-
-  /**
-   * Scenario 67 — ticking X-Deal puts the whole cart in the only shape an
-   * X-Deal can take (inhouse installment, no credit application) rather than
-   * leaving the cashier to find out at Confirm. Unticking leaves the cart
-   * as it is; the usual down-payment floor and credit-application
-   * requirement simply apply again.
-   */
-  function toggleXDeal(on: boolean) {
-    setXDealChecked(on)
-    if (!on) return
-    setEmployeeApplianceLoanChecked(false)
-    setCreditApplicationId('')
-    setPaymentMode('installment')
-    if (cashSubMode === 'card') setCashSubMode('cash_on_hand')
-    const lineIds = cart.map((l) => l.lineId)
-    setLineInvoiceType(lineIds, 'installment')
-    setLineInstallmentProvider(lineIds, 'inhouse')
   }
 
   /**
@@ -2700,8 +2640,6 @@ export default function CheckoutPage() {
         lines: cart,
         customerId: selectedCustomer?.id,
         promoCodeId: promoResult?.promoCode?.id,
-        isXDeal: xDealActive || undefined,
-        xDealReference: xDealActive ? xDealReference.trim() : undefined,
       },
     })
     setParking(false)
@@ -2797,26 +2735,6 @@ export default function CheckoutPage() {
       return
     }
 
-    // Scenario 67 — the same cart-shape rules the backend enforces, checked
-    // here so the cashier gets a plain message instead of a rejected sale.
-    // The Payment Mode / provider locks below normally make the first two
-    // unreachable; these are the backstop for a cart that changed after
-    // X-Deal was ticked.
-    if (xDealActive) {
-      if (!xDealReference.trim()) {
-        setError('Enter the X-Deal reference.')
-        return
-      }
-      if (cart.some((l) => l.invoiceType !== 'installment' || l.installmentProvider === 'tpf')) {
-        setError('Every item in an X-Deal must be on inhouse installment.')
-        return
-      }
-      if (new Set(cart.map((l) => l.financingTermId ?? '')).size > 1) {
-        setError('Every item in an X-Deal must use the same financing term.')
-        return
-      }
-    }
-
     const lineMissingTerm = inhouseInstallmentCartLines.find((l) => !l.financingTermId)
     if (lineMissingTerm) {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
@@ -2826,7 +2744,7 @@ export default function CheckoutPage() {
       inhouseInstallmentCartLines.length > 0 &&
       !creditApplicationId &&
       !isGovernmentInstitutionalCustomer &&
-      !downPaymentWaived
+      !employeeApplianceLoanActive
     ) {
       setError(
         'Select the approved credit application for this customer — every installment sale requires one.'
@@ -2847,10 +2765,12 @@ export default function CheckoutPage() {
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-        const downPayment = downPaymentWaived ? 0 : parseFloat(l.downPaymentInput ?? '0') || 0
+        const downPayment = employeeApplianceLoanActive
+          ? 0
+          : parseFloat(l.downPaymentInput ?? '0') || 0
         // Scenario 60 — an Employee Appliance Loan waives the down payment
         // (and the ">0" / 10%-floor checks below) entirely.
-        if (!downPaymentWaived && downPayment <= 0) {
+        if (!employeeApplianceLoanActive && downPayment <= 0) {
           setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
           return
         }
@@ -2858,7 +2778,7 @@ export default function CheckoutPage() {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
-        if (!downPaymentWaived && downPayment < 0.1 * lineAmount - 0.005) {
+        if (!employeeApplianceLoanActive && downPayment < 0.1 * lineAmount - 0.005) {
           setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
           return
         }
@@ -2867,7 +2787,9 @@ export default function CheckoutPage() {
     for (const l of inhouseInstallmentCartLines) {
       const lineAmount =
         effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-      const downPayment = downPaymentWaived ? 0 : parseFloat(l.downPaymentInput ?? '0') || 0
+      const downPayment = employeeApplianceLoanActive
+        ? 0
+        : parseFloat(l.downPaymentInput ?? '0') || 0
       if (downPayment < 0 || downPayment > lineAmount) {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
         return
@@ -2877,7 +2799,7 @@ export default function CheckoutPage() {
       // the exact rounded-to-centavo value shown by the "Min" hint below
       // can land a hair under the true unrounded floor and be rejected.
       // Waived entirely for an Employee Appliance Loan (Scenario 60).
-      if (!downPaymentWaived && downPayment < 0.1 * lineAmount - 0.005) {
+      if (!employeeApplianceLoanActive && downPayment < 0.1 * lineAmount - 0.005) {
         setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
         return
       }
@@ -2885,8 +2807,7 @@ export default function CheckoutPage() {
 
     // Down payment — forced explicit choice before its amount can even be
     // tendered, same as before the down payment shared this pool.
-    // An X-Deal has no down payment, so there is nothing to choose a method for.
-    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !xDealActive) {
+    if (installmentCartLines.length > 0 && !installmentPaymentMethod) {
       setError('Choose how the down payment will be paid — Cash or Credit/Debit Card.')
       return
     }
@@ -3001,10 +2922,8 @@ export default function CheckoutPage() {
           // priceUseTypeId — every line below sends its own explicit value,
           // so the backend's transaction-level fallback (for older/other
           // callers) never needs to apply here.
-          // Never sent for an X-Deal — the backend rejects one outright, so
-          // a barter can never consume an application.
           creditApplicationId:
-            inhouseInstallmentCartLines.length > 0 && creditApplicationId && !xDealActive
+            inhouseInstallmentCartLines.length > 0 && creditApplicationId
               ? creditApplicationId
               : undefined,
           salesInvoiceNumber: invoiceNumberInput.trim(),
@@ -3047,8 +2966,6 @@ export default function CheckoutPage() {
           hrApplianceLoanApplicationNumber: employeeApplianceLoanActive
             ? hrApplianceLoanApplicationNumber.trim()
             : undefined,
-          isXDeal: xDealActive || undefined,
-          xDealReference: xDealActive ? xDealReference.trim() : undefined,
           // The approving manager's id is read back off the cart when the
           // component state that normally holds it is gone. A price override
           // writes to both: priceOverrideBy on the line (which is part of
@@ -3097,7 +3014,7 @@ export default function CheckoutPage() {
             // whatever was typed/defaulted before the checkbox was checked.
             downPayment:
               l.invoiceType === 'installment'
-                ? downPaymentWaived
+                ? employeeApplianceLoanActive
                   ? 0
                   : parseFloat(l.downPaymentInput ?? '0') || 0
                 : undefined,
@@ -3190,11 +3107,7 @@ export default function CheckoutPage() {
             totalAmount,
             serialLines: displayLines,
             creditApplicationId:
-              inhouseInstallmentCartLines.length > 0 && !xDealActive
-                ? creditApplicationId
-                : undefined,
-            isXDeal: xDealActive,
-            xDealReference: xDealActive ? xDealReference.trim() : null,
+              inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
           })
           return
         }
@@ -3374,8 +3287,6 @@ export default function CheckoutPage() {
         salesInvoiceNumber: txData?.salesInvoiceNumber ?? null,
         deliveryReceiptNumber: txData?.deliveryReceiptNumber ?? null,
         loyaltyEarned,
-        isXDeal: xDealActive,
-        xDealReference: xDealActive ? xDealReference.trim() : null,
         invoices: txData?.invoices ?? [],
         lineOutcomes: cart.map((l) => ({
           lineId: l.lineId,
@@ -3618,8 +3529,6 @@ export default function CheckoutPage() {
         totalAmount={pendingApproval.totalAmount}
         serialLines={pendingApproval.serialLines}
         creditApplicationId={pendingApproval.creditApplicationId}
-        isXDeal={pendingApproval.isXDeal}
-        xDealReference={pendingApproval.xDealReference}
         canSignPromissoryNote={canSignPromissoryNote}
         onReset={resetSale}
         fmt={fmt}
@@ -3991,7 +3900,6 @@ export default function CheckoutPage() {
                     )}
                     <button
                       onClick={clearCustomer}
-                      aria-label="Clear customer"
                       className="text-purple-300 hover:text-purple-600"
                     >
                       <X size={13} />
@@ -4124,10 +4032,7 @@ export default function CheckoutPage() {
                   <input
                     type="checkbox"
                     checked={employeeApplianceLoanChecked}
-                    onChange={(e) => {
-                      setEmployeeApplianceLoanChecked(e.target.checked)
-                      if (e.target.checked) setXDealChecked(false)
-                    }}
+                    onChange={(e) => setEmployeeApplianceLoanChecked(e.target.checked)}
                     className="mt-0.5"
                   />
                   <span>
@@ -4145,53 +4050,6 @@ export default function CheckoutPage() {
                     placeholder="HR Appliance Loan Application Number *"
                     value={hrApplianceLoanApplicationNumber}
                     onChange={(e) => setHrApplianceLoanApplicationNumber(e.target.value)}
-                  />
-                )}
-              </div>
-            )}
-
-            {/* Scenario 67 — any customer can be on the other side of a
-                barter, so unlike the employee loan above this isn't gated on
-                a customer tag. Offline is excluded: an installment sale
-                already can't complete offline, and the offline queue drops
-                sale-level flags. */}
-            {selectedCustomer && saleMode === 'sale' && (
-              <div
-                data-testid="x-deal-panel"
-                className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
-              >
-                <label className="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    data-testid="x-deal-checkbox"
-                    checked={xDealChecked}
-                    disabled={isOffline}
-                    onChange={(e) => toggleXDeal(e.target.checked)}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    <span className="font-medium text-prominent-purple-900">X-Deal (barter)</span>
-                    <span className="block text-gray-700">
-                      {isOffline
-                        ? 'Unavailable offline'
-                        : 'Inhouse installment, no down payment, no credit application — accounting clears the balance with an X-Deal credit memo'}
-                    </span>
-                  </span>
-                </label>
-                {xDealChecked && (
-                  <input
-                    data-testid="x-deal-reference"
-                    className="mt-2 w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    placeholder="X-Deal Reference (barter agreement no.) *"
-                    maxLength={100}
-                    value={xDealReference}
-                    onChange={(e) => {
-                      setXDealReference(e.target.value)
-                      // The "Enter the X-Deal reference." error would otherwise
-                      // linger beside a button that already reads "Create
-                      // Installment Plan", reading as if the reference were refused.
-                      if (error === 'Enter the X-Deal reference.') setError('')
-                    }}
                   />
                 )}
               </div>
@@ -4691,14 +4549,14 @@ export default function CheckoutPage() {
                         Government institutional customer — no credit application required.
                       </p>
                     )}
-                    {selectedCustomer && downPaymentWaived && (
+                    {selectedCustomer && employeeApplianceLoanActive && (
                       <p className="mt-2.5 text-[13px] text-prominent-purple-500">
-                        {downPaymentWaivedLabel} — no credit application required.
+                        Employee Appliance Loan — no credit application required.
                       </p>
                     )}
                     {selectedCustomer &&
                       !isGovernmentInstitutionalCustomer &&
-                      !downPaymentWaived && (
+                      !employeeApplianceLoanActive && (
                         <div className="mt-2.5">
                           <label className="mb-1 block text-[13px] text-prominent-purple-700">
                             Approved Credit Application
@@ -4789,13 +4647,6 @@ export default function CheckoutPage() {
                       <button
                         key={mode}
                         type="button"
-                        // Scenario 67 — an X-Deal is installment-only.
-                        disabled={xDealActive && mode !== 'installment'}
-                        title={
-                          xDealActive && mode !== 'installment'
-                            ? 'An X-Deal is always an inhouse installment sale'
-                            : undefined
-                        }
                         onClick={() => {
                           setPaymentMode(mode)
                           if (mode === 'installment' && cashSubMode === 'card')
@@ -4808,7 +4659,7 @@ export default function CheckoutPage() {
                         className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                           paymentMode === mode
                             ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                            : 'bg-white text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white'
+                            : 'bg-white text-gray-500 hover:bg-gray-100'
                         }`}
                       >
                         {mode === 'cash'
@@ -4850,7 +4701,7 @@ export default function CheckoutPage() {
                     line.priceListDownPayment != null
                       ? Math.round(Number(line.priceListDownPayment))
                       : null
-                  const downPaymentValue = downPaymentWaived
+                  const downPaymentValue = employeeApplianceLoanActive
                     ? 0
                     : line.downPaymentInput
                       ? parseFloat(line.downPaymentInput) || 0
@@ -4876,12 +4727,10 @@ export default function CheckoutPage() {
                               <button
                                 key={provider}
                                 onClick={() => setLineInstallmentProvider(groupLineIds, provider)}
-                                // Scenario 67 — an X-Deal is inhouse-only.
-                                disabled={xDealActive && provider === 'tpf'}
                                 className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
                                   groupProvider === provider
                                     ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-50'
+                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
                                 }`}
                               >
                                 {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
@@ -4910,7 +4759,7 @@ export default function CheckoutPage() {
                                   className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
                                 />
                               </div>
-                              {downPaymentWaived ? (
+                              {employeeApplianceLoanActive ? (
                                 <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="text-[13px] font-semibold text-prominent-purple-700">
@@ -4925,7 +4774,7 @@ export default function CheckoutPage() {
                                       {fmt(0)}
                                     </span>
                                     <span className="ml-2 text-xs text-prominent-purple-500">
-                                      {downPaymentWaivedLabel}
+                                      Employee Appliance Loan
                                     </span>
                                   </div>
                                 </div>
@@ -4991,7 +4840,7 @@ export default function CheckoutPage() {
                                   </div>
                                 </div>
                               )}
-                              {!downPaymentWaived && (
+                              {!employeeApplianceLoanActive && (
                                 <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                   <span className="text-prominent-purple-400">●</span>
                                   {curatedDownPaymentWhole !== null
@@ -5027,7 +4876,7 @@ export default function CheckoutPage() {
                           )}
                           {groupProvider === 'tpf' && (
                             <>
-                              {downPaymentWaived ? (
+                              {employeeApplianceLoanActive ? (
                                 <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="text-[13px] font-semibold text-prominent-purple-700">
@@ -5042,7 +4891,7 @@ export default function CheckoutPage() {
                                       {fmt(0)}
                                     </span>
                                     <span className="ml-2 text-xs text-prominent-purple-500">
-                                      {downPaymentWaivedLabel}
+                                      Employee Appliance Loan
                                     </span>
                                   </div>
                                 </div>
@@ -5180,7 +5029,7 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 )}
-                {installmentCartLines.length > 0 && !xDealActive && (
+                {installmentCartLines.length > 0 && (
                   <div
                     data-testid="dp-payment-mode-toggle"
                     className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
@@ -5636,15 +5485,14 @@ export default function CheckoutPage() {
                 inhouseInstallmentCartLines.length > 0 &&
                 !creditApplicationId &&
                 !isGovernmentInstitutionalCustomer &&
-                !downPaymentWaived
+                !employeeApplianceLoanActive
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
               const tpfMissingDownPayment =
-                !downPaymentWaived &&
+                !employeeApplianceLoanActive &&
                 tpfInstallmentCartLines.some((l) => !(parseFloat(l.downPaymentInput ?? '0') > 0))
               const missingHrLoanNumber =
                 employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
-              const missingXDealReference = xDealActive && !xDealReference.trim()
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
 
@@ -5673,8 +5521,7 @@ export default function CheckoutPage() {
                               ? 'Select an approved credit application'
                               : saleMode === 'sale' &&
                                   installmentCartLines.length > 0 &&
-                                  !installmentPaymentMethod &&
-                                  !xDealActive
+                                  !installmentPaymentMethod
                                 ? 'Choose a down payment method'
                                 : saleMode === 'sale' && tpfMissingReference
                                   ? 'Select a TPF provider and enter a reference number'
@@ -5682,27 +5529,25 @@ export default function CheckoutPage() {
                                     ? 'Enter the down payment for the TPF-financed item(s)'
                                     : saleMode === 'sale' && missingHrLoanNumber
                                       ? 'Enter the HR appliance loan application number'
-                                      : saleMode === 'sale' && missingXDealReference
-                                        ? 'Enter the X-Deal reference'
-                                        : saleMode === 'sale' &&
-                                            !hasChargeOrInstallmentLine &&
-                                            !selectedCustomer
-                                          ? 'Select a customer'
-                                          : saleMode === 'sale' && balance > 0.009
-                                            ? `Underpaid by ${fmt(balance)}`
-                                            : saleMode === 'sale' && loyaltyOverBalance
-                                              ? 'Insufficient loyalty points'
-                                              : needsManagerOverride && !managerOverrideApproved
-                                                ? 'Manager override required'
-                                                : cart.some((l) => l.isSerialTracked)
-                                                  ? 'Checkout'
-                                                  : saleMode === 'reserve'
-                                                    ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                    : allCharge
-                                                      ? 'Issue Charge Invoice'
-                                                      : allInstallment
-                                                        ? 'Create Installment Plan'
-                                                        : 'Confirm Sale'
+                                      : saleMode === 'sale' &&
+                                          !hasChargeOrInstallmentLine &&
+                                          !selectedCustomer
+                                        ? 'Select a customer'
+                                        : saleMode === 'sale' && balance > 0.009
+                                          ? `Underpaid by ${fmt(balance)}`
+                                          : saleMode === 'sale' && loyaltyOverBalance
+                                            ? 'Insufficient loyalty points'
+                                            : needsManagerOverride && !managerOverrideApproved
+                                              ? 'Manager override required'
+                                              : cart.some((l) => l.isSerialTracked)
+                                                ? 'Checkout'
+                                                : saleMode === 'reserve'
+                                                  ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                  : allCharge
+                                                    ? 'Issue Charge Invoice'
+                                                    : allInstallment
+                                                      ? 'Create Installment Plan'
+                                                      : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'
@@ -6479,9 +6324,6 @@ function SuccessScreen({
       financedBalance?: number | null
     }[]
     invoices?: PosTransactionInvoice[]
-    /** Scenario 67 */
-    isXDeal?: boolean
-    xDealReference?: string | null
   }
   totalAmount: number
   selectedCustomer: PosCustomer | null
@@ -6598,11 +6440,6 @@ function SuccessScreen({
                         ? 'Sale Complete — Mixed'
                         : 'Sale Complete'}
               </p>
-              {success.isXDeal && (
-                <div className="mt-2 flex justify-center">
-                  <XDealBadge reference={success.xDealReference} />
-                </div>
-              )}
               {success.offlineBuffered ? (
                 <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
               ) : hasChargeOrInstallment ? (
@@ -6923,8 +6760,6 @@ function PendingApprovalScreen({
   totalAmount,
   serialLines,
   creditApplicationId,
-  isXDeal,
-  xDealReference,
   canSignPromissoryNote,
   onReset,
   fmt,
@@ -6933,8 +6768,6 @@ function PendingApprovalScreen({
   totalAmount: number
   serialLines: { itemName: string; serialNumberLabel?: string }[]
   creditApplicationId?: string
-  isXDeal?: boolean
-  xDealReference?: string | null
   canSignPromissoryNote: boolean
   onReset: () => void
   fmt: (n: number) => string
@@ -6999,11 +6832,6 @@ function PendingApprovalScreen({
           <p className="mt-1 text-sm text-amber-600">
             Waiting for a Business Owner or Branch Manager to review.
           </p>
-          {isXDeal && (
-            <div className="mt-2 flex justify-center">
-              <XDealBadge reference={xDealReference} />
-            </div>
-          )}
         </div>
 
         <div className="w-full space-y-2 rounded-xl bg-gray-50 px-5 py-4 text-left">
