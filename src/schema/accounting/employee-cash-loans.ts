@@ -32,6 +32,16 @@ export type EmployeeCashLoanPayment = {
   createdAt: string
 }
 
+/** A payroll deduction that settled (part of) this loan. Amounts arrive as
+ * decimal strings, so read them through Number(). */
+export type EmployeeCashLoanDeduction = {
+  id: string
+  expenseId: string
+  expenseNumber: string
+  amount: number | string
+  deductedAt: string
+}
+
 export type EmployeeCashLoanStatus = 'ACTIVE' | 'PAID_OFF' | 'CANCELLED'
 
 // EMPLOYEE — a real HR Employee, recovered later via payroll/Accounting (no
@@ -69,6 +79,7 @@ export type EmployeeCashLoan = {
   journalEntryId?: string | null
   scheduleLines: EmployeeCashLoanScheduleLine[]
   payments: EmployeeCashLoanPayment[]
+  deductions?: EmployeeCashLoanDeduction[]
   createdAt: string
 }
 

@@ -243,7 +243,7 @@ export default function CalendarWidget() {
           <ChevronLeft className="h-4 w-4 text-zinc-500" />
         </button>
       </div>
-      <p className="shrink-0 text-center text-sm font-semibold text-zinc-900">
+      <p className="shrink-0 text-center text-sm font-semibold text-prominent-purple-900">
         {monthName} {year}
       </p>
       <div className="flex flex-1 items-center justify-end gap-2">
@@ -269,20 +269,20 @@ export default function CalendarWidget() {
       {/* Nav bar rendered once and shared by both views — its measured
           height (navRowRef) is what the content area below sizes itself
           against, so switching views can't leave this out of sync. */}
-      <div ref={navRowRef} className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+      <div ref={navRowRef} className="rounded-2xl border border-purple-100/70 bg-white shadow-sm">
         {navRow}
       </div>
 
       {view === 'calendar' && (
         <div
-          className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
+          className="flex flex-col overflow-hidden rounded-2xl border border-purple-100/70 bg-white shadow-sm"
           style={{ height: contentAreaHeightPx }}
         >
-          <div className="grid shrink-0 grid-cols-7 border-b border-zinc-200 bg-zinc-50">
+          <div className="grid shrink-0 grid-cols-7 border-b border-purple-100/70 bg-purple-50/50">
             {DAYS.map((d) => (
               <div
                 key={d}
-                className="border-r border-zinc-200 py-2 text-center text-[11px] font-semibold text-zinc-400 last:border-r-0"
+                className="py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-purple-400"
               >
                 {d}
               </div>
@@ -306,18 +306,18 @@ export default function CalendarWidget() {
                 <div
                   key={i}
                   onClick={day !== null ? (e) => handleCellClick(day, e) : undefined}
-                  className={`flex flex-col items-center justify-center gap-1 border-b border-r border-zinc-100 last:border-r-0 ${
+                  className={`flex flex-col items-center justify-center gap-1 border-b border-r border-purple-50 last:border-r-0 ${
                     day === null
-                      ? 'bg-zinc-50/60'
-                      : `cursor-pointer ${isSelected ? 'bg-purple-50' : 'hover:bg-zinc-50'}`
+                      ? 'bg-purple-50/20'
+                      : `cursor-pointer ${isSelected ? 'bg-purple-50' : 'hover:bg-purple-50/50'}`
                   }`}
                 >
                   {day !== null && (
                     <>
                       <span
-                        className={`flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-medium ${
+                        className={`flex h-7 w-7 items-center justify-center rounded-full text-[13px] font-medium ${
                           isToday
-                            ? 'bg-prominent-purple-700 font-bold text-white'
+                            ? 'bg-gradient-to-br from-purple-700 to-purple-500 font-bold text-white shadow-md shadow-purple-300/60'
                             : isSelected
                               ? 'bg-purple-100 text-prominent-purple-700'
                               : 'text-zinc-700'
@@ -325,7 +325,7 @@ export default function CalendarWidget() {
                       >
                         {day}
                       </span>
-                      <span className="flex items-center gap-0.5">
+                      <span className="flex h-1.5 items-center gap-0.5">
                         {hasOwnEvent && (
                           <span className="h-1.5 w-1.5 rounded-full bg-prominent-purple-500" />
                         )}
@@ -342,7 +342,7 @@ export default function CalendarWidget() {
 
       {view === 'events' &&
         (monthEvents.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-300 bg-white py-8 text-center shadow-sm">
+          <div className="rounded-2xl border border-dashed border-purple-200 bg-white py-8 text-center shadow-sm">
             <p className="text-xs font-medium text-zinc-500">No events this month.</p>
           </div>
         ) : (
@@ -375,7 +375,7 @@ export default function CalendarWidget() {
               return (
                 <div
                   key={key}
-                  className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+                  className="rounded-2xl border border-purple-100/70 bg-white p-4 shadow-sm"
                   style={{ scrollSnapAlign: 'start' }}
                 >
                   <p

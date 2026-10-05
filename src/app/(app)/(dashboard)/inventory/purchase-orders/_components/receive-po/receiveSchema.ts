@@ -104,8 +104,6 @@ export const ReceivePoFormSchema = z.object({
   // our own fleet, for branch-to-branch transfers, and a supplier's crew will
   // never be on it. Same pair the direct-receive form carries, so a receipt
   // raised against a PO prints the same line as one raised without.
-  driverName: z.string().max(150).optional(),
-  helperName: z.string().max(150).optional(),
   lines: z.array(ReceivePoLineSchema).min(1),
 })
 
