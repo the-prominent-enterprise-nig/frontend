@@ -1985,9 +1985,46 @@ export type BankReconciliationLineSourceType =
   | 'AR_PAYMENT'
   | 'AP_PAYMENT'
   | 'CLEARING_SETTLEMENT'
+  | 'FUND_TRANSFER_OUT'
+  | 'FUND_TRANSFER_IN'
   /** Scenario 61 Part 6 — a cleared POS deposit, on its deposit date. */
   | 'POS_DEPOSIT'
 export type BankReconciliationLineDirection = 'DEPOSIT' | 'WITHDRAWAL'
+
+/**
+ * Scenario 61 Part C — the bank side of a reconciliation. A checked line has
+ * cleared (it is already in the statement balance); an unchecked one is
+ * outstanding: deposits in transit are added, outstanding withdrawals and
+ * checks subtracted. Mirrors the backend's adjustedStatementBalance().
+ */
+export function adjustedStatementBalance(
+  statementBalance: number,
+  lines: { checked: boolean; direction: BankReconciliationLineDirection; amount: number }[]
+): number {
+  return lines
+    .filter((l) => !l.checked)
+    .reduce(
+      (bal, l) => (l.direction === 'DEPOSIT' ? bal + l.amount : bal - l.amount),
+      statementBalance
+    )
+}
+
+/**
+ * Scenario 61 Part C — RECONCILED is never picked by hand: it is set only by
+ * Mark Reconciled, which the backend refuses unless the difference is zero.
+ * Until then a worksheet is In Progress (still a difference) or For Review
+ * (zero — ready for someone to sign it off).
+ */
+export type ReconStatus = 'Reconciled' | 'For Review' | 'In Progress'
+export function reconStatus(reconciled: boolean, discrepancy: number): ReconStatus {
+  if (reconciled) return 'Reconciled'
+  return Math.abs(discrepancy) < 0.01 ? 'For Review' : 'In Progress'
+}
+export const RECON_STATUS_STYLE: Record<ReconStatus, string> = {
+  Reconciled: 'text-emerald-700 font-medium',
+  'For Review': 'text-blue-700 font-medium',
+  'In Progress': 'text-amber-700 font-medium',
+}
 export interface BankReconciliationLine {
   id: string
   bankReconciliationId: string
@@ -2028,6 +2065,10 @@ export interface BankLedgerEntry {
   credit: number
   balance: number | null
   journalEntryId?: string | null
+  /** Scenario 61 Part C — CLEARED / OUTSTANDING for a reconciling item
+   * (collection, check payment, settlement, transfer); null for anything
+   * that isn't one (bank charges, adjusting entries, deposits…). */
+  clearingStatus?: 'CLEARED' | 'OUTSTANDING' | null
 }
 export interface BankLedgerWindow {
   bankAccount: { id: string; name: string; glAccountId: string | null }
@@ -2234,20 +2275,71 @@ export const BankAdjusting = {
     amount: number
     date: string
     description?: string
+    // Scenario 61 Part C — printed on the adjusting entry's voucher.
+    voucherControlNo: string
   }) => api.post<any>('/bank-accounts/adjusting-entry', body),
+}
+
+// Scenario 61 Part C — printable Journal Voucher for any journal entry
+// (bank adjusting entries, unidentified bank credits, reprints).
+export const JournalVouchers = {
+  getDocument: (journalEntryId: string) =>
+    api.get<unknown>(`/journal-entries/${journalEntryId}/document`),
 }
 
 // Scenario 40 Gap 5 — inter-account transfer (e.g. funding a Petty Cash
 // Fund / the Revolving Fund from the main operating account).
+// Scenario 61 — Inter-Account Transfer (formerly "Fund Transfer"). Now a
+// persisted record with a history, a voucher, and a limited edit.
+export type FundTransferBank = Pick<
+  BankAccount,
+  'id' | 'name' | 'bankName' | 'accountNumber' | 'accountType'
+>
+
+export interface FundTransfer {
+  id: string
+  transferNumber: string
+  date: string
+  clearingDate: string | null
+  sourceBankAccountId: string
+  destinationBankAccountId: string
+  sourceBankAccount: FundTransferBank
+  destinationBankAccount: FundTransferBank
+  amount: number
+  reference: string | null
+  description: string | null
+  journalEntryId: string | null
+  createdById: string | null
+  sourceClearedAt: string | null
+  destinationClearedAt: string | null
+  // Detail only.
+  sourceClearedInReconciliation?: { id: string; statementDate: string } | null
+  destinationClearedInReconciliation?: { id: string; statementDate: string } | null
+  journalEntry?: { id: string; code: string; status: string } | null
+  createdAt: string
+}
+
 export const BankTransfers = {
   create: (body: {
     sourceBankAccountId: string
     destinationBankAccountId: string
     amount: number
     date: string
+    clearingDate?: string
     reference?: string
     description?: string
-  }) => api.post<any>('/bank-accounts/transfer', body),
+  }) => api.post<FundTransfer>('/bank-accounts/transfer', body),
+  list: (params?: {
+    bankAccountId?: string
+    startDate?: string
+    endDate?: string
+    search?: string
+  }) => api.get<FundTransfer[]>('/bank-accounts/transfers', params),
+  get: (id: string) => api.get<FundTransfer>(`/bank-accounts/transfers/${id}`),
+  // Only these two fields are editable once posted; null clears a field.
+  update: (id: string, body: { clearingDate?: string | null; reference?: string | null }) =>
+    api.patch<FundTransfer>(`/bank-accounts/transfers/${id}`, body),
+  getDocument: (id: string) => api.get<unknown>(`/bank-accounts/transfers/${id}/document`),
 }
 
 // ============ Clearing Settlements & Unidentified Bank Credits (Scenario 38 Gap 1) ============
@@ -2275,6 +2367,7 @@ export interface UnidentifiedBankCredit {
   amount: number
   creditDate: string
   bankRef?: string | null
+  voucherControlNo?: string | null
   status: 'unmatched' | 'reclassified'
   reclassifiedNote?: string | null
   reclassifiedAt?: string | null
@@ -2345,8 +2438,13 @@ export const UnidentifiedBankCredits = {
       '/bank-accounts/unidentified-bank-credits',
       status ? { status } : undefined
     ),
-  record: (body: { bankAccountId: string; amount: number; creditDate: string; bankRef?: string }) =>
-    api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
+  record: (body: {
+    bankAccountId: string
+    amount: number
+    creditDate: string
+    bankRef?: string
+    voucherControlNo: string
+  }) => api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
   reclassify: (id: string, body: { targetType: ClearingSettlementType; tpfProviderId?: string }) =>
     api.post<UnidentifiedBankCredit>(
       `/bank-accounts/unidentified-bank-credits/${id}/reclassify`,

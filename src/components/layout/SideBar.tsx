@@ -420,11 +420,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
       // Its own entry, not a button on Bank Reconciliation: moving money
       // between two fund accounts is a disbursement, not part of agreeing a
       // statement to the books.
+      // Scenario 61 — renamed from "Fund Transfer"; now lands on the
+      // transfer history, readable by anyone who can see bank accounts.
       {
-        label: 'Fund Transfer',
+        label: 'Inter-Account Transfer',
         href: '/accounting/fund-transfers',
         icon: Landmark,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
+        requiredPermission: [
+          ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
+          ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
+        ],
       },
     ],
     bottom: [],

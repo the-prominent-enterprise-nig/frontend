@@ -11,28 +11,39 @@ import {
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
 
+const today = () => new Date().toISOString().slice(0, 10)
+const emptyForm = () => ({
+  date: today(),
+  clearingDate: '',
+  sourceBankAccountId: '',
+  destinationBankAccountId: '',
+  amount: '',
+  reference: '',
+  description: '',
+})
+
 // Scenario 40 Gap 5 (Option B) — a real inter-account transfer, e.g.
 // funding a branch's Petty Cash Fund or the Revolving Fund from the main
 // operating account. Full page from the start, per the same developer
 // feedback that moved the Expense form off a modal (2026-08-31).
+//
+// Scenario 61 — renamed from "Fund Transfer", gains a Clearing Date, and on
+// success lands on the new transfer's own page with a "Transfer recorded"
+// banner and its printable voucher — a page, not a pop-up (client UI/UX
+// direction: no modals).
 export default function FundTransferForm() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<BankAccount[]>([])
-  const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
-    sourceBankAccountId: '',
-    destinationBankAccountId: '',
-    amount: '',
-    reference: '',
-    description: '',
-  })
+  const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadAccounts = () =>
     BankAccounts.list().then((res) => {
       if (res.success && res.data) setAccounts(res.data)
     })
+  useEffect(() => {
+    loadAccounts()
   }, [])
 
   const source = accounts.find((a) => a.id === form.sourceBankAccountId)
@@ -45,6 +56,8 @@ export default function FundTransferForm() {
     if (form.sourceBankAccountId === form.destinationBankAccountId)
       return 'Source and destination must be different accounts.'
     if (amount <= 0) return 'Enter an amount greater than 0.'
+    if (form.clearingDate && form.clearingDate < form.date)
+      return 'Clearing date cannot be earlier than the transfer date.'
     return null
   }
 
@@ -62,28 +75,29 @@ export default function FundTransferForm() {
       destinationBankAccountId: form.destinationBankAccountId,
       amount,
       date: form.date,
+      clearingDate: form.clearingDate || undefined,
       reference: form.reference || undefined,
       description: form.description || undefined,
     })
     setSaving(false)
-    if (!res.success) {
+    if (!res.success || !res.data) {
       setError(res.message || res.error || 'Transfer failed — check Account Mapping settings')
       return
     }
-    router.push('/accounting/bank-accounts')
+    router.push(`/accounting/fund-transfers/${res.data.id}?created=1`)
   }
 
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href="/accounting/bank-accounts"
+        href="/accounting/fund-transfers"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to bank accounts
+        Back to transfer history
       </Link>
 
-      <h1 className="text-2xl font-semibold text-gray-900">Fund Transfer</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Inter-Account Transfer</h1>
       <p className="mt-1 text-sm text-gray-500">
         Move money between two bank/fund accounts — e.g. funding a branch&apos;s Petty Cash Fund or
         the Revolving Fund. Posts a journal entry and updates both accounts&apos; balances.
@@ -93,7 +107,7 @@ export default function FundTransferForm() {
         onSubmit={submit}
         className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-6"
       >
-        <div className="max-w-xs">
+        <div className="grid max-w-xl grid-cols-2 gap-4">
           <Field label="Date *">
             <input
               required
@@ -102,6 +116,18 @@ export default function FundTransferForm() {
               onChange={(e) => setForm({ ...form, date: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
+          </Field>
+          <Field label="Clearing Date">
+            <input
+              type="date"
+              min={form.date}
+              value={form.clearingDate}
+              onChange={(e) => setForm({ ...form, clearingDate: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+            <p className="mt-1 text-[12px] text-gray-500">
+              When it cleared the bank. Can be filled in later.
+            </p>
           </Field>
         </div>
 
@@ -184,7 +210,7 @@ export default function FundTransferForm() {
         )}
         <div className="flex justify-end gap-2 pt-3 border-t">
           <Link
-            href="/accounting/bank-accounts"
+            href="/accounting/fund-transfers"
             className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg text-gray-700"
           >
             Cancel
