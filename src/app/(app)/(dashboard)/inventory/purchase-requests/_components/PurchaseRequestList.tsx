@@ -228,9 +228,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         {/* ── Header ───────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Purchase Requests</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Requests</h1>
             <p className="text-[13px] text-[#5b5b6b]">
-              Manage and track purchase requests across your organisation
+              Manage and track stock requests across your organisation
             </p>
           </div>
           {canCreate && (
@@ -240,7 +240,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
               className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-4 py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
             >
               <Plus className="h-4 w-4" />
-              New Purchase
+              New Stock Request
             </button>
           )}
         </div>
@@ -321,7 +321,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
               <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
                 <div className="h-[30px] w-[30px] rounded-lg border border-[#e4e4e9] bg-[#fbfbfc]" />
                 <div className="mt-1 text-[14px] font-semibold">
-                  No purchase requests match your filters
+                  No stock requests match your filters
                 </div>
                 <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
                   {search
@@ -339,9 +339,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
             ) : (
               <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
                 <div className="h-[34px] w-[34px] rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]" />
-                <div className="mt-1 text-[15px] font-semibold">No purchase requests yet</div>
+                <div className="mt-1 text-[15px] font-semibold">No stock requests yet</div>
                 <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
-                  Purchase requests appear here once someone raises one. Submitted requests convert
+                  Stock requests appear here once someone raises one. Submitted requests convert
                   into a purchase order automatically.
                 </div>
                 {canCreate && (
@@ -350,7 +350,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                     onClick={() => setShowCreateModal(true)}
                     className="mt-3.5 rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
                   >
-                    + New Purchase
+                    + New Stock Request
                   </button>
                 )}
               </div>
@@ -541,11 +541,11 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
       <ConfirmActionModal
         open={submittingPr !== null}
         onClose={() => setSubmittingPr(null)}
-        title="Submit Purchase Request"
+        title="Submit Stock Request"
         icon={<Send className="h-5 w-5" />}
         iconColorClass="text-[#5b21b6]"
         summary={<p className="text-sm font-medium text-zinc-900">{submittingPr?.code}</p>}
-        message="This sends the purchase request into the approval queue — you won't be able to edit it as a draft afterward."
+        message="This sends the stock request into the approval queue — you won't be able to edit it as a draft afterward."
         confirmLabel="Submit"
         confirmingLabel="Submitting…"
         confirmButtonClass="bg-[#5b21b6] hover:bg-[#4a189b]"

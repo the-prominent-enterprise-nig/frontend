@@ -365,11 +365,11 @@ export default function TransferList({ session }: { session: SessionUser }) {
 
   return (
     <div className={`${PLEX} min-h-full w-full bg-zinc-50 text-[#17171c] antialiased`}>
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-[14px] px-[22px] pb-[26px] pt-[18px]">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-[14px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">Stock Transfers</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Transfers</h1>
             <p className="text-[13px] text-[#5b5b6b]">
               Move stock between branches with full ledger traceability.
             </p>

@@ -236,15 +236,13 @@ export default function UdsList({ session }: { session: SessionUser }) {
   }
 
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
+    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
       <div className="mx-auto max-w-7xl space-y-6">
         {/* Same header chrome as Stock Returns and Stock Transfers — these
             three inventory movement screens share one surface. */}
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[#17171c]">
-              Unit Document Sheets
-            </h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Unit Document Sheets</h1>
             <p className="text-[13px] text-[#5b5b6b]">
               Track units leaving the branch for repair, pull-out, maintenance, or loan.
             </p>

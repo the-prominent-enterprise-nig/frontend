@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
 import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
@@ -23,8 +24,6 @@ import {
   FileBarChart,
   FileCheck2,
   FilePlus,
-  PackageX,
-  ClipboardCheck,
   HandCoins,
   House,
   IdCard,
@@ -48,8 +47,6 @@ import {
   ShoppingBag,
   ShoppingCart,
   Tag,
-  Tags,
-  Truck,
   Undo2,
   Users,
   UsersRound,
@@ -73,7 +70,12 @@ type NavItem = {
   icon: LucideIcon
   requiredPermission?: string | string[]
   badge?: { text: string; variant: 'count' | 'new'; color?: string }
-  subItems?: Array<{ label: string; href: string; icon: LucideIcon }>
+  subItems?: Array<{
+    label: string
+    href: string
+    icon: LucideIcon
+    requiredPermission?: string | string[]
+  }>
   section?: string
   activeWhen?: string[]
   usePrefix?: boolean
@@ -116,100 +118,53 @@ const navItemsBySegment: Record<string, NavConfig> = {
   inventory: {
     main: [
       {
-        label: 'Stock',
-        href: '/inventory/stock',
-        icon: Package,
-        requiredPermission: INVENTORY_PERMISSIONS.STOCKS_READ,
-      },
-      {
-        label: 'Catalog',
+        label: 'Item Master',
         href: '/inventory/catalog',
         icon: Tag,
         requiredPermission: INVENTORY_PERMISSIONS.ITEMS_READ,
       },
       {
-        label: 'Price Lists',
-        href: '/inventory/price-lists',
-        icon: Tags,
-        requiredPermission: INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
+        label: 'Stock Ledger',
+        href: '/inventory/stock',
+        icon: BookOpen,
+        requiredPermission: [INVENTORY_PERMISSIONS.STOCKS_READ, INVENTORY_PERMISSIONS.RECEIVE_READ],
       },
       {
-        label: 'Purchase Orders',
-        href: '/inventory/purchase-orders',
-        icon: ShoppingCart,
-        requiredPermission: [PROCUREMENT_PERMISSIONS.PO_READ, PROCUREMENT_PERMISSIONS.PR_READ],
-        activeWhen: ['/inventory/purchase-orders'],
-      },
-      {
-        label: 'Stock Transfers',
-        href: '/inventory/operations',
+        label: 'Stock Transaction',
+        href: '/inventory/stock-transaction',
         icon: ArrowLeftRight,
         requiredPermission: [
-          INVENTORY_PERMISSIONS.TRANSFERS_READ,
           INVENTORY_PERMISSIONS.RECEIVE_READ,
+          INVENTORY_PERMISSIONS.TRANSFERS_READ,
           INVENTORY_PERMISSIONS.RETURNS_READ,
-          INVENTORY_PERMISSIONS.QUALITY_HOLD_READ,
-          INVENTORY_PERMISSIONS.BACKORDERS_READ,
-          INVENTORY_PERMISSIONS.STOCK_ADJUST,
-          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_CONFIRM,
-          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_INVESTIGATE,
-          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_APPROVE,
+          INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ,
+          INVENTORY_PERMISSIONS.UDS_READ,
+          PROCUREMENT_PERMISSIONS.PO_READ,
+          PROCUREMENT_PERMISSIONS.PR_READ,
         ],
       },
       {
-        label: 'Debit Memos',
-        href: '/inventory/debit-memos',
-        icon: PackageX,
-        requiredPermission: INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ,
+        label: 'Master Data',
+        href: '/inventory/master-data',
+        icon: Layers,
+        requiredPermission: [
+          INVENTORY_PERMISSIONS.WAREHOUSES_READ,
+          INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
+          INVENTORY_PERMISSIONS.COSTING_READ,
+          INVENTORY_PERMISSIONS.COSTING_CONFIGURE,
+          INVENTORY_PERMISSIONS.WILDCARD,
+          PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
+        ],
       },
       {
-        label: 'Suppliers',
-        href: '/inventory/suppliers',
-        icon: Truck,
-        requiredPermission: PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
-      },
-      // Counting is hidden from the nav for now. The route and its page are
-      // untouched — /inventory/counting still loads, it is just not linked.
-      // The entry carries no `section` marker, so commenting it out leaves
-      // every group heading where it was.
-      // {
-      //   label: 'Counting',
-      //   href: '/inventory/counting',
-      //   icon: RefreshCcw,
-      //   requiredPermission: INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
-      // },
-      // Finance is hidden from the nav for now, same as Counting above. The
-      // route and its page are untouched — /inventory/finance still loads, it
-      // is just not linked.
-      // {
-      //   label: 'Finance',
-      //   href: '/inventory/finance',
-      //   icon: Coins,
-      //   requiredPermission: INVENTORY_PERMISSIONS.COSTING_READ,
-      // },
-      {
-        label: 'Warehouses',
-        href: '/inventory/warehouses',
-        icon: Warehouse,
-        requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSES_READ,
-      },
-      {
-        label: 'Unit Documents',
-        href: '/inventory/uds',
-        icon: ClipboardCheck,
-        requiredPermission: INVENTORY_PERMISSIONS.UDS_READ,
-      },
-      {
-        label: 'Reports',
+        label: 'Stock Report',
         href: '/inventory/reports',
         icon: FileBarChart,
         requiredPermission: INVENTORY_PERMISSIONS.REPORTS_VALUATION,
       },
-      {
-        label: 'Settings',
-        href: '/inventory/settings',
-        icon: Settings,
-      },
+      // Counting and Finance are hidden from the nav. Their routes still load:
+      // /inventory/counting (Stock Adjustments is linked from Stock Transaction
+      // above), /inventory/finance.
     ],
     bottom: [],
   },
@@ -742,6 +697,42 @@ function NavLink({
   )
 }
 
+function FlyoutPanel({
+  item,
+  pathname,
+  onPick,
+}: {
+  item: NavItem
+  pathname: string
+  onPick: () => void
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+      <p className="border-b border-zinc-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        {item.label}
+      </p>
+      {item.subItems?.map((sub) => {
+        const subActive = pathname === sub.href
+        return (
+          <Link
+            key={sub.href}
+            href={sub.href}
+            onClick={onPick}
+            className={`flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors ${
+              subActive
+                ? 'bg-prominent-orange-50 text-prominent-orange-700'
+                : 'text-zinc-700 hover:bg-zinc-50'
+            }`}
+          >
+            <sub.icon className="h-4 w-4 shrink-0" />
+            {sub.label}
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
 function AdminSettingsDropdownItem({
   item,
   pathname,
@@ -756,14 +747,51 @@ function AdminSettingsDropdownItem({
   isMobile?: boolean
 }) {
   const isActive = item.subItems?.some((s) => pathname === s.href) ?? pathname === item.href
+  const triggerRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null)
+
+  // Click outside or Escape closes an open desktop panel.
+  useEffect(() => {
+    if (!anchor) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return
+      setAnchor(null)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAnchor(null)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [anchor])
+
+  // The sidebar's nav list scrolls, which clips anything absolutely positioned
+  // inside it. Desktop panels therefore render in a portal at the trigger's
+  // screen position; mobile keeps the in-place flyout.
+  const togglePanel = () => {
+    if (anchor) return setAnchor(null)
+    const rect = triggerRef.current?.getBoundingClientRect()
+    if (rect) setAnchor({ top: rect.top, left: rect.right })
+  }
+  const pickSubItem = () => {
+    setAnchor(null)
+    onClick?.()
+  }
 
   return (
     <div className="relative group/dropdown">
       {/* Trigger — not a link, just a visual row */}
       <div
-        className={`flex cursor-default items-center gap-2.5 rounded-lg px-2 py-1.5 transition-all duration-150 ${
+        ref={triggerRef}
+        onClick={isMobile ? undefined : togglePanel}
+        className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 transition-all duration-150 ${
           collapsed ? 'justify-center' : ''
-        } ${isActive ? 'bg-prominent-orange-200/20' : isMobile ? 'hover:bg-gray-100' : 'hover:bg-gray-100/20'}`}
+        } ${isActive ? 'bg-prominent-orange-200/20' : isMobile ? 'hover:bg-gray-100' : ''}`}
       >
         <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
           <item.icon
@@ -771,10 +799,7 @@ function AdminSettingsDropdownItem({
           />
         </span>
         {!collapsed && !isMobile && (
-          <>
-            <span className="flex-1 text-[13px] font-medium text-white">{item.label}</span>
-            <ChevronUp className="h-3 w-3 text-white/50" />
-          </>
+          <span className="flex-1 text-[13px] font-medium text-white">{item.label}</span>
         )}
         {!collapsed && isMobile && (
           <>
@@ -788,36 +813,24 @@ function AdminSettingsDropdownItem({
         )}
       </div>
 
-      {/* Flyout — upward on desktop, right when collapsed */}
-      <div
-        className={`pointer-events-none absolute z-50 opacity-0 transition-all duration-150 group-hover/dropdown:pointer-events-auto group-hover/dropdown:opacity-100 ${
-          collapsed ? 'left-full top-0 min-w-45 pl-3' : 'bottom-full left-0 w-full pb-2'
-        }`}
-      >
-        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
-          <p className="border-b border-zinc-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-            {item.label}
-          </p>
-          {item.subItems?.map((sub) => {
-            const subActive = pathname === sub.href
-            return (
-              <Link
-                key={sub.href}
-                href={sub.href}
-                onClick={onClick}
-                className={`flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors ${
-                  subActive
-                    ? 'bg-prominent-orange-50 text-prominent-orange-700'
-                    : 'text-zinc-700 hover:bg-zinc-50'
-                }`}
-              >
-                <sub.icon className="h-4 w-4 shrink-0" />
-                {sub.label}
-              </Link>
-            )
-          })}
+      {isMobile && (
+        <div className="pointer-events-none absolute z-50 bottom-full left-0 w-full pb-2 opacity-0 transition-all duration-150 group-hover/dropdown:pointer-events-auto group-hover/dropdown:opacity-100">
+          <FlyoutPanel item={item} pathname={pathname} onPick={pickSubItem} />
         </div>
-      </div>
+      )}
+
+      {!isMobile &&
+        anchor &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{ top: anchor.top, left: anchor.left }}
+            className="fixed z-[60] min-w-48 pl-3"
+          >
+            <FlyoutPanel item={item} pathname={pathname} onPick={pickSubItem} />
+          </div>,
+          document.body
+        )}
 
       {/* Collapsed tooltip */}
       {collapsed && (
@@ -1099,13 +1112,24 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     mainItems = config.main
   }
 
-  const filterItem = (item: NavItem) => {
-    if (!item.requiredPermission) return true
-    const required = Array.isArray(item.requiredPermission)
-      ? item.requiredPermission
-      : [item.requiredPermission]
-    return required.some((p) => hasPermission(session, p))
+  const hasAnyPermission = (required?: string | string[]) => {
+    if (!required) return true
+    const list = Array.isArray(required) ? required : [required]
+    return list.some((p) => hasPermission(session, p))
   }
+
+  // A parent with sub-items shows only while at least one child is visible.
+  const filterItem = (item: NavItem) =>
+    hasAnyPermission(item.requiredPermission) &&
+    (!item.subItems || item.subItems.some((sub) => hasAnyPermission(sub.requiredPermission)))
+
+  const withVisibleSubItems = (item: NavItem): NavItem =>
+    item.subItems
+      ? {
+          ...item,
+          subItems: item.subItems.filter((sub) => hasAnyPermission(sub.requiredPermission)),
+        }
+      : item
 
   // Module nav items — filtered by the user's moduleAccess
   const moduleNavItems: NavItem[] = MODULES.filter((m) => hasModuleAccess(session, m.key)).map(
@@ -1120,7 +1144,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
 
   // Always prepend Dashboard item so it's visible on every route
   // Deduplicate by href — moduleNavItems and config.main can both contain the same module root href
-  const rawMain = [DASHBOARD_ITEM, ...moduleNavItems, ...mainItems.filter(filterItem)]
+  const rawMain = [
+    DASHBOARD_ITEM,
+    ...moduleNavItems,
+    ...mainItems.filter(filterItem).map(withVisibleSubItems),
+  ]
   const seen = new Set<string>()
   const main = rawMain.filter((item) => {
     if (seen.has(item.href)) return false
