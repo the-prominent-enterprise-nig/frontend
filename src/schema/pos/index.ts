@@ -1317,6 +1317,9 @@ export interface PosReleaseFormCartSnapshot {
   financingTermId?: string
   downPayment?: number
   creditApplicationId?: string
+  /** Scenario 67 — the snapshot is the submitted cart, X-Deal flags included. */
+  isXDeal?: boolean
+  xDealReference?: string | null
 }
 
 export interface PosReleaseFormRequest {
