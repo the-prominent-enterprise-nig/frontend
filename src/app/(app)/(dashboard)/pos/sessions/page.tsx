@@ -2143,14 +2143,14 @@ function ReconciliationModal({
         {Number(data.totalCollectionsCash ?? 0) > 0 && (
           <div className="rounded-xl border border-gray-200 px-4 py-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Installment collections (cash)</span>
+              <span className="text-sm text-gray-600">Counter collections (cash)</span>
               <span className="text-sm font-medium text-gray-900">
                 {formatCurrency(Number(data.totalCollectionsCash))}
               </span>
             </div>
             <p className="mt-1 text-xs text-gray-400">
-              Counter collections taken this shift — included in expected cash, because the money is
-              in the drawer.
+              Installment collections and delivery fees taken this shift — included in expected
+              cash, because the money is in the drawer.
             </p>
           </div>
         )}

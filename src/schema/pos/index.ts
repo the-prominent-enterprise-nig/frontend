@@ -310,6 +310,23 @@ export interface PosTransaction {
   /** Delivery Receipt number — same once-per-transaction convention as
    * salesInvoiceNumber above. */
   deliveryReceiptNumber?: string | null
+  /** Scenario 66 — who receives the delivery; set only on a sale for delivery. */
+  deliverTo?: string | null
+  deliveryAddress?: string | null
+  deliveryBarangayCode?: string | null
+  /** Never part of totalAmount — collected on its own collection receipt. */
+  deliveryFee?: number | string | null
+  deliveryFeeReferenceNumber?: string | null
+  /** The fee's own receipt: its tender, system number, and whether a void
+   * cancelled it. Null when there is no fee. */
+  deliveryFeeCollectionReceipt?: {
+    id?: string
+    number: string | null
+    reference: string | null
+    method: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR' | null
+    amount: number
+    cancelledAt: string | null
+  } | null
   sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
@@ -470,6 +487,16 @@ export interface CreateTransactionInput {
   /** Delivery Receipt number — same once-per-transaction convention as
    * salesInvoiceNumber above. */
   deliveryReceiptNumber?: string
+  /** Scenario 66 — sending deliverTo marks the sale for delivery;
+   * deliveryAddress is then required. The fee (0 = free delivery) is never
+   * part of subtotal/totalAmount; when it is above 0 its tender and its own
+   * CR number are required. */
+  deliverTo?: string
+  deliveryAddress?: string
+  deliveryBarangayCode?: string
+  deliveryFee?: number
+  deliveryFeeMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+  deliveryFeeReferenceNumber?: string
   isTaxExempt?: boolean
   taxExemptionRef?: string
   /** Set when a manager has PIN-approved an override (receiptless return,
