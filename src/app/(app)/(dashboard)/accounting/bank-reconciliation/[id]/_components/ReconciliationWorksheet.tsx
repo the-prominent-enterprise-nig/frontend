@@ -22,6 +22,7 @@ const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
   CLEARING_SETTLEMENT: 'Clearing Settlement',
   FUND_TRANSFER_OUT: 'Inter-Account Transfer (out)',
   FUND_TRANSFER_IN: 'Inter-Account Transfer (in)',
+  POS_DEPOSIT: 'POS Deposit',
 }
 
 // Scenario 42 — the reconciliation worksheet. Statement Balance and System

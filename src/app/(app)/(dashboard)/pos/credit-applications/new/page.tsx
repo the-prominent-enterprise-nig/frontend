@@ -5,7 +5,7 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import NewCreditApplicationForm from '../_components/NewCreditApplicationForm'
 
 export const metadata = {
-  title: 'New Credit Application | Prominent Enterprise',
+  title: 'New Credit Application | NIG Central',
   description: 'Raise an in-house financing application for a customer',
 }
 

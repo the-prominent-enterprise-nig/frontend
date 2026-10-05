@@ -15,6 +15,8 @@ export interface AppToastOptions {
   description?: string
   status?: ToastStatus
   position?: ToastPosition
+  /** A button on the toast, e.g. "View transfer". */
+  action?: { label: string; onClick: () => void }
 }
 
 export function showToast({
@@ -22,19 +24,20 @@ export function showToast({
   description,
   status = 'info',
   position = 'top-right',
+  action,
 }: AppToastOptions) {
   switch (status) {
     case 'success':
-      return toast.success(title, { description, position })
+      return toast.success(title, { description, position, action })
     case 'warning':
-      return toast.warning(title, { description, position })
+      return toast.warning(title, { description, position, action })
     case 'error':
-      return toast.error(title, { description, position })
+      return toast.error(title, { description, position, action })
     case 'loading':
-      return toast.loading(title, { description, position })
+      return toast.loading(title, { description, position, action })
     case 'info':
     default:
-      return toast.info(title, { description, position })
+      return toast.info(title, { description, position, action })
   }
 }
 

@@ -1,13 +1,14 @@
 'use client'
 
 import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
-import type { SheetDraftController } from '../_hooks/useSheetDraft'
+import { checkedByOf, type SheetDraftController } from '../_hooks/useSheetDraft'
 
 /**
- * The three people who stand behind the form, and the branch's remark.
+ * The two people who stand behind the form, and the branch's remark — the
+ * client's form has no third CERTIFIED CORRECT BY line (Scenario 61).
  *
- * PREPARED BY is stamped from the session — whoever pulled the report. The
- * other two are typed and saved. Each card says whether it is settled yet, so
+ * PREPARED BY is stamped from the session — whoever pulled the report.
+ * CHECKED BY defaults to the branch manager and can be typed over and saved. Each card says whether it is settled yet, so
  * an unsigned form is obvious at a glance rather than only to whoever knows
  * which names ought to be there.
  */
@@ -29,14 +30,11 @@ export default function DailyCollectionSignoffs({
   preparedBy,
   edit,
 }: Props): React.JSX.Element {
-  const checkedBy = edit ? (edit.draft?.checkedBy ?? '') : (report.sheet?.checkedBy ?? '')
-  const certifiedBy = edit
-    ? (edit.draft?.certifiedCorrectBy ?? '')
-    : (report.sheet?.certifiedCorrectBy ?? '')
+  const checkedBy = edit ? (edit.draft?.checkedBy ?? '') : checkedByOf(report)
 
   return (
     <section className="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white">
-      <div className="grid grid-cols-1 divide-y divide-gray-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <div className="grid grid-cols-1 divide-y divide-gray-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
         <div className={CARD}>
           <span className={LABEL}>Prepared by</span>
           <span className="text-sm font-medium text-gray-900">{preparedBy || '—'}</span>
@@ -46,14 +44,14 @@ export default function DailyCollectionSignoffs({
         <SignatoryCard
           label="Checked by"
           value={checkedBy}
-          meta={checkedBy ? 'Verified the count' : 'Awaiting the filed count'}
+          meta={
+            report.sheet?.checkedBy
+              ? 'Verified the count'
+              : checkedBy
+                ? 'Branch manager — signs once the count is filed'
+                : 'Awaiting the filed count'
+          }
           onChange={edit ? (v) => edit.update('checkedBy', v) : null}
-        />
-        <SignatoryCard
-          label="Certified correct by"
-          value={certifiedBy}
-          meta={certifiedBy ? 'Signed off' : 'Signs after checking'}
-          onChange={edit ? (v) => edit.update('certifiedCorrectBy', v) : null}
         />
       </div>
 

@@ -49,7 +49,12 @@ function buildLedger(loan: EmployeeCashLoan): LedgerRow[] {
     { date: loan.loanDate, description: 'Loan disbursed', debit: loan.totalReceivable, credit: 0 },
     ...loan.payments.map((p) => ({
       date: p.paymentDate,
-      description: p.referenceNumber ? `Payment (${p.referenceNumber})` : 'Payment',
+      // Scenario 63 — a payroll deduction reads as one, not a bare payment.
+      description: p.expenseId
+        ? (p.note ?? 'Payroll deduction')
+        : p.referenceNumber
+          ? `Payment (${p.referenceNumber})`
+          : 'Payment',
       debit: 0,
       credit: p.amount,
     })),
@@ -145,7 +150,9 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
   }
 
   const isOther = loan.borrowerType === 'OTHER'
-  const ledger = isOther ? buildLedger(loan) : []
+  // Scenario 63 — an employee loan's payroll deductions are real payments
+  // now, so it has a ledger too, not only a schedule.
+  const ledger = buildLedger(loan)
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
@@ -252,51 +259,12 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
           </div>
         </div>
 
-        {isOther ? (
-          <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-zinc-200 px-4 py-3">
-              <h3 className="text-sm font-semibold text-zinc-700">Ledger</h3>
-              <p className="text-xs text-zinc-400">
-                No fixed schedule — paid back any amount, any time.
-              </p>
-            </div>
-            <div className="scroll-fade-x overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50">
-                    <Th>Date</Th>
-                    <Th>Description</Th>
-                    <Th align="right">Debit</Th>
-                    <Th align="right">Credit</Th>
-                    <Th align="right">Balance</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ledger.map((r, i) => (
-                    <tr key={i} className="border-b border-zinc-100 last:border-0">
-                      <td className="px-4 py-2 text-prominent-purple-900">{fmtDate(r.date)}</td>
-                      <td className="px-4 py-2 text-prominent-purple-900">{r.description}</td>
-                      <td className="px-4 py-2 text-right text-prominent-purple-900">
-                        {r.debit ? fmt(r.debit) : ''}
-                      </td>
-                      <td className="px-4 py-2 text-right text-prominent-purple-900">
-                        {r.credit ? fmt(r.credit) : ''}
-                      </td>
-                      <td className="px-4 py-2 text-right font-medium text-prominent-purple-900">
-                        {fmt(r.balance)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : (
+        {!isOther && (
           <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-zinc-200 px-4 py-3">
               <h3 className="text-sm font-semibold text-zinc-700">Schedule</h3>
               <p className="text-xs text-zinc-400">
-                Read-only — repayment recording isn&apos;t built into POS yet.
+                Recovered through payroll deductions — each one appears in the ledger below.
               </p>
             </div>
             <div className="scroll-fade-x overflow-x-auto">
@@ -333,6 +301,46 @@ export default function LoanDetail({ id, session }: { id: string; session: Sessi
             </div>
           </div>
         )}
+        <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="border-b border-zinc-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-zinc-700">Ledger</h3>
+            <p className="text-xs text-zinc-400">
+              {isOther
+                ? 'No fixed schedule — paid back any amount, any time.'
+                : 'The loan as released, and every payroll deduction applied to it.'}
+            </p>
+          </div>
+          <div className="scroll-fade-x overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-zinc-50">
+                  <Th>Date</Th>
+                  <Th>Description</Th>
+                  <Th align="right">Debit</Th>
+                  <Th align="right">Credit</Th>
+                  <Th align="right">Balance</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledger.map((r, i) => (
+                  <tr key={i} className="border-b border-zinc-100 last:border-0">
+                    <td className="px-4 py-2 text-prominent-purple-900">{fmtDate(r.date)}</td>
+                    <td className="px-4 py-2 text-prominent-purple-900">{r.description}</td>
+                    <td className="px-4 py-2 text-right text-prominent-purple-900">
+                      {r.debit ? fmt(r.debit) : ''}
+                    </td>
+                    <td className="px-4 py-2 text-right text-prominent-purple-900">
+                      {r.credit ? fmt(r.credit) : ''}
+                    </td>
+                    <td className="px-4 py-2 text-right font-medium text-prominent-purple-900">
+                      {fmt(r.balance)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   )

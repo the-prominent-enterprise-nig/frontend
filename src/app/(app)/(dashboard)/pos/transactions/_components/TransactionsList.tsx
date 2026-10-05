@@ -27,6 +27,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { TransactionDetail } from '../../_components/TransactionDetail'
 import Link from 'next/link'
 import { getOwnReleaseFormRequests } from '../../_actions/pos-actions'
+import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
 const typeColor: Record<string, string> = {
   sale: 'bg-blue-100 text-blue-700',
@@ -455,10 +456,13 @@ export default function TransactionsList({ session }: Props) {
                       {tx.salesInvoiceNumber ?? tx.transactionNumber}
                     </td>
                     <td className="px-5 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${typeColor[tx.transactionType]}`}
-                      >
-                        {tx.transactionType}
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${typeColor[tx.transactionType]}`}
+                        >
+                          {tx.transactionType}
+                        </span>
+                        {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
                       </span>
                     </td>
                     <td className="px-5 py-3">

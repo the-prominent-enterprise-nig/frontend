@@ -2,8 +2,8 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { redirect } from 'next/navigation'
 
 export const metadata = {
-  title: 'Authentication - Prominent Enterprise',
-  description: 'Login and authentication for Prominent Enterprise',
+  title: 'Authentication - NIG Central',
+  description: 'Login and authentication for NIG Central',
 }
 
 export default async function AuthLayout({

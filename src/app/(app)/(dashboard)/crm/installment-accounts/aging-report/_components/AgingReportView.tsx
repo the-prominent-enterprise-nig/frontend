@@ -1,10 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Printer } from 'lucide-react'
+import { Printer, Table2 } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../../_actions/get-branches'
-import { printAgingReportDocument } from '@/src/libs/print/printInventoryDocument'
+import {
+  printAgingReportDocument,
+  printAgingRawDataDocument,
+} from '@/src/libs/print/printInventoryDocument'
 import ExportButton from '@/src/components/common/ExportButton'
 import TablePagination from '@/src/components/common/TablePagination'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -117,6 +120,14 @@ export default function AgingReportView() {
             }}
             disabled={!report || report.branches.length === 0}
           />
+          <button
+            onClick={() => report && printAgingRawDataDocument(report)}
+            disabled={!report}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Table2 className="h-4 w-4" />
+            Print Raw Data
+          </button>
           <button
             onClick={() => report && printAgingReportDocument(report)}
             disabled={!report}

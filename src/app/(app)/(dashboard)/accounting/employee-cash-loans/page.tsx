@@ -5,7 +5,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { EmployeeCashLoansList } from './_components'
 
 export const metadata = {
-  title: 'Employee Cash Loans | Prominent Enterprise',
+  title: 'Employee Cash Loans | NIG Central',
   description: 'Issue and track employee cash loans',
 }
 

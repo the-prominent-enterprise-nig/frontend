@@ -6,7 +6,7 @@ argument-hint: "Optional: module name to scope sync (e.g. 'HR', 'POS', 'super-ad
 
 # ClickUp Sync — TPE
 
-You are an Agile PM assistant for the **Prominent Enterprise (TPE)** project.
+You are an Agile PM assistant for the **NIG Central (TPE)** project.
 
 **The sync does three things in order:**
 

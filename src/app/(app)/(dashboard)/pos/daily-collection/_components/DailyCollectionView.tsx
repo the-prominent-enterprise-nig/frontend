@@ -9,18 +9,32 @@ import { showToast } from '@/src/components/ui/toast'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { getDailyCollection } from '../_actions/get-daily-collection'
 import { getDailyCollectionRollup } from '../_actions/get-daily-collection-rollup'
+import { getDailySalesMonitoring } from '../_actions/get-daily-sales-monitoring'
 import { saveDailyCollectionSheet } from '../_actions/save-daily-collection-sheet'
 import { useSheetDraft } from '../_hooks/useSheetDraft'
 import { todayIso } from '../_utils/business-date'
 import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
+import type { DailySalesMonitoringReport } from '@/src/schema/pos/daily-sales-monitoring'
 import DailyCollectionActionBar from './DailyCollectionActionBar'
 import DailyCollectionForm from './DailyCollectionForm'
 import DailyCollectionLedger from './DailyCollectionLedger'
 import DailyCollectionRollup from './DailyCollectionRollup'
 import DailyCollectionSignoffs from './DailyCollectionSignoffs'
 import DailyCollectionTotals from './DailyCollectionTotals'
+import DailySalesMonitoringSheet from './DailySalesMonitoringSheet'
 import DateStepper from './DateStepper'
 import { cashPosition } from './form-model'
+
+/** The two forms a branch files for one business day. */
+type SheetView = 'collection' | 'sales'
+
+const SHEET_TITLES: Record<SheetView, string> = {
+  collection: 'Daily Collection Report',
+  sales: 'Daily Sales & Collection Monitoring',
+}
+
+/** Left to right in the switcher. */
+const SHEET_TABS: SheetView[] = ['sales', 'collection']
 
 interface Props {
   companyName: string
@@ -62,6 +76,9 @@ export default function DailyCollectionView({
   const linkedDate = params.get('date')
   const linkedBranchId = params.get('branchId')
   const linkedBranchName = params.get('branchName')
+  const [sheetView, setSheetView] = useState<SheetView>(
+    params.get('view') === 'sales' ? 'sales' : 'collection'
+  )
 
   const [date, setDate] = useState(
     linkedDate && /^\d{4}-\d{2}-\d{2}$/.test(linkedDate) ? linkedDate : todayIso()
@@ -99,6 +116,14 @@ export default function DailyCollectionView({
     enabled: showRollup,
   })
   const rollup = rollupQuery.data?.success ? rollupQuery.data.data : undefined
+
+  const salesQuery = useQuery({
+    queryKey: ['pos-daily-sales-monitoring', date, scopedBranchId],
+    queryFn: () => getDailySalesMonitoring({ date, branchId: scopedBranchId ?? undefined }),
+    enabled: !showRollup && sheetView === 'sales',
+  })
+  const salesReport = salesQuery.data?.success ? salesQuery.data.data : undefined
+  const onSalesView = !showRollup && sheetView === 'sales'
 
   const report: DailyCollectionReport | undefined = data?.success ? data.data : undefined
   const sheet = useSheetDraft(report, date)
@@ -143,7 +168,9 @@ export default function DailyCollectionView({
       ? 'No trading recorded for this date yet — the report covers closed sessions only.'
       : showRollup
         ? 'Every branch on one business day, and the cash each one counted against it.'
-        : 'Every collection taken at this branch on one business day, with the denomination count that reconciles the cash.'
+        : onSalesView
+          ? "The day's sales by category, channel and invoice type, in the Daily Collection Report's format."
+          : 'Every collection taken at this branch on one business day, with the denomination count that reconciles the cash.'
 
   return (
     <div className="mx-auto max-w-[1400px] p-6">
@@ -153,15 +180,23 @@ export default function DailyCollectionView({
             Point of Sale &middot; {sessionBranchName ?? branchName ?? 'All branches'}
           </p>
           <h1 className="mt-1 text-2xl font-bold text-prominent-purple-900">
-            Daily Collection Report
+            {showRollup ? SHEET_TITLES.collection : SHEET_TITLES[sheetView]}
           </h1>
           <p className="mt-0.5 text-sm text-gray-500">{subhead}</p>
         </div>
         <div className="flex items-end gap-3">
+          {!showRollup && (
+            <SheetTabs value={sheetView} onChange={setSheetView} disabled={editing} />
+          )}
           <DateStepper value={date} onChange={setDate} disabled={editing} />
           {/* Both act on one branch's form: there is no sheet to print and no
               workbook to pull while the roll-up is what is on screen. */}
-          {!showRollup && !report?.withheld && (
+          {onSalesView && salesReport && (
+            <button onClick={() => window.print()} className="btn-secondary">
+              Print
+            </button>
+          )}
+          {!showRollup && !onSalesView && !report?.withheld && (
             <>
               <button onClick={() => window.print()} className="btn-secondary">
                 Print
@@ -177,7 +212,14 @@ export default function DailyCollectionView({
         </div>
       </div>
 
-      {showRollup ? (
+      {onSalesView ? (
+        <SalesMonitoringBody
+          isLoading={salesQuery.isLoading}
+          report={salesReport}
+          showAllBranchesLink={sessionBranchId === null}
+          onAllBranches={() => setBranch(null)}
+        />
+      ) : showRollup ? (
         rollupQuery.isLoading ? (
           <Skeleton className="h-64 w-full" />
         ) : rollupQuery.isError || !rollup ? (
@@ -255,7 +297,6 @@ export default function DailyCollectionView({
               <div className="hidden print:block">
                 <DailyCollectionForm
                   report={report}
-                  companyName={reportCompanyName}
                   preparedBy={preparedBy}
                   edit={editing ? sheet : null}
                 />
@@ -277,7 +318,11 @@ export default function DailyCollectionView({
  * says why, and says what is still holding the branch open, which is the one
  * thing the owner can actually do something about.
  */
-function NotSubmitted({ report }: { report: DailyCollectionReport }): React.JSX.Element {
+function NotSubmitted({
+  report,
+}: {
+  report: Pick<DailyCollectionReport, 'branchName' | 'openSessionCount'>
+}): React.JSX.Element {
   const open = report.openSessionCount
 
   return (
@@ -301,11 +346,79 @@ function NotSubmitted({ report }: { report: DailyCollectionReport }): React.JSX.
   )
 }
 
-function LoadError(): React.JSX.Element {
+function LoadError({ title = SHEET_TITLES.collection }: { title?: string }): React.JSX.Element {
   return (
     <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-      Unable to load the Daily Collection Report.
+      Unable to load the {title}.
     </p>
+  )
+}
+
+/** Switches between the day's two forms. Locked while the collection form's
+ * handwritten half is being edited, so a draft is never left behind a tab. */
+function SheetTabs({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: SheetView
+  onChange: (view: SheetView) => void
+  disabled: boolean
+}): React.JSX.Element {
+  return (
+    <div role="tablist" className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+      {SHEET_TABS.map((view) => (
+        <button
+          key={view}
+          role="tab"
+          aria-selected={value === view}
+          disabled={disabled}
+          onClick={() => onChange(view)}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${
+            value === view
+              ? 'bg-prominent-purple-700 text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          {view === 'collection' ? 'Collection report' : 'Sales monitoring'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Scenario 61 — the Daily Sales Monitoring sheet. Printed and signed by the
+ * Cashier and Branch Manager; nothing on it is typed in, so there is no
+ * filing step of its own. Unlike the collection report it is not withheld
+ * until the branch files — the owner can read it at any time.
+ */
+function SalesMonitoringBody({
+  isLoading,
+  report,
+  showAllBranchesLink,
+  onAllBranches,
+}: {
+  isLoading: boolean
+  report: DailySalesMonitoringReport | undefined
+  showAllBranchesLink: boolean
+  onAllBranches: () => void
+}): React.JSX.Element {
+  if (isLoading) return <Skeleton className="h-64 w-full" />
+  if (!report) return <LoadError title={SHEET_TITLES.sales} />
+  return (
+    <>
+      {showAllBranchesLink && (
+        <button
+          onClick={onAllBranches}
+          className="mb-3 text-sm text-prominent-purple-700 hover:underline print:hidden"
+        >
+          ← All branches
+        </button>
+      )}
+      <OpenSessionNote report={report} />
+      <DailySalesMonitoringSheet report={report} />
+    </>
   )
 }
 
@@ -331,7 +444,11 @@ function EditingNote(): React.JSX.Element {
  * deliberately low is still a figure someone will act on. The note goes as
  * soon as the last session closes, which is when the form gets signed.
  */
-function OpenSessionNote({ report }: { report: DailyCollectionReport }): React.JSX.Element | null {
+function OpenSessionNote({
+  report,
+}: {
+  report: Pick<DailyCollectionReport, 'openSessionCount'>
+}): React.JSX.Element | null {
   if (report.openSessionCount < 1) return null
 
   const many = report.openSessionCount > 1

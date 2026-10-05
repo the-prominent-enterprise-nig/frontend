@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
-import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
+import { hasExactPermission, hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import {
@@ -21,6 +21,7 @@ import {
   Contact,
   CreditCard,
   FileBarChart,
+  Database,
   FileCheck2,
   FilePlus,
   PackageX,
@@ -54,6 +55,7 @@ import {
   Users,
   UsersRound,
   UserPlus,
+  Banknote,
   Wallet,
   Warehouse,
   Network,
@@ -71,6 +73,8 @@ type NavItem = {
   href: string
   icon: LucideIcon
   requiredPermission?: string | string[]
+  /** Must hold this exact permission row — wildcards don't count. */
+  exactPermission?: string
   badge?: { text: string; variant: 'count' | 'new'; color?: string }
   subItems?: Array<{ label: string; href: string; icon: LucideIcon }>
   section?: string
@@ -344,6 +348,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: FileBarChart,
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
+      // Scenario 62 — raw data from every module, read-only. Business Owner
+      // only; exact permission so the Accountant's accounting:* can't reach.
+      {
+        label: 'Data Query Center',
+        href: '/accounting/query-center',
+        icon: Database,
+        exactPermission: ACCOUNTING_PERMISSIONS.QUERY_CENTER_READ,
+      },
       {
         label: 'Fiscal Periods',
         href: '/accounting/fiscal-periods',
@@ -396,10 +408,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
       },
       {
         // Scenario 53 — the same screen POS shows read-only, but this is the
-        // one where the cash actually gets banked.
-        label: 'Cash-in-Transit',
+        // one where the cash actually gets banked. Scenario 61: labelled
+        // Undeposited Funds here too (the URL and permissions keep the old
+        // cash-in-transit name), with its own icon rather than Bank Accounts'
+        // Wallet just above it.
+        label: 'Undeposited Funds',
         href: '/accounting/cash-in-transit',
-        icon: Wallet,
+        icon: Banknote,
         requiredPermission: ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },
       // Its own entry, not a button on Bank Reconciliation: moving money
@@ -509,7 +524,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // the Cash-in-Transit name for the GL account it reconciles against.
         label: 'Undeposited Funds',
         href: '/pos/undeposited-funds',
-        icon: Wallet,
+        icon: Banknote,
         requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },
       {
@@ -1101,6 +1116,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   }
 
   const filterItem = (item: NavItem) => {
+    if (item.exactPermission) return hasExactPermission(session, item.exactPermission)
     if (!item.requiredPermission) return true
     const required = Array.isArray(item.requiredPermission)
       ? item.requiredPermission

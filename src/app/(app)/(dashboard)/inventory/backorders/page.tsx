@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { BackordersPageView } from './_components'
 
 export const metadata = {
-  title: 'Backorders | Prominent Enterprise',
+  title: 'Backorders | NIG Central',
   description: 'Track and manage backorder records for out-of-stock items',
 }
 

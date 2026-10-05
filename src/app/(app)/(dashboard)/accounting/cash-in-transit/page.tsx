@@ -4,10 +4,12 @@ import { can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { CashInTransitList } from '../../pos/undeposited-funds/_components/CashInTransitList'
 
-export const metadata = { title: 'Cash-in-Transit | Prominent Enterprise' }
+export const metadata = { title: 'Undeposited Funds | NIG Central' }
 
 /**
- * Scenario 53 — Accounting's own view of Cash-in-Transit.
+ * Scenario 53 — Accounting's own view of Cash-in-Transit, labelled Undeposited
+ * Funds since Scenario 61 to match POS (the route and permissions keep the
+ * cash-in-transit name).
  *
  * Deliberately renders the same CashInTransitList the POS route uses rather
  * than a parallel copy: the two screens show identical data and differ only in
@@ -29,6 +31,9 @@ export default async function AccountingCashInTransitPage() {
   }
 
   const canManage = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_MANAGE)
+  // Scenario 61 Part 5 — only accounting deposits: recording a draft (manage)
+  // and clearing it (verify) are both accounting's.
+  const canVerify = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_VERIFY)
 
   // A branch-assigned caller (Accountant, Branch Manager) is restricted to
   // their own branch server-side too — BankAccountsService.clearCashInTransit()
@@ -38,7 +43,9 @@ export default async function AccountingCashInTransitPage() {
 
   return (
     <CashInTransitList
+      title="Undeposited Funds"
       canManage={canManage}
+      canVerify={canVerify}
       restrictedBranchId={restrictedBranchId}
       isUnrestricted={restrictedBranchId === null}
     />

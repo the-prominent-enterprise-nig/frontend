@@ -11,6 +11,15 @@ export interface PosTerminal {
   createdAt: string
   updatedAt: string
   branch?: { id: string; name: string }
+  /** Scenario 60 — set when this terminal sells at a caravan; `branchId` is then its host. */
+  caravanBranchId?: string | null
+  caravanBranch?: {
+    id: string
+    name: string
+    isTemporary?: boolean
+    eventName?: string | null
+    addressLine1?: string | null
+  } | null
 }
 
 // Cashier Terminal Access
@@ -120,6 +129,8 @@ export interface SessionReconciliation {
   totalRefunds: number
   netSales: number
   transactionCount: number
+  /** Scenario 61 — SI numbers of the session's completed sales, in order. */
+  invoiceNumbers?: string[]
   totalCashDrops: number
   totalPettyCashIn: number
   totalPettyCashOut: number
@@ -259,6 +270,7 @@ export interface PosPayment {
   paymentMethod: PosPaymentMethod
   amount: number
   referenceNumber?: string | null
+  checkNumber?: string | null
   giftCardId?: string | null
   createdAt: string
 }
@@ -313,6 +325,13 @@ export interface PosTransaction {
   /** HR's own approval reference for the employee appliance loan — set
    * whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string | null
+  /** Scenario 67 — true when this sale is an X-Deal (barter): inhouse
+   * installment, no down payment, no credit application; accounting clears
+   * its balance with an X-Deal credit memo. */
+  isXDeal?: boolean | null
+  /** The barter agreement / counterparty reference, set whenever isXDeal is
+   * true. */
+  xDealReference?: string | null
   /** Present on create()/findOne() — one per distinct financing term used in
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
@@ -443,6 +462,12 @@ export interface CreateTransactionInput {
   /** HR's own approval reference for the employee appliance loan —
    * required whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string
+  /** Scenario 67 — marks this sale as an X-Deal (barter). Every line must
+   * be inhouse installment on one financing term with a ₱0 down payment,
+   * and no creditApplicationId may be sent. */
+  isXDeal?: boolean
+  /** Required whenever isXDeal is true, rejected otherwise. */
+  xDealReference?: string
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -641,6 +666,8 @@ export interface AddPaymentInput {
   amount: number
   giftCardId?: string
   referenceNumber?: string
+  /** The check's own number — cash tendered via the Check sub-mode. */
+  checkNumber?: string
   paymentMethodConfigId?: string
   /** Named sub-choice used (Scenario 37) — POS Terminal for card, bank for
    * bank_transfer, gateway for qr. */
@@ -1070,6 +1097,10 @@ export interface ComputeInstallmentPreviewInput {
   totalAmount: number
   downPayment?: number
   financingTermId: string
+  /** When given, a curated PriceListItemTerm (the real rate card) for this
+   * SKU + term wins over the generic factorRate calculation, if one exists
+   * — see FinancingTermsService.preview(). */
+  priceListItemId?: string
 }
 
 export interface InstallmentScheduleLineWithInvoice {

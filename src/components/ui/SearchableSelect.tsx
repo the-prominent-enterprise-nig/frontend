@@ -9,7 +9,13 @@ import { ChevronDown, Check, X } from 'lucide-react'
 const DROPDOWN_MAX_HEIGHT = 224
 const MIN_DROPDOWN_HEIGHT = 120
 
-export type SearchableSelectOption = { value: string; label: string }
+export type SearchableSelectOption = {
+  value: string
+  label: string
+  /** Options sharing a group sit under one small heading. Pass them already
+   * ordered by group — a heading is drawn wherever the group changes. */
+  group?: string
+}
 
 type BaseProps = {
   options: SearchableSelectOption[]
@@ -343,24 +349,30 @@ export default function SearchableSelect(props: Props) {
         ) : filtered.length === 0 ? (
           <p className="px-3 py-2 text-sm text-gray-400">No matches</p>
         ) : (
-          filtered.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              data-testid="searchable-select-option"
-              role={multiple ? 'checkbox' : undefined}
-              aria-checked={multiple ? isSelected(opt.value) : undefined}
-              onMouseDown={(e) => multiple && e.preventDefault()}
-              onClick={() => toggle(opt.value)}
-              className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
-                isSelected(opt.value)
-                  ? 'bg-prominent-purple-50 text-prominent-purple-700'
-                  : 'text-gray-800'
-              }`}
-            >
-              {opt.label}
-              {isSelected(opt.value) && <Check className="h-3.5 w-3.5 shrink-0" />}
-            </button>
+          filtered.map((opt, i) => (
+            <div key={opt.value}>
+              {opt.group && opt.group !== filtered[i - 1]?.group && (
+                <p className="px-3 pb-1 pt-2 text-[10.5px] font-medium uppercase tracking-wide text-gray-400">
+                  {opt.group}
+                </p>
+              )}
+              <button
+                type="button"
+                data-testid="searchable-select-option"
+                role={multiple ? 'checkbox' : undefined}
+                aria-checked={multiple ? isSelected(opt.value) : undefined}
+                onMouseDown={(e) => multiple && e.preventDefault()}
+                onClick={() => toggle(opt.value)}
+                className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
+                  isSelected(opt.value)
+                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                    : 'text-gray-800'
+                }`}
+              >
+                {opt.label}
+                {isSelected(opt.value) && <Check className="h-3.5 w-3.5 shrink-0" />}
+              </button>
+            </div>
           ))
         )}
       </div>

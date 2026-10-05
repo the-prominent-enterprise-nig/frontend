@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { UomList } from './_components'
 
 export const metadata = {
-  title: 'Units of Measure | Prominent Enterprise',
+  title: 'Units of Measure | NIG Central',
   description:
     'Define base units and alternate units with conversion factors for purchasing and selling',
 }

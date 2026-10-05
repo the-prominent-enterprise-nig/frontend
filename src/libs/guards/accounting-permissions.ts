@@ -115,6 +115,8 @@ export const ACCOUNTING_PERMISSIONS = {
   // the Accountant. These keep the Accountant accounting-only.
   CASH_IN_TRANSIT_READ: 'accounting:cash-in-transit:read',
   CASH_IN_TRANSIT_MANAGE: 'accounting:cash-in-transit:manage',
+  /** Scenario 61 Part 5 — clear (post) a POS deposit draft. Accounting only. */
+  CASH_IN_TRANSIT_VERIFY: 'accounting:cash-in-transit:verify',
 
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
@@ -126,6 +128,9 @@ export const ACCOUNTING_PERMISSIONS = {
   CREDIT_MEMOS_READ: 'accounting:credit-memos:read',
   CREDIT_MEMOS_CREATE: 'accounting:credit-memos:create',
   CREDIT_MEMOS_VOID: 'accounting:credit-memos:void',
+  /** Scenario 67 — issue or void an X-Deal (barter) credit memo. Deliberately
+   * not covered by Branch Manager's accounting:credit-memos:*. */
+  X_DEAL_MEMOS_ISSUE: 'accounting:x-deal-memos:issue',
 
   DEBIT_MEMOS_READ: 'accounting:debit-memos:read',
   DEBIT_MEMOS_CREATE: 'accounting:debit-memos:create',
@@ -172,6 +177,11 @@ export const ACCOUNTING_PERMISSIONS = {
   SUPPLIER_DEBIT_MEMOS_APPROVE: 'accounting:supplier-debit-memos:approve',
   SUPPLIER_DEBIT_MEMOS_FINALIZE: 'accounting:supplier-debit-memos:finalize',
   SUPPLIER_DEBIT_MEMOS_VOID: 'accounting:supplier-debit-memos:void',
+
+  // Scenario 62 — Business Owner only. Checked with hasExactPermission(),
+  // never can()/hasPermission(): the Accountant's 'accounting:*' wildcard
+  // must not reach it (the backend's QueryCenterGuard enforces the same).
+  QUERY_CENTER_READ: 'accounting:query-center:read',
 
   WILDCARD: 'accounting:*',
 } as const
@@ -255,6 +265,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:bank-accounts:reconcile': 'Create and complete a bank reconciliation',
   'accounting:cash-in-transit:read': 'View outstanding Cash-in-Transit from Accounting',
   'accounting:cash-in-transit:manage': 'Deposit Cash-in-Transit into a bank account',
+  'accounting:cash-in-transit:verify':
+    "Check a POS deposit draft's attachments and clear (post) it",
   'accounting:bank-accounts:adjust':
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
   'accounting:bank-accounts:transfer':
@@ -267,6 +279,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:credit-memos:read': 'View credit memos',
   'accounting:credit-memos:create': 'Issue a credit memo against an open invoice',
   'accounting:credit-memos:void': 'Void a credit memo',
+  'accounting:x-deal-memos:issue':
+    "Issue or void an X-Deal credit memo, clearing a barter sale's whole balance",
   'accounting:debit-memos:read': 'View debit memos',
   'accounting:debit-memos:create': 'Issue a debit memo against an invoice',
   'accounting:debit-memos:void': 'Void a debit memo',
@@ -305,6 +319,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:supplier-debit-memos:finalize':
     'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
   'accounting:supplier-debit-memos:void': 'Void a supplier debit memo',
+  'accounting:query-center:read':
+    'Data Query Center — browse and export raw data from every module (Business Owner only)',
   'accounting:*': 'Wildcard full accounting access',
 }
 

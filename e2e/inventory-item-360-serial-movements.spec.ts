@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady, fillStable } from './utils'
 
-// Clicking a serial chip under an expanded location (Stock tab) drills into
-// that one physical unit's own movement timeline (receipt/transfer/sale/
-// etc.), assembled server-side from the transaction-line tables that
-// reference it — there's no per-serial StockLedger row to read. There is no
-// standalone Serials tab: serials live inline under each location.
+// Clicking a serial chip under an expanded location (Stock tab) opens that one
+// physical unit's Serial History panel on top of the item — the same panel
+// every other screen opens — assembled server-side from the transaction-line
+// tables that reference it. Back returns to the item.
 test.describe('Inventory — Item 360 drawer, per-serial movement drill-down', () => {
-  test('clicking a serial shows its own timeline, with a way back to Stock', async ({ page }) => {
+  test('clicking a serial opens its history panel, with a way back to the item', async ({
+    page,
+  }) => {
     await gotoReady(page, '/inventory/stock')
 
     const searchInput = page.getByPlaceholder('Search brand, model, or category…')
@@ -42,23 +43,18 @@ test.describe('Inventory — Item 360 drawer, per-serial movement drill-down', (
     const serialNumberText = (await serialChip.innerText()).trim()
     await serialChip.click()
 
-    // Drilled in: tab nav is replaced by a back button + this one serial's
-    // own header and timeline.
-    await expect(drawerTabs).toHaveCount(0)
-    const backButton = drawer.getByRole('button', { name: 'Back to Stock' })
-    await expect(backButton).toBeVisible({ timeout: 10_000 })
-    await expect(drawer.getByText(serialNumberText, { exact: true })).toBeVisible()
+    const history = page.getByRole('dialog', { name: 'Serial History' })
+    await expect(history).toBeVisible({ timeout: 10_000 })
+    await expect(history.getByText(serialNumberText, { exact: true })).toBeVisible()
 
-    // Seeded serials are bulk-registered directly (no goods-receipt or
-    // transaction-line fixtures behind them), so the real, correct state
-    // here is the empty one — this proves the drill-down renders it
-    // properly rather than erroring or showing stale/wrong data. The
-    // populated-timeline path (receipt/transfer/sale entries actually
-    // appearing) is covered by backend code review, not live seed data here.
-    await expect(drawer.getByText('No movements recorded yet')).toBeVisible({ timeout: 10_000 })
+    // Seeded serials are bulk-registered directly (no goods receipt behind
+    // them), so their timeline starts with the "Added to inventory" entry
+    // rather than being blank.
+    await expect(history.getByText('Added to inventory')).toBeVisible({ timeout: 10_000 })
 
+    const backButton = history.getByRole('button', { name: 'Back', exact: true })
     await backButton.click()
-    await expect(backButton).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: 'Item Details' })).toBeVisible()
     await expect(drawerTabs).toBeVisible()
   })
 })

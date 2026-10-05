@@ -5,11 +5,18 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { SerialNumberList } from './_components'
 
 export const metadata = {
-  title: 'Serial Number Tracking | Prominent Enterprise',
+  title: 'Serial Number Tracking | NIG Central',
   description: 'Register, search, and track individual serial numbers across their lifecycle',
 }
 
-export default async function SerialNumbersPage() {
+export default async function SerialNumbersPage({
+  searchParams,
+}: {
+  // Scenario 60 Part 3 — `?caravan=<id>` opens the Caravan tab on that
+  // caravan (the ended-caravan banners link here).
+  searchParams: Promise<{ caravan?: string }>
+}) {
+  const { caravan } = await searchParams
   const session = await getSessionOrNull()
 
   if (!session) {
@@ -22,7 +29,7 @@ export default async function SerialNumbersPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <SerialNumberList session={session} />
+      <SerialNumberList session={session} initialCaravanId={caravan} />
     </div>
   )
 }
