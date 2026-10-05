@@ -31,7 +31,7 @@ function fmtDate(v?: string | null): string {
 export default function ReceivingReportDetail({
   id,
   // Receiving reports live under the Stock hub's own Reports tab.
-  backHref = '/inventory/stock?tab=reports',
+  backHref = '/inventory/stock-transaction?tab=receiving',
   backLabel = 'Back',
 }: {
   id: string
