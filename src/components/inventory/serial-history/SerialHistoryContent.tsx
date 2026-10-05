@@ -221,16 +221,34 @@ export default function SerialHistoryContent({
   serialId,
   serialNumber,
   onClose,
+  timelineOnly = false,
 }: {
   serialId: string
   serialNumber?: string
   onClose: () => void
+  /** Inside a table row the row already names the unit, so drop the header and
+   * keep only the movements, with a small close control. */
+  timelineOnly?: boolean
 }) {
   const { header, entries, isLoading, error } = useSerialHistory(serialId)
 
   return (
     <div className={`${PLEX} flex min-h-0 flex-1 flex-col`}>
-      <Header header={header} fallbackSerial={serialNumber} onClose={onClose} />
+      {timelineOnly ? (
+        <div className="flex shrink-0 items-center justify-between border-b border-[#eeeef1] px-5 py-2.5">
+          <p className="text-[12px] font-medium text-[#5b5b6b]">Movements</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close movements"
+            className="rounded p-1 text-[#8b8b9b] hover:bg-zinc-100 hover:text-zinc-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <Header header={header} fallbackSerial={serialNumber} onClose={onClose} />
+      )}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <TimelineSkeleton />
