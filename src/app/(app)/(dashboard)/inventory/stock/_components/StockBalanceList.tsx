@@ -86,7 +86,8 @@ const AVAILABLE_TEXT: Record<StockStatus, string> = {
 /** The seven-column track the header, rows and skeletons all share — same
  * `role="table"`/CSS-grid approach as Purchase Orders, since assistive tech
  * and this module's e2e specs both lean on the explicit table semantics. */
-const GRID = 'grid grid-cols-[minmax(0,1fr)_128px_84px_68px_84px_96px_118px] gap-x-3 items-center'
+const GRID =
+  'grid grid-cols-[minmax(0,1fr)_160px_84px_96px_68px_84px_96px_118px] gap-x-3 items-center'
 
 function SkeletonBar({ wide }: { wide?: boolean }) {
   return (
@@ -230,21 +231,37 @@ export default function StockBalanceList({
 
         {/* Metric band */}
         {!isLoading && (
-          <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1080px]:grid-cols-5 min-[1080px]:divide-y-0">
+          <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1280px]:grid-cols-6 min-[1080px]:divide-y-0">
             <div className="flex flex-col gap-1 px-4 py-3">
               <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
                 Items
               </span>
-              <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em]`}>
+              <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
                 {pagination.total.toLocaleString()}
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
               <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
-                On hand
+                Total
               </span>
-              <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em]`}>
+              <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
                 {(summary?.totalOnHandQty ?? 0).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1 px-4 py-3">
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+                Transferred
+              </span>
+              <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
+                {(summary?.totalInTransitQty ?? 0).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1 px-4 py-3">
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+                Sold
+              </span>
+              <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
+                {(summary?.totalSoldQty ?? 0).toLocaleString()}
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
@@ -252,7 +269,7 @@ export default function StockBalanceList({
                 Reserved
               </span>
               <span
-                className={`${MONO} text-[20px] font-semibold tracking-[-.01em] ${
+                className={`${MONO} text-[17px] font-semibold tracking-[-.01em] ${
                   (summary?.totalReservedQty ?? 0) > 0 ? 'text-[#8a4b06]' : 'text-[#17171c]'
                 }`}
               >
@@ -264,17 +281,9 @@ export default function StockBalanceList({
                 Available
               </span>
               <span
-                className={`${MONO} text-[20px] font-semibold tracking-[-.01em] text-[#0b6644]`}
+                className={`${MONO} text-[17px] font-semibold tracking-[-.01em] text-[#0b6644]`}
               >
                 {(summary?.totalAvailableQty ?? 0).toLocaleString()}
-              </span>
-            </div>
-            <div className="flex flex-col gap-1 px-4 py-3">
-              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
-                Sold
-              </span>
-              <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em]`}>
-                {(summary?.totalSoldQty ?? 0).toLocaleString()}
               </span>
             </div>
           </div>
@@ -409,7 +418,7 @@ export default function StockBalanceList({
             {/* Wide: CSS-grid table, same approach as Purchase Orders — explicit
               role="table"/"row"/"cell" since the markup isn't a <table>. */}
             {showTable && (
-              <div role="table" aria-label="Stock balance" className="hidden min-[1080px]:block">
+              <div role="table" aria-label="Stock balance" className="hidden min-[1280px]:block">
                 <div
                   role="row"
                   className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
@@ -417,7 +426,10 @@ export default function StockBalanceList({
                   <span role="columnheader">Item</span>
                   <span role="columnheader">Category</span>
                   <span role="columnheader" className="text-right">
-                    On Hand
+                    Total
+                  </span>
+                  <span role="columnheader" className="text-right">
+                    Transferred
                   </span>
                   <span role="columnheader" className="text-right">
                     Sold
@@ -451,35 +463,46 @@ export default function StockBalanceList({
                       className={`cursor-pointer border-t border-[#f4f4f6] bg-white hover:bg-[#fcfcfd] ${GRID} px-4 py-[11px]`}
                     >
                       <div role="cell" className="flex min-w-0 flex-col gap-0.5">
-                        <span className="truncate text-[14.5px] font-medium text-[#17171c]">
+                        <span className="break-words text-[13px] font-medium leading-snug text-[#17171c]">
                           {itemTitle(bal.item)}
                         </span>
                         {subline && (
-                          <span className="truncate text-[13px] text-[#8b8b9b]">{subline}</span>
+                          <span className="break-words text-[13px] leading-snug text-[#8b8b9b]">
+                            {subline}
+                          </span>
                         )}
                       </div>
 
-                      <span role="cell" className="truncate text-[14px] text-[#5b5b6b]">
+                      <span
+                        role="cell"
+                        className="break-words text-[14px] leading-snug text-[#5b5b6b]"
+                      >
                         {bal.item?.primaryCategory?.name ?? '—'}
                       </span>
 
                       <span
                         role="cell"
-                        className={`${MONO} text-right text-[15px] font-semibold text-[#17171c]`}
+                        className={`${MONO} text-right text-[13.5px] font-semibold text-[#17171c]`}
                       >
                         {bal.onHandQty.toLocaleString()}
                       </span>
 
                       <span
                         role="cell"
-                        className={`${MONO} text-right text-[14.5px] text-[#8b8b9b]`}
+                        className={`${MONO} text-right text-[13px] ${
+                          bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]'
+                        }`}
                       >
+                        {bal.inTransitQty.toLocaleString()}
+                      </span>
+
+                      <span role="cell" className={`${MONO} text-right text-[13px] text-[#8b8b9b]`}>
                         {bal.soldQty.toLocaleString()}
                       </span>
 
                       <span
                         role="cell"
-                        className={`${MONO} text-right text-[14.5px] ${
+                        className={`${MONO} text-right text-[13px] ${
                           bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]'
                         }`}
                       >
@@ -488,7 +511,7 @@ export default function StockBalanceList({
 
                       <span
                         role="cell"
-                        className={`${MONO} text-right text-[15.5px] font-semibold ${AVAILABLE_TEXT[status]}`}
+                        className={`${MONO} text-right text-[14px] font-semibold ${AVAILABLE_TEXT[status]}`}
                       >
                         {bal.availableQty.toLocaleString()}
                       </span>
@@ -542,7 +565,7 @@ export default function StockBalanceList({
 
             {/* Narrow: cards */}
             {showTable && (
-              <div className="flex flex-col gap-[10px] p-3 min-[1080px]:hidden">
+              <div className="flex flex-col gap-[10px] p-3 min-[1280px]:hidden">
                 {balances.map((bal) => {
                   const status = stockStatusOf(bal)
                   const subline = [
@@ -560,19 +583,26 @@ export default function StockBalanceList({
                     >
                       <div className="flex items-start justify-between gap-[10px]">
                         <div className="flex min-w-0 flex-col gap-[3px]">
-                          <span className="truncate text-[13px] font-medium">
+                          <span className="break-words text-[13px] font-medium leading-snug">
                             {itemTitle(bal.item)}
                           </span>
                           {subline && (
-                            <span className="truncate text-[11.5px] text-[#8b8b9b]">{subline}</span>
+                            <span className="break-words text-[11.5px] leading-snug text-[#8b8b9b]">
+                              {subline}
+                            </span>
                           )}
                         </div>
                         <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
                       </div>
 
-                      <div className="grid grid-cols-4 gap-[6px]">
+                      <div className="grid grid-cols-5 gap-[6px]">
                         {[
-                          { label: 'On hand', value: bal.onHandQty, tone: 'text-[#17171c]' },
+                          { label: 'Total', value: bal.onHandQty, tone: 'text-[#17171c]' },
+                          {
+                            label: 'Transferred',
+                            value: bal.inTransitQty,
+                            tone: bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]',
+                          },
                           { label: 'Sold', value: bal.soldQty, tone: 'text-[#8b8b9b]' },
                           {
                             label: 'Reserved',
@@ -617,11 +647,12 @@ export default function StockBalanceList({
             {isLoading && (
               <div>
                 <div
-                  className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1080px]:grid`}
+                  className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1280px]:grid`}
                 >
                   <span>Item</span>
                   <span>Category</span>
-                  <span className="text-right">On Hand</span>
+                  <span className="text-right">Total</span>
+                  <span className="text-right">Transferred</span>
                   <span className="text-right">Sold</span>
                   <span className="text-right">Reserved</span>
                   <span className="text-right">Available</span>
@@ -630,9 +661,10 @@ export default function StockBalanceList({
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div
                     key={i}
-                    className={`${GRID} hidden border-t border-[#f4f4f6] px-4 py-[14px] min-[1080px]:grid`}
+                    className={`${GRID} hidden border-t border-[#f4f4f6] px-4 py-[14px] min-[1280px]:grid`}
                   >
                     <SkeletonBar wide />
+                    <SkeletonBar />
                     <SkeletonBar />
                     <SkeletonBar />
                     <SkeletonBar />
@@ -641,7 +673,7 @@ export default function StockBalanceList({
                     <SkeletonBar wide />
                   </div>
                 ))}
-                <div className="flex flex-col gap-[10px] p-3 min-[1080px]:hidden">
+                <div className="flex flex-col gap-[10px] p-3 min-[1280px]:hidden">
                   {Array.from({ length: 4 }).map((_, i) => (
                     <div
                       key={i}
@@ -682,7 +714,7 @@ export default function StockBalanceList({
                   <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]">
                     <Package className="h-4 w-4 text-[#5b21b6]" />
                   </div>
-                  <div className="mt-1 text-[15px] font-semibold">No stock on record</div>
+                  <div className="mt-1 text-[13.5px] font-semibold">No stock on record</div>
                   <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
                     Balances appear here once stock is received against a purchase order or entered
                     through an opening-stock adjustment.
