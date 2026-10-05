@@ -163,6 +163,8 @@ export interface CoMaker {
 
 export interface Customer {
   id: string
+  /** Scenario 67 — X-Deal (barter) installment accounts; list responses only. */
+  xDealAccountCount?: number
   tenantId: string
   customerCode: string
   name: string
@@ -379,6 +381,9 @@ export interface InstallmentAccount {
   legalEscalationNotes?: string | null
   legalEscalationUpdatedAt?: string | null
   status: InstallmentAccountStatus
+  /** Scenario 67 — set when this account came from an X-Deal (barter) sale. */
+  isXDeal?: boolean
+  xDealReference?: string | null
   createdAt: string
   customer?: { name: string } | null
   branch?: { name: string } | null
