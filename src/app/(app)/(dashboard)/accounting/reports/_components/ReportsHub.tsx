@@ -561,25 +561,43 @@ function Section({
   scope?: DrillScope
 }) {
   const rows = Array.isArray(items) ? items : []
+  const ids = new Set(rows.map((r: any) => r.accountId))
+  const kidsOf = (id: string) => rows.filter((k: any) => k.parentAccountId === id)
+  const rolledUp = (r: any): number =>
+    (r.balance ?? 0) + kidsOf(r.accountId).reduce((n: number, k: any) => n + rolledUp(k), 0)
+  // A row's parent being in the same section nests it; otherwise it is top-level.
+  const renderRow = (r: any, depth: number): React.ReactNode => {
+    const kids = kidsOf(r.accountId)
+    return (
+      <div key={r.accountId}>
+        <div
+          className={`flex justify-between text-sm py-1 border-l-2 border-gray-100 ${depth ? 'text-gray-600' : ''}`}
+          style={{ paddingLeft: 12 + depth * 20 }}
+        >
+          <span className={kids.length ? 'font-medium' : undefined}>
+            {r.number} — {r.name}
+          </span>
+          {kids.length ? (
+            <span className="font-medium">{fmtMoney(Math.abs(rolledUp(r)))}</span>
+          ) : (
+            <DrillAmount accountId={r.accountId} scope={scope}>
+              {fmtMoney(Math.abs(r.balance ?? 0))}
+            </DrillAmount>
+          )}
+        </div>
+        {kids.map((k: any) => renderRow(k, depth + 1))}
+      </div>
+    )
+  }
   return (
     <div className="mb-4">
       <div className="font-semibold text-gray-800 mb-1">{title}</div>
       {rows.length === 0 ? (
         <div className="text-sm text-gray-400 italic pl-3">None</div>
       ) : (
-        rows.map((r: any) => (
-          <div
-            key={r.accountId}
-            className="flex justify-between text-sm py-1 pl-3 border-l-2 border-gray-100"
-          >
-            <span>
-              {r.number} — {r.name}
-            </span>
-            <DrillAmount accountId={r.accountId} scope={scope}>
-              {fmtMoney(Math.abs(r.balance ?? 0))}
-            </DrillAmount>
-          </div>
-        ))
+        rows
+          .filter((r: any) => !r.parentAccountId || !ids.has(r.parentAccountId))
+          .map((r: any) => renderRow(r, 0))
       )}
       <div className="flex justify-between text-sm font-semibold mt-1 pl-3 border-t border-gray-200 pt-1">
         <span>Total {title}</span>

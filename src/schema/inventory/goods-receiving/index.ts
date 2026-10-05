@@ -419,10 +419,19 @@ export const ReceivingReportSchema = z.object({
   // Why the stock came in. A repair_return / repossession receipt takes units
   // back from a customer, so it has no supplier invoice behind it.
   reason: z.string().optional().nullable(),
+  repairType: z.string().optional().nullable(),
   receivedAt: z.string(),
   notes: z.string().optional().nullable(),
   warehouse: ReceivingReportWarehouseSchema.optional().nullable(),
   supplier: ReceivingReportSupplierSchema.optional().nullable(),
+  // Single-receipt response only: the customer a return/repossession came from.
+  returnedBy: z
+    .object({ id: z.string(), name: z.string(), customerCode: z.string().optional() })
+    .optional()
+    .nullable(),
+  returnedInvoices: z
+    .array(z.object({ number: z.string(), date: z.string().nullable().optional() }))
+    .optional(),
   receivedById: z.string().optional().nullable(),
   receivedByName: z.string().optional().nullable(),
   poDate: z.string().optional().nullable(),

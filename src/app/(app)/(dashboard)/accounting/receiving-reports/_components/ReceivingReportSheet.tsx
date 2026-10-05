@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  receivingReportReasonLabel,
   receivingReportSourceName,
   receivingReportSourceSubtitle,
   receivingReportSourceRef,
@@ -39,6 +40,11 @@ export interface ReceivingReportDocument {
     /** Set only on a receipt that came from a branch transfer rather than a
      * supplier. Its number takes the sheet's PO slot — see
      * receivingReportSourceRef(). */
+    reason?: string | null
+    /** The sales invoice(s) a returned unit came back from. */
+    returnedInvoices?: { number: string; date?: string | null }[] | null
+    repairType?: string | null
+    returnedBy?: { name?: string | null; customerCode?: string | null } | null
     stockTransfer?: {
       id?: string | null
       transferNumber?: string | null
@@ -105,6 +111,8 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
   const enterprise = doc.enterprise
   const lines = rr.lines ?? []
   const sourceRef = receivingReportSourceRef(rr)
+  const returnedFrom = rr.returnedInvoices?.length ? rr.returnedInvoices : null
+  const isReturn = rr.reason === 'repair_return' || rr.reason === 'repossession'
 
   // The print builder's own running totals: units always, money only when
   // at least one line carries a cost (a transfer-sourced receipt has none).
@@ -123,7 +131,14 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
   return (
     <div className="bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
       <div className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-bold text-prominent-purple-900">Receiving Report</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-prominent-purple-900">Receiving Report</h1>
+          {receivingReportReasonLabel(rr) && (
+            <p className="mt-1 text-sm font-semibold uppercase tracking-wide text-gray-700">
+              {receivingReportReasonLabel(rr)}
+            </p>
+          )}
+        </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/nig-logo.png"
@@ -156,15 +171,33 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
         <div className="text-right">
           <MetaPair label="No." value={doc.documentNumber ?? rr.code} />
           <MetaPair label="Date" value={docDate(rr.receivedAt)} />
-          <MetaPair
-            label="Ref"
-            value={rr.deliveryReceiptNumber || rr.supplierInvoiceNumber || '—'}
-          />
-          {/* "P.O. No." on a supplier receipt, "Transfer No." on one that
-              came from another branch — the slot names what the receipt
-              actually points back at. */}
-          <MetaPair label={sourceRef.label} value={sourceRef.code ?? '—'} />
-          <MetaPair label="Dated" value={docDate(sourceRef.dated)} />
+          {isReturn ? (
+            // A return has no supplier paperwork or PO — what it points back
+            // at is the sales invoice the unit was sold on. A receipt posted
+            // before the invoice was saved shows neither slot rather than a
+            // supplier's blank ones.
+            returnedFrom && (
+              <>
+                <MetaPair
+                  label="Invoice No."
+                  value={returnedFrom.map((i) => i.number).join(', ')}
+                />
+                <MetaPair label="Dated" value={docDate(returnedFrom[0].date ?? null)} />
+              </>
+            )
+          ) : (
+            <>
+              <MetaPair
+                label="Ref"
+                value={rr.deliveryReceiptNumber || rr.supplierInvoiceNumber || '—'}
+              />
+              {/* "P.O. No." on a supplier receipt, "Transfer No." on one that
+                  came from another branch — the slot names what the receipt
+                  actually points back at. */}
+              <MetaPair label={sourceRef.label} value={sourceRef.code ?? '—'} />
+              <MetaPair label="Dated" value={docDate(sourceRef.dated)} />
+            </>
+          )}
         </div>
         <div className="md:border-l md:border-gray-300 md:pl-7">
           <p className="font-bold text-prominent-purple-900">

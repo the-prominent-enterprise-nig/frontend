@@ -7,6 +7,7 @@ import { FileAttachments } from '@/src/libs/data/AccountingV2Data'
 import ReceivingReportSheet, {
   type ReceivingReportDocument,
 } from '../../../../accounting/receiving-reports/_components/ReceivingReportSheet'
+import ReturnReceiptEditForm from '../../../../accounting/receiving-reports/_components/ReturnReceiptEditForm'
 import ReceivingReportEditForm from '../../../../accounting/receiving-reports/_components/ReceivingReportEditForm'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import { getReceivingDocument } from '../../_actions/get-receiving-document'
@@ -224,14 +225,25 @@ export default function ReceivingReportDetail({
       {/* Scenario 46 — correcting the report after the fact. Shared with the
           PO's Delivery Receipts drawer so a correction reads the same way
           from either screen. */}
-      {editing && record && (
-        <ReceivingReportEditForm
-          id={id}
-          record={record}
-          onCancel={() => setEditing(false)}
-          onSaved={refetchAfterSave}
-        />
-      )}
+      {editing &&
+        record &&
+        // A repair/return or repossession has no supplier paperwork to
+        // correct, so it gets its own form rather than the supplier one.
+        (record.reason === 'repair_return' || record.reason === 'repossession' ? (
+          <ReturnReceiptEditForm
+            id={id}
+            record={record}
+            onCancel={() => setEditing(false)}
+            onSaved={refetchAfterSave}
+          />
+        ) : (
+          <ReceivingReportEditForm
+            id={id}
+            record={record}
+            onCancel={() => setEditing(false)}
+            onSaved={refetchAfterSave}
+          />
+        ))}
 
       <div className="mt-2.5">
         <ReceivingReportSheet doc={doc} />

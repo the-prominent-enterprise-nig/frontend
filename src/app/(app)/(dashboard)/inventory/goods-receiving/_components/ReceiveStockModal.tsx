@@ -966,10 +966,10 @@ export default function ReceiveStockModal({
           unitReturn && line.existingSerialNumberIds && line.existingSerialNumberIds.length > 0
             ? line.existingSerialNumberIds
             : undefined,
-        // Only meaningful for a repossession line — dropped otherwise so a
-        // stale pick from switching reasons mid-form can't ride along.
-        installmentAccountId:
-          reason === 'repossession' ? line.installmentAccountId || undefined : undefined,
+        // The invoice a returned unit came back from — dropped on any other
+        // reason so a stale pick from switching reasons mid-form can't ride
+        // along.
+        installmentAccountId: unitReturn ? line.installmentAccountId || undefined : undefined,
       })),
     })
     if (result.success) onClose()

@@ -11,6 +11,7 @@ import {
   UDS_ASSESSMENT_LABELS,
   type Uds,
 } from '@/src/schema/inventory/uds'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { SupplierOption } from './SetRepairProviderModal'
 
@@ -197,14 +198,16 @@ export default function AssessUdsModal({
                   control={control}
                   rules={{ validate: (v) => !!v || 'Choose who will repair the unit' }}
                   render={({ field }) => (
-                    <select {...field} className={fieldClass}>
-                      <option value="">— Select —</option>
-                      {supplierOptions.map((sup) => (
-                        <option key={sup.id} value={sup.id}>
-                          {sup.code} — {sup.name}
-                        </option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      value={field.value ?? ''}
+                      onChange={(v) => field.onChange(v)}
+                      placeholder="Search repair provider…"
+                      portal
+                      options={supplierOptions.map((sup) => ({
+                        value: sup.id,
+                        label: `${sup.code} — ${sup.name}`,
+                      }))}
+                    />
                   )}
                 />
                 {errors.repairProviderId ? (

@@ -132,16 +132,14 @@ export default function UpdateUdsStatusModal({
     },
   })
   const selectedStatus = watch('status')
-  // The branch <-> main trip happens on exactly these two transitions: the
-  // unit leaves for main, and it is back at the branch when the sheet closes.
-  // Asking for the SI anywhere else would collect a number for a leg that
-  // isn't being made, and the server would drop it.
+  // Only the return to branch collects an SI. The trip out to main doesn't:
+  // the stock transfer records that movement and no separate SI is raised for
+  // it. Asking anywhere else would collect a number for a leg that isn't being
+  // made, and the server would drop it.
   const siLeg =
-    selectedStatus === 'in_transit'
-      ? { label: 'SI for the transfer to main', hint: 'Raised by the branch with the unit' }
-      : selectedStatus === 'completed'
-        ? { label: 'SI for the return to branch', hint: 'Raised when the unit comes back' }
-        : null
+    selectedStatus === 'completed'
+      ? { label: 'SI for the return to branch', hint: 'Raised when the unit comes back' }
+      : null
 
   useEffect(() => {
     if (!isOpen) {

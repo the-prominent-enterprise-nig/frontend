@@ -24,6 +24,7 @@ import type {
   ReceivingReport,
 } from '@/src/schema/inventory/goods-receiving'
 import {
+  receivingReportReasonLabel,
   receivingReportSourceName,
   receivingReportSourceRef,
   receivingReportSourceSubtitle,
@@ -249,7 +250,12 @@ function sourceName(report: ReceivingReport): string {
 function PoLink({ report }: { report: ReceivingReport }) {
   const router = useRouter()
   const { code } = receivingReportSourceRef(report)
-  if (!code) return null
+  // A return/repossession has no PO or transfer behind it; its reason is the
+  // reference, under the customer's name.
+  const reason = receivingReportReasonLabel(report)
+  if (!code) {
+    return reason ? <p className="truncate text-[13px] text-[#8b8b9b]">{reason}</p> : null
+  }
 
   // Both references are deep-linkable, to different screens. A PO opens by
   // id; a transfer has no per-transfer route (its detail is a modal over the

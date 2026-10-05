@@ -1,14 +1,17 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Plus, Search, Pencil, Trash2, X } from 'lucide-react'
 import { BankAccounts, type BankAccount, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 
 export default function BankAccountsList() {
+  const router = useRouter()
   const [items, setItems] = useState<BankAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<BankAccount | null>(null)
   const [creating, setCreating] = useState(false)
+  const [search, setSearch] = useState('')
   const load = useCallback(async () => {
     setLoading(true)
     const r = await BankAccounts.list()
@@ -18,6 +21,16 @@ export default function BankAccountsList() {
   useEffect(() => {
     load()
   }, [load])
+  const q = search.trim().toLowerCase()
+  const visible = q
+    ? items.filter((a) =>
+        [a.name, a.bankName, a.accountNumber, a.accountType, a.currencyCode].some((v) =>
+          String(v ?? '')
+            .toLowerCase()
+            .includes(q)
+        )
+      )
+    : items
   const del = async (id: string) => {
     if (confirm('Deactivate account?')) {
       await BankAccounts.remove(id)
@@ -34,18 +47,21 @@ export default function BankAccountsList() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={load}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
-          <button
             onClick={() => setCreating(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
           >
             <Plus className="w-4 h-4" /> Add
           </button>
         </div>
+      </div>
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, bank, or account #"
+          className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+        />
       </div>
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
@@ -68,15 +84,26 @@ export default function BankAccountsList() {
                   Loading...
                 </td>
               </tr>
-            ) : items.length === 0 ? (
+            ) : visible.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
-                  No bank accounts.
+                  {q ? 'No matching accounts.' : 'No bank accounts.'}
                 </td>
               </tr>
             ) : (
-              items.map((a) => (
-                <tr key={a.id}>
+              visible.map((a) => (
+                <tr
+                  key={a.id}
+                  className="cursor-pointer hover:bg-gray-50"
+                  onClick={() =>
+                    a.glAccountId
+                      ? router.push(
+                          `/accounting/general-ledger?accountId=${a.glAccountId}&startDate=`
+                        )
+                      : setEditing(a)
+                  }
+                  title={a.glAccountId ? 'Open ledger' : 'No GL account linked — click to edit'}
+                >
                   <td className="px-3 py-2 font-medium">{a.name}</td>
                   <td className="px-3 py-2">{a.bankName}</td>
                   <td className="px-3 py-2 font-mono text-xs">{a.accountNumber}</td>
@@ -93,13 +120,19 @@ export default function BankAccountsList() {
                   <td className="px-3 py-2 text-right">
                     <div className="flex justify-end gap-1">
                       <button
-                        onClick={() => setEditing(a)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditing(a)
+                        }}
                         className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => del(a.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          del(a.id)
+                        }}
                         className="p-1.5 text-red-600 hover:bg-red-50 rounded"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -156,7 +189,26 @@ function BankForm({
       setAccounts((data?.items ?? data ?? []) as Account[])
     })()
   }, [])
-  const glAccounts = accounts.filter((a) => String(a.type).toUpperCase() === 'ASSET')
+  // Only accounts anywhere beneath "Cash and Cash Equivalents" — the balance
+  // sheet rolls these up under it. An already-saved link stays selectable.
+  const cashControl = accounts.find(
+    (a) => a.name === 'Cash and Cash Equivalents' && !(a as any).parentAccountId
+  )
+  const underCash = new Set<string>()
+  if (cashControl) {
+    const parentOf = new Map(
+      accounts.map((a) => [a.id, (a as any).parentAccountId as string | undefined])
+    )
+    for (const a of accounts) {
+      for (let p = parentOf.get(a.id), i = 0; p && i < 10; p = parentOf.get(p), i++) {
+        if (p === cashControl.id) {
+          underCash.add(a.id)
+          break
+        }
+      }
+    }
+  }
+  const glAccounts = accounts.filter((a) => underCash.has(a.id) || a.id === initial?.glAccountId)
   const [saving, setSaving] = useState(false)
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -242,7 +294,11 @@ function BankForm({
               onChange={(e) => setForm({ ...form, glAccountId: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             >
-              <option value="">— Use default Cash/Bank mapping —</option>
+              <option value="">
+                {initial
+                  ? '— Use default Cash/Bank mapping —'
+                  : '— Create new sub-account under Cash and Cash Equivalents —'}
+              </option>
               {glAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.number ?? a.code} — {a.name}
