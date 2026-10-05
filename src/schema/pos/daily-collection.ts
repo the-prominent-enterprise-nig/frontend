@@ -35,8 +35,11 @@ export type DailyCollectionRow = z.infer<typeof DailyCollectionRowSchema>
  * API so the screen, the print sheet and the workbook cannot disagree. */
 export const NonCashTenderSchema = z.object({
   tender: z.string(),
+  /** 'DP' for a non-cash down payment, otherwise the kind of the sale it came from. */
+  kind: z.string().default('COD'),
   label: z.string(),
   amount: z.number(),
+  /** Who paid this tender that day, largest first. */
 })
 export type NonCashTender = z.infer<typeof NonCashTenderSchema>
 
@@ -80,6 +83,9 @@ export const DailyCollectionReportSchema = z.object({
   branchManagerName: z.string().nullable().default(null),
   date: z.string(),
   rows: z.array(DailyCollectionRowSchema),
+  /** Non-cash sales and down payments, listed in the ledger with their payment
+   * mode but never moving its BALANCE. */
+  nonCashRows: z.array(DailyCollectionRowSchema).default([]),
   deposits: z.array(DailyCollectionDepositSchema),
   byKind: z.record(CollectionKindSchema, z.number()),
   /** Cash only — the ledger, the BALANCE column and the denomination count

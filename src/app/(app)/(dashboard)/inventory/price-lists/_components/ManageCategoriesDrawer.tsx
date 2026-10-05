@@ -141,7 +141,7 @@ export default function ManageCategoriesDrawer({
                 >
                   {type.name}
                 </span>
-                <p className="text-sm text-[#5b5b6b]">{type.description || '—'}</p>
+                <p className="text-xs text-[#5b5b6b]">{type.description || '—'}</p>
               </div>
 
               <div className="flex shrink-0 items-center gap-3">
