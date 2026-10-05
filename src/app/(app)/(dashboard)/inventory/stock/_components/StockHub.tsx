@@ -1,13 +1,12 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
-import { useState } from 'react'
-import { PackageCheck, BookOpen, ClipboardList, Hash } from 'lucide-react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { PackageCheck, ClipboardList, Hash } from 'lucide-react'
 import { InventoryTabNav } from '@/src/components/inventory/InventoryTabNav'
 import StockBalanceList from './StockBalanceList'
 import ReservationsPageView from '../../reservations/_components/ReservationsPageView'
 import NegativeStockPageView from '../../negative-stock/_components/NegativeStockPageView'
-import StockLedgerTab from '../../goods-receiving/_components/StockLedgerTab'
 import ReceivingReportsTab from '../../goods-receiving/_components/ReceivingReportsTab'
 import { SerialNumberList } from '../../serial-numbers/_components'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
@@ -22,13 +21,20 @@ import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 const TABS = [
   { id: 'balance', label: 'Balance', icon: PackageCheck },
   { id: 'serials', label: 'Serial Numbers', icon: Hash },
-  { id: 'ledger', label: 'Stock Ledger', icon: BookOpen },
   { id: 'reports', label: 'Receiving Reports', icon: ClipboardList },
 ]
 
 export function StockHub({ session }: { session: SessionUser }) {
+  const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
-  const tab = searchParams.get('tab') ?? 'balance'
+  // The Ledger tab folded into Balance; an old ?tab=ledger link lands on Balance.
+  const requested = searchParams.get('tab') ?? 'balance'
+  const tab = requested === 'ledger' ? 'balance' : requested
+
+  useEffect(() => {
+    if (requested === 'ledger') router.replace(`${pathname}?tab=balance`)
+  }, [requested, pathname, router])
 
   // Lifted here (rather than local to each tab's hook) because StockHub
   // itself never unmounts across a tab switch — only its children do — so
@@ -41,13 +47,6 @@ export function StockHub({ session }: { session: SessionUser }) {
       <InventoryTabNav tabs={TABS} />
       {tab === 'serials' ? (
         <SerialNumberList session={session} />
-      ) : tab === 'ledger' ? (
-        <div className="mx-auto w-full max-w-[1560px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-          <StockLedgerTab
-            initialLocations={sharedLocations}
-            canAdjust={can(session, INVENTORY_PERMISSIONS.STOCK_ADJUST)}
-          />
-        </div>
       ) : tab === 'reports' ? (
         <div className="mx-auto w-full max-w-[1560px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
           <ReceivingReportsTab />
