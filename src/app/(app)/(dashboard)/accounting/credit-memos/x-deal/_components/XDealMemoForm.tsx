@@ -25,7 +25,11 @@ export default function XDealMemoForm() {
   const queryClient = useQueryClient()
   const [posTransactionId, setPosTransactionId] = useState('')
   const [reason, setReason] = useState('')
-  const [memoDate, setMemoDate] = useState(() => new Date().toISOString().slice(0, 10))
+  // Today in the Philippines, not UTC — before 8 AM the UTC date is still
+  // yesterday, which would book the memo to the previous day (or month).
+  const [memoDate, setMemoDate] = useState(() =>
+    new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -88,8 +92,8 @@ export default function XDealMemoForm() {
         X-Deal offset
       </h1>
       <p className="mt-1 text-sm text-gray-500">
-        Clears an X-Deal (barter) sale&apos;s whole remaining balance and closes its installment
-        account at ₱0.00.
+        Clears an X-Deal sale&apos;s whole remaining balance and closes its installment account at
+        ₱0.00.
       </p>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">

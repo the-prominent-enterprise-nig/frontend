@@ -1706,17 +1706,19 @@ export default function CheckoutPage() {
   // set via the transaction-wide Payment Mode toggle — there's no per-item
   // choice anymore) is Credit Card. One card swipe covers whatever's being
   // paid by card in this sale, so the Card Acquirer/Straight-Installment/Term
-  // fields render once, not per line.
+  // fields render once, not per line. An X-Deal collects no down payment, so
+  // a cash/card choice made before ticking it no longer applies — it's kept
+  // (unticking restores it), just not acted on.
   const hasCreditCardLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
-    (installmentCartLines.length > 0 && installmentPaymentMethod === 'credit_card')
+    (installmentCartLines.length > 0 && !xDealActive && installmentPaymentMethod === 'credit_card')
   // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR). Also
   // covers the down payment's cash tendering now that it shares this pool —
   // cash-lines and installment-lines never coexist in one cart, so only one
   // of the two OR branches is ever true.
   const hasCashLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment') ||
-    (installmentCartLines.length > 0 && installmentPaymentMethod === 'cash')
+    (installmentCartLines.length > 0 && !xDealActive && installmentPaymentMethod === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
   // value (net of promo discount, prorated by the cash lines' share of the
@@ -4641,7 +4643,7 @@ export default function CheckoutPage() {
                     className="mt-0.5"
                   />
                   <span>
-                    <span className="font-medium text-prominent-purple-900">X-Deal (barter)</span>
+                    <span className="font-medium text-prominent-purple-900">X-Deal</span>
                     <span className="block text-gray-700">
                       {isOffline
                         ? 'Unavailable offline'
@@ -4653,7 +4655,7 @@ export default function CheckoutPage() {
                   <input
                     data-testid="x-deal-reference"
                     className="mt-2 w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    placeholder="X-Deal Reference (barter agreement no.) *"
+                    placeholder="X-Deal Reference (agreement no.) *"
                     maxLength={100}
                     value={xDealReference}
                     onChange={(e) => {
