@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Handshake, Loader2 } from 'lucide-react'
 import { XDealMemos, fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { showToast } from '@/src/components/ui/toast'
@@ -22,6 +22,7 @@ const LIST_HREF = '/accounting/credit-memos'
  */
 export default function XDealMemoForm() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [posTransactionId, setPosTransactionId] = useState('')
   const [reason, setReason] = useState('')
   const [memoDate, setMemoDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -66,6 +67,9 @@ export default function XDealMemoForm() {
       description: `${selected?.customer.name ?? 'The account'} is settled at ₱0.00.`,
       status: 'success',
     })
+    // The list caches for 30 s and is already cached from the way here, so
+    // without this it would come back without the memo just issued.
+    queryClient.invalidateQueries({ queryKey: ['customer-credit-memos'] })
     router.push(LIST_HREF)
   }
 
