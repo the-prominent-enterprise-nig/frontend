@@ -416,6 +416,9 @@ export const ReceivingReportSchema = z.object({
   sourceType: z.enum(['goods_receipt', 'manual_rr']).optional(),
   applicationType: z.string().optional(),
   modeOfTransfer: z.string().optional().nullable(),
+  // Why the stock came in. A repair_return / repossession receipt takes units
+  // back from a customer, so it has no supplier invoice behind it.
+  reason: z.string().optional().nullable(),
   receivedAt: z.string(),
   notes: z.string().optional().nullable(),
   warehouse: ReceivingReportWarehouseSchema.optional().nullable(),

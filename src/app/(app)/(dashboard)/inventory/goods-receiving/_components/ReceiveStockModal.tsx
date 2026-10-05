@@ -528,6 +528,12 @@ export default function ReceiveStockModal({
 
   function addUnitLine(accountId: string, unit: InstallmentAccountUnitItem): void {
     if (!unit.serialNumberId) return
+    // Read the live form value, not `lines`: pickInvoice calls this from an
+    // async callback (and the invoice combobox fires onChange + onSelect), so
+    // the same single-unit invoice could otherwise be appended twice and trip
+    // "duplicate serial" on its own unit.
+    const current = (getValues('lines') ?? []) as RrLine[]
+    if (current.some((l) => l.existingSerialNumberIds?.[0] === unit.serialNumberId)) return
     rememberItem(unit.itemId, {
       name: unit.itemName ?? unit.itemId,
       isSerialTracked: true,
