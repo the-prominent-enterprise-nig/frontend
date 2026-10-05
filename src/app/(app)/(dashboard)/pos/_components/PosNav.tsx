@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  BookOpen,
   LayoutDashboard,
   ShoppingCart,
   BookmarkCheck,
@@ -32,10 +33,20 @@ const GROUPS: { label: string; paths: string[]; items: NavItem[] }[] = [
     // Parked Sales tab hidden for now (still a real, working feature — the
     // route/controller/service are untouched, and Scenario 09 still depends
     // on ParkedSalesService as-is — just no nav entry into it at the moment).
-    paths: ['/pos', '/pos/checkout', '/pos/reservations', '/pos/transactions', '/pos/parked-sales'],
+    paths: [
+      '/pos',
+      '/pos/checkout',
+      '/pos/catalog',
+      '/pos/reservations',
+      '/pos/transactions',
+      '/pos/parked-sales',
+    ],
     items: [
       { label: 'Overview', href: '/pos', exact: true, icon: LayoutDashboard },
       { label: 'Checkout', href: '/pos/checkout', icon: ShoppingCart },
+      // Item Master's product browse moved here from Inventory (Scenario 62):
+      // brands, models, prices and stock for the branch's sellable items.
+      { label: 'Product Catalog', href: '/pos/catalog', icon: BookOpen },
       { label: 'Reservations', href: '/pos/reservations', icon: BookmarkCheck },
       { label: 'Transactions', href: '/pos/transactions', icon: ReceiptText },
       // The page existed but was linked from nowhere — not here, not the

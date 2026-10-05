@@ -16,7 +16,7 @@ interface ModalProps {
   description?: string
   onClose: () => void
   children: ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'
   footer?: ReactNode
 }
 
@@ -25,6 +25,7 @@ const SIZE_CLASSES: Record<Exclude<NonNullable<ModalProps['size']>, 'full'>, str
   md: 'max-w-lg',
   lg: 'max-w-2xl',
   xl: 'max-w-5xl',
+  '2xl': 'max-w-7xl',
 }
 
 export function Modal({

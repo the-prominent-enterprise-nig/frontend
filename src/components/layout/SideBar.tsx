@@ -383,6 +383,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos', '/pos/checkout', '/pos/transactions'],
       },
       {
+        label: 'Product Catalog',
+        href: '/pos/catalog',
+        icon: BookOpen,
+        requiredPermission: POS_PERMISSIONS.TRANSACTIONS_READ,
+        activeWhen: ['/pos/catalog'],
+      },
+      {
         label: 'Management',
         href: '/pos/sessions',
         icon: Monitor,
