@@ -325,7 +325,7 @@ export interface PosTransaction {
   /** HR's own approval reference for the employee appliance loan — set
    * whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string | null
-  /** Scenario 65 — true when this sale is an X-Deal (barter): inhouse
+  /** Scenario 67 — true when this sale is an X-Deal (barter): inhouse
    * installment, no down payment, no credit application; accounting clears
    * its balance with an X-Deal credit memo. */
   isXDeal?: boolean | null
@@ -462,7 +462,7 @@ export interface CreateTransactionInput {
   /** HR's own approval reference for the employee appliance loan —
    * required whenever isEmployeeApplianceLoan is true. */
   hrApplianceLoanApplicationNumber?: string
-  /** Scenario 65 — marks this sale as an X-Deal (barter). Every line must
+  /** Scenario 67 — marks this sale as an X-Deal (barter). Every line must
    * be inhouse installment on one financing term with a ₱0 down payment,
    * and no creditApplicationId may be sent. */
   isXDeal?: boolean

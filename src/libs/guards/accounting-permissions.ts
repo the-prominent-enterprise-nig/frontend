@@ -128,7 +128,7 @@ export const ACCOUNTING_PERMISSIONS = {
   CREDIT_MEMOS_READ: 'accounting:credit-memos:read',
   CREDIT_MEMOS_CREATE: 'accounting:credit-memos:create',
   CREDIT_MEMOS_VOID: 'accounting:credit-memos:void',
-  /** Scenario 65 — issue or void an X-Deal (barter) credit memo. Deliberately
+  /** Scenario 67 — issue or void an X-Deal (barter) credit memo. Deliberately
    * not covered by Branch Manager's accounting:credit-memos:*. */
   X_DEAL_MEMOS_ISSUE: 'accounting:x-deal-memos:issue',
 

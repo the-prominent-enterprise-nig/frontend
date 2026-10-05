@@ -1,4 +1,4 @@
-# Scenario 65 — X-Deal (Barter) Transaction — Gap Analysis & Closing Plan
+# Scenario 67 — X-Deal (Barter) Transaction — Gap Analysis & Closing Plan
 
 **Source**: developer request, 2026-10-01. Goal statement:
 
@@ -227,7 +227,7 @@ And the inverse after XD-M15 (void): the account is back in the IA aging, A/R ag
 
 #### Manual test script
 
-`docs/scenario-65-manual-test-script.md`, written in Part 4: one end-to-end walk (stock an item → ring up an X-Deal → manager approves → release interest for one month → issue the memo → check the ledger, aging and GL → void → check again), plus a short "try to break it" list mirroring R1–R10.
+`docs/scenario-67-manual-test-script.md`, written in Part 4: one end-to-end walk (stock an item → ring up an X-Deal → manager approves → release interest for one month → issue the memo → check the ledger, aging and GL → void → check again), plus a short "try to break it" list mirroring R1–R10.
 
 ## Not in this scenario
 

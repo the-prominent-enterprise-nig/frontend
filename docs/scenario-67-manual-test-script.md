@@ -1,6 +1,6 @@
-# Scenario 65 — X-Deal (Barter) Transaction: Manual Test Script
+# Scenario 67 — X-Deal (Barter) Transaction: Manual Test Script
 
-Companion to [scenario-65-x-deal-transaction-plan.md](./scenario-65-x-deal-transaction-plan.md).
+Companion to [scenario-67-x-deal-transaction-plan.md](./scenario-67-x-deal-transaction-plan.md).
 Click-by-click: every step names the menu, the button and what to type, then what you should see.
 Tick **☐ → ✅ / ❌** as you go and note anything odd in the **Notes** line under each section.
 
@@ -9,7 +9,7 @@ Tick **☐ → ✅ / ❌** as you go and note anything odd in the **Notes** line
 - **⚠️ watch** — only covered indirectly. Give these the most attention.
 - Case IDs (XD-…) point at the automated test for the same thing.
 
-Branch: `feat/scenario-65-x-deal-transaction` in both repos.
+Branch: `feat/scenario-67-x-deal-transaction` in both repos.
 
 ---
 
@@ -17,9 +17,10 @@ Branch: `feat/scenario-65-x-deal-transaction` in both repos.
 
 ### 0.1 Servers and database
 
-1. Dev DB has both Scenario 65 migrations (`20261001090000_scenario_65_x_deal`,
-   `20261001100000_scenario_65_x_deal_credit_memo`) and the backfill has run
-   (`npx ts-node -r tsconfig-paths/register scripts/backfill-scenario-65-x-deal.ts` in
+1. Dev DB has both Scenario 67 migrations (`20261001090000_scenario_65_x_deal`,
+   `20261001100000_scenario_65_x_deal_credit_memo` — the folders keep the
+   original number 65: they were applied before the renumber to 67) and the backfill has run
+   (`npx ts-node -r tsconfig-paths/register scripts/backfill-scenario-67-x-deal.ts` in
    `backend/backend` — four ✓ lines, safe to re-run).
 2. Backend on `localhost:3001`, frontend on `localhost:3000`.
 3. **Every login** uses password `dev-prominent-enterprise-2026`. Where a PIN box shows `••••`,

@@ -828,7 +828,7 @@ export default function CheckoutPage() {
   const [employeeApplianceLoanChecked, setEmployeeApplianceLoanChecked] = useState(false)
   const [hrApplianceLoanApplicationNumber, setHrApplianceLoanApplicationNumber] = useState('')
 
-  // Scenario 65 — X-Deal (barter): rung up as an inhouse installment sale
+  // Scenario 67 — X-Deal (barter): rung up as an inhouse installment sale
   // with no down payment and no credit application, whose balance
   // accounting later offsets in full with an X-Deal credit memo. Any
   // customer, cashier-confirmed; mutually exclusive with the Employee
@@ -985,7 +985,7 @@ export default function CheckoutPage() {
       financedBalance?: number | null
     }[]
     invoices?: PosTransactionInvoice[]
-    /** Scenario 65 */
+    /** Scenario 67 */
     isXDeal?: boolean
     xDealReference?: string | null
   } | null>(null)
@@ -998,7 +998,7 @@ export default function CheckoutPage() {
     /** Scenario 17 Part 7 — set only for installment sales, so
      * PendingApprovalScreen knows whether to show the Promissory Note card. */
     creditApplicationId?: string
-    /** Scenario 65 */
+    /** Scenario 67 */
     isXDeal?: boolean
     xDealReference?: string | null
   } | null>(null)
@@ -1245,7 +1245,7 @@ export default function CheckoutPage() {
     if (handoff && belongsToAnOpenSession) {
       if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
         setCart(handoff.lines)
-        // Scenario 65 — restored once the customer below is re-selected.
+        // Scenario 67 — restored once the customer below is re-selected.
         if (handoff.isXDeal) {
           pendingResumedXDealRef.current = { reference: handoff.xDealReference ?? '' }
           setPaymentMode('installment')
@@ -1798,7 +1798,7 @@ export default function CheckoutPage() {
     if (lastEmployeeLoanCustomerIdRef.current === customerId) return
     lastEmployeeLoanCustomerIdRef.current = customerId
     setHrApplianceLoanApplicationNumber('')
-    // Scenario 65 — same reset for the X-Deal, except when this customer is
+    // Scenario 67 — same reset for the X-Deal, except when this customer is
     // the one a resumed parked X-Deal was waiting for.
     const resumedXDeal = customerId ? pendingResumedXDealRef.current : null
     pendingResumedXDealRef.current = null
@@ -2333,7 +2333,7 @@ export default function CheckoutPage() {
   }
 
   /**
-   * Scenario 65 — ticking X-Deal puts the whole cart in the only shape an
+   * Scenario 67 — ticking X-Deal puts the whole cart in the only shape an
    * X-Deal can take (inhouse installment, no credit application) rather than
    * leaving the cashier to find out at Confirm. Unticking leaves the cart
    * as it is; the usual down-payment floor and credit-application
@@ -2797,7 +2797,7 @@ export default function CheckoutPage() {
       return
     }
 
-    // Scenario 65 — the same cart-shape rules the backend enforces, checked
+    // Scenario 67 — the same cart-shape rules the backend enforces, checked
     // here so the cashier gets a plain message instead of a rejected sale.
     // The Payment Mode / provider locks below normally make the first two
     // unreachable; these are the backstop for a cart that changed after
@@ -4150,7 +4150,7 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* Scenario 65 — any customer can be on the other side of a
+            {/* Scenario 67 — any customer can be on the other side of a
                 barter, so unlike the employee loan above this isn't gated on
                 a customer tag. Offline is excluded: an installment sale
                 already can't complete offline, and the offline queue drops
@@ -4789,7 +4789,7 @@ export default function CheckoutPage() {
                       <button
                         key={mode}
                         type="button"
-                        // Scenario 65 — an X-Deal is installment-only.
+                        // Scenario 67 — an X-Deal is installment-only.
                         disabled={xDealActive && mode !== 'installment'}
                         title={
                           xDealActive && mode !== 'installment'
@@ -4876,7 +4876,7 @@ export default function CheckoutPage() {
                               <button
                                 key={provider}
                                 onClick={() => setLineInstallmentProvider(groupLineIds, provider)}
-                                // Scenario 65 — an X-Deal is inhouse-only.
+                                // Scenario 67 — an X-Deal is inhouse-only.
                                 disabled={xDealActive && provider === 'tpf'}
                                 className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
                                   groupProvider === provider
@@ -6479,7 +6479,7 @@ function SuccessScreen({
       financedBalance?: number | null
     }[]
     invoices?: PosTransactionInvoice[]
-    /** Scenario 65 */
+    /** Scenario 67 */
     isXDeal?: boolean
     xDealReference?: string | null
   }

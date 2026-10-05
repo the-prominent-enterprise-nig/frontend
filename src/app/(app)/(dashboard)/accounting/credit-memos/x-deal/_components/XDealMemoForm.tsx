@@ -15,7 +15,7 @@ const INPUT_CLASS =
 const LIST_HREF = '/accounting/credit-memos'
 
 /**
- * Scenario 65 — clears an X-Deal (barter) sale's whole remaining balance.
+ * Scenario 67 — clears an X-Deal (barter) sale's whole remaining balance.
  * No amount and no item lines: the server works out the split, and the
  * figures shown here are its own preview of the exact JE it will post, so
  * what's confirmed is what's booked.

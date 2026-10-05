@@ -35,7 +35,7 @@ const TYPE_LABELS: Record<CreditMemoType, string> = {
  */
 export default function CreditMemosList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, ACCOUNTING_PERMISSIONS.CREDIT_MEMOS_CREATE)
-  // Scenario 65 — its own permission: Branch Manager can issue and void
+  // Scenario 67 — its own permission: Branch Manager can issue and void
   // ordinary credit memos but not X-Deal ones.
   const canXDeal = hasPermission(session, ACCOUNTING_PERMISSIONS.X_DEAL_MEMOS_ISSUE)
   const [search, setSearch] = useState('')

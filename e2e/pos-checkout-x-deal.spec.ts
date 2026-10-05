@@ -14,12 +14,12 @@ import {
   deleteCustomers,
 } from './utils'
 
-// Scenario 65 — X-Deal (barter) at POS checkout. The backend rules (cart
+// Scenario 67 — X-Deal (barter) at POS checkout. The backend rules (cart
 // shape, ₱0 down payment, no credit application, reference required) are
 // covered by backend/test/pos-x-deal-checkout.e2e-spec.ts; this spec covers
 // the checkout UI that drives them, plus the X-DEAL badge wherever the sale
 // and its installment account are listed. Case IDs (XD-F…) match
-// docs/scenario-65-x-deal-transaction-plan.md.
+// docs/scenario-67-x-deal-transaction-plan.md.
 //
 // The seed leaves nothing sellable that also has a price, so this spec builds
 // its own: a fresh non-serial item, stocked at Bago, priced on a dedicated
@@ -219,7 +219,7 @@ async function pickFirstTerm(page: Page): Promise<void> {
 const xDealCheckbox = (page: Page) => page.getByTestId('x-deal-checkbox')
 const xDealReference = (page: Page) => page.getByTestId('x-deal-reference')
 
-test.describe('POS Checkout — X-Deal (Scenario 65)', () => {
+test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
   test.beforeAll(async ({ playwright }, testInfo) => {
     const request = await ownerRequest(playwright, testInfo.project.use.baseURL!)
     await sweepE2ECustomers(request, PREFIX)

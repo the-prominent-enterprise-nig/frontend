@@ -7,11 +7,11 @@ import {
 } from '@playwright/test'
 import { gotoReady, loginAs, sweepE2ECustomers, deleteCustomers } from './utils'
 
-// Scenario 65 Part 4 — the "X-Deal offset" action in Accounting > Credit
+// Scenario 67 Part 4 — the "X-Deal offset" action in Accounting > Credit
 // Memos. The memo's own rules (JE split, atomicity, guards, void restoring
 // everything) are covered by backend/test/credit-memos-x-deal.e2e-spec.ts;
 // this spec covers the screen that drives them. Case IDs (XD-F…) match
-// docs/scenario-65-x-deal-transaction-plan.md.
+// docs/scenario-67-x-deal-transaction-plan.md.
 //
 // Every sale here is created through the API as Business Owner — the
 // checkout UI that rings one up is pos-checkout-x-deal.spec.ts's job.
@@ -202,7 +202,7 @@ async function openXDealPage(page: Page) {
   await expect(page.getByLabel('X-Deal sale')).toBeVisible({ timeout: 15_000 })
 }
 
-test.describe.serial('Credit Memos — X-Deal offset (Scenario 65)', () => {
+test.describe.serial('Credit Memos — X-Deal offset (Scenario 67)', () => {
   test.beforeAll(async ({ playwright }, testInfo) => {
     const request = await ownerRequest(playwright, testInfo.project.use.baseURL!)
     await sweepE2ECustomers(request, PREFIX)
@@ -340,7 +340,7 @@ test.describe.serial('Credit Memos — X-Deal offset (Scenario 65)', () => {
   })
 })
 
-test.describe('Credit Memos — X-Deal offset permission (Scenario 65)', () => {
+test.describe('Credit Memos — X-Deal offset permission (Scenario 67)', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
   test('XD-F18: Branch Manager sees ordinary credit memos but no "X-Deal offset"', async ({

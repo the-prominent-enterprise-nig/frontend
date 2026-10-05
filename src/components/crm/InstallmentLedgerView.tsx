@@ -61,7 +61,7 @@ export default function InstallmentLedgerView({
     })
   }, [accountId])
 
-  // Scenario 65 — a closed X-Deal was settled by its memo, not by payments;
+  // Scenario 67 — a closed X-Deal was settled by its memo, not by payments;
   // the memo is the ledger's own credit row, so its number comes from there.
   const xDealMemoRef =
     ledger?.account.isXDeal && ledger.account.status === 'closed'

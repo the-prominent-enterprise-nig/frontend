@@ -871,7 +871,7 @@ export interface CreditMemo {
   /** Set when this memo was auto-created from an approved POS return/refund
    * (Scenario 13 Part 3) rather than issued by hand. */
   sourceReturnRequestId?: string | null
-  /** Scenario 65 — set on an x_deal memo: the X-Deal sale it cleared. */
+  /** Scenario 67 — set on an x_deal memo: the X-Deal sale it cleared. */
   posTransactionId?: string | null
 }
 export interface CreateCreditMemoLineInput {
@@ -901,7 +901,7 @@ export const CreditMemos = {
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/${id}/void`, {}),
 }
 
-// ============ X-Deal memos (Scenario 65) ============
+// ============ X-Deal memos (Scenario 67) ============
 /** An open X-Deal sale an X-Deal memo can clear. */
 export interface XDealCandidate {
   posTransactionId: string

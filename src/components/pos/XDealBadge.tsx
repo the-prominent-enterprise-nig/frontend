@@ -1,5 +1,5 @@
 /**
- * Scenario 65 — marks an X-Deal (barter) sale or installment account
+ * Scenario 67 — marks an X-Deal (barter) sale or installment account
  * wherever it is listed, so nobody mistakes it for an ordinary installment
  * sale to be collected on. The reference is the barter agreement no.
  */
