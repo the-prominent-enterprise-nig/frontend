@@ -300,7 +300,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
   const hasActiveFilters = !!(warehouseFilter || fromDate || toDate || search || outcome)
 
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
+    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
       <div className="mx-auto max-w-7xl space-y-5">
         {/* Header */}
         {/* Header chrome — sizes, weights and the #5b21b6 primary — is shared
@@ -308,9 +308,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
             screens read as one surface rather than two designs. */}
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[#17171c]">
-              Stock returns
-            </h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock returns</h1>
             {/* Says "in" explicitly because the Debit Memos tab next door
                 moves stock the opposite way, and the two labels can't tell
                 them apart on their own. */}

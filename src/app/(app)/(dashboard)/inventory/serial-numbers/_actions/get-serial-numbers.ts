@@ -19,6 +19,8 @@ type Params = {
   branchIds?: string[]
   warehouseIds?: string[]
   status?: string
+  // Stock classification — several are OR-ed server-side.
+  classification?: string[]
   search?: string
   // Scenario 55 Part 4 — auto-resolving which of this item's sold serials
   // belongs to a picked InstallmentAccount's customer, so a repossession
@@ -55,6 +57,7 @@ export async function getSerialNumbers(
     warehouseIds: params.warehouseIds?.length ? params.warehouseIds.join(',') : undefined,
     status: params.status,
     search: params.search,
+    classification: params.classification?.length ? params.classification.join(',') : undefined,
     soldToCustomerId: params.soldToCustomerId,
     caravanId: params.caravanId,
     scope: params.scope,

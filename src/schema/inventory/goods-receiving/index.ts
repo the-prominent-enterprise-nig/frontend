@@ -203,6 +203,8 @@ const StockBalanceSummarySchema = z.object({
   totalAvailableQty: z.number(),
   totalReservedQty: z.number(),
   totalSoldQty: z.number().optional(),
+  // Units in transit across the filtered set, summed server-side.
+  totalInTransitQty: z.number().optional(),
 })
 
 export const StockBalanceListResponseSchema = z

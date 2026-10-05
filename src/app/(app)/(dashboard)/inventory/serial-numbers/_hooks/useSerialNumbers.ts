@@ -10,6 +10,9 @@ import {
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getSerialNumbers } from '../_actions/get-serial-numbers'
+
+/** brand_new = no receipt or an ordinary one; repo = repossession; repair_return = repair return. */
+export type StockClassification = 'brand_new' | 'repo' | 'repair_return'
 import { getCaravanItemGroups } from '../_actions/get-caravan-item-groups'
 import { registerSerialNumbers } from '../_actions/register-serial-numbers'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
@@ -42,6 +45,7 @@ export function useSerialNumbers(
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<SerialStatus | undefined>(undefined)
+  const [classification, setClassification] = useState<StockClassification[]>([])
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined)
   const [brandFilter, setBrandFilter] = useState<string | undefined>(undefined)
   // Scenario 56 — Operations + multi-select Branches, shared with the other
@@ -85,11 +89,13 @@ export function useSerialNumbers(
             warehouseIds,
             region,
             search,
+            classification,
           },
     [
       page,
       limit,
       statusFilter,
+      classification,
       categoryFilter,
       brandFilter,
       branchIds,
@@ -264,6 +270,8 @@ export function useSerialNumbers(
     error: activeList.error,
 
     statusFilter,
+    classification,
+    setClassification,
     categoryFilter,
     brandFilter,
     locationFilter,
@@ -287,6 +295,7 @@ export function useSerialNumbers(
     },
     resetFilters: () => {
       setStatusFilter(undefined)
+      setClassification([])
       setCategoryFilter(undefined)
       setBrandFilter(undefined)
       locationFilter.reset()
