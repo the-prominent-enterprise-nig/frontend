@@ -11,7 +11,6 @@ import {
   AdjustingForm,
   BANK_RECON_HREF,
   ReclassifyForm,
-  SettlementForm,
   UnidentifiedCreditForm,
 } from './BankReconForms'
 
@@ -39,11 +38,6 @@ export function AdjustingEntryPage() {
 export function UnidentifiedCreditPage() {
   const back = useBack()
   return <UnidentifiedCreditForm accounts={useBankAccounts()} onClose={back} onSaved={back} />
-}
-
-export function SettleClearingPage() {
-  const back = useBack()
-  return <SettlementForm accounts={useBankAccounts()} onClose={back} onSaved={back} />
 }
 
 export function ReclassifyPage({ id }: { id: string }) {

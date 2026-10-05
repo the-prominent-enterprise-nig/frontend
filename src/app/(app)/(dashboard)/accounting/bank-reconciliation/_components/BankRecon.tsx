@@ -2,15 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import {
-  Plus,
-  RefreshCw,
-  CheckCircle,
-  FileEdit,
-  ArrowRightLeft,
-  Trash2,
-  Printer,
-} from 'lucide-react'
+import { Plus, CheckCircle, FileEdit, Trash2, Printer } from 'lucide-react'
 import {
   BankAccounts,
   ClearingSettlements,
@@ -24,6 +16,7 @@ import {
   reconStatus,
   RECON_STATUS_STYLE,
 } from '@/src/libs/data/AccountingV2Data'
+import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import { CLEARING_TYPE_LABELS, printVoucher } from './BankReconForms'
 
 // Scenario 42 Part 3 / Scenario 61 Part C — the real discrepancy from the
@@ -91,12 +84,6 @@ export default function BankRecon() {
           <p className="text-sm text-gray-500">Compare bank statements to system records.</p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
           <Link
             href="/accounting/bank-reconciliation/adjusting-entry"
             className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-lg"
@@ -108,12 +95,6 @@ export default function BankRecon() {
             className="flex items-center gap-2 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg"
           >
             <Plus className="w-4 h-4" /> Unidentified Credit
-          </Link>
-          <Link
-            href="/accounting/bank-reconciliation/settle-clearing"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-lg"
-          >
-            <ArrowRightLeft className="w-4 h-4" /> Settle Clearing Account
           </Link>
           <Link
             href="/accounting/bank-reconciliation/new"
@@ -133,7 +114,7 @@ export default function BankRecon() {
               <th className="px-3 py-2 text-right">System Balance</th>
               <th className="px-3 py-2 text-right">Difference</th>
               <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th className="px-3 py-2 w-10" aria-label="Actions" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -180,36 +161,30 @@ export default function BankRecon() {
                         {reconStatus(r.reconciled, discrepancy)}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {!r.reconciled && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              complete(r.id)
-                            }}
-                            disabled={!isZero}
-                            title={
-                              isZero
-                                ? 'Mark reconciled'
-                                : `Cannot complete — discrepancy of ${fmtMoney(discrepancy)}. Open the worksheet to check off cleared items.`
-                            }
-                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            remove(r)
-                          }}
-                          title="Delete reconciliation"
-                          className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                      <RowActionsMenu
+                        horizontal
+                        items={[
+                          // Only offered once the discrepancy is zero — until then the
+                          // worksheet is where cleared items get checked off.
+                          ...(!r.reconciled && isZero
+                            ? [
+                                {
+                                  label: 'Mark reconciled',
+                                  icon: CheckCircle,
+                                  variant: 'success' as const,
+                                  onClick: () => complete(r.id),
+                                },
+                              ]
+                            : []),
+                          {
+                            label: 'Delete reconciliation',
+                            icon: Trash2,
+                            variant: 'danger' as const,
+                            onClick: () => remove(r),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 )
@@ -293,7 +268,95 @@ export default function BankRecon() {
                   <th className="px-3 py-2 text-left">Bank Ref</th>
                   <th className="px-3 py-2 text-left">Voucher Control No.</th>
                   <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
+                  <th className="px-3 py-2 w-10" aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
+                      Loading...
+                    </td>
+                  </tr>
+                ) : (
+                  credits.map((c) => (
+                    <tr key={c.id}>
+                      <td className="px-3 py-2">{c.bankAccount?.name}</td>
+                      <td className="px-3 py-2 text-xs">{fmtDate(c.creditDate)}</td>
+                      <td className="px-3 py-2 text-right">{fmtMoney(c.amount)}</td>
+                      <td className="px-3 py-2 text-xs">{c.bankRef || '—'}</td>
+                      <td className="px-3 py-2 text-xs">{c.voucherControlNo || '—'}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {c.status === 'unmatched' ? (
+                          <span className="text-amber-700">Unmatched</span>
+                        ) : (
+                          <span className="text-emerald-700" title={c.reclassifiedNote ?? ''}>
+                            Reclassified
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <RowActionsMenu
+                          horizontal
+                          items={[
+                            ...(c.journalEntryId
+                              ? [
+                                  {
+                                    label: 'Print voucher',
+                                    icon: Printer,
+                                    onClick: () =>
+                                      printVoucher(
+                                        c.journalEntryId!,
+                                        'Unidentified Bank Credit Voucher'
+                                      ),
+                                  },
+                                ]
+                              : []),
+                            ...(c.status === 'unmatched'
+                              ? [
+                                  {
+                                    label: 'Reclassify',
+                                    icon: FileEdit,
+                                    onClick: () =>
+                                      router.push(
+                                        `/accounting/bank-reconciliation/unidentified-credit/${c.id}/reclassify`
+                                      ),
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {(loading || credits.length > 0) && (
+        <>
+          <div className="mt-6 flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-lg font-semibold">Unidentified Bank Credits</h3>
+              <p className="text-xs text-gray-500">
+                Bank credits with no matching sale or settlement yet — reclassify once identified.
+              </p>
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Bank Account</th>
+                  <th className="px-3 py-2 text-left">Credit Date</th>
+                  <th className="px-3 py-2 text-right">Amount</th>
+                  <th className="px-3 py-2 text-left">Bank Ref</th>
+                  <th className="px-3 py-2 text-left">Voucher Control No.</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 w-10" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
