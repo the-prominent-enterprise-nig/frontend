@@ -497,6 +497,36 @@ export default function CreditApplicationDetail({
           </button>
         </div>
 
+        {/* Scenario 64 item 28 — at the top of the page so it is in view the
+            moment the approval lands, without scrolling past the documents —
+            going to the till is the only thing anyone wants next. */}
+        {canSell && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-prominent-purple-200 bg-prominent-purple-50 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-prominent-purple-900">Ready to sell</p>
+              <p className="mt-0.5 text-sm text-prominent-purple-700">
+                {hasOpenSession
+                  ? 'Opens the till with this customer, these items and this application already selected.'
+                  : 'No till is open. Open a POS session at a terminal, then Refresh — this cannot open one for you.'}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* The till is usually opened on another screen, or by someone
+                  else, while this page is already up — and the session query
+                  is cached, so nothing here notices. Rather than have the
+                  seller reload the whole application, this re-asks. */}
+              <button
+                type="button"
+                onClick={continueToSale}
+                disabled={!hasOpenSession}
+                className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-start justify-between">
           <div>
             {/* Labelled, not a bare code. The number has always been
@@ -1256,36 +1286,6 @@ export default function CreditApplicationDetail({
               </p>
             </div>
           ))}
-
-        {/* Scenario 64 item 28 — directly under the decision, because that is
-            where the approver is looking the moment it lands, and going to
-            the till is the only thing anyone wants next. */}
-        {canSell && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-prominent-purple-200 bg-prominent-purple-50 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-prominent-purple-900">Ready to sell</p>
-              <p className="mt-0.5 text-sm text-prominent-purple-700">
-                {hasOpenSession
-                  ? 'Opens the till with this customer, these items and this application already selected.'
-                  : 'No till is open. Open a POS session at a terminal, then Refresh — this cannot open one for you.'}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {/* The till is usually opened on another screen, or by someone
-                  else, while this page is already up — and the session query
-                  is cached, so nothing here notices. Rather than have the
-                  seller reload the whole application, this re-asks. */}
-              <button
-                type="button"
-                onClick={continueToSale}
-                disabled={!hasOpenSession}
-                className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
-              </button>
-            </div>
-          </div>
-        )}
 
         {application.status === 'partially_approved' && (
           <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
