@@ -122,6 +122,11 @@ function formatDateIn(iso: string): string {
     .replace(/\//g, '-')
 }
 
+/** Only the two standalone warehouses keep the "Warehouse" suffix; other locations show bare names. */
+function locationLabel(name: string): string {
+  return /^(panay|negros)\b/i.test(name) ? name : name.replace(/\s+warehouse$/i, '')
+}
+
 /** Page number box: type a page and press Enter or click away to jump. */
 function PageJump({
   page,
@@ -225,7 +230,7 @@ export default function AgingReport({
           clearable
           options={warehouses.map((w) => ({
             value: w.id,
-            label: w.name.replace(/\s+warehouse$/i, ''),
+            label: locationLabel(w.name),
           }))}
         />
         <SearchableSelect
@@ -352,7 +357,7 @@ export default function AgingReport({
                       {row.serialNumber}
                     </td>
                     <td className="px-4 py-[11px] text-[13px] text-[#5b5b6b]">
-                      {row.warehouseName?.replace(/\s+warehouse$/i, '') ?? '—'}
+                      {row.warehouseName ? locationLabel(row.warehouseName) : '—'}
                     </td>
                     <td className="px-4 py-[11px] text-center">
                       <span
