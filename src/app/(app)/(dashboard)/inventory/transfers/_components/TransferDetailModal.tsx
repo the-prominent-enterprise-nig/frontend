@@ -956,8 +956,8 @@ export default function TransferDetailModal({
             }),
           }))
         : undefined,
-      driverName: data.driverName,
-      driverPhone: data.driverPhone,
+      driverName: data.driverName?.trim() || undefined,
+      driverPhone: data.driverPhone?.trim() || undefined,
       vehiclePlate: data.vehiclePlate,
       carrierName: data.carrierName,
     })
@@ -1635,14 +1635,14 @@ export default function TransferDetailModal({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver Name <span className="text-red-500">*</span>
+                      Driver Name
                     </label>
                     <Controller
                       name="driverName"
                       control={dispatchForm.control}
                       render={({ field }) => (
                         <VehicleAutocompleteInput
-                          value={field.value}
+                          value={field.value ?? ''}
                           onChange={field.onChange}
                           onPickVehicle={pickDispatchVehicle}
                           search={searchDispatchVehicles}
@@ -1655,7 +1655,7 @@ export default function TransferDetailModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver Phone <span className="text-red-500">*</span>
+                      Driver Phone
                     </label>
                     <Controller
                       name="driverPhone"
