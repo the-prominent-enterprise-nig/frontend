@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Search, Package, X } from 'lucide-react'
 import { useStockBalance } from '../_hooks/useStockBalance'
 import { useUIShell } from '@/src/stores/ui-shell.store'
@@ -129,7 +130,7 @@ export default function StockBalanceList({
     locationOptions,
     locationsLoading,
     categoryOptions,
-  } = useStockBalance(onLocationsChange)
+  } = useStockBalance(onLocationsChange, useSearchParams().get('search') ?? '')
 
   const activeFilterCount = [locations.length > 0, !!region, !!categoryId, !!stockStatus].filter(
     Boolean

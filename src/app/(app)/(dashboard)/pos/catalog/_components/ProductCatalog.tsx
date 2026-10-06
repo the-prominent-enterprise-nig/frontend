@@ -304,7 +304,10 @@ function StockCell({ item, canViewStock }: { item: PosCatalogItem; canViewStock:
     <div className="flex flex-col items-start gap-1">
       <StockStatusBadge status={qty > 0 ? 'in_stock' : 'out'} size="sm" />
       {canViewStock ? (
-        <Link href="/inventory/stock" className="text-xs text-prominent-purple-700 hover:underline">
+        <Link
+          href={`/inventory/stock?tab=balance&search=${encodeURIComponent(item.name)}`}
+          className="text-xs text-prominent-purple-700 hover:underline"
+        >
           {qty} {qty === 1 ? 'unit' : 'units'}
         </Link>
       ) : (
