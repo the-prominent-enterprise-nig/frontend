@@ -20,7 +20,6 @@ import { dispatchToProvider } from '../_actions/dispatch-to-provider'
 import { receiveFromProvider } from '../_actions/receive-from-provider'
 import { releaseToCustomer } from '../_actions/release-to-customer'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type {
   CreateUdsFormValues,
@@ -92,12 +91,6 @@ export function useUdsManager() {
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
-    staleTime: STALE.LOOKUP,
-  })
-
-  const serialsQuery = useQuery({
-    queryKey: ['inventory-serials-in-stock'],
-    queryFn: () => getSerialNumbers({ status: 'in_stock', limit: 500 }),
     staleTime: STALE.LOOKUP,
   })
 
@@ -287,7 +280,6 @@ export function useUdsManager() {
     setPage,
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
-    serialOptions: serialsQuery.data?.data?.data ?? [],
     supplierOptions: suppliersQuery.data?.data?.data ?? [],
 
     createUds: createMutation.mutateAsync,

@@ -15,6 +15,7 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import { uploadRfsForm } from '../_actions/upload-rfs-form'
 import { showToast } from '@/src/components/ui/toast'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { UdsSerialSearchCombobox } from './UdsSerialSearchCombobox'
 
 type WarehouseOption = {
   id: string
@@ -29,11 +30,6 @@ type WarehouseOption = {
 function branchLabel(wh: WarehouseOption): string {
   return wh.branch?.name ?? wh.name
 }
-type SerialOption = {
-  id: string
-  serialNumber: string
-  item?: { sku: string; name: string } | null
-}
 type SupplierOption = { id: string; code: string; name: string }
 
 type Props = {
@@ -42,7 +38,6 @@ type Props = {
   onSubmit: (data: CreateUdsFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
   warehouseOptions: WarehouseOption[]
-  serialOptions: SerialOption[]
   supplierOptions: SupplierOption[]
   // A Branch Manager only ever issues a UDS against their own branch — the
   // list is scoped (and locked outright when it resolves to one warehouse)
@@ -75,7 +70,6 @@ export default function CreateUdsModal({
   onSubmit,
   isSubmitting,
   warehouseOptions,
-  serialOptions,
   supplierOptions,
   currentUserBranchId,
 }: Props) {
@@ -321,16 +315,7 @@ export default function CreateUdsModal({
                         name={`lines.${idx}.serialNumberId`}
                         control={control}
                         render={({ field: f }) => (
-                          <SearchableSelect
-                            value={f.value}
-                            onChange={f.onChange}
-                            portal
-                            placeholder="Search serial number…"
-                            options={serialOptions.map((s) => ({
-                              value: s.id,
-                              label: `${s.serialNumber}${s.item ? ` — ${s.item.sku} ${s.item.name}` : ''}`,
-                            }))}
-                          />
+                          <UdsSerialSearchCombobox value={f.value} onChange={f.onChange} />
                         )}
                       />
                       {errors.lines?.[idx]?.serialNumberId && (
