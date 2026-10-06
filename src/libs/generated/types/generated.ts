@@ -12687,9 +12687,9 @@ export interface components {
       /** @description One entry per serial-tracked line being dispatched, assigning the specific physical unit sent. Required for any serial-tracked line that doesn't already carry a serialNumberId (i.e. every normal human-requested line — the requester never picks the serial themselves). */
       serialAssignments?: components['schemas']['DispatchTransferSerialAssignmentDto'][]
       /** @description Driver's full name */
-      driverName: string
+      driverName?: string
       /** @description Driver's contact number */
-      driverPhone: string
+      driverPhone?: string
       /** @description Driver's license number */
       driverLicense?: string
       /** @description Vehicle plate number */
