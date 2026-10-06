@@ -196,7 +196,7 @@ export default function SerialNumberList({
     : undefined
   // The unit whose history is open under its row: the one clicked, or on the
   // Locator the one an exact serial search matches.
-  const expandedSerial = inlineSerial ?? (isLocator ? (exactSerial ?? null) : null)
+  const expandedSerial = isLocator ? (inlineSerial ?? exactSerial ?? null) : null
 
   const openCaravan = (id: string): void => {
     setCaravanView(true)
@@ -562,16 +562,18 @@ export default function SerialNumberList({
                       {serials.map((serial) => (
                         <Fragment key={serial.id}>
                           <tr
-                            // The whole row opens the unit's history — the
-                            // serial number below is the keyboard-reachable
-                            // version of the same action.
-                            onClick={() =>
-                              openSerialHistory({
-                                id: serial.id,
-                                serialNumber: serial.serialNumber,
-                              })
+                            // On the Locator the whole row opens the unit's
+                            // history; the stock book has no movement history.
+                            onClick={
+                              isLocator
+                                ? () =>
+                                    openSerialHistory({
+                                      id: serial.id,
+                                      serialNumber: serial.serialNumber,
+                                    })
+                                : undefined
                             }
-                            className={`cursor-pointer hover:bg-[#fcfcfd] ${
+                            className={`${isLocator ? 'cursor-pointer ' : ''}hover:bg-[#fcfcfd] ${
                               selection.isSelected(serial.id) || inlineSerial?.id === serial.id
                                 ? 'bg-[#f8f4fd]'
                                 : ''
@@ -593,11 +595,19 @@ export default function SerialNumberList({
                             <td className="px-4 py-[11px]">
                               <div className="flex flex-col gap-0.5">
                                 <div className="flex items-center gap-1.5">
-                                  <SerialLink
-                                    serialId={serial.id}
-                                    serialNumber={serial.serialNumber}
-                                    className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
-                                  />
+                                  {isLocator ? (
+                                    <SerialLink
+                                      serialId={serial.id}
+                                      serialNumber={serial.serialNumber}
+                                      className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
+                                    />
+                                  ) : (
+                                    <span
+                                      className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
+                                    >
+                                      {serial.serialNumber}
+                                    </span>
+                                  )}
                                   <CopySerialButton serialNumber={serial.serialNumber} />
                                 </div>
                                 {displayClassificationLabel(serial.item?.type?.name) && (

@@ -261,7 +261,7 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await expect(xDealReference(page)).toHaveCount(0)
   })
 
-  test('XD-F02 / XD-F07: ticking X-Deal forces inhouse installment, waives the down payment, hides the credit application and locks Cash, Delivery Receipt and TPF', async ({
+  test('XD-F02 / XD-F07: ticking X-Deal forces inhouse installment, starts the down payment at ₱0 (optional, Scenario 68), hides the credit application and locks Cash, Delivery Receipt and TPF', async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F02')
@@ -284,13 +284,14 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     ).toBeEnabled()
 
     await pickFirstTerm(page)
-    await expect(page.getByText('Waived', { exact: true })).toBeVisible()
-    // The down-payment row's "X-Deal" tag — the panel's own label reads the same.
-    await expect(
-      page
-        .getByText('X-Deal', { exact: true })
-        .and(page.locator(':not([data-testid="x-deal-panel"] *)'))
-    ).toBeVisible()
+    const downPayment = page.getByTestId('x-deal-down-payment')
+    await expect(downPayment).toContainText('X-Deal · optional')
+    await expect(downPayment.getByLabel('X-Deal cash portion')).toHaveValue('')
+    await expect(downPayment).toContainText('Cash portion')
+    await expect(downPayment).toContainText(
+      'The X-Deal credit memo clears the whole sale when it is approved.'
+    )
+    await expect(page.getByText('Nothing to collect at checkout for this cart.')).toBeVisible()
   })
 
   test('XD-F03: Confirm is blocked without a reference, including a whitespace-only one', async ({
@@ -329,14 +330,14 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
 
     await xDealCheckbox(page).check()
     await pickFirstTerm(page)
-    await expect(page.getByText('Waived', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('x-deal-down-payment')).toBeVisible()
 
     await xDealCheckbox(page).uncheck()
 
     await expect(xDealReference(page)).toHaveCount(0)
     await expect(page.getByText('Approved Credit Application', { exact: true })).toBeVisible()
     await expect(page.getByTestId('dp-payment-mode-toggle')).toBeVisible()
-    await expect(page.getByText('Waived', { exact: true })).toHaveCount(0)
+    await expect(page.getByTestId('x-deal-down-payment')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Delivery Receipt', exact: true })).toBeEnabled()
     await expect(page.getByRole('button', { name: 'TPF Installment', exact: true })).toBeEnabled()
 
@@ -545,7 +546,10 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await row.getByRole('button', { name: 'Review' }).click()
     await expect(page.getByTestId('review-x-deal-note')).toContainText(reference)
     await expect(page.getByTestId('review-x-deal-note')).toContainText(
-      'no down payment and no credit application by design'
+      'no credit application by design'
+    )
+    await expect(page.getByTestId('review-x-deal-note')).toContainText(
+      'Nothing paid at the counter'
     )
 
     // Leave nothing pending for the next run.
@@ -558,6 +562,160 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
       if (r.cartSnapshot?.xDealReference?.startsWith('XD-F19-')) {
         await page.request.post(`/api/pos/release-form-requests/${r.id}/reject`, {
           data: { reviewNotes: 'E2E XD-F19 cleanup' },
+        })
+      }
+    }
+  })
+
+  // ─────────── Scenario 68 — part paid now, the memo with the sale ───────────
+
+  test('XP-F01: a down payment on an X-Deal brings back the Cash / Card choice; paid by check it posts with the check number and the sale settles itself', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'XPF01')
+    const salesInvoiceNumber = `SI-XPF01-${Date.now()}`
+    const cr = `CR-XPF01-${Date.now()}`
+
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, customer.name)
+    await xDealCheckbox(page).check()
+    await xDealReference(page).fill(`XD-REF-XPF01-${Date.now()}`)
+    await pickFirstTerm(page)
+    await expect(page.getByTestId('dp-payment-mode-toggle')).toHaveCount(0)
+
+    await fillStable(page.getByLabel('X-Deal cash portion'), '3000')
+    await expect(page.getByTestId('x-deal-down-payment')).toContainText(
+      'is cleared by the X-Deal credit memo'
+    )
+    const dpToggle = page.getByTestId('dp-payment-mode-toggle')
+    await expect(dpToggle).toBeVisible()
+    await dpToggle.getByRole('button', { name: 'Cash', exact: true }).click()
+    await page
+      .getByTestId('cash-sub-mode-toggle')
+      .getByRole('button', { name: 'Check', exact: true })
+      .click()
+    await fillStable(page.getByLabel('Check Number'), '0012345')
+
+    await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
+    await fillStable(page.getByLabel('Amount received'), '3000')
+    await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), cr)
+
+    // The Owner may approve, so it completes here.
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(page.getByTestId('success-x-deal-note')).toBeVisible()
+
+    const list = await (
+      await page.request.get('/api/pos/transactions', { params: { search: salesInvoiceNumber } })
+    ).json()
+    const [sale] = (
+      (list.data ?? list) as { id: string; salesInvoiceNumber: string | null }[]
+    ).filter((t) => t.salesInvoiceNumber === salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    expect(tx.payments).toHaveLength(1)
+    expect(tx.payments[0]).toMatchObject({
+      paymentMethod: 'cash',
+      checkNumber: '0012345',
+      referenceNumber: cr,
+    })
+    expect(Number(tx.payments[0].amount)).toBe(3000)
+
+    const memos = (
+      await (
+        await page.request.get('/api/credit-memos', { params: { customerId: customer.id } })
+      ).json()
+    ).items as { type: string; status: string; amount: number }[]
+    const memo = memos.find((m) => m.type === 'x_deal' && m.status === 'ISSUED')
+    expect(memo).toBeTruthy()
+  })
+
+  test('XP-F02: a down payment of the whole sale is refused — that is a cash sale, not an X-Deal', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'XPF02')
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, customer.name)
+    await xDealCheckbox(page).check()
+    await xDealReference(page).fill(`XD-REF-XPF02-${Date.now()}`)
+    await pickFirstTerm(page)
+    await fillStable(page.getByLabel('X-Deal cash portion'), String(ITEM_PRICE))
+    await page
+      .getByTestId('dp-payment-mode-toggle')
+      .getByRole('button', { name: 'Cash', exact: true })
+      .click()
+    await fillStable(page.getByLabel('Sales Invoice No.'), `SI-XPF02-${Date.now()}`)
+    await fillStable(page.getByLabel('Amount received'), String(ITEM_PRICE))
+    await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), `CR-XPF02-${Date.now()}`)
+
+    let posted = false
+    page.on('request', (req) => {
+      if (req.method() === 'POST' && req.url().includes('/pos/transactions')) posted = true
+    })
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    await expect(
+      page.getByText(
+        "An X-Deal's cash portion must be less than the sale total — a sale paid in full is not an X-Deal."
+      )
+    ).toBeVisible()
+    expect(posted).toBe(false)
+  })
+
+  test('XP-F03: a cashier X-Deal with a down payment is held; the pending screen and the approver both see the part paid and that the memo comes on approval', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'XPF03')
+    const reference = `XD-XPF03-${Date.now()}`
+    const cr = `CR-XPF03-${Date.now()}`
+
+    await page.context().clearCookies()
+    await loginAs(page, BAGO_CASHIER_EMAIL, DEV_PASSWORD)
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, customer.name)
+    await xDealCheckbox(page).check()
+    await pickFirstTerm(page)
+    await xDealReference(page).fill(reference)
+    await fillStable(page.getByLabel('X-Deal cash portion'), '2000')
+    await page
+      .getByTestId('dp-payment-mode-toggle')
+      .getByRole('button', { name: 'Cash', exact: true })
+      .click()
+    await fillStable(page.getByLabel('Sales Invoice No.'), `SI-XPF03-${Date.now()}`)
+    await fillStable(page.getByLabel('Amount received'), '2000')
+    await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), cr)
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    await expect(page.getByText('Pending Approval', { exact: true })).toBeVisible({
+      timeout: 45_000,
+    })
+    await expect(page.getByTestId('pending-x-deal-note')).toContainText(
+      'the X-Deal credit memo is issued automatically'
+    )
+
+    await page.context().clearCookies()
+    await loginAs(page, OWNER_EMAIL, DEV_PASSWORD)
+    await gotoReady(page, '/pos/release-approvals')
+    const row = page.locator('tr', { hasText: customer.name })
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await row.getByRole('button', { name: 'Review' }).click()
+    const note = page.getByTestId('review-x-deal-note')
+    await expect(note).toContainText('₱2,000.00 was paid at the counter as the cash portion')
+    await expect(note).toContainText(`CR ${cr}`)
+    await expect(note).toContainText('issues the X-Deal credit memo for the rest')
+
+    // Leave nothing pending for the next run.
+    const pending = (await (
+      await page.request.get('/api/pos/release-form-requests/pending')
+    ).json()) as { id: string; cartSnapshot?: { xDealReference?: string } }[] | { data: never[] }
+    const list = Array.isArray(pending) ? pending : ((pending as { data?: unknown[] }).data ?? [])
+    for (const r of list as { id: string; cartSnapshot?: { xDealReference?: string } }[]) {
+      if (r.cartSnapshot?.xDealReference?.startsWith('XD-XPF03-')) {
+        await page.request.post(`/api/pos/release-form-requests/${r.id}/reject`, {
+          data: { reviewNotes: 'E2E XP-F03 cleanup' },
         })
       }
     }

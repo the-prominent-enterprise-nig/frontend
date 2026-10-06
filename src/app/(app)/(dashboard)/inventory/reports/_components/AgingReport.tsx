@@ -1,8 +1,10 @@
 'use client'
 import ExportButton from '@/src/components/common/ExportButton'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import { formatShortDate } from '@/src/libs/format/date'
-import { AlertTriangle, PackageX, Search, X } from 'lucide-react'
+import { formatAge } from '@/src/libs/format/date'
+import { ArrowDown, ArrowUp, ArrowUpDown, Search, X } from 'lucide-react'
+import type { ReactElement } from 'react'
+import type { AgingSort } from '../_hooks/useInventoryReports'
 import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import {
   SERIAL_AGING_BUCKET_LABELS,
@@ -16,8 +18,6 @@ interface Props {
   data: AgingReportResponse | null | undefined
   isLoading: boolean
   isFetching: boolean
-  bucketFilter: SerialAgingBucket | undefined
-  setBucketFilter: (v: SerialAgingBucket | undefined) => void
   page: number
   setPage: (page: number) => void
   /** The filters this report was loaded with, minus paging — the Excel
@@ -34,10 +34,48 @@ interface Props {
     key: 'serial' | 'brandId' | 'model' | 'receivedFrom' | 'receivedTo',
     value: string | undefined
   ) => void
-  brands: { id: string; name: string }[]
+  warehouses: { id: string; name: string }[]
+  warehouseId: string | undefined
+  setWarehouseId: (v: string | undefined) => void
   categoryId: string | undefined
   setCategoryId: (v: string | undefined) => void
   categoryOptions: { id: string; name: string }[]
+  sort: AgingSort
+  onSort: (sort: AgingSort) => void
+}
+
+/** Column header that sorts the whole report; a second click flips direction. */
+function SortableTh({
+  label,
+  by,
+  sort,
+  onSort,
+  align,
+}: {
+  label: string
+  by: AgingSort['by']
+  sort: AgingSort
+  onSort: (sort: AgingSort) => void
+  align: 'left' | 'center'
+}): ReactElement {
+  const active = sort.by === by
+  const Icon = !active ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
+  const nextDir: AgingSort['dir'] = active && sort.dir === 'desc' ? 'asc' : 'desc'
+  return (
+    <th
+      className={`px-4 py-[9px] font-medium text-${align}`}
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort({ by, dir: nextDir })}
+        className={`inline-flex cursor-pointer items-center gap-1 uppercase hover:text-[#17171c] ${active ? 'text-[#5b21b6]' : ''}`}
+      >
+        {label}
+        <Icon className="h-3 w-3" />
+      </button>
+    </th>
+  )
 }
 
 // Same tones as the stock views' status pills, one per age bucket.
@@ -48,11 +86,6 @@ const BUCKET_TONE: Record<SerialAgingBucket, string> = {
   '91_180': 'bg-[#fdeceb] text-[#b42318]',
   '180_plus': 'bg-[#f9d4d1] text-[#8f1a12]',
 }
-
-const bucketOptions = SerialAgingBucketSchema.options.map((b) => ({
-  value: b,
-  label: SERIAL_AGING_BUCKET_LABELS[b],
-}))
 
 const INPUT =
   'h-[38px] rounded-lg border bg-white px-3 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2] ' +
@@ -80,36 +113,81 @@ function Metric({
   )
 }
 
+/** M-D-YY date-in, e.g. 01-29-26, matching the client's sheet. */
+function formatDateIn(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date
+    .toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })
+    .replace(/\//g, '-')
+}
+
+/** Only the two standalone warehouses keep the "Warehouse" suffix; other locations show bare names. */
+function locationLabel(name: string): string {
+  return /^(panay|negros)\b/i.test(name) ? name : name.replace(/\s+warehouse$/i, '')
+}
+
+/** Page number box: type a page and press Enter or click away to jump. */
+function PageJump({
+  page,
+  totalPages,
+  onJump,
+}: {
+  page: number
+  totalPages: number
+  onJump: (page: number) => void
+}) {
+  const commit = (input: HTMLInputElement): void => {
+    const next = Math.min(totalPages, Math.max(1, Math.round(Number(input.value))))
+    if (input.value.trim() === '' || Number.isNaN(next)) {
+      input.value = String(page)
+      return
+    }
+    onJump(next)
+  }
+
+  return (
+    <input
+      key={page}
+      type="number"
+      min={1}
+      max={totalPages}
+      defaultValue={page}
+      aria-label="Go to page"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit(e.currentTarget)
+      }}
+      onBlur={(e) => commit(e.currentTarget)}
+      className="h-7 w-14 rounded-lg border bg-white text-center text-[12.5px] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+    />
+  )
+}
+
 export default function AgingReport({
   data,
   isLoading,
   isFetching,
-  bucketFilter,
-  setBucketFilter,
   page,
   setPage,
   exportParams,
   filters,
   setFilter,
-  brands,
+  warehouses,
+  warehouseId,
+  setWarehouseId,
   categoryId,
   setCategoryId,
   categoryOptions,
+  sort,
+  onSort,
 }: Props) {
   const summary = data?.summary
   const meta = data?.meta
   const totalPages = meta?.lastPage ?? 1
   const totalRows = meta?.total ?? 0
   const pageSize = meta?.limit ?? 20
-  const slowMovingCount = summary?.['91_180']?.count ?? 0
-  const shouldBeOutCount = summary?.['180_plus']?.count ?? 0
   const hasFilters = Boolean(
-    bucketFilter ||
-    filters.serial ||
-    filters.brandId ||
-    filters.model ||
-    filters.receivedFrom ||
-    filters.receivedTo
+    filters.serial || warehouseId || filters.model || filters.receivedFrom || filters.receivedTo
   )
 
   return (
@@ -136,33 +214,27 @@ export default function AgingReport({
           <Search className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
           <input
             type="search"
-            aria-label="Search serial or model"
-            placeholder="Search serial or model…"
+            aria-label="Search serial, model, brand, RR or origin"
+            placeholder="Search serial, model, brand, RR or origin…"
             value={filters.serial ?? ''}
             onChange={(e) => setFilter('serial', e.target.value)}
             className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
           />
         </label>
         <SearchableSelect
-          className="w-[150px]"
-          value={bucketFilter ?? ''}
-          onChange={(v) => setBucketFilter((v || undefined) as SerialAgingBucket | undefined)}
-          placeholder="All ages"
+          className="w-[220px]"
+          value={warehouseId ?? ''}
+          onChange={(v) => setWarehouseId(v || undefined)}
+          placeholder="All locations"
           chrome={CONTROL_CHROME}
           clearable
-          options={bucketOptions}
+          options={warehouses.map((w) => ({
+            value: w.id,
+            label: locationLabel(w.name),
+          }))}
         />
         <SearchableSelect
-          className="w-[150px]"
-          value={filters.brandId ?? ''}
-          onChange={(v) => setFilter('brandId', v)}
-          placeholder="All brands"
-          chrome={CONTROL_CHROME}
-          clearable
-          options={brands.map((b) => ({ value: b.id, label: b.name }))}
-        />
-        <SearchableSelect
-          className="w-[150px]"
+          className="w-[220px]"
           value={categoryId ?? ''}
           onChange={(v) => setCategoryId(v || undefined)}
           placeholder="All categories"
@@ -174,9 +246,8 @@ export default function AgingReport({
           <button
             type="button"
             onClick={() => {
-              setBucketFilter(undefined)
               setFilter('serial', undefined)
-              setFilter('brandId', undefined)
+              setWarehouseId(undefined)
               setFilter('receivedFrom', undefined)
               setFilter('receivedTo', undefined)
               setCategoryId(undefined)
@@ -189,28 +260,6 @@ export default function AgingReport({
         )}
       </div>
 
-      {/* Alerts */}
-      {!isLoading && (slowMovingCount > 0 || shouldBeOutCount > 0) && (
-        <div className="flex flex-wrap gap-3">
-          {slowMovingCount > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-[#f3d9b5] bg-[#fdf6ec] px-3.5 py-2">
-              <AlertTriangle className="h-4 w-4 text-[#b45309]" />
-              <span className="text-[12.5px] font-medium text-[#7a4a06]">
-                {slowMovingCount} slow-moving unit{slowMovingCount !== 1 ? 's' : ''} (91–180 days)
-              </span>
-            </div>
-          )}
-          {shouldBeOutCount > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-[#f3c9c5] bg-[#fdeceb] px-3.5 py-2">
-              <PackageX className="h-4 w-4 text-[#b42318]" />
-              <span className="text-[12.5px] font-medium text-[#b42318]">
-                {shouldBeOutCount} unit{shouldBeOutCount !== 1 ? 's' : ''} should be out (180+ days)
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Export */}
       <div className="flex items-center justify-between">
         <p className="text-[13px] text-[#5b5b6b]">
@@ -218,7 +267,6 @@ export default function AgingReport({
         </p>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-[12.5px] text-[#5b5b6b]">
-            <span>RR</span>
             <input
               type="date"
               aria-label="RR date from"
@@ -268,15 +316,15 @@ export default function AgingReport({
                 <tr
                   className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[11.5px] uppercase tracking-[.09em] text-[#8b8b9b]`}
                 >
-                  <th className="px-4 py-[9px] text-left font-medium">Date in</th>
-                  <th className="px-4 py-[9px] text-left font-medium">Origin</th>
-                  <th className="px-4 py-[9px] text-left font-medium">RR #</th>
-                  <th className="px-4 py-[9px] text-left font-medium">Brand</th>
-                  <th className="px-4 py-[9px] text-left font-medium">Type</th>
-                  <th className="px-4 py-[9px] text-left font-medium">Model</th>
-                  <th className="px-4 py-[9px] text-left font-medium">Serial #</th>
-                  <th className="px-4 py-[9px] text-right font-medium">Days</th>
-                  <th className="px-4 py-[9px] text-center font-medium">Age</th>
+                  <SortableTh label="datein" by="dateIn" sort={sort} onSort={onSort} align="left" />
+                  <th className="px-4 py-[9px] text-left font-medium">origin</th>
+                  <th className="px-4 py-[9px] text-left font-medium">rr</th>
+                  <th className="px-4 py-[9px] text-left font-medium">brand</th>
+                  <th className="px-4 py-[9px] text-left font-medium">type</th>
+                  <th className="px-4 py-[9px] text-left font-medium">model</th>
+                  <th className="px-4 py-[9px] text-left font-medium">serial</th>
+                  <th className="px-4 py-[9px] text-left font-medium">loc</th>
+                  <SortableTh label="age" by="age" sort={sort} onSort={onSort} align="center" />
                 </tr>
               </thead>
               <tbody>
@@ -286,7 +334,7 @@ export default function AgingReport({
                     className="border-t border-[#f4f4f6] hover:bg-[#fcfcfd]"
                   >
                     <td className="px-4 py-[11px] text-[13px] text-[#5b5b6b]">
-                      {formatShortDate(row.receivedAt)}
+                      {row.noDate ? '—' : formatDateIn(row.receivedAt)}
                     </td>
                     <td className="px-4 py-[11px] text-[13.5px] text-[#17171c]">
                       {row.origin ?? '—'}
@@ -308,14 +356,14 @@ export default function AgingReport({
                     >
                       {row.serialNumber}
                     </td>
-                    <td className={`${MONO} px-4 py-[11px] text-right text-[14.5px] font-semibold`}>
-                      {row.daysSinceReceipt}
+                    <td className="px-4 py-[11px] text-[13px] text-[#5b5b6b]">
+                      {row.warehouseName ? locationLabel(row.warehouseName) : '—'}
                     </td>
                     <td className="px-4 py-[11px] text-center">
                       <span
-                        className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11.5px] font-medium ${BUCKET_TONE[row.bucket]}`}
+                        className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11.5px] font-medium ${row.bucket ? BUCKET_TONE[row.bucket] : 'text-[#8b8b9b]'}`}
                       >
-                        {SERIAL_AGING_BUCKET_LABELS[row.bucket]}
+                        {row.noDate ? '—' : (row.importedAge ?? formatAge(row.receivedAt))}
                       </span>
                     </td>
                   </tr>
@@ -341,8 +389,9 @@ export default function AgingReport({
             >
               Prev
             </button>
-            <span className="px-2 font-medium text-[#17171c]">
-              {page} / {totalPages}
+            <span className="flex items-center gap-1.5 px-2 font-medium text-[#17171c]">
+              <PageJump page={page} totalPages={totalPages} onJump={setPage} />
+              <span>/ {totalPages}</span>
             </span>
             <button
               type="button"

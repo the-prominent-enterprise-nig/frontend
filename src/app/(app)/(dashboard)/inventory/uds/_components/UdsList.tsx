@@ -154,7 +154,6 @@ export default function UdsList({ session }: { session: SessionUser }) {
     page,
     setPage,
     warehouseOptions,
-    serialOptions,
     supplierOptions,
     createUds,
     isCreating,
@@ -569,7 +568,6 @@ export default function UdsList({ session }: { session: SessionUser }) {
         onSubmit={createUds}
         isSubmitting={isCreating}
         warehouseOptions={warehouseOptions}
-        serialOptions={serialOptions}
         supplierOptions={supplierOptions}
         currentUserBranchId={session.branchId}
       />

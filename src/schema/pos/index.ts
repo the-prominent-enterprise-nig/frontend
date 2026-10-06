@@ -526,6 +526,13 @@ export interface CreateTransactionInput {
   deliveryFeeBankTransferVerifiedAtRegister?: boolean
   deliveryFeeCardTxnMode?: PosCardTxnMode
   deliveryFeeCardInstallmentTerm?: number
+  /** Scenario 68 — an X-Deal's down payment (the part paid at the register;
+   * the amount is the lines' downPayment). Rejected on any other sale. */
+  xDealDownPaymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+  xDealDownPaymentReferenceNumber?: string
+  xDealDownPaymentCheckNumber?: string
+  xDealDownPaymentMethodOptionId?: string
+  xDealDownPaymentVerifiedAtRegister?: boolean
   isTaxExempt?: boolean
   taxExemptionRef?: string
   /** Set when a manager has PIN-approved an override (receiptless return,
@@ -1363,6 +1370,10 @@ export interface PosReleaseFormCartSnapshot {
   /** Scenario 67 — the snapshot is the submitted cart, X-Deal flags included. */
   isXDeal?: boolean
   xDealReference?: string | null
+  /** Scenario 68 — the part of an X-Deal paid at the counter, recorded on
+   * approval; the amount itself is the lines' downPayment. */
+  xDealDownPaymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+  xDealDownPaymentReferenceNumber?: string
 }
 
 export interface PosReleaseFormRequest {

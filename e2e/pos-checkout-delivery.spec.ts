@@ -12,11 +12,14 @@ import {
   sweepE2EPriceLists,
   sweepE2EPriceUseTypes,
   deleteCustomers,
+  openCustomSelect,
 } from './utils'
 
 // Scenario 66 — delivery at POS checkout: Deliver to, Delivery Address and a
 // delivery fee collected on its own collection receipt, never part of the
-// sale. The money side (the fee's receipt and JE, the CR rules, reports) is
+// sale. Scenario 68 — the checkout totals the fee in: one Total, one Amount
+// received, the fee paid with the sale's own tender (DT-F…); the separate
+// Paid with only shows when the sale itself collects nothing. The money side (the fee's receipt and JE, the CR rules, reports) is
 // covered by backend/test/pos-delivery-fee-checkout.e2e-spec.ts and
 // pos-delivery-fee-reports.e2e-spec.ts; this spec covers the checkout UI that
 // drives it. Case IDs (DF-F…) match docs/scenario-66-pos-delivery-fee-plan.md.
@@ -253,10 +256,30 @@ async function readyCashSale(page: Page, customerName: string, salesInvoiceNumbe
   await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
 }
 
-async function fillPayment(page: Page, cr: string): Promise<void> {
-  await fillStable(page.getByLabel('Amount received'), '100000')
-  await fillStable(page.getByPlaceholder('CR Number *'), cr)
+async function fillPayment(page: Page, cr: string, amount = '100000'): Promise<void> {
+  await fillStable(page.getByLabel('Amount received'), amount)
+  // The label is the payment method's own reference label ("CR Number" by
+  // default), so match its start rather than one exact spelling.
+  await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), cr)
 }
+
+/** Scenario 68 — a cart whose sale collects nothing at the register: a fully
+ * bartered (₱0 down) X-Deal, which the Business Owner completes directly.
+ * The delivery fee is then the only money taken, with its own Paid with. */
+async function readyBarterSale(page: Page, customerName: string, salesInvoiceNumber: string) {
+  await openCheckout(page)
+  await addItem(page)
+  await selectCustomer(page, customerName)
+  await page.getByTestId('x-deal-checkbox').check()
+  await page.getByTestId('x-deal-reference').fill(`XD-REF-DF-${Date.now()}`)
+  const termPicker = page.getByRole('combobox', { name: 'Select a term…' })
+  await expect(termPicker).toBeVisible({ timeout: 10_000 })
+  await openCustomSelect(termPicker)
+  await page.getByRole('listbox').getByRole('option').first().click()
+  await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
+}
+
+const createPlan = (page: Page) => page.getByRole('button', { name: /Create Installment Plan/ })
 
 const section = (page: Page) => page.getByTestId('delivery-section')
 const toggle = (page: Page) => page.getByTestId('delivery-toggle')
@@ -324,23 +347,120 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await expect(section(page)).toContainText('Free delivery — no fee to collect.')
   })
 
-  test('DF-F02: typing a fee leaves both Totals alone and shows the fee beside them', async ({
+  test('DF-F02 / DT-F01 (Scenario 68): a fee is totaled into both Totals, paid with the sale, on its own CR', async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F02', withAddress)
     await openCheckout(page)
     await addItem(page)
     await selectCustomer(page, customer.name)
-    const totalBefore = await page.getByTestId('order-summary-total').textContent()
+    await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,000.00')
 
     await toggle(page).check()
     await fillStable(feeInput(page), '150')
 
-    await expect(page.getByTestId('order-summary-total')).toHaveText(totalBefore!)
     await expect(page.getByTestId('order-summary-delivery-fee')).toContainText('₱150.00')
-    await expect(page.getByTestId('payment-delivery-fee')).toContainText('₱150.00')
+    await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,150.00')
+    await expect(page.getByTestId('payment-total')).toHaveText('₱8,150.00')
+    await expect(page.getByTestId('payment-delivery-fee')).toContainText(
+      'Includes the delivery fee of ₱150.00'
+    )
+    // The sale's own tender carries it — no separate Paid with — but it keeps
+    // its own Delivery CR Number.
+    await expect(page.getByTestId('delivery-fee-method')).toHaveCount(0)
+    await expect(page.getByTestId('delivery-fee-with-sale')).toBeVisible()
     await expect(feeCr(page)).toBeVisible()
-    await expect(page.getByTestId('delivery-fee-method')).toBeVisible()
+  })
+
+  test('DT-F02: Amount received must cover the fee too — paying only the sale total is underpaid and posts nothing', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF02', withAddress)
+    const salesInvoiceNumber = `SI-DTF02-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    await fillStable(feeCr(page), `CR-DTF02-FEE-${Date.now()}`)
+    await fillPayment(page, `CR-DTF02-SALE-${Date.now()}`, '8000')
+
+    // The confirm button itself says what's short — the fee.
+    const underpaid = page.getByRole('button', { name: /Underpaid by ₱150\.00/ })
+    await expect(underpaid).toBeVisible()
+    await underpaid.click()
+    expect(await salesBySalesInvoice(page.request, salesInvoiceNumber)).toHaveLength(0)
+  })
+
+  test("DT-F03: sale + fee in one payment — change is on the grand total, the sale's own payment stays the sale's, and the fee is receipted in cash on its own CR", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF03', withAddress)
+    const salesInvoiceNumber = `SI-DTF03-${Date.now()}`
+    const feeCrNumber = `CR-DTF03-FEE-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    await fillStable(feeCr(page), feeCrNumber)
+    await fillPayment(page, `CR-DTF03-SALE-${Date.now()}`, '8200')
+
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(page.getByText('Change: ₱50.00')).toBeVisible()
+    await expect(page.getByTestId('success-delivery-fee-line')).toContainText('₱150.00')
+    await expect(page.getByText('₱8,150.00', { exact: true })).toBeVisible()
+
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    // Never in the sale: its payment and its total are the sale's alone.
+    expect(Number(tx.totalAmount)).toBe(8000)
+    const paid = (tx.payments as { amount: number | string }[]).reduce(
+      (sum, p) => sum + Number(p.amount),
+      0
+    )
+    expect(paid).toBe(8000)
+    expect(tx.deliveryFeeCollectionReceipt).toMatchObject({
+      reference: feeCrNumber,
+      method: 'CASH',
+      amount: 150,
+    })
+  })
+
+  test("DT-F04: a sale paid by check carries its check onto the fee's receipt", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF04', withAddress)
+    const salesInvoiceNumber = `SI-DTF04-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await page
+      .getByTestId('cash-sub-mode-toggle')
+      .getByRole('button', { name: 'Check', exact: true })
+      .click()
+    await fillStable(page.getByLabel('Check Number'), '0099887')
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    await fillStable(feeCr(page), `CR-DTF04-FEE-${Date.now()}`)
+    await fillPayment(page, `CR-DTF04-SALE-${Date.now()}`, '8150')
+
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    // The success screen names the sale's tender for the fee, not the hidden
+    // Paid with's default (found writing the manual script).
+    await expect(page.getByTestId('success-delivery')).toContainText('Check #0099887')
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    expect(tx.deliveryFeeCollectionReceipt).toMatchObject({
+      method: 'CHECK',
+      checkNumber: '0099887',
+      amount: 150,
+    })
   })
 
   test('DF-F03: Confirm is blocked for a blank Deliver to, and for a fee with no CR — nothing is posted', async ({
@@ -554,18 +674,27 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     expect(tx.deliveryBarangayCode).toBe(BARANGAY_CODE)
   })
 
-  test("DF-F17: Paid with offers the sale's Cash choices; a check needs its number and posts as a check (PR #201 review)", async ({
+  test("DF-F17 / DT-F05: when the sale itself collects nothing, the fee is the payment box's Total and Paid with offers the sale's Cash choices; a check needs its number and posts as a check", async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F17', withAddress)
     const salesInvoiceNumber = `SI-DFF17-${Date.now()}`
-    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await readyBarterSale(page, customer.name, salesInvoiceNumber)
     await toggle(page).check()
     await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
     await fillStable(feeInput(page), '150')
+    await expect(page.getByTestId('payment-delivery-fee-only')).toContainText('₱150.00')
 
     const paidWith = page.getByTestId('delivery-fee-method')
-    for (const label of ['Cash on Hand', 'Check', 'Bank Transfer', 'QR', 'Debit/Credit Card']) {
+    for (const label of [
+      'Cash on Hand',
+      'Check',
+      'Bank Transfer',
+      'GCash',
+      'Billers',
+      'QR',
+      'Debit/Credit Card',
+    ]) {
       await expect(paidWith.getByRole('button', { name: label, exact: true })).toBeVisible()
     }
     await expect(
@@ -576,16 +705,15 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     const checkNumber = page.getByLabel('Delivery fee check number')
     await expect(checkNumber).toBeVisible()
     await fillStable(feeCr(page), `CR-DFF17-FEE-${Date.now()}`)
-    await fillPayment(page, `CR-DFF17-SALE-${Date.now()}`)
 
-    await confirm(page).click()
+    await createPlan(page).click()
     await expect(page.getByText('Enter the check number for the delivery fee.')).toBeVisible()
     expect(await salesBySalesInvoice(page.request, salesInvoiceNumber)).toHaveLength(0)
 
     await fillStable(checkNumber, '0012345')
-    await confirm(page).click()
-    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
-      timeout: 20_000,
+    await createPlan(page).click()
+    await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
+      timeout: 30_000,
     })
     await expect(page.getByTestId('success-delivery')).toContainText('Check #0012345')
 
@@ -603,7 +731,7 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F18', withAddress)
-    await readyCashSale(page, customer.name, `SI-DFF18-${Date.now()}`)
+    await readyBarterSale(page, customer.name, `SI-DFF18-${Date.now()}`)
     await toggle(page).check()
     await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
     await fillStable(feeInput(page), '150')
@@ -619,8 +747,7 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await expect(page.getByLabel('Delivery fee card term')).toBeVisible()
 
     await fillStable(feeCr(page), `CR-DFF18-FEE-${Date.now()}`)
-    await fillPayment(page, `CR-DFF18-SALE-${Date.now()}`)
-    await confirm(page).click()
+    await createPlan(page).click()
     await expect(
       page.getByText("Select a term for the delivery fee's card installment.")
     ).toBeVisible()

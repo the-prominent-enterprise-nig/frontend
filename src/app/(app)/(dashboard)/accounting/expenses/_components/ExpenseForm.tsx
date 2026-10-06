@@ -1700,6 +1700,12 @@ function ExpenseFormFields({
                         lines need an Account picked before saving.
                       </p>
                     )}
+                    {importResult.ambiguousAccounts.length > 0 && (
+                      <p className="mt-0.5 text-amber-700">
+                        More than one account is named {importResult.ambiguousAccounts.join(', ')} —
+                        those lines need the right Account picked before saving.
+                      </p>
+                    )}
                     {importResult.matchedCustomers > 0 && (
                       <p className="mt-0.5 text-zinc-500">
                         {importResult.matchedCustomers} deduction(s) matched a customer and will

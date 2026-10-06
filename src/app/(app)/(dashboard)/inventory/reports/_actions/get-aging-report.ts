@@ -14,6 +14,8 @@ type Params = {
   receivedFrom?: string
   receivedTo?: string
   bucket?: SerialAgingBucket
+  sortBy?: 'dateIn' | 'age'
+  sortDir?: 'asc' | 'desc'
   page?: number
   limit?: number
 }
@@ -30,6 +32,8 @@ export async function getAgingReport(params: Params = {}) {
     receivedFrom: params.receivedFrom,
     receivedTo: params.receivedTo,
     bucket: params.bucket,
+    sortBy: params.sortBy,
+    sortDir: params.sortDir,
     page: params.page,
     limit: params.limit,
   }
