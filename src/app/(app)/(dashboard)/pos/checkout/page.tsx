@@ -1227,6 +1227,7 @@ export default function CheckoutPage() {
           // application's items would discard all of that and re-ask for a
           // serial already chosen, so only the picker selection is wanted.
           arrivalSelectRef.current = handoff.creditApplicationId
+          setPaymentMode('installment')
         } else {
           setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
         }
@@ -2489,6 +2490,11 @@ export default function CheckoutPage() {
       setLinePriceUseTypeId(lineIds, arrivingCreditApplication.priceUseTypeId)
     }
     setLineInvoiceType(lineIds, 'installment')
+    // The Cash/Installment/Delivery Receipt toggle is its own state, separate
+    // from the lines' invoice type — without this the lines read installment
+    // while the toggle still highlights Cash.
+    setPaymentMode('installment')
+    if (cashSubMode === 'card') setCashSubMode('cash_on_hand')
     arrivalSelectRef.current = arrivingCreditApplication.id
     setCreditApplicationId(arrivingCreditApplication.id)
     setArrivingCreditApplication(null)
