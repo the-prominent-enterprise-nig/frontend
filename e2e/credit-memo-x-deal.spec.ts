@@ -35,6 +35,8 @@ type Fixtures = {
   financingTermId: string
   xDeal: Sale
   ordinary: Sale
+  /** Scenario 68 — an X-Deal left with the memo it issued itself. */
+  settledXDeal: Sale
 }
 
 let fx: Fixtures
@@ -146,10 +148,23 @@ async function postSale(request: APIRequestContext, payload: Record<string, unkn
   return body.id as string
 }
 
+/** Scenario 68 — an X-Deal issues its own memo with the sale. The X-Deal
+ * offset page is now for re-issuing after a void, so the fixture X-Deal has
+ * its memo voided unless keepAutoMemo. */
+async function voidAutoMemo(request: APIRequestContext, customerId: string) {
+  const memos = (await (await request.get('/api/credit-memos', { params: { customerId } })).json())
+    .items as { id: string; type: string; status: string }[]
+  const memo = memos.find((m) => m.type === 'x_deal' && m.status === 'ISSUED')
+  expect(memo, 'the X-Deal should have issued its own memo').toBeTruthy()
+  const res = await request.post(`/api/credit-memos/x-deal/${memo!.id}/void`, { data: {} })
+  expect(res.ok(), await res.text()).toBeTruthy()
+}
+
 async function createSale(
   request: APIRequestContext,
   base: Pick<Fixtures, 'itemId' | 'itemName' | 'sessionId' | 'financingTermId'>,
-  kind: 'x-deal' | 'ordinary'
+  kind: 'x-deal' | 'ordinary',
+  opts: { keepAutoMemo?: boolean } = {}
 ): Promise<Sale> {
   const customer =
     kind === 'x-deal'
@@ -182,6 +197,7 @@ async function createSale(
       },
     ],
   })
+  if (kind === 'x-deal' && !opts.keepAutoMemo) await voidAutoMemo(request, customer.id)
   return { customerId: customer.id, customerName: customer.name, transactionId }
 }
 
@@ -223,6 +239,7 @@ test.describe.serial('Credit Memos — X-Deal offset (Scenario 67)', () => {
       ...base,
       xDeal: await createSale(request, base, 'x-deal'),
       ordinary: await createSale(request, base, 'ordinary'),
+      settledXDeal: await createSale(request, base, 'x-deal', { keepAutoMemo: true }),
     }
     await request.dispose()
   })
@@ -281,7 +298,8 @@ test.describe.serial('Credit Memos — X-Deal offset (Scenario 67)', () => {
         await page.request.get('/api/credit-memos', { params: { customerId: fx.xDeal.customerId } })
       ).json()
     ).items as { memoNumber: string; type: string; status: string; arInvoiceId: string }[]
-    const xDealMemos = memos.filter((m) => m.type === 'x_deal')
+    // The fixture's own automatic memo was voided first (Scenario 68).
+    const xDealMemos = memos.filter((m) => m.type === 'x_deal' && m.status === 'ISSUED')
     expect(xDealMemos).toHaveLength(1)
     const memoNumber = xDealMemos[0].memoNumber
 
@@ -335,6 +353,35 @@ test.describe.serial('Credit Memos — X-Deal offset (Scenario 67)', () => {
     const account = await installmentAccountOf(page.request, fx.xDeal.customerId)
     await gotoReady(page, `/crm/customers/${fx.xDeal.customerId}/installments/${account.id}`)
     await expect(page.getByTestId('ledger-status')).toHaveText('Active', { timeout: 15_000 })
+  })
+
+  test('XP-F04: an X-Deal arrives with its own memo — not offered on X-Deal offset, which says memos are automatic', async ({
+    page,
+  }) => {
+    await openXDealPage(page)
+    await expect(page.getByTestId('x-deal-offset-auto-note')).toContainText(
+      'X-Deal memos are now issued automatically'
+    )
+    await expect(
+      page.getByLabel('X-Deal sale').locator('option', { hasText: fx.settledXDeal.customerName })
+    ).toHaveCount(0)
+
+    const memos = (
+      await (
+        await page.request.get('/api/credit-memos', {
+          params: { customerId: fx.settledXDeal.customerId },
+        })
+      ).json()
+    ).items as { memoNumber: string; type: string; status: string }[]
+    const memo = memos.find((m) => m.type === 'x_deal' && m.status === 'ISSUED')!
+    expect(memo).toBeTruthy()
+
+    const account = await installmentAccountOf(page.request, fx.settledXDeal.customerId)
+    await gotoReady(page, `/crm/customers/${fx.settledXDeal.customerId}/installments/${account.id}`)
+    await expect(page.getByTestId('ledger-status')).toHaveText(
+      `Settled — X-Deal credit memo ${memo.memoNumber}`,
+      { timeout: 15_000 }
+    )
   })
 
   test('XD-F17: the ordinary New Credit Memo dialog offers no X-Deal type', async ({ page }) => {

@@ -9,6 +9,7 @@
  */
 
 import type { PaymentMethodConfig, PosCardTxnMode } from '@/src/schema/pos'
+import { qrOptionGroup } from './qr-option-groups'
 
 /** The API's tenders for a delivery fee — the same four a down payment takes. */
 export type DeliveryFeeMethod = 'cash' | 'card' | 'bank_transfer' | 'qr'
@@ -23,6 +24,8 @@ export const DELIVERY_FEE_TENDERS = [
   'cash_on_hand',
   'check',
   'bank_transfer',
+  'gcash',
+  'billers',
   'qr',
   'card',
 ] as const
@@ -32,21 +35,32 @@ export const DELIVERY_FEE_TENDER_LABELS: Record<DeliveryFeeTender, string> = {
   cash_on_hand: 'Cash on Hand',
   check: 'Check',
   bank_transfer: 'Bank Transfer',
+  gcash: 'GCash',
+  billers: 'Billers',
   qr: 'QR',
   card: 'Debit/Credit Card',
 }
 
-/** A check is cash with a check number, as it is on the sale. */
+/** A check is cash with a check number, and GCash / Billers are QR with
+ * their own part of its option list — all as they are on the sale. */
 export const DELIVERY_FEE_TENDER_METHOD: Record<DeliveryFeeTender, DeliveryFeeMethod> = {
   cash_on_hand: 'cash',
   check: 'cash',
   bank_transfer: 'bank_transfer',
+  gcash: 'qr',
+  billers: 'qr',
   qr: 'qr',
   card: 'card',
 }
 
-/** The tenders whose bank / gateway / card acquirer is picked from a list. */
-export const TENDERS_WITH_OPTIONS: readonly DeliveryFeeTender[] = ['bank_transfer', 'qr', 'card']
+/** The tenders whose bank / gateway / biller / card acquirer is picked from a list. */
+export const TENDERS_WITH_OPTIONS: readonly DeliveryFeeTender[] = [
+  'bank_transfer',
+  'gcash',
+  'billers',
+  'qr',
+  'card',
+]
 
 /** The card-installment terms checkout offers on the sale. */
 export const CARD_INSTALLMENT_TERMS = [3, 6, 9, 12, 18, 24] as const
@@ -122,8 +136,14 @@ export function deliveryFeeOptions(
   configuredMethods: PaymentMethodConfig[]
 ): { id: string; name: string }[] {
   if (!TENDERS_WITH_OPTIONS.includes(tender)) return []
-  const config = configuredMethods.find((m) => m.key === tender)
-  return config?.options.filter((o) => o.isEnabled) ?? []
+  const method = DELIVERY_FEE_TENDER_METHOD[tender]
+  const config = configuredMethods.find((m) => m.key === method)
+  return (
+    config?.options.filter(
+      // QR's one list is split three ways by name, as the sale splits it.
+      (o) => o.isEnabled && (method !== 'qr' || qrOptionGroup(o.name) === tender)
+    ) ?? []
+  )
 }
 
 /** The fee's receipt as the transaction detail reads it back. */
@@ -150,16 +170,22 @@ const RECEIPT_METHOD_TENDER: Record<
 /** The same label as the success screen's, from the saved receipt. */
 export function deliveryFeeReceiptTenderLabel(receipt: DeliveryFeeReceiptTender): string | null {
   if (!receipt.method) return null
+  const optionName = receipt.paymentMethodOption?.name
+  // A QR receipt reads as GCash or Billers when its option is one of theirs.
+  const tender =
+    receipt.method === 'QR' && optionName
+      ? qrOptionGroup(optionName)
+      : RECEIPT_METHOD_TENDER[receipt.method]
   return deliveryFeeTenderLabel(
     {
       ...EMPTY_DELIVERY,
-      tender: RECEIPT_METHOD_TENDER[receipt.method],
+      tender,
       checkNumber: receipt.checkNumber ?? '',
       bankVerified: !!receipt.bankTransferVerifiedAtRegister,
       cardTxnMode: receipt.cardTxnMode ?? 'straight',
       cardTerm: receipt.cardInstallmentTerm ?? undefined,
     },
-    receipt.paymentMethodOption?.name
+    optionName
   )
 }
 

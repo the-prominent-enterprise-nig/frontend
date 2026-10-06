@@ -95,6 +95,12 @@ export default function XDealMemoForm() {
         Clears an X-Deal sale&apos;s whole remaining balance and closes its installment account at
         ₱0.00.
       </p>
+      {/* Scenario 68 — every X-Deal issues this memo itself when the sale is
+          approved, so only a sale whose memo was voided is listed here. */}
+      <p className="mt-1 text-sm text-gray-500" data-testid="x-deal-offset-auto-note">
+        X-Deal memos are now issued automatically when the sale is approved. Use this page only to
+        re-issue one after its memo was voided.
+      </p>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
@@ -113,7 +119,7 @@ export default function XDealMemoForm() {
                 {candidatesQuery.isLoading
                   ? 'Loading…'
                   : candidates.length === 0
-                    ? 'No open X-Deal sales'
+                    ? 'No X-Deal sales to re-issue'
                     : 'Select an X-Deal sale…'}
               </option>
               {candidates.map((c) => (

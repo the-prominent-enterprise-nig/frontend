@@ -122,8 +122,19 @@ function customerLabel(req: PosReleaseFormRequest): string {
 }
 
 /** Scenario 67 — the customer, with the X-DEAL badge when the held sale is
- * one, so the approver knows why it has no down payment and no credit
- * application. */
+ * one, so the approver knows why it has no credit application. */
+/** Scenario 68 — the part of a held X-Deal paid at the counter. */
+function xDealDownPaymentOf(snapshot: PosReleaseFormRequest['cartSnapshot']): number {
+  const total = (snapshot?.lines ?? []).reduce(
+    (s, l) => s + (Number(l.downPayment ?? snapshot?.downPayment ?? 0) || 0),
+    0
+  )
+  return Math.round(total * 100) / 100
+}
+
+const formatPeso = (n: number) =>
+  `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 function CustomerCell({ req }: { req: PosReleaseFormRequest }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -989,8 +1000,14 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                     {reviewTarget.cartSnapshot.xDealReference
                       ? ` (ref. ${reviewTarget.cartSnapshot.xDealReference})`
                       : ''}{' '}
-                    — no down payment and no credit application by design. Accounting clears the
-                    balance with an X-Deal memo.
+                    — no credit application by design.{' '}
+                    {xDealDownPaymentOf(reviewTarget.cartSnapshot) > 0
+                      ? `${formatPeso(xDealDownPaymentOf(reviewTarget.cartSnapshot))} was paid at the counter as the cash portion${
+                          reviewTarget.cartSnapshot.xDealDownPaymentReferenceNumber
+                            ? ` (CR ${reviewTarget.cartSnapshot.xDealDownPaymentReferenceNumber})`
+                            : ''
+                        }. Approving records it and issues the X-Deal credit memo for the rest.`
+                      : 'Nothing paid at the counter — approving issues the X-Deal credit memo for the whole sale.'}
                   </span>
                 </div>
               )}

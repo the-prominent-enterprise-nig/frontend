@@ -39,6 +39,7 @@ import {
   effectiveUnitPrice,
   lineTaxAmount,
 } from './_utils/calculations'
+import { BILLER_OPTION_NAMES, GCASH_OPTION_NAMES } from './_utils/qr-option-groups'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -113,6 +114,8 @@ import {
   parseDeliveryFee,
   resolveDeliveryAddress,
   type CustomerAddress,
+  TENDERS_WITH_OPTIONS,
+  type DeliveryFeeTender,
   type DeliveryState,
 } from './_utils/delivery'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
@@ -280,11 +283,6 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   qr: 'QR',
   custom: 'Custom',
 }
-
-// GCash and Billers are their own Payment Method buttons but tender through
-// the 'qr' method; its one option list is split into the three groups by name.
-const GCASH_OPTION_NAMES = ['GCash Send Money', 'Soundpay']
-const BILLER_OPTION_NAMES = ['Ecpay', 'Palawan Pay']
 
 /** Payment methods withheld from the till (client, 2026-10-01 — "just hide
  *  the point system"). Hidden, not removed: the loyalty account still loads
@@ -789,10 +787,11 @@ export default function CheckoutPage() {
   const [hrApplianceLoanApplicationNumber, setHrApplianceLoanApplicationNumber] = useState('')
 
   // Scenario 67 — X-Deal (barter): rung up as an inhouse installment sale
-  // with no down payment and no credit application, whose balance
-  // accounting later offsets in full with an X-Deal credit memo. Any
-  // customer, cashier-confirmed; mutually exclusive with the Employee
-  // Appliance Loan above.
+  // with no credit application, whose balance an X-Deal credit memo offsets.
+  // Scenario 68: part of it may be paid now as the down payment, and the
+  // memo is issued with the sale itself (at approval). Any customer,
+  // cashier-confirmed; mutually exclusive with the Employee Appliance Loan
+  // above.
   const [xDealChecked, setXDealChecked] = useState(false)
   const [xDealReference, setXDealReference] = useState('')
   // Read by the credit-application loader, whose effect closure would
@@ -1543,30 +1542,49 @@ export default function CheckoutPage() {
   const isEmployeeCustomer = selectedCustomer?.customerType === 'employee'
   const employeeApplianceLoanActive = isEmployeeCustomer && employeeApplianceLoanChecked
   const xDealActive = !!selectedCustomer && xDealChecked
-  // Both collect nothing at the register: every down payment is ₱0 and the
-  // credit-application requirement is skipped.
+  // Neither needs a credit application, and neither has the 10% down-payment
+  // floor: an Employee Appliance Loan's down payment is optional (Chloe,
+  // development) and so is an X-Deal's cash portion (Scenario 68).
+  const skipsCreditApplication = employeeApplianceLoanActive || xDealActive
+  const skipsCreditApplicationLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
   const downPaymentWaived = employeeApplianceLoanActive || xDealActive
   const downPaymentWaivedLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
-  // Only an X-Deal is forced to ₱0. An Employee Appliance Loan waives the
-  // 10% floor but lets the cashier take a down payment if the employee wants
-  // to pay one — it starts at ₱0 and only counts once typed explicitly (the
-  // term pick's auto-fill, marked by downPaymentAutoForPriceListItemId, is
-  // ignored for it).
-  const downPaymentZeroed = xDealActive
+  // Nothing is forced to ₱0 any more: an X-Deal's part paid now is its cash
+  // portion (Scenario 68), typed by the cashier like an Employee Appliance
+  // Loan's optional down payment.
+  const downPaymentZeroed = false
+  // No rate-card figure either — the cashier's amount stands.
+  const downPaymentFree = employeeApplianceLoanActive || xDealActive
+  // An Employee Appliance Loan's down payment only counts once typed
+  // explicitly (the term pick's auto-fill, marked by
+  // downPaymentAutoForPriceListItemId, is ignored for it). An X-Deal never
+  // gets that auto-fill — ticking it clears the marker and the term pick
+  // skips it.
   const lineDownPayment = (l: CartLine): number => {
     if (downPaymentZeroed) return 0
     if (employeeApplianceLoanActive && l.downPaymentAutoForPriceListItemId !== undefined) return 0
     return parseFloat(l.downPaymentInput ?? '0') || 0
   }
+  const xDealDownPaymentTotal = xDealActive
+    ? Math.round(
+        cart
+          .filter((l) => l.invoiceType === 'installment' && l.installmentProvider !== 'tpf')
+          .reduce((s, l) => s + lineDownPayment(l), 0) * 100
+      ) / 100
+    : 0
+  // Whether a cash portion is being taken here at all — an X-Deal only when
+  // part of it is paid now.
+  const xDealCollectsNothing = xDealActive && xDealDownPaymentTotal <= 0
 
   // A line the rate card prices for its term carries exactly the card's down
   // payment (lineCardDownPayment). Whatever left another figure in the field —
   // one typed before a Price Use change, a restored or resumed cart — it is
   // brought back in line here, so the field, the installment preview, the
   // submit check and the sale itself all say the same amount. Not while the
-  // down payment is waived (Employee Appliance Loan, X-Deal): it stays ₱0.
+  // down payment is waived (Employee Appliance Loan) or optional (X-Deal):
+  // the cashier's figure stands.
   useEffect(() => {
-    if (downPaymentWaived) return
+    if (downPaymentFree) return
     setCart((prev) => {
       let changed = false
       const next = prev.map((l) => {
@@ -1584,7 +1602,7 @@ export default function CheckoutPage() {
     })
     // lineCardDownPayment reads only the line and financingTerms, both deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, financingTerms, downPaymentWaived])
+  }, [cart, financingTerms, downPaymentFree])
 
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
@@ -1596,19 +1614,23 @@ export default function CheckoutPage() {
   // set via the transaction-wide Payment Mode toggle — there's no per-item
   // choice anymore) is Credit Card. One card swipe covers whatever's being
   // paid by card in this sale, so the Card Acquirer/Straight-Installment/Term
-  // fields render once, not per line. An X-Deal collects no down payment, so
-  // a cash/card choice made before ticking it no longer applies — it's kept
-  // (unticking restores it), just not acted on.
+  // fields render once, not per line. An X-Deal with nothing paid now has no
+  // down payment to take, so a cash/card choice made before ticking it is
+  // kept (unticking restores it) but not acted on until a down payment is.
   const hasCreditCardLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
-    (installmentCartLines.length > 0 && !xDealActive && installmentPaymentMethod === 'credit_card')
+    (installmentCartLines.length > 0 &&
+      !xDealCollectsNothing &&
+      installmentPaymentMethod === 'credit_card')
   // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR). Also
   // covers the down payment's cash tendering now that it shares this pool —
   // cash-lines and installment-lines never coexist in one cart, so only one
   // of the two OR branches is ever true.
   const hasCashLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment') ||
-    (installmentCartLines.length > 0 && !xDealActive && installmentPaymentMethod === 'cash')
+    (installmentCartLines.length > 0 &&
+      !xDealCollectsNothing &&
+      installmentPaymentMethod === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
   // value (net of promo discount, prorated by the cash lines' share of the
@@ -1677,9 +1699,23 @@ export default function CheckoutPage() {
   const regularTenderTarget = Math.round((cashLinesTotal + tpfCollectedAtRegister) * 100) / 100
   const tenderTarget = Math.round((regularTenderTarget + installmentDownPaymentsTotal) * 100) / 100
 
+  // Scenario 66 — the delivery fee as entered (0 while blank or not yet a
+  // valid amount).
+  const deliveryFeeAmount = delivery.enabled ? (parseDeliveryFee(delivery.fee) ?? 0) : 0
+  // Scenario 68 — the checkout totals the delivery fee in: when the sale
+  // collects anything, the cashier takes sale + fee as one payment, so the
+  // payment box's Total, Amount received, change and "Underpaid" all use
+  // collectTarget. Only the sale's own part (tenderTarget) is ever sent to
+  // addPayment — the fee is recorded by create() on its own receipt and JE,
+  // so revenue, VAT and drawer cash never count it twice. When the sale
+  // collects nothing (charge, ₱0 X-Deal) the fee is taken on its own, with
+  // the Delivery section's Paid with.
+  const deliveryFeeWithSale = tenderTarget > 0 ? deliveryFeeAmount : 0
+  const collectTarget = Math.round((tenderTarget + deliveryFeeWithSale) * 100) / 100
+
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
-  const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
-  const change = totalPaid > tenderTarget ? Math.round((totalPaid - tenderTarget) * 100) / 100 : 0
+  const balance = Math.max(0, Math.round((collectTarget - totalPaid) * 100) / 100)
+  const change = totalPaid > collectTarget ? Math.round((totalPaid - collectTarget) * 100) / 100 : 0
 
   // Reserve mode has no tax/promo concept — SkuReservationsService values a
   // reservation as a flat item.sellingPrice × quantity, so the deposit cap
@@ -2671,6 +2707,15 @@ export default function CheckoutPage() {
     const lineIds = cart.map((l) => l.lineId)
     setLineInvoiceType(lineIds, 'installment')
     setLineInstallmentProvider(lineIds, 'inhouse')
+    // Scenario 68 — starts fully bartered (₱0 now); the cashier types in
+    // whatever part is paid at the register.
+    setCart((prev) =>
+      prev.map((l) => ({
+        ...l,
+        downPaymentInput: '',
+        downPaymentAutoForPriceListItemId: undefined,
+      }))
+    )
   }
 
   /**
@@ -2797,6 +2842,10 @@ export default function CheckoutPage() {
         //
         // A term the card quotes fixes the down payment outright, so it is
         // set even over a typed figure (PR #199 review).
+        //
+        // Scenario 68 — not on an X-Deal: its down payment is whatever part
+        // the cashier says is paid now, blank meaning fully bartered.
+        if (xDealActive) return { ...l, financingTermId }
         const fixed = lineCardDownPayment({ ...l, financingTermId })
         if (fixed != null) {
           return {
@@ -2985,6 +3034,79 @@ export default function CheckoutPage() {
   // bank_transfer/qr), so the cashier isn't asked to re-pick a method that
   // was already chosen above. Still just a default — freely changeable via
   // the row's own dropdown for split-tender or anything else.
+  /**
+   * Scenario 68 — an X-Deal's down payment, in the create request: the
+   * tender the Down Payment toggle and Cash's sub-choice already describe
+   * (a check is cash with its number; GCash and Billers are QR options), and
+   * the CR from the payment row. Nothing at all when nothing is paid now.
+   */
+  function xDealDownPaymentPayload(): {
+    xDealDownPaymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+    xDealDownPaymentReferenceNumber?: string
+    xDealDownPaymentCheckNumber?: string
+    xDealDownPaymentMethodOptionId?: string
+    xDealDownPaymentVerifiedAtRegister?: boolean
+  } {
+    if (!xDealActive || xDealDownPaymentTotal <= 0) return {}
+    const method = (preferredPaymentMethodKey() ?? 'cash') as
+      | 'cash'
+      | 'card'
+      | 'bank_transfer'
+      | 'qr'
+    const reference = payments
+      .filter((p) => p.amount > 0 && p.referenceNumber.trim())
+      .map((p) => p.referenceNumber.trim())
+      .join(', ')
+    return {
+      xDealDownPaymentMethod: method,
+      xDealDownPaymentReferenceNumber: reference || undefined,
+      ...(method === 'cash' && cashSubMode === 'check'
+        ? { xDealDownPaymentCheckNumber: checkNumber.trim() || undefined }
+        : {}),
+      ...(method === 'card' && cardTerminalOptionId
+        ? { xDealDownPaymentMethodOptionId: cardTerminalOptionId }
+        : (method === 'bank_transfer' || method === 'qr') && cashPaymentOptionId
+          ? { xDealDownPaymentMethodOptionId: cashPaymentOptionId }
+          : {}),
+      ...(method === 'bank_transfer' && bankTransferVerifiedAtRegister
+        ? { xDealDownPaymentVerifiedAtRegister: true }
+        : {}),
+    }
+  }
+
+  /**
+   * Scenario 68 — when the fee is paid with the sale's own payment, its
+   * Paid with is the sale's tender, with the same details: Cash's
+   * sub-choice (check number, bank / gateway / biller, verified at
+   * register) or the card (acquirer, Straight / Installment and term).
+   */
+  function deliveryWithSaleTender(): DeliveryState {
+    if (deliveryFeeWithSale <= 0) return delivery
+    if (hasCreditCardLine) {
+      return {
+        ...delivery,
+        tender: 'card',
+        checkNumber: '',
+        optionId: cardTerminalOptionId,
+        bankVerified: false,
+        cardTxnMode,
+        cardTerm: cardTxnMode === 'installment' ? cardInstallmentTerm : undefined,
+      }
+    }
+    // Paid with has the sale's Cash choices one for one (GCash and Billers
+    // record as QR with their option, as the sale's do).
+    const tender: DeliveryFeeTender = cashSubMode === 'card' ? 'cash_on_hand' : cashSubMode
+    return {
+      ...delivery,
+      tender,
+      checkNumber: tender === 'check' ? checkNumber : '',
+      optionId: TENDERS_WITH_OPTIONS.includes(tender) ? cashPaymentOptionId : undefined,
+      bankVerified: tender === 'bank_transfer' && bankTransferVerifiedAtRegister,
+      cardTxnMode: 'straight',
+      cardTerm: undefined,
+    }
+  }
+
   function preferredPaymentMethodKey(): PosPaymentMethod | null {
     if (hasCreditCardLine) return 'card'
     if (hasCashLine) {
@@ -3080,9 +3202,6 @@ export default function CheckoutPage() {
 
   // ─── Confirm sale ──────────────────────────────────────────────────────────
 
-  // Scenario 66 — the delivery fee as entered (0 while blank or not yet a
-  // valid amount). Shown beside the Totals, never added to them.
-  const deliveryFeeAmount = delivery.enabled ? (parseDeliveryFee(delivery.fee) ?? 0) : 0
   // The offline queue drops sale-level fields (plan decision D9), and a sale
   // resumed from a table tab already exists — neither can carry a delivery.
   const deliveryUnavailableReason = isOffline
@@ -3168,7 +3287,7 @@ export default function CheckoutPage() {
         return
       }
       const problem = deliveryProblem(
-        delivery,
+        deliveryWithSaleTender(),
         deliveryCustomerAddress,
         payments.filter((p) => p.amount > 0).map((p) => p.referenceNumber)
       )
@@ -3201,6 +3320,18 @@ export default function CheckoutPage() {
         setError('Every item in an X-Deal must use the same financing term.')
         return
       }
+      // Scenario 68 — some of it has to be bartered, or it's a cash sale.
+      const xDealSaleTotal = cart.reduce(
+        (s, l) =>
+          s + effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity,
+        0
+      )
+      if (xDealDownPaymentTotal >= Math.round(xDealSaleTotal * 100) / 100 - 0.005) {
+        setError(
+          "An X-Deal's cash portion must be less than the sale total — a sale paid in full is not an X-Deal."
+        )
+        return
+      }
     }
 
     const lineMissingTerm = inhouseInstallmentCartLines.find((l) => !l.financingTermId)
@@ -3212,7 +3343,7 @@ export default function CheckoutPage() {
       inhouseInstallmentCartLines.length > 0 &&
       !creditApplicationId &&
       !isGovernmentInstitutionalCustomer &&
-      !downPaymentWaived
+      !skipsCreditApplication
     ) {
       setError(
         'Select the approved credit application for this customer — every installment sale requires one.'
@@ -3267,8 +3398,8 @@ export default function CheckoutPage() {
       }
       // A line the rate card prices for its term must carry exactly the
       // card's down payment — the same rule the server applies. Not when the
-      // down payment is waived (Employee Appliance Loan, X-Deal).
-      const fixed = downPaymentWaived ? null : lineCardDownPayment(l)
+      // down payment is waived (Employee Appliance Loan) or optional (X-Deal).
+      const fixed = downPaymentFree ? null : lineCardDownPayment(l)
       if (fixed != null) {
         if (Math.abs(downPayment - fixed) > DOWN_PAYMENT_FLOOR_TOLERANCE) {
           setError(
@@ -3283,9 +3414,9 @@ export default function CheckoutPage() {
       // the exact rounded-to-centavo value shown by the "Min" hint below
       // can land a hair under the true unrounded floor and be rejected.
       // Waived entirely for an Employee Appliance Loan (development) or an
-      // X-Deal (Scenario 67).
+      // X-Deal (Scenario 67 / 68).
       if (
-        !downPaymentWaived &&
+        !downPaymentFree &&
         downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
       ) {
         setError(
@@ -3297,9 +3428,13 @@ export default function CheckoutPage() {
 
     // Down payment — forced explicit choice before its amount can even be
     // tendered, same as before the down payment shared this pool.
-    // An X-Deal has no down payment, so there is nothing to choose a method for.
-    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !xDealActive) {
-      setError('Choose how the down payment will be paid — Cash or Credit/Debit Card.')
+    // An X-Deal with nothing paid now has nothing to choose a method for.
+    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !xDealCollectsNothing) {
+      setError(
+        xDealActive
+          ? 'Choose how the cash portion will be paid — Cash or Credit/Debit Card.'
+          : 'Choose how the down payment will be paid — Cash or Credit/Debit Card.'
+      )
       return
     }
 
@@ -3421,7 +3556,7 @@ export default function CheckoutPage() {
               : undefined,
           salesInvoiceNumber: invoiceNumberInput.trim(),
           // Scenario 66 — nothing at all when delivery is off.
-          ...deliveryPayload(delivery, deliveryCustomerAddress),
+          ...deliveryPayload(deliveryWithSaleTender(), deliveryCustomerAddress),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
           // tpfApprovedAmount is deliberately not sent (client request,
@@ -3464,6 +3599,10 @@ export default function CheckoutPage() {
             : undefined,
           isXDeal: xDealActive || undefined,
           xDealReference: xDealActive ? xDealReference.trim() : undefined,
+          // Scenario 68 — an X-Deal's down payment travels with the sale: the
+          // backend records it (before the X-Deal memo) when the sale is
+          // created, at approval for a held one. Never through addPayment.
+          ...xDealDownPaymentPayload(),
           // The approving manager's id is read back off the cart when the
           // component state that normally holds it is gone. A price override
           // writes to both: priceOverrideBy on the line (which is part of
@@ -3630,7 +3769,8 @@ export default function CheckoutPage() {
         txData = txRes.data
       }
 
-      if (tenderTarget > 0) {
+      // Scenario 68 — an X-Deal's down payment was recorded with the sale.
+      if (tenderTarget > 0 && !xDealActive) {
         // The merged payments pool covers cash/TPF first, then whatever's
         // left over goes to the down payment below — same rows can straddle
         // both if the cashier tendered it all in one go. (A delivery fee is
@@ -3800,14 +3940,19 @@ export default function CheckoutPage() {
               deliverTo: delivery.deliverTo.trim(),
               address: resolveDeliveryAddress(delivery, deliveryCustomerAddress).address,
               fee: deliveryFeeAmount,
+              // Scenario 68 — what the fee was actually paid with: the
+              // sale's own tender when it rode along with the sale.
               tenderLabel:
                 deliveryFeeAmount > 0
-                  ? deliveryFeeTenderLabel(
-                      delivery,
-                      deliveryFeeOptions(delivery.tender, configuredMethods).find(
-                        (o) => o.id === delivery.optionId
-                      )?.name
-                    )
+                  ? (() => {
+                      const paid = deliveryWithSaleTender()
+                      return deliveryFeeTenderLabel(
+                        paid,
+                        deliveryFeeOptions(paid.tender, configuredMethods).find(
+                          (o) => o.id === paid.optionId
+                        )?.name
+                      )
+                    })()
                   : null,
               feeCr: deliveryFeeAmount > 0 ? delivery.feeCr.trim() : null,
             }
@@ -4625,7 +4770,7 @@ export default function CheckoutPage() {
                     <span className="block text-gray-700">
                       {isOffline
                         ? 'Unavailable offline'
-                        : 'Inhouse installment, no down payment, no credit application — accounting clears the balance with an X-Deal credit memo'}
+                        : 'Inhouse installment, no credit application. Part of it may be paid now as the cash portion; an X-Deal credit memo clears the rest automatically when the sale is approved'}
                     </span>
                   </span>
                 </label>
@@ -4705,6 +4850,7 @@ export default function CheckoutPage() {
               customerAddressLoading={deliveryAddressLoading}
               unavailableReason={deliveryUnavailableReason}
               configuredMethods={configuredMethods}
+              feeFollowsSale={tenderTarget > 0}
               fmt={fmt}
             />
           )}
@@ -4979,22 +5125,23 @@ export default function CheckoutPage() {
                 </div>
               )}
             </div>
-            <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
-              <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-2xl font-bold text-gray-900" data-testid="order-summary-total">
-                {fmt(totalAmount)}
-              </span>
-            </div>
-            {/* Scenario 66 — below the Total, never in it. */}
+            {/* Scenario 68 — the fee is totaled in at checkout; it is still
+                posted on its own receipt and JE, never as part of the sale. */}
             {deliveryFeeAmount > 0 && (
               <div
-                className="mt-2 flex items-center justify-between rounded-lg bg-purple-50 px-2.5 py-1.5 text-xs text-purple-700"
+                className="mt-3 flex items-center justify-between text-xs text-purple-700"
                 data-testid="order-summary-delivery-fee"
               >
-                <span>Delivery fee — on its own CR, not in the Total</span>
+                <span>Delivery fee</span>
                 <span className="font-semibold">{fmt(deliveryFeeAmount)}</span>
               </div>
             )}
+            <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
+              <span className="text-sm font-semibold text-gray-700">Total</span>
+              <span className="text-2xl font-bold text-gray-900" data-testid="order-summary-total">
+                {fmt(Math.round((totalAmount + deliveryFeeAmount) * 100) / 100)}
+              </span>
+            </div>
 
             {/* Tax exempt toggle */}
             <div className="mt-3 flex items-center justify-between border-t border-purple-200 pt-3">
@@ -5169,14 +5316,14 @@ export default function CheckoutPage() {
                         Government institutional customer — no credit application required.
                       </p>
                     )}
-                    {selectedCustomer && downPaymentWaived && (
+                    {selectedCustomer && skipsCreditApplication && (
                       <p className="mt-2.5 text-[13px] text-prominent-purple-500">
-                        {downPaymentWaivedLabel} — no credit application required.
+                        {skipsCreditApplicationLabel} — no credit application required.
                       </p>
                     )}
                     {selectedCustomer &&
                       !isGovernmentInstitutionalCustomer &&
-                      !downPaymentWaived && (
+                      !skipsCreditApplication && (
                         <div className="mt-2.5">
                           <label className="mb-1 block text-[13px] text-prominent-purple-700">
                             Approved Credit Application
@@ -5377,7 +5524,7 @@ export default function CheckoutPage() {
                   // Set when the card quotes this line's term: the down payment
                   // is then the card's, and there is nothing to change.
                   const fixedDownPayment =
-                    groupProvider === 'inhouse' && !downPaymentWaived
+                    groupProvider === 'inhouse' && !downPaymentFree
                       ? lineCardDownPayment(line)
                       : null
                   const downPaymentValue = downPaymentWaived
@@ -5450,6 +5597,45 @@ export default function CheckoutPage() {
                                       {downPaymentWaivedLabel}
                                     </span>
                                   </div>
+                                </div>
+                              ) : xDealActive ? (
+                                // Scenario 68 — the part paid now, if any.
+                                <div
+                                  data-testid="x-deal-down-payment"
+                                  className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Cash portion
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      X-Deal · optional
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    inputMode="decimal"
+                                    aria-label="X-Deal cash portion"
+                                    placeholder="0.00"
+                                    value={line.downPaymentInput ?? ''}
+                                    onChange={(e) =>
+                                      setLineDownPaymentInput(groupLineIds, e.target.value)
+                                    }
+                                    className="mt-1 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                  />
+                                  <p className="mt-1 text-xs text-prominent-purple-500">
+                                    {(parseFloat(line.downPaymentInput ?? '') || 0) > 0
+                                      ? `Paid now at this counter. The rest, ${fmt(
+                                          Math.max(
+                                            0,
+                                            lineSaleAmount -
+                                              (parseFloat(line.downPaymentInput ?? '') || 0)
+                                          )
+                                        )}, is cleared by the X-Deal credit memo when the sale is approved.`
+                                      : 'The X-Deal credit memo clears the whole sale when it is approved.'}
+                                  </p>
                                 </div>
                               ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
                                 <>
@@ -5529,7 +5715,7 @@ export default function CheckoutPage() {
                                   </div>
                                 </div>
                               )}
-                              {!downPaymentWaived && (
+                              {!downPaymentFree && (
                                 <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                   <span className="text-prominent-purple-400">●</span>
                                   {fixedDownPayment != null
@@ -5720,13 +5906,13 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 )}
-                {installmentCartLines.length > 0 && !xDealActive && (
+                {installmentCartLines.length > 0 && !xDealCollectsNothing && (
                   <div
                     data-testid="dp-payment-mode-toggle"
                     className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
                   >
                     <p className="mb-1.5 text-xs font-medium text-gray-800">
-                      Down Payment
+                      {xDealActive ? 'Cash Portion' : 'Down Payment'}
                       <span className="ml-1 font-normal text-gray-500">
                         ({fmt(allDownPaymentsTotal)})
                       </span>
@@ -5969,7 +6155,20 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {saleMode === 'sale' && tenderTarget <= 0 ? (
+            {saleMode === 'sale' && tenderTarget <= 0 && deliveryFeeAmount > 0 ? (
+              // Scenario 68 — only the fee is taken here; its tender and its
+              // own CR are in the Delivery section.
+              <div className="space-y-1" data-testid="payment-delivery-fee-only">
+                <div className="flex items-center justify-between text-lg font-bold text-gray-900">
+                  <span>Total</span>
+                  <span>{fmt(deliveryFeeAmount)}</span>
+                </div>
+                <p className="text-xs text-purple-700">
+                  The delivery fee — paid with the Delivery section&apos;s Paid with, on its own
+                  Delivery CR Number. Nothing else is collected at checkout for this cart.
+                </p>
+              </div>
+            ) : saleMode === 'sale' && tenderTarget <= 0 ? (
               <p className="rounded-lg bg-gray-100 px-3 py-2 text-center text-xs text-gray-500">
                 Nothing to collect at checkout for this cart.
               </p>
@@ -5985,15 +6184,14 @@ export default function CheckoutPage() {
                 {saleMode === 'sale' && (
                   <div className="flex items-center justify-between text-lg font-bold text-gray-900">
                     <span>Total</span>
-                    <span>{fmt(tenderTarget)}</span>
+                    <span data-testid="payment-total">{fmt(collectTarget)}</span>
                   </div>
                 )}
-                {/* Scenario 66 — collected too, but on the fee's own CR (in
-                    the Delivery section), so it is not tendered here. */}
-                {saleMode === 'sale' && deliveryFeeAmount > 0 && (
+                {/* Scenario 68 — totaled in; still receipted on its own CR. */}
+                {saleMode === 'sale' && deliveryFeeWithSale > 0 && (
                   <p className="text-xs text-purple-700" data-testid="payment-delivery-fee">
-                    Also collect the delivery fee of {fmt(deliveryFeeAmount)} on its own CR — not
-                    part of this total.
+                    Includes the delivery fee of {fmt(deliveryFeeWithSale)}, receipted on its own
+                    Delivery CR Number.
                   </p>
                 )}
                 {payments.map((p, i) => {
@@ -6228,7 +6426,7 @@ export default function CheckoutPage() {
                 inhouseInstallmentCartLines.length > 0 &&
                 !creditApplicationId &&
                 !isGovernmentInstitutionalCustomer &&
-                !downPaymentWaived
+                !skipsCreditApplication
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
               const tpfMissingDownPayment =
@@ -6266,8 +6464,10 @@ export default function CheckoutPage() {
                               : saleMode === 'sale' &&
                                   installmentCartLines.length > 0 &&
                                   !installmentPaymentMethod &&
-                                  !xDealActive
-                                ? 'Choose a down payment method'
+                                  !xDealCollectsNothing
+                                ? xDealActive
+                                  ? 'Choose how the cash portion is paid'
+                                  : 'Choose a down payment method'
                                 : saleMode === 'sale' && tpfMissingReference
                                   ? 'Select a TPF provider and enter a reference number'
                                   : saleMode === 'sale' && tpfMissingDownPayment
@@ -7124,7 +7324,15 @@ function SuccessScreen({
   // the receipt has to lead with the collected figure rather than imply the
   // customer paid the lot.
   const totalTendered = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
-  const paidNow = Math.max(0, Math.round((totalTendered - success.change) * 100) / 100)
+  // Scenario 68 — the delivery fee is collected with the sale, so what was
+  // tendered can include it. It is never part of the sale (its own receipt),
+  // so it comes off before working out what the sale itself took.
+  const deliveryFeeCollected = success.delivery?.fee ?? 0
+  const feeInTender = totalTendered > 0 ? deliveryFeeCollected : 0
+  const paidNow = Math.max(
+    0,
+    Math.round((totalTendered - success.change - feeInTender) * 100) / 100
+  )
   const notCollectedHere = Math.max(0, Math.round((totalAmount - paidNow) * 100) / 100)
   const tpfOutcomes = installmentOutcomes.filter((o) => o.installmentProvider === 'tpf')
   const allTpf = tpfOutcomes.length > 0 && tpfOutcomes.length === installmentOutcomes.length
@@ -7139,7 +7347,9 @@ function SuccessScreen({
           : allInhouse
             ? 'Financed on installment'
             : 'Financed / billed to account'
-  const headlineAmount = notCollectedHere > 0 ? paidNow : totalAmount
+  // Everything taken at this register: the sale's part plus the fee.
+  const headlineAmount =
+    Math.round(((notCollectedHere > 0 ? paidNow : totalAmount) + deliveryFeeCollected) * 100) / 100
   // Worth spelling out only when the cash handed over isn't the headline
   // figure — otherwise it just repeats the number directly above it.
   const showTendered = totalTendered > 0 && Math.abs(totalTendered - headlineAmount) >= 0.01
@@ -7192,8 +7402,11 @@ function SuccessScreen({
                         : 'Sale Complete'}
               </p>
               {success.isXDeal && (
-                <div className="mt-2 flex justify-center">
+                <div className="mt-2 flex flex-col items-center gap-1">
                   <XDealBadge reference={success.xDealReference} />
+                  <p className="text-xs text-gray-500" data-testid="success-x-deal-note">
+                    Cleared by an X-Deal credit memo, issued with the sale.
+                  </p>
                 </div>
               )}
               {success.offlineBuffered ? (
@@ -7392,20 +7605,31 @@ function SuccessScreen({
               nobody paid at this register spelled out above it whenever the
               two differ. */}
           <div className="border-t border-gray-100 bg-gray-50 px-6 py-4 text-center">
-            {notCollectedHere > 0 && (
+            {(notCollectedHere > 0 || deliveryFeeCollected > 0) && (
               <div className="mb-3 space-y-1">
                 <div className="flex justify-between text-[11px] text-gray-500">
                   <span>Sale total</span>
                   <span className="font-medium text-gray-700">{fmt(totalAmount)}</span>
                 </div>
-                <div className="flex justify-between text-[11px] text-gray-500">
-                  <span>{notCollectedLabel}</span>
-                  <span className="font-medium text-gray-700">−{fmt(notCollectedHere)}</span>
-                </div>
+                {notCollectedHere > 0 && (
+                  <div className="flex justify-between text-[11px] text-gray-500">
+                    <span>{notCollectedLabel}</span>
+                    <span className="font-medium text-gray-700">−{fmt(notCollectedHere)}</span>
+                  </div>
+                )}
+                {deliveryFeeCollected > 0 && (
+                  <div
+                    className="flex justify-between text-[11px] text-gray-500"
+                    data-testid="success-delivery-fee-line"
+                  >
+                    <span>Delivery fee (own CR)</span>
+                    <span className="font-medium text-gray-700">+{fmt(deliveryFeeCollected)}</span>
+                  </div>
+                )}
               </div>
             )}
             <p className="text-sm text-gray-500">
-              {notCollectedHere > 0 ? 'Paid Now' : 'Total Charged'}
+              {notCollectedHere > 0 || deliveryFeeCollected > 0 ? 'Paid Now' : 'Total Charged'}
             </p>
             <p className="text-3xl font-bold text-gray-900">{fmt(headlineAmount)}</p>
             {(showTendered || success.change > 0) && (
@@ -7638,8 +7862,11 @@ function PendingApprovalScreen({
             Waiting for a Business Owner or Branch Manager to review.
           </p>
           {isXDeal && (
-            <div className="mt-2 flex justify-center">
+            <div className="mt-2 flex flex-col items-center gap-1">
               <XDealBadge reference={xDealReference} />
+              <p className="text-xs text-gray-500" data-testid="pending-x-deal-note">
+                When approved, the X-Deal credit memo is issued automatically.
+              </p>
             </div>
           )}
         </div>
