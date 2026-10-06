@@ -1542,24 +1542,37 @@ export default function CheckoutPage() {
   const isEmployeeCustomer = selectedCustomer?.customerType === 'employee'
   const employeeApplianceLoanActive = isEmployeeCustomer && employeeApplianceLoanChecked
   const xDealActive = !!selectedCustomer && xDealChecked
-  // Neither needs a credit application.
+  // Neither needs a credit application, and neither has the 10% down-payment
+  // floor: an Employee Appliance Loan's down payment is optional (Chloe,
+  // development) and so is an X-Deal's cash portion (Scenario 68).
   const skipsCreditApplication = employeeApplianceLoanActive || xDealActive
   const skipsCreditApplicationLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
-  // An Employee Appliance Loan collects nothing at the register: every down
-  // payment is ₱0. Scenario 68 — an X-Deal may be part paid there ("half
-  // payment, half deal"): its down payment is optional, from ₱0 up, with no
-  // 10% floor and no rate-card figure; the X-Deal memo clears the rest.
-  const downPaymentWaived = employeeApplianceLoanActive
+  const downPaymentWaived = employeeApplianceLoanActive || xDealActive
+  const downPaymentWaivedLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
+  // Nothing is forced to ₱0 any more: an X-Deal's part paid now is its cash
+  // portion (Scenario 68), typed by the cashier like an Employee Appliance
+  // Loan's optional down payment.
+  const downPaymentZeroed = false
+  // No rate-card figure either — the cashier's amount stands.
   const downPaymentFree = employeeApplianceLoanActive || xDealActive
-  const downPaymentWaivedLabel = 'Employee Appliance Loan'
+  // An Employee Appliance Loan's down payment only counts once typed
+  // explicitly (the term pick's auto-fill, marked by
+  // downPaymentAutoForPriceListItemId, is ignored for it). An X-Deal never
+  // gets that auto-fill — ticking it clears the marker and the term pick
+  // skips it.
+  const lineDownPayment = (l: CartLine): number => {
+    if (downPaymentZeroed) return 0
+    if (employeeApplianceLoanActive && l.downPaymentAutoForPriceListItemId !== undefined) return 0
+    return parseFloat(l.downPaymentInput ?? '0') || 0
+  }
   const xDealDownPaymentTotal = xDealActive
     ? Math.round(
         cart
           .filter((l) => l.invoiceType === 'installment' && l.installmentProvider !== 'tpf')
-          .reduce((s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0), 0) * 100
+          .reduce((s, l) => s + lineDownPayment(l), 0) * 100
       ) / 100
     : 0
-  // Whether a down payment is being taken here at all — an X-Deal only when
+  // Whether a cash portion is being taken here at all — an X-Deal only when
   // part of it is paid now.
   const xDealCollectsNothing = xDealActive && xDealDownPaymentTotal <= 0
 
@@ -1652,22 +1665,10 @@ export default function CheckoutPage() {
   // Scenario 60 — both totals collapse to 0 for an Employee Appliance
   // Loan, overriding whatever's left in downPaymentInput from before the
   // checkbox was checked; nothing is collected at the register for it.
-  const installmentDownPaymentsTotal = downPaymentWaived
-    ? 0
-    : Math.round(
-        inhouseInstallmentCartLines.reduce(
-          (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
-          0
-        ) * 100
-      ) / 100
-  const tpfDownPaymentsTotal = downPaymentWaived
-    ? 0
-    : Math.round(
-        tpfInstallmentCartLines.reduce(
-          (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
-          0
-        ) * 100
-      ) / 100
+  const installmentDownPaymentsTotal =
+    Math.round(inhouseInstallmentCartLines.reduce((s, l) => s + lineDownPayment(l), 0) * 100) / 100
+  const tpfDownPaymentsTotal =
+    Math.round(tpfInstallmentCartLines.reduce((s, l) => s + lineDownPayment(l), 0) * 100) / 100
   // Every down payment being collected at this register, whoever carries the
   // balance afterwards — inhouse and TPF share one tender method and one
   // pool, so the toggle labels itself with the combined figure.
@@ -1839,7 +1840,7 @@ export default function CheckoutPage() {
         (l) =>
           `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}`
       )
-      .join('|') + `|dpWaived:${downPaymentWaived}`
+      .join('|') + `|dpWaived:${downPaymentZeroed}|emp:${employeeApplianceLoanActive}`
 
   // Approval happens in someone ELSE's session — only Business Owner holds
   // pos:application:approve — so "approve in another tab, come back to the
@@ -2034,7 +2035,7 @@ export default function CheckoutPage() {
       }
       installmentPreviewTimers.current[line.lineId] = setTimeout(async () => {
         setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: true }))
-        const downPayment = downPaymentWaived ? 0 : parseFloat(line.downPaymentInput ?? '0') || 0
+        const downPayment = lineDownPayment(line)
         const res = await previewInstallment({
           totalAmount: lineAmount,
           downPayment,
@@ -2047,7 +2048,12 @@ export default function CheckoutPage() {
           // even for a rate-card SKU (found 2026-09-22: DP badge showed the
           // curated ₱3,590 but the monthly installment showed the generic
           // ₱4,575.60 instead of the rate card's ₱5,130).
-          priceListItemId: line.priceListItemId ?? undefined,
+          // Not for an Employee Appliance Loan that takes a down payment: the
+          // card's monthly was worked out from the card's own down payment.
+          priceListItemId:
+            employeeApplianceLoanActive && downPayment > 0
+              ? undefined
+              : (line.priceListItemId ?? undefined),
         })
         setInstallmentPreviews((prev) => ({
           ...prev,
@@ -3358,7 +3364,7 @@ export default function CheckoutPage() {
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-        const downPayment = downPaymentWaived ? 0 : parseFloat(l.downPaymentInput ?? '0') || 0
+        const downPayment = lineDownPayment(l)
         // Scenario 60 — an Employee Appliance Loan waives the down payment
         // (and the ">0" / 10%-floor checks below) entirely.
         if (!downPaymentWaived && downPayment <= 0) {
@@ -3385,7 +3391,7 @@ export default function CheckoutPage() {
     for (const l of inhouseInstallmentCartLines) {
       const lineAmount =
         effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-      const downPayment = downPaymentWaived ? 0 : parseFloat(l.downPaymentInput ?? '0') || 0
+      const downPayment = lineDownPayment(l)
       if (downPayment < 0 || downPayment > lineAmount) {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
         return
@@ -3643,12 +3649,7 @@ export default function CheckoutPage() {
             // TPF's is simply the slice the financier doesn't fund. Waived
             // to 0 for an Employee Appliance Loan (Scenario 60), overriding
             // whatever was typed/defaulted before the checkbox was checked.
-            downPayment:
-              l.invoiceType === 'installment'
-                ? downPaymentWaived
-                  ? 0
-                  : parseFloat(l.downPaymentInput ?? '0') || 0
-                : undefined,
+            downPayment: l.invoiceType === 'installment' ? lineDownPayment(l) : undefined,
           })),
         })
 
@@ -4730,7 +4731,7 @@ export default function CheckoutPage() {
                       Employee Appliance Loan
                     </span>
                     <span className="block text-gray-700">
-                      No down payment, no credit application required
+                      Down payment is optional, no credit application required
                     </span>
                   </span>
                 </label>
@@ -5406,19 +5407,6 @@ export default function CheckoutPage() {
                                 <p className="mt-2 text-[13px] text-amber-700">
                                   Every installment sale requires an approved credit application.
                                 </p>
-                                {/* Approval happens in the Business Owner's own
-                                session, so the cashier is usually waiting on
-                                someone else. This list refreshes when the tab
-                                regains focus; saying so stops the wait looking
-                                like a dead screen. */}
-                                <p className="mt-1 text-[12px] text-amber-600">
-                                  Waiting on an approval? This refreshes when you come back to this
-                                  tab.
-                                </p>
-                                <p className="mt-1 text-[11px] text-amber-600">
-                                  Your cart is kept — it still needs the owner&apos;s approval
-                                  before this sale can be completed.
-                                </p>
                               </div>
                             )}
 
@@ -5540,7 +5528,7 @@ export default function CheckoutPage() {
                       ? lineCardDownPayment(line)
                       : null
                   const downPaymentValue = downPaymentWaived
-                    ? 0
+                    ? lineDownPayment(line)
                     : (fixedDownPayment ??
                       (line.downPaymentInput
                         ? parseFloat(line.downPaymentInput) || 0
@@ -5591,7 +5579,7 @@ export default function CheckoutPage() {
                                 placeholder="Select a term…"
                                 compact
                               />
-                              {downPaymentWaived ? (
+                              {downPaymentZeroed ? (
                                 <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="text-[13px] font-semibold text-prominent-purple-700">
@@ -5649,15 +5637,24 @@ export default function CheckoutPage() {
                                       : 'The X-Deal credit memo clears the whole sale when it is approved.'}
                                   </p>
                                 </div>
-                              ) : downPaymentEditingThisLine ? (
+                              ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
                                 <>
                                   <input
                                     type="number"
                                     min={0}
                                     step={1}
-                                    placeholder="Down payment"
-                                    autoFocus
-                                    value={line.downPaymentInput ?? ''}
+                                    placeholder={
+                                      employeeApplianceLoanActive
+                                        ? 'Down payment (optional)'
+                                        : 'Down payment'
+                                    }
+                                    autoFocus={!employeeApplianceLoanActive}
+                                    value={
+                                      employeeApplianceLoanActive &&
+                                      line.downPaymentAutoForPriceListItemId !== undefined
+                                        ? ''
+                                        : (line.downPaymentInput ?? '')
+                                    }
                                     onChange={(e) =>
                                       setLineDownPaymentInput(groupLineIds, e.target.value)
                                     }
@@ -5676,16 +5673,19 @@ export default function CheckoutPage() {
                                     className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
-                                    Must be at least {fmt(minDownPaymentWhole)} and no more than{' '}
-                                    {fmt(lineSaleAmount)}.
+                                    {employeeApplianceLoanActive
+                                      ? `Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`
+                                      : `Must be at least ${fmt(minDownPaymentWhole)} and no more than ${fmt(lineSaleAmount)}.`}
                                   </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                  >
-                                    Use the minimum instead
-                                  </button>
+                                  {!employeeApplianceLoanActive && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                      className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                    >
+                                      Use the minimum instead
+                                    </button>
+                                  )}
                                 </>
                               ) : (
                                 <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
@@ -5753,7 +5753,7 @@ export default function CheckoutPage() {
                           )}
                           {groupProvider === 'tpf' && (
                             <>
-                              {downPaymentWaived ? (
+                              {downPaymentZeroed ? (
                                 <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="text-[13px] font-semibold text-prominent-purple-700">
@@ -5772,15 +5772,24 @@ export default function CheckoutPage() {
                                     </span>
                                   </div>
                                 </div>
-                              ) : downPaymentEditingThisLine ? (
+                              ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
                                 <>
                                   <input
                                     type="number"
                                     min={0}
                                     step={1}
-                                    placeholder="Down payment"
-                                    autoFocus
-                                    value={line.downPaymentInput ?? ''}
+                                    placeholder={
+                                      employeeApplianceLoanActive
+                                        ? 'Down payment (optional)'
+                                        : 'Down payment'
+                                    }
+                                    autoFocus={!employeeApplianceLoanActive}
+                                    value={
+                                      employeeApplianceLoanActive &&
+                                      line.downPaymentAutoForPriceListItemId !== undefined
+                                        ? ''
+                                        : (line.downPaymentInput ?? '')
+                                    }
                                     onChange={(e) =>
                                       setLineDownPaymentInput(groupLineIds, e.target.value)
                                     }
@@ -5795,16 +5804,19 @@ export default function CheckoutPage() {
                                     className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
-                                    Must be at least {fmt(minDownPaymentWhole)} and no more than{' '}
-                                    {fmt(lineSaleAmount)}.
+                                    {employeeApplianceLoanActive
+                                      ? `Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`
+                                      : `Must be at least ${fmt(minDownPaymentWhole)} and no more than ${fmt(lineSaleAmount)}.`}
                                   </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                  >
-                                    Use the minimum instead
-                                  </button>
+                                  {!employeeApplianceLoanActive && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                      className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                    >
+                                      Use the minimum instead
+                                    </button>
+                                  )}
                                 </>
                               ) : (
                                 <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
