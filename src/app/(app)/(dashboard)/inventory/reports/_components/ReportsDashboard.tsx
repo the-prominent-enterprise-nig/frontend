@@ -20,11 +20,13 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
     setPage,
     refetchValuation,
     refetchTurnover,
-    agingBucketFilter,
-    setAgingBucketFilter,
     agingFilters,
     setAgingFilter,
-    agingBrands,
+    warehouseFilter,
+    setWarehouseFilter,
+    warehouseOptions,
+    agingSort,
+    setAgingSort,
     agingData,
     isAgingLoading,
     isAgingFetching,
@@ -69,11 +71,13 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             data={agingData}
             isLoading={isAgingLoading}
             isFetching={isAgingFetching}
-            bucketFilter={agingBucketFilter}
-            setBucketFilter={setAgingBucketFilter}
             filters={agingFilters}
             setFilter={setAgingFilter}
-            brands={agingBrands}
+            warehouses={warehouseOptions}
+            warehouseId={warehouseFilter}
+            setWarehouseId={setWarehouseFilter}
+            sort={agingSort}
+            onSort={setAgingSort}
             categoryId={categoryFilter}
             setCategoryId={setCategoryFilter}
             categoryOptions={categoryOptions}
@@ -81,12 +85,14 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             setPage={setPage}
             exportParams={{
               categoryId: categoryFilter || undefined,
-              bucket: agingBucketFilter,
+              warehouseId: warehouseFilter,
               serialNumber: agingFilters.serial,
               brandId: agingFilters.brandId,
               model: agingFilters.model,
               receivedFrom: agingFilters.receivedFrom,
               receivedTo: agingFilters.receivedTo,
+              sortBy: agingSort.by,
+              sortDir: agingSort.dir,
             }}
           />
         )}

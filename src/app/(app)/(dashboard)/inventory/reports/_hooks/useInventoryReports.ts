@@ -12,6 +12,7 @@ import { getCategories } from '../../items/_actions/get-lookup-data'
 import type { SerialAgingBucket } from '@/src/schema/inventory/reports'
 
 export type ReportTab = 'valuation' | 'turnover' | 'aging' | 'reconciliation'
+export type AgingSort = { by: 'dateIn' | 'age'; dir: 'asc' | 'desc' }
 
 const PAGE_SIZE = 20
 
@@ -39,6 +40,7 @@ export function useInventoryReports() {
   const [agingModel, setAgingModel] = useState<string | undefined>(undefined)
   const [agingReceivedFrom, setAgingReceivedFrom] = useState<string | undefined>(undefined)
   const [agingReceivedTo, setAgingReceivedTo] = useState<string | undefined>(undefined)
+  const [agingSort, setAgingSort] = useState<AgingSort>({ by: 'dateIn', dir: 'desc' })
   const { brands: agingBrands } = useBrands()
 
   // Reconciliation-specific — no pagination (backend caps each section at
@@ -101,6 +103,8 @@ export function useInventoryReports() {
       model: agingModel || undefined,
       receivedFrom: agingReceivedFrom,
       receivedTo: agingReceivedTo,
+      sortBy: agingSort.by,
+      sortDir: agingSort.dir,
       page,
       limit: PAGE_SIZE,
     }),
@@ -114,6 +118,7 @@ export function useInventoryReports() {
       agingModel,
       agingReceivedFrom,
       agingReceivedTo,
+      agingSort,
       page,
     ]
   )
@@ -238,6 +243,11 @@ export function useInventoryReports() {
         receivedTo: setAgingReceivedTo,
       }
       setters[key](value || undefined)
+      resetPage()
+    },
+    agingSort,
+    setAgingSort: (sort: AgingSort) => {
+      setAgingSort(sort)
       resetPage()
     },
     agingBrands,
