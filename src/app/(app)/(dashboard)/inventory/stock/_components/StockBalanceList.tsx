@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Search, Package, X, History } from 'lucide-react'
+import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Search, Package, X } from 'lucide-react'
 import { useStockBalance } from '../_hooks/useStockBalance'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -16,12 +17,6 @@ import { AddItemButton } from '../../items/_components/AddItemButton'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
-import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
-import {
-  SERIAL_STATUS_COLORS,
-  SERIAL_STATUS_LABELS,
-  type SerialNumberSummary,
-} from '@/src/schema/inventory/serial-numbers'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // This screen follows the Purchase Orders / Receiving Reports design's own
@@ -110,13 +105,6 @@ export default function StockBalanceList({
 }) {
   const { pushPanel } = useUIShell()
   const [searchFocus, setSearchFocus] = useState(false)
-  // Scenario 60 Part 4 — the item-rollup search above stays brand/model/
-  // category only (a serial belongs to one unit, not the rolled-up
-  // quantity), but a serial number typed here should still be findable and
-  // go straight to that unit's movement history, per the client's own
-  // wording: findable "under Stock Balance," not by first knowing which
-  // item to open. Run alongside the main list query, not instead of it.
-  const [serialMatch, setSerialMatch] = useState<SerialNumberSummary | null>(null)
 
   const {
     balances,
@@ -142,7 +130,7 @@ export default function StockBalanceList({
     locationOptions,
     locationsLoading,
     categoryOptions,
-  } = useStockBalance(onLocationsChange)
+  } = useStockBalance(onLocationsChange, useSearchParams().get('search') ?? '')
 
   const activeFilterCount = [locations.length > 0, !!region, !!categoryId, !!stockStatus].filter(
     Boolean
@@ -162,42 +150,6 @@ export default function StockBalanceList({
       region,
     })
   }
-
-  // Debounced — fires alongside the main brand/model/category search rather
-  // than replacing it, and only once the query is long enough that a serial
-  // substring match actually means something (a bare "1" would otherwise
-  // "match" almost every serial in the tenant).
-  useEffect(() => {
-    const query = search.trim()
-    if (query.length < 4) {
-      setSerialMatch(null)
-      return
-    }
-    let cancelled = false
-    const timer = setTimeout(async () => {
-      // limit: 5, not 1 — the endpoint's own `search` is a broad OR (serial,
-      // item name, brand, model, category, RR, supplier), same one the
-      // Serial Number Tracking page uses, so a single result isn't
-      // guaranteed to be the serial-number hit even when one exists
-      // alongside item/brand matches. Only a hit on the serial number's own
-      // text counts here — otherwise a typed brand/model would "match" via
-      // some unrelated serial and show this banner on every ordinary
-      // item search.
-      const res = await getSerialNumbers({ search: query, limit: 5 })
-      if (cancelled) return
-      const hit = res.success
-        ? res.data?.data.find((s) => s.serialNumber.toLowerCase().includes(query.toLowerCase()))
-        : undefined
-      setSerialMatch(hit ?? null)
-    }, 300)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [search])
-
-  const openSerialMovements = (serial: SerialNumberSummary) =>
-    pushPanel({ type: 'serial', serialId: serial.id, serialNumber: serial.serialNumber })
 
   const showTable = !isLoading && balances.length > 0
   const isNoResults = !isLoading && balances.length === 0
@@ -386,343 +338,315 @@ export default function StockBalanceList({
             genuinely don't match a serial string). Works for a sold serial
             too — this is the intuitive, one-step path the client asked for,
             replacing "open the item, then search again inside its drawer". */}
-        {serialMatch && (
-          <button
-            type="button"
-            onClick={() => openSerialMovements(serialMatch)}
-            className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#ddd0f7] bg-[#f7f3ff] px-4 py-3 text-left hover:border-[#5b21b6]"
-          >
-            <div className="flex min-w-0 items-center gap-2.5">
-              <History className="h-4 w-4 shrink-0 text-[#5b21b6]" />
-              <p className="min-w-0 truncate text-[13px] text-[#3d3d4a]">
-                Serial <span className={`${MONO} font-semibold`}>{serialMatch.serialNumber}</span> —{' '}
-                {itemTitle(serialMatch.item)}
-              </p>
-              <span
-                className={`inline-flex shrink-0 items-center rounded-[5px] px-2 py-0.5 text-[11px] font-medium ${SERIAL_STATUS_COLORS[serialMatch.status]}`}
-              >
-                {SERIAL_STATUS_LABELS[serialMatch.status]}
-              </span>
-            </div>
-            <span className="shrink-0 text-[12px] font-medium text-[#5b21b6]">
-              View movement history →
-            </span>
-          </button>
-        )}
 
-        {/* Table card — omitted entirely once a serial match is already
-            showing above and the rollup list has nothing to add; an empty
-            bordered box under the banner would just be dead space. */}
-        {!(isNoResults && serialMatch) && (
-          <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
-            {/* Wide: CSS-grid table, same approach as Purchase Orders — explicit
+        {/* Table card */}
+        <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
+          {/* Wide: CSS-grid table, same approach as Purchase Orders — explicit
               role="table"/"row"/"cell" since the markup isn't a <table>. */}
-            {showTable && (
-              <div role="table" aria-label="Stock balance" className="hidden min-[1280px]:block">
-                <div
-                  role="row"
-                  className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
-                >
-                  <span role="columnheader">Item</span>
-                  <span role="columnheader">Category</span>
-                  <span role="columnheader" className="text-right">
-                    Total
-                  </span>
-                  <span role="columnheader" className="text-right">
-                    Transferred
-                  </span>
-                  <span role="columnheader" className="text-right">
-                    Sold
-                  </span>
-                  <span role="columnheader" className="text-right">
-                    Reserved
-                  </span>
-                  <span role="columnheader" className="text-right">
-                    Available
-                  </span>
-                  <span role="columnheader" className="text-center">
-                    Status
-                  </span>
-                </div>
+          {showTable && (
+            <div role="table" aria-label="Stock balance" className="hidden min-[1280px]:block">
+              <div
+                role="row"
+                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+              >
+                <span role="columnheader">Item</span>
+                <span role="columnheader">Category</span>
+                <span role="columnheader" className="text-right">
+                  Total
+                </span>
+                <span role="columnheader" className="text-right">
+                  Transferred
+                </span>
+                <span role="columnheader" className="text-right">
+                  Sold
+                </span>
+                <span role="columnheader" className="text-right">
+                  Reserved
+                </span>
+                <span role="columnheader" className="text-right">
+                  Available
+                </span>
+                <span role="columnheader" className="text-center">
+                  Status
+                </span>
+              </div>
 
-                {balances.map((bal) => {
-                  const status = stockStatusOf(bal)
-                  const subline = [
-                    itemTitle(bal.item) !== bal.item?.name ? bal.item?.name : null,
-                    bal.item?.sku,
-                    (bal.locationCount ?? 0) > 1 ? `${bal.locationCount} locations` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')
+              {balances.map((bal) => {
+                const status = stockStatusOf(bal)
+                const subline = [
+                  itemTitle(bal.item) !== bal.item?.name ? bal.item?.name : null,
+                  bal.item?.sku,
+                  (bal.locationCount ?? 0) > 1 ? `${bal.locationCount} locations` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
 
-                  return (
-                    <div
-                      key={bal.id}
-                      role="row"
-                      onClick={() => openDrawer(bal)}
-                      className={`cursor-pointer border-t border-[#f4f4f6] bg-white hover:bg-[#fcfcfd] ${GRID} px-4 py-[11px]`}
+                return (
+                  <div
+                    key={bal.id}
+                    role="row"
+                    onClick={() => openDrawer(bal)}
+                    className={`cursor-pointer border-t border-[#f4f4f6] bg-white hover:bg-[#fcfcfd] ${GRID} px-4 py-[11px]`}
+                  >
+                    <div role="cell" className="flex min-w-0 flex-col gap-0.5">
+                      <span className="break-words text-[13px] font-medium leading-snug text-[#17171c]">
+                        {itemTitle(bal.item)}
+                      </span>
+                      {subline && (
+                        <span className="break-words text-[13px] leading-snug text-[#8b8b9b]">
+                          {subline}
+                        </span>
+                      )}
+                    </div>
+
+                    <span
+                      role="cell"
+                      className="break-words text-[14px] leading-snug text-[#5b5b6b]"
                     >
-                      <div role="cell" className="flex min-w-0 flex-col gap-0.5">
-                        <span className="break-words text-[13px] font-medium leading-snug text-[#17171c]">
+                      {bal.item?.primaryCategory?.name ?? '—'}
+                    </span>
+
+                    <span
+                      role="cell"
+                      className={`${MONO} text-right text-[13.5px] font-semibold text-[#17171c]`}
+                    >
+                      {bal.onHandQty.toLocaleString()}
+                    </span>
+
+                    <span
+                      role="cell"
+                      className={`${MONO} text-right text-[13px] ${
+                        bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]'
+                      }`}
+                    >
+                      {bal.inTransitQty.toLocaleString()}
+                    </span>
+
+                    <span role="cell" className={`${MONO} text-right text-[13px] text-[#8b8b9b]`}>
+                      {bal.soldQty.toLocaleString()}
+                    </span>
+
+                    <span
+                      role="cell"
+                      className={`${MONO} text-right text-[13px] ${
+                        bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]'
+                      }`}
+                    >
+                      {bal.reservedQty.toLocaleString()}
+                    </span>
+
+                    <span
+                      role="cell"
+                      className={`${MONO} text-right text-[14px] font-semibold ${AVAILABLE_TEXT[status]}`}
+                    >
+                      {bal.availableQty.toLocaleString()}
+                    </span>
+
+                    <span role="cell" className="flex justify-center">
+                      <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
+                    </span>
+                  </div>
+                )
+              })}
+
+              <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
+                <span className="text-[11.5px] text-[#8b8b9b]">
+                  Showing {(page - 1) * pagination.limit + 1}–
+                  {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} items
+                </span>
+                <div className="flex items-center gap-[10px]">
+                  <span className="text-[11.5px] text-[#8b8b9b]">Rows</span>
+                  <select
+                    value={limit}
+                    onChange={(e) => setLimit(Number(e.target.value))}
+                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
+                  >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPage(Math.max(1, page - 1))}
+                      disabled={page <= 1}
+                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                      disabled={page >= pagination.totalPages}
+                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Narrow: cards */}
+          {showTable && (
+            <div className="flex flex-col gap-[10px] p-3 min-[1280px]:hidden">
+              {balances.map((bal) => {
+                const status = stockStatusOf(bal)
+                const subline = [
+                  itemTitle(bal.item) !== bal.item?.name ? bal.item?.name : null,
+                  bal.item?.sku,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+
+                return (
+                  <div
+                    key={bal.id}
+                    onClick={() => openDrawer(bal)}
+                    className="flex cursor-pointer flex-col gap-[10px] rounded-[11px] border border-[#e4e4e9] bg-white p-3"
+                  >
+                    <div className="flex items-start justify-between gap-[10px]">
+                      <div className="flex min-w-0 flex-col gap-[3px]">
+                        <span className="break-words text-[13px] font-medium leading-snug">
                           {itemTitle(bal.item)}
                         </span>
                         {subline && (
-                          <span className="break-words text-[13px] leading-snug text-[#8b8b9b]">
+                          <span className="break-words text-[11.5px] leading-snug text-[#8b8b9b]">
                             {subline}
                           </span>
                         )}
                       </div>
-
-                      <span
-                        role="cell"
-                        className="break-words text-[14px] leading-snug text-[#5b5b6b]"
-                      >
-                        {bal.item?.primaryCategory?.name ?? '—'}
-                      </span>
-
-                      <span
-                        role="cell"
-                        className={`${MONO} text-right text-[13.5px] font-semibold text-[#17171c]`}
-                      >
-                        {bal.onHandQty.toLocaleString()}
-                      </span>
-
-                      <span
-                        role="cell"
-                        className={`${MONO} text-right text-[13px] ${
-                          bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]'
-                        }`}
-                      >
-                        {bal.inTransitQty.toLocaleString()}
-                      </span>
-
-                      <span role="cell" className={`${MONO} text-right text-[13px] text-[#8b8b9b]`}>
-                        {bal.soldQty.toLocaleString()}
-                      </span>
-
-                      <span
-                        role="cell"
-                        className={`${MONO} text-right text-[13px] ${
-                          bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]'
-                        }`}
-                      >
-                        {bal.reservedQty.toLocaleString()}
-                      </span>
-
-                      <span
-                        role="cell"
-                        className={`${MONO} text-right text-[14px] font-semibold ${AVAILABLE_TEXT[status]}`}
-                      >
-                        {bal.availableQty.toLocaleString()}
-                      </span>
-
-                      <span role="cell" className="flex justify-center">
-                        <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
-                      </span>
+                      <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
                     </div>
-                  )
-                })}
 
-                <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                  <span className="text-[11.5px] text-[#8b8b9b]">
-                    Showing {(page - 1) * pagination.limit + 1}–
-                    {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}{' '}
-                    items
-                  </span>
-                  <div className="flex items-center gap-[10px]">
-                    <span className="text-[11.5px] text-[#8b8b9b]">Rows</span>
-                    <select
-                      value={limit}
-                      onChange={(e) => setLimit(Number(e.target.value))}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
-                    >
-                      <option value={20}>20</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPage(Math.max(1, page - 1))}
-                        disabled={page <= 1}
-                        className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
-                      >
-                        Previous
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                        disabled={page >= pagination.totalPages}
-                        className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Narrow: cards */}
-            {showTable && (
-              <div className="flex flex-col gap-[10px] p-3 min-[1280px]:hidden">
-                {balances.map((bal) => {
-                  const status = stockStatusOf(bal)
-                  const subline = [
-                    itemTitle(bal.item) !== bal.item?.name ? bal.item?.name : null,
-                    bal.item?.sku,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')
-
-                  return (
-                    <div
-                      key={bal.id}
-                      onClick={() => openDrawer(bal)}
-                      className="flex cursor-pointer flex-col gap-[10px] rounded-[11px] border border-[#e4e4e9] bg-white p-3"
-                    >
-                      <div className="flex items-start justify-between gap-[10px]">
-                        <div className="flex min-w-0 flex-col gap-[3px]">
-                          <span className="break-words text-[13px] font-medium leading-snug">
-                            {itemTitle(bal.item)}
-                          </span>
-                          {subline && (
-                            <span className="break-words text-[11.5px] leading-snug text-[#8b8b9b]">
-                              {subline}
-                            </span>
-                          )}
-                        </div>
-                        <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
-                      </div>
-
-                      <div className="grid grid-cols-5 gap-[6px]">
-                        {[
-                          { label: 'Total', value: bal.onHandQty, tone: 'text-[#17171c]' },
-                          {
-                            label: 'Transferred',
-                            value: bal.inTransitQty,
-                            tone: bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]',
-                          },
-                          { label: 'Sold', value: bal.soldQty, tone: 'text-[#8b8b9b]' },
-                          {
-                            label: 'Reserved',
-                            value: bal.reservedQty,
-                            tone: bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]',
-                          },
-                          {
-                            label: 'Available',
-                            value: bal.availableQty,
-                            tone: AVAILABLE_TEXT[status],
-                          },
-                        ].map((m) => (
-                          <div
-                            key={m.label}
-                            className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]"
+                    <div className="grid grid-cols-5 gap-[6px]">
+                      {[
+                        { label: 'Total', value: bal.onHandQty, tone: 'text-[#17171c]' },
+                        {
+                          label: 'Transferred',
+                          value: bal.inTransitQty,
+                          tone: bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]',
+                        },
+                        { label: 'Sold', value: bal.soldQty, tone: 'text-[#8b8b9b]' },
+                        {
+                          label: 'Reserved',
+                          value: bal.reservedQty,
+                          tone: bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]',
+                        },
+                        {
+                          label: 'Available',
+                          value: bal.availableQty,
+                          tone: AVAILABLE_TEXT[status],
+                        },
+                      ].map((m) => (
+                        <div
+                          key={m.label}
+                          className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]"
+                        >
+                          <span
+                            className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
                           >
-                            <span
-                              className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
-                            >
-                              {m.label}
-                            </span>
-                            <span className={`${MONO} text-[14px] font-semibold ${m.tone}`}>
-                              {m.value.toLocaleString()}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {bal.item?.primaryCategory?.name && (
-                        <div className="rounded-[8px] border border-[#eeeef1] bg-[#fbfbfc] px-3 py-2 text-[12px] text-[#5b5b6b]">
-                          {bal.item.primaryCategory.name}
-                          {(bal.locationCount ?? 0) > 1 ? ` · ${bal.locationCount} locations` : ''}
+                            {m.label}
+                          </span>
+                          <span className={`${MONO} text-[14px] font-semibold ${m.tone}`}>
+                            {m.value.toLocaleString()}
+                          </span>
                         </div>
-                      )}
+                      ))}
                     </div>
-                  )
-                })}
-              </div>
-            )}
 
-            {/* Loading */}
-            {isLoading && (
-              <div>
+                    {bal.item?.primaryCategory?.name && (
+                      <div className="rounded-[8px] border border-[#eeeef1] bg-[#fbfbfc] px-3 py-2 text-[12px] text-[#5b5b6b]">
+                        {bal.item.primaryCategory.name}
+                        {(bal.locationCount ?? 0) > 1 ? ` · ${bal.locationCount} locations` : ''}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Loading */}
+          {isLoading && (
+            <div>
+              <div
+                className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1280px]:grid`}
+              >
+                <span>Item</span>
+                <span>Category</span>
+                <span className="text-right">Total</span>
+                <span className="text-right">Transferred</span>
+                <span className="text-right">Sold</span>
+                <span className="text-right">Reserved</span>
+                <span className="text-right">Available</span>
+                <span className="text-center">Status</span>
+              </div>
+              {Array.from({ length: 8 }).map((_, i) => (
                 <div
-                  className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1280px]:grid`}
+                  key={i}
+                  className={`${GRID} hidden border-t border-[#f4f4f6] px-4 py-[14px] min-[1280px]:grid`}
                 >
-                  <span>Item</span>
-                  <span>Category</span>
-                  <span className="text-right">Total</span>
-                  <span className="text-right">Transferred</span>
-                  <span className="text-right">Sold</span>
-                  <span className="text-right">Reserved</span>
-                  <span className="text-right">Available</span>
-                  <span className="text-center">Status</span>
-                </div>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`${GRID} hidden border-t border-[#f4f4f6] px-4 py-[14px] min-[1280px]:grid`}
-                  >
-                    <SkeletonBar wide />
-                    <SkeletonBar />
-                    <SkeletonBar />
-                    <SkeletonBar />
-                    <SkeletonBar />
-                    <SkeletonBar />
-                    <SkeletonBar />
-                    <SkeletonBar wide />
-                  </div>
-                ))}
-                <div className="flex flex-col gap-[10px] p-3 min-[1280px]:hidden">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] p-3"
-                    >
-                      <SkeletonBar wide />
-                      <SkeletonBar />
-                    </div>
-                  ))}
-                </div>
-                <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-[#8b8b9b]">
-                  Loading stock balances…
-                </div>
-              </div>
-            )}
-
-            {/* No results / empty */}
-            {isNoResults &&
-              (hasFilters ? (
-                <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
-                  <Package className="h-[30px] w-[30px] text-[#c9c9d3]" />
-                  <div className="mt-1 text-[14px] font-semibold">No items match</div>
-                  <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
-                    {search
-                      ? `Nothing matches "${search}". Try the SKU, model or serial number, or clear a filter to widen the search.`
-                      : 'No items fall inside these filters. Clear one to see more stock.'}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={resetFilters}
-                    className="mt-3 rounded-lg border border-[#d3d3db] bg-white px-[15px] py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2]"
-                  >
-                    Clear search and filters
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
-                  <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]">
-                    <Package className="h-4 w-4 text-[#5b21b6]" />
-                  </div>
-                  <div className="mt-1 text-[13.5px] font-semibold">No stock on record</div>
-                  <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
-                    Balances appear here once stock is received against a purchase order or entered
-                    through an opening-stock adjustment.
-                  </div>
+                  <SkeletonBar wide />
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar wide />
                 </div>
               ))}
-          </div>
-        )}
+              <div className="flex flex-col gap-[10px] p-3 min-[1280px]:hidden">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] p-3"
+                  >
+                    <SkeletonBar wide />
+                    <SkeletonBar />
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-[#8b8b9b]">
+                Loading stock balances…
+              </div>
+            </div>
+          )}
+
+          {/* No results / empty */}
+          {isNoResults &&
+            (hasFilters ? (
+              <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
+                <Package className="h-[30px] w-[30px] text-[#c9c9d3]" />
+                <div className="mt-1 text-[14px] font-semibold">No items match</div>
+                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                  {search
+                    ? `Nothing matches "${search}". Try the SKU, model or serial number, or clear a filter to widen the search.`
+                    : 'No items fall inside these filters. Clear one to see more stock.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="mt-3 rounded-lg border border-[#d3d3db] bg-white px-[15px] py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2]"
+                >
+                  Clear search and filters
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
+                <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]">
+                  <Package className="h-4 w-4 text-[#5b21b6]" />
+                </div>
+                <div className="mt-1 text-[13.5px] font-semibold">No stock on record</div>
+                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                  Balances appear here once stock is received against a purchase order or entered
+                  through an opening-stock adjustment.
+                </div>
+              </div>
+            ))}
+        </div>
       </div>
     </div>
   )

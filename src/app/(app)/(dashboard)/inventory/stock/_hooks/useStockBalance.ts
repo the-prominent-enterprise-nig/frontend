@@ -9,7 +9,10 @@ import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import { useLocationFilter } from '@/src/libs/inventory/useLocationFilter'
 
-export function useStockBalance(onLocationsChange?: (v: LocationToken[]) => void) {
+export function useStockBalance(
+  onLocationsChange?: (v: LocationToken[]) => void,
+  initialSearch = ''
+) {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   // Scenario 56 — Operations + Branches now come from the shared hook every
@@ -18,7 +21,7 @@ export function useStockBalance(onLocationsChange?: (v: LocationToken[]) => void
   const { locations, region, branchIds, warehouseIds } = locationFilter
   const [stockStatus, setStockStatusState] = useState<StockStateFilter | undefined>(undefined)
   const [categoryId, setCategoryIdState] = useState<string | undefined>(undefined)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(initialSearch)
 
   // Mirrors every selection (explicit picks and the region-narrowing
   // auto-drop below) up to StockHub, so the Ledger tab can inherit it when

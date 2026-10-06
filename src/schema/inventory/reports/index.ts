@@ -124,9 +124,11 @@ export const AgingReportItemSchema = z.object({
   warehouseId: z.string().nullable(),
   warehouseName: z.string().nullable(),
   receivedAt: z.string(),
+  importedAge: z.string().nullable().optional(),
+  noDate: z.boolean().optional(),
   daysSinceReceipt: z.number(),
   unitCost: z.number(),
-  bucket: SerialAgingBucketSchema,
+  bucket: SerialAgingBucketSchema.nullable(),
   slowMoving: z.boolean(),
   shouldBeOut: z.boolean(),
 })

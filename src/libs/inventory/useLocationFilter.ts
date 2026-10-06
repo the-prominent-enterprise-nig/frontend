@@ -39,6 +39,12 @@ export type LocationFilter = {
  *
  * @param onChange runs after any selection change (lists reset to page 1).
  */
+/** "San Sebastian Warehouse" lists as "San Sebastian"; a name that is only "Warehouse" is kept. */
+function withoutWarehouseSuffix(name: string): string {
+  const trimmed = name.replace(/\s+warehouse$/i, '').trim()
+  return trimmed || name
+}
+
 export function useLocationFilter(
   opts: { initialLocations?: LocationToken[]; onChange?: () => void } = {}
 ): LocationFilter {
@@ -64,10 +70,14 @@ export function useLocationFilter(
     // warehouses listed below in their own right.
     const branches = (branchesQuery.data ?? [])
       .filter((b) => b.type !== 'warehouse')
-      .map((b) => ({ value: branchToken(b.id), label: b.name, region: b.region ?? null }))
+      .map((b) => ({
+        value: branchToken(b.id),
+        label: withoutWarehouseSuffix(b.name),
+        region: b.region ?? null,
+      }))
     const warehouses = (standaloneWarehousesQuery.data?.data?.data ?? []).map((wh) => ({
       value: warehouseToken(wh.id),
-      label: wh.name,
+      label: withoutWarehouseSuffix(wh.name),
       region: wh.region ?? null,
     }))
     return [...warehouses, ...branches].sort((a, b) => a.label.localeCompare(b.label))
