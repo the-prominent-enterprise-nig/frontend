@@ -217,16 +217,19 @@ export default function AgingReport({
           />
         </label>
         <SearchableSelect
-          className="w-[150px]"
+          className="w-[220px]"
           value={warehouseId ?? ''}
           onChange={(v) => setWarehouseId(v || undefined)}
           placeholder="All locations"
           chrome={CONTROL_CHROME}
           clearable
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+          options={warehouses.map((w) => ({
+            value: w.id,
+            label: w.name.replace(/\s+warehouse$/i, ''),
+          }))}
         />
         <SearchableSelect
-          className="w-[150px]"
+          className="w-[220px]"
           value={categoryId ?? ''}
           onChange={(v) => setCategoryId(v || undefined)}
           placeholder="All categories"
@@ -349,7 +352,7 @@ export default function AgingReport({
                       {row.serialNumber}
                     </td>
                     <td className="px-4 py-[11px] text-[13px] text-[#5b5b6b]">
-                      {row.warehouseName ?? '—'}
+                      {row.warehouseName?.replace(/\s+warehouse$/i, '') ?? '—'}
                     </td>
                     <td className="px-4 py-[11px] text-center">
                       <span
