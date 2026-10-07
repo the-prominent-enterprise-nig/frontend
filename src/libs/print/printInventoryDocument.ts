@@ -156,6 +156,17 @@ export function buildReceivingReportHtml(
     })
     .join('')
 
+  // Input VAT carved out of the unit costs and tax withheld at receiving, so
+  // AP's invoice (which takes both from this receipt) can be read against it.
+  const vatAmount = Number(rr.vatAmount ?? 0)
+  const withheldAmount = Number(rr.withheldAmount ?? 0)
+  const taxRows =
+    showAmounts && (vatAmount > 0 || withheldAmount > 0)
+      ? `<tr><td class="label">Input VAT</td><td class="value">${fmtMoney(vatAmount)}</td></tr>
+        <tr><td class="label">Less: Withholding tax</td><td class="value">${withheldAmount > 0 ? '- ' : ''}${fmtMoney(withheldAmount)}</td></tr>
+        <tr><td class="label">Net payable</td><td class="value">${fmtMoney(totalAmount + vatAmount - withheldAmount)}</td></tr>`
+      : ''
+
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
@@ -243,6 +254,7 @@ export function buildReceivingReportHtml(
           <td class="label">Total</td>
           <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}${showAmounts ? ` — ${fmtMoney(totalAmount)}` : ''}</td>
         </tr>
+        ${taxRows}
       </table>
     </div>
 

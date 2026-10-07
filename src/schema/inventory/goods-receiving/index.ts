@@ -120,6 +120,13 @@ export const ReceiveStockFormSchema = z
     // every other caller (see receiveStock()'s perLineTax-gated ValidateIf).
     deliveryReceiptNumber: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
+    // Which tax model the server applies. Create RR sends perLineTax: true
+    // (per-line tax code/withholding class); Receive Against PO sends
+    // vatTreatment instead and keeps the supplier-driven model. Both used to
+    // be stripped here and perLineTax forced on in receive-stock.ts, which
+    // zeroed VAT/withholding on every PO receipt.
+    perLineTax: z.boolean().optional(),
+    vatTreatment: z.enum(['inclusive', 'exclusive', 'exempt']).optional(),
     // Scenario 55 — why this is a no-PO receipt with no registered supplier:
     // getting your own stock back (a repair return, a repossession) rather
     // than a purchase. Mirrors StockReceiptReason server-side. When set,
