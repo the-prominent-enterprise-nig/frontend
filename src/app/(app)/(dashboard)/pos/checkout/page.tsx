@@ -3834,7 +3834,10 @@ export default function CheckoutPage() {
           return true
         }
 
-        let remaining = regularTenderTarget
+        // A pure-TPF cart's down payment is already recorded by create()
+        // (its own PosPayment row, CR number and JE line), so tendering it
+        // again here would double the drawer cash and the posting.
+        let remaining = isPureTpfCart ? 0 : regularTenderTarget
         for (let i = 0; i < rows.length && remaining > 0.009; i++) {
           const take = parseFloat(Math.min(rows[i].amount, remaining).toFixed(2))
           if (take <= 0) continue
