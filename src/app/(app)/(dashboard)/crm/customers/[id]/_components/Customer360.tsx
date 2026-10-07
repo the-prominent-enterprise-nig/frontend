@@ -432,12 +432,6 @@ export default function Customer360({
         <section className="rounded-xl border border-gray-200 bg-white p-5">
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <h2 className="text-[14px] font-semibold text-gray-900">Transaction History</h2>
-            <p className="text-[11px] text-gray-400">
-              Items bought — click for the sales invoice · payments are in the{' '}
-              <Link href={`${base}/${id}/ledger`} className="underline hover:text-gray-600">
-                Customer Ledger
-              </Link>
-            </p>
           </div>
           {historyLoading ? (
             <p className="py-4 text-center text-[13px] text-gray-400">
