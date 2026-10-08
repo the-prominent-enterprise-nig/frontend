@@ -204,7 +204,7 @@ export default function XDealMemoForm() {
               <tbody className="divide-y divide-gray-100">
                 {preview.clearing > 0 && (
                   <tr>
-                    <td className="py-1.5">1-02-060 Due from X-Deal Partners (Barter)</td>
+                    <td className="py-1.5">1-01-140 Accounts Receivable - Others</td>
                     <td className="py-1.5 text-right tabular-nums" data-testid="je-clearing">
                       {fmtMoney(preview.clearing)}
                     </td>

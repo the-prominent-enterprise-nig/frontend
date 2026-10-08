@@ -191,9 +191,7 @@ function BankForm({
   }, [])
   // Only accounts anywhere beneath "Cash and Cash Equivalents" — the balance
   // sheet rolls these up under it. An already-saved link stays selectable.
-  const cashControl = accounts.find(
-    (a) => a.name === 'Cash and Cash Equivalents' && !(a as any).parentAccountId
-  )
+  const cashControl = accounts.find((a) => a.number === '1-01-010')
   const underCash = new Set<string>()
   if (cashControl) {
     const parentOf = new Map(

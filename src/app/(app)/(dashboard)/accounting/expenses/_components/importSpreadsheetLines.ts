@@ -295,7 +295,8 @@ export async function importSpreadsheetLines(
   )
   // A chart can hold two accounts with one name — the client's has "Loans to
   // Officers and Employees" both as 1-01-060 (keeps a per-name ledger) and as
-  // 1-03-041 (doesn't). Every candidate is kept so the row can pick; a plain
+  // 1-03-041 (doesn't) — that was the old chart; the current one has it once,
+  // as 1-01-322, but the same-name guard stays for any future duplicate. Every candidate is kept so the row can pick; a plain
   // Map let whichever came last win, which sent every loan deduction to the
   // account with no ledger and drew down nobody's balance.
   const accountsByName = new Map<string, Account[]>()

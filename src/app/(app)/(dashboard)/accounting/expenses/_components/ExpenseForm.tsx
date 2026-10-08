@@ -63,7 +63,7 @@ const CLEARED_OPTIONS: { value: ClearedType; label: string }[] = [
 
 // VAT, NON_VAT, EXEMPT — mirrors the backend's free-text taxCode column.
 // "Input VAT" is the label, not the stored value: on a purchase, VAT paid is
-// input VAT (a claimable asset, account 1-05-010) — the reference tool names
+// input VAT (a claimable asset, account 1-01-370) — the reference tool names
 // the code that way and so do we now, but the column keeps its 'VAT' value so
 // existing rows stay valid. Its counterpart, Output VAT, is a sales-side
 // liability and is deliberately absent — it can never apply to an expense.
@@ -301,17 +301,20 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
       // too: nothing an expense entry does belongs there.
       const postable = list.filter((a) => {
         const type = (a.type ?? '').toUpperCase()
-        const isHeader = (a.number ?? '').endsWith('-000')
+        // The client's chart has headers that aren't "-000" (1-01-040,
+        // 2-01-100…); the seed marks every one in its description.
+        const isHeader =
+          (a.number ?? '').endsWith('-000') || (a.description ?? '').startsWith('Header account')
         return !isHeader && type !== 'EQUITY'
       })
       setPostableAccounts(postable)
       // A Supplier line can be a real inventory purchase (an Asset, not an
-      // Expense) — "1-04-*" is the Inventory account family (Inventory
-      // itself, 1-04-000, plus its Appliances/Furniture/Aircon/IT Products
+      // Expense) — "1-01-2*" is the Inventory account family (Inventory
+      // itself, 1-01-200, plus its Appliances/Furniture/Aircon/IT Products
       // children), the only Asset accounts a Supplier expense line should
       // ever offer. Matched by number prefix since the frontend Account
       // type doesn't carry the backend's `category` enum.
-      setInventoryAccounts(list.filter((a) => (a.number ?? '').startsWith('1-04')))
+      setInventoryAccounts(list.filter((a) => (a.number ?? '').startsWith('1-01-2')))
     })
     APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
     // Payment Method → Bank Transfer unlocks picking which bank account the
@@ -543,7 +546,7 @@ function ExpenseFormFields({
   // type — postableAccounts already covers assets/liabilities/expense/income
   // (headers and Equity stay excluded, see the fetch effect above), unioned
   // with inventoryAccounts since that set also carries the Inventory header
-  // row (1-04-000) itself, which the "-000 = header" heuristic would
+  // row (1-01-200) itself, which the "-000 = header" heuristic would
   // otherwise drop.
   const accountCategoryOptions = useMemo(() => {
     const merged = [...postableAccounts]
