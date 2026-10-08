@@ -17,13 +17,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   D: 'bg-red-50 text-red-700 ring-red-200',
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-blue-50 text-blue-700 ring-blue-200',
-  closed: 'bg-gray-100 text-gray-600 ring-gray-200',
-  early_closed: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  written_off: 'bg-red-50 text-red-700 ring-red-200',
-}
-
 function CategoryBadge({ category }: { category?: string | null }) {
   if (!category) return <span className="text-gray-400">—</span>
   return (
@@ -37,16 +30,12 @@ function CategoryBadge({ category }: { category?: string | null }) {
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
-        STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
-      }`}
-    >
-      {status.replace('_', ' ')}
-    </span>
-  )
+/** What the collector asks for next: the overdue amount while there is one,
+ * otherwise the coming month's installment (less any partial already paid). */
+function nextMiDue(a: InstallmentAccount): number {
+  const due = Number(a.miDue ?? 0)
+  if (due > 0) return due
+  return Math.max(0, Number(a.monthlyInstallment ?? 0) - Number(a.partialPaymentOnNextDue ?? 0))
 }
 
 function peso(amount: number | string): string {
@@ -240,18 +229,20 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex min-w-0 items-center gap-1.5">
+                        {a.category && <CategoryBadge category={a.category} />}
                         <span className="truncate font-medium text-gray-900">
                           {a.accountNumber}
                         </span>
                         {a.isXDeal && <XDealBadge reference={a.xDealReference} />}
                       </span>
-                      <CategoryBadge category={a.category} />
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
                       {a.customer ? a.customer.name : '—'}
                     </div>
-                    <div className="mt-1 flex items-center justify-between">
-                      <StatusBadge status={a.status} />
+                    {a.customer?.phone && (
+                      <div className="truncate text-[12px] text-gray-500">{a.customer.phone}</div>
+                    )}
+                    <div className="mt-1 flex items-center justify-end">
                       <span className="text-[13px] font-semibold tabular-nums text-gray-900">
                         {peso(a.currentBalance)}
                       </span>
@@ -270,10 +261,9 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                   <tr>
                     <th className="px-4 py-3">Account #</th>
                     <th className="px-4 py-3">Customer</th>
-                    <th className="px-4 py-3">Branch</th>
                     <th className="px-4 py-3">Collector</th>
-                    <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">MI Due Date</th>
+                    <th className="px-4 py-3 text-right">MI Due</th>
                     <th className="px-4 py-3 text-right">Balance</th>
                   </tr>
                 </thead>
@@ -286,24 +276,29 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                     >
                       <td className="px-4 py-3 font-medium text-gray-900">
                         <span className="inline-flex items-center gap-1.5">
+                          {a.category && <CategoryBadge category={a.category} />}
                           {a.accountNumber}
                           {a.isXDeal && <XDealBadge reference={a.xDealReference} />}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[13px] text-gray-700">
                         {a.customer ? a.customer.name : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-[13px] text-gray-600">
-                        {a.branch?.name ?? <span className="text-gray-400">—</span>}
+                        {a.customer?.phone && (
+                          <div className="text-[12px] text-gray-500">{a.customer.phone}</div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[13px] text-gray-600">
                         {a.collector?.stubNumber ?? <span className="text-gray-400">—</span>}
                       </td>
-                      <td className="px-4 py-3">
-                        <CategoryBadge category={a.category} />
+                      <td className="px-4 py-3 text-[13px] text-gray-600">
+                        {a.nextDueDate ? (
+                          new Date(a.nextDueDate).toLocaleDateString()
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={a.status} />
+                      <td className="px-4 py-3 text-right text-[13px] tabular-nums text-gray-700">
+                        {peso(nextMiDue(a))}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums font-medium text-gray-900">
                         {peso(a.currentBalance)}

@@ -387,7 +387,13 @@ export interface InstallmentAccount {
   isXDeal?: boolean
   xDealReference?: string | null
   createdAt: string
-  customer?: { name: string } | null
+  /** Next monthly-installment (MI) due date. */
+  nextDueDate?: string | null
+  /** Monthly-installment amount currently due. */
+  miDue?: number | string
+  partialPaymentOnNextDue?: number | string
+  monthlyInstallment?: number | string
+  customer?: { name: string; phone?: string | null } | null
   branch?: { name: string } | null
   collector?: { stubNumber: string; name: string } | null
 }
