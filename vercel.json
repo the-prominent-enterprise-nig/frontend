@@ -4,10 +4,9 @@
   "git": {
     "deploymentEnabled": {
       "*": false,
-      "dev": false,
-      "development": false,
+      "development": true,
       "main": true
     }
   },
-  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ]"
+  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ] && [ \"$VERCEL_GIT_COMMIT_REF\" != \"development\" ]"
 }
