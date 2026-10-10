@@ -70,6 +70,7 @@ export default function DailySalesMonitoringSheet({
   return (
     <>
       <div
+        data-testid="sales-monitoring-sheet"
         className={`${printable ? 'print-sheet print-sheet-compact ' : ''}flex flex-col gap-5 rounded-2xl border border-gray-200 bg-white p-6 text-gray-900 print:rounded-none print:border-0`}
       >
         <SheetHeader report={report} />

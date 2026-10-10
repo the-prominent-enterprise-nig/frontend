@@ -33,7 +33,12 @@ test.describe('POS — Daily Sales Monitoring sheet', () => {
     // No "Not submitted yet" here: the owner reads this sheet before the
     // branch files.
     await expect(page.getByRole('heading', { name: 'Not submitted yet' })).toHaveCount(0)
-    const sheet = page.locator('.print-sheet')
+    // `.print-sheet` is not this sheet's handle: the on-screen copy renders
+    // with printable=false and carries no such class, while the print pages
+    // (DailyCollectionPrintPages, a `.print-region` parked at left:-10000px)
+    // render BOTH sheets with it. Take the sheet by its own test id, and
+    // exclude the off-screen copy of it.
+    const sheet = page.locator('[data-testid="sales-monitoring-sheet"]:not(.print-region *)')
     await expect(sheet).toBeVisible()
     // Sales only — the collections are the Daily Collection Report's.
     await expect(sheet.getByText('For accounting', { exact: false })).toHaveCount(0)
