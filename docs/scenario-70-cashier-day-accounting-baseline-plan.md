@@ -33,7 +33,7 @@ The baseline itself is built and green, and it is the acceptance test for everyt
 | G5  | A branch New Receipt lands in COH — Branch Collections       | ✅ **Done** `2c84ce1`      | S    | A branch receipt resolves `POS_CASH`; corrections reuse the original entry’s own cash account                              |
 | G6  | A due settled with its rebate reads MI, not MI-PARTIAL       | ✅ **Done** `e86defe`      | S    | The rebate counts toward the due before MI / MI-PARTIAL is decided                                                         |
 | G7  | A TPF balance is not a collection — the day totals 87,365.00 | 🚧 **Needs decision**      | S    | The financed balance is counted as collected; see _Decisions needed_                                                       |
-| G3  | New Receipts are part of TOTAL BRANCH COLLECTION             | 🚧 **Built, blocked**      | M    | Written and green, but it builds on uncommitted `daily-collection.service.ts` work — lands when that does                  |
+| G3  | New Receipts are part of TOTAL BRANCH COLLECTION             | ✅ **Done** `84f29a6`      | M    | A third report source and a new OTHERS kind, through the form sheet and the Excel export                                   |
 | G2  | A TPF down payment carries its provider                      | ✅ **Done** `4239353` `+1` | S    | `tpfDownPaymentMethodOptionId` carries the provider; per-partner accounts now have an API                                  |
 | G1  | Revenue splits per category                                  | ✅ **Done** `6217f8e`      | M    | Revenue resolves per line via `Item.revenueAccountId` on all three posting paths                                           |
 | G10 | GCash, Maya and ECPay each clear their own account           | 🚧 **Needs decision**      | M    | `ClearingSettlementType` is 4 coarse types; the three share one E-Wallet clearing account                                  |
@@ -44,7 +44,7 @@ The baseline itself is built and green, and it is the acceptance test for everyt
 
 **Done (2026-10-10):** G1, G2, G4, G5, G6, as five atomic commits, each verified on its own in a throwaway worktree — typecheck clean and the baseline 27/27 at every one. Two neighbouring suites were repaired on the way (`acknowledgement-receipts` sent no `receiptType`; `unapplied-collections` could not run twice).
 
-**Built but not committed:** G3. It is green in the working tree and depends on in-flight `daily-collection.service.ts` work (`inBranch`, `sourceCounter`, `collectorLabelOf`), so it cannot stand as its own commit until that lands.
+**G3** landed once the branch-reporting work it builds on was committed (`6683f39`), as its own commit on top.
 
 **Still open:** G7 and G10, one client decision each. Everything else is closed: the day rings up, reports, banks and reads back as the client's own sheet draws it. With G11 closed the baseline's day banks in full — one deposit, five banks, 87,365.00, every holding account emptied — which is the client's own entry to the centavo bar the clearing-account split G10 asks for.
 
