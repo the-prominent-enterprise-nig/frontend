@@ -36,6 +36,7 @@ import {
   PackageCheck,
   Receipt,
   ReceiptText,
+  Percent,
   PhilippinePeso,
   ScrollText,
   Settings,
@@ -196,6 +197,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
       },
       {
+        // Scenario 69 Part C — sits beside Account Mapping: that screen says
+        // which GL account each tax posts to, this one says what the tax is.
+        label: 'Tax Codes',
+        href: '/accounting/tax-codes',
+        icon: Percent,
+        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_CODES_READ,
+      },
+      {
         label: 'AR Invoices',
         href: '/accounting/ar-invoices',
         icon: Receipt,
@@ -312,6 +321,21 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/reports',
         icon: FileBarChart,
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
+      },
+      {
+        // Scenario 69 Part H — VAT and withholding tax reports. Open to whoever
+        // reads the financial reports; a branch user sees their own branch.
+        label: 'Tax Reports',
+        href: '/accounting/tax-reports',
+        icon: ScrollText,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
+      },
+      {
+        // The VAT settlement and withholding tax remittance: company-level.
+        label: 'Tax Closing',
+        href: '/accounting/tax-closing',
+        icon: Landmark,
+        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_CLOSING_READ,
       },
       // Scenario 62 — raw data from every module, read-only. Business Owner
       // only; exact permission so the Accountant's accounting:* can't reach.

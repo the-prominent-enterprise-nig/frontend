@@ -1,4 +1,5 @@
 import { api } from '@/src/libs/api/client'
+import type { TaxOverrideEntry } from '@/src/libs/tax/tax-override'
 
 // ============ Fixed Assets v2 (ACC-21) ============
 export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION'
@@ -538,7 +539,14 @@ export interface ARInvoice {
   // returns the whole Customer row) — the list endpoint's lighter select
   // stops at id/name, so the letterhead block on the detail sheet treats
   // them as optional.
-  customer?: { id: string; name: string; address?: string | null; taxId?: string | null }
+  customer?: {
+    id: string
+    name: string
+    address?: string | null
+    taxId?: string | null
+    /** The customer's own VAT-exempt profile: where a new invoice's class starts. */
+    isTaxExempt?: boolean | null
+  }
   invoiceDate: string
   dueDate: string
   description?: string
@@ -548,6 +556,17 @@ export interface ARInvoice {
   amountPaid: number
   status: string
   costCenter?: string
+  /** Scenario 69 Part F — the invoice's output VAT class (VAT-OUT-12,
+   * VAT-OUT-GOV-12, VAT-OUT-0ZR or VAT-OUT-EXEMPT), the certificate a
+   * zero-rated or exempt one rests on, and who approved it. Null on an invoice
+   * that was never classified (older ones, and ones with no VAT left blank). */
+  outputVatCode?: string | null
+  taxExemptionRef?: string | null
+  outputVatApprovedBy?: string | null
+  outputVatApprovedByName?: string | null
+  /** Scenario 69 Part I — the class when it was changed from the one the invoice
+   * started on, with why, who and when. Null when it was not. */
+  taxOverride?: TaxOverrideEntry[] | null
   payments?: ARPayment[]
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
@@ -621,6 +640,10 @@ export interface ARInvoiceCustomerResult {
   name: string
   phone: string | null
   customerCode: string
+  /** Registered as exempt from VAT, with the certificate on file — a new
+   * invoice for this customer starts VAT-exempt (Scenario 69 Part F). */
+  isTaxExempt?: boolean
+  taxExemptionRef?: string | null
 }
 
 export interface ARReceiptListItem {
@@ -1155,6 +1178,18 @@ export interface APBill {
   // Reclassified out of AP into WHT Payable when the bill is received, not at
   // payment time. It is NOT a payment: see apOutstanding().
   withholdingAmount?: number
+  /** Scenario 69 Part D — the EWT tax code the withholding was computed at
+   * (EWT-GOODS-1, EWT-RENT-5, EWT-NONE…). Null on a bill that mixed rates
+   * (a receipt with goods and services lines) and on bills from before codes
+   * existed. */
+  withholdingTaxCode?: string | null
+  /** The ATC the code carried when the bill was made; null until NIG's
+   * accountant supplies the ATC list. */
+  withholdingAtc?: string | null
+  /** Scenario 69 Part I — the line input VAT codes and the withholding code that
+   * were changed from the supplier's defaults, with why, who and when. Null when
+   * nothing was. */
+  taxOverride?: TaxOverrideEntry[] | null
   totalAmount: number
   // Cash actually disbursed to the supplier. Never includes withholding.
   amountPaid: number
@@ -1483,8 +1518,19 @@ export interface APBillLine {
    * and RR lines use, so a 3-way match compares like with like. */
   discountedCost?: number | null
   lineTotal: number
+  /** Scenario 69 Part G — the line's input VAT code from the tax code master
+   * (VAT-IN-12, VAT-IN-CAPEX, VAT-IN-NONVAT, VAT-IN-EXEMPT, VAT-IN-OOS). Null,
+   * or one of the older spellings, on a line from before codes. */
   taxCode?: string | null
+  /** Derived from the code's rate on the bill date. */
   taxAmount: number
+  /** The project or asset a VAT-IN-CAPEX line is for. */
+  projectAssetRef?: string | null
+  /** The account this line's net posts to when it is not the bill's own
+   * expense account: a capital good's asset account, an out-of-scope item's
+   * balance-sheet account. */
+  accountId?: string | null
+  account?: { id: string; number: string; name: string } | null
   /** A promotional/zero-cost unit that was still billed as a line. */
   isFreebie?: boolean
   notes?: string | null
@@ -1721,6 +1767,14 @@ export interface BusinessExpenseLine {
   amount: number
   taxCode?: ExpenseTaxCode | string | null
   taxAmount: number
+  /** Scenario 69 Part G — the project or asset a VAT-IN-CAPEX line is for. */
+  projectAssetRef?: string | null
+  /** Scenario 69 Part E — the EWT tax code this line is withheld at, and what
+   * that came to (the code's rate × the amount net of VAT). Null / 0 = not
+   * withheld. The amount is derived server-side, never sent. */
+  withholdingTaxCode?: string | null
+  withholdingAtc?: string | null
+  withholdingAmount?: number
   /** Read-only. Set by the API when this line's account is one of the
    * mapped Special Accounts — it's how an advance or loan line reopens as
    * itself rather than as an ordinary category line. */
@@ -1779,6 +1833,9 @@ export interface BusinessExpense {
   subtotal: number
   taxAmount: number
   totalAmount: number
+  /** Scenario 69 Part E — withheld from the payee and owed to the BIR; the
+   * payments total totalAmount less this (the cash that actually leaves). */
+  withholdingAmount?: number
   payments: BusinessExpensePayment[]
   costCenter?: string | null
   /** Scenario 47 — set server-side from the creating user's branch; null on
@@ -1834,12 +1891,21 @@ export interface ExpenseDocument {
       lineEmployee: string | null
       linePayee: string | null
       taxCode: string | null
+      /** Scenario 69 Part G — the project or asset a VAT-IN-CAPEX line is for. */
+      projectAssetRef?: string | null
       amount: number
       taxAmount: number
+      withholdingTaxCode?: string | null
+      withholdingAtc?: string | null
+      withholdingAmount?: number
     }[]
     subtotal: number
     taxAmount: number
     totalAmount: number
+    /** Withheld from the payee, and the cash that actually left (the payment
+     * rows total `netPayable`). */
+    withholdingAmount?: number
+    netPayable?: number
     status: string
     payeeType: PayeeType | null
     otherCategory: OtherCategory | null
@@ -2186,6 +2252,7 @@ export type ChecklistKey =
   | 'fixedAssetDepreciation'
   | 'accruals'
   | 'taxAccruals'
+  | 'taxCodeExceptions'
 
 export interface ChecklistItem {
   done: boolean
@@ -2232,6 +2299,7 @@ export const CHECKLIST_LABELS: Record<ChecklistKey, string> = {
   fixedAssetDepreciation: 'Fixed asset depreciation',
   accruals: 'Accruals',
   taxAccruals: 'Tax accruals',
+  taxCodeExceptions: 'Tax code exceptions reviewed',
 }
 
 export const FiscalPeriods = {
@@ -2251,7 +2319,107 @@ export const FiscalPeriods = {
   remove: (id: string) => api.delete(`/fiscal-periods/${id}`),
 }
 
-// ============ Tax ============
+// ============ Tax Codes (Scenario 69 Part C) ============
+export type TaxCodeType =
+  | 'OUTPUT_VAT'
+  | 'INPUT_VAT'
+  | 'EWT_PAYABLE'
+  | 'CWT_RECEIVABLE'
+  | 'WTC'
+  | 'OTHER'
+export type TaxBaseRule =
+  | 'GROSS'
+  | 'VAT_EXCLUSIVE'
+  | 'VAT_INCLUSIVE_EXTRACT'
+  | 'NET_OF_VAT'
+  | 'FIXED'
+  | 'VARIABLE'
+export type TaxCodeVersionStatus = 'CURRENT' | 'UPCOMING' | 'ENDED'
+/** One VERSION of a tax code. A rate change is a new version with a later
+ * effectiveFrom, so a transaction keeps the rate in force on its own date. */
+export interface TaxCode {
+  id: string
+  code: string
+  name: string
+  taxType: TaxCodeType
+  /** Percent, not a fraction: 12 means 12%. */
+  ratePercent: number
+  baseRule: TaxBaseRule
+  atc: string | null
+  /** The AccountMapping key the tax posts to; null = posts no tax. */
+  accountMappingKey: string | null
+  description: string | null
+  isDefault: boolean
+  requiresApproval: boolean
+  /** Same on every version of a code. */
+  isActive: boolean
+  /** YYYY-MM-DD */
+  effectiveFrom: string
+  effectiveTo: string | null
+  status: TaxCodeVersionStatus
+  createdAt: string
+  updatedAt: string
+}
+export interface TaxCodeListItem extends TaxCode {
+  versionCount: number
+  /** The change already scheduled after this version, if any. */
+  next: { id: string; ratePercent: number; effectiveFrom: string } | null
+}
+export interface TaxCodeInput {
+  code: string
+  name: string
+  taxType: TaxCodeType
+  ratePercent: number
+  baseRule: TaxBaseRule
+  atc?: string | null
+  accountMappingKey?: string | null
+  description?: string | null
+  isDefault?: boolean
+  requiresApproval?: boolean
+  isActive?: boolean
+  effectiveFrom: string
+  effectiveTo?: string | null
+}
+/** What can change on an existing version — the rate and dates cannot. */
+export interface TaxCodeEdit {
+  name?: string
+  description?: string | null
+  atc?: string | null
+  accountMappingKey?: string | null
+  isDefault?: boolean
+  requiresApproval?: boolean
+  /** Applies to every version of the code. */
+  isActive?: boolean
+}
+/** What a picker needs of a code: the version in force today, active codes only. */
+export interface TaxCodeOption {
+  code: string
+  name: string
+  taxType: TaxCodeType
+  /** Percent, not a fraction: 5 means 5%. */
+  ratePercent: number
+  baseRule: TaxBaseRule
+  accountMappingKey: string | null
+  requiresApproval: boolean
+  isDefault: boolean
+}
+export const TaxCodes = {
+  list: (params?: {
+    type?: TaxCodeType
+    search?: string
+    includeInactive?: boolean
+    asOf?: string
+  }) => api.get<TaxCodeListItem[]>('/tax-codes', params),
+  // Scenario 69 Part D — readable by whoever picks a code (supplier, AP bill and
+  // receiving screens), not just the people who maintain the master.
+  options: (type?: TaxCodeType) => api.get<TaxCodeOption[]>('/tax-codes/options', { type }),
+  history: (code: string) => api.get<TaxCode[]>(`/tax-codes/by-code/${encodeURIComponent(code)}`),
+  get: (id: string) => api.get<TaxCode>(`/tax-codes/${id}`),
+  // Posting a code that already exists adds a NEW VERSION of it.
+  create: (body: TaxCodeInput) => api.post<TaxCode>('/tax-codes', body),
+  update: (id: string, body: TaxCodeEdit) => api.patch<TaxCode>(`/tax-codes/${id}`, body),
+}
+
 // ============ Account Mapping ============
 export interface AccountMapping {
   key: string

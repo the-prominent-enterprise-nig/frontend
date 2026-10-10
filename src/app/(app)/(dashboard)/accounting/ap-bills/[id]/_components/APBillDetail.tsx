@@ -21,6 +21,8 @@ import {
   type APBillDocument,
 } from '@/src/libs/data/AccountingV2Data'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
+import { inputVatShortName, isMasterInputVatCode } from '@/src/libs/tax/input-vat'
+import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 import {
   printAPBillDocument,
   printAPPaymentVoucherDocument,
@@ -499,6 +501,70 @@ export default function APBillDetail({ id }: { id: string }) {
                 ))}
               </tbody>
             </table>
+          ) : (bill.lines?.length ?? 0) > 0 ? (
+            // The invoice's own lines (Scenario 46), with what Scenario 69 Part G
+            // adds to each: its input VAT code and the tax derived from it, and
+            // for a capital or out-of-scope line the account it posts to and the
+            // project or asset it is for.
+            <table className="w-full border-collapse text-[12.5px]" data-testid="own-lines">
+              <thead>
+                <tr>
+                  <th className={TH}>Description</th>
+                  <th className={`${TH} w-20 text-right`}>Qty</th>
+                  <th className={`${TH} w-32 text-right`}>Unit price</th>
+                  <th className={`${TH} w-32 text-right`}>Total</th>
+                  <th className={`${TH} w-44`}>Input VAT</th>
+                  <th className={TH}>Posts to</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(bill.lines ?? []).map((l) => (
+                  <tr key={l.id}>
+                    <td className={TD}>
+                      {l.description || l.item?.name || '—'}
+                      {l.isFreebie && (
+                        <span className="ml-1.5 rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+                          Freebie
+                        </span>
+                      )}
+                    </td>
+                    <td className={`${TD} text-right tabular-nums`}>{Number(l.quantity)}</td>
+                    <td className={`${TD} text-right tabular-nums`}>
+                      {fmtMoney(Number(l.unitPrice))}
+                    </td>
+                    <td className={`${TD} text-right tabular-nums`}>
+                      {fmtMoney(Number(l.lineTotal))}
+                    </td>
+                    <td className={TD}>
+                      {l.taxCode ? (
+                        <>
+                          <span className="font-medium">
+                            {isMasterInputVatCode(l.taxCode)
+                              ? inputVatShortName(l.taxCode)
+                              : l.taxCode}
+                          </span>
+                          {l.taxAmount > 0 && (
+                            <span className="ml-1.5 tabular-nums text-gray-600">
+                              {fmtMoney(l.taxAmount)}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className={TD}>
+                      {l.account ? `${l.account.number} — ${l.account.name}` : "Bill's account"}
+                      {l.projectAssetRef && (
+                        <div className="mt-0.5 text-[11px] text-gray-500">
+                          Project / asset: {l.projectAssetRef}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
             <table className="w-full border-collapse text-[12.5px]">
               <thead>
@@ -517,6 +583,13 @@ export default function APBillDetail({ id }: { id: string }) {
           )}
         </div>
 
+        {/* Scenario 69 Part I — tax codes changed from the supplier's defaults, and
+            why. On screen only: it is a control note, not part of the invoice. */}
+        {bill.taxOverride && bill.taxOverride.length > 0 && (
+          <div className="mt-3 print:hidden">
+            <TaxOverrideSummary entries={bill.taxOverride} testId="bill-override-summary" />
+          </div>
+        )}
         <div className="mt-3 flex justify-end">
           <table className="text-[12.5px]">
             <tbody>
@@ -541,7 +614,12 @@ export default function APBillDetail({ id }: { id: string }) {
               </tr>
               {withholding > 0 && (
                 <tr>
-                  <td className={TOTAL_LABEL}>Withholding tax</td>
+                  <td className={TOTAL_LABEL}>
+                    Withholding tax
+                    {bill.withholdingTaxCode
+                      ? ` (${bill.withholdingTaxCode}${bill.withholdingAtc ? ` · ${bill.withholdingAtc}` : ''})`
+                      : ''}
+                  </td>
                   <td className={`${TOTAL_VALUE} min-w-[140px]`}>- {fmtMoney(withholding)}</td>
                 </tr>
               )}

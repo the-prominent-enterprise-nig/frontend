@@ -27,6 +27,8 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
 import { deliveryFeeReceiptTenderLabel } from '../checkout/_utils/delivery'
+import { outputVatLabel } from '@/src/libs/tax/output-vat'
+import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -288,6 +290,30 @@ export function TransactionDetail({
                 ) : tx.taxTotal > 0 ? (
                   <Row label="Tax" value={formatCurrency(tx.taxTotal)} />
                 ) : null}
+                {/* Scenario 69 Part F — how the sale was classified for output VAT,
+                    and for a zero-rated or exempt one the document it rests on and
+                    who approved it. */}
+                {tx.outputVatCode && (
+                  <Row label="VAT treatment" value={outputVatLabel(tx.outputVatCode)} muted />
+                )}
+                {tx.taxExemptionRef && (
+                  <Row label="Certificate / reference" value={tx.taxExemptionRef} muted />
+                )}
+                {tx.outputVatApprovedBy && (
+                  <Row
+                    label="VAT approved by"
+                    value={tx.outputVatApprovedByName ?? 'Manager'}
+                    muted
+                  />
+                )}
+                {/* Scenario 69 Part I — the class changed from its default, and why.
+                    Held back until the full transaction is in: the list row this
+                    opens with has no names, and "Someone" would flash first. */}
+                {!detailLoading && tx.taxOverride && tx.taxOverride.length > 0 && (
+                  <div className="py-1">
+                    <TaxOverrideSummary entries={tx.taxOverride} testId="sale-override-summary" />
+                  </div>
+                )}
                 {tx.session?.terminal?.branch?.name && (
                   <Row label="Branch" value={tx.session.terminal.branch.name} />
                 )}

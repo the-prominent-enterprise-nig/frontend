@@ -35,6 +35,12 @@ const TAX_CODE_LABELS: Record<string, string> = {
   VAT: 'Input VAT',
   NON_VAT: 'Non-VAT',
   EXEMPT: 'Exempt',
+  // Scenario 69 Part G — and the tax code master's own names for them.
+  'VAT-IN-CAPEX': 'Capital goods',
+  'VAT-IN-12': 'Input VAT',
+  'VAT-IN-NONVAT': 'Non-VAT',
+  'VAT-IN-EXEMPT': 'Exempt',
+  'VAT-IN-OOS': 'Out of scope',
 }
 
 /** MM/DD/YYYY — the format the form's date inputs and the printed voucher use. */
@@ -158,6 +164,11 @@ export default function ExpenseDetail({ id }: { id: string }) {
   // payee type fixes it at the header, where it's already shown.
   const perLinePayee = e.lines.some((l) => l.lineEmployee || l.linePayee)
   const showTax = e.taxAmount > 0
+  // Scenario 69 Part E — what was withheld from the payee (owed to the BIR,
+  // not paid out) and the cash that actually left.
+  const withheld = e.withholdingAmount ?? 0
+  const showWithholding = withheld > 0
+  const netPayable = e.netPayable ?? e.totalAmount - withheld
 
   return (
     <div className="px-4 py-4 sm:px-6 lg:px-8">
@@ -213,6 +224,16 @@ export default function ExpenseDetail({ id }: { id: string }) {
           <Field label="Total">
             <span className="font-semibold tabular-nums">{fmtMoney(e.totalAmount)}</span>
           </Field>
+          {showWithholding && (
+            <>
+              <Field label="Withholding tax">
+                <span className="tabular-nums">−{fmtMoney(withheld)}</span>
+              </Field>
+              <Field label="Net payable">
+                <span className="font-semibold tabular-nums">{fmtMoney(netPayable)}</span>
+              </Field>
+            </>
+          )}
           {e.payeeAddress && <Field label="Address">{e.payeeAddress}</Field>}
           {e.payeeTin && <Field label="Payee's TIN">{e.payeeTin}</Field>}
           {e.paidFor.length > 0 && <Field label="Supplier invoices">{e.paidFor.join(', ')}</Field>}
@@ -236,6 +257,7 @@ export default function ExpenseDetail({ id }: { id: string }) {
                 {itemMode && <th className="py-2 pr-4 text-right">Qty</th>}
                 {itemMode && <th className="py-2 pr-4 text-right">Unit price</th>}
                 {showTax && <th className="py-2 pr-4 text-right">VAT incl.</th>}
+                {showWithholding && <th className="py-2 pr-4 text-right">Withholding</th>}
                 <th className="py-2 text-right">Total</th>
               </tr>
             </thead>
@@ -249,7 +271,15 @@ export default function ExpenseDetail({ id }: { id: string }) {
                     </td>
                   )}
                   <td className="py-2 pr-4 text-gray-900">{l.account ?? '—'}</td>
-                  <td className="py-2 pr-4 text-gray-600">{l.description || '—'}</td>
+                  <td className="py-2 pr-4 text-gray-600">
+                    {l.description || '—'}
+                    {/* Scenario 69 Part G — what a capital purchase is for. */}
+                    {l.projectAssetRef && (
+                      <span className="mt-0.5 block text-[11px] text-gray-400">
+                        Project / asset: {l.projectAssetRef}
+                      </span>
+                    )}
+                  </td>
                   {itemMode && (
                     <td className="py-2 pr-4 font-mono text-[12px] text-gray-600">
                       {l.siNumber ?? '—'}
@@ -273,6 +303,21 @@ export default function ExpenseDetail({ id }: { id: string }) {
                       )}
                     </td>
                   )}
+                  {showWithholding && (
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      {l.withholdingTaxCode && (l.withholdingAmount ?? 0) > 0 ? (
+                        <>
+                          {fmtMoney(l.withholdingAmount ?? 0)}
+                          <span className="ml-1 text-[11px] text-gray-400">
+                            {l.withholdingTaxCode}
+                            {l.withholdingAtc ? ` · ${l.withholdingAtc}` : ''}
+                          </span>
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  )}
                   <td className="py-2 text-right tabular-nums">{fmtMoney(l.total)}</td>
                 </tr>
               ))}
@@ -292,6 +337,17 @@ export default function ExpenseDetail({ id }: { id: string }) {
           <span className="font-semibold text-prominent-purple-900">
             Total <span className="tabular-nums">{fmtMoney(e.totalAmount)}</span>
           </span>
+          {showWithholding && (
+            <>
+              <span className="text-gray-500">
+                Less withholding tax{' '}
+                <span className="tabular-nums text-gray-800">−{fmtMoney(withheld)}</span>
+              </span>
+              <span className="font-semibold text-prominent-purple-900">
+                Net payable <span className="tabular-nums">{fmtMoney(netPayable)}</span>
+              </span>
+            </>
+          )}
         </div>
       </section>
 

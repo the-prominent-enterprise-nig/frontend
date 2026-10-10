@@ -22,8 +22,14 @@ export const SUPPLIER_TYPES = [
 // with no tax to back out, and the goods are carried at that full price.
 export const SUPPLIER_INPUT_VAT_TYPES = ['pct_12', 'none'] as const
 
-// Expanded withholding held back from this supplier and remitted to the
-// BIR. 1% is the norm on goods; `none` is the per-supplier exception.
+// Scenario 69 Part G — whether and how the supplier charges VAT. It sets the
+// input VAT code its purchases start on, and the server keeps the older flag
+// above in step with it (VAT = 12%, everything else = none).
+export const SUPPLIER_VAT_STATUSES = ['VAT', 'NON_VAT', 'EXEMPT', 'GOVERNMENT', 'PEZA'] as const
+
+// The old none / 1% flag. The server keeps it in step with the tax code below
+// (EWT-NONE = none, anything else = pct_1) so older readers still work; the
+// supplier form edits the code, not this.
 export const SUPPLIER_WITHHOLDING_TYPES = ['pct_1', 'none'] as const
 
 // ─── Create / Update Supplier ─────────────────────────────────────────────────
@@ -62,7 +68,12 @@ export const CreateSupplierFormSchema = z.object({
   alphanumericTaxCode: z.string().max(50).optional(),
   taxRate: z.string().max(20).optional(),
   defaultInputVat: z.enum(SUPPLIER_INPUT_VAT_TYPES).optional(),
+  vatStatus: z.enum(SUPPLIER_VAT_STATUSES).optional(),
   defaultWithholding: z.enum(SUPPLIER_WITHHOLDING_TYPES).optional(),
+  // Scenario 69 Part D — the EWT tax code held back from this supplier
+  // (EWT-GOODS-1 by default, EWT-RENT-5 for a lessor, EWT-NONE for none). The
+  // rate comes from the tax code master on the document's own date.
+  defaultWithholdingTaxCode: z.string().max(40).optional(),
   defaultPayableAccountId: z.string().optional(),
   defaultExpenseAccountId: z.string().optional(),
 })
@@ -117,7 +128,9 @@ export const SupplierDetailSchema = SupplierListItemSchema.extend({
   alphanumericTaxCode: z.string().optional().nullable(),
   taxRate: z.string().optional().nullable(),
   defaultInputVat: z.enum(SUPPLIER_INPUT_VAT_TYPES).optional().nullable(),
+  vatStatus: z.enum(SUPPLIER_VAT_STATUSES).optional().nullable(),
   defaultWithholding: z.enum(SUPPLIER_WITHHOLDING_TYPES).optional().nullable(),
+  defaultWithholdingTaxCode: z.string().optional().nullable(),
   defaultPayableAccountId: z.string().optional().nullable(),
   defaultExpenseAccountId: z.string().optional().nullable(),
 })

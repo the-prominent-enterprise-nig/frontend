@@ -8,10 +8,9 @@ import {
   ReceiveStockFormSchema,
   type ReceiveStockFormValues,
 } from '@/src/schema/inventory/goods-receiving'
-import {
-  MANUAL_RR_TAX_CODES,
-  MANUAL_RR_WITHHOLDING_CLASSES,
-} from '@/src/schema/inventory/manual-receiving-reports'
+import { MANUAL_RR_TAX_CODES } from '@/src/schema/inventory/manual-receiving-reports'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { withholdingClassOptions } from '@/src/libs/tax/ewt'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
@@ -224,6 +223,9 @@ export default function ReceiveStockModal({
   // bar, including the starting value: Goods + VAT is the common case.
   const [defaultTaxCode, setDefaultTaxCode] = useState('VAT')
   const [defaultWithholdingClass, setDefaultWithholdingClass] = useState('goods')
+  // Withholding is previewed at the rates the tax code master holds for the
+  // goods / services codes — the ones the server posts at.
+  const ewt = useEwtCodes()
 
   useEffect(() => {
     if (isOpen) return
@@ -323,7 +325,7 @@ export default function ReceiveStockModal({
   }
 
   const issueLines = toIssueLines(lines, contextFor, watched.reason)
-  const totals = rrTotals(watched)
+  const totals = rrTotals(watched, ewt.rateFor)
   // ReceiveActionBar speaks the PO screen's totals shape; the two extra flags
   // there are "does this delivery charge/withhold at all", read off the
   // already-derived per-line totals now that there's no header treatment to
@@ -1132,7 +1134,7 @@ export default function ReceiveStockModal({
                 aria-label="Default withholding"
                 className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
               >
-                {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
+                {withholdingClassOptions(ewt.rateFor).map((cls) => (
                   <option key={cls.value} value={cls.value}>
                     {cls.label}
                   </option>

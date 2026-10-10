@@ -25,9 +25,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   CreateManualReceivingReportFormSchema,
   MANUAL_RR_TAX_CODES,
-  MANUAL_RR_WITHHOLDING_CLASSES,
   type CreateManualReceivingReportFormValues,
 } from '@/src/schema/inventory/manual-receiving-reports'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { withholdingClassOptions } from '@/src/libs/tax/ewt'
 import SearchableSelect, { type SearchableSelectOption } from '@/src/components/ui/SearchableSelect'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
@@ -145,6 +146,9 @@ export default function ManualRrForm() {
   // item) is overridden individually, tucked away in its own row.
   const [defaultTaxCode, setDefaultTaxCode] = useState('VAT')
   const [defaultWithholdingClass, setDefaultWithholdingClass] = useState('goods')
+  // Withholding is previewed at the rates the tax code master holds for the
+  // goods / services codes — the ones the server posts at.
+  const ewt = useEwtCodes()
 
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
@@ -179,7 +183,7 @@ export default function ManualRrForm() {
   const lines = watched.lines ?? []
   const anyCosted = lines.some((l) => l?.unitCost != null)
   const totalUnits = lines.reduce((sum, l) => sum + (Number(l?.quantityReceived) || 0), 0)
-  const totals = manualRrTotals(watched)
+  const totals = manualRrTotals(watched, ewt.rateFor)
 
   // Falls back to whichever of itemId/newItemName is actually populated —
   // covers a duplicated line, whose id was never explicitly toggled but
@@ -488,7 +492,7 @@ export default function ManualRrForm() {
               aria-label="Default withholding"
               className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
             >
-              {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
+              {withholdingClassOptions(ewt.rateFor).map((cls) => (
                 <option key={cls.value} value={cls.value}>
                   {cls.label}
                 </option>

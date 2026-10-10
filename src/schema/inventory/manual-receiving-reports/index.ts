@@ -33,12 +33,9 @@ export const MANUAL_RR_TAX_CODES = [
 // Real BIR EWT rates vary by the nature of the payment, not one flat
 // document-wide rate — goods and services are withheld differently, and a
 // single delivery can mix both. Independent of MANUAL_RR_TAX_CODES: a line
-// can be VAT + Goods, Exempt + Services, etc.
-export const MANUAL_RR_WITHHOLDING_CLASSES = [
-  { value: '', label: 'None' },
-  { value: 'goods', label: 'Goods (1%)' },
-  { value: 'services', label: 'Services (2%)' },
-]
+// can be VAT + Goods, Exempt + Services, etc. The classes and the rate each is
+// withheld at (read off the tax code master) are in libs/tax/ewt.ts's
+// withholdingClassOptions(): the percentages are no longer kept here.
 
 const ManualRrWarehouseSchema = z.object({
   id: z.string(),

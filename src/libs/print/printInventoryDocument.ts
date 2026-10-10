@@ -2399,7 +2399,26 @@ export function buildExpenseVoucherHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  const lines = (e.lines ?? []) as { account?: string; description?: string; total?: number }[]
+  const lines = (e.lines ?? []) as {
+    account?: string
+    description?: string
+    total?: number
+    withholdingTaxCode?: string | null
+    withholdingAtc?: string | null
+  }[]
+  // Withheld from the payee and owed to the BIR: the paper voucher shows it
+  // under the amount, with the code (and ATC, once the accountant supplies the
+  // list) it was withheld at, and the net that was actually paid out.
+  const withheld = Number(e.withholdingAmount ?? 0)
+  const withholdingCodes = [
+    ...new Set(
+      lines
+        .filter((l) => l.withholdingTaxCode)
+        .map((l) =>
+          l.withholdingAtc ? `${l.withholdingTaxCode} · ${l.withholdingAtc}` : l.withholdingTaxCode
+        )
+    ),
+  ].join(', ')
   const payments = (e.payments ?? []) as {
     paymentMethod?: string
     reference?: string | null
@@ -2475,8 +2494,9 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     .kv .k { width: 128px; flex-shrink: 0; font-weight: 700; }
     .kv .v { color: #374151; }
     .kv-group + .kv-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f3f4f6; }
-    table.totals { margin: 12px 0 0 auto; width: 280px; }
+    table.totals { margin: 12px 0 0 auto; width: auto; min-width: 280px; }
     table.totals td { border: 0; border-bottom: 1px solid #f3f4f6; text-align: right; padding: 5px 10px; }
+    table.totals td:first-child { white-space: nowrap; }
     table.totals tr.grand td { border-top: 1px solid #999; border-bottom: 0; font-weight: 700; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
@@ -2546,8 +2566,14 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     </table>
     <table class="totals">
       <tbody>
-        <tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
-        <tr class="grand"><td>Total</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+        ${
+          withheld > 0
+            ? `<tr><td>Amount</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+        <tr><td>Less: withholding tax${withholdingCodes ? ` (${esc(withholdingCodes)})` : ''}</td><td>(${fmt(withheld)})</td></tr>
+        <tr class="grand"><td>Net amount paid</td><td>${fmt(Number(e.netPayable ?? Number(e.totalAmount ?? 0) - withheld))}</td></tr>`
+            : `<tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+        <tr class="grand"><td>Total</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>`
+        }
       </tbody>
     </table>
 

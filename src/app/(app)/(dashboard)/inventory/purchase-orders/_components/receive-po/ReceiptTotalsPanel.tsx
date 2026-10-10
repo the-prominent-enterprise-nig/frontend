@@ -1,5 +1,6 @@
 'use client'
 
+import { fmtPercent } from '@/src/libs/tax/ewt'
 import { MONO } from '../procurementTokens'
 import { PANEL } from './receiveTokens'
 import { fmtPeso, type ReceiptTotals } from './receiveTotals'
@@ -37,7 +38,9 @@ export function ReceiptTotalsPanel({ totals }: { totals: ReceiptTotals }) {
     {
       key: 'wht',
       label: 'Less withholding tax',
-      note: totals.withholdsTax ? '1% of stock value · BIR 2307' : 'none for this supplier',
+      note: totals.withholdsTax
+        ? `${totals.withholdingPercent != null ? `${fmtPercent(totals.withholdingPercent)} of stock value` : 'of stock value'}${totals.withholdingCode ? ` · ${totals.withholdingCode}` : ''} · BIR 2307`
+        : 'none for this supplier',
       value: totals.withholdsTax ? `−${fmtPeso(totals.withheld)}` : '—',
       minus: true,
     },

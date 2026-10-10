@@ -72,7 +72,25 @@ export const ACCOUNTING_PERMISSIONS = {
   BIR_EXPORT_READ: 'accounting:bir_export:read',
   BIR_EXPORT_GENERATE: 'accounting:bir_export:generate',
 
+  // Scenario 69 Part C — the tax code master (rates, ATCs, posting accounts).
+  // Business Owner and Accountant only; the Branch Manager has none of these.
+  TAX_CODES_READ: 'accounting:tax-codes:read',
+  TAX_CODES_CREATE: 'accounting:tax-codes:create',
+  TAX_CODES_UPDATE: 'accounting:tax-codes:update',
+  // Scenario 69 Part I — change a tax code the system filled in by default on a
+  // bill or an invoice (a reason is required). Business Owner, Accountant and
+  // Branch Manager; Employee-level roles do not hold it.
+  TAX_CODES_OVERRIDE: 'accounting:tax-codes:override',
+
   FINANCIAL_REPORT_READ: 'accounting:financial_report:read',
+
+  // Scenario 69 Part H — the VAT settlement and withholding tax remittance. The
+  // tax REPORTS ride on FINANCIAL_REPORT_READ above; these move the company's
+  // balances, so they are Business Owner and Accountant only (the Branch
+  // Manager's accounting grants are an explicit list that leaves them out).
+  TAX_CLOSING_READ: 'accounting:tax-closing:read',
+  TAX_CLOSING_CREATE: 'accounting:tax-closing:create',
+  TAX_CLOSING_REVERSE: 'accounting:tax-closing:reverse',
 
   // Scenario 53 — same manual RR capability as
   // INVENTORY_PERMISSIONS.MANUAL_RR_CREATE, via Accounting's own namespace.
@@ -100,6 +118,8 @@ export const ACCOUNTING_PERMISSIONS = {
   AR_INVOICES_DELETE: 'accounting:ar-invoices:delete',
   AR_INVOICES_SEND: 'accounting:ar-invoices:send',
   AR_INVOICES_PAY: 'accounting:ar-invoices:pay',
+  // Scenario 69 Part F — classify an invoice as zero-rated or VAT-exempt.
+  AR_INVOICES_RESTRICTED_VAT: 'accounting:ar-invoices:restricted-vat',
 
   BANK_ACCOUNTS_READ: 'accounting:bank-accounts:read',
   BANK_ACCOUNTS_CREATE: 'accounting:bank-accounts:create',
@@ -235,6 +255,14 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:customer:delete': 'Delete customers',
   'accounting:bir_export:read': 'View BIR forms and alphalist',
   'accounting:bir_export:generate': 'Generate BIR forms',
+  'accounting:tax-codes:read': 'View the tax code master (rates, ATCs, posting accounts)',
+  'accounting:tax-codes:create': 'Add tax codes and new rate versions',
+  'accounting:tax-codes:update': 'Edit tax code names, ATCs, posting accounts and flags',
+  'accounting:tax-codes:override':
+    'Change a tax code the system filled in by default on a bill or an invoice',
+  'accounting:tax-closing:read': 'View VAT settlements and withholding tax remittances',
+  'accounting:tax-closing:create': 'Post a VAT settlement or a withholding tax remittance',
+  'accounting:tax-closing:reverse': 'Reverse a posted VAT settlement or withholding tax remittance',
   'accounting:financial_report:read':
     'View financial reports (Balance Sheet, Income Statement, Trial Balance, Cash Flow)',
   'accounting:manual-rr:create':
@@ -258,6 +286,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:ar-invoices:delete': 'Delete an AR invoice',
   'accounting:ar-invoices:send': 'Send an AR invoice to the customer',
   'accounting:ar-invoices:pay': 'Record or cancel a payment against an AR invoice',
+  'accounting:ar-invoices:restricted-vat':
+    'Approve an AR invoice classified as zero-rated or VAT-exempt (no output VAT)',
   'accounting:bank-accounts:read': 'View bank accounts and reconciliation history',
   'accounting:bank-accounts:create': 'Create a bank account',
   'accounting:bank-accounts:update': 'Edit a bank account',

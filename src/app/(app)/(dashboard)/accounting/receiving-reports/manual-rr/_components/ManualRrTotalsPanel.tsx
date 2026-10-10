@@ -1,5 +1,7 @@
 'use client'
 
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { fmtPercent, WITHHOLDING_CLASS_CODES } from '@/src/libs/tax/ewt'
 import { MONO } from '../../../../inventory/purchase-orders/_components/procurementTokens'
 import { PANEL } from '../../../../inventory/purchase-orders/_components/receive-po/receiveTokens'
 import type { ManualRrTotals } from './manualRrCosting'
@@ -23,6 +25,9 @@ export function ManualRrTotalsPanel({
   lines: number
   units: number
 }) {
+  const { rateFor } = useEwtCodes()
+  const goodsPct = fmtPercent(rateFor(WITHHOLDING_CLASS_CODES.goods) * 100)
+  const servicesPct = fmtPercent(rateFor(WITHHOLDING_CLASS_CODES.services) * 100)
   const rows = [
     {
       key: 'stock',
@@ -49,7 +54,7 @@ export function ManualRrTotalsPanel({
       label: 'Less withholding tax',
       note:
         totals.withheld > 0
-          ? '1% goods · 2% services · BIR 2307'
+          ? `${goodsPct} goods · ${servicesPct} services · BIR 2307`
           : 'no line is classed for withholding',
       value: totals.withheld > 0 ? `−${fmtPeso(totals.withheld)}` : '—',
       minus: true,

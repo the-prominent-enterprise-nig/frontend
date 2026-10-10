@@ -42,6 +42,14 @@ import { importSpreadsheetLines, nameKeys, type ImportResult } from './importSpr
 import { SpecialAccountPicker } from './SpecialAccountPicker'
 import { downloadCsv } from '@/src/libs/format/csv-export'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { isCapexAccount } from '@/src/libs/tax/input-vat'
+import {
+  ewtOptionLabel,
+  ewtShortLabel,
+  ewtSelectOptions,
+  type EwtRateFor,
+} from '@/src/libs/tax/ewt'
 
 // Ties the sticky header's Save to the <form> further down, which it sits
 // outside of.
@@ -71,15 +79,24 @@ const CLEARED_OPTIONS: { value: ClearedType; label: string }[] = [
  * the configurable TaxRate table was removed. */
 const VAT_RATE_PERCENT = 12
 
+/** Scenario 69 Part G — a capital purchase: the Input VAT is claimed like any
+ * other, but the line is tagged to the project or asset it is for, and its
+ * account is a property / equipment one. */
+const CAPEX_CODE = 'VAT-IN-CAPEX'
+
 const TAX_CODE_OPTIONS = [
   { value: 'VAT', label: 'Input VAT' },
+  { value: CAPEX_CODE, label: 'Capital goods (Input VAT)' },
   { value: 'NON_VAT', label: 'Non-VAT' },
   { value: 'EXEMPT', label: 'Exempt' },
 ]
 
-/** The one code that carries a claimable tax amount — everything else is,
- * by definition, a line with no VAT on it. */
+/** The code a normal VATable purchase carries. */
 const TAXABLE_CODE = 'VAT'
+
+/** The codes that carry a claimable tax amount — everything else is, by
+ * definition, a line with no VAT on it. */
+const isTaxable = (code: string): boolean => code === TAXABLE_CODE || code === CAPEX_CODE
 
 /**
  * Payroll lives at Payee → Other with this typed into Other Category, and
@@ -118,6 +135,11 @@ const OTHER_CATEGORY_OPTIONS = [
 const TAX_CODE_ALIASES: Record<string, string> = {
   INPUT_VAT: TAXABLE_CODE,
   NON_TAXABLE: 'NON_VAT',
+  // The tax code master's own names for the same treatments.
+  'VAT-IN-12': TAXABLE_CODE,
+  'VAT-IN-NONVAT': 'NON_VAT',
+  'VAT-IN-OOS': 'NON_VAT',
+  'VAT-IN-EXEMPT': 'EXEMPT',
 }
 function taxCodeFor(stored?: string | null): string {
   if (!stored) return 'NON_VAT'
@@ -126,29 +148,40 @@ function taxCodeFor(stored?: string | null): string {
 
 const round2 = (n: number): number => Math.round(n * 100) / 100
 
-/** What the typed Amount is worth net of VAT — the figure sent to the API
- * as the line amount, and what posts to the expense account.
+/** Input VAT contained in the typed Amount.
  *
  * An Input VAT line is quoted VAT-inclusive: the supplier's invoice total is
  * what the clerk has in front of them and what actually leaves the bank, so
- * that is what the Amount box takes. The 12% inside it is split back out
- * here rather than added on top. Every other tax code carries no VAT, so the
- * typed figure already is the net. A deduction (negative amount) is not a
- * purchase and never carries input VAT. */
-function netFor(line: { taxCode: string; amount: string }): number {
-  const amount = Number(line.amount) || 0
-  if (line.taxCode !== TAXABLE_CODE || amount < 0) return amount
-  return round2(amount / (1 + VAT_RATE_PERCENT / 100))
-}
-
-/** Input VAT contained in the typed Amount. Computed as 12% of the net
- * rather than as (typed − net) so it matches the figure the server derives
- * from the net it is sent — rounding each half of the split independently
- * is what the server does, and the two must not disagree. */
+ * that is what the Amount box takes, and the API takes it as typed. The 12%
+ * inside it is the 12/112 fraction of that amount, to the centavo — exactly
+ * the figure the server derives (computeExpenseTaxAmount), so what is shown
+ * here is what posts. Every other tax code carries no VAT. A deduction
+ * (negative amount) is not a purchase and never carries input VAT. */
 function vatFor(line: { taxCode: string; amount: string }): number {
   const amount = Number(line.amount) || 0
-  if (line.taxCode !== TAXABLE_CODE || amount < 0) return 0
-  return round2(netFor(line) * (VAT_RATE_PERCENT / 100))
+  if (!isTaxable(line.taxCode) || amount < 0) return 0
+  return round2(amount * (VAT_RATE_PERCENT / (100 + VAT_RATE_PERCENT)))
+}
+
+/** What the typed Amount is worth net of VAT — what posts to the expense
+ * account, and what a withholding tax is figured on. */
+function netFor(line: { taxCode: string; amount: string }): number {
+  const amount = Number(line.amount) || 0
+  return round2(amount - vatFor(line))
+}
+
+/** What a line is withheld at its EWT code (Scenario 69 Part E): the code's
+ * rate on the amount net of VAT — the figure the server derives and posts to
+ * Withholding Tax Payable. The server rounds the same way, from the same rate;
+ * only the rate (read off the tax code master by useEwtCodes) can differ, and
+ * only until the list loads. A deduction is never withheld. */
+function withholdingFor(
+  line: { taxCode: string; amount: string; withholdingTaxCode: string },
+  rateFor: EwtRateFor
+): number {
+  const amount = Number(line.amount) || 0
+  if (!line.withholdingTaxCode || amount <= 0) return 0
+  return round2(netFor(line) * rateFor(line.withholdingTaxCode))
 }
 
 interface LineState {
@@ -170,6 +203,11 @@ interface LineState {
   description: string
   amount: string
   taxCode: string
+  /** The project or asset a capital purchase (VAT-IN-CAPEX) is for. */
+  projectAssetRef: string
+  /** The EWT tax code this line is withheld at ('' = not withheld). The amount
+   * withheld is derived (withholdingFor), never typed. */
+  withholdingTaxCode: string
   // SUPPLIER-only — picking an item prefills categoryAccountId + unitPrice
   // and computes amount as qty * unitPrice (see setLine).
   itemId: string
@@ -193,6 +231,8 @@ function emptyLine(): LineState {
     description: '',
     amount: '',
     taxCode: 'NON_VAT',
+    projectAssetRef: '',
+    withholdingTaxCode: '',
     itemId: '',
     itemLabel: '',
     qty: '',
@@ -230,6 +270,17 @@ const GENERIC_MODE_GRID_COLS =
 // A Customer, Supplier or Employee expense has no use for either.
 const OTHER_MODE_GRID_COLS =
   'grid-cols-[minmax(0,1.7fr)_minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
+// Scenario 69 Part E — the same two shapes with a Withholding column in front of
+// Total, for the payees whose lines can be withheld (a Supplier, or an Other
+// payee that is not a payroll run). Written out in full: Tailwind only
+// generates a class it can read as a whole.
+// The Withholding column is the widest of the numbers: it has to show a whole
+// "EWT-RENT-5 · 5%", and the Item / SI / Special Account boxes beside it give
+// up the room.
+const ITEM_MODE_WITHHOLDING_GRID_COLS =
+  'grid-cols-[minmax(0,1.8fr)_minmax(0,1.2fr)_minmax(0,1.8fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.7fr)_minmax(0,1fr)_auto]'
+const OTHER_MODE_WITHHOLDING_GRID_COLS =
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -435,11 +486,14 @@ function ExpenseFormFields({
           collectFromId: (l as any).customerId ?? '',
           collectFromLabel: (l as any).customer?.name ?? '',
           description: l.description ?? '',
-          // Stored net of VAT; the Amount box holds the VAT-inclusive
-          // figure, so put the tax back before showing it. A non-taxable
-          // line has no tax to add and reopens unchanged.
-          amount: String(round2((l.amount ?? 0) + (l.taxAmount ?? 0))),
+          // Stored VAT-inclusive, exactly as typed (the API splits the VAT out
+          // itself), so it reopens as it was entered. It used to add the tax
+          // back on, which was right while the amount was stored net and
+          // inflated every reopened Input VAT line once it stopped being.
+          amount: String(l.amount ?? 0),
           taxCode: taxCodeFor(l.taxCode),
+          projectAssetRef: l.projectAssetRef ?? '',
+          withholdingTaxCode: l.withholdingTaxCode ?? '',
           itemId: l.itemId ?? '',
           itemLabel: '',
           qty: l.qty ? String(l.qty) : '',
@@ -559,6 +613,16 @@ function ExpenseFormFields({
     }
     return accountsToCategoryOptions(merged)
   }, [postableAccounts, inventoryAccounts])
+  // Scenario 69 Part G — a capital purchase posts to a property / equipment
+  // account, so a capital line offers only those.
+  const capexAccountOptions = useMemo(
+    () => accountsToCategoryOptions(postableAccounts.filter(isCapexAccount)),
+    [postableAccounts]
+  )
+  const capexAccountIds = useMemo(
+    () => new Set(capexAccountOptions.map((o) => o.id)),
+    [capexAccountOptions]
+  )
   // Reuses CategorySelect (flat, depth 0) rather than the plain Select —
   // suppliers grew past a comfortable scroll-and-eyeball list, same reason
   // Category itself is a search box instead of a native <select>.
@@ -615,6 +679,33 @@ function ExpenseFormFields({
     () => new Set(postableAccounts.filter((a) => a.isSpecialAccountControl).map((a) => a.id)),
     [postableAccounts]
   )
+  // Scenario 69 Part E — a purchase can be withheld at an EWT code: a
+  // Supplier's, or a free-text Other payee's (a lessor who is not a supplier).
+  // A customer refund or an employee reimbursement is not a purchase, and a
+  // payroll run is compensation, which an EWT code does not cover.
+  const ewt = useEwtCodes()
+  const canWithhold = isItemMode || (isOtherMode && !isPayrollCategory)
+  /** A line can carry a code unless it is a deduction or an advance / loan
+   * line — neither is a purchase, and the server refuses a code on them. */
+  const lineCanWithhold = (l: LineState): boolean =>
+    canWithhold &&
+    (Number(l.amount) || 0) > 0 &&
+    !(isOtherMode && specialAccountControlIds.has(l.categoryAccountId))
+  /** What a line is withheld at, as the server will see it: nothing when the
+   * line cannot carry a code, whatever its state still holds. */
+  const withheldFor = (l: LineState): number =>
+    lineCanWithhold(l) ? withholdingFor(l, ewt.rateFor) : 0
+  // The line table's column template, which the header row and every line row
+  // share so they always agree.
+  const lineGridCols = isItemMode
+    ? canWithhold
+      ? ITEM_MODE_WITHHOLDING_GRID_COLS
+      : ITEM_MODE_GRID_COLS
+    : isOtherMode
+      ? canWithhold
+        ? OTHER_MODE_WITHHOLDING_GRID_COLS
+        : OTHER_MODE_GRID_COLS
+      : GENERIC_MODE_GRID_COLS
   // Deductions larger than what the person still owes. Advisory only — the
   // balance stops at zero and the entry still records — but a payroll
   // sheet deducting more than is owed is far likelier a mis-key than a
@@ -702,6 +793,10 @@ function ExpenseFormFields({
   // Equals what was typed into the Amount boxes — on an Input VAT line the
   // VAT is taken out of that figure, not added to it.
   const total = subtotal + vatTotal
+  // What was withheld from the payee goes to the BIR, not out of the bank:
+  // the payment rows below total the rest.
+  const withholdingTotal = round2(lines.reduce((sum, l) => sum + withheldFor(l), 0))
+  const netPayable = round2(total - withholdingTotal)
 
   // Item mode computes Amount from Qty * Unit Price. Applied to every line
   // change, not just setLine's — the SI resolver writes a line's price
@@ -848,10 +943,10 @@ function ExpenseFormFields({
   const removePayment = (index: number) => setPayments((prev) => prev.filter((_, i) => i !== index))
   const paymentsTotal = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
   useEffect(() => {
-    if (paymentAmountEditedRef.current || payments.length !== 1 || total <= 0) return
-    const next = total.toFixed(2)
+    if (paymentAmountEditedRef.current || payments.length !== 1 || netPayable <= 0) return
+    const next = netPayable.toFixed(2)
     if (payments[0].amount !== next) setPayments([{ ...payments[0], amount: next }])
-  }, [total, payments])
+  }, [netPayable, payments])
 
   // Lets the sticky header's Save submit a form it sits outside of.
   const formRef = useRef<HTMLFormElement>(null)
@@ -873,8 +968,10 @@ function ExpenseFormFields({
       if (p.paymentMethod === 'BANK_TRANSFER' && !p.bankAccountId)
         return 'Pick which bank account each Bank Transfer payment is paid from.'
     }
-    if (Math.abs(paymentsTotal - total) > 0.01)
-      return `Payments total (${fmtMoney(paymentsTotal)}) must equal the expense total (${fmtMoney(total)}).`
+    if (Math.abs(paymentsTotal - netPayable) > 0.01)
+      return withholdingTotal > 0
+        ? `Payments total (${fmtMoney(paymentsTotal)}) must equal the expense total less its withholding (${fmtMoney(netPayable)}).`
+        : `Payments total (${fmtMoney(paymentsTotal)}) must equal the expense total (${fmtMoney(total)}).`
     if (!form.payeeType) return 'Choose who this is for (Customer, Supplier, Employee, or Other).'
     if (form.payeeType === 'CUSTOMER' && !form.customerId) return 'Pick a customer.'
     if (form.payeeType === 'EMPLOYEE' && !form.employeeId) return 'Pick an employee.'
@@ -892,6 +989,8 @@ function ExpenseFormFields({
         return 'Every line needs an amount greater than 0.'
       }
       if (!l.categoryAccountId) return 'Every line needs an account.'
+      if (l.taxCode === CAPEX_CODE && !l.projectAssetRef.trim())
+        return 'A capital purchase needs the project or asset it is for.'
     }
     // The entry as a whole has to be money going out: record() credits cash
     // for the total, and deductions exceeding what they deduct from is a
@@ -954,6 +1053,12 @@ function ExpenseFormFields({
         taxCode: l.taxCode || undefined,
       }
       line.categoryAccountId = l.categoryAccountId
+      if (l.taxCode === CAPEX_CODE) line.projectAssetRef = l.projectAssetRef.trim()
+      // The code only — the server derives the amount from it, as it does the
+      // VAT, so there is no figure here that could disagree with what posts.
+      if (lineCanWithhold(l) && l.withholdingTaxCode) {
+        line.withholdingTaxCode = l.withholdingTaxCode
+      }
       // Special Account, Division, and the customer a deduction collects from
       // belong to Payee → Other alone. Nothing else renders them, so nothing
       // else sends them — any value left in state from a payee type that was
@@ -1214,9 +1319,10 @@ function ExpenseFormFields({
             <div className="flex items-center gap-3">
               {payments.length > 1 && (
                 <span
-                  className={`text-xs ${Math.abs(paymentsTotal - total) > 0.01 ? 'text-amber-600' : 'text-zinc-400'}`}
+                  className={`text-xs ${Math.abs(paymentsTotal - netPayable) > 0.01 ? 'text-amber-600' : 'text-zinc-400'}`}
                 >
-                  Payments total: {fmtMoney(paymentsTotal)} / {fmtMoney(total)}
+                  Payments total: {fmtMoney(paymentsTotal)} / {fmtMoney(netPayable)}
+                  {withholdingTotal > 0 && ' (after withholding)'}
                 </span>
               )}
             </div>
@@ -1387,13 +1493,7 @@ function ExpenseFormFields({
         {hasOwnCategoryLines && (
           <div className="pt-2">
             <div
-              className={`grid gap-2 rounded-lg bg-zinc-50 py-1.5 text-xs font-medium text-zinc-500 ${
-                isItemMode
-                  ? ITEM_MODE_GRID_COLS
-                  : isOtherMode
-                    ? OTHER_MODE_GRID_COLS
-                    : GENERIC_MODE_GRID_COLS
-              }`}
+              className={`grid gap-2 rounded-lg bg-zinc-50 py-1.5 text-xs font-medium text-zinc-500 ${lineGridCols}`}
             >
               {isItemMode && (
                 <>
@@ -1414,6 +1514,7 @@ function ExpenseFormFields({
               <div>Amount</div>
               <div>Tax Code</div>
               <div>Tax Amount</div>
+              {canWithhold && <div>Withholding</div>}
               <div>Total</div>
               {/* One pick from the branches and departments list — per line,
                   because a payroll run spans every department it pays. */}
@@ -1424,16 +1525,7 @@ function ExpenseFormFields({
               {lines.map((line, i) => {
                 const lineTotal = netFor(line) + vatFor(line)
                 return (
-                  <div
-                    key={i}
-                    className={`grid gap-2 items-center py-1.5 ${
-                      isItemMode
-                        ? ITEM_MODE_GRID_COLS
-                        : isOtherMode
-                          ? OTHER_MODE_GRID_COLS
-                          : GENERIC_MODE_GRID_COLS
-                    }`}
-                  >
+                  <div key={i} className={`grid gap-2 items-center py-1.5 ${lineGridCols}`}>
                     {isItemMode && (
                       <>
                         <ExpenseItemSearchCombobox
@@ -1489,7 +1581,9 @@ function ExpenseFormFields({
                       noun="accounts"
                       value={line.categoryAccountId}
                       onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
-                      options={accountCategoryOptions}
+                      options={
+                        line.taxCode === CAPEX_CODE ? capexAccountOptions : accountCategoryOptions
+                      }
                       placeholder="— Select —"
                     />
                     {/* Which named balance the line belongs to, under whichever
@@ -1555,7 +1649,7 @@ function ExpenseFormFields({
                       min={isOtherMode ? undefined : '0.01'}
                       aria-label="Amount"
                       title={
-                        line.taxCode === TAXABLE_CODE
+                        isTaxable(line.taxCode)
                           ? `VAT-inclusive — the ${VAT_RATE_PERCENT}% Input VAT is split out of this amount`
                           : undefined
                       }
@@ -1569,7 +1663,17 @@ function ExpenseFormFields({
                     <Select
                       compact
                       value={line.taxCode}
-                      onChange={(taxCode) => setLine(i, { taxCode })}
+                      onChange={(taxCode) =>
+                        setLine(i, {
+                          taxCode,
+                          // A capital line posts to a property / equipment
+                          // account: an account picked for something else
+                          // cannot stay.
+                          ...(taxCode === CAPEX_CODE && !capexAccountIds.has(line.categoryAccountId)
+                            ? { categoryAccountId: '' }
+                            : {}),
+                        })
+                      }
                       options={TAX_CODE_OPTIONS}
                     />
                     {/* Only an Input VAT line can carry a tax amount —
@@ -1579,7 +1683,7 @@ function ExpenseFormFields({
                     <div
                       aria-label="Tax amount"
                       title={
-                        line.taxCode === TAXABLE_CODE
+                        isTaxable(line.taxCode)
                           ? `The ${VAT_RATE_PERCENT}% Input VAT already inside the amount, split out on save`
                           : 'No VAT on this tax code'
                       }
@@ -1589,6 +1693,48 @@ function ExpenseFormFields({
                     >
                       {vatFor(line) > 0 ? fmtMoney(vatFor(line)) : '—'}
                     </div>
+                    {/* Scenario 69 Part E — which EWT code this line is
+                        withheld at. The amount is worked out, never typed:
+                        the code's rate on the amount net of VAT. */}
+                    {canWithhold && (
+                      <div
+                        data-testid="line-withholding"
+                        className="min-w-0"
+                        title={
+                          !lineCanWithhold(line)
+                            ? 'A deduction or an advance / loan line cannot be withheld'
+                            : (() => {
+                                const picked = ewt.options.find(
+                                  (o) => o.code === line.withholdingTaxCode
+                                )
+                                return picked
+                                  ? `${ewtOptionLabel(picked)} — on the amount net of VAT`
+                                  : 'Withheld at this EWT code on the amount net of VAT'
+                              })()
+                        }
+                      >
+                        <Select
+                          compact
+                          disabled={!lineCanWithhold(line)}
+                          value={line.withholdingTaxCode}
+                          onChange={(withholdingTaxCode) => setLine(i, { withholdingTaxCode })}
+                          options={[
+                            { value: '', label: '— None —' },
+                            ...ewtSelectOptions(
+                              ewt.options,
+                              line.withholdingTaxCode,
+                              ewt.isLoading,
+                              ewtShortLabel
+                            ),
+                          ]}
+                        />
+                        {withheldFor(line) > 0 && (
+                          <p className="mt-0.5 truncate px-1 text-[11px] text-zinc-500">
+                            −{fmtMoney(withheldFor(line))} withheld
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <div className="min-w-0 truncate px-2.5 py-1.5 text-[13px] text-zinc-600">
                       {fmtMoney(lineTotal)}
                     </div>
@@ -1606,6 +1752,29 @@ function ExpenseFormFields({
                         }))}
                         placeholder="— None —"
                       />
+                    )}
+                    {/* Scenario 69 Part G — what a capital purchase is for. */}
+                    {line.taxCode === CAPEX_CODE && (
+                      <div
+                        data-testid="line-project-asset"
+                        className="flex items-center gap-2"
+                        style={{ gridColumn: '1 / -1' }}
+                      >
+                        <label className="text-[12px] font-medium text-zinc-600">
+                          Project / asset
+                        </label>
+                        <input
+                          aria-label="Project or asset"
+                          value={line.projectAssetRef}
+                          onChange={(e) => setLine(i, { projectAssetRef: e.target.value })}
+                          placeholder="e.g. FA-0007, or the CIP / project reference"
+                          maxLength={100}
+                          className="w-full max-w-md rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                        />
+                        <span className="text-[11px] text-zinc-500">
+                          Post it to a property / equipment account.
+                        </span>
+                      </div>
                     )}
                     <div className="flex justify-end">
                       {lines.length > 1 && (
@@ -1780,6 +1949,19 @@ function ExpenseFormFields({
           <div>
             Total: <span className="font-semibold">{fmtMoney(total)}</span>
           </div>
+          {/* What was withheld is owed to the BIR, not paid to the payee: the
+              payment rows above total what is left. */}
+          {withholdingTotal > 0 && (
+            <>
+              <div>
+                Less: withholding tax:{' '}
+                <span className="font-medium">−{fmtMoney(withholdingTotal)}</span>
+              </div>
+              <div>
+                Net payable: <span className="font-semibold">{fmtMoney(netPayable)}</span>
+              </div>
+            </>
+          )}
         </div>
       </form>
     </div>

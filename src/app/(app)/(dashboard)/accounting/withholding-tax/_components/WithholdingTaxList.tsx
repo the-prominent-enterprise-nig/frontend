@@ -48,8 +48,9 @@ export default function WithholdingTaxList() {
           <h2 className="text-2xl font-bold text-gray-900">Withholding Tax (CWT)</h2>
           <p className="text-sm text-gray-500">
             Track BIR Form 2307 certificates and flag amounts that don&rsquo;t match what was
-            withheld at collection. A withheld amount stays open on the customer&rsquo;s invoice
-            until its certificate is recorded here &mdash; that is what posts it.
+            withheld at collection. A withheld amount settles the customer&rsquo;s invoice and is
+            booked to Creditable Withholding Tax when the payment is collected &mdash; recording its
+            certificate here posts nothing, it only clears it from Pending.
           </p>
         </div>
         <button
@@ -251,14 +252,13 @@ function MarkReceivedForm({
         <form onSubmit={submit} className="p-5 space-y-3">
           <p className="text-xs text-gray-500">
             {payment.arInvoice.customer.name} withheld {fmtMoney(payment.withholdingAmount)} on{' '}
-            {payment.arInvoice.invoiceNumber}, and that much is still outstanding on the invoice.
-            Recording the certificate posts it &mdash; debit Withholding Tax Receivable, credit
-            Accounts Receivable &mdash; and closes the balance.
+            {payment.arInvoice.invoiceNumber}. That amount was already booked to Withholding Tax
+            Receivable and settled the invoice when the payment was collected, so recording the
+            certificate posts nothing.
           </p>
           <p className="text-xs text-gray-500">
-            A certificate stating <em>more</em> than was withheld still settles only{' '}
-            {fmtMoney(payment.withholdingAmount)}; one stating less settles less and leaves the rest
-            outstanding. Either way a mismatch is flagged for review rather than silently changed.
+            A certificate stating a different amount than was withheld is flagged for Accounting/CPA
+            review rather than silently changed.
           </p>
           <label className="block">
             <span className="block text-xs font-medium text-gray-600 mb-1">Certificate No.</span>
@@ -379,8 +379,8 @@ function ResolveVarianceForm({
         <form onSubmit={submit} className="p-5 space-y-3">
           <p className="text-xs text-gray-500">{payment.withholdingVarianceNote}</p>
           <p className="text-xs text-gray-400">
-            This records your decision only — it never changes what the certificate already posted
-            to the GL. If a correction is needed, make it as a separate AR adjustment.
+            This records your decision only — it never changes what was posted to the GL at
+            collection. If a correction is needed, make it as a separate AR adjustment.
           </p>
           <label className="block">
             <span className="block text-xs font-medium text-gray-600 mb-1">

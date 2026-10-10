@@ -147,6 +147,15 @@ import type {
 } from '@/src/schema/pos'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import { caravanPlaceLabel, terminalPlaceId } from '@/src/libs/format/locationLabel'
+import { useOutputVatCodes } from '@/src/hooks/useOutputVatCodes'
+import {
+  OUTPUT_VAT_EXEMPT,
+  OUTPUT_VAT_STANDARD,
+  OUTPUT_VAT_ZERO_RATED,
+  POS_OUTPUT_VAT_CODES,
+  restrictedKind,
+  shortVatName,
+} from '@/src/libs/tax/output-vat'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -582,9 +591,18 @@ export default function CheckoutPage() {
   const [searchingCustomers, setSearchingCustomers] = useState(false)
   const customerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Tax exempt
-  const [isTaxExempt, setIsTaxExempt] = useState(false)
+  // VAT treatment (Scenario 69 Part F) — the output VAT class of this sale:
+  // VATable by default, or zero-rated / VAT-exempt, which are restricted: they
+  // need the certificate they rest on and a manager's approval.
+  const [outputVatCode, setOutputVatCode] = useState<string>(OUTPUT_VAT_STANDARD)
   const [taxExemptionRef, setTaxExemptionRef] = useState('')
+  // Scenario 69 Part I — why the class is not the one the sale started on.
+  const [taxOverrideReason, setTaxOverrideReason] = useState('')
+  // "No VAT is charged". Zero-rated and VAT-exempt price the same way (the VAT
+  // inside the price comes off), so the price maths below keys off this one
+  // flag — named for the switch it replaced.
+  const isTaxExempt = outputVatCode !== OUTPUT_VAT_STANDARD
+  const { options: vatChoices } = useOutputVatCodes(POS_OUTPUT_VAT_CODES)
 
   // Sales Invoice No. — required on every sale, typed in from the physical
   // invoice booklet (maps to PosTransaction.salesInvoiceNumber).
@@ -1743,6 +1761,15 @@ export default function CheckoutPage() {
   // Manager override check
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
+  // A zero-rated or VAT-exempt sale needs the same manager PIN approval a big
+  // discount does — and shares its slot, so one approval covers both. A table
+  // tab's sale already exists; nothing is classified at this point.
+  const needsVatApproval = isTaxExempt && !fromTab?.posTransactionId
+  // Scenario 69 Part I — a sale starts on VAT-OUT-12, or on VAT-OUT-EXEMPT when
+  // its customer is tax-exempt. Any other class is a change from that, and needs
+  // its reason (a restricted one keeps its manager's approval besides).
+  const defaultOutputVat = selectedCustomer?.isTaxExempt ? OUTPUT_VAT_EXEMPT : OUTPUT_VAT_STANDARD
+  const departsFromDefault = !fromTab?.posTransactionId && outputVatCode !== defaultOutputVat
 
   // The Payment section used to start on an empty "+ Add payment method"
   // placeholder for every sale, reading as a missing/broken step rather than
@@ -2173,6 +2200,14 @@ export default function CheckoutPage() {
 
   async function selectCustomer(customer: PosCustomer) {
     setSelectedCustomer(customer)
+    // A customer registered as tax-exempt starts the sale VAT-exempt, with the
+    // certificate on their profile filled in. Only a default: the cashier can
+    // change it, and the sale still needs a manager's approval. A table tab's
+    // sale already exists, so there is nothing to classify.
+    if (customer.isTaxExempt && !fromTab?.posTransactionId) {
+      setOutputVatCode(OUTPUT_VAT_EXEMPT)
+      setTaxExemptionRef(customer.taxExemptionRef ?? '')
+    }
     setCustomerSearch('')
     setCustomerResults([])
     setEmployeeResults([])
@@ -3260,8 +3295,28 @@ export default function CheckoutPage() {
       return
     }
 
-    if (isTaxExempt && !taxExemptionRef.trim()) {
-      setError('Enter a certificate or exemption reference for tax-exempt sales.')
+    if (needsVatApproval && !taxExemptionRef.trim()) {
+      setError(
+        `Enter the certificate or reference that supports this ${restrictedKind(outputVatCode)} sale.`
+      )
+      return
+    }
+    if (needsVatApproval && isOffline) {
+      setError(
+        `A ${restrictedKind(outputVatCode)} sale needs a manager's approval, which needs a network connection.`
+      )
+      return
+    }
+    if (needsVatApproval && !managerOverrideApproved) {
+      setError(
+        `A ${restrictedKind(outputVatCode)} sale needs a manager's approval before checking out.`
+      )
+      return
+    }
+    if (departsFromDefault && taxOverrideReason.trim().length < 3) {
+      setError(
+        `Say why this sale is not ${shortVatName(defaultOutputVat)} (at least 3 characters).`
+      )
       return
     }
 
@@ -3507,8 +3562,9 @@ export default function CheckoutPage() {
         subtotal: vatExclSubtotalForBackend,
         totalAmount,
         salesInvoiceNumber: invoiceNumberInput.trim(),
-        isTaxExempt,
+        outputVatCode,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
+        taxOverrideReason: departsFromDefault ? taxOverrideReason.trim() : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
         lines: cart.map((l) => ({
           itemId: l.itemId,
@@ -3597,8 +3653,9 @@ export default function CheckoutPage() {
           taxAmount: taxTotal,
           subtotal: vatExclSubtotalForBackend,
           totalAmount,
-          isTaxExempt,
+          outputVatCode,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
+          taxOverrideReason: departsFromDefault ? taxOverrideReason.trim() : undefined,
           isEmployeeApplianceLoan: employeeApplianceLoanActive || undefined,
           hrApplianceLoanApplicationNumber: employeeApplianceLoanActive
             ? hrApplianceLoanApplicationNumber.trim()
@@ -4013,8 +4070,9 @@ export default function CheckoutPage() {
     setSuccess(null)
     setPendingApproval(null)
     setReservationSuccess(null)
-    setIsTaxExempt(false)
+    setOutputVatCode(OUTPUT_VAT_STANDARD)
     setTaxExemptionRef('')
+    setTaxOverrideReason('')
     setInvoiceNumberInput('')
     setDelivery(EMPTY_DELIVERY)
     setDeliveryCustomerAddress(null)
@@ -5129,7 +5187,9 @@ export default function CheckoutPage() {
                 )}
               {isTaxExempt && (
                 <div className="flex justify-between text-green-600 text-xs">
-                  <span>Tax Exempt</span>
+                  <span>
+                    {outputVatCode === OUTPUT_VAT_ZERO_RATED ? 'Zero-rated' : 'VAT-exempt'}
+                  </span>
                   <span>—</span>
                 </div>
               )}
@@ -5152,34 +5212,102 @@ export default function CheckoutPage() {
               </span>
             </div>
 
-            {/* Tax exempt toggle */}
-            <div className="mt-3 flex items-center justify-between border-t border-purple-200 pt-3">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck
-                  size={13}
-                  className={isTaxExempt ? 'text-green-500' : 'text-gray-700'}
-                />
-                <span className="text-xs text-gray-700">Tax Exempt</span>
+            {/* VAT treatment (Scenario 69 Part F). Not offered on a table tab's
+                sale: it already exists, so there is nothing left to classify. */}
+            {!fromTab?.posTransactionId && (
+              <div className="mt-3 border-t border-purple-200 pt-3" data-testid="vat-treatment">
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <ShieldCheck
+                    size={13}
+                    className={isTaxExempt ? 'text-green-500' : 'text-gray-700'}
+                  />
+                  <span className="text-xs text-gray-700">VAT treatment</span>
+                </div>
+                <div
+                  role="radiogroup"
+                  aria-label="VAT treatment"
+                  className="grid grid-cols-3 gap-1 rounded-lg bg-gray-100 p-0.5"
+                >
+                  {vatChoices.map((choice) => {
+                    const selected = outputVatCode === choice.code
+                    return (
+                      <button
+                        key={choice.code}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        data-testid={`vat-treatment-${choice.code}`}
+                        title={choice.name}
+                        onClick={() => {
+                          if (selected) return
+                          setOutputVatCode(choice.code)
+                          // The certificate belongs to the class it supports.
+                          setTaxExemptionRef('')
+                        }}
+                        className={`rounded-md px-1.5 py-1 text-xs font-medium transition-colors ${
+                          selected
+                            ? choice.requiresApproval
+                              ? 'bg-green-500 text-white shadow-sm'
+                              : 'bg-white text-gray-900 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {shortVatName(choice.code)}
+                      </button>
+                    )
+                  })}
+                </div>
+                {needsVatApproval && (
+                  <div className="mt-2 space-y-2" data-testid="vat-treatment-restricted">
+                    <input
+                      className="w-full rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100"
+                      placeholder="Certificate / exemption reference"
+                      aria-label="Certificate or exemption reference"
+                      value={taxExemptionRef}
+                      onChange={(e) => setTaxExemptionRef(e.target.value)}
+                    />
+                    {managerOverrideApproved ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+                        <ShieldCheck size={13} />
+                        <span>
+                          Approved by <span className="font-semibold">{overrideManagerName}</span>
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <div className="flex items-center gap-2 text-xs text-amber-700">
+                          <AlertTriangle size={13} />
+                          <span>
+                            A {restrictedKind(outputVatCode)} sale needs a manager&apos;s approval
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOverrideError('')
+                            setShowOverrideDialog(true)
+                          }}
+                          className="ml-2 flex shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                        >
+                          <KeyRound size={11} /> Approve
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {departsFromDefault && (
+                  <div className="mt-2" data-testid="vat-override">
+                    <input
+                      className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                      placeholder={`Why is this not ${shortVatName(defaultOutputVat)}? (required)`}
+                      aria-label="Reason the VAT treatment was changed"
+                      maxLength={500}
+                      value={taxOverrideReason}
+                      onChange={(e) => setTaxOverrideReason(e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => {
-                  setIsTaxExempt((v) => !v)
-                  setTaxExemptionRef('')
-                }}
-                className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${isTaxExempt ? 'bg-green-500' : 'bg-gray-200'}`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${isTaxExempt ? 'translate-x-4' : 'translate-x-0'}`}
-                />
-              </button>
-            </div>
-            {isTaxExempt && (
-              <input
-                className="mt-2 w-full rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100"
-                placeholder="Certificate / exemption reference"
-                value={taxExemptionRef}
-                onChange={(e) => setTaxExemptionRef(e.target.value)}
-              />
             )}
           </div>
 
@@ -6637,7 +6765,9 @@ export default function CheckoutPage() {
             <div>
               <h2 className="text-lg font-bold text-gray-900">Manager Override</h2>
               <p className="text-xs text-gray-500">
-                Discount {discountPct.toFixed(0)}% exceeds the {discountThreshold}% threshold.
+                {needsManagerOverride &&
+                  `Discount ${discountPct.toFixed(0)}% exceeds the ${discountThreshold}% threshold. `}
+                {needsVatApproval && `This is a ${restrictedKind(outputVatCode)} sale.`}
               </p>
             </div>
           </div>

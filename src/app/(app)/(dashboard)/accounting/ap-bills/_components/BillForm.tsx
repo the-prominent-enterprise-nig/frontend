@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
@@ -15,6 +15,42 @@ import {
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import { EwtCodeSelect } from '@/src/components/accounting/EwtCodeSelect'
+import { TaxOverrideBox, TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
+import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { useInputVatCodes } from '@/src/hooks/useInputVatCodes'
+import { fmtPercent, supplierEwtCode } from '@/src/libs/tax/ewt'
+import {
+  TAX_OVERRIDE_PERMISSION,
+  changeOf,
+  freshChanges,
+  reasonMissingMessage,
+  reasonOk,
+  standingFor,
+  type TaxOverrideChange,
+} from '@/src/libs/tax/tax-override'
+import {
+  INPUT_VAT_EXEMPT,
+  INPUT_VAT_NON_VAT,
+  INPUT_VAT_STANDARD,
+  SUPPLIER_VAT_STATUS_LABEL,
+  claimsInputVat,
+  defaultInputVatCode,
+  inputVatOn,
+  inputVatOptionLabel,
+  isCapexAccount,
+  isMasterInputVatCode,
+  needsLineAccount,
+  needsProjectAssetRef,
+  supplierMayChargeVat,
+  supplierVatStatus,
+  type SupplierVatStatus,
+} from '@/src/libs/tax/input-vat'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getSupplier } from '@/src/app/(app)/(dashboard)/inventory/suppliers/_actions/get-supplier'
 
 // Scenario 41 — same treatment Scenario 40 gave Expenses (developer
 // feedback, 2026-08-31): this used to be a modal, now its own full page,
@@ -82,6 +118,14 @@ interface BillLineState {
   discountType: 'percentage' | 'amount'
   isFreebie: boolean
   notes: string
+  /** Scenario 69 Part G — the input VAT code someone picked for the line, from
+   * the tax code master. Blank means "whatever the supplier starts on", so a
+   * line follows its supplier until a code is chosen (see codeOf). */
+  taxCode: string
+  /** The project or asset a VAT-IN-CAPEX line is for. */
+  projectAssetRef: string
+  /** The account this line's net posts to, when it is not the bill's own. */
+  accountId: string
 }
 function emptyBillLine(): BillLineState {
   return {
@@ -94,6 +138,9 @@ function emptyBillLine(): BillLineState {
     discountType: 'percentage',
     isFreebie: false,
     notes: '',
+    taxCode: '',
+    projectAssetRef: '',
+    accountId: '',
   }
 }
 function billLineTotal(l: BillLineState): number {
@@ -101,6 +148,27 @@ function billLineTotal(l: BillLineState): number {
   // lines have always treated it.
   if (l.isFreebie) return 0
   return (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0)
+}
+
+/** A line saved before input VAT codes existed carries nothing, or one of the
+ * older spellings: show it as the master's own code so the picker has a value.
+ * Nothing at all stays blank, and takes the supplier's default once that is
+ * known. */
+function masterCodeFor(stored: string | null | undefined): string {
+  if (!stored) return ''
+  if (isMasterInputVatCode(stored)) return stored.toUpperCase()
+  switch (stored.toUpperCase()) {
+    case 'VAT':
+    case 'INPUT_VAT':
+      return INPUT_VAT_STANDARD
+    case 'NON_VAT':
+    case 'NON_TAXABLE':
+      return INPUT_VAT_NON_VAT
+    case 'EXEMPT':
+      return INPUT_VAT_EXEMPT
+    default:
+      return ''
+  }
 }
 
 function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved: () => void }) {
@@ -121,10 +189,65 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
     // Left blank on a new bill so the backend auto-calculates it from the
-    // supplier's withholding rate; pre-filled here so editing an existing
+    // withholding tax code's rate; pre-filled here so editing an existing
     // bill shows (and can override) what was actually computed.
     withholdingAmount: initial?.withholdingAmount != null ? String(initial.withholdingAmount) : '',
+    // Scenario 69 Part D — the EWT code the withholding is computed at. Blank
+    // means the supplier's own default; a bill that already carries a code
+    // starts on it.
+    withholdingTaxCode: initial?.withholdingTaxCode ?? '',
   })
+  const ewt = useEwtCodes()
+  const inputVat = useInputVatCodes()
+  // Scenario 69 Part I — a code kept away from the supplier's default is an
+  // override: it needs this permission, and a reason.
+  const { data: me } = useMe()
+  const canOverride = !!me && can(me, TAX_OVERRIDE_PERMISSION)
+  const [overrideReason, setOverrideReason] = useState('')
+  // The supplier's VAT status decides what each line starts as and whether a
+  // claimable code is allowed at all (Scenario 69 Part G).
+  const [supplierVat, setSupplierVat] = useState<{
+    name: string
+    status: SupplierVatStatus
+    /** The code the supplier's bills are withheld at unless one is chosen. */
+    ewtCode: string
+  } | null>(null)
+  const supplierStatus: SupplierVatStatus = supplierVat?.status ?? 'VAT'
+  const lineDefaultCode = defaultInputVatCode(supplierStatus)
+  const mayClaim = supplierMayChargeVat(supplierStatus)
+  // A capital line posts to a property / equipment account; an out-of-scope
+  // one to the balance-sheet account it belongs to.
+  const [accounts, setAccounts] = useState<Account[]>([])
+  useEffect(() => {
+    getAccounts({ limit: 500 }).then((r) => {
+      const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
+      setAccounts(
+        list.filter(
+          (a) =>
+            !(a.number ?? '').endsWith('-000') &&
+            !(a.description ?? '').startsWith('Header account')
+        )
+      )
+    })
+  }, [])
+  const accountOptions = useMemo(() => {
+    const toOptions = (list: Account[]): CategorySelectOption[] =>
+      list.map((a) => ({
+        id: a.id,
+        name: a.number ? `${a.number} — ${a.name}` : a.name,
+        depth: 0,
+      }))
+    return {
+      capex: toOptions(accounts.filter(isCapexAccount)),
+      balanceSheet: toOptions(
+        accounts.filter((a) => ['ASSET', 'LIABILITY'].includes((a.type ?? '').toUpperCase()))
+      ),
+    }
+  }, [accounts])
+  // A bill made from a receiving report is withheld at whatever the receipt
+  // was — the code belongs to the report, like its amounts.
+  const isReceiptSourced = (initial?.goodsReceipts?.length ?? 0) > 0
+  const pickedWithholding = ewt.options.find((o) => o.code === form.withholdingTaxCode)
   // Scenario 46 — the invoice's own lines. An AP bill IS the SI, so when lines
   // are present they ARE the invoice and the subtotal/tax/total are computed
   // from them; the typed figures below only apply to a bill with no lines
@@ -141,8 +264,62 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
       discountType: (l.discounts?.[0]?.type ?? 'percentage') as 'percentage' | 'amount',
       isFreebie: l.isFreebie ?? false,
       notes: l.notes ?? '',
+      taxCode: masterCodeFor(l.taxCode),
+      projectAssetRef: l.projectAssetRef ?? '',
+      accountId: l.accountId ?? '',
     }))
   )
+  useEffect(() => {
+    if (!form.supplierId) {
+      setSupplierVat(null)
+      return
+    }
+    let cancelled = false
+    getSupplier(form.supplierId).then((r) => {
+      if (cancelled || !r.success || !r.data) return
+      setSupplierVat({
+        name: r.data.name,
+        status: supplierVatStatus(r.data),
+        ewtCode: supplierEwtCode(r.data),
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [form.supplierId])
+  /** The code a line is on: the one someone picked, else what its supplier
+   * starts on. Derived, not stored, so a line added before the supplier's
+   * status arrives (or under another supplier) still follows it. */
+  const codeOf = (line: BillLineState): string => line.taxCode || lineDefaultCode
+  // A claimable code someone picked cannot stay on a supplier that charges no
+  // VAT (the server refuses it): the line goes back to following the supplier.
+  useEffect(() => {
+    if (!supplierVat || mayClaim) return
+    setBillLines((prev) =>
+      prev.some((l) => claimsInputVat(l.taxCode))
+        ? prev.map((l) =>
+            claimsInputVat(l.taxCode)
+              ? { ...l, taxCode: '', projectAssetRef: '', accountId: '' }
+              : l
+          )
+        : prev
+    )
+  }, [supplierVat, mayClaim])
+  /** Recoding a line: the tag and the account belong to the code that asked
+   * for them, so they do not carry across a change either way. */
+  const withCode = (line: BillLineState, code: string): BillLineState => ({
+    ...line,
+    taxCode: code,
+    projectAssetRef: needsProjectAssetRef(code) ? line.projectAssetRef : '',
+    accountId:
+      code !== codeOf(line) && (needsLineAccount(code) || needsLineAccount(codeOf(line)))
+        ? ''
+        : line.accountId,
+  })
+  /** What the server will derive for a line: the code's rate on its net. */
+  const lineVat = (line: BillLineState): number =>
+    inputVatOn(billLineTotal(line), inputVat.rateFor(codeOf(line)))
+  const linesVat = Math.round(billLines.reduce((sum, l) => sum + lineVat(l), 0) * 100) / 100
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // A repeated SI is a question, not a mistake: one supplier invoice can cover
@@ -154,6 +331,26 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
   // GL) locks everything except how it's paid. See ap-bills.service.ts's
   // update() for the matching backend guard.
   const isLocked = !!initial && initial.status !== 'DRAFT'
+  // The changes this bill would carry from its supplier's defaults: each line's
+  // input VAT code, and the withholding code. Worked out only once the supplier
+  // is known (before that the defaults are guesses), and never on a bill that is
+  // locked or whose code is its receiving report's.
+  const allChanges: TaxOverrideChange[] = []
+  if (!isLocked && supplierVat) {
+    billLines.forEach((l, i) => {
+      const c = changeOf('INPUT_VAT_CODE', lineDefaultCode, codeOf(l), i + 1)
+      if (c) allChanges.push(c)
+    })
+    if (!isReceiptSourced && form.withholdingTaxCode) {
+      const w = changeOf('WITHHOLDING_CODE', supplierVat.ewtCode, form.withholdingTaxCode)
+      if (w) allChanges.push(w)
+    }
+  }
+  const freshOverrides = freshChanges(allChanges, initial?.taxOverride)
+  const standingOverrides = (initial?.taxOverride ?? []).filter((e) =>
+    allChanges.some((c) => standingFor([e], c))
+  )
+  const overrideBlocked = freshOverrides.length > 0 && !canOverride
   const [purchaseOrders, setPurchaseOrders] = useState<APBillPurchaseOrderOption[]>([])
   const [receipts, setReceipts] = useState<APBillGoodsReceiptOption[]>([])
   const [matchCheck, setMatchCheck] = useState<APBillMatchCheck | null>(null)
@@ -167,7 +364,14 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
     // Only reset the previously-picked PO when the supplier actually
     // changes after mount — not on the initial load of an existing bill.
     if (form.supplierId !== supplierIdOnMount.current) {
-      setForm((f) => ({ ...f, purchaseOrderId: '', goodsReceiptIds: [] }))
+      // A different supplier is withheld at its own default, not at whatever
+      // the last one's code was.
+      setForm((f) => ({
+        ...f,
+        purchaseOrderId: '',
+        goodsReceiptIds: [],
+        withholdingTaxCode: '',
+      }))
     }
     APBillMatching.purchaseOrders(form.supplierId).then((r) =>
       setPurchaseOrders(r.data?.data ?? [])
@@ -202,6 +406,29 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
       setError('Supplier is required')
       return
     }
+    // Scenario 69 Part G — what a capital or out-of-scope line needs, said
+    // here (the server checks it too) so it is not found after the save.
+    for (const [i, l] of billLines.entries()) {
+      const code = codeOf(l)
+      if (needsProjectAssetRef(code) && !l.projectAssetRef.trim()) {
+        setError(`Line ${i + 1}: a capital purchase needs the project or asset it is for.`)
+        return
+      }
+      if (needsLineAccount(code) && !l.accountId) {
+        setError(
+          `Line ${i + 1}: pick the account this ${
+            needsProjectAssetRef(code)
+              ? 'capital purchase posts to (a property or equipment account)'
+              : 'out-of-scope item posts to'
+          }.`
+        )
+        return
+      }
+    }
+    if (freshOverrides.length > 0 && !reasonOk(overrideReason)) {
+      setError(reasonMissingMessage(freshOverrides))
+      return
+    }
     // Scenario 41 required the SI number to create a bill by hand; Scenario 46
     // relaxes that (client: "allow create w/o SI just add flag/warning") — the
     // goods often arrive days before the invoice, and the bill is flagged
@@ -232,6 +459,17 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
           // supplier's withholding rate instead of overriding it with 0.
           withholdingAmount:
             form.withholdingAmount === '' ? undefined : Number(form.withholdingAmount),
+          // Only a code someone picked is sent: blank is the supplier's default,
+          // and one the bill already carried needs no repeating.
+          withholdingTaxCode:
+            !isReceiptSourced &&
+            form.withholdingTaxCode &&
+            form.withholdingTaxCode !== (initial?.withholdingTaxCode ?? '')
+              ? form.withholdingTaxCode
+              : undefined,
+          // Why a code was kept off its supplier's default (Part I); only what
+          // is new needs saying.
+          taxOverrideReason: freshOverrides.length > 0 ? overrideReason.trim() : undefined,
           // Scenario 46 — when the invoice is itemised, the lines ARE the invoice
           // and the backend recomputes subtotal/tax/total from them, ignoring the
           // figures above. Omitted entirely when the table is empty, so a
@@ -244,6 +482,12 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
                 unitPrice: l.isFreebie ? 0 : Number(l.unitPrice) || 0,
                 isFreebie: l.isFreebie,
                 notes: l.notes || undefined,
+                // The code only: the server derives each line's tax from it.
+                taxCode: codeOf(l) || undefined,
+                projectAssetRef: needsProjectAssetRef(codeOf(l))
+                  ? l.projectAssetRef.trim() || undefined
+                  : undefined,
+                accountId: l.accountId || undefined,
                 discounts: l.discountValue
                   ? [{ type: l.discountType, value: Number(l.discountValue) }]
                   : undefined,
@@ -341,9 +585,16 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <TaxOverrideSummary entries={initial?.taxOverride} testId="bill-override-summary" />
+            <div className="grid grid-cols-3 gap-3">
               <InfoRow label="Subtotal" value={fmtMoney(initial?.subtotal ?? 0)} />
               <InfoRow label="Input Tax (VAT)" value={fmtMoney(initial?.taxAmount ?? 0)} />
+              <InfoRow
+                label="Withholding Tax"
+                value={`${fmtMoney(initial?.withholdingAmount ?? 0)}${
+                  initial?.withholdingTaxCode ? ` · ${initial.withholdingTaxCode}` : ''
+                }`}
+              />
             </div>
           </div>
         ) : (
@@ -492,141 +743,248 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
                         <th className="px-2 py-1.5 text-right font-medium">Qty</th>
                         <th className="px-2 py-1.5 text-right font-medium">Unit Price</th>
                         <th className="px-2 py-1.5 text-right font-medium">Discount</th>
+                        <th className="px-2 py-1.5 text-left font-medium">Input VAT code</th>
                         <th className="px-2 py-1.5 text-left font-medium">Notes</th>
                         <th className="px-2 py-1.5 text-center font-medium">Free</th>
                         <th className="px-2 py-1.5 text-right font-medium">Total</th>
+                        <th className="px-2 py-1.5 text-right font-medium">VAT</th>
                         <th className="w-8" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {billLines.map((l, i) => (
-                        <tr key={i}>
-                          <td className="px-2 py-1.5">
-                            <input
-                              aria-label={`Line ${i + 1} description`}
-                              value={l.description}
-                              onChange={(e) =>
-                                setBillLines((p) =>
-                                  p.map((x, n) =>
-                                    n === i ? { ...x, description: e.target.value } : x
-                                  )
-                                )
-                              }
-                              className="w-full rounded border border-gray-200 px-2 py-1"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="number"
-                              step="0.01"
-                              aria-label={`Line ${i + 1} quantity`}
-                              value={l.quantity}
-                              onChange={(e) =>
-                                setBillLines((p) =>
-                                  p.map((x, n) =>
-                                    n === i ? { ...x, quantity: e.target.value } : x
-                                  )
-                                )
-                              }
-                              className="w-20 rounded border border-gray-200 px-2 py-1 text-right"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="number"
-                              step="0.01"
-                              aria-label={`Line ${i + 1} unit price`}
-                              value={l.unitPrice}
-                              onChange={(e) =>
-                                setBillLines((p) =>
-                                  p.map((x, n) =>
-                                    n === i ? { ...x, unitPrice: e.target.value } : x
-                                  )
-                                )
-                              }
-                              className="w-28 rounded border border-gray-200 px-2 py-1 text-right"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <div className="flex items-center gap-1">
+                        <Fragment key={i}>
+                          <tr>
+                            <td className="px-2 py-1.5">
                               <input
-                                type="number"
-                                step="0.01"
-                                aria-label={`Line ${i + 1} discount`}
-                                value={l.discountValue}
+                                aria-label={`Line ${i + 1} description`}
+                                value={l.description}
                                 onChange={(e) =>
                                   setBillLines((p) =>
                                     p.map((x, n) =>
-                                      n === i ? { ...x, discountValue: e.target.value } : x
+                                      n === i ? { ...x, description: e.target.value } : x
+                                    )
+                                  )
+                                }
+                                className="w-full rounded border border-gray-200 px-2 py-1"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input
+                                type="number"
+                                step="0.01"
+                                aria-label={`Line ${i + 1} quantity`}
+                                value={l.quantity}
+                                onChange={(e) =>
+                                  setBillLines((p) =>
+                                    p.map((x, n) =>
+                                      n === i ? { ...x, quantity: e.target.value } : x
                                     )
                                   )
                                 }
                                 className="w-20 rounded border border-gray-200 px-2 py-1 text-right"
                               />
-                              <select
-                                aria-label={`Line ${i + 1} discount type`}
-                                value={l.discountType}
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input
+                                type="number"
+                                step="0.01"
+                                aria-label={`Line ${i + 1} unit price`}
+                                value={l.unitPrice}
                                 onChange={(e) =>
                                   setBillLines((p) =>
                                     p.map((x, n) =>
-                                      n === i
-                                        ? {
-                                            ...x,
-                                            discountType: e.target.value as 'percentage' | 'amount',
-                                          }
-                                        : x
+                                      n === i ? { ...x, unitPrice: e.target.value } : x
                                     )
                                   )
                                 }
-                                className="rounded border border-gray-200 px-1 py-1"
-                              >
-                                <option value="percentage">%</option>
-                                <option value="amount">₱</option>
-                              </select>
-                            </div>
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              aria-label={`Line ${i + 1} notes`}
-                              placeholder="Optional"
-                              value={l.notes}
-                              onChange={(e) =>
-                                setBillLines((p) =>
-                                  p.map((x, n) => (n === i ? { ...x, notes: e.target.value } : x))
-                                )
-                              }
-                              className="w-full rounded border border-gray-200 px-2 py-1"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 text-center">
-                            <input
-                              type="checkbox"
-                              aria-label={`Line ${i + 1} is a free item`}
-                              title="Promotional/zero-cost unit that was still billed as a line"
-                              checked={l.isFreebie}
-                              onChange={(e) =>
-                                setBillLines((p) =>
-                                  p.map((x, n) =>
-                                    n === i ? { ...x, isFreebie: e.target.checked } : x
+                                className="w-28 rounded border border-gray-200 px-2 py-1 text-right"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  aria-label={`Line ${i + 1} discount`}
+                                  value={l.discountValue}
+                                  onChange={(e) =>
+                                    setBillLines((p) =>
+                                      p.map((x, n) =>
+                                        n === i ? { ...x, discountValue: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                  className="w-20 rounded border border-gray-200 px-2 py-1 text-right"
+                                />
+                                <select
+                                  aria-label={`Line ${i + 1} discount type`}
+                                  value={l.discountType}
+                                  onChange={(e) =>
+                                    setBillLines((p) =>
+                                      p.map((x, n) =>
+                                        n === i
+                                          ? {
+                                              ...x,
+                                              discountType: e.target.value as
+                                                | 'percentage'
+                                                | 'amount',
+                                            }
+                                          : x
+                                      )
+                                    )
+                                  }
+                                  className="rounded border border-gray-200 px-1 py-1"
+                                >
+                                  <option value="percentage">%</option>
+                                  <option value="amount">₱</option>
+                                </select>
+                              </div>
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <select
+                                aria-label={`Line ${i + 1} input VAT code`}
+                                value={codeOf(l)}
+                                onChange={(e) =>
+                                  setBillLines((p) =>
+                                    p.map((x, n) => (n === i ? withCode(x, e.target.value) : x))
                                   )
-                                )
-                              }
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
-                            {fmtMoney(billLineTotal(l))}
-                          </td>
-                          <td className="px-2 py-1.5 text-right">
-                            <button
-                              type="button"
-                              aria-label={`Remove line ${i + 1}`}
-                              onClick={() => setBillLines((p) => p.filter((_, n) => n !== i))}
-                              className="rounded p-1 text-red-500 hover:bg-red-50"
+                                }
+                                className="w-40 rounded border border-gray-200 px-1 py-1"
+                              >
+                                {inputVat.options.map((o) => (
+                                  <option
+                                    key={o.code}
+                                    value={o.code}
+                                    disabled={
+                                      (!mayClaim &&
+                                        claimsInputVat(o.code) &&
+                                        o.code !== codeOf(l)) ||
+                                      // a code other than the supplier's default needs the
+                                      // override permission, unless the line already has it
+                                      (!canOverride &&
+                                        o.code !== lineDefaultCode &&
+                                        o.code !== codeOf(l))
+                                    }
+                                  >
+                                    {inputVatOptionLabel(o)}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input
+                                aria-label={`Line ${i + 1} notes`}
+                                placeholder="Optional"
+                                value={l.notes}
+                                onChange={(e) =>
+                                  setBillLines((p) =>
+                                    p.map((x, n) => (n === i ? { ...x, notes: e.target.value } : x))
+                                  )
+                                }
+                                className="w-full rounded border border-gray-200 px-2 py-1"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              <input
+                                type="checkbox"
+                                aria-label={`Line ${i + 1} is a free item`}
+                                title="Promotional/zero-cost unit that was still billed as a line"
+                                checked={l.isFreebie}
+                                onChange={(e) =>
+                                  setBillLines((p) =>
+                                    p.map((x, n) =>
+                                      n === i ? { ...x, isFreebie: e.target.checked } : x
+                                    )
+                                  )
+                                }
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
+                              {fmtMoney(billLineTotal(l))}
+                            </td>
+                            <td
+                              aria-label={`Line ${i + 1} input VAT`}
+                              className="px-2 py-1.5 text-right tabular-nums text-gray-500"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
+                              {lineVat(l) > 0 ? fmtMoney(lineVat(l)) : '—'}
+                            </td>
+                            <td className="px-2 py-1.5 text-right">
+                              <button
+                                type="button"
+                                aria-label={`Remove line ${i + 1}`}
+                                onClick={() => setBillLines((p) => p.filter((_, n) => n !== i))}
+                                className="rounded p-1 text-red-500 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                          {/* Scenario 69 Part G — what a capital or out-of-scope
+                            line needs: the account its net posts to, and for a
+                            capital purchase the project or asset it is for. */}
+                          {(needsLineAccount(codeOf(l)) || l.accountId) && (
+                            <tr data-testid={`line-${i + 1}-posting`} className="bg-gray-50/60">
+                              <td colSpan={10} className="px-3 py-2">
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-medium text-gray-600">
+                                      Posts to
+                                    </span>
+                                    <div className="w-72">
+                                      <CategorySelect
+                                        compact
+                                        aria-label={`Line ${i + 1} account`}
+                                        noun="accounts"
+                                        value={l.accountId || undefined}
+                                        onChange={(id) =>
+                                          setBillLines((p) =>
+                                            p.map((x, n) =>
+                                              n === i ? { ...x, accountId: id ?? '' } : x
+                                            )
+                                          )
+                                        }
+                                        options={
+                                          needsProjectAssetRef(codeOf(l))
+                                            ? accountOptions.capex
+                                            : accountOptions.balanceSheet
+                                        }
+                                        placeholder={
+                                          needsProjectAssetRef(codeOf(l))
+                                            ? '— Property / equipment account —'
+                                            : '— Account —'
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                  {needsProjectAssetRef(codeOf(l)) && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] font-medium text-gray-600">
+                                        Project / asset
+                                      </span>
+                                      <input
+                                        aria-label={`Line ${i + 1} project or asset`}
+                                        value={l.projectAssetRef}
+                                        maxLength={100}
+                                        placeholder="e.g. FA-0007, or the CIP / project reference"
+                                        onChange={(e) =>
+                                          setBillLines((p) =>
+                                            p.map((x, n) =>
+                                              n === i
+                                                ? { ...x, projectAssetRef: e.target.value }
+                                                : x
+                                            )
+                                          )
+                                        }
+                                        className="w-72 rounded border border-gray-200 px-2 py-1"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -658,26 +1016,75 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
                   }`}
                 />
               </Field>
-              <Field label="Input Tax (VAT)">
+              <Field label={billLines.length ? 'Input Tax (VAT, from lines)' : 'Input Tax (VAT)'}>
                 <input
                   type="number"
                   step="0.01"
-                  value={form.taxAmount}
+                  readOnly={billLines.length > 0}
+                  value={billLines.length ? linesVat.toFixed(2) : form.taxAmount}
                   onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
+                  className={`w-full px-3 py-2 text-sm border border-gray-200 rounded-lg ${
+                    billLines.length ? 'bg-zinc-50 text-zinc-500' : ''
+                  }`}
+                />
+                {billLines.length > 0 && !mayClaim && supplierVat && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    {supplierVat.name} is {SUPPLIER_VAT_STATUS_LABEL[supplierStatus].toLowerCase()}:
+                    no input VAT is claimed on its lines.
+                  </p>
+                )}
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Withholding Tax Code">
+                <EwtCodeSelect
+                  ariaLabel="Withholding tax code"
+                  value={form.withholdingTaxCode}
+                  // A different code means "withhold at that rate": the amount
+                  // worked out for the old one is dropped so the server works it
+                  // out again, instead of the stale figure riding along.
+                  onChange={(code) =>
+                    setForm({ ...form, withholdingTaxCode: code, withholdingAmount: '' })
+                  }
+                  options={ewt.options}
+                  loading={ewt.isLoading}
+                  blankLabel="Supplier's default"
+                  disabled={isReceiptSourced || !canOverride}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg disabled:bg-zinc-50 disabled:text-zinc-500"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  {isReceiptSourced
+                    ? 'Set by the receiving report this bill came from.'
+                    : !canOverride
+                      ? "Withheld at the supplier's own code; another code needs the tax-code override permission."
+                      : !form.withholdingTaxCode
+                        ? "Withheld at the supplier's own code."
+                        : pickedWithholding
+                          ? `Held back at ${fmtPercent(pickedWithholding.ratePercent)} of the subtotal.`
+                          : null}
+                </p>
+              </Field>
+              <Field label="Withholding Tax">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={form.withholdingAmount}
+                  onChange={(e) => setForm({ ...form, withholdingAmount: e.target.value })}
+                  placeholder="Auto-calculated from the code's rate if left blank"
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
                 />
               </Field>
             </div>
-            <Field label="Withholding Tax">
-              <input
-                type="number"
-                step="0.01"
-                value={form.withholdingAmount}
-                onChange={(e) => setForm({ ...form, withholdingAmount: e.target.value })}
-                placeholder="Auto-calculated from the supplier's withholding rate if left blank"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            {(freshOverrides.length > 0 || standingOverrides.length > 0) && (
+              <TaxOverrideBox
+                testId="bill-override"
+                changes={freshOverrides}
+                standing={standingOverrides}
+                canOverride={canOverride}
+                reason={overrideReason}
+                onReason={setOverrideReason}
               />
-            </Field>
+            )}
           </>
         )}
         {/* "How this bill will be paid" — Source of Payment, Reference Number
@@ -707,7 +1114,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
           </Link>
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || overrideBlocked}
             className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
           >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}

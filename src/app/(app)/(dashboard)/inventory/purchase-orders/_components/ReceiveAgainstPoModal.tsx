@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PackageCheck, X } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 import Tooltip from '@/src/components/ui/Tooltip'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
@@ -61,6 +62,9 @@ const STATUS_LABEL: Record<PurchaseOrderSummary['status'], string> = {
 }
 
 export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Props) {
+  // The withholding preview follows the tax code master's rate for the
+  // supplier's EWT code, the same one the server posts at.
+  const { rateFor } = useEwtCodes()
   // Scenario 27 — goods are always received into one of the real warehouses
   // now, never a branch's own local stock, so this is unconditionally the
   // standalone-only list.
@@ -196,7 +200,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       quantityReceived: l.quantityReceived,
       unitCost: l.unitCost,
     })),
-    po?.supplier ?? ({} as PurchaseOrderSummary['supplier'])
+    po?.supplier ?? ({} as PurchaseOrderSummary['supplier']),
+    rateFor
   )
 
   const blockers = collectBlockers(

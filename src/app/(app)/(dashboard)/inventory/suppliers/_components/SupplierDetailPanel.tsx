@@ -7,6 +7,7 @@ import { ArrowLeft, Ban, Check, Loader2, Pencil, ShoppingCart } from 'lucide-rea
 import { showToast } from '@/src/components/ui/toast'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { MONO } from '@/src/libs/design/plex'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
 import type { SupplierDetail } from '@/src/schema/inventory/suppliers'
 import { getSupplier } from '../_actions/get-supplier'
 import { updateSupplier } from '../_actions/update-supplier'
@@ -19,7 +20,9 @@ import {
   supplierSubline,
   termsLabel,
   typeLabel,
-  vatLabel,
+  vatStartsAsLabel,
+  vatStatusLabel,
+  withholdingCodeLabel,
   withholdingLabel,
   type OnboardingStatus,
 } from '../_lib/supplier-format'
@@ -112,6 +115,7 @@ export default function SupplierDetailPanel({
   })
 
   const supplier = detailQuery.data?.success ? detailQuery.data.data : undefined
+  const ewt = useEwtCodes()
 
   const onboardingMutation = useMutation({
     mutationFn: (onboardingStatus: OnboardingStatus) =>
@@ -349,11 +353,8 @@ export default function SupplierDetailPanel({
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#eeeef1] pt-3.5 lg:grid-cols-4">
           <Fact label="Payment terms" value={termsLabel(supplier.paymentTerms)} />
           <Fact label="Credit limit" value={fmtCreditLimit(supplier.creditLimit)} />
-          <Fact label="Input VAT" value={vatLabel(supplier.defaultInputVat)} />
-          <Fact
-            label="Withholding"
-            value={withholdingLabel(supplier.defaultWithholding, supplier.alphanumericTaxCode)}
-          />
+          <Fact label="VAT status" value={vatStatusLabel(supplier)} />
+          <Fact label="Withholding" value={withholdingLabel(supplier)} />
         </div>
       </div>
 
@@ -410,10 +411,11 @@ export default function SupplierDetailPanel({
               <FieldRow label="Credit limit" value={fmtCreditLimit(supplier.creditLimit)} />
             </ProfileGroup>
             <ProfileGroup title="Tax defaults">
-              <FieldRow label="Default input VAT" value={vatLabel(supplier.defaultInputVat)} />
+              <FieldRow label="VAT status" value={vatStatusLabel(supplier)} />
+              <FieldRow label="Purchases start as" value={vatStartsAsLabel(supplier)} />
               <FieldRow
                 label="Default withholding"
-                value={supplier.defaultWithholding === 'none' ? 'None' : '1%'}
+                value={withholdingCodeLabel(supplier, ewt.options)}
               />
               <FieldRow label="ATC" value={supplier.alphanumericTaxCode} />
               <FieldRow label="Tax rate" value={supplier.taxRate} />

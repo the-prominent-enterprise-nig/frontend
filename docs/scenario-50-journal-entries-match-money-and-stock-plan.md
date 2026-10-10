@@ -8,6 +8,8 @@ The two that survived share one idea, which is what makes this one scenario rath
 
 Today it does neither reliably. A collection with withholding posts an entry totalling more than the money collected, split across an extra row. An installment sale empties a shelf and never touches the Inventory account.
 
+> **Update 2026-10-10 — the withholding half of this scenario was reversed by [Scenario 69 Part B](./scenario-69-tax-setup-vat-wht-plan.md)** (Finding 1, decisions 2 and 3, Parts 3–4 below). A withheld collection now posts Dr Cash / Dr Creditable WHT / Cr AR at the till and settles the invoice at once; receiving the 2307 afterwards posts nothing. The developer chose this to match the client's NIG ERP Tax Setup workbook and their own GL posting file (rows 11E/11F), knowing it breaks the "JE is 9K, nothing else" line recorded below. The rest of this scenario (inventory in the entry, itemised lines) is unchanged.
+
 ## Related ClickUp Tickets
 
 None found. Create via the `clickup-create-ticket` skill.
@@ -274,6 +276,8 @@ Ordered cheapest-first — steps 1 and 2 need no new data.
 3. The all-clear state ("Every completed sale has a COGS posting") is now trustworthy: it previously said that even when zero-cost sales existed.
 
 ### 6. Withholding posts on the certificate, not the collection
+
+> **Superseded 2026-10-10** by Scenario 69 Part B: withholding now posts at collection and receiving the 2307 posts nothing. The steps below describe the old behavior and no longer pass; use Scenario 69's Part B test steps instead.
 
 ⚠️ **There is no withholding field on the Collections screen** — `withholdingAmount` is in the form state, hardcoded to `'0'`, with no input rendered. On the AR side withholding can only be recorded through the API today. That is a pre-existing gap, and it means step 6a needs Swagger.
 
