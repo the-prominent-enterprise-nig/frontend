@@ -86,20 +86,21 @@ test.describe('POS — the cashier day baseline on screen', () => {
 
     // The non-cash block: the card down payment, the two QR/e-wallet
     // collections (3,500.00 of Soundpay and Maya QR, 2,940.00 of ECPay on its
-    // own DP line) and the three financiers' balances.
+    // own DP line), the bond check taken on a New Receipt, and the three
+    // financiers' balances.
     await expect(figure(page, '7,500.00').first()).toBeVisible()
     await expect(figure(page, '3,500.00').first()).toBeVisible()
     await expect(figure(page, '2,940.00').first()).toBeVisible()
+    await expect(figure(page, '56,000.00').first()).toBeVisible()
     await expect(figure(page, '76,000.00').first()).toBeVisible()
 
     // What the screen totals the day at today. The client's own sheet says
-    // 87,365.00: the 76,000.00 of TPF balances is money no one has collected
-    // yet, and the 56,000.00 bond check taken on a New Receipt is missing
-    // altogether. Both are tracked as gap tests G7 and G3 in the backend
-    // baseline — the figure here is deliberately the current one, so this
-    // test fails the moment either is fixed and both sheets move together.
-    await expect(row(page, 'Grand total collected')).toContainText('107,365.00')
-    await expect(page.getByText('56,000.00', { exact: true })).toHaveCount(0)
+    // 87,365.00; the difference is the 76,000.00 of TPF balances — money no
+    // one has collected yet, which the report still counts as collected
+    // (backend gap test G7). The figure here is deliberately the current one,
+    // so this test fails the moment that is fixed and both halves of the
+    // baseline move together.
+    await expect(row(page, 'Grand total collected')).toContainText('163,365.00')
   })
 
   test('the Daily Sales Monitoring sheet reads back the day’s three cuts', async ({ page }) => {

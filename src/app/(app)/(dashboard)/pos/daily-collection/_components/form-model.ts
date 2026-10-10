@@ -318,7 +318,9 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
     line('DP', kind('DP'), { group: 'cash' }),
     // A full payment (FP) is still an instalment collection: it counts here.
     line('MI', kind('MI') + kind('MI-PARTIAL') + kind('FP'), { group: 'cash' }),
-    line('OTHERS', kind('DC'), { sub: 'DC', group: 'cash' }),
+    // DC and the day's New Receipts (Scenario 70 G3) share the client's own
+    // OTHERS line — neither settles a sale or a due.
+    line('OTHERS', kind('DC') + kind('OTHERS'), { sub: 'DC', group: 'cash' }),
     line('TOTAL COLLECTION', report.totalCollection, {
       emphasis: true,
       highlight: true,

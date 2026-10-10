@@ -6,7 +6,9 @@ import { z } from 'zod'
  * DESC-type subtotals, a denomination block and the day's deposits.
  */
 /** FP — full payment: the collection that settles an account. */
-export const CollectionKindSchema = z.enum(['COD', 'DP', 'DC', 'MI', 'MI-PARTIAL', 'FP'])
+/** OTHERS — a New Receipt: money the branch took in against no sale and no
+ * due, like a refunded performance bond (Scenario 70 G3). */
+export const CollectionKindSchema = z.enum(['COD', 'DP', 'DC', 'MI', 'MI-PARTIAL', 'FP', 'OTHERS'])
 export type CollectionKind = z.infer<typeof CollectionKindSchema>
 
 export const DailyCollectionRowSchema = z.object({
@@ -250,7 +252,15 @@ export const LEDGER_HEADERS = [
 ] as const
 
 /** DESC subtotal order, as the client prints it. */
-export const COLLECTION_KINDS: CollectionKind[] = ['COD', 'DP', 'DC', 'MI', 'MI-PARTIAL', 'FP']
+export const COLLECTION_KINDS: CollectionKind[] = [
+  'COD',
+  'DP',
+  'DC',
+  'MI',
+  'MI-PARTIAL',
+  'FP',
+  'OTHERS',
+]
 
 /**
  * What the screen sends when a branch saves its form. The whole document goes
