@@ -25,8 +25,21 @@ export const DailyCollectionRowSchema = z.object({
   /** A voided collection receipt, listed at 0.00 so the receipt numbers run
    * without gaps, as the client's form lists them. */
   cancelled: z.boolean().optional(),
+  /** The collector who took this in the field, as `COL-0001 — Juan Cruz`.
+   * Null on a counter collection and on every POS sale row. Fills the form's
+   * AGENT column. */
+  collectorLabel: z.string().nullable().optional(),
+  /** Taken on a session that has not closed yet: in the ledger and in TOTAL
+   * COLLECTION, but with no drawer count behind it so it stays out of
+   * cashOnHand and the denomination reconciliation. */
+  pendingCount: z.boolean().optional(),
   /** Scenario 60 Part 4 — the caravan(s) this sale's units came out of. */
   caravan: z.string().nullable().optional(),
+  /** The other counter this collection was taken at — a satellite office
+   * filing under this branch, or a caravan register that rings up here but
+   * stands at the event. Null for the branch's own counter, so only a row
+   * whose cash is in another drawer carries a tag. */
+  sourceCounter: z.string().nullable().optional(),
 })
 export type DailyCollectionRow = z.infer<typeof DailyCollectionRowSchema>
 
@@ -54,6 +67,18 @@ export const CaravanSalesLineSchema = z.object({
   amount: z.number(),
 })
 export type CaravanSalesLine = z.infer<typeof CaravanSalesLineSchema>
+
+/** One counter whose cash is on this sheet but not in its drawer — a
+ * satellite office filing under this branch, or a caravan register. In the
+ * ledger and in TOTAL COLLECTED, and outside the denomination reconciliation:
+ * that cash is in another drawer, counted by its own cashier. */
+export const OffsiteCashLineSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.enum(['satellite', 'caravan']),
+  amount: z.number(),
+})
+export type OffsiteCashLine = z.infer<typeof OffsiteCashLineSchema>
 
 export const DailyCollectionDepositSchema = z.object({
   bankName: z.string(),
@@ -99,16 +124,35 @@ export const DailyCollectionReportSchema = z.object({
   grandTotalCollection: z.number().default(0),
   caravanSales: z.array(CaravanSalesLineSchema).default([]),
   caravanSalesTotal: z.number().default(0),
+  /** Cash taken at a counter other than this branch's own. Counted by that
+   * counter's own cashier, so it is deliberately not in `cashOnHand` and
+   * whoever counts this drawer must not be asked to find it. */
+  offsiteCash: z.array(OffsiteCashLineSchema).default([]),
+  offsiteCashCollection: z.number().default(0),
   /** Sessions still open that took part of their shift on this date. Their
-   * collections are already on the form; their drawer count is not, so the
-   * count cannot be reconciled until they close. */
+   * collections ARE on the form; their drawer count is not, so the count can
+   * only be reconciled against the settled part until they close. */
   openSessionCount: z.number().default(0),
-  /** Opening float across the day's sessions — in the drawer when the
+  /** Opening float across the day's CLOSED sessions — in the drawer when the
    * denominations are counted, but not a collection. */
   openingFloat: z.number().default(0),
-  /** Float plus cash collected: what the denomination count must come to. */
+  /** Settled float plus settled cash: what the denomination count must come
+   * to. Excludes anything still in an open drawer. */
   cashOnHand: z.number().default(0),
+  /** Cash taken on sessions that have closed — the part of totalCollection
+   * the count stands behind. */
+  settledCashCollection: z.number().default(0),
+  /** Cash taken on sessions still open. Already inside totalCollection;
+   * settled + pending === totalCollection. */
+  pendingCashCollection: z.number().default(0),
+  /** Opening float in drawers not yet counted. */
+  pendingFloat: z.number().default(0),
+  /** What the open drawers should hold (pending cash + pending float) — the
+   * figure that moves into cashOnHand as they close. Not a variance. */
+  pendingCashOnHand: z.number().default(0),
   totalDeposited: z.number(),
+  /** Undeposited cash: everything collected less what was banked, open-session
+   * takings included. Matches where the ledger's BALANCE column lands. */
   balance: z.number(),
   /** What the form prints: the branch's corrected count when it has saved
    * one, the sessions' own closing counts otherwise. */

@@ -57,6 +57,19 @@ function formatCurrency(n: number) {
   )
 }
 
+/**
+ * Whether this shift was rung up at a caravan — a temporary Branch row
+ * (`Branch.isTemporary`) parked at a host.
+ *
+ * Read off the TERMINAL, not the branch: for a caravan terminal `branchId`
+ * holds the HOST branch and the caravan itself sits on `caravanBranchId`, so
+ * `terminal.branch.isTemporary` is false on exactly the sessions this is
+ * meant to catch (see PosTerminalsService's branch resolution).
+ */
+function isCaravanSession(session: PosSession): boolean {
+  return Boolean(session.terminal?.caravanBranchId ?? session.terminal?.caravanBranch)
+}
+
 type ModalState =
   | { type: 'none' }
   | { type: 'open' }
@@ -98,6 +111,21 @@ export default function SessionsPage() {
     setModal({ type: 'none' })
   }
 
+  /**
+   * Closing an ordinary branch's shift hands straight over to that branch's
+   * Daily Collection Report, on the Collection report tab, where the
+   * denomination count is filled in and the form is signed. That form is the
+   * end of the closing routine, so the cashier lands on it rather than on a
+   * dialog they have to dismiss before finding it. The reconciliation it no
+   * longer pops up is not lost: the posted variance and its GL entry stay one
+   * button to the left on the session's own row.
+   *
+   * A CARAVAN (temporary branch) closes the old way, on the reconciliation
+   * modal. A caravan has no Daily Collection Report of its own — its takings
+   * roll into the host branch's form (`terminal.branch` IS the host; the
+   * caravan is `terminal.caravanBranch`), so sending the cashier there would
+   * drop them on somebody else's sheet instead of their own closing figures.
+   */
   async function handleClose(id: string, form: CloseSessionInput) {
     setError('')
     const res = await closeMutation.mutateAsync({ id, input: form })
@@ -105,6 +133,13 @@ export default function SessionsPage() {
       setError(res.error ?? 'Failed to close session')
       return
     }
+    const closed = modal.type === 'close' ? modal.session : null
+    if (closed && !isCaravanSession(closed)) {
+      setModal({ type: 'none' })
+      goToCollectionReport(closed, 'collection')
+      return
+    }
+
     const rec = await getSessionReconciliation(id)
     setModal((prev) => {
       if (rec.success && rec.data && prev.type === 'close') {
@@ -112,18 +147,7 @@ export default function SessionsPage() {
         // these figures; it computes them with the same helper close() uses to
         // post the variance journal entry, so anything derived here could only
         // ever contradict what was actually posted.
-        //
-        // The fallbacks this replaces did exactly that: the backend's field
-        // names never matched what was read here, so every figure fell through
-        // to client-side arithmetic, and `openingCash + cashCollected` read a
-        // Prisma Decimal serialised as the string "1000", making
-        // `"1000" + 0 === "10000"`. A no-sale session opened with ₱1,000
-        // reported ₱10,000 expected and a ₱10,000 shortage.
-        return {
-          type: 'reconciliation',
-          session: prev.session,
-          data: rec.data,
-        }
+        return { type: 'reconciliation', session: prev.session, data: rec.data }
       }
       return { type: 'none' }
     })
@@ -131,23 +155,26 @@ export default function SessionsPage() {
 
   /**
    * Straight to the branch's Daily Collection page for the day this shift
-   * traded — a whole page, not a dialog. It opens on the Sales monitoring
-   * sheet; the Collection report is one tab across. Both are printed,
-   * exported and deep-linked, none of which a modal does well.
+   * traded — a whole page, not a dialog. Both sheets are printed, exported
+   * and deep-linked, none of which a modal does well.
    *
-   * The session's own closing reconciliation stays one button to the left:
-   * the posted variance and its GL entry live there, and the collection
-   * report does not carry them.
+   * `view` picks which tab it lands on: 'collection' for the form that gets
+   * counted and signed (where closing hands over), 'sales' for the browsing
+   * entry point the row's own button has always used.
    */
-  function handleViewCollectionReport(target: PosSession) {
+  function goToCollectionReport(target: PosSession, view: 'collection' | 'sales') {
     const date = isoDateOf(target.openedAt)
     const branch = target.terminal?.branch
-    const query = new URLSearchParams({ date, view: 'sales' })
+    const query = new URLSearchParams({ date, view })
     if (branch) {
       query.set('branchId', branch.id)
       query.set('branchName', branch.name)
     }
     router.push(`/pos/daily-collection?${query.toString()}`)
+  }
+
+  function handleViewCollectionReport(target: PosSession) {
+    goToCollectionReport(target, 'sales')
   }
 
   async function handleHandover(id: string, form: HandoverSessionInput) {
@@ -1306,11 +1333,14 @@ function CloseSessionModal({
   // without asking anyone. Zero lines are kept rather than hidden: "cash
   // drops — none this shift" is itself the answer to "was any cash pulled?".
   //
-  // Developer-confirmed 2026-09-19: four movement lines only. The backend's
-  // expected figure also folds in counter collections and petty cash returned
-  // (see computeExpectedCash), so on a shift that had either, these four will
-  // not visibly add up to the total below — the total stays correct, it is
-  // the explanation that is partial.
+  // Every term in the backend's own expected formula earns a line here (see
+  // computeExpectedCash): float + cash sales + counter collections + petty
+  // cash in - cash drops - petty cash out. The two that used to be missing,
+  // counter collections and petty cash in, left the visible lines short of
+  // the total on any shift that had either — a cashier reading the build-up
+  // saw a drawer that should hold less than the total said, which looks
+  // exactly like the shortage they are trying to rule out. Both appear only
+  // on a shift that had one, same as the drops/petty-out lines below.
   const expectedRows: CashRow[] = [
     {
       key: 'opening',
@@ -1323,6 +1353,18 @@ function CloseSessionModal({
       label: 'Cash collected',
       note: 'cash tendered at this terminal',
       amount: Number(tenderSummary?.totalCash ?? 0),
+    },
+    {
+      key: 'collections',
+      label: 'Counter collections',
+      note: 'installment dues paid in cash at the counter',
+      amount: Number(reconciliation?.totalCollectionsCash ?? 0),
+    },
+    {
+      key: 'pettyIn',
+      label: 'Petty cash returned',
+      note: 'unspent float put back in the drawer',
+      amount: Number(reconciliation?.totalPettyCashIn ?? 0),
     },
     {
       key: 'drops',
@@ -1349,9 +1391,11 @@ function CloseSessionModal({
     },
   ]
   // Scenario 61 — the client's close lists sales, invoices and cash
-  // collected; drops and petty cash only earn a line on a shift that had one.
+  // collected; drops, petty cash and counter collections only earn a line on
+  // a shift that had one.
+  const OPTIONAL_CASH_ROWS = ['collections', 'pettyIn', 'drops', 'pettyOut']
   const cashRows = expectedRows.filter(
-    (row) => row.amount !== 0 || (row.key !== 'drops' && row.key !== 'pettyOut')
+    (row) => row.amount !== 0 || !OPTIONAL_CASH_ROWS.includes(row.key)
   )
 
   // Non-cash grouped by method, with each provider underneath: a shift is

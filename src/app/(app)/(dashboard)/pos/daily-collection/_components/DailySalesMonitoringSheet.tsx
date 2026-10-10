@@ -51,7 +51,16 @@ const CATEGORY_TREE: CategoryGroup[] = [
 
 const COLUMN_HEAD =
   'border-b border-gray-900 pb-1.5 font-mono text-[10px] uppercase tracking-[0.09em] text-gray-500'
-const GRID = 'grid grid-cols-[minmax(0,1fr)_130px] items-baseline gap-x-3.5'
+/** A fixed amount column, narrow but the same on every row, so the figures
+ * stack in one straight line instead of each row sizing itself. */
+const GRID = 'grid grid-cols-[minmax(0,1fr)_120px] items-baseline gap-x-3'
+/** The card keeps its full width; the figures run down one centred column so
+ * the sheet reads top to bottom, like a receipt. The same fixed width holds
+ * on paper — the print fitter measures this layout under screen styles and
+ * then zooms it onto the page, so a width that resolved differently in print
+ * (a percentage of the fitted layout) would make it measure one height and
+ * print another, and the sheet would run onto a second page. */
+const RECEIPT_COLUMN = 'mx-auto w-full max-w-[32rem]'
 
 export default function DailySalesMonitoringSheet({
   report,
@@ -61,11 +70,11 @@ export default function DailySalesMonitoringSheet({
   return (
     <>
       <div
-        className={`${printable ? 'print-sheet print-sheet-compact ' : ''}flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 text-gray-900 print:rounded-none print:border-0`}
+        className={`${printable ? 'print-sheet print-sheet-compact ' : ''}flex flex-col gap-5 rounded-2xl border border-gray-200 bg-white p-6 text-gray-900 print:rounded-none print:border-0`}
       >
         <SheetHeader report={report} />
         <CategoryTable sales={sales} />
-        <div className="grid grid-cols-1 gap-7 sm:grid-cols-2 print:grid-cols-2">
+        <div className="flex flex-col gap-5">
           <TieOut
             title="By channel"
             lines={[
@@ -88,7 +97,9 @@ export default function DailySalesMonitoringSheet({
 
 function SheetHeader({ report }: { report: DailySalesMonitoringReport }): React.JSX.Element {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-5 border-b-2 border-gray-900 pb-3.5">
+    <header
+      className={`${RECEIPT_COLUMN} flex flex-wrap items-end justify-between gap-x-5 gap-y-1 border-b-2 border-gray-900 pb-3.5`}
+    >
       <div className="flex flex-col gap-1">
         <span className="text-lg font-semibold tracking-tight">
           Daily Sales &amp; Collection Monitoring
@@ -111,7 +122,7 @@ function CategoryTable({
   const amount = (c: SalesCategory): number => sales.byCategory[c] ?? 0
 
   return (
-    <div className="flex flex-col">
+    <div className={`${RECEIPT_COLUMN} flex flex-col`}>
       <div className={`${GRID} ${COLUMN_HEAD}`}>
         <span>For sales · per category</span>
         <span className="text-right">Amount</span>
@@ -154,12 +165,12 @@ function CategoryRow({
 }: CategoryRowProps): React.JSX.Element {
   const total = emphasis === 'total'
   const rowClass = total
-    ? 'border-t-[1.5px] border-gray-900 pt-2.5 pb-1 print-tight-total'
-    : `border-b border-gray-100 py-1.5 print-tight ${sub ? 'pl-5.5' : ''}`
+    ? 'border-t-[1.5px] border-gray-900 pt-2 pb-0.5 print-tight-total'
+    : 'border-b border-gray-100 py-1 print-tight'
   const labelClass = total
     ? 'text-[13px] font-semibold'
     : sub
-      ? 'text-[12.5px] text-gray-700'
+      ? 'pl-4 text-[12.5px] text-gray-700'
       : 'text-[13px] font-medium'
 
   return (
@@ -178,15 +189,12 @@ function CategoryRow({
 
 function TieOut({ title, lines }: { title: string; lines: [string, number][] }): React.JSX.Element {
   return (
-    <div className="flex flex-col">
+    <div className={`${RECEIPT_COLUMN} flex flex-col`}>
       <span className={COLUMN_HEAD}>{title}</span>
       {lines.map(([name, amount]) => (
-        <div
-          key={name}
-          className="print-tight flex justify-between gap-3 border-b border-gray-100 py-1.75"
-        >
+        <div key={name} className={`${GRID} print-tight border-b border-gray-100 py-1`}>
           <span className="text-[12.5px]">{name}</span>
-          <span className="font-mono text-[12.5px] tabular-nums">{peso(amount)}</span>
+          <span className="text-right font-mono text-[12.5px] tabular-nums">{peso(amount)}</span>
         </div>
       ))}
     </div>

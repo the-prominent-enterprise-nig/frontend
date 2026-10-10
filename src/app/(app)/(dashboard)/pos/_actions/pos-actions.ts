@@ -1461,6 +1461,8 @@ export interface Branch {
   name: string
   isMainBranch?: boolean
   isTemporary?: boolean
+  /** Scenario 60 — the branch hosting a caravan; null for an ordinary branch. */
+  hostBranchId?: string | null
   eventName?: string | null
   addressLine1?: string | null
 }

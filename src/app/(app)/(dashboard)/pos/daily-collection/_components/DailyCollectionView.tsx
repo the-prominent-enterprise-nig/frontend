@@ -167,6 +167,14 @@ export default function DailyCollectionView({
   const position = report ? cashPosition(report, draftCounts ?? report.denominations) : null
   const reportCompanyName = report?.companyName || companyName
 
+  // Scenario 60 — whichever branch the report came back for wins over the
+  // POS switcher's own label. The switcher offers caravans (checkout sells
+  // from one), but a caravan has no Daily Collection: the API answers with
+  // the branch hosting it, so the chrome has to name that branch too rather
+  // than captioning Antique's form "Caravan · Pandan".
+  const reportBranchName =
+    report?.branchName ?? salesReport?.branchName ?? sessionBranchName ?? branchName
+
   // A date ahead of today has no closed sessions behind it by definition, so
   // the page says so rather than presenting an empty form as a finding.
   const subhead =
@@ -184,7 +192,7 @@ export default function DailyCollectionView({
         <div className="mb-5 flex flex-wrap items-start justify-between gap-4 print:hidden">
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.09em] text-gray-500">
-              Point of Sale &middot; {sessionBranchName ?? branchName ?? 'All branches'}
+              Point of Sale &middot; {reportBranchName ?? 'All branches'}
             </p>
             <h1 className="mt-1 text-2xl font-bold text-prominent-purple-900">
               {showRollup ? SHEET_TITLES.collection : SHEET_TITLES[sheetView]}
@@ -251,9 +259,6 @@ export default function DailyCollectionView({
             ) : (
               <>
                 {editing && <EditingNote />}
-                {/* Above the figures, not below them: the caveat has to land before
-              someone reads them, not after. */}
-                <OpenSessionNote report={report} />
 
                 {/* The report carries the letterhead so the screen, the print sheet
               and the exported workbook can never disagree; the session's own
@@ -424,7 +429,6 @@ function SalesMonitoringBody({
           ← All branches
         </button>
       )}
-      <OpenSessionNote report={report} />
       <DailySalesMonitoringSheet report={report} printable={false} />
     </>
   )
@@ -439,35 +443,6 @@ function EditingNote(): React.JSX.Element {
       denomination count — including the COINS amount, which is typed as pesos rather than a piece
       count. The collections, deposits and totals are read from the day&apos;s transactions and
       cannot be typed over.
-    </p>
-  )
-}
-
-/**
- * Screen-only: the report counts closed sessions only, so while one is still
- * open the form is not yet the whole day and the screen has to say so.
- *
- * Leaving an open session off is what keeps the form honest — every
- * collection on it has a drawer count behind it — but a figure that is
- * deliberately low is still a figure someone will act on. The note goes as
- * soon as the last session closes, which is when the form gets signed.
- */
-function OpenSessionNote({
-  report,
-}: {
-  report: Pick<DailyCollectionReport, 'openSessionCount'>
-}): React.JSX.Element | null {
-  if (report.openSessionCount < 1) return null
-
-  const many = report.openSessionCount > 1
-  return (
-    <p className="mb-3 rounded-xl border border-prominent-orange-200 bg-prominent-orange-50 px-4 py-3 text-sm text-prominent-orange-900 print:hidden">
-      <span className="font-semibold">
-        {report.openSessionCount} session{many ? 's are' : ' is'} still open.
-      </span>{' '}
-      This report counts closed sessions only, so nothing {many ? 'they have' : 'it has'} taken is
-      on it yet — the figures below will grow as {many ? 'those sessions close' : 'it closes'}.
-      Print it once the day&apos;s sessions have all closed.
     </p>
   )
 }

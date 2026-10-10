@@ -68,7 +68,9 @@ export function useConsignToCaravan(onDone: () => void): {
           ? {
               label: 'View transfer',
               onClick: () =>
-                router.push(`/inventory/transfers?transfer=${encodeURIComponent(number)}`),
+                router.push(
+                  `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(number)}`
+                ),
             }
           : undefined,
       })
