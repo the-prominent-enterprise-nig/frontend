@@ -39,14 +39,14 @@ The baseline itself is built and green, and it is the acceptance test for everyt
 | G10 | GCash, Maya and ECPay each clear their own account           | 🚧 **Needs decision**      | M    | `ClearingSettlementType` is 4 coarse types; the three share one E-Wallet clearing account                 |
 | G8  | One deposit record, itemised across the banks that took it   | ✅ **Done** `287d204`      | L    | `PosDepositLine` — a bank, an amount and the account it clears; one entry posted from the slips           |
 | G9  | That deposit clears the processors' holding accounts too     | ✅ **Done** `287d204`      | M    | That same entry empties the branch’s cash and every processor’s clearing account together                 |
-| G11 | The 56,000.00 bond check is banked with the rest of the day  | 🚧 **Next**                | —    | The cheque is on no session, so no deposit can reach it — New Receipts need to be bankable                |
+| G11 | The 56,000.00 bond check is banked with the rest of the day  | ✅ **Done** `a45354d`      | —    | A receipt carries the deposit that banked it and is selected onto one in its own right                    |
 | G12 | Record deposit opens with the amount blank                   | ❌ **Depends on G8**       | M    | UI. The field is filled from the sessions being banked (₱54,375.00 in the client's shot)                  |
 
 **Done (2026-10-10):** G1, G2, G4, G5, G6, as five atomic commits, each verified on its own in a throwaway worktree — typecheck clean and the baseline 27/27 at every one. Two neighbouring suites were repaired on the way (`acknowledgement-receipts` sent no `receiptType`; `unapplied-collections` could not run twice).
 
 **Built but not committed:** G3. It is green in the working tree and depends on in-flight `daily-collection.service.ts` work (`inBranch`, `sourceCounter`, `collectorLabelOf`), so it cannot stand as its own commit until that lands.
 
-**Still open:** G7 and G10 (one client decision each), G11 (New Receipts are not bankable yet) and G12 (the Record deposit screen).
+**Still open:** G7 and G10 (one client decision each) and G12 (the Record deposit screen). With G11 closed the baseline's day banks in full — one deposit, five banks, 87,365.00, every holding account emptied — which is the client's own entry to the centavo bar the clearing-account split G10 asks for.
 
 **Needs a migration: G8** (deposit lines), with **G9** and **G12** hanging off it and **G11** falling out for free.
 **Needs a chart-of-accounts decision: G10.**
@@ -70,11 +70,11 @@ The five that move the number the client reads first. Each is config or a few li
 6. **G2 — the TPF down payment's provider.** Add `tpfDownPaymentMethodOptionId` to `CreateTransactionDto`, carry it onto the auto-created `PosPayment`, and surface the picker at checkout the way a normal tender has one. Also worth doing here: `TpfProvider.glAccountId` exists but no API sets it, so per-partner receivables can only be configured in the database.
 7. **G1 — revenue per category.** `buildSaleJELines` and `createAndPostInstallmentPlan` both resolve `MAPPING_KEYS.SALES_REVENUE` once for the whole cart. Resolve per line through `item.revenueAccountId` first, the way COGS already does via `posting.resolveAccount(item.cogsAccountId, …)`. Watch the allocation: `allocateExactly` apportions the net to the lines, so the centavo remainder must still land somewhere deterministic.
 
-## Phase 3 — The deposit 🚧 _G8 and G9 done; G11 and G12 next_
+## Phase 3 — The deposit 🚧 _G8, G9 and G11 done; G12 next_
 
 8. **G8 + G9 — done (`287d204`).** `PosDepositLine` carries a bank, an amount and the account it clears; clearing posts one entry from the slips, a debit per bank and a credit per holding account. The rule enforced is the one figure the system knows: the slips clearing the branch's own cash must come to what the sessions left. The baseline banks its day as one record of 31,365.00 across four banks.
 
-9. **G11 — make a New Receipt bankable.** The fifth bank on the client's entry is the cheque's, and no deposit can reach it: a New Receipt sits on no session, so it is in branch collection but outside every deposit's idea of what is outstanding. It needs the same treatment a session's cash has — an outstanding figure and a link to the deposit that banks it.
+9. **G11 — done (`a45354d`).** A New Receipt carries the deposit that banked it and is selected onto one in its own right, counting toward what the cash slips must come to. The baseline's deposit is now the client's own entry: Dr Security 17,425 / BDO 56,000 / Metrobank 9,000 / UnionBank 2,000 / BPI 2,940 against Cr Branch Collection 73,425 / Card Clearing 7,500 / E-Wallet Clearing 6,440.
 
 10. **G12 — the Record deposit screen.** A line editor (bank, amount, what it clears), the amount blank on open, and a running difference against what is outstanding. The backend is ready for it.
 
