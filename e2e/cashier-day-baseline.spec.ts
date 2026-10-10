@@ -35,7 +35,7 @@ import { gotoReady } from './utils'
 const BASELINE_BRANCH = 'E2E Cashier Day Baseline Branch'
 
 const SEED_HINT =
-  'The cashier day baseline is not in this database — seed it with ' +
+  'The cashier day baseline is not in this database for today — seed it with ' +
   'backend/scripts/seed-cashier-day-baseline.ts, with the e2e stack already ' +
   'up (see this file’s header).'
 
@@ -56,6 +56,20 @@ async function openBaselineBranch(page: Page): Promise<boolean> {
   }
   await branch.click()
   await expect(page.getByRole('heading', { name: 'Daily Collection Report' })).toBeVisible()
+
+  // The branch outlives the day. Seeding creates it once and every later seed
+  // reuses it, but the sheet only carries the baseline on the date it was
+  // seeded for — so yesterday's seed leaves the branch in the roll-up with an
+  // empty day behind it, and checking for the branch alone would fail every
+  // assertion below instead of skipping. The day's own cash total is the
+  // guard.
+  try {
+    await expect(row(page, 'Total cash')).toContainText('17,425.00', {
+      timeout: 10_000,
+    })
+  } catch {
+    return false
+  }
   return true
 }
 
