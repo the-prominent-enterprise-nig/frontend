@@ -140,14 +140,12 @@ test.describe('POS — the cashier day baseline on screen', () => {
   })
 
   /**
-   * The sheet's second act. The client's annotation says the closing's whole
-   * 87,365.00 goes to Undeposited Funds and clears as one entry itemised
-   * across five banks, with the Record deposit amount left blank for
-   * accounting to fill in. What the screen shows today is the drawer alone,
-   * at an amount the system worked out itself — gaps G8 and G12 in
-   * docs/cashier-day-baseline.md.
+   * The sheet's second act, on screen. The client's annotation says the
+   * closing's whole 87,365.00 clears as one entry itemised across the banks
+   * that took it, leaving Undeposited Funds at zero — which is what the
+   * screen now shows: one deposit posted, for the day, not for the drawer.
    */
-  test('Undeposited Funds shows the drawer banked, not the day', async ({ page }) => {
+  test('Undeposited Funds shows the day banked in one deposit', async ({ page }) => {
     test.skip(!(await openBaselineBranch(page)), SEED_HINT)
 
     await gotoReady(page, '/pos/undeposited-funds')
@@ -156,14 +154,17 @@ test.describe('POS — the cashier day baseline on screen', () => {
     await page.getByRole('textbox', { name: 'All branches' }).fill('E2E Cashier')
     await page.getByText(BASELINE_BRANCH, { exact: false }).first().click()
 
-    // One deposit posted, for the drawer's 17,425.00 — not the closing's
-    // 87,365.00, and not itemised across the five banks the sheet names.
+    // One deposit, carrying the sheet's own TOTAL BRANCH COLLECTION: the
+    // cash, the bond cheque and both processors' settlements, across five
+    // banks in a single record.
     const cleared = page
       .getByText(/^Cleared/)
       .first()
       .locator('..')
-    await expect(cleared).toContainText('17,425.00')
+    await expect(cleared).toContainText('87,365.00')
     await expect(cleared).toContainText('1 deposit posted')
-    await expect(page.getByText('87,365.00', { exact: false })).toHaveCount(0)
+    // And nothing of the day is left waiting to be banked.
+    const undeposited = page.getByText('Undeposited', { exact: true }).first().locator('..')
+    await expect(undeposited).toContainText('₱0.00')
   })
 })
