@@ -10,7 +10,14 @@ import {
   type CashInTransitHistoryRow,
   type CashInTransitSessionRow,
 } from '../../_actions/pos-actions'
-import { BankAccounts, type BankAccount, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
+import {
+  AcknowledgementReceipts,
+  BankAccounts,
+  type BankAccount,
+  fmtMoney,
+  fmtDate,
+} from '@/src/libs/data/AccountingV2Data'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import AttachmentsPanel, { uploadAndAttach } from '@/src/components/common/AttachmentsPanel'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
@@ -274,6 +281,7 @@ export function CashInTransitList({
           accounts={ledger.accounts}
           sessions={depositing}
           totalAmount={depositing.reduce((sum, r) => sum + r.amount, 0)}
+          branchId={depositing[0]?.branchId ?? null}
           onClose={() => setDepositing(null)}
           onSaved={() => {
             setDepositing(null)
@@ -741,27 +749,96 @@ function SummaryCard({
   )
 }
 
+interface Slip {
+  bankAccountId: string
+  /** A string, and empty on open — the client asked for the amount field to
+   * start blank so accounting itemises the banks rather than accepting a
+   * figure the system worked out (Scenario 70 G12). */
+  amount: string
+  /** A processor's clearing account; empty means the branch's own cash. */
+  clearsAccountId: string
+  note: string
+}
+
+/** Centavos, so a tally of typed amounts cannot drift into 0.004 differences. */
+const round2 = (n: number): number => Math.round(n * 100) / 100
+
+const EMPTY_SLIP: Slip = {
+  bankAccountId: '',
+  amount: '',
+  clearsAccountId: '',
+  note: '',
+}
+
 function DepositForm({
   accounts,
   sessions,
   totalAmount,
+  branchId,
   onClose,
   onSaved,
 }: {
   accounts: BankAccount[]
   sessions: LedgerRow[]
   totalAmount: number
+  branchId: string | null
   onClose: () => void
   onSaved: () => void
 }) {
   const [form, setForm] = useState({
-    bankAccountId: '',
-    depositDate: new Date().toISOString().slice(0, 10),
+    // Local date, not UTC: toISOString() is a day behind for the first eight
+    // hours of every Manila morning, so the deposit opened with yesterday's
+    // date on it and posted there unless somebody noticed.
+    depositDate: new Date().toLocaleDateString('en-CA'),
     reference: '',
   })
+  const [slips, setSlips] = useState<Slip[]>([{ ...EMPTY_SLIP }])
+  const [pickedReceipts, setPickedReceipts] = useState<Set<string>>(new Set())
   const [files, setFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // The branch's New Receipts still to be banked — money taken at the counter
+  // against no sale, which sits in the branch's cash like any collection
+  // (Scenario 70 G11) and is banked on the same slip run.
+  const newReceipts = useQuery({
+    queryKey: ['unbanked-new-receipts', branchId],
+    queryFn: () =>
+      AcknowledgementReceipts.list({ branchId: branchId ?? undefined, unbanked: 'true' }),
+    enabled: !!branchId,
+    staleTime: 0,
+  })
+  const receipts = newReceipts.data?.data ?? []
+
+  // The chart, for the "clears" column: a slip either empties the branch's
+  // own cash or one processor's clearing account.
+  const chart = useQuery({
+    queryKey: ['deposit-clearing-accounts'],
+    queryFn: () => getAccounts({ limit: 500 }),
+    staleTime: 5 * 60_000,
+  })
+  const clearingOptions = (chart.data?.data?.items ?? [])
+    .filter((a: Account) => /clearing/i.test(a.name))
+    .map((a: Account) => ({
+      value: a.id,
+      label: a.number ? `${a.number} — ${a.name}` : a.name,
+    }))
+
+  const receiptsTotal = receipts
+    .filter((r) => pickedReceipts.has(r.id))
+    .reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
+  /** What the branch's own cash slips have to come to. */
+  const outstanding = round2(totalAmount + receiptsTotal)
+  const slipAmount = (slip: Slip): number => Number(slip.amount) || 0
+  const cashSlips = round2(
+    slips.filter((s) => !s.clearsAccountId).reduce((sum, s) => sum + slipAmount(s), 0)
+  )
+  const difference = round2(outstanding - cashSlips)
+  const slipsTotal = round2(slips.reduce((sum, s) => sum + slipAmount(s), 0))
+  const incomplete = slips.some((s) => !s.bankAccountId || slipAmount(s) <= 0)
+
+  const setSlip = (i: number, patch: Partial<Slip>) =>
+    setSlips((prev) => prev.map((s, n) => (n === i ? { ...s, ...patch } : s)))
 
   // Scenario 61 Part 5 — records a DRAFT; nothing posts until accounting has
   // checked the attachments and clears it from the Deposits view.
@@ -770,8 +847,15 @@ function DepositForm({
     setSaving(true)
     setError(null)
     const res = await createPosDeposit({
-      bankAccountId: form.bankAccountId,
+      bankAccountId: slips[0].bankAccountId,
       sessionIds: sessions.map((s) => s.sessionId),
+      newReceiptIds: [...pickedReceipts],
+      lines: slips.map((s) => ({
+        bankAccountId: s.bankAccountId,
+        amount: slipAmount(s),
+        clearsAccountId: s.clearsAccountId || undefined,
+        note: s.note || undefined,
+      })),
       depositDate: form.depositDate,
       reference: form.reference || undefined,
     })
@@ -803,7 +887,7 @@ function DepositForm({
       {/* Header and footer stay put; only the middle scrolls, so however
           many files are attached the Record deposit button is never pushed
           out of view. */}
-      <div className="flex w-full max-w-2xl max-h-[90vh] flex-col rounded-lg bg-white shadow-xl">
+      <div className="flex w-full max-w-3xl max-h-[90vh] flex-col rounded-lg bg-white shadow-xl">
         <div className="flex shrink-0 items-center justify-between px-5 py-4 border-b">
           <h3 className="text-lg font-semibold">Record deposit</h3>
           <button onClick={onClose}>
@@ -817,23 +901,113 @@ function DepositForm({
               on the date below.
             </p>
             <DepositSessions sessions={sessions} totalAmount={totalAmount} />
-            <label className="block">
-              <span className="block text-xs font-medium text-gray-600 mb-1">Bank Account *</span>
-              {/* Searchable by name or account number — a branch can bank with
-                several accounts at the same bank. Portalled so the list is
-                not clipped by this scrolling dialog. */}
-              <SearchableSelect
-                value={form.bankAccountId}
-                onChange={(value) => setForm({ ...form, bankAccountId: value })}
-                options={accounts.map((a) => ({
-                  value: a.id,
-                  label: a.accountNumber ? `${a.name} — ${a.accountNumber}` : a.name,
-                }))}
-                placeholder="Search bank account…"
-                clearable
-                portal
-              />
-            </label>
+
+            {receipts.length > 0 && (
+              <div className="rounded-lg border border-gray-200">
+                <p className="border-b border-gray-200 px-3 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                  New Receipts to bank
+                </p>
+                <ul className="divide-y divide-gray-100">
+                  {receipts.map((r) => (
+                    <li key={r.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={pickedReceipts.has(r.id)}
+                        onChange={() =>
+                          setPickedReceipts((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(r.id)) next.delete(r.id)
+                            else next.add(r.id)
+                            return next
+                          })
+                        }
+                      />
+                      <span className="min-w-0 flex-1 truncate">
+                        {r.number ? `${r.number} · ` : ''}
+                        {r.payerName}
+                      </span>
+                      <span className="font-mono tabular-nums">{fmtMoney(Number(r.amount))}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Scenario 70 G12 — one row per bank, each saying what it empties.
+                The client's own closing goes to five banks at once and clears
+                the branch's cash and every processor's account in one record;
+                the amount starts blank so accounting itemises it rather than
+                accepting a figure worked out for them. */}
+            <div className="rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Slips — one per bank
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSlips((prev) => [...prev, { ...EMPTY_SLIP }])}
+                  className="text-xs font-medium text-prominent-purple-700 hover:underline"
+                >
+                  Add slip
+                </button>
+              </div>
+              <div className="space-y-3 p-3">
+                {slips.map((slip, i) => (
+                  <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_7rem_1fr_auto]">
+                    <SearchableSelect
+                      value={slip.bankAccountId}
+                      onChange={(value) => setSlip(i, { bankAccountId: value })}
+                      options={accounts.map((a) => ({
+                        value: a.id,
+                        label: a.accountNumber ? `${a.name} — ${a.accountNumber}` : a.name,
+                      }))}
+                      placeholder="Bank account…"
+                      clearable
+                      portal
+                    />
+                    <input
+                      inputMode="decimal"
+                      value={slip.amount}
+                      onChange={(e) => setSlip(i, { amount: e.target.value })}
+                      placeholder="Amount"
+                      aria-label={`Slip ${i + 1} amount`}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right font-mono text-sm tabular-nums"
+                    />
+                    <SearchableSelect
+                      value={slip.clearsAccountId}
+                      onChange={(value) => setSlip(i, { clearsAccountId: value })}
+                      options={[{ value: '', label: "The branch's own cash" }, ...clearingOptions]}
+                      placeholder="The branch's own cash"
+                      portal
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSlips((prev) => prev.filter((_, n) => n !== i))}
+                      disabled={slips.length === 1}
+                      aria-label={`Remove slip ${i + 1}`}
+                      className="px-2 text-gray-400 hover:text-red-600 disabled:opacity-30"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-baseline justify-between border-t border-gray-200 px-3 py-2 text-sm">
+                <span className="text-gray-600">
+                  Cash slips {fmtMoney(cashSlips)} of {fmtMoney(outstanding)}
+                </span>
+                <span
+                  className={`font-mono tabular-nums ${
+                    Math.abs(difference) < 0.005 ? 'text-green-700' : 'text-amber-700'
+                  }`}
+                >
+                  {Math.abs(difference) < 0.005
+                    ? `Balanced · ${fmtMoney(slipsTotal)} in total`
+                    : `${fmtMoney(Math.abs(difference))} ${difference > 0 ? 'short' : 'over'}`}
+                </span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="block text-xs font-medium text-gray-600 mb-1">Deposit Date *</span>
@@ -883,7 +1057,9 @@ function DepositForm({
             </button>
             <button
               type="submit"
-              disabled={saving || !form.bankAccountId || sessions.length === 0}
+              disabled={
+                saving || incomplete || sessions.length === 0 || Math.abs(difference) >= 0.005
+              }
               className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Record deposit'}

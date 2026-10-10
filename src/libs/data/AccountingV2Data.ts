@@ -830,7 +830,9 @@ export interface UpdateAcknowledgementReceiptInput {
   collectorId?: string
 }
 export const AcknowledgementReceipts = {
-  list: (params?: { branchId?: string }) =>
+  /** `unbanked: 'true'` asks for only what the branch still has to bank —
+   * not cancelled, not already on a deposit (Scenario 70 G11). */
+  list: (params?: { branchId?: string; unbanked?: 'true' }) =>
     api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
   get: (id: string) =>
     api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),

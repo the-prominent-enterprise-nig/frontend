@@ -36,9 +36,24 @@ export interface PosDeposit {
   attachmentCount?: number
 }
 
+/** Scenario 70 G8 — one slip: a bank, an amount, and what it empties. */
+export interface PosDepositLineInput {
+  bankAccountId: string
+  amount: number
+  /** A processor's clearing account; omitted for the branch's own cash. */
+  clearsAccountId?: string
+  note?: string
+}
+
 export interface CreatePosDepositInput {
+  /** The header's own bank. With slips it is the first slip's. */
   bankAccountId: string
   sessionIds: string[]
+  /** Scenario 70 G11 — New Receipts banked with the sessions. */
+  newReceiptIds?: string[]
+  /** Scenario 70 G8 — one per bank the money actually went to. Without them
+   * the deposit is the old single-bank shape, amount worked out server-side. */
+  lines?: PosDepositLineInput[]
   depositDate: string
   reference?: string
 }
