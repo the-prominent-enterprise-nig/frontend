@@ -27,26 +27,26 @@ The baseline itself is built and green, and it is the acceptance test for everyt
 
 ## Verdict table
 
-| #   | Gap (what the sheet asks for)                                | Verdict                    | Size | Why                                                                                                       |
-| --- | ------------------------------------------------------------ | -------------------------- | ---- | --------------------------------------------------------------------------------------------------------- |
-| G4  | A rebate goes to Sales Discounts `4-01-100`                  | ✅ **Done** `1bf8110`      | XS   | Backfill repoints the mapping; the rebate spec no longer forces it onto 4-01-090                          |
-| G5  | A branch New Receipt lands in COH — Branch Collections       | ✅ **Done** `2c84ce1`      | S    | A branch receipt resolves `POS_CASH`; corrections reuse the original entry’s own cash account             |
-| G6  | A due settled with its rebate reads MI, not MI-PARTIAL       | ✅ **Done** `e86defe`      | S    | The rebate counts toward the due before MI / MI-PARTIAL is decided                                        |
-| G7  | A TPF balance is not a collection — the day totals 87,365.00 | 🚧 **Needs decision**      | S    | The financed balance is counted as collected; see _Decisions needed_                                      |
-| G3  | New Receipts are part of TOTAL BRANCH COLLECTION             | 🚧 **Built, blocked**      | M    | Written and green, but it builds on uncommitted `daily-collection.service.ts` work — lands when that does |
-| G2  | A TPF down payment carries its provider                      | ✅ **Done** `4239353` `+1` | S    | `tpfDownPaymentMethodOptionId` carries the provider; per-partner accounts now have an API                 |
-| G1  | Revenue splits per category                                  | ✅ **Done** `6217f8e`      | M    | Revenue resolves per line via `Item.revenueAccountId` on all three posting paths                          |
-| G10 | GCash, Maya and ECPay each clear their own account           | 🚧 **Needs decision**      | M    | `ClearingSettlementType` is 4 coarse types; the three share one E-Wallet clearing account                 |
-| G8  | One deposit record, itemised across the banks that took it   | ✅ **Done** `287d204`      | L    | `PosDepositLine` — a bank, an amount and the account it clears; one entry posted from the slips           |
-| G9  | That deposit clears the processors' holding accounts too     | ✅ **Done** `287d204`      | M    | That same entry empties the branch’s cash and every processor’s clearing account together                 |
-| G11 | The 56,000.00 bond check is banked with the rest of the day  | ✅ **Done** `a45354d`      | —    | A receipt carries the deposit that banked it and is selected onto one in its own right                    |
-| G12 | Record deposit opens with the amount blank                   | ❌ **Depends on G8**       | M    | UI. The field is filled from the sessions being banked (₱54,375.00 in the client's shot)                  |
+| #   | Gap (what the sheet asks for)                                | Verdict                    | Size | Why                                                                                                                        |
+| --- | ------------------------------------------------------------ | -------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------- |
+| G4  | A rebate goes to Sales Discounts `4-01-100`                  | ✅ **Done** `1bf8110`      | XS   | Backfill repoints the mapping; the rebate spec no longer forces it onto 4-01-090                                           |
+| G5  | A branch New Receipt lands in COH — Branch Collections       | ✅ **Done** `2c84ce1`      | S    | A branch receipt resolves `POS_CASH`; corrections reuse the original entry’s own cash account                              |
+| G6  | A due settled with its rebate reads MI, not MI-PARTIAL       | ✅ **Done** `e86defe`      | S    | The rebate counts toward the due before MI / MI-PARTIAL is decided                                                         |
+| G7  | A TPF balance is not a collection — the day totals 87,365.00 | 🚧 **Needs decision**      | S    | The financed balance is counted as collected; see _Decisions needed_                                                       |
+| G3  | New Receipts are part of TOTAL BRANCH COLLECTION             | 🚧 **Built, blocked**      | M    | Written and green, but it builds on uncommitted `daily-collection.service.ts` work — lands when that does                  |
+| G2  | A TPF down payment carries its provider                      | ✅ **Done** `4239353` `+1` | S    | `tpfDownPaymentMethodOptionId` carries the provider; per-partner accounts now have an API                                  |
+| G1  | Revenue splits per category                                  | ✅ **Done** `6217f8e`      | M    | Revenue resolves per line via `Item.revenueAccountId` on all three posting paths                                           |
+| G10 | GCash, Maya and ECPay each clear their own account           | 🚧 **Needs decision**      | M    | `ClearingSettlementType` is 4 coarse types; the three share one E-Wallet clearing account                                  |
+| G8  | One deposit record, itemised across the banks that took it   | ✅ **Done** `287d204`      | L    | `PosDepositLine` — a bank, an amount and the account it clears; one entry posted from the slips                            |
+| G9  | That deposit clears the processors' holding accounts too     | ✅ **Done** `287d204`      | M    | That same entry empties the branch’s cash and every processor’s clearing account together                                  |
+| G11 | The 56,000.00 bond check is banked with the rest of the day  | ✅ **Done** `a45354d`      | —    | A receipt carries the deposit that banked it and is selected onto one in its own right                                     |
+| G12 | Record deposit opens with the amount blank                   | ✅ **Done** `d47415f0`     | M    | A row per slip — bank, amount, what it clears — the amount blank on open, with a running tally against what is outstanding |
 
 **Done (2026-10-10):** G1, G2, G4, G5, G6, as five atomic commits, each verified on its own in a throwaway worktree — typecheck clean and the baseline 27/27 at every one. Two neighbouring suites were repaired on the way (`acknowledgement-receipts` sent no `receiptType`; `unapplied-collections` could not run twice).
 
 **Built but not committed:** G3. It is green in the working tree and depends on in-flight `daily-collection.service.ts` work (`inBranch`, `sourceCounter`, `collectorLabelOf`), so it cannot stand as its own commit until that lands.
 
-**Still open:** G7 and G10 (one client decision each) and G12 (the Record deposit screen). With G11 closed the baseline's day banks in full — one deposit, five banks, 87,365.00, every holding account emptied — which is the client's own entry to the centavo bar the clearing-account split G10 asks for.
+**Still open:** G7 and G10, one client decision each. Everything else is closed: the day rings up, reports, banks and reads back as the client's own sheet draws it. With G11 closed the baseline's day banks in full — one deposit, five banks, 87,365.00, every holding account emptied — which is the client's own entry to the centavo bar the clearing-account split G10 asks for.
 
 **Needs a migration: G8** (deposit lines), with **G9** and **G12** hanging off it and **G11** falling out for free.
 **Needs a chart-of-accounts decision: G10.**
@@ -70,13 +70,15 @@ The five that move the number the client reads first. Each is config or a few li
 6. **G2 — the TPF down payment's provider.** Add `tpfDownPaymentMethodOptionId` to `CreateTransactionDto`, carry it onto the auto-created `PosPayment`, and surface the picker at checkout the way a normal tender has one. Also worth doing here: `TpfProvider.glAccountId` exists but no API sets it, so per-partner receivables can only be configured in the database.
 7. **G1 — revenue per category.** `buildSaleJELines` and `createAndPostInstallmentPlan` both resolve `MAPPING_KEYS.SALES_REVENUE` once for the whole cart. Resolve per line through `item.revenueAccountId` first, the way COGS already does via `posting.resolveAccount(item.cogsAccountId, …)`. Watch the allocation: `allocateExactly` apportions the net to the lines, so the centavo remainder must still land somewhere deterministic.
 
-## Phase 3 — The deposit 🚧 _G8, G9 and G11 done; G12 next_
+## Phase 3 — The deposit ✅ _done_
 
 8. **G8 + G9 — done (`287d204`).** `PosDepositLine` carries a bank, an amount and the account it clears; clearing posts one entry from the slips, a debit per bank and a credit per holding account. The rule enforced is the one figure the system knows: the slips clearing the branch's own cash must come to what the sessions left. The baseline banks its day as one record of 31,365.00 across four banks.
 
 9. **G11 — done (`a45354d`).** A New Receipt carries the deposit that banked it and is selected onto one in its own right, counting toward what the cash slips must come to. The baseline's deposit is now the client's own entry: Dr Security 17,425 / BDO 56,000 / Metrobank 9,000 / UnionBank 2,000 / BPI 2,940 against Cr Branch Collection 73,425 / Card Clearing 7,500 / E-Wallet Clearing 6,440.
 
-10. **G12 — the Record deposit screen.** A line editor (bank, amount, what it clears), the amount blank on open, and a running difference against what is outstanding. The backend is ready for it.
+10. **G12 — done (`d47415f0`).** A row per slip (bank, amount, what it clears), the amount blank on open as the client asked, the branch's unbanked New Receipts listed to be banked alongside the sessions, and a running tally — "Cash slips ₱73,425.00 of ₱73,425.00 · Balanced" — with Record deposit disabled until they meet. Seeding gained `BASELINE_SKIP_BANKING=1`, which leaves the day closed but unbanked so the screen has something in front of it.
+
+**Not covered by a test:** the modal itself. Its committed e2e would need an unbanked day, and the baseline's own screen test needs a banked one — the two cannot both hold for one branch-day. It was driven by hand against a `BASELINE_SKIP_BANKING=1` seed (blank amount, the tally moving to 73,425.00 as the New Receipt is ticked, the button enabling when the slips balance); the rules behind it are covered server-side.
 
 Do not start Phase 3 before Phase 1: until a New Receipt reaches branch collection, the 56,000.00 line of the client's deposit has nothing to clear.
 
