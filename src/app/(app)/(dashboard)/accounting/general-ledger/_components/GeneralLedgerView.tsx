@@ -22,6 +22,7 @@ export default function GeneralLedgerView() {
   const [endDate, setEndDate] = useState(searchParams.get('endDate') || TODAY)
   const branchId = searchParams.get('branchId') ?? ''
   const view = searchParams.get('view') === 'internal' ? 'internal' : ''
+  const bankAccountId = searchParams.get('bankAccountId') ?? ''
   const drilled = searchParams.has('accountId')
   const [accounts, setAccounts] = useState<Account[]>([])
   // A running balance only makes sense scoped to one account, so it's
@@ -40,6 +41,7 @@ export default function GeneralLedgerView() {
       endDate,
       branchId: branchId || undefined,
       view: view || undefined,
+      bankAccountId: bankAccountId || undefined,
     })
     setData(res?.data ?? null)
     setLoading(false)
@@ -113,11 +115,18 @@ export default function GeneralLedgerView() {
               endDate,
               branchId: branchId || undefined,
               view: view || undefined,
+              bankAccountId: bankAccountId || undefined,
             }}
             fallbackFilename={`general-ledger-${startDate}-to-${endDate}.xlsx`}
           />
         </div>
       </div>
+
+      {bankAccountId && (
+        <p className="mb-3 text-xs text-gray-500">
+          Showing one bank&apos;s own activity on this account.
+        </p>
+      )}
 
       {drilled && (branchId || view) && (
         <p className="mb-3 text-xs text-gray-500">

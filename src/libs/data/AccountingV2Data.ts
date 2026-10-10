@@ -218,6 +218,8 @@ export const Reports = {
     // Scenario 62 — same scoping as the P&L a drill-down came from.
     branchId?: string
     view?: string
+    // One bank's own lines on the shared Cash and Cash Equivalents account.
+    bankAccountId?: string
   }) => api.get<any>('/reports/general-ledger', params as any),
   cashFlow: (startDate: string, endDate: string) =>
     api.get<any>('/reports/cash-flow', { startDate, endDate }),

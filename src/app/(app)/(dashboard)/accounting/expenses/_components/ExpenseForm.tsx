@@ -1836,7 +1836,7 @@ function ExpenseFormFields({
                         ['Account', 'Particulars / Memo', 'Debit', 'Credit'],
                         [
                           ['Salaries and Wages', 'ACCOUNTING & FINANCE-NEGROS', 41008.47, ''],
-                          ['Employee Cash Advance', 'DELA CRUZ, JUAN', '', 2500],
+                          ['Advances to Employees and Officers', 'DELA CRUZ, JUAN', '', 2500],
                         ]
                       )
                     }
