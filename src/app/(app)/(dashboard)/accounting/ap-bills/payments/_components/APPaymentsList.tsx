@@ -120,7 +120,7 @@ export default function APPaymentsList() {
             href="/accounting/ap-bills/payments/new"
             className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800"
           >
-            <Plus className="h-4 w-4" /> Record Payment
+            <Plus className="h-4 w-4" /> Create Voucher
           </Link>
           <form onSubmit={onSearch} className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />

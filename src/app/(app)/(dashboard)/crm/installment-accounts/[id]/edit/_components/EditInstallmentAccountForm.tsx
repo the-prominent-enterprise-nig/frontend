@@ -12,6 +12,7 @@ import type {
   InstallmentAccountClassification,
   InstallmentAccountStatus,
 } from '@/src/schema/crm/types'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type FormState = {
   branchId: string
@@ -33,6 +34,33 @@ const empty: FormState = {
   arrears: '',
   penalty: '',
   insuranceCharge: '',
+}
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'early_closed', label: 'Early closed' },
+  { value: 'written_off', label: 'Written off' },
+]
+
+const CLASSIFICATION_OPTIONS = [
+  { value: 'official', label: 'Official' },
+  { value: 'arrears', label: 'Arrears' },
+  { value: 'not_moving', label: 'Not moving' },
+]
+
+/** A is only ever given at creation and C only through management approval,
+ * so neither is offered here unless the account already is one. */
+function categoryOptions(original: InstallmentAccountCategory | ''): {
+  value: string
+  label: string
+}[] {
+  return [
+    ...(original === 'A' ? [{ value: 'A', label: 'A' }] : []),
+    { value: 'B', label: 'B' },
+    ...(original === 'C' ? [{ value: 'C', label: 'C' }] : []),
+    { value: 'D', label: 'D' },
+  ]
 }
 
 type AccountSummary = {
@@ -218,108 +246,73 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="branchId" className="block text-[13px] font-medium text-gray-700">
-              Branch
-            </label>
-            <select
-              id="branchId"
+            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+            <SearchableSelect
               value={form.branchId}
-              onChange={(e) => setField('branchId', e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Unassigned</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setField('branchId', v)}
+              options={branches.map((b) => ({ value: b.id, label: b.name }))}
+              placeholder="Unassigned branch"
+              clearable
+              className="mt-1 w-full"
+            />
           </div>
           <div>
-            <label htmlFor="collectorId" className="block text-[13px] font-medium text-gray-700">
-              Collector
-            </label>
-            <select
-              id="collectorId"
+            <label className="block text-[13px] font-medium text-gray-700">Collector</label>
+            <SearchableSelect
               value={form.collectorId}
-              onChange={(e) => setField('collectorId', e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Unassigned</option>
-              {collectors.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.stubNumber} — {c.name}
-                  {c.id === suggestedCollectorId ? ' — suggested' : ''}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setField('collectorId', v)}
+              options={collectors.map((c) => ({
+                value: c.id,
+                label: `${c.stubNumber} — ${c.name}${c.id === suggestedCollectorId ? ' — suggested' : ''}`,
+              }))}
+              placeholder="Unassigned collector"
+              clearable
+              className="mt-1 w-full"
+            />
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="status" className="block text-[13px] font-medium text-gray-700">
-              Status
-            </label>
-            <select
-              id="status"
+            <label className="block text-[13px] font-medium text-gray-700">Status</label>
+            <SearchableSelect
               value={form.status}
-              onChange={(e) => setField('status', e.target.value as InstallmentAccountStatus)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="active">Active</option>
-              <option value="closed">Closed</option>
-              <option value="early_closed">Early closed</option>
-              <option value="written_off">Written off</option>
-            </select>
+              onChange={(v) => setField('status', v as InstallmentAccountStatus)}
+              options={STATUS_OPTIONS}
+              className="mt-1 w-full"
+            />
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="category" className="block text-[13px] font-medium text-gray-700">
-              Category
-            </label>
-            <select
-              id="category"
+            <label className="block text-[13px] font-medium text-gray-700">Category</label>
+            <SearchableSelect
               value={form.category}
-              onChange={(e) =>
-                setField('category', e.target.value as InstallmentAccountCategory | '')
-              }
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Unset</option>
-              <option value="A">A</option>
-              <option value="B">B</option>
-              <option value="C" disabled={originalCategory !== 'C'}>
-                C {originalCategory !== 'C' ? '— requires graduation request' : ''}
-              </option>
-              <option value="D">D</option>
-            </select>
-            {originalCategory !== 'C' && (
-              <p className="mt-1 text-[12px] text-gray-500">
-                Graduation to Category C needs management approval — request it from the account
-                detail page instead of editing directly here.
-              </p>
-            )}
+              onChange={(v) => setField('category', v as InstallmentAccountCategory | '')}
+              options={categoryOptions(originalCategory)}
+              placeholder="No category"
+              clearable
+              className="mt-1 w-full"
+            />
+            <p className="mt-1 text-[12px] text-gray-500">
+              A is given to every new account for its first month, then it moves to B on its own.
+              Graduation to Category C needs management approval — request it from the account
+              detail page instead of editing directly here.
+            </p>
           </div>
           <div>
-            <label htmlFor="classification" className="block text-[13px] font-medium text-gray-700">
-              Classification
-            </label>
-            <select
-              id="classification"
+            <label className="block text-[13px] font-medium text-gray-700">Classification</label>
+            <SearchableSelect
               value={form.classification}
-              onChange={(e) =>
-                setField('classification', e.target.value as InstallmentAccountClassification | '')
+              onChange={(v) =>
+                setField('classification', v as InstallmentAccountClassification | '')
               }
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Unset</option>
-              <option value="official">Official</option>
-              <option value="arrears">Arrears</option>
-              <option value="not_moving">Not moving</option>
-            </select>
+              options={CLASSIFICATION_OPTIONS}
+              placeholder="No classification"
+              clearable
+              className="mt-1 w-full"
+            />
           </div>
         </div>
 

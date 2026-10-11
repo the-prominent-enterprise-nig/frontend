@@ -294,6 +294,9 @@ export type InstallmentAccountFilters = {
   category?: string
   classification?: string
   status?: string
+  /** Due Date range on the next due date, YYYY-MM-DD, both ends inclusive. */
+  dueFrom?: string
+  dueTo?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>

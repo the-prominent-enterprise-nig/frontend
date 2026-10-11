@@ -33,10 +33,10 @@ const STATUS_STYLES: Record<string, string> = {
 // Description/Debit/Credit/Due/Outstanding table) — see
 // InstallmentAccountService.getLedger()'s doc comment for exactly which
 // paper-form fields/rows this can and can't reproduce from real data (no
-// Unit Manager anywhere in this system, no itemized Total Penalty separate
-// from Penalty Balance, no memo-only voucher rows). Section/Row styling
-// matches this same folder's InstallmentAccountDetail.tsx (the CRM account
-// page this links out to) rather than a boxed form-grid look.
+// itemized Total Penalty separate from Penalty Balance, no memo-only voucher
+// rows; the paper form's Unit Manager is left off at the client's request).
+// Section/Row styling matches this same folder's InstallmentAccountDetail.tsx
+// (the CRM account page this links out to) rather than a boxed form-grid look.
 export default function InstallmentLedgerView({
   accountId,
   backHref,
@@ -168,9 +168,6 @@ export default function InstallmentLedgerView({
               <InfoTable
                 fields={[
                   { label: 'Agent', value: ledger.account.sellingAgent?.name ?? '—' },
-                  // No "Unit Manager" role/relation exists anywhere in this
-                  // system — left blank rather than guessed.
-                  { label: 'Unit Manager', value: '—' },
                   {
                     label: 'Collector',
                     value: ledger.account.collector

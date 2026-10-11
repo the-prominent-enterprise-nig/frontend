@@ -148,7 +148,7 @@ test.describe('AP bill — lines carry an input VAT code', () => {
     await pickSupplier(page, supplier)
 
     await fillStable(
-      page.locator('label:has-text("SI / Invoice Number") input'),
+      page.locator('label:has-text("Supplier Invoice Number") input'),
       `E2E-G-${Date.now()}`
     )
     await page.getByRole('button', { name: 'Add line' }).click()

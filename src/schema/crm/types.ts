@@ -387,9 +387,17 @@ export interface InstallmentAccount {
   isXDeal?: boolean
   xDealReference?: string | null
   createdAt: string
-  customer?: { name: string } | null
+  customer?: { name: string; phone?: string | null } | null
   branch?: { name: string } | null
   collector?: { stubNumber: string; name: string } | null
+  // List-only, worked out by the server: the Sales Invoice No. this contract
+  // came from, when its next monthly installment falls due, and how much of
+  // that installment is still asked for (the list's "MI Due"; not the stored
+  // `miDue` on the detail, which nothing recalculates). Both are null on an
+  // account nothing falls due on any more (closed, written off).
+  siNumber?: string
+  dueDate?: string | null
+  dueAmount?: number | null
 }
 
 export interface InstallmentAccountDetail extends InstallmentAccount {

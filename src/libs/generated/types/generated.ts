@@ -8941,40 +8941,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/accounting/installment-interest-release/pending': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Preview what a release run would post, without posting anything */
-    get: operations['InstallmentInterestReleaseController_getPending']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/accounting/installment-interest-release/run': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Release each eligible contract's elapsed financing markup; posts one JE per contract */
-    post: operations['InstallmentInterestReleaseController_runRelease']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/recurring-entries': {
     parameters: {
       query?: never
@@ -31189,42 +31155,6 @@ export interface operations {
       path: {
         id: string
       }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentInterestReleaseController_getPending: {
-    parameters: {
-      query: {
-        asOfDate: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentInterestReleaseController_runRelease: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
       cookie?: never
     }
     requestBody?: never

@@ -934,7 +934,7 @@ export function printPurchaseOrderDocument(
  * misalign in the first place, and doesn't match the paper form anyway:
  *   1. Lastname / Firstname / Middle / (Sales Invoice No. + SI Date)
  *   2. Brand / Type / Model / Serial
- *   3. Agent / Unit Manager / Collector / FMI
+ *   3. Agent / Collector (two cells wide) / FMI
  *   4. LCP / Down / Amt. Financed / Inst. Diff.
  *   5. Scheme (the paper form's "WIP") / MI / Term / Branch
  *   6. PN / IC / Total Price
@@ -945,8 +945,9 @@ export function printPurchaseOrderDocument(
  * customer's own real stored name-part columns now, falling back to the
  * single merged `name` in the Lastname cell only for the rare customer
  * created before those columns existed and never re-saved since. The one
- * thing the paper form has that this still can't reproduce is "Unit
- * Manager" — no such role exists anywhere in this system, left blank.
+ * thing the paper form has that this does not carry over is "Unit
+ * Manager" — no such role exists in this system, and the client asked for
+ * it off the Customer Ledger (2026-10-11).
  */
 export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
   const { account, rows } = ledger
@@ -1064,12 +1065,12 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
       }
       <tr>
         ${cell('Agent', account.sellingAgent?.name ?? '—')}
-        ${cell('Unit Manager', '—')}
         ${cell(
           'Collector',
           account.collector
             ? `${account.collector.stubNumber} — ${account.collector.name}`
-            : 'Unassigned'
+            : 'Unassigned',
+          2
         )}
         ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
       </tr>
@@ -1736,7 +1737,7 @@ export function buildAgingRawDataHtml(report: AgingReportResponse): string {
 
   const rows = report.branches.flatMap((branch) =>
     branch.collectors.flatMap((collector) => {
-      // collectorLabel is "COL-0001 — Gallendo Edgardo"; the sheet wants the bare name.
+      // collectorLabel is "Ajuy — Gallendo Edgardo"; the sheet wants the bare name.
       const name = collector.collectorLabel.split(' — ').pop() ?? ''
       const underscored = name.replace(/ /g, '_')
       return collector.rows.map((r) => {

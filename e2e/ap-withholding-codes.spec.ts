@@ -135,7 +135,7 @@ test.describe('Withholding tax codes — suppliers, AP bills and receiving', () 
     await page.locator('div.fixed button', { hasText: supplier.name }).first().click()
 
     const marker = `E2E-D-${Date.now()}`
-    await fillStable(page.locator('label:has-text("SI / Invoice Number") input'), marker)
+    await fillStable(page.locator('label:has-text("Supplier Invoice Number") input'), marker)
     await fillStable(page.locator('label:has-text("Subtotal *") input'), '50000')
     await selectStable(code, 'EWT-RENT-5')
 

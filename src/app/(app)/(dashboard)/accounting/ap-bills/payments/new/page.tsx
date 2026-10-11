@@ -4,7 +4,7 @@ import { requirePermission } from '@/src/libs/guards/require-permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import RecordPaymentForm from './_components/RecordPaymentForm'
 
-export const metadata = { title: 'Record Payment' }
+export const metadata = { title: 'Create Voucher' }
 export default async function Page() {
   const session = await getSessionOrNull()
   requirePermission(session, ACCOUNTING_PERMISSIONS.AP_BILLS_PAY)

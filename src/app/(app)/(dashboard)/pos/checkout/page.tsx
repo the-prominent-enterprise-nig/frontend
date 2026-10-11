@@ -35,7 +35,6 @@ import {
 import {
   computePricingTotals,
   resolveLineTaxRate,
-  displayUnitPriceExclTax,
   effectiveUnitPrice,
   lineTaxAmount,
 } from './_utils/calculations'
@@ -4951,7 +4950,6 @@ export default function CheckoutPage() {
                         Cart · {displayGroups.length} item{displayGroups.length !== 1 ? 's' : ''}
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-gray-900">{fmt(subtotal)}</span>
                   </div>
                   <div className="scroll-fade-x overflow-x-auto">
                     <table className="min-w-full text-sm">
@@ -5112,10 +5110,11 @@ export default function CheckoutPage() {
                                   {line.priceResolved ? (
                                     <div className="flex flex-col items-end gap-0.5">
                                       {fmt(
-                                        displayUnitPriceExclTax(
+                                        effectiveUnitPrice(
                                           line,
                                           activeTaxRate,
-                                          inclusivePricing
+                                          inclusivePricing,
+                                          isTaxExempt
                                         ) * groupQty
                                       )}
                                       {line.priceOverrideBy && (
@@ -7830,11 +7829,6 @@ function SuccessScreen({
           {success.journalEntryId && (
             <p className="px-6 pt-3 text-center font-mono text-[10px] text-gray-400">
               JE: {success.journalEntryId}
-            </p>
-          )}
-          {success.loyaltyEarned && selectedCustomer && (
-            <p className="px-6 pt-2 text-center text-xs font-medium text-purple-500">
-              Points earned for {customerDisplayName(selectedCustomer)}
             </p>
           )}
 

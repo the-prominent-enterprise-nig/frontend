@@ -37,19 +37,13 @@ const CLEARED_OPTIONS = [
   { value: 'LATER_DATE', label: 'On a later date' },
 ]
 
-const METHOD_OPTIONS = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'check', label: 'Check' },
-  { value: 'bank_transfer', label: 'Bank Transfer' },
-]
-
 interface PaymentSource {
+  /** Not asked for any more — the Paid from row is just the account, a
+   * reference and an amount. The server still wants one per source, so a new
+   * row says 'check' (the old default) and a voucher being amended keeps
+   * whatever it was raised with. */
   method: string
   bankAccountId: string
-  /** Free text for what this source was for — the halves of a split payment
-   * need telling apart. Replaced the per-source Check # box, which duplicated
-   * Reference Number: the cheque number was being typed into both. */
-  description: string
   reference: string
   /** Blank on the only row — a single source funds the whole payment, so its
    * amount is the total and there is nothing to type. Filled in once a second
@@ -58,7 +52,7 @@ interface PaymentSource {
 }
 
 function blankSource(): PaymentSource {
-  return { method: 'check', bankAccountId: '', description: '', reference: '', amount: '' }
+  return { method: 'check', bankAccountId: '', reference: '', amount: '' }
 }
 
 /** MM/DD/YYYY, the format used across this module's date inputs. */
@@ -226,6 +220,25 @@ export default function RecordPaymentForm() {
   /** The existing voucher this screen is acting on, whichever mode. */
   const voucherId = settleId ?? editId
   const [settling, setSettling] = useState<APDisbursementListItem | null>(null)
+  // Opening a payment that has already been made: the same screen it was paid
+  // on, filled in. Its invoices read PAID, so the open-invoices list does not
+  // carry them, and what each can take here is what is still open PLUS what this
+  // voucher itself paid — otherwise the voucher would be refused for exactly its
+  // own amount. Saving corrects the books (the server reverses the old entry and
+  // posts a new one).
+  const amendingPaid =
+    editing && !!settling && settling.status !== 'UNPAID' && settling.status !== 'CANCELLED'
+  const ownPaid = useMemo<Record<string, number>>(
+    () =>
+      amendingPaid && settling
+        ? Object.fromEntries(settling.invoices.map((i) => [i.billId, i.amount]))
+        : {},
+    [amendingPaid, settling]
+  )
+  const outstandingFor = useCallback(
+    (b: APBill) => outstandingOf(b) + (ownPaid[b.id] ?? 0),
+    [ownPaid]
+  )
   const [presetApplied, setPresetApplied] = useState(false)
   const [presetNotice, setPresetNotice] = useState<string | null>(null)
   // The invoices this payment is settling, once they are decided. Non-null
@@ -298,7 +311,6 @@ export default function RecordPaymentForm() {
           found.sources.map((src) => ({
             method: src.method || 'check',
             bankAccountId: src.bankAccount?.id ?? '',
-            description: src.description ?? '',
             reference: src.reference ?? '',
             amount: src.amount != null ? String(src.amount) : '',
           }))
@@ -310,6 +322,8 @@ export default function RecordPaymentForm() {
         clearedType: found.clearedType ?? f.clearedType,
         clearedDate: found.clearedDate ? found.clearedDate.slice(0, 10) : f.clearedDate,
         notes: found.notes ?? f.notes,
+        // A paid voucher has the date it was paid on; an unpaid one has none yet.
+        paymentDate: found.paymentDate ? found.paymentDate.slice(0, 10) : f.paymentDate,
       }))
     })
   }, [voucherId])
@@ -333,12 +347,19 @@ export default function RecordPaymentForm() {
     // not just its total — see displayLines().
     const res = await APBills.list({ supplierId, withDetail: 'true' })
     const open = (res.data?.items ?? []).filter(
-      (b) => PAYABLE_STATUSES.includes(b.status) && outstandingOf(b) > 0.005
+      (b) => PAYABLE_STATUSES.includes(b.status) && outstandingFor(b) > 0.005
     )
-    setBills(open)
+    // A paid voucher's own invoices are PAID, so they are fetched by id and put
+    // in front of the open ones.
+    const own: APBill[] = []
+    if (amendingPaid && settling) {
+      const fetched = await Promise.all(settling.invoices.map((i) => APBills.get(i.billId)))
+      for (const r of fetched) if (r.success && r.data) own.push(r.data)
+    }
+    setBills([...own, ...open.filter((b) => !own.some((o) => o.id === b.id))])
     if (!voucherId) setAllocations({})
     setLoadingBills(false)
-  }, [supplierId, voucherId])
+  }, [supplierId, voucherId, amendingPaid, settling, outstandingFor])
 
   useEffect(() => {
     loadBills()
@@ -353,7 +374,7 @@ export default function RecordPaymentForm() {
     const found = bills.filter((b) => presetBills.includes(b.id))
     if (found.length) {
       const next: Record<string, string> = {}
-      for (const b of found) next[b.id] = String(outstandingOf(b).toFixed(2))
+      for (const b of found) next[b.id] = String(outstandingFor(b).toFixed(2))
       setAllocations(next)
     } else {
       // Every selected invoice was settled elsewhere in the meantime. Staying
@@ -368,7 +389,7 @@ export default function RecordPaymentForm() {
       )
     }
     setPresetApplied(true)
-  }, [bills, presetBills, presetApplied])
+  }, [bills, presetBills, presetApplied, outstandingFor])
 
   // What this screen may pay. Restricted to the incoming selection until the
   // user deliberately widens it (or switches payee, below).
@@ -392,10 +413,10 @@ export default function RecordPaymentForm() {
     () =>
       locked
         ? Object.fromEntries(
-            visibleBills.map((b) => [b.id, allocations[b.id] ?? outstandingOf(b).toFixed(2)])
+            visibleBills.map((b) => [b.id, allocations[b.id] ?? outstandingFor(b).toFixed(2)])
           )
         : allocations,
-    [locked, visibleBills, allocations]
+    [locked, visibleBills, allocations, outstandingFor]
   )
 
   const selectedBills = useMemo(
@@ -503,7 +524,7 @@ export default function RecordPaymentForm() {
   const toggle = (bill: APBill, on: boolean) => {
     setAllocations((prev) => {
       const next = { ...prev }
-      if (on) next[bill.id] = String(outstandingOf(bill).toFixed(2))
+      if (on) next[bill.id] = String(outstandingFor(bill).toFixed(2))
       else delete next[bill.id]
       return next
     })
@@ -513,7 +534,7 @@ export default function RecordPaymentForm() {
   const toggleAll = (on: boolean) => {
     if (!on) return setAllocations({})
     const next: Record<string, string> = {}
-    for (const b of visibleBills) next[b.id] = String(outstandingOf(b).toFixed(2))
+    for (const b of visibleBills) next[b.id] = String(outstandingFor(b).toFixed(2))
     setAllocations(next)
   }
 
@@ -522,10 +543,7 @@ export default function RecordPaymentForm() {
     setError(null)
     if (selectedIds.length === 0) return setError('Select at least one invoice to pay.')
     for (const src of sources) {
-      if (!src.bankAccountId)
-        return setError(
-          `Cash / bank account is required for ${src.method.replace('_', ' ')} payments.`
-        )
+      if (!src.bankAccountId) return setError('Pick the bank or cash account this is paid from.')
     }
     // Applies however many sources there are: an untouched single row defaults
     // to the full total, so this only fires on a figure someone actually typed.
@@ -564,9 +582,9 @@ export default function RecordPaymentForm() {
     for (const r of rows) {
       if (!(r.amount > 0)) return setError('Every selected invoice needs an amount above zero.')
       const bill = bills.find((b) => b.id === r.apBillId)!
-      if (r.amount > outstandingOf(bill) + 0.01)
+      if (r.amount > outstandingFor(bill) + 0.01)
         return setError(
-          `${bill.billNumber ?? 'An invoice'} only has ${fmtMoney(outstandingOf(bill))} outstanding.`
+          `${bill.billNumber ?? 'An invoice'} only has ${fmtMoney(outstandingFor(bill))} outstanding.`
         )
     }
 
@@ -582,10 +600,13 @@ export default function RecordPaymentForm() {
           method: src.method,
           bankAccountId: src.bankAccountId || undefined,
           reference: src.reference || undefined,
-          description: src.description || undefined,
           amount: sourceAmount(src),
         })),
-        voucherDate: new Date(form.paymentDate).toISOString(),
+        // A paid voucher is corrected by its payment date; an unpaid one has only
+        // the date it was raised.
+        ...(amendingPaid
+          ? { paymentDate: new Date(form.paymentDate).toISOString() }
+          : { voucherDate: new Date(form.paymentDate).toISOString() }),
         clearedType: form.clearedType,
         clearedDate:
           form.clearedType === 'LATER_DATE' && form.clearedDate
@@ -618,7 +639,6 @@ export default function RecordPaymentForm() {
           method: src.method,
           bankAccountId: src.bankAccountId || undefined,
           reference: src.reference || undefined,
-          description: src.description || undefined,
           amount: sourceAmount(src),
         })),
       })
@@ -638,7 +658,6 @@ export default function RecordPaymentForm() {
         method: src.method,
         bankAccountId: src.bankAccountId || undefined,
         reference: src.reference || undefined,
-        description: src.description || undefined,
         amount: sourceAmount(src),
       })),
       voucherDate: new Date(form.paymentDate).toISOString(),
@@ -675,11 +694,43 @@ export default function RecordPaymentForm() {
       </h1>
       <p className="mb-4 text-[13px] text-gray-500">
         {editing
-          ? 'It keeps its number. Nothing has posted yet, so anything on it can still change.'
+          ? amendingPaid
+            ? 'It keeps its number. This payment has already been recorded, and everything on it can still be corrected.'
+            : 'It keeps its number. Nothing has posted yet, so anything on it can still change.'
           : settling
             ? 'The invoices were decided when this voucher was raised — add the cheque and the date.'
             : 'One cheque, one voucher — recorded together with the payment.'}
       </p>
+
+      {amendingPaid && (
+        <div
+          role="alert"
+          data-testid="paid-voucher-warning"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800"
+        >
+          <p className="font-semibold">This payment has already been recorded and posted.</p>
+          <p className="mt-0.5">
+            Saving a change reverses its journal entry and posts a corrected one, and each
+            invoice&apos;s paid amount and status follow. The voucher keeps its number.
+          </p>
+          {settling && settling.invoices.length > 0 && (
+            <p className="mt-1">
+              Invoice details (dates, SI number):{' '}
+              {settling.invoices.map((i, n) => (
+                <span key={i.billId}>
+                  {n > 0 && ', '}
+                  <Link
+                    href={`/accounting/ap-bills/${i.billId}/edit?details=1`}
+                    className="font-medium underline"
+                  >
+                    {i.billNumber ?? 'invoice'}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Beat 1 — who are we paying. Nothing else shows until this is set. */}
       <div className="max-w-md">
@@ -775,7 +826,7 @@ export default function RecordPaymentForm() {
                 <tbody className="divide-y divide-gray-100">
                   {visibleBills.map((b) => {
                     const on = b.id in activeAllocations
-                    const out = outstandingOf(b)
+                    const out = outstandingFor(b)
                     const amt = Number(activeAllocations[b.id] ?? 0)
                     const partial = on && amt > 0 && amt < out - 0.01
                     const whtPot = b.withholdingAmount ?? 0
@@ -1024,11 +1075,10 @@ export default function RecordPaymentForm() {
                     readOnly
                     aria-label="Voucher number (generated)"
                     title="Generated from the bank and reference number of the first payment method"
-                    value={previewVoucher(
-                      selectedBank,
-                      primarySource?.reference ?? '',
-                      form.paymentDate
-                    )}
+                    value={
+                      settling?.voucherNumber ??
+                      previewVoucher(selectedBank, primarySource?.reference ?? '', form.paymentDate)
+                    }
                     className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-500 outline-none"
                   />
                 </label>
@@ -1079,15 +1129,6 @@ export default function RecordPaymentForm() {
                   {sources.map((src, idx) => (
                     <div key={idx} className="flex flex-wrap items-end gap-2">
                       <span className="pb-2 text-[13px] text-gray-400">{idx + 1}.</span>
-                      <label className="block w-44">
-                        <span className="sr-only">Payment method {idx + 1}</span>
-                        <Select
-                          compact
-                          value={src.method}
-                          onChange={(method) => setSource(idx, { method })}
-                          options={METHOD_OPTIONS}
-                        />
-                      </label>
                       <label className="block w-64">
                         <span className="mb-1 block text-[11px] text-gray-500">
                           Bank and Cash Accounts *
@@ -1100,14 +1141,6 @@ export default function RecordPaymentForm() {
                           onChange={(id) => setSource(idx, { bankAccountId: id ?? '' })}
                           options={bankOptions}
                           placeholder="— Select —"
-                        />
-                      </label>
-                      <label className="block w-48">
-                        <span className="mb-1 block text-[11px] text-gray-500">Description</span>
-                        <input
-                          value={src.description}
-                          onChange={(e) => setSource(idx, { description: e.target.value })}
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                         />
                       </label>
                       <label className="block w-44">
@@ -1220,7 +1253,7 @@ export default function RecordPaymentForm() {
           ) : (
             <PhilippinePeso className="h-4 w-4" />
           )}
-          {saving ? 'Saving…' : editing ? 'Save changes' : 'Record Payment'}
+          {saving ? 'Saving…' : editing ? 'Save changes' : 'Create Voucher'}
         </button>
         <Link
           href="/accounting/ap-bills"

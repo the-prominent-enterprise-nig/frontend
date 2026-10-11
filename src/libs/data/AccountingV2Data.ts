@@ -74,40 +74,6 @@ export const FixedAssetsV2 = {
   remove: (id: string) => api.delete(`/fixed-assets/${id}`),
 }
 
-// ============ Installment Interest Release (Scenario 29 ACC-04) ============
-export interface PendingInterestReleaseSchedule {
-  installmentScheduleId: string
-  transactionNumber?: string | null
-  periodsEligible: number
-  amount: number
-}
-export interface PendingInterestReleaseResult {
-  asOfDate: string
-  schedules: PendingInterestReleaseSchedule[]
-  totalPending: number
-}
-export interface InterestReleaseRunResultItem {
-  installmentScheduleId: string
-  journalEntryId: string
-  periodsReleased: number
-  amountReleased: number
-}
-export interface InterestReleaseRunResult {
-  asOfDate: string
-  schedulesReleased: number
-  totalReleased: number
-  results: InterestReleaseRunResultItem[]
-  skipped: { installmentScheduleId: string; reason: string }[]
-}
-export const InstallmentInterestRelease = {
-  getPending: (asOfDate?: string) =>
-    api.get<PendingInterestReleaseResult>('/accounting/installment-interest-release/pending', {
-      asOfDate,
-    }),
-  run: (body: { asOfDate?: string }) =>
-    api.post<InterestReleaseRunResult>('/accounting/installment-interest-release/run', body),
-}
-
 // ============ Budgets (ACC-23) ============
 export type BudgetGrain = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL'
 export interface Budget {
@@ -1106,6 +1072,10 @@ export interface APBill {
     purchaseOrderNumber?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
+    // The receipt's own VAT and withholding — Decimal columns, so they arrive
+    // as strings. Present on APBills.get() (findOne includes the whole row).
+    vatAmount?: number | string | null
+    withheldAmount?: number | string | null
     // Line-level detail — populated by APBills.get() (the detail page) and by
     // APBills.list({ withDetail: 'true' }); the plain list view stays on the
     // lighter shape above.
@@ -1326,10 +1296,17 @@ export interface APDisbursementListItem {
   clearedDate: string | null
   notes: string | null
   journalEntryId: string | null
-  invoices: { billId: string; billNumber: string | null; amount: number }[]
+  invoices: {
+    billId: string
+    billNumber: string | null
+    amount: number
+    /** What this voucher claims of the invoice's withholding. */
+    withholdingAmount?: number
+  }[]
   sources: {
     method: string
     reference: string | null
+    chequeNumber?: string | null
     description: string | null
     amount: number
     bankAccount: { id: string; name: string; accountNumber: string } | null

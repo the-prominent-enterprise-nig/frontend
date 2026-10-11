@@ -7,6 +7,7 @@ import { Plus, Search, Wallet, Calculator, FileClock } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import PriceCheckModal from '@/src/components/crm/PriceCheckModal'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
@@ -53,6 +54,30 @@ function peso(amount: number | string): string {
   return `₱${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
 }
 
+function shortDate(value: string): string {
+  return new Date(value).toLocaleDateString('en-PH', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+/** A due date already behind us on an account that is still being collected. */
+function isPastDue(dueDate: string | null | undefined): boolean {
+  return !!dueDate && new Date(dueDate).getTime() < Date.now()
+}
+
+const FILTER_CLASS = 'rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm'
+
+const CATEGORY_OPTIONS = ['A', 'B', 'C', 'D'].map((c) => ({ value: c, label: c }))
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'early_closed', label: 'Early closed' },
+  { value: 'written_off', label: 'Written off' },
+]
+
 export default function InstallmentAccountsList({ canCreate }: { canCreate: boolean }) {
   const router = useRouter()
   const [accounts, setAccounts] = useState<InstallmentAccount[]>([])
@@ -62,10 +87,11 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
   )
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [classificationFilter, setClassificationFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
   const [collectorFilter, setCollectorFilter] = useState('')
+  const [dueFrom, setDueFrom] = useState('')
+  const [dueTo, setDueTo] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [priceCheckOpen, setPriceCheckOpen] = useState(false)
@@ -87,10 +113,11 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
       const res = await installmentAccountsApi.list({
         search: search || undefined,
         category: categoryFilter || undefined,
-        classification: classificationFilter || undefined,
         status: statusFilter || undefined,
         branchId: branchFilter || undefined,
         collectorId: collectorFilter || undefined,
+        dueFrom: dueFrom || undefined,
+        dueTo: dueTo || undefined,
         limit: 50,
       })
       if (controller.signal.aborted) return
@@ -102,7 +129,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
       controller.abort()
       clearTimeout(t)
     }
-  }, [search, categoryFilter, classificationFilter, statusFilter, branchFilter, collectorFilter])
+  }, [search, categoryFilter, statusFilter, branchFilter, collectorFilter, dueFrom, dueTo])
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
@@ -140,8 +167,11 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
         </div>
       </header>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
-        <div className="relative min-w-[220px] flex-1">
+      {/* Search on its own row, every filter on the row below it, in the
+          order the client drew them: Category, Branch, Collector Code, Due
+          Date From–To, Status. Every dropdown is searchable. */}
+      <div className="mb-4 space-y-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+        <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
@@ -150,62 +180,64 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-prominent-orange-400 focus:outline-none"
           />
         </div>
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All categories</option>
-          <option value="A">A</option>
-          <option value="B">B</option>
-          <option value="C">C</option>
-          <option value="D">D</option>
-        </select>
-        <select
-          value={classificationFilter}
-          onChange={(e) => setClassificationFilter(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All classifications</option>
-          <option value="official">Official</option>
-          <option value="arrears">Arrears</option>
-          <option value="not_moving">Not moving</option>
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="closed">Closed</option>
-          <option value="early_closed">Early closed</option>
-          <option value="written_off">Written off</option>
-        </select>
-        <select
-          value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All branches</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={collectorFilter}
-          onChange={(e) => setCollectorFilter(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All collectors</option>
-          {collectors.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.stubNumber} — {c.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchableSelect
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={CATEGORY_OPTIONS}
+            placeholder="All categories"
+            clearable
+            portal
+            className="min-w-[9.5rem] flex-1"
+          />
+          <SearchableSelect
+            value={branchFilter}
+            onChange={setBranchFilter}
+            options={branches.map((b) => ({ value: b.id, label: b.name }))}
+            placeholder="All branches"
+            clearable
+            portal
+            className="min-w-[9rem] flex-1"
+          />
+          <SearchableSelect
+            value={collectorFilter}
+            onChange={setCollectorFilter}
+            options={collectors.map((c) => ({ value: c.id, label: `${c.stubNumber} — ${c.name}` }))}
+            placeholder="All collector codes"
+            clearable
+            portal
+            className="min-w-[11rem] flex-[1.5]"
+          />
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span className="font-medium">Due Date</span>
+            <input
+              type="date"
+              aria-label="Due Date from"
+              value={dueFrom}
+              max={dueTo || undefined}
+              onChange={(e) => setDueFrom(e.target.value)}
+              className={`${FILTER_CLASS} w-[8.75rem] shrink-0 !px-2 text-[13px]`}
+            />
+            <span>to</span>
+            <input
+              type="date"
+              aria-label="Due Date to"
+              value={dueTo}
+              min={dueFrom || undefined}
+              onChange={(e) => setDueTo(e.target.value)}
+              className={`${FILTER_CLASS} w-[8.75rem] shrink-0 !px-2 text-[13px]`}
+            />
+          </div>
+          <SearchableSelect
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUS_OPTIONS}
+            placeholder="All statuses"
+            clearable
+            portal
+            className="min-w-[9rem] flex-1"
+          />
+        </div>
       </div>
 
       {loading && (
@@ -241,7 +273,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex min-w-0 items-center gap-1.5">
                         <span className="truncate font-medium text-gray-900">
-                          {a.accountNumber}
+                          {a.siNumber ?? a.accountNumber}
                         </span>
                         {a.isXDeal && <XDealBadge reference={a.xDealReference} />}
                       </span>
@@ -249,9 +281,19 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
                       {a.customer ? a.customer.name : '—'}
+                      {a.customer?.phone ? ` · ${a.customer.phone}` : ''}
                     </div>
-                    <div className="mt-1 flex items-center justify-between">
-                      <StatusBadge status={a.status} />
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="text-[12px] text-gray-500">
+                        {a.dueDate ? (
+                          <span className={isPastDue(a.dueDate) ? 'font-medium text-red-600' : ''}>
+                            Due {shortDate(a.dueDate)}
+                          </span>
+                        ) : (
+                          <StatusBadge status={a.status} />
+                        )}
+                        {a.dueAmount != null ? ` · MI ${peso(a.dueAmount)}` : ''}
+                      </span>
                       <span className="text-[13px] font-semibold tabular-nums text-gray-900">
                         {peso(a.currentBalance)}
                       </span>
@@ -262,19 +304,21 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
             ))}
           </ul>
 
-          {/* Desktop: table */}
+          {/* Desktop: table — Cat, SI #, Customer / Contact #, Collector,
+              Due Date, MI Due, Outstanding Balance (the client's "OB",
+              spelled out), as drawn by the client. */}
           <div className="hidden overflow-hidden rounded-xl border border-gray-200 bg-white md:block">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                   <tr>
-                    <th className="px-4 py-3">Account #</th>
-                    <th className="px-4 py-3">Customer</th>
-                    <th className="px-4 py-3">Branch</th>
+                    <th className="px-4 py-3">Cat</th>
+                    <th className="px-4 py-3">SI #</th>
+                    <th className="px-4 py-3">Customer / Contact #</th>
                     <th className="px-4 py-3">Collector</th>
-                    <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right">Balance</th>
+                    <th className="px-4 py-3">Due Date</th>
+                    <th className="px-4 py-3 text-right">MI Due</th>
+                    <th className="whitespace-nowrap px-4 py-3 text-right">Outstanding Balance</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-gray-800">
@@ -282,28 +326,60 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                     <tr
                       key={a.id}
                       onClick={() => router.push(`/crm/installment-accounts/${a.id}`)}
-                      className="cursor-pointer transition-colors hover:bg-gray-50"
+                      className="cursor-pointer align-top transition-colors hover:bg-gray-50"
                     >
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        <span className="inline-flex items-center gap-1.5">
-                          {a.accountNumber}
-                          {a.isXDeal && <XDealBadge reference={a.xDealReference} />}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-[13px] text-gray-700">
-                        {a.customer ? a.customer.name : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-[13px] text-gray-600">
-                        {a.branch?.name ?? <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-[13px] text-gray-600">
-                        {a.collector?.stubNumber ?? <span className="text-gray-400">—</span>}
-                      </td>
                       <td className="px-4 py-3">
                         <CategoryBadge category={a.category} />
                       </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={a.status} />
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        <span className="inline-flex items-center gap-1.5">
+                          {a.siNumber ?? a.accountNumber}
+                          {a.isXDeal && <XDealBadge reference={a.xDealReference} />}
+                        </span>
+                        <span className="block font-mono text-[11px] font-normal text-gray-400">
+                          {a.accountNumber}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-gray-700">
+                        <span className="block">{a.customer ? a.customer.name : '—'}</span>
+                        <span className="block text-[12px] text-gray-500">
+                          {a.customer?.phone || '—'}
+                        </span>
+                        {a.status !== 'active' && (
+                          <span className="mt-1 inline-block">
+                            <StatusBadge status={a.status} />
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-gray-600">
+                        {a.collector ? (
+                          <>
+                            <span className="block">{a.collector.name}</span>
+                            <span className="block text-[12px] text-gray-400">
+                              {a.collector.stubNumber}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td
+                        className={`whitespace-nowrap px-4 py-3 text-[13px] ${
+                          isPastDue(a.dueDate) ? 'font-medium text-red-600' : 'text-gray-600'
+                        }`}
+                      >
+                        {a.dueDate ? (
+                          shortDate(a.dueDate)
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-gray-800">
+                        {a.dueAmount != null ? (
+                          peso(a.dueAmount)
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums font-medium text-gray-900">
                         {peso(a.currentBalance)}

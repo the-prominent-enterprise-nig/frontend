@@ -112,7 +112,7 @@ test.describe('AP bill — withholding at a code other than the supplier’s own
     await pickSupplier(page, supplier)
 
     await fillStable(
-      page.locator('label:has-text("SI / Invoice Number") input'),
+      page.locator('label:has-text("Supplier Invoice Number") input'),
       `E2E-I-${Date.now()}`
     )
     await fillStable(page.locator('label:has-text("Subtotal *") input'), '50000')

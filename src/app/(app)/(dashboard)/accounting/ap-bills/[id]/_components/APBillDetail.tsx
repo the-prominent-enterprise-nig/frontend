@@ -175,7 +175,7 @@ export default function APBillDetail({ id }: { id: string }) {
     ...(['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(bill.status) && uncommitted > 0.005
       ? [
           {
-            label: 'Record Payment',
+            label: 'Create Voucher',
             icon: PhilippinePeso,
             onClick: () =>
               router.push(

@@ -1,20 +1,20 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Loader2, Lock, Plus, Trash2 } from 'lucide-react'
 import {
   APBills,
   APBillMatching,
   type APBill,
   type APBillPurchaseOrderOption,
   type APBillGoodsReceiptOption,
-  type APBillMatchCheck,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { EwtCodeSelect } from '@/src/components/accounting/EwtCodeSelect'
 import { TaxOverrideBox, TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 import { useMe } from '@/src/hooks/useMe'
@@ -58,8 +58,18 @@ import { getSupplier } from '@/src/app/(app)/(dashboard)/inventory/suppliers/_ac
 // its own route now: /accounting/ap-bills/new and /accounting/ap-bills/[id]/edit
 // both render this one component, the latter passing billId to load the
 // draft first.
+/** The voucher this bill was paid on, once a payment has actually been made. */
+function paidVoucherIdOf(bill: APBill): string | undefined {
+  return bill.disbursementAllocations?.find(
+    (a) => a.disbursement.status === 'PAID' || a.disbursement.status === 'PARTIAL'
+  )?.disbursement.id
+}
+
 export default function BillForm({ billId }: { billId?: string }) {
   const router = useRouter()
+  // ?details=1 is the way back from the payment screen to the invoice's own
+  // paperwork — without it, Edit on a paid bill opens the payment.
+  const wantsDetails = useSearchParams().get('details') === '1'
   const [initial, setInitial] = useState<APBill | null>(null)
   const [ready, setReady] = useState(!billId)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -68,12 +78,19 @@ export default function BillForm({ billId }: { billId?: string }) {
     if (!billId) return
     APBills.get(billId).then((res) => {
       if (res.success && res.data) {
-        // Scenario 43 — a fully settled bill is genuinely locked (nothing
-        // left to edit), but DRAFT/RECEIVED/PARTIAL/OVERDUE can all still
-        // reach this form — how much of it is actually editable is decided
-        // below (BillFormFields' isLocked), not gated here.
-        if (['PAID', 'CANCELLED'].includes(res.data.status)) {
-          setLoadError('This bill is fully settled and can no longer be edited.')
+        // Only a cancelled bill is shut. Every other status reaches this form,
+        // PAID included (the client wants a bill's own paperwork editable
+        // after Record Payment) — how much of it is editable is decided below
+        // (BillFormFields' isLocked), not gated here.
+        const paidOn = paidVoucherIdOf(res.data)
+        if (res.data.status === 'CANCELLED') {
+          setLoadError('This bill is cancelled and can no longer be edited.')
+        } else if (paidOn && !wantsDetails) {
+          // A bill that has been paid opens on the screen it was paid on —
+          // the Voucher, filled in, with a warning — not on a second, different
+          // form for the same payment. Left loading while the page swaps.
+          router.replace(`/accounting/ap-bills/payments/new?edit=${paidOn}`)
+          return
         } else {
           setInitial(res.data)
         }
@@ -82,7 +99,7 @@ export default function BillForm({ billId }: { billId?: string }) {
       }
       setReady(true)
     })
-  }, [billId])
+  }, [billId, wantsDetails, router])
 
   if (!ready) {
     return <div className="px-6 py-8 lg:px-10 text-sm text-gray-400">Loading…</div>
@@ -353,7 +370,6 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
   const overrideBlocked = freshOverrides.length > 0 && !canOverride
   const [purchaseOrders, setPurchaseOrders] = useState<APBillPurchaseOrderOption[]>([])
   const [receipts, setReceipts] = useState<APBillGoodsReceiptOption[]>([])
-  const [matchCheck, setMatchCheck] = useState<APBillMatchCheck | null>(null)
   const supplierIdOnMount = useRef(form.supplierId)
 
   useEffect(() => {
@@ -385,11 +401,6 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
     }
     APBillMatching.receipts(form.purchaseOrderId).then((r) => setReceipts(r.data?.data ?? []))
   }, [form.purchaseOrderId])
-
-  useEffect(() => {
-    if (!initial?.id || !initial?.purchaseOrderId) return
-    APBillMatching.matchCheck(initial.id).then((r) => setMatchCheck(r.data ?? null))
-  }, [initial?.id, initial?.purchaseOrderId])
 
   const toggleReceipt = (id: string) => {
     setForm((f) => ({
@@ -496,8 +507,8 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
         }
     const body = { ...payload, confirmDuplicateBillNumber: duplicateSi !== null }
     const res = initial ? await APBills.update(initial.id, body) : await APBills.create(body)
-    setSaving(false)
     if (!res.success) {
+      setSaving(false)
       if (res.errorCode === 'duplicate_supplier_invoice_number') {
         // Not an error yet — the same SI across several POs is normal. Show what
         // it clashes with and let them look before deciding.
@@ -525,24 +536,35 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
         {!initial ? 'New Bill' : isLocked ? 'Bill Details' : 'Edit Bill'}
       </h1>
       <p className="mt-1 text-sm text-gray-500">
-        Record a supplier bill. Receiving posts a journal entry to the GL.
+        {isReceiptSourced
+          ? "The receiving report is shown for reference and can't be changed here. Fill in the supplier's invoice below."
+          : 'Record a supplier bill. Receiving posts a journal entry to the GL.'}
       </p>
 
       <form
         onSubmit={submit}
         className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-5"
       >
+        {isReceiptSourced && initial && (
+          <>
+            <ReceivingReportReadOnly bill={initial} />
+            <h2 className="pt-1 text-[13px] font-semibold text-prominent-purple-900">AP Bill</h2>
+          </>
+        )}
         {isLocked ? (
           <div className="space-y-3">
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              This bill has been received and posted to the GL, so its goods-cost figures (Subtotal,
-              VAT) are fixed — they only change by correcting the Receiving Report. Its own
-              paperwork below can still be edited. How it gets paid is decided on its voucher — use
-              Record Payment from the invoice.
+              {initial?.status === 'PAID'
+                ? 'This bill is fully paid and posted to the GL, so its goods-cost figures (Subtotal, VAT) are fixed — they only change by correcting the Receiving Report. Its own paperwork below can still be edited.'
+                : 'This bill has been received and posted to the GL, so its goods-cost figures (Subtotal, VAT) are fixed — they only change by correcting the Receiving Report. Its own paperwork below can still be edited. How it gets paid is decided on its voucher — use Record Payment from the invoice.'}
             </div>
-            <InfoRow label="Supplier" value={initial?.supplier?.name ?? '—'} />
-            {initial?.purchaseOrder && (
-              <InfoRow label="Purchase Order" value={initial.purchaseOrder.code} />
+            {!isReceiptSourced && (
+              <>
+                <InfoRow label="Supplier" value={initial?.supplier?.name ?? '—'} />
+                {initial?.purchaseOrder && (
+                  <InfoRow label="Purchase Order" value={initial.purchaseOrder.code} />
+                )}
+              </>
             )}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Bill Date *">
@@ -571,7 +593,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </Field>
-            <Field label="SI / Invoice Number">
+            <Field label="Supplier Invoice Number">
               <input
                 value={form.billNumber}
                 onChange={(e) => {
@@ -599,71 +621,58 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
           </div>
         ) : (
           <>
-            <Field label="Supplier *">
-              <SupplierSearchCombobox
-                value={form.supplierId}
-                onChange={(id) => setForm({ ...form, supplierId: id })}
-                initialLabel={
-                  initial?.supplier
-                    ? `${initial.supplier.code} — ${initial.supplier.name}`
-                    : undefined
-                }
-              />
-            </Field>
-            {form.supplierId && (
-              <Field label="Purchase Order (for the 3-way match)">
-                <select
-                  value={form.purchaseOrderId}
-                  onChange={(e) => setForm({ ...form, purchaseOrderId: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                >
-                  <option value="">— None —</option>
-                  {purchaseOrders.map((po) => (
-                    <option key={po.id} value={po.id}>
-                      {po.code} — {fmtMoney(po.totalAmount)} ({po.status})
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            {form.purchaseOrderId && (
-              <Field label="Receiving Reports matched to this bill">
-                {receipts.length === 0 ? (
-                  <p className="text-xs text-gray-400">
-                    No receiving reports posted against this PO yet.
-                  </p>
-                ) : (
-                  <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-28 overflow-y-auto">
-                    {receipts.map((r) => (
-                      <label key={r.id} className="flex items-center gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={form.goodsReceiptIds.includes(r.id)}
-                          onChange={() => toggleReceipt(r.id)}
-                        />
-                        {r.code} — {fmtDate(r.receivedAt)}
-                      </label>
-                    ))}
-                  </div>
+            {!isReceiptSourced && (
+              <>
+                <Field label="Supplier *">
+                  <SupplierSearchCombobox
+                    value={form.supplierId}
+                    onChange={(id) => setForm({ ...form, supplierId: id })}
+                    initialLabel={
+                      initial?.supplier
+                        ? `${initial.supplier.code} — ${initial.supplier.name}`
+                        : undefined
+                    }
+                  />
+                </Field>
+                {form.supplierId && (
+                  <Field label="Purchase Order (for the 3-way match)">
+                    <select
+                      value={form.purchaseOrderId}
+                      onChange={(e) => setForm({ ...form, purchaseOrderId: e.target.value })}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                    >
+                      <option value="">— None —</option>
+                      {purchaseOrders.map((po) => (
+                        <option key={po.id} value={po.id}>
+                          {po.code} — {fmtMoney(po.totalAmount)} ({po.status})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                 )}
-              </Field>
-            )}
-            {matchCheck?.applicable && (
-              <div
-                className={`text-xs px-3 py-2 rounded-lg ${
-                  matchCheck.matched
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-amber-50 text-amber-700'
-                }`}
-              >
-                3-way match:{' '}
-                <span className="font-semibold">{matchCheck.matched ? 'Matched' : 'Variance'}</span>
-                {' — '}PO{' '}
-                {matchCheck.partial && matchCheck.poReceivedTotal != null
-                  ? `${fmtMoney(matchCheck.poReceivedTotal)} received of ${fmtMoney(matchCheck.poTotal ?? 0)}`
-                  : fmtMoney(matchCheck.poTotal ?? 0)}{' '}
-                · RRs {fmtMoney(matchCheck.rrTotal ?? 0)} · Bill {fmtMoney(matchCheck.invoiceTotal)}
-              </div>
+                {form.purchaseOrderId && (
+                  <Field label="Receiving Reports matched to this bill">
+                    {receipts.length === 0 ? (
+                      <p className="text-xs text-gray-400">
+                        No receiving reports posted against this PO yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-28 overflow-y-auto">
+                        {receipts.map((r) => (
+                          <label key={r.id} className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={form.goodsReceiptIds.includes(r.id)}
+                              onChange={() => toggleReceipt(r.id)}
+                            />
+                            {r.code} — {fmtDate(r.receivedAt)}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </Field>
+                )}
+              </>
             )}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Bill Date *">
@@ -692,7 +701,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </Field>
-            <Field label={initial ? 'SI / Invoice Number' : 'SI / Invoice Number *'}>
+            <Field label={initial ? 'Supplier Invoice Number' : 'Supplier Invoice Number *'}>
               <input
                 required={!initial}
                 value={form.billNumber}
@@ -731,8 +740,9 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
               </div>
               {billLines.length === 0 ? (
                 <p className="px-3 py-3 text-[12px] text-gray-400">
-                  No lines — the subtotal below is used as-is. Add lines to itemise this invoice and
-                  have its totals computed.
+                  {isReceiptSourced
+                    ? "No lines — this bill carries the receiving report's figures. Add lines only if the supplier's invoice differs from what was received."
+                    : 'No lines — the subtotal below is used as-is. Add lines to itemise this invoice and have its totals computed.'}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -999,10 +1009,18 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label={billLines.length ? 'Subtotal (from lines)' : 'Subtotal *'}>
+              <Field
+                label={
+                  billLines.length
+                    ? 'Subtotal (from lines)'
+                    : isReceiptSourced
+                      ? 'Subtotal (from the receiving report)'
+                      : 'Subtotal *'
+                }
+              >
                 <input
-                  required={billLines.length === 0}
-                  readOnly={billLines.length > 0}
+                  required={billLines.length === 0 && !isReceiptSourced}
+                  readOnly={billLines.length > 0 || isReceiptSourced}
                   type="number"
                   step="0.01"
                   value={
@@ -1012,19 +1030,27 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
                   }
                   onChange={(e) => setForm({ ...form, subtotal: e.target.value })}
                   className={`w-full px-3 py-2 text-sm border border-gray-200 rounded-lg ${
-                    billLines.length ? 'bg-zinc-50 text-zinc-500' : ''
+                    billLines.length > 0 || isReceiptSourced ? 'bg-zinc-50 text-zinc-500' : ''
                   }`}
                 />
               </Field>
-              <Field label={billLines.length ? 'Input Tax (VAT, from lines)' : 'Input Tax (VAT)'}>
+              <Field
+                label={
+                  billLines.length
+                    ? 'Input Tax (VAT, from lines)'
+                    : isReceiptSourced
+                      ? 'Input Tax (VAT, from the receiving report)'
+                      : 'Input Tax (VAT)'
+                }
+              >
                 <input
                   type="number"
                   step="0.01"
-                  readOnly={billLines.length > 0}
+                  readOnly={billLines.length > 0 || isReceiptSourced}
                   value={billLines.length ? linesVat.toFixed(2) : form.taxAmount}
                   onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
                   className={`w-full px-3 py-2 text-sm border border-gray-200 rounded-lg ${
-                    billLines.length ? 'bg-zinc-50 text-zinc-500' : ''
+                    billLines.length > 0 || isReceiptSourced ? 'bg-zinc-50 text-zinc-500' : ''
                   }`}
                 />
                 {billLines.length > 0 && !mayClaim && supplierVat && (
@@ -1068,10 +1094,13 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
                 <input
                   type="number"
                   step="0.01"
+                  readOnly={isReceiptSourced}
                   value={form.withholdingAmount}
                   onChange={(e) => setForm({ ...form, withholdingAmount: e.target.value })}
                   placeholder="Auto-calculated from the code's rate if left blank"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                  className={`w-full px-3 py-2 text-sm border border-gray-200 rounded-lg ${
+                    isReceiptSourced ? 'bg-zinc-50 text-zinc-500' : ''
+                  }`}
                 />
               </Field>
             </div>
@@ -1086,6 +1115,17 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
               />
             )}
           </>
+        )}
+        {initial && paidVoucherIdOf(initial) && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2 text-[13px]">
+            <span className="text-gray-600">This bill has a recorded payment.</span>
+            <Link
+              href={`/accounting/ap-bills/payments/new?edit=${paidVoucherIdOf(initial)}`}
+              className="font-medium text-prominent-purple-700 hover:underline"
+            >
+              Edit payment
+            </Link>
+          </div>
         )}
         {/* "How this bill will be paid" — Source of Payment, Reference Number
             and Cheque No. — used to sit here. They predate the voucher model
@@ -1122,6 +1162,167 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
           </button>
         </div>
       </form>
+    </div>
+  )
+}
+
+/** A receiving-report value shown the way a form field would be, but not
+ * editable: the receipt owns it, and this bill only ever reads it. */
+function ReadOnlyField({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+      <div className="w-full rounded-lg border border-gray-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+        {value || '—'}
+      </div>
+    </div>
+  )
+}
+
+type BillReceipt = NonNullable<APBill['goodsReceipts']>[number]
+
+/** The receiving report(s) this bill was raised from, laid out as the report's
+ * own fields and lines but with nothing to type into. The figures belong to the
+ * report — the server ignores them from this form — so correcting one means
+ * correcting the report and pulling the change over (see the notice on the
+ * bill's page). */
+function ReceivingReportReadOnly({ bill }: { bill: APBill }) {
+  const receipts = bill.goodsReceipts ?? []
+  return (
+    <section
+      data-testid="bill-rr-readonly"
+      className="rounded-lg border border-gray-200 bg-gray-50/50"
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-3 py-2">
+        <span className="text-[13px] font-semibold text-prominent-purple-900">
+          Receiving Report{receipts.length > 1 ? 's' : ''}
+        </span>
+        <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+          <Lock className="h-3 w-3" /> Read-only — correct it on the Receiving Report
+        </span>
+      </div>
+      <div className="space-y-4 p-3">
+        <div className="grid gap-3 md:grid-cols-2">
+          <ReadOnlyField
+            label="Supplier"
+            value={bill.supplier ? `${bill.supplier.code} — ${bill.supplier.name}` : null}
+          />
+          <ReadOnlyField label="Purchase Order" value={bill.purchaseOrder?.code} />
+        </div>
+        {receipts.map((rr) => (
+          <ReceivingReportBlock key={rr.id} rr={rr} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ReceivingReportBlock({ rr }: { rr: BillReceipt }) {
+  const lines = rr.lines ?? []
+  const hasCost = lines.some((l) => l.unitCost != null)
+  const total = lines.reduce(
+    (sum, l) => sum + Number(l.quantityReceived ?? 0) * Number(l.unitCost ?? 0),
+    0
+  )
+  // The same running figures the report's own sheet prints: the tax only
+  // shows once the report carries some.
+  const vat = Number(rr.vatAmount ?? 0)
+  const withheld = Number(rr.withheldAmount ?? 0)
+  const hasTax = hasCost && (vat > 0 || withheld > 0)
+  return (
+    <div className="space-y-3" data-testid={`bill-rr-${rr.code}`}>
+      <div className="grid gap-3 md:grid-cols-4">
+        <ReadOnlyField
+          label="RR No."
+          value={
+            <span className="flex items-center justify-between gap-2">
+              {rr.code}
+              <Link
+                href={`/accounting/receiving-reports/${rr.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open ${rr.code}`}
+                className="text-prominent-purple-600 hover:text-prominent-purple-800"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            </span>
+          }
+        />
+        <ReadOnlyField
+          label="Date received"
+          value={rr.receivedAt ? fmtDate(rr.receivedAt) : null}
+        />
+        <ReadOnlyField label="DR No." value={rr.deliveryReceiptNumber} />
+        <ReadOnlyField label="Supplier Invoice on the report" value={rr.supplierInvoiceNumber} />
+      </div>
+      {lines.length > 0 && (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <table className="w-full text-[12px]">
+            <thead className="text-[10px] uppercase tracking-wider text-gray-500">
+              <tr>
+                <th className="px-2 py-1.5 text-left font-medium">Item</th>
+                <th className="px-2 py-1.5 text-right font-medium">Qty</th>
+                <th className="px-2 py-1.5 text-right font-medium">Unit cost</th>
+                <th className="px-2 py-1.5 text-right font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-zinc-600">
+              {lines.map((l) => {
+                const chain = discountChainLabel(l, fmtMoney)
+                return (
+                  <tr key={l.id}>
+                    <td className="px-2 py-1.5">
+                      {l.item?.name ?? '—'}
+                      {l.isFreebie && (
+                        <span className="ml-1.5 rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+                          Freebie
+                        </span>
+                      )}
+                      {chain && <div className="mt-0.5 text-[11px] text-gray-500">{chain}</div>}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">
+                      {Number(l.quantityReceived ?? 0)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">
+                      {l.unitCost != null ? fmtMoney(Number(l.unitCost)) : '—'}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">
+                      {l.unitCost != null
+                        ? fmtMoney(Number(l.quantityReceived ?? 0) * Number(l.unitCost))
+                        : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {hasCost && (
+            <dl className="ml-auto w-full max-w-xs space-y-1 border-t border-gray-100 px-3 py-2 text-[12px] text-zinc-600">
+              <div className="flex justify-between gap-4">
+                <dt>Total</dt>
+                <dd className="tabular-nums">{fmtMoney(total)}</dd>
+              </div>
+              {hasTax && (
+                <>
+                  <div className="flex justify-between gap-4">
+                    <dt>Input VAT</dt>
+                    <dd className="tabular-nums">{fmtMoney(vat)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt>Less: Withholding tax</dt>
+                    <dd className="tabular-nums">{fmtMoney(withheld)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 font-semibold text-zinc-800">
+                    <dt>Net payable</dt>
+                    <dd className="tabular-nums">{fmtMoney(total + vat - withheld)}</dd>
+                  </div>
+                </>
+              )}
+            </dl>
+          )}
+        </div>
+      )}
     </div>
   )
 }

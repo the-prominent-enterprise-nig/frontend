@@ -96,6 +96,22 @@ async function pickCustomer(page: Page, searchTerm: string, fullName: string): P
   await resultButton.click()
 }
 
+/** Drives one of the app's searchable dropdowns (SearchableSelect): type to
+ * narrow the list, then pick the option; the box then reads as that option. */
+async function pickSearchableOption(page: Page, placeholder: string, optionLabel: string) {
+  const combobox = page.getByPlaceholder(placeholder, { exact: true })
+  await expect(async () => {
+    await combobox.click()
+    await combobox.fill(optionLabel)
+    const option = page.locator('[data-testid="searchable-select-option"]', {
+      hasText: new RegExp(`^${optionLabel}$`),
+    })
+    await expect(option).toBeVisible({ timeout: 2_000 })
+    await option.click()
+    await expect(combobox).toHaveValue(optionLabel, { timeout: 2_000 })
+  }).toPass({ timeout: 15_000 })
+}
+
 /** Drives CollectorAreaPicker's Region/Province/City SearchableSelects
  * (type-ahead comboboxes with short placeholders — "Region"/"Province"/
  * "City", not the longer "Type to search X" used by PhilippineAddressPicker
@@ -139,7 +155,7 @@ test.describe('CRM — Collectors', () => {
     await submitStable(
       () =>
         fillAllStable([
-          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Collector code *'), value: stubNumber },
           { locator: page.getByLabel('Name *'), value: name },
         ]),
       () => page.getByRole('button', { name: 'Create collector' }).click(),
@@ -220,7 +236,7 @@ test.describe('CRM — Collectors', () => {
     await submitStable(
       async () => {
         await fillAllStable([
-          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Collector code *'), value: stubNumber },
           { locator: page.getByLabel('Name *'), value: name },
         ])
         await addCollectorArea(page, chainA)
@@ -287,7 +303,7 @@ test.describe('CRM — Collectors', () => {
     await submitStable(
       () =>
         fillAllStable([
-          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Collector code *'), value: stubNumber },
           { locator: page.getByLabel('Name *'), value: name },
         ]),
       () => page.getByRole('button', { name: 'Create collector' }).click(),
@@ -297,7 +313,7 @@ test.describe('CRM — Collectors', () => {
 
     await gotoReady(page, '/crm/collectors')
     await expect(page.getByRole('heading', { name: 'Collectors' })).toBeVisible()
-    await fillStable(page.getByPlaceholder(/search stub number or name/i), stubNumber)
+    await fillStable(page.getByPlaceholder(/search collector code or name/i), stubNumber)
     // Both the mobile card list and desktop table render simultaneously
     // (Tailwind responsive classes only toggle CSS display) — scope to the
     // desktop table to avoid a strict-mode multi-match.
@@ -325,7 +341,7 @@ test.describe('CRM — Collectors', () => {
     await submitStable(
       () =>
         fillAllStable([
-          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Collector code *'), value: stubNumber },
           { locator: page.getByLabel('Name *'), value: name },
         ]),
       () => page.getByRole('button', { name: 'Create collector' }).click(),
@@ -422,7 +438,7 @@ test.describe('CRM — Installment Accounts', () => {
     await submitStable(
       async () => {
         await fillAllStable([
-          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Collector code *'), value: stubNumber },
           { locator: page.getByLabel('Name *'), value: collectorName },
         ])
         await pickAreaLevel(page, 'Region', 'Region II (Cagayan Valley)')
@@ -519,7 +535,7 @@ test.describe('CRM — Installment Accounts', () => {
     await submitStable(
       async () => {
         await fillAllStable([
-          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Collector code *'), value: stubNumber },
           { locator: page.getByLabel('Name *'), value: collectorName },
         ])
         await pickAreaLevel(page, 'Region', 'Region II (Cagayan Valley)')
@@ -536,11 +552,12 @@ test.describe('CRM — Installment Accounts', () => {
     expect(collectorId).toBeTruthy()
 
     await gotoReady(page, `/crm/installment-accounts/${accountId}/edit`)
-    const collectorSelect = page.getByLabel('Collector')
-    await expect(collectorSelect).toHaveValue(collectorId!, { timeout: 10_000 })
-    await expect(
-      collectorSelect.locator('option', { hasText: `${stubNumber} — ${collectorName} — suggested` })
-    ).toHaveCount(1)
+    // The collector picker is a searchable dropdown: the suggested collector
+    // comes pre-selected, and its label says so.
+    await expect(page.getByPlaceholder('Unassigned collector', { exact: true })).toHaveValue(
+      `${stubNumber} — ${collectorName} — suggested`,
+      { timeout: 10_000 }
+    )
 
     await page.getByRole('button', { name: 'Save changes' }).click()
     await page.waitForURL(`/crm/installment-accounts/${accountId}`, { timeout: 10_000 })
@@ -555,7 +572,7 @@ test.describe('CRM — Installment Accounts', () => {
     await submitStable(
       async () => {
         await fillAllStable([
-          { locator: page.getByLabel('Stub number *'), value: otherStub },
+          { locator: page.getByLabel('Collector code *'), value: otherStub },
           { locator: page.getByLabel('Name *'), value: otherName },
         ])
         await pickAreaLevel(page, 'Region', 'Region II (Cagayan Valley)')
@@ -571,7 +588,10 @@ test.describe('CRM — Installment Accounts', () => {
     const otherCollectorId = page.url().match(/\/crm\/collectors\/([a-f0-9-]+)$/)?.[1]
 
     await gotoReady(page, `/crm/installment-accounts/${accountId}/edit`)
-    await expect(page.getByLabel('Collector')).toHaveValue(collectorId!, { timeout: 10_000 })
+    await expect(page.getByPlaceholder('Unassigned collector', { exact: true })).toHaveValue(
+      new RegExp(`^${stubNumber} — ${collectorName}`),
+      { timeout: 10_000 }
+    )
 
     // Cleanup
     const delAccount = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
@@ -790,10 +810,11 @@ test.describe('CRM — Installment Accounts', () => {
     // Smoke-check the filter controls exist and are operable (full filtering
     // correctness — where clause construction — is already covered by the
     // backend e2e suite's findAll tests).
-    await page.getByRole('combobox').nth(0).selectOption('A')
-    await expect(page.getByRole('combobox').nth(0)).toHaveValue('A')
-    await page.getByRole('combobox').nth(2).selectOption('closed')
-    await expect(page.getByRole('combobox').nth(2)).toHaveValue('closed')
+    // Every filter is a searchable dropdown — click it, type, pick the option.
+    await pickSearchableOption(page, 'All categories', 'A')
+    await pickSearchableOption(page, 'All statuses', 'Closed')
+    // Classification is no longer a list filter.
+    await expect(page.getByPlaceholder('All classifications')).toHaveCount(0)
   })
 
   test('list rows are fully clickable, not just the account number cell', async ({ page }) => {
@@ -848,7 +869,7 @@ test.describe('CRM — Collection Incentives', () => {
     await submitStable(
       () =>
         fillAllStable([
-          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Collector code *'), value: stubNumber },
           { locator: page.getByLabel('Name *'), value: collectorName },
         ]),
       () => page.getByRole('button', { name: 'Create collector' }).click(),
@@ -1328,7 +1349,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
 
     // Move it into DAM via the edit form's classification field
     await gotoReady(page, `/crm/installment-accounts/${accountId}/edit`)
-    await page.getByLabel('Classification').selectOption('not_moving')
+    await pickSearchableOption(page, 'No classification', 'Not moving')
     await page.getByRole('button', { name: 'Save changes' }).click()
     await page.waitForURL(`/crm/installment-accounts/${accountId}`, { timeout: 15_000 })
 
