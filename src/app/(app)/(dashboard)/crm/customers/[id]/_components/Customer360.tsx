@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ChevronRight, Download, GitMerge, Paperclip, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, GitMerge, X } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import {
   getCustomerPurchases,
@@ -616,79 +616,10 @@ export default function Customer360({
           schedule={scheduleDetailTarget}
           customerId={id}
           customerName={data.name}
-          isCrm={isCrm}
           base={base}
           onClose={() => setScheduleDetailTarget(null)}
         />
       )}
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Co-maker (Guarantor)</h2>
-          {!data.coMakers || data.coMakers.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No co-maker on file. Add one from Edit.
-            </p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {data.coMakers.map((cm) => (
-                <li
-                  key={cm.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13px]"
-                >
-                  <span className="font-medium text-gray-800">
-                    {cm.name} — {cm.relationship}
-                  </span>
-                  <span className="flex items-center gap-2 text-gray-500">
-                    <span>{cm.contactNumber}</span>
-                    {cm.email && <span>{cm.email}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">ID & Consent</h2>
-          {!data.idType && !data.idNumber && !data.idDocumentFile && !data.consentGiven ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No ID information on file. Add it from Edit.
-            </p>
-          ) : (
-            <div className="space-y-2.5 text-[13px]">
-              {(data.idType || data.idNumber) && (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium text-gray-800">{data.idType || 'ID'}</span>
-                  {data.idNumber && <span className="text-gray-500">{data.idNumber}</span>}
-                </div>
-              )}
-              {data.idDocumentFile && (
-                <a
-                  href={`/api/files/${data.idDocumentFile.id}/download`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-prominent-purple-700 hover:underline"
-                >
-                  <Paperclip className="h-3.5 w-3.5" />
-                  {data.idDocumentFile.originalName}
-                  <Download className="h-3.5 w-3.5" />
-                </a>
-              )}
-              <div className="flex items-center gap-1.5 text-gray-500">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${data.consentGiven ? 'bg-green-500' : 'bg-gray-300'}`}
-                />
-                {data.consentGiven
-                  ? `Consent given${data.consentGivenAt ? ` on ${new Date(data.consentGivenAt).toLocaleDateString()}` : ''}`
-                  : 'Consent not yet given'}
-              </div>
-            </div>
-          )}
-        </section>
-      </div>
 
       <ScheduleReminderModal
         open={reminderOpen}
@@ -1017,7 +948,6 @@ function InstallmentScheduleDetailModal({
   schedule,
   customerId,
   customerName,
-  isCrm,
   base,
   onClose,
 }: {
@@ -1026,9 +956,6 @@ function InstallmentScheduleDetailModal({
   customerName: string
   /** The module's customers root — '/crm/customers' or '/pos/customers'. */
   base: string
-  /** False when this view is mounted under POS — the installment account
-   * detail it links to is a CRM route a Cashier cannot open. */
-  isCrm: boolean
   onClose: () => void
 }) {
   const router = useRouter()
@@ -1091,25 +1018,16 @@ function InstallmentScheduleDetailModal({
                 schedule.id}
             </p>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              {/* This used to be the ONLY link out, and despite its label it
-                  went to the contract's own per-account ledger, not the
-                  customer ledger — and vanished entirely on a plan with no
-                  linked account. Both are offered now, and the customer
-                  ledger opens narrowed to this plan. */}
+              {/* Opens the customer ledger narrowed to this plan — for a plan
+                  with an account that is the plan's own paper-form ledger.
+                  The separate /installments/<account> link is gone: that view
+                  now lives here, at /ledger?transactionId=acct:<id>. */}
               <Link
                 href={customerLedgerHref(base, customerId, schedule)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
               >
                 View customer ledger →
               </Link>
-              {isCrm && schedule.installmentAccount && (
-                <Link
-                  href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  Customer Ledger →
-                </Link>
-              )}
             </div>
           </div>
 

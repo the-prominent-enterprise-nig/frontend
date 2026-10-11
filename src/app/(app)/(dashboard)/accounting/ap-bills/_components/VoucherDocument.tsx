@@ -31,6 +31,14 @@ export interface VoucherSource {
   bankAccount?: { name?: string | null; accountNumber?: string | null } | null
 }
 
+/** An amount held back from the supplier on this payment. */
+export interface VoucherDeduction {
+  account?: { number?: string | null; name?: string | null } | null
+  supplier?: string | null
+  description?: string | null
+  amount?: number | null
+}
+
 export interface VoucherDocumentEnvelope {
   enterprise?: { companyLegalName?: string | null; address?: string | null } | null
   document: {
@@ -51,6 +59,8 @@ export interface VoucherDocumentEnvelope {
     amount?: number | null
     totalAmount?: number | null
     withholdingAmount?: number | null
+    deductions?: VoucherDeduction[]
+    deductionsTotal?: number | null
     invoices?: VoucherInvoice[]
     sources?: VoucherSource[]
   }
@@ -103,7 +113,12 @@ export default function VoucherDocument({
   // settled against the invoice but never leaves the bank.
   const amount = Number(p.amount ?? p.totalAmount ?? 0) + Number(p.withholdingAmount ?? 0)
   const withholding = Number(p.withholdingAmount ?? 0)
-  const netPaid = amount - withholding
+  // Deductions never leave the bank either: they stay with the payer and are
+  // credited to the account each was mapped to. Amount paid + deductions +
+  // withholding adds back up to the Total.
+  const deductions = p.deductions ?? []
+  const deductionsTotal = Number(p.deductionsTotal ?? 0)
+  const netPaid = amount - withholding - deductionsTotal
 
   const reference = p.chequeNumber ? `CK#${p.chequeNumber}` : (p.reference ?? '—')
 
@@ -254,6 +269,40 @@ export default function VoucherDocument({
         </table>
       </div>
 
+      {deductions.length > 0 && (
+        <>
+          <p className="mt-5 mb-1.5 font-bold text-prominent-purple-900">Deductions</p>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[12.5px]">
+              <thead>
+                <tr>
+                  <th className={TH}>Account</th>
+                  <th className={TH}>Supplier</th>
+                  <th className={TH}>Description</th>
+                  <th className={`${TH} w-40 text-right`}>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deductions.map((d, i) => (
+                  <tr key={i}>
+                    <td className={TD}>
+                      {d.account
+                        ? [d.account.number, d.account.name].filter(Boolean).join(' — ')
+                        : '—'}
+                    </td>
+                    <td className={TD}>{d.supplier || '—'}</td>
+                    <td className={TD}>{d.description || '—'}</td>
+                    <td className={`${TD} text-right tabular-nums`}>
+                      {fmtMoney(Number(d.amount ?? 0))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       <div className="mt-3 flex justify-end">
         <table className="border-collapse text-[13px]">
           <tbody>
@@ -261,6 +310,12 @@ export default function VoucherDocument({
               <td className={TOTAL_LABEL}>Amount paid</td>
               <td className={`${TOTAL_VALUE} min-w-[140px]`}>{fmtMoney(netPaid)}</td>
             </tr>
+            {deductionsTotal > 0 && (
+              <tr>
+                <td className={TOTAL_LABEL}>Deductions</td>
+                <td className={`${TOTAL_VALUE} min-w-[140px]`}>{fmtMoney(deductionsTotal)}</td>
+              </tr>
+            )}
             {withholding > 0 && (
               <tr>
                 <td className={TOTAL_LABEL}>Withholding tax</td>

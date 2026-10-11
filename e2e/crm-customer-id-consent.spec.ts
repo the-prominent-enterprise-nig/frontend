@@ -25,7 +25,7 @@ test.describe('CRM — Customer ID & Consent', () => {
     createdIds = []
   })
 
-  test('uploads an ID document, fills type/number, gives consent, and shows it on the profile', async ({
+  test('uploads an ID document, fills type/number, gives consent, and saves it on the customer', async ({
     page,
   }) => {
     const uniqueSuffix = Date.now()
@@ -105,13 +105,17 @@ test.describe('CRM — Customer ID & Consent', () => {
     }).toPass({ timeout: 20_000 })
 
     await expect(page.getByRole('heading', { name: fullName })).toBeVisible()
-    await expect(page.getByText('ID & Consent')).toBeVisible()
-    await expect(page.getByText("Driver's License")).toBeVisible()
-    await expect(page.getByText('N01-23-456789')).toBeVisible()
-    await expect(page.getByText('rfs-form-sample.txt')).toBeVisible()
-    await expect(page.getByText(/Consent given/)).toBeVisible()
-
     const customerId = page.url().match(/\/crm\/customers\/([a-f0-9-]+)$/)?.[1]
     if (customerId) createdIds.push(customerId)
+
+    // The profile page no longer has an ID & Consent section (client asked for
+    // it off) — capture still works, so prove it saved through the API rather
+    // than through the screen.
+    await expect(page.getByText('ID & Consent')).toHaveCount(0)
+    const detail = await (await page.request.get(`/api/crm/customers/${customerId}`)).json()
+    expect(detail.idType).toBe("Driver's License")
+    expect(detail.idNumber).toBe('N01-23-456789')
+    expect(detail.idDocumentFile?.originalName).toBe('rfs-form-sample.txt')
+    expect(detail.consentGiven).toBe(true)
   })
 })

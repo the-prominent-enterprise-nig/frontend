@@ -431,12 +431,19 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
     dueDate: string
     arInvoiceId: string
     invoiceNumber: string
+    // THIS due's own amount and what has been collected on it — one row is one
+    // month, not the whole contract (the invoice they hang off is shared).
     totalAmount: number | string
     amountPaid: number | string
+    // This due's own status (PAID / PARTIAL / OVERDUE / SENT=due), not the
+    // shared invoice's.
     status: string
-    // Developer-requested (2026-08-19): most recent non-cancelled payment
-    // date on this invoice, or null if nothing's been paid yet.
+    // Most recent non-cancelled collection applied to this due, or null if
+    // nothing has been collected on it yet.
     paidOn: string | null
+    // Whether this month has been billed yet (its date has arrived, or it was
+    // paid ahead). Total Billing is the sum of the billed rows.
+    billed: boolean
   }[]
   // Scenario 32 item 1 — resolved via the linked InstallmentSchedule's
   // PosTransactionLines (mirrors Customer360's InstallmentScheduleDetailModal

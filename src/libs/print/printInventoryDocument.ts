@@ -2133,70 +2133,42 @@ export function printAPBillDocument(data: unknown): void {
 }
 
 /**
- * Scenario 43 Part C — bespoke letterhead layout for a single AP payment,
- * replacing the old renderApChequeBody() (a bare label/value list with no
- * letterhead, no Account table, no signatures) which was cheque-specific.
- * This is a proper superset — still shows the method/reference/cheque
- * number the old print did, plus the bill's own voucherNumber (raised
- * before payment, as the authorization to pay), the Gap-B Account
- * breakdown, and the Prepared/Certified/Approved-by + acknowledgment
- * signature blocks the client's own paper "Payment" form has, matching the
- * family style already established for the other bespoke prints.
+ * The AP payment voucher as a printable page.
+ *
+ * Mirrors VoucherDocument.tsx — the same blocks in the same order with the same
+ * wording — because the printed paper used to drift from the voucher on screen
+ * (an older Account / SI / Total table, a Source of Funds grid, no payee address
+ * or TIN) and read as a different, uglier document. The signature blocks and the
+ * acknowledgment are the one thing the page does not carry: they are lines for a
+ * pen, so they are printed here and nowhere else. Change one, change the other.
+ *
+ * Two envelopes reach it: a disbursement (one cheque, every invoice it settled)
+ * and a legacy per-bill payment (its own share only).
  */
 export function buildAPPaymentVoucherHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
   const p = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
-  // Two backends feed this one template and name their fields differently:
-  // the per-payment voucher sends `amount` + `effectiveExpenseAccount`, while
-  // the disbursement voucher sends `totalAmount` + `account`. Reading only the
-  // first pair left both blank on a disbursement — the account printed as "—"
-  // and the total fell back to 0, so the only figure that survived was the
-  // withholding, making a 11,718.00 voucher print as 104.63.
-  const effectiveExpenseAccount = (p.effectiveExpenseAccount ?? p.account) as {
-    name?: string
-  } | null
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+  const prettyMethod = (m: unknown) =>
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
 
-  // Two envelopes reach this same paper: a disbursement (one cheque, every
-  // invoice it settled) and a legacy per-bill payment (its own share only).
-  // The disbursement one is the multi-invoice case — without these fields it
-  // printed an em-dash account and a total built from the wrong numbers.
-  const invoices = (p.invoices ?? []) as {
-    billNumber?: string | null
-    description?: string | null
-    amount?: number
-  }[]
-  const account = p.account as { number?: string; name?: string } | null
-  const accountName =
-    [account?.number, account?.name].filter(Boolean).join(' — ') ||
-    effectiveExpenseAccount?.name ||
-    '—'
+  // A disbursement sends `totalAmount` + `account`; a single payment sends
+  // `amount` + `effectiveExpenseAccount`.
+  const account = (p.effectiveExpenseAccount ?? p.account) as { name?: string } | null
 
-  // Tax excluded: the total is the money that actually left the bank, and
-  // withholding never does — it is credited against the invoice and remitted
-  // to the BIR. It is disclosed under the table instead of inflating the
-  // figure the payee acknowledges receiving.
-  const withholdingAmount = Number(p.withholdingAmount ?? 0)
-  const amount = invoices.length
-    ? Number(p.totalAmount ?? invoices.reduce((sum, i) => sum + Number(i.amount ?? 0), 0))
-    : Number(p.amount ?? 0)
-
-  // One row per invoice the cheque settled; a legacy per-bill payment has no
-  // invoice list, so it keeps its single account line.
-  const accountRows = invoices.length
-    ? invoices
-        .map(
-          (i) =>
-            `<tr><td>${esc(accountName)}${i.billNumber ? ` — ${esc(i.billNumber)}` : ''}</td><td class="right">${fmt(Number(i.amount ?? 0))}</td></tr>`
-        )
-        .join('')
-    : `<tr><td>${esc(accountName)}</td><td class="right">${fmt(amount)}</td></tr>`
+  // What this voucher settled, not what left the bank: withholding is settled
+  // against the invoice but never leaves it.
+  const withholding = Number(p.withholdingAmount ?? 0)
+  const amount = Number(p.amount ?? p.totalAmount ?? 0) + withholding
+  const netPaid = amount - withholding
 
   const reference = p.chequeNumber
     ? `CK#${esc(p.chequeNumber)}`
@@ -2204,78 +2176,100 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       ? esc(p.reference)
       : '—'
 
-  // How the disbursement was funded. A cheque can be split across methods, so
-  // the backend sends one row per source; the per-payment voucher carries no
-  // `sources`, so its single method/reference stands in as one row.
-  const prettyMethod = (m: unknown) =>
-    String(m ?? '')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
-  const rawSources = Array.isArray(p.sources)
-    ? (p.sources as Record<string, unknown>[])
-    : p.method
-      ? [
+  type Inv = { billNumber?: string | null; description?: string | null; amount?: number }
+  const invoices: Inv[] =
+    Array.isArray(p.invoices) && p.invoices.length
+      ? (p.invoices as Inv[])
+      : [
           {
-            method: p.method,
-            reference: p.chequeNumber ?? p.reference,
-            // A per-payment voucher has no per-source description; its own
-            // stands in so the column isn't empty on that shape.
-            description: p.description,
+            billNumber: p.billNumber as string | null,
+            description: p.description as string | null,
+            amount,
           },
         ]
-      : []
-  // SI and description sit per-invoice on a disbursement (one cheque can
-  // settle several bills) and top-level on a per-payment voucher, which has
-  // no `invoices` at all — so the latter stands in as a single row.
-  const rawInvoices = Array.isArray(p.invoices)
-    ? (p.invoices as Record<string, unknown>[])
-    : [{ billNumber: p.billNumber, description: p.description, amount }]
-  const invoiceRows = rawInvoices
-    .map(
-      (inv) => `<tr>
-          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
-          <td>${inv.billNumber ? esc(inv.billNumber) : '—'}</td>
-          <td class="right">${fmt(Number(inv.amount ?? 0))}</td>
-        </tr>`
-    )
-    .join('')
+  const siNumbers = Array.from(new Set(invoices.map((i) => i.billNumber).filter(Boolean)))
+  const showInvoiceSi = invoices.length > 1
+  const showInvoiceDescription = invoices.length > 1
+  const voucherDescription = p.notes ? String(p.notes) : null
 
-  const sourceRows = rawSources
-    .map((src) => {
-      const bank = src.bankAccount as { name?: string; accountNumber?: string } | null
+  type Src = {
+    method?: unknown
+    reference?: unknown
+    description?: unknown
+    amount?: unknown
+    bankAccount?: { name?: string; accountNumber?: string } | null
+  }
+  const sources: Src[] =
+    Array.isArray(p.sources) && p.sources.length
+      ? (p.sources as Src[])
+      : p.method
+        ? [
+            {
+              method: p.method,
+              reference: p.chequeNumber ?? p.reference,
+              description: p.description,
+            },
+          ]
+        : []
+  const isSplitFunding = sources.length > 1
+
+  const sourceBlocks = sources
+    .map((src, i) => {
+      const bank = src.bankAccount
       const bankLabel = bank?.name
         ? bank.accountNumber
           ? `${bank.name} — ${bank.accountNumber}`
           : bank.name
         : null
-      return `<tr>
-          <td>${esc(prettyMethod(src.method))}</td>
-          <td>${bankLabel ? esc(bankLabel) : '—'}</td>
-          <td>${src.reference ? esc(src.reference) : '—'}</td>
-          <td>${src.description ? esc(src.description) : '—'}</td>
-        </tr>`
+      const rows: [string, string][] = [['Method', prettyMethod(src.method)]]
+      if (bankLabel) rows.push(['Bank Account', bankLabel])
+      if (src.description) rows.push(['Description', String(src.description)])
+      if (isSplitFunding) rows.push(['Amount', fmt(Number(src.amount ?? 0))])
+      return `<div class="src${i > 0 ? ' src-next' : ''}">${rows
+        .map(
+          ([label, value]) =>
+            `<div class="kv"><span class="k">${esc(label)}</span><span>${esc(value)}</span></div>`
+        )
+        .join('')}</div>`
     })
     .join('')
 
+  const accountRows = invoices
+    .map(
+      (inv) => `<tr>
+          <td>${esc(account?.name || '—')}</td>
+          ${showInvoiceSi ? `<td>${esc(inv.billNumber || '—')}</td>` : ''}
+          ${showInvoiceDescription ? `<td>${esc(inv.description || '—')}</td>` : ''}
+          <td class="right">${fmt(Number(inv.amount ?? 0))}</td>
+        </tr>`
+    )
+    .join('')
+
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
-    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    h1 { font-size: 26px; margin: 0; }
+    body { font-family: Poppins, Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; color: #1d0f38; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .brand-logo { height: 80px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 8px; }
     .info > div { flex: 1; }
+    .info .meta { text-align: right; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
-    .party-name { font-weight: 700; margin: 0 0 4px; }
-    .party-address { margin: 0; color: #333; }
-    .meta-label { font-weight: 700; margin: 0 0 2px; }
-    .meta-value { margin: 0 0 12px; }
-    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; color: #1d0f38; }
+    .party-address { margin: 4px 0 0; color: #333; white-space: pre-line; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; color: #1d0f38; }
+    .meta-value { margin: 0 0 12px; color: #333; }
+    .section-label { font-weight: 700; margin: 20px 0 6px; color: #1d0f38; }
+    .src-next { margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
+    .kv { display: flex; gap: 16px; padding: 2px 0; }
+    .kv .k { width: 128px; flex-shrink: 0; font-weight: 700; color: #1d0f38; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
-    th { background: #f5f5f5; text-align: left; font-weight: 700; }
-    td.right, th.right { text-align: right; }
-    tr.total-row td { font-weight: 700; }
-    .wht-note { margin: 8px 0 0; font-size: 11px; color: #666; }
+    th { background: #f3f4f6; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; font-variant-numeric: tabular-nums; }
+    table.totals { width: auto; margin-left: auto; margin-top: 12px; }
+    table.totals td { border: 0; border-bottom: 1px solid #eee; padding: 5px 10px; text-align: right; font-size: 13px; }
+    table.totals td.value { min-width: 140px; font-variant-numeric: tabular-nums; }
+    table.totals tr.grand td { border-bottom: 0; border-top: 1px solid #999; font-weight: 700; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -2294,49 +2288,50 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     <div class="info">
       <div class="party">
         <p class="party-name">${esc(p.payee) || '—'}</p>
+        ${p.payeeAddress ? `<p class="party-address">${esc(p.payeeAddress)}</p>` : ''}
       </div>
       <div class="meta">
         <p class="meta-label">Date</p>
-        <p class="meta-value">${fmtDate(p.paymentDate)}</p>
+        <p class="meta-value">${fmtDate(p.paymentDate ?? p.voucherDate)}</p>
         <p class="meta-label">Reference</p>
         <p class="meta-value">${reference}</p>
         <p class="meta-label">VOUCHER #</p>
         <p class="meta-value">${p.voucherNumber ? esc(p.voucherNumber) : '—'}</p>
+        <p class="meta-label">Supplier Invoice</p>
+        <p class="meta-value">${siNumbers.length ? esc(siNumbers.join(', ')) : 'Pending Supplier Invoice'}</p>
+        ${p.payeeTin ? `<p class="meta-label">PAYEE'S TIN:</p><p class="meta-value">${esc(p.payeeTin)}</p>` : ''}
       </div>
       <div class="enterprise">
-        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-name">${esc(enterprise?.companyLegalName) || '—'}</p>
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
       </div>
     </div>
 
-    ${p.description ? `<p class="description">${esc(p.description)}</p>` : ''}
+    ${sourceBlocks ? `<p class="section-label">Source of Funds</p>${sourceBlocks}` : ''}
+    ${
+      voucherDescription
+        ? `<div class="kv" style="margin-top:16px"><span class="k">Description</span><span>${esc(voucherDescription)}</span></div>`
+        : ''
+    }
 
+    <p class="section-label">Account Details</p>
     <table>
       <thead>
-        <tr><th>Account</th><th>SI</th><th class="right">Total</th></tr>
+        <tr>
+          <th>Account</th>
+          ${showInvoiceSi ? '<th>Supplier Invoice</th>' : ''}
+          ${showInvoiceDescription ? '<th>Description</th>' : ''}
+          <th class="right">Total</th>
+        </tr>
       </thead>
-      <tbody>
-        ${accountRows}
-        <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
-      </tbody>
+      <tbody>${accountRows}</tbody>
     </table>
-    ${
-      withholdingAmount > 0
-        ? `<p class="wht-note">Net of withholding tax of ${fmt(withholdingAmount)}, credited against the invoice${invoices.length > 1 ? 's' : ''} above and remitted to the BIR.</p>`
-        : ''
-    }
 
-    ${
-      sourceRows
-        ? `<p class="section-label">Source of Funds</p>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Bank Account</th><th>Reference</th><th>Description</th></tr>
-      </thead>
-      <tbody>${sourceRows}</tbody>
-    </table>`
-        : ''
-    }
+    <table class="totals">
+      <tr><td>Amount paid</td><td class="value">${fmt(netPaid)}</td></tr>
+      ${withholding > 0 ? `<tr><td>Withholding tax</td><td class="value">${fmt(withholding)}</td></tr>` : ''}
+      <tr class="grand"><td>Total</td><td class="value">${fmt(amount)}</td></tr>
+    </table>
 
     <div class="signatures">
       <div class="sig-block">

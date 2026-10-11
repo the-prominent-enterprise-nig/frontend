@@ -18,6 +18,7 @@ import {
   ClipboardList,
   ClipboardX,
   Coins,
+  Repeat,
   Contact,
   CreditCard,
   FileBarChart,
@@ -243,6 +244,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/expenses',
         icon: Coins,
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+      },
+      {
+        // Expenses that come round again (rent, electricity…): saved once, a draft
+        // is made on each due date. Same permission as Expenses — it is an expense
+        // that has not happened yet.
+        label: 'Recurring Expenses',
+        href: '/accounting/recurring-expenses',
+        icon: Repeat,
+        requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+        usePrefix: true,
       },
       {
         section: 'Accounting',

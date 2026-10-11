@@ -6,12 +6,15 @@ import Link from 'next/link'
 import { ArrowLeft, Loader2, Plus, Trash2, Upload } from 'lucide-react'
 import {
   Expenses,
+  RecurringExpenses,
   APBillSuppliers,
   APBills,
   ARInvoices,
   AccountMappings,
   BankAccounts,
   type BusinessExpense,
+  type RecurringExpense,
+  type RecurringFrequency,
   type APBillSupplierOption,
   type APBill,
   type ARInvoice,
@@ -20,6 +23,10 @@ import {
   type ClearedType,
   type BankAccount,
   type SpecialAccountRow,
+  type ExpenseVehicleOption,
+  type ExpenseAgentOption,
+  type ExpenseAgentSale,
+  vehicleLabel,
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
@@ -38,10 +45,12 @@ import {
   type Department,
 } from '@/src/libs/data/OrgStructureData'
 import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './ExpenseItemSearchCombobox'
+import ExpenseAttachmentsPanel, { uploadStagedExpenseAttachments } from './ExpenseAttachmentsPanel'
+import { showToast } from '@/src/components/ui/toast'
 import { importSpreadsheetLines, nameKeys, type ImportResult } from './importSpreadsheetLines'
 import { SpecialAccountPicker } from './SpecialAccountPicker'
 import { downloadCsv } from '@/src/libs/format/csv-export'
-import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
+import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { useEwtCodes } from '@/src/hooks/useEwtCodes'
 import { isCapexAccount } from '@/src/libs/tax/input-vat'
 import {
@@ -50,6 +59,112 @@ import {
   ewtSelectOptions,
   type EwtRateFor,
 } from '@/src/libs/tax/ewt'
+
+// ── Recurring Expenses ────────────────────────────────────────────────────
+// The same form edits a recurring expense's template: what it saves is the expense
+// (payee, lines, accounts, the one payment) plus a schedule, and the system makes a
+// DRAFT from it on each due date. Nothing here posts anything.
+
+/** Which recurring expense the form is for: a new one (optionally filled in from an
+ * existing expense) or one being edited. */
+export type RecurringMode = { id?: string; fromExpenseId?: string }
+
+interface ScheduleState {
+  name: string
+  frequency: RecurringFrequency
+  /** The first due date of a new one; the next due date of an existing one. */
+  dueDate: string
+  endDate: string
+  isActive: boolean
+}
+
+const FREQUENCY_OPTIONS: { value: RecurringFrequency; label: string }[] = [
+  { value: 'MONTHLY', label: 'Monthly' },
+  { value: 'WEEKLY', label: 'Weekly' },
+  { value: 'QUARTERLY', label: 'Quarterly' },
+  { value: 'YEARLY', label: 'Yearly' },
+  { value: 'AS_NEEDED', label: 'As needed (no schedule)' },
+]
+
+/** The client's own list of recurring expenses, as a way to start one: it names the
+ * expense, picks the account and suggests how often. Fund replenishment (PCF /
+ * revolving / special fund) is an Inter-Account Transfer and liquidations are a
+ * Special Account entry, so neither is an expense account to start from. "Installation"
+ * has an account per product, so it names the expense and leaves the account to pick. */
+const RECURRING_QUICK_STARTS: {
+  label: string
+  account: string | null
+  frequency: RecurringFrequency
+}[] = [
+  { label: 'Rental monthly', account: '6-03-010', frequency: 'MONTHLY' },
+  { label: 'Telephone / cellphone / internet bills', account: '6-03-060', frequency: 'MONTHLY' },
+  { label: 'Electricity bills', account: '6-03-040', frequency: 'MONTHLY' },
+  { label: 'Water bills', account: '6-03-050', frequency: 'MONTHLY' },
+  { label: 'Load subsidy', account: '6-03-071', frequency: 'MONTHLY' },
+  { label: 'Cable bills', account: '6-03-061', frequency: 'MONTHLY' },
+  { label: 'Repair & maintenance — vehicle', account: '6-04-030', frequency: 'AS_NEEDED' },
+  { label: 'Fuel / lubricants', account: '6-04-010', frequency: 'AS_NEEDED' },
+  { label: 'Commission / SMI', account: '6-01-041', frequency: 'AS_NEEDED' },
+  { label: 'Office supplies', account: '6-03-083', frequency: 'AS_NEEDED' },
+  { label: 'Installation — labor / materials', account: null, frequency: 'AS_NEEDED' },
+  { label: 'Freight', account: '6-04-070', frequency: 'AS_NEEDED' },
+  { label: 'Transpo expenses', account: '6-04-060', frequency: 'AS_NEEDED' },
+  { label: 'Meal allowances', account: '6-01-070', frequency: 'AS_NEEDED' },
+  { label: 'Birthday incentive to employees', account: '6-01-061', frequency: 'AS_NEEDED' },
+  { label: 'Marketing & advertising', account: '6-02-010', frequency: 'AS_NEEDED' },
+]
+
+const todayLocalIso = () => new Date().toISOString().slice(0, 10)
+
+/** A stored recurring expense, in the shape the form already knows how to open
+ * (an expense), so the form does not need a second way to fill itself in. */
+function templateToExpense(row: RecurringExpense): BusinessExpense {
+  const t = row.template
+  const name = row.payeeLabel ?? ''
+  return {
+    id: row.id,
+    expenseNumber: '',
+    expenseDate: todayLocalIso(),
+    payeeType: t.payeeType ?? null,
+    otherCategory: (t.otherCategory as BusinessExpense['otherCategory']) ?? null,
+    supplierId: t.supplierId ?? null,
+    customerId: t.customerId ?? null,
+    customer: t.customerId ? { id: t.customerId, name } : null,
+    employeeId: t.employeeId ?? null,
+    employee: t.employeeId
+      ? { id: t.employeeId, firstName: name, lastName: '', employeeCode: '' }
+      : null,
+    agentId: t.agentId ?? null,
+    agent: t.agentId ? { id: t.agentId, name } : null,
+    payee: t.payee ?? null,
+    sourceOfFundId: t.sourceOfFundId ?? null,
+    description: t.description ?? null,
+    voucherNumber: null,
+    lines: t.lines.map((l, i) => ({
+      ...l,
+      id: `tpl-${i}`,
+      lineNumber: i + 1,
+      categoryAccountId: l.categoryAccountId,
+      amount: Number(l.amount),
+      taxAmount: 0,
+    })),
+    payments: [
+      {
+        id: 'tpl-pay',
+        lineNumber: 1,
+        paymentMethod: t.payment.paymentMethod,
+        bankAccountId: t.payment.bankAccountId ?? null,
+        reference: t.payment.reference ?? null,
+        // Worked out each time; the form hides it.
+        amount: 0,
+      },
+    ],
+    subtotal: 0,
+    taxAmount: 0,
+    totalAmount: 0,
+    status: 'DRAFT',
+  } as BusinessExpense
+}
 
 // Ties the sticky header's Save to the <form> further down, which it sits
 // outside of.
@@ -61,8 +176,30 @@ const PAYEE_OPTIONS: { value: PayeeType; label: string }[] = [
   { value: 'CUSTOMER', label: 'Customer' },
   { value: 'SUPPLIER', label: 'Supplier' },
   { value: 'EMPLOYEE', label: 'Employee' },
+  { value: 'AGENT', label: 'Sales Agent' },
   { value: 'OTHER', label: 'Other' },
 ]
+
+/** What a Vehicle Repairs and Maintenance line was for. The client's rule is
+ * simply "dropdown" and gave no list, so this is the set their own mockup used
+ * plus the usual remaining jobs; anything else goes under Others with the
+ * detail typed into Service detail / remarks. */
+const REPAIR_SERVICE_TYPES = [
+  'Oil Change',
+  'Tires',
+  'Battery',
+  'Brakes',
+  'Tune-up',
+  'Body Work',
+  'Others',
+]
+const REPAIR_SERVICE_OPTIONS = [
+  { value: '', label: '— Select —' },
+  ...REPAIR_SERVICE_TYPES.map((t) => ({ value: t, label: t })),
+]
+
+/** Which extra fields a line's account asks for — Account.expenseKind. */
+type ExpenseKind = NonNullable<Account['expenseKind']>
 
 const CLEARED_OPTIONS: { value: ClearedType; label: string }[] = [
   { value: 'SAME_DATE', label: 'On the same date' },
@@ -146,6 +283,19 @@ function taxCodeFor(stored?: string | null): string {
   return TAX_CODE_ALIASES[stored.toUpperCase()] ?? stored
 }
 
+/** The Tax Code a NEW line starts on. A purchase — a Supplier's, or an Other
+ * payee that is not a payroll run — is almost always VATable, so it starts on
+ * Input VAT instead of making the clerk switch it on for every line (it used to
+ * start on Non-VAT). Everything else has no input VAT to claim and starts
+ * Non-VAT: a customer refund, an employee reimbursement, an agent's commission,
+ * and above all payroll, where VAT on a salary would post to the books.
+ * A reopened draft keeps whatever it was saved with (see taxCodeFor). */
+function defaultTaxCodeFor(payeeType: PayeeType | '', otherCategory: string): string {
+  const isPurchase =
+    payeeType === 'SUPPLIER' || (payeeType === 'OTHER' && otherCategory !== PAYROLL_CATEGORY)
+  return isPurchase ? TAXABLE_CODE : 'NON_VAT'
+}
+
 const round2 = (n: number): number => Math.round(n * 100) / 100
 
 /** Input VAT contained in the typed Amount.
@@ -220,8 +370,30 @@ interface LineState {
   // among siCandidates[i] otherwise.
   apBillId: string
   apBillLabel: string
+  // Fuel / Vehicle Repair lines (Account.expenseKind) — the vehicle from the
+  // fleet roster, litres, the kind of job and a remark.
+  vehicleId: string
+  /** The plate as saved, so an edit still names a vehicle the roster list no
+   * longer offers (deactivated, another branch's). */
+  vehicleLabel: string
+  liters: string
+  repairServiceType: string
+  serviceDetail: string
+  // Commission lines (payee = Sales Agent) — the sale being released.
+  posTransactionId: string
+  saleLabel: string
 }
-function emptyLine(): LineState {
+/** What a line stops carrying once its account moves to a different kind. */
+const NO_KIND_FIELDS = {
+  vehicleId: '',
+  vehicleLabel: '',
+  liters: '',
+  repairServiceType: '',
+  serviceDetail: '',
+  posTransactionId: '',
+  saleLabel: '',
+}
+function emptyLine(taxCode: string = 'NON_VAT'): LineState {
   return {
     categoryAccountId: '',
     payee: '',
@@ -230,7 +402,7 @@ function emptyLine(): LineState {
     collectFromLabel: '',
     description: '',
     amount: '',
-    taxCode: 'NON_VAT',
+    taxCode,
     projectAssetRef: '',
     withholdingTaxCode: '',
     itemId: '',
@@ -239,6 +411,7 @@ function emptyLine(): LineState {
     unitPrice: '',
     apBillId: '',
     apBillLabel: '',
+    ...NO_KIND_FIELDS,
   }
 }
 
@@ -263,13 +436,13 @@ function emptyPayment(): PaymentState {
 // the floor at 0 forces columns to actually hold the fr ratio and lets the
 // (already-truncating) cell content ellipsize instead.
 const ITEM_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+  'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_auto]'
 const GENERIC_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,2fr)_minmax(0,2.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+  'grid-cols-[minmax(0,2fr)_minmax(0,2.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
 // Payee → Other's shape: the generic one plus Special Account and Division.
 // A Customer, Supplier or Employee expense has no use for either.
 const OTHER_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]'
 // Scenario 69 Part E — the same two shapes with a Withholding column in front of
 // Total, for the payees whose lines can be withheld (a Supplier, or an Other
 // payee that is not a payroll run). Written out in full: Tailwind only
@@ -278,9 +451,15 @@ const OTHER_MODE_GRID_COLS =
 // "EWT-RENT-5 · 5%", and the Item / SI / Special Account boxes beside it give
 // up the room.
 const ITEM_MODE_WITHHOLDING_GRID_COLS =
-  'grid-cols-[minmax(0,1.8fr)_minmax(0,1.2fr)_minmax(0,1.8fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.7fr)_minmax(0,1fr)_auto]'
+  'grid-cols-[minmax(0,1.8fr)_minmax(0,1.2fr)_minmax(0,1.8fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.7fr)_minmax(0,1fr)_auto]'
 const OTHER_MODE_WITHHOLDING_GRID_COLS =
-  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.7fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]'
+// The same two Other shapes without the Special Account column, for an entry
+// where no line has any use for one (see showSpecialColumn).
+const OTHER_MODE_NO_SPECIAL_GRID_COLS =
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]'
+const OTHER_MODE_WITHHOLDING_NO_SPECIAL_GRID_COLS =
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.7fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]'
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -327,10 +506,24 @@ function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] 
 // the payee is fixed at the header (Customer/Supplier/a free-text Other
 // label) and each line picks its own category, splitting one payment
 // across expense categories.
-export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
+export default function ExpenseForm({
+  expenseId,
+  recurring,
+}: {
+  expenseId?: string
+  /** Set to edit a recurring expense instead of an expense — see RecurringMode. */
+  recurring?: RecurringMode
+}) {
   const router = useRouter()
   const [initial, setInitial] = useState<BusinessExpense | null>(null)
-  const [ready, setReady] = useState(!expenseId)
+  const [schedule, setSchedule] = useState<ScheduleState>({
+    name: '',
+    frequency: 'MONTHLY',
+    dueDate: '',
+    endDate: '',
+    isActive: true,
+  })
+  const [ready, setReady] = useState(!expenseId && !recurring?.id && !recurring?.fromExpenseId)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
   const [postableAccounts, setPostableAccounts] = useState<Account[]>([])
@@ -376,6 +569,42 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     AccountMappings.list().then((r) => setMappings(r.data ?? []))
   }, [])
 
+  // Recurring: edit a stored one, or start a new one from an existing expense.
+  useEffect(() => {
+    if (!recurring?.id && !recurring?.fromExpenseId) return
+    if (recurring.id) {
+      RecurringExpenses.get(recurring.id).then((res) => {
+        if (res.success && res.data) {
+          const r = res.data
+          setInitial(templateToExpense(r))
+          setSchedule({
+            name: r.name,
+            frequency: r.frequency,
+            dueDate: r.nextRunDate?.slice(0, 10) ?? '',
+            endDate: r.endDate?.slice(0, 10) ?? '',
+            isActive: r.isActive,
+          })
+        } else {
+          setLoadError(res.message || res.error || 'Recurring expense not found.')
+        }
+        setReady(true)
+      })
+    } else if (recurring.fromExpenseId) {
+      Expenses.get(recurring.fromExpenseId).then((res) => {
+        if (res.success && res.data) {
+          setInitial(res.data)
+          setSchedule((s) => ({
+            ...s,
+            name: res.data?.description || res.data?.payee || '',
+          }))
+        } else {
+          setLoadError(res.message || res.error || 'Expense not found.')
+        }
+        setReady(true)
+      })
+    }
+  }, [recurring?.id, recurring?.fromExpenseId])
+
   useEffect(() => {
     if (!expenseId) return
     Expenses.get(expenseId).then((res) => {
@@ -399,11 +628,11 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     return (
       <div className="px-6 py-8 lg:px-10">
         <Link
-          href="/accounting/expenses"
+          href={recurring ? '/accounting/recurring-expenses' : '/accounting/expenses'}
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to expenses
+          {recurring ? 'Back to recurring expenses' : 'Back to expenses'}
         </Link>
         <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
           {loadError}
@@ -420,8 +649,31 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
       inventoryAccounts={inventoryAccounts}
       bankAccounts={bankAccounts}
       mappings={mappings}
-      onSaved={() => router.push('/accounting/expenses')}
+      recurring={recurring ? { id: recurring.id, schedule } : null}
+      onSaved={() =>
+        router.push(recurring ? '/accounting/recurring-expenses' : '/accounting/expenses')
+      }
     />
+  )
+}
+
+/** A labelled box in a line's detail row (plate, litres, service type…). A div
+ * rather than a <label>: several of these hold a dropdown, and a label around
+ * one forwards every click on its text into the control. */
+function KindField({
+  label,
+  className = '',
+  children,
+}: {
+  label: string
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <span className="mb-0.5 block text-[11px] font-medium text-zinc-500">{label}</span>
+      {children}
+    </div>
   )
 }
 
@@ -432,6 +684,7 @@ function ExpenseFormFields({
   inventoryAccounts,
   bankAccounts,
   mappings,
+  recurring,
   onSaved,
 }: {
   initial: BusinessExpense | null
@@ -440,8 +693,25 @@ function ExpenseFormFields({
   inventoryAccounts: Account[]
   bankAccounts: BankAccount[]
   mappings: AccountMapping[]
+  /** Set when this form edits a recurring expense's template rather than an expense. */
+  recurring: { id?: string; schedule: ScheduleState } | null
   onSaved: () => void
 }) {
+  // The schedule fields (name, how often, next due, end, paused), only used when
+  // `recurring` is set. Seeded once from the loaded one.
+  const [schedule, setSchedule] = useState<ScheduleState>(
+    recurring?.schedule ?? {
+      name: '',
+      frequency: 'MONTHLY',
+      dueDate: '',
+      endDate: '',
+      isActive: true,
+    }
+  )
+  // Only used while creating — an attachment needs the expense's id, which
+  // doesn't exist yet. The panel holds the picked files here and submit
+  // uploads them once the expense has been saved.
+  const [stagedAttachments, setStagedAttachments] = useState<File[]>([])
   // payeeType derivation for edit mode: new records always carry it; a
   // legacy record (saved before Scenario 40) falls back to whichever link it
   // actually has, defaulting to SUPPLIER to match the old form's default shape.
@@ -463,6 +733,7 @@ function ExpenseFormFields({
     employeeLabel: initial?.employee
       ? [initial.employee.firstName, initial.employee.lastName].filter(Boolean).join(' ')
       : '',
+    agentId: initial?.agentId ?? '',
     payee: initial?.payee ?? '',
     otherCategory: initial?.otherCategory ?? '',
     description: initial?.description ?? '',
@@ -502,6 +773,15 @@ function ExpenseFormFields({
           // same as itemId) — the mount effect below re-resolves it.
           apBillId: l.apBillId ?? '',
           apBillLabel: '',
+          vehicleId: l.vehicleId ?? '',
+          vehicleLabel: l.vehicle ? vehicleLabel(l.vehicle) : '',
+          liters: l.liters != null ? String(l.liters) : '',
+          repairServiceType: l.repairServiceType ?? '',
+          serviceDetail: l.serviceDetail ?? '',
+          posTransactionId: l.posTransactionId ?? '',
+          saleLabel: l.posTransaction
+            ? (l.posTransaction.salesInvoiceNumber ?? l.posTransaction.transactionNumber)
+            : '',
         }))
       : [emptyLine()]
   )
@@ -573,7 +853,8 @@ function ExpenseFormFields({
       }
       setLines(
         result.lines.map((l) => ({
-          ...emptyLine(),
+          // A payroll sheet: no VAT on salaries, whatever a new line starts on.
+          ...emptyLine('NON_VAT'),
           categoryAccountId: l.categoryAccountId,
           collectFromId: l.collectFromId,
           collectFromLabel: l.collectFromLabel,
@@ -653,6 +934,7 @@ function ExpenseFormFields({
     form.payeeType === 'CUSTOMER' ||
     form.payeeType === 'SUPPLIER' ||
     form.payeeType === 'EMPLOYEE' ||
+    form.payeeType === 'AGENT' ||
     form.payeeType === 'OTHER'
   // SUPPLIER-only — the only payee type that can be a real inventory
   // purchase, so it's the only one that gets an Item/Qty/Unit Price line
@@ -679,6 +961,71 @@ function ExpenseFormFields({
     () => new Set(postableAccounts.filter((a) => a.isSpecialAccountControl).map((a) => a.id)),
     [postableAccounts]
   )
+  // Fuel, Vehicle Repairs and Commission lines carry extra fields, and which
+  // lines is decided by the account each one posts to (Account.expenseKind) —
+  // not by a separate screen per kind of expense. A mixed voucher (fuel plus a
+  // toll) just has detail rows on the lines that need them.
+  const expenseKindByAccountId = useMemo(
+    () =>
+      new Map(
+        postableAccounts
+          .filter((a) => a.expenseKind)
+          .map((a) => [a.id, a.expenseKind as ExpenseKind] as const)
+      ),
+    [postableAccounts]
+  )
+  /** The extra fields a line posting to this account carries. A payroll run is
+   * left alone — its sheet maps lines onto whatever accounts it names — and a
+   * commission line is only one on a Sales Agent entry, the one place there is
+   * an agent whose sales it can release. */
+  const kindOfAccount = (accountId: string): ExpenseKind | null => {
+    const kind = expenseKindByAccountId.get(accountId) ?? null
+    if (!kind || isPayrollCategory) return null
+    if (kind === 'AGENT_COMMISSION' && form.payeeType !== 'AGENT') return null
+    return kind
+  }
+  /** The Special Account column (Payee → Other) is for lines that carry a named
+   * balance. A Fuel / Vehicle Repair / Commission line never does, so when every
+   * line on the entry is one of those the column is dropped altogether — header
+   * included. One ordinary (or still blank) line brings it back for the table. */
+  const showSpecialColumn = isOtherMode && lines.some((l) => !kindOfAccount(l.categoryAccountId))
+  // The fleet roster and the agent master, behind the expense permission (the
+  // routes they wrap need inventory / CRM permissions an accountant lacks).
+  const [vehicles, setVehicles] = useState<ExpenseVehicleOption[]>([])
+  const [agents, setAgents] = useState<ExpenseAgentOption[]>([])
+  useEffect(() => {
+    Expenses.vehicles().then((r) => setVehicles(r.data ?? []))
+    Expenses.agents().then((r) => setAgents(r.data ?? []))
+  }, [])
+  const agentOptions = useMemo(() => {
+    const opts = agents.map((a) => ({ id: a.id, name: a.name, depth: 0 }))
+    // An agent since deactivated is still the payee of the entry being reopened.
+    if (initial?.agent && !opts.some((o) => o.id === initial.agent!.id)) {
+      opts.push({ id: initial.agent.id, name: initial.agent.name, depth: 0 })
+    }
+    return opts
+  }, [agents, initial])
+  const vehicleOptions = useMemo(() => {
+    // `<plate number> - <vehicle>`. The roster also lists a driver, but a line is
+    // not tied to one — showing it beside a plate implied it was. The type
+    // (category + tag) is what keeps a plate the roster lists twice apart.
+    //
+    // Rows that read identically (the roster has exact duplicates, e.g. the same
+    // plate entered twice as a Collector) are offered once: nothing on screen
+    // could tell the two apart, so a second copy is only a way to pick wrong.
+    const seen = new Set<string>()
+    return vehicles.flatMap((v) => {
+      const name = vehicleLabel(v)
+      if (seen.has(name)) return []
+      seen.add(name)
+      return [{ id: v.id, name, depth: 0 }]
+    })
+  }, [vehicles])
+  // A saved line may point at the other copy of a duplicate — keep its label shown.
+  const vehicleOptionsFor = (line: LineState) =>
+    line.vehicleId && !vehicleOptions.some((o) => o.id === line.vehicleId)
+      ? [...vehicleOptions, { id: line.vehicleId, name: line.vehicleLabel || 'Vehicle', depth: 0 }]
+      : vehicleOptions
   // Scenario 69 Part E — a purchase can be withheld at an EWT code: a
   // Supplier's, or a free-text Other payee's (a lessor who is not a supplier).
   // A customer refund or an employee reimbursement is not a purchase, and a
@@ -703,8 +1050,12 @@ function ExpenseFormFields({
       : ITEM_MODE_GRID_COLS
     : isOtherMode
       ? canWithhold
-        ? OTHER_MODE_WITHHOLDING_GRID_COLS
-        : OTHER_MODE_GRID_COLS
+        ? showSpecialColumn
+          ? OTHER_MODE_WITHHOLDING_GRID_COLS
+          : OTHER_MODE_WITHHOLDING_NO_SPECIAL_GRID_COLS
+        : showSpecialColumn
+          ? OTHER_MODE_GRID_COLS
+          : OTHER_MODE_NO_SPECIAL_GRID_COLS
       : GENERIC_MODE_GRID_COLS
   // Deductions larger than what the person still owes. Advisory only — the
   // balance stops at zero and the entry still records — but a payroll
@@ -825,7 +1176,7 @@ function ExpenseFormFields({
     setLines((prev) => [
       ...prev,
       {
-        ...emptyLine(),
+        ...emptyLine(defaultTaxCodeFor(form.payeeType, form.otherCategory)),
         categoryAccountId: isItemMode ? (supplierDefaultAccountId ?? '') : '',
         // apBillId stays blank here on purpose — an unused row gets no bill
         // until it actually has an Item on it (see the Item onSelect below).
@@ -960,21 +1311,34 @@ function ExpenseFormFields({
   }
 
   const validate = (): string | null => {
-    if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
+    if (recurring) {
+      if (!schedule.name.trim()) return 'Give this recurring expense a name.'
+      if (schedule.frequency !== 'AS_NEEDED' && !schedule.dueDate)
+        return recurring.id
+          ? 'Say when it is next due.'
+          : 'Say when it is first due — the first draft is made on that date.'
+      if (schedule.endDate && schedule.dueDate && schedule.endDate < schedule.dueDate)
+        return 'The end date is before the due date.'
+    }
+    if (!recurring && form.clearedType === 'LATER_DATE' && !form.clearedDate)
       return 'Pick the date this payment is expected to clear.'
     for (const p of payments) {
-      if (!p.amount || Number(p.amount) <= 0)
+      // A recurring expense's payment amount is worked out each time (the total
+      // less any withholding), so there is nothing to check here.
+      if (!recurring && (!p.amount || Number(p.amount) <= 0))
         return 'Every payment method needs an amount greater than 0.'
       if (p.paymentMethod === 'BANK_TRANSFER' && !p.bankAccountId)
         return 'Pick which bank account each Bank Transfer payment is paid from.'
     }
-    if (Math.abs(paymentsTotal - netPayable) > 0.01)
+    if (!recurring && Math.abs(paymentsTotal - netPayable) > 0.01)
       return withholdingTotal > 0
         ? `Payments total (${fmtMoney(paymentsTotal)}) must equal the expense total less its withholding (${fmtMoney(netPayable)}).`
         : `Payments total (${fmtMoney(paymentsTotal)}) must equal the expense total (${fmtMoney(total)}).`
-    if (!form.payeeType) return 'Choose who this is for (Customer, Supplier, Employee, or Other).'
+    if (!form.payeeType)
+      return 'Choose who this is for (Customer, Supplier, Employee, Sales Agent, or Other).'
     if (form.payeeType === 'CUSTOMER' && !form.customerId) return 'Pick a customer.'
     if (form.payeeType === 'EMPLOYEE' && !form.employeeId) return 'Pick an employee.'
+    if (form.payeeType === 'AGENT' && !form.agentId) return 'Pick the sales agent.'
     if (form.payeeType === 'OTHER' && !form.payee.trim())
       return 'Name the payee — who the money went to.'
     if (lines.length === 0) return 'Add at least one line.'
@@ -991,7 +1355,22 @@ function ExpenseFormFields({
       if (!l.categoryAccountId) return 'Every line needs an account.'
       if (l.taxCode === CAPEX_CODE && !l.projectAssetRef.trim())
         return 'A capital purchase needs the project or asset it is for.'
+      const kind = kindOfAccount(l.categoryAccountId)
+      if ((kind === 'FUEL' || kind === 'VEHICLE_REPAIR') && !l.vehicleId)
+        return 'Pick the plate number on every fuel and vehicle-repair line.'
+      if (kind === 'VEHICLE_REPAIR' && !l.repairServiceType)
+        return 'Pick the Repair/Service Type on every vehicle-repair line.'
+      if (kind === 'FUEL' && l.liters !== '' && !(Number(l.liters) >= 0))
+        return 'Liters cannot be negative.'
+      if (kind === 'AGENT_COMMISSION' && !l.posTransactionId)
+        return 'Pick the Sales Invoice No. on every commission line.'
     }
+    const releasedSales = lines
+      .filter((l) => kindOfAccount(l.categoryAccountId) === 'AGENT_COMMISSION')
+      .map((l) => l.posTransactionId)
+      .filter(Boolean)
+    if (new Set(releasedSales).size !== releasedSales.length)
+      return "The same sales invoice is on two lines — a sale's commission is released once."
     // The entry as a whole has to be money going out: record() credits cash
     // for the total, and deductions exceeding what they deduct from is a
     // mis-key. The server rejects it too. Unreachable off payroll, where
@@ -1000,7 +1379,28 @@ function ExpenseFormFields({
     return null
   }
 
-  const resetLinesForPayeeChange = () => setLines([emptyLine()])
+  const resetLinesForPayeeChange = (nextPayeeType: PayeeType | '') =>
+    setLines([emptyLine(defaultTaxCodeFor(nextPayeeType, ''))])
+
+  /** Starting a recurring expense from the client's list: it names the expense,
+   * suggests how often, and fills in the account. Most are bills from a supplier, so
+   * with no payee chosen yet it starts there. */
+  const applyQuickStart = (q: (typeof RECURRING_QUICK_STARTS)[number]) => {
+    setSchedule((s) => ({ ...s, name: q.label, frequency: q.frequency }))
+    const accountId = q.account
+      ? (postableAccounts.find((a) => a.number === q.account)?.id ?? '')
+      : ''
+    if (!form.payeeType) {
+      setForm({ ...form, payeeType: 'SUPPLIER' })
+      setLines([{ ...emptyLine(defaultTaxCodeFor('SUPPLIER', '')), categoryAccountId: accountId }])
+    } else if (accountId) {
+      setLines((prev) =>
+        prev.map((l, i) =>
+          i === 0 && !l.categoryAccountId ? { ...l, categoryAccountId: accountId } : l
+        )
+      )
+    }
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1037,6 +1437,9 @@ function ExpenseFormFields({
       payload.employeeId = form.employeeId
     } else if (form.payeeType === 'SUPPLIER') {
       payload.supplierId = form.supplierId || undefined
+    } else if (form.payeeType === 'AGENT') {
+      // The server keeps the agent's name as the payee.
+      payload.agentId = form.agentId
     } else {
       // The payee's own name — "NIG EMPLOYEES" on the client's payroll
       // voucher, and what the printed voucher shows as the payee.
@@ -1075,6 +1478,15 @@ function ExpenseFormFields({
         }
         Object.assign(line, divisionIdsFor(l.division))
       }
+      // Which of these a line sends is its account's call — see kindOfAccount.
+      const kind = kindOfAccount(l.categoryAccountId)
+      if (kind === 'FUEL' || kind === 'VEHICLE_REPAIR') line.vehicleId = l.vehicleId
+      if (kind === 'FUEL' && l.liters !== '') line.liters = Number(l.liters)
+      if (kind === 'VEHICLE_REPAIR') {
+        line.repairServiceType = l.repairServiceType
+        if (l.serviceDetail.trim()) line.serviceDetail = l.serviceDetail.trim()
+      }
+      if (kind === 'AGENT_COMMISSION') line.posTransactionId = l.posTransactionId
       if (isItemMode && l.itemId) {
         line.itemId = l.itemId
         if (l.qty) line.qty = Number(l.qty)
@@ -1087,6 +1499,54 @@ function ExpenseFormFields({
       return line
     })
 
+    if (recurring) {
+      // What a recurring expense stores: the expense minus what belongs to each
+      // occurrence (its date, its numbers, its payment amount) — plus the schedule.
+      const first = payments[0]
+      const template = {
+        payeeType: payload.payeeType,
+        otherCategory: payload.otherCategory,
+        supplierId: payload.supplierId,
+        customerId: payload.customerId,
+        employeeId: payload.employeeId,
+        agentId: payload.agentId,
+        payee: payload.payee,
+        sourceOfFundId: payload.sourceOfFundId,
+        description: payload.description,
+        lines: payload.lines,
+        payment: {
+          paymentMethod: first.paymentMethod,
+          bankAccountId:
+            first.paymentMethod === 'BANK_TRANSFER' ? first.bankAccountId || undefined : undefined,
+          reference: first.reference || undefined,
+        },
+      }
+      const scheduled = schedule.frequency !== 'AS_NEEDED'
+      const saved = recurring.id
+        ? await RecurringExpenses.update(recurring.id, {
+            name: schedule.name.trim(),
+            frequency: schedule.frequency,
+            ...(scheduled ? { nextRunDate: schedule.dueDate } : {}),
+            endDate: schedule.endDate || null,
+            isActive: schedule.isActive,
+            template,
+          })
+        : await RecurringExpenses.create({
+            name: schedule.name.trim(),
+            frequency: schedule.frequency,
+            startDate: scheduled ? schedule.dueDate : todayLocalIso(),
+            endDate: schedule.endDate || undefined,
+            template,
+          })
+      setSaving(false)
+      if (!saved.success) {
+        setError(saved.message || saved.error || 'Save failed')
+        return
+      }
+      onSaved()
+      return
+    }
+
     const res = initial
       ? await Expenses.update(initial.id, payload)
       : await Expenses.create(payload)
@@ -1094,6 +1554,22 @@ function ExpenseFormFields({
       setSaving(false)
       setError(res.message || res.error || 'Save failed')
       return
+    }
+    // Receipts picked before the expense existed only have somewhere to
+    // attach to now. Done before Record so they are kept even if posting
+    // fails, and a failure here is reported but doesn't undo the save —
+    // losing a recorded expense over a failed upload would be the worse of
+    // the two outcomes, and the file can be re-attached from the expense.
+    const savedId = (res.data as { id?: string } | undefined)?.id
+    if (!initial && stagedAttachments.length > 0 && savedId) {
+      const failed = await uploadStagedExpenseAttachments(savedId, stagedAttachments)
+      if (failed > 0) {
+        showToast({
+          title: `${failed} attachment${failed === 1 ? '' : 's'} failed to upload`,
+          description: 'The expense saved. Attach the file again from the expense itself.',
+          status: 'error',
+        })
+      }
     }
     if (mode === 'record') {
       const saved = res.data as { id?: string } | undefined
@@ -1126,46 +1602,68 @@ function ExpenseFormFields({
           renderer treats that prop. */}
       <div className="sticky top-0 z-20 -mx-6 -mt-5 mb-4 border-b border-zinc-200 bg-zinc-50/95 px-6 pb-3 pt-5 backdrop-blur lg:-mx-10 lg:px-10">
         <Link
-          href="/accounting/expenses"
+          href={recurring ? '/accounting/recurring-expenses' : '/accounting/expenses'}
           className="mb-3 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to expenses
+          {recurring ? 'Back to recurring expenses' : 'Back to expenses'}
         </Link>
 
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold text-prominent-purple-900">
-              {initial ? 'Edit Expense' : 'New Expense'}
+              {recurring
+                ? recurring.id
+                  ? 'Edit Recurring Expense'
+                  : 'New Recurring Expense'
+                : initial
+                  ? 'Edit Expense'
+                  : 'New Expense'}
             </h1>
             <p className="mt-1 text-sm text-gray-500">
-              Record and categorize a business expense. Recording posts a journal entry to the GL.
+              {recurring
+                ? 'Saved once. On each due date a draft expense is made from what is below — nothing posts until you record the draft.'
+                : 'Record and categorize a business expense. Recording posts a journal entry to the GL.'}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2 pt-1">
             <Link
-              href="/accounting/expenses"
+              href={recurring ? '/accounting/recurring-expenses' : '/accounting/expenses'}
               className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
             >
               Cancel
             </Link>
-            <button
-              type="button"
-              onClick={() => submitAs('draft')}
-              disabled={saving}
-              className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
-            >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? 'Saving...' : 'Save draft'}
-            </button>
-            <button
-              type="button"
-              onClick={() => submitAs('record')}
-              disabled={saving}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-            >
-              Record
-            </button>
+            {recurring ? (
+              <button
+                type="button"
+                onClick={() => submitAs('draft')}
+                disabled={saving}
+                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => submitAs('draft')}
+                  disabled={saving}
+                  className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+                >
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {saving ? 'Saving...' : 'Save draft'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitAs('record')}
+                  disabled={saving}
+                  className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                >
+                  Record
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -1184,8 +1682,102 @@ function ExpenseFormFields({
       </div>
 
       <form ref={formRef} id={FORM_ID} onSubmit={submit} className="mt-4 space-y-2">
+        {recurring && (
+          <div
+            data-testid="recurring-schedule"
+            className="mb-3 space-y-3 rounded-lg border border-prominent-purple-100 bg-prominent-purple-50/30 p-3"
+          >
+            <p className="text-[13px] font-semibold text-prominent-purple-900">Schedule</p>
+            {!recurring.id && (
+              <div>
+                <p className="mb-1 text-[11px] font-medium text-zinc-500">
+                  Start from one of the client&apos;s recurring expenses
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {RECURRING_QUICK_STARTS.map((q) => (
+                    <button
+                      key={q.label}
+                      type="button"
+                      onClick={() => applyQuickStart(q)}
+                      // The account is looked up by number, so it has to be loaded first —
+                      // clicking sooner would name the expense but leave its account blank.
+                      disabled={postableAccounts.length === 0}
+                      className="rounded-full border border-prominent-purple-200 bg-white px-2.5 py-1 text-[12px] text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:cursor-wait disabled:opacity-50"
+                    >
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  PCF / revolving / special fund replenishment is an Inter-Account Transfer, and
+                  liquidations are a Special Account entry — neither is set up here.
+                </p>
+              </div>
+            )}
+            <div className="grid max-w-4xl grid-cols-2 gap-3 lg:grid-cols-4">
+              <Field label="Name *">
+                <input
+                  aria-label="Recurring expense name"
+                  value={schedule.name}
+                  onChange={(e) => setSchedule({ ...schedule, name: e.target.value })}
+                  placeholder="e.g. Office rent — Iloilo"
+                  maxLength={150}
+                  className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                />
+              </Field>
+              <Field label="Repeats *">
+                <Select
+                  compact
+                  aria-label="Repeats"
+                  value={schedule.frequency}
+                  onChange={(frequency) =>
+                    setSchedule({ ...schedule, frequency: frequency as RecurringFrequency })
+                  }
+                  options={FREQUENCY_OPTIONS}
+                />
+              </Field>
+              {schedule.frequency !== 'AS_NEEDED' && (
+                <Field label={recurring.id ? 'Next due date *' : 'First due date *'}>
+                  <input
+                    type="date"
+                    aria-label="Due date"
+                    value={schedule.dueDate}
+                    onChange={(e) => setSchedule({ ...schedule, dueDate: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                </Field>
+              )}
+              {schedule.frequency !== 'AS_NEEDED' && (
+                <Field label="Ends (optional)">
+                  <input
+                    type="date"
+                    aria-label="End date"
+                    value={schedule.endDate}
+                    onChange={(e) => setSchedule({ ...schedule, endDate: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                </Field>
+              )}
+            </div>
+            {recurring.id && (
+              <label className="flex items-center gap-2 text-[13px] text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={schedule.isActive}
+                  onChange={(e) => setSchedule({ ...schedule, isActive: e.target.checked })}
+                />
+                Active — untick to pause it without losing it
+              </label>
+            )}
+            <p className="text-[12px] text-zinc-500">
+              {schedule.frequency === 'AS_NEEDED'
+                ? 'No schedule: a saved starting point. Use "Create draft now" on the list whenever it comes up.'
+                : "Each amount below is what it usually comes to — change it on the draft when a month's bill differs."}
+            </p>
+          </div>
+        )}
         <div
-          className={`grid gap-3 ${form.clearedType === 'LATER_DATE' ? 'grid-cols-3 max-w-2xl' : 'grid-cols-2 max-w-md'}`}
+          className={`grid gap-3 ${form.clearedType === 'LATER_DATE' ? 'grid-cols-3 max-w-2xl' : 'grid-cols-2 max-w-md'} ${recurring ? 'hidden' : ''}`}
         >
           <Field label="Date *">
             <input
@@ -1230,7 +1822,15 @@ function ExpenseFormFields({
           {payments.map((p, i) => (
             <div key={i} className="flex items-end gap-3">
               <div
-                className={`grid flex-1 gap-3 ${p.paymentMethod === 'BANK_TRANSFER' ? 'grid-cols-4' : 'grid-cols-3'}`}
+                className={`grid flex-1 gap-3 ${
+                  p.paymentMethod === 'BANK_TRANSFER'
+                    ? recurring
+                      ? 'grid-cols-3'
+                      : 'grid-cols-4'
+                    : recurring
+                      ? 'grid-cols-2'
+                      : 'grid-cols-3'
+                }`}
               >
                 <div>
                   {/* Titles the column on the first row only, so a split
@@ -1285,17 +1885,21 @@ function ExpenseFormFields({
                     className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                   />
                 </Field>
-                <Field label="Amount">
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={p.amount}
-                    onChange={(e) => setPayment(i, { amount: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                </Field>
+                {/* A recurring expense's payment is sized each time — the total less any
+                    withholding — so there is no amount to type. */}
+                {!recurring && (
+                  <Field label="Amount">
+                    <input
+                      required
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={p.amount}
+                      onChange={(e) => setPayment(i, { amount: e.target.value })}
+                      className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                    />
+                  </Field>
+                )}
               </div>
               {payments.length > 1 && (
                 <button
@@ -1309,13 +1913,17 @@ function ExpenseFormFields({
             </div>
           ))}
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-            <button
-              type="button"
-              onClick={addPayment}
-              className="flex items-center gap-1.5 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 rounded-lg px-2 py-1"
-            >
-              <Plus className="w-4 h-4" /> Add payment method
-            </button>
+            {!recurring ? (
+              <button
+                type="button"
+                onClick={addPayment}
+                className="flex items-center gap-1.5 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 rounded-lg px-2 py-1"
+              >
+                <Plus className="w-4 h-4" /> Add payment method
+              </button>
+            ) : (
+              <span />
+            )}
             <div className="flex items-center gap-3">
               {payments.length > 1 && (
                 <span
@@ -1353,10 +1961,11 @@ function ExpenseFormFields({
                   supplierId: '',
                   employeeId: '',
                   employeeLabel: '',
+                  agentId: '',
                   payee: '',
                   otherCategory: '',
                 })
-                resetLinesForPayeeChange()
+                resetLinesForPayeeChange(value as PayeeType)
               }}
               options={PAYEE_OPTIONS}
               placeholder="— Select —"
@@ -1380,7 +1989,13 @@ function ExpenseFormFields({
                   compact
                   aria-label="Other category"
                   value={form.otherCategory}
-                  onChange={(otherCategory) => setForm({ ...form, otherCategory })}
+                  onChange={(otherCategory) => {
+                    setForm({ ...form, otherCategory })
+                    // Calling the entry a payroll run takes VAT off the lines already
+                    // on it — they started on Input VAT while it was an ordinary purchase.
+                    if (otherCategory === PAYROLL_CATEGORY)
+                      setLines((prev) => prev.map((l) => ({ ...l, taxCode: 'NON_VAT' })))
+                  }}
                   options={OTHER_CATEGORY_OPTIONS}
                 />
               </Field>
@@ -1462,6 +2077,32 @@ function ExpenseFormFields({
           </div>
         )}
 
+        {/* One cheque pays one person, so the agent is chosen once here — as the
+            payee — and every commission line's Sales Invoice No. is picked from
+            this agent's own sales. (The mockup repeated the agent on every line,
+            where it could disagree with the payee.) */}
+        {form.payeeType === 'AGENT' && (
+          <div className="max-w-md">
+            <Field label="Sales Agent *">
+              <CategorySelect
+                compact
+                aria-label="Select sales agent"
+                noun="agents"
+                value={form.agentId}
+                onChange={(id) => {
+                  setForm({ ...form, agentId: id ?? '' })
+                  // The sales already picked were this agent's, not the next one's.
+                  setLines((prev) =>
+                    prev.map((l) => ({ ...l, posTransactionId: '', saleLabel: '' }))
+                  )
+                }}
+                options={agentOptions}
+                placeholder="— Select —"
+              />
+            </Field>
+          </div>
+        )}
+
         {form.payeeType === 'SUPPLIER' && (
           <div className="max-w-md">
             <Field label="Supplier">
@@ -1486,6 +2127,23 @@ function ExpenseFormFields({
           />
         </Field>
 
+        {/* Supporting documents, kept with the header fields rather than at
+            the foot of the form — a payroll entry runs to hundreds of lines,
+            and anything below them is off screen by the time it matters.
+            While creating there is no expense id yet, so the panel stages the
+            files and the submit uploads them once the expense has one. Not
+            shown for a recurring expense: that is a template, and `initial`
+            there is the expense it was copied from, not a record to attach to. */}
+        {!recurring && (
+          <div className="pt-1">
+            <ExpenseAttachmentsPanel
+              expenseId={initial?.id}
+              staged={stagedAttachments}
+              onStagedChange={setStagedAttachments}
+            />
+          </div>
+        )}
+
         {/* Line items — Scenario 40 Part 6. Supplier is the only payee type
             that can be a real inventory purchase, so it's the only one that
             gets the Item/Qty/Unit Price columns; every other type just
@@ -1502,7 +2160,7 @@ function ExpenseFormFields({
                 </>
               )}
               <div>Account</div>
-              {isOtherMode && <div>Special Account</div>}
+              {showSpecialColumn && <div>Special Account</div>}
               {isItemMode ? (
                 <>
                   <div>Qty</div>
@@ -1511,21 +2169,27 @@ function ExpenseFormFields({
               ) : (
                 <div>Description</div>
               )}
-              <div>Amount</div>
               <div>Tax Code</div>
-              <div>Tax Amount</div>
               {canWithhold && <div>Withholding</div>}
-              <div>Total</div>
               {/* One pick from the branches and departments list — per line,
                   because a payroll run spans every department it pays. */}
               {isOtherMode && <div>Division</div>}
+              {/* Last, so it is the field you finish on. There is no per-line Total:
+                  the amount IS the line's total (VAT inside it), and the totals
+                  block under the table carries the sums. */}
+              <div>Amount</div>
               <div />
             </div>
             <div className="divide-y divide-zinc-100">
               {lines.map((line, i) => {
-                const lineTotal = netFor(line) + vatFor(line)
+                const kind = kindOfAccount(line.categoryAccountId)
+                // Sales already on another line of this entry — not offered again.
+                const otherSaleIds = lines
+                  .filter((_, j) => j !== i)
+                  .map((l) => l.posTransactionId)
+                  .filter(Boolean)
                 return (
-                  <div key={i} className={`grid gap-2 items-center py-1.5 ${lineGridCols}`}>
+                  <div key={i} className={`grid gap-2 items-start py-1.5 ${lineGridCols}`}>
                     {isItemMode && (
                       <>
                         <ExpenseItemSearchCombobox
@@ -1580,7 +2244,18 @@ function ExpenseFormFields({
                       aria-label="Account"
                       noun="accounts"
                       value={line.categoryAccountId}
-                      onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
+                      onChange={(id) =>
+                        setLine(i, {
+                          categoryAccountId: id ?? '',
+                          // An advance or a loan is money lent, not a purchase — it
+                          // never carries Input VAT, whatever the line started on.
+                          ...(specialAccountControlIds.has(id ?? '') ? { taxCode: 'NON_VAT' } : {}),
+                          // Moving to an account of a different kind drops what
+                          // the old one collected — a plate means nothing on a
+                          // commission line. Same kind keeps it.
+                          ...(kindOfAccount(id ?? '') !== kind ? NO_KIND_FIELDS : {}),
+                        })
+                      }
                       options={
                         line.taxCode === CAPEX_CODE ? capexAccountOptions : accountCategoryOptions
                       }
@@ -1588,8 +2263,15 @@ function ExpenseFormFields({
                     />
                     {/* Which named balance the line belongs to, under whichever
                         control account the Account picker chose. Inert on an
-                        account that keeps no such ledger. */}
-                    {isOtherMode && (
+                        account that keeps no such ledger.
+
+                        Left empty on a Fuel / Vehicle Repair / Commission line:
+                        those accounts never keep one, and the detail row below
+                        already says what the line is for. The cell stays while
+                        the column is showing so the columns still line up; when
+                        every line is one of these, the column is not there at all. */}
+                    {showSpecialColumn && kind && <div aria-hidden />}
+                    {showSpecialColumn && !kind && (
                       <div className="min-w-0">
                         <SpecialAccountPicker
                           value={{
@@ -1638,60 +2320,44 @@ function ExpenseFormFields({
                         className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                       />
                     )}
-                    {/* Payee → Other alone can go negative — a payroll
-                        sheet's Credit column (statutory withholding, an
-                        advance taken back out of pay), which needs no min to
-                        stay typeable. Every other payee keeps its floor. */}
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      min={isOtherMode ? undefined : '0.01'}
-                      aria-label="Amount"
-                      title={
-                        isTaxable(line.taxCode)
-                          ? `VAT-inclusive — the ${VAT_RATE_PERCENT}% Input VAT is split out of this amount`
-                          : undefined
-                      }
-                      readOnly={isItemMode && !!line.itemId}
-                      value={line.amount}
-                      onChange={(e) => setLine(i, { amount: e.target.value })}
-                      className={`w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
-                        isItemMode && line.itemId ? 'bg-zinc-50 text-zinc-500' : ''
-                      }`}
-                    />
-                    <Select
-                      compact
-                      value={line.taxCode}
-                      onChange={(taxCode) =>
-                        setLine(i, {
-                          taxCode,
-                          // A capital line posts to a property / equipment
-                          // account: an account picked for something else
-                          // cannot stay.
-                          ...(taxCode === CAPEX_CODE && !capexAccountIds.has(line.categoryAccountId)
-                            ? { categoryAccountId: '' }
-                            : {}),
-                        })
-                      }
-                      options={TAX_CODE_OPTIONS}
-                    />
-                    {/* Only an Input VAT line can carry a tax amount —
-                          the others have no VAT by definition, so the field
-                          is locked rather than left open to an entry the
-                          backend will reject on save. */}
+                    {/* The Input VAT already inside the amount sits under the Tax Code,
+                        the way the withholding does under its code — it used to
+                        have a column of its own. Only an Input VAT line has any;
+                        the others have none by definition, so nothing is shown. */}
                     <div
-                      aria-label="Tax amount"
+                      data-testid="line-tax"
+                      className="min-w-0"
                       title={
                         isTaxable(line.taxCode)
                           ? `The ${VAT_RATE_PERCENT}% Input VAT already inside the amount, split out on save`
                           : 'No VAT on this tax code'
                       }
-                      className={`min-w-0 truncate px-2.5 py-1.5 text-[13px] ${
-                        vatFor(line) > 0 ? 'text-zinc-600' : 'text-zinc-400'
-                      }`}
                     >
-                      {vatFor(line) > 0 ? fmtMoney(vatFor(line)) : '—'}
+                      <Select
+                        compact
+                        value={line.taxCode}
+                        onChange={(taxCode) =>
+                          setLine(i, {
+                            taxCode,
+                            // A capital line posts to a property / equipment
+                            // account: an account picked for something else
+                            // cannot stay.
+                            ...(taxCode === CAPEX_CODE &&
+                            !capexAccountIds.has(line.categoryAccountId)
+                              ? { categoryAccountId: '' }
+                              : {}),
+                          })
+                        }
+                        options={TAX_CODE_OPTIONS}
+                      />
+                      {vatFor(line) > 0 && (
+                        <p
+                          aria-label="Tax amount"
+                          className="mt-0.5 truncate px-1 text-[11px] text-zinc-500"
+                        >
+                          {fmtMoney(vatFor(line))} VAT
+                        </p>
+                      )}
                     </div>
                     {/* Scenario 69 Part E — which EWT code this line is
                         withheld at. The amount is worked out, never typed:
@@ -1735,9 +2401,6 @@ function ExpenseFormFields({
                         )}
                       </div>
                     )}
-                    <div className="min-w-0 truncate px-2.5 py-1.5 text-[13px] text-zinc-600">
-                      {fmtMoney(lineTotal)}
-                    </div>
                     {isOtherMode && (
                       <CategorySelect
                         compact
@@ -1753,6 +2416,28 @@ function ExpenseFormFields({
                         placeholder="— None —"
                       />
                     )}
+                    {/* Payee → Other alone can go negative — a payroll
+                        sheet's Credit column (statutory withholding, an
+                        advance taken back out of pay), which needs no min to
+                        stay typeable. Every other payee keeps its floor. */}
+                    <input
+                      required
+                      type="number"
+                      step="0.01"
+                      min={isOtherMode ? undefined : '0.01'}
+                      aria-label="Amount"
+                      title={
+                        isTaxable(line.taxCode)
+                          ? `VAT-inclusive — the ${VAT_RATE_PERCENT}% Input VAT is split out of this amount`
+                          : undefined
+                      }
+                      readOnly={isItemMode && !!line.itemId}
+                      value={line.amount}
+                      onChange={(e) => setLine(i, { amount: e.target.value })}
+                      className={`w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
+                        isItemMode && line.itemId ? 'bg-zinc-50 text-zinc-500' : ''
+                      }`}
+                    />
                     {/* Scenario 69 Part G — what a capital purchase is for. */}
                     {line.taxCode === CAPEX_CODE && (
                       <div
@@ -1776,7 +2461,7 @@ function ExpenseFormFields({
                         </span>
                       </div>
                     )}
-                    <div className="flex justify-end">
+                    <div className="flex justify-end pt-1">
                       {lines.length > 1 && (
                         <button
                           type="button"
@@ -1787,6 +2472,134 @@ function ExpenseFormFields({
                         </button>
                       )}
                     </div>
+                    {/* The extra fields this line's account asks for, on a row of
+                        their own under the line — the table is already as wide
+                        as it can be, and only these lines need them. */}
+                    {kind && (
+                      <div
+                        data-testid={`line-kind-${kind.toLowerCase()}`}
+                        style={{ gridColumn: '1 / -1' }}
+                        className="grid grid-cols-1 gap-2 rounded-lg bg-prominent-purple-50/40 p-2 sm:grid-cols-2 lg:grid-cols-4"
+                      >
+                        {(kind === 'FUEL' || kind === 'VEHICLE_REPAIR') && (
+                          <>
+                            <KindField label="Plate No. *">
+                              <CategorySelect
+                                compact
+                                aria-label="Plate number"
+                                noun="vehicles"
+                                value={line.vehicleId || undefined}
+                                onChange={(id) =>
+                                  setLine(i, { vehicleId: id ?? '', vehicleLabel: '' })
+                                }
+                                options={vehicleOptionsFor(line)}
+                                placeholder="— Select —"
+                              />
+                            </KindField>
+                          </>
+                        )}
+                        {kind === 'FUEL' && (
+                          <KindField label="Liters (optional)">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              aria-label="Liters"
+                              value={line.liters}
+                              onChange={(e) => setLine(i, { liters: e.target.value })}
+                              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          </KindField>
+                        )}
+                        {kind === 'VEHICLE_REPAIR' && (
+                          <>
+                            <KindField label="Repair/Service Type *">
+                              <Select
+                                compact
+                                aria-label="Repair or service type"
+                                value={line.repairServiceType}
+                                onChange={(repairServiceType) => setLine(i, { repairServiceType })}
+                                options={REPAIR_SERVICE_OPTIONS}
+                              />
+                            </KindField>
+                            <KindField label="Service detail / remarks">
+                              <input
+                                aria-label="Service detail"
+                                value={line.serviceDetail}
+                                maxLength={255}
+                                onChange={(e) => setLine(i, { serviceDetail: e.target.value })}
+                                className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              />
+                            </KindField>
+                          </>
+                        )}
+                        {kind === 'AGENT_COMMISSION' &&
+                          (form.agentId ? (
+                            <KindField label="Sales Invoice No. *" className="sm:col-span-2">
+                              {/* Keyed on the pick so the shown label always follows
+                                  the line, even after a line above it is removed. */}
+                              <SearchCombobox
+                                key={`${i}-${line.posTransactionId}`}
+                                compact
+                                value={line.posTransactionId}
+                                initialLabel={line.saleLabel}
+                                queryKey={`expense-agent-sales:${form.agentId}:${otherSaleIds.join(',')}`}
+                                placeholder="— Select invoice —"
+                                typeToSearchMessage="Search this agent's sales…"
+                                emptyMessage="No unreleased sales for this agent"
+                                onChange={(id) => {
+                                  if (!id) setLine(i, { posTransactionId: '', saleLabel: '' })
+                                }}
+                                onSelect={(option) => {
+                                  const sale = option.meta as ExpenseAgentSale
+                                  setLine(i, {
+                                    posTransactionId: sale.id,
+                                    saleLabel: sale.number,
+                                    // What the system accrued on the sale, when it did —
+                                    // a starting point, still editable.
+                                    ...(line.amount === '' && sale.commission != null
+                                      ? { amount: String(sale.commission) }
+                                      : {}),
+                                    ...(line.description.trim() === ''
+                                      ? { description: `Commission - ${sale.number}` }
+                                      : {}),
+                                  })
+                                }}
+                                search={async (query) => {
+                                  const res = await Expenses.agentSales(form.agentId, {
+                                    search: query || undefined,
+                                    excludeExpenseId: initial?.id,
+                                  })
+                                  return (res.data ?? [])
+                                    .filter((x) => !x.releasedOn && !otherSaleIds.includes(x.id))
+                                    .map((x) => ({
+                                      id: x.id,
+                                      primary: x.number,
+                                      secondary: [x.customerName, fmtMoney(x.subtotal)]
+                                        .filter(Boolean)
+                                        .join(' · '),
+                                      badge:
+                                        x.commission != null
+                                          ? `Commission ${fmtMoney(x.commission)}`
+                                          : undefined,
+                                      meta: x,
+                                    }))
+                                }}
+                              />
+                              <p className="mt-0.5 text-[11px] text-zinc-500">
+                                Only this agent&apos;s sales not already released. The amount fills
+                                from the commission accrued on the sale, when there is one — change
+                                it to pay a different figure.
+                              </p>
+                            </KindField>
+                          ) : (
+                            <p className="text-[12px] text-amber-700 sm:col-span-2">
+                              Pick the Sales Agent above first — this line&apos;s invoice comes from
+                              that agent&apos;s sales.
+                            </p>
+                          ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}

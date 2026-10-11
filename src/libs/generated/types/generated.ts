@@ -13846,7 +13846,7 @@ export interface components {
       entityId: string
     }
     CreateInstallmentAccountDto: {
-      /** @example IA-0001 */
+      /** @example 0001 */
       accountNumber: string
       /** @description Accounting customer ID */
       customerId: string
@@ -13916,7 +13916,7 @@ export interface components {
       meta: components['schemas']['InstallmentAccountPaginationMetaDto']
     }
     UpdateInstallmentAccountDto: {
-      /** @example IA-0001 */
+      /** @example 0001 */
       accountNumber?: string
       /** @description Accounting customer ID */
       customerId?: string

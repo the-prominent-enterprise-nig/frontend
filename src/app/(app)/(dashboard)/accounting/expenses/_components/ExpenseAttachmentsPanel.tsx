@@ -163,7 +163,7 @@ export default function ExpenseAttachmentsPanel({
               ) : (
                 <Upload className="h-3.5 w-3.5" />
               )}
-              Attach
+              Add attachment
             </button>
           </>
         )}

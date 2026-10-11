@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Ban, CheckCircle, Loader2, Pencil, Printer, Trash2 } from 'lucide-react'
+import { ArrowLeft, Ban, CheckCircle, Loader2, Pencil, Printer, Repeat, Trash2 } from 'lucide-react'
 import { Expenses, fmtMoney, type ExpenseDocument } from '@/src/libs/data/AccountingV2Data'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocument'
@@ -21,6 +21,7 @@ const PAYEE_TYPE_LABELS: Record<string, string> = {
   CUSTOMER: 'Customer',
   SUPPLIER: 'Supplier',
   EMPLOYEE: 'Employee',
+  AGENT: 'Sales Agent',
   OTHER: 'Other',
 }
 
@@ -141,6 +142,13 @@ export default function ExpenseDetail({ id }: { id: string }) {
   // View (this is it), so the same expense offers the same actions wherever
   // it is looked at.
   const menuItems: RowMenuItem[] = [
+    // Any expense can become the template for a recurring one: the form opens
+    // already filled in, and only the schedule is left to say.
+    {
+      label: 'Make recurring',
+      icon: Repeat,
+      onClick: () => router.push(`/accounting/recurring-expenses/new?from=${id}`),
+    },
     ...(e.status === 'DRAFT'
       ? [
           { label: 'Record', icon: CheckCircle, onClick: record, variant: 'success' as const },
@@ -201,6 +209,15 @@ export default function ExpenseDetail({ id }: { id: string }) {
         </span>
         {e.voucherNumber && (
           <span className="font-mono text-[12px] text-gray-500">{e.expenseNumber}</span>
+        )}
+        {e.recurringExpense && (
+          <Link
+            href="/accounting/recurring-expenses"
+            title="This draft was made by a recurring expense"
+            className="inline-flex items-center gap-1 rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-semibold text-prominent-purple-700 hover:underline"
+          >
+            <Repeat className="h-3 w-3" /> {e.recurringExpense.name}
+          </Link>
         )}
       </div>
 
@@ -273,6 +290,22 @@ export default function ExpenseDetail({ id }: { id: string }) {
                   <td className="py-2 pr-4 text-gray-900">{l.account ?? '—'}</td>
                   <td className="py-2 pr-4 text-gray-600">
                     {l.description || '—'}
+                    {/* Fuel / vehicle repair / commission — the plate, litres,
+                        kind of job, or the sale the commission was released on. */}
+                    {(l.plateNo || l.repairServiceType || l.saleNumber) && (
+                      <span className="mt-0.5 block text-[11px] text-gray-400">
+                        {[
+                          l.plateNo &&
+                            `Plate ${l.plateNo}${l.vehicleType ? ` - ${l.vehicleType}` : ''}`,
+                          l.liters != null && `${l.liters} L`,
+                          l.repairServiceType,
+                          l.serviceDetail,
+                          l.saleNumber && `Sales Invoice ${l.saleNumber}`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    )}
                     {/* Scenario 69 Part G — what a capital purchase is for. */}
                     {l.projectAssetRef && (
                       <span className="mt-0.5 block text-[11px] text-gray-400">

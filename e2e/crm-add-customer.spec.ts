@@ -136,15 +136,16 @@ test.describe('CRM — Add Customer', () => {
     await expect(page.getByText(streetAddress, { exact: false })).toBeVisible()
 
     // A co-maker attached outside the profile form (here via the API, as
-    // the Credit Application does) still shows in the profile's read-only
-    // display — removing the capture fields must not hide existing data.
+    // the Credit Application does) is still stored, but the profile no longer
+    // shows a Co-maker section (client asked for it off).
     const addCoMakerRes = await page.request.post(`/api/crm/customers/${customerId}/co-makers`, {
       data: { name: coMakerName, relationship: 'Spouse', contactNumber: '09171234567' },
     })
     expect(addCoMakerRes.ok()).toBeTruthy()
     await page.reload()
-    await expect(page.getByText('Co-maker (Guarantor)')).toBeVisible()
-    await expect(page.getByText(`${coMakerName} — Spouse`)).toBeVisible()
+    await expect(page.getByRole('heading', { name: fullName })).toBeVisible()
+    await expect(page.getByText('Co-maker (Guarantor)')).toHaveCount(0)
+    await expect(page.getByText(`${coMakerName} — Spouse`)).toHaveCount(0)
 
     // Confirm it's findable by search from the customers list (also exercises
     // the search-by-name path the POS checkout customer picker relies on).

@@ -1258,6 +1258,18 @@ export interface CreateDisbursementBody {
    * bankAccountId/chequeNumber/method above; the server records that as one
    * source either way, and the voucher number derives from the first. */
   sources?: DisbursementSource[]
+  /** Amounts held back from the supplier on this payment, each credited to a
+   * Chart of Accounts account. The invoices are still settled in full; the
+   * sources fund the allocated total less these. */
+  deductions?: DisbursementDeduction[]
+}
+/** One deduction taken off a payment to a supplier. */
+export interface DisbursementDeduction {
+  accountId: string
+  /** Whose payment it comes out of. Omitted means the voucher's own payee. */
+  supplierId?: string
+  description?: string
+  amount: number
 }
 /** One funding source of a disbursement. */
 export interface DisbursementSource {
@@ -1274,10 +1286,12 @@ export interface DisbursementSource {
 }
 /** One row of the Payments screen — a whole transaction, not one invoice's
  * share of it. `kind: 'payment'` rows are pre-disbursement payments made
- * through the retired per-bill route; they settle exactly one invoice. */
+ * through the retired per-bill route; they settle exactly one invoice.
+ * `kind: 'expense'` rows are paid Expenses, present only when the list is
+ * asked for them (`includeExpenses`); `id` is then the expense's id. */
 export interface APDisbursementListItem {
   id: string
-  kind: 'disbursement' | 'payment'
+  kind: 'disbursement' | 'payment' | 'expense'
   voucherNumber: string | null
   /** UNPAID until a cheque is cut. Raising a voucher posts nothing — it is the
    * authorisation to pay, and settlement is what moves the money. */
@@ -1291,7 +1305,19 @@ export interface APDisbursementListItem {
   method: string | null
   reference: string | null
   bankAccount: { id: string; name: string; accountNumber: string } | null
+  /** What the cheque is for: the invoices settled less any deductions. */
   amount: number
+  /** The invoices settled, before deductions. Absent on payments and expenses. */
+  settledAmount?: number
+  /** What was held back from the supplier, and the account it was credited to. */
+  deductions?: {
+    accountId: string
+    account: { id: string; number: string; name: string } | null
+    supplierId: string | null
+    supplier: { id: string; name: string } | null
+    description: string | null
+    amount: number
+  }[]
   clearedType: string | null
   clearedDate: string | null
   notes: string | null
@@ -1431,7 +1457,13 @@ export const APBills = {
   /** Cancel an unpaid voucher — kept as CANCELLED, not deleted. */
   cancelDisbursement: (id: string) => api.delete(`/ap-bills/disbursements/${id}`),
   /** The Payments screen — one row per transaction. */
-  listDisbursements: (params?: { search?: string; supplierId?: string }) =>
+  listDisbursements: (params?: {
+    search?: string
+    supplierId?: string
+    /** Adds every paid Expense as a row of kind 'expense'. Only the Payments
+     * screen wants these — callers hunting for vouchers to settle do not. */
+    includeExpenses?: boolean
+  }) =>
     api.get<{ items: APDisbursementListItem[]; total: number }>(
       '/ap-bills/disbursements',
       params as any
@@ -1704,7 +1736,7 @@ export const APPaymentMethods = {
 export type BusinessExpenseStatus = 'DRAFT' | 'RECORDED' | 'VOID'
 // Scenario 40 Gap 1 + Part 2 — Payee is now typed; OTHER unlocks the
 // Special Account list, including CA_LIQUIDATION (Part 2's settlement flow).
-export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'OTHER'
+export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'AGENT' | 'OTHER'
 // Payee → Other sub-choice. UTILITIES/SALARIES_WAGES/PAYROLL behave like
 // SUPPLIER (each line picks its own category); SPECIAL_ACCOUNTS is the
 // pre-existing Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation
@@ -1764,6 +1796,22 @@ export interface BusinessExpenseLine {
   divisionBranch?: { id: string; name: string; code?: string | null } | null
   divisionDepartmentId?: string | null
   divisionDepartment?: { id: string; name: string; code?: string | null } | null
+  /** Fuel / vehicle-repair lines — the vehicle from the fleet roster. */
+  vehicleId?: string | null
+  vehicle?: { id: string; plateNo: string; tag?: string | null } | null
+  /** Fuel lines — litres bought (optional). */
+  liters?: number | null
+  /** Vehicle-repair lines — the kind of job, and a remark on it. */
+  repairServiceType?: string | null
+  serviceDetail?: string | null
+  /** Commission lines — the POS sale whose commission this line releases. */
+  posTransactionId?: string | null
+  posTransaction?: {
+    id: string
+    transactionNumber: string
+    salesInvoiceNumber?: string | null
+    subtotal: number | string
+  } | null
 }
 // One entry can be paid through several methods at once (e.g. part Cash,
 // part Bank Transfer) — rows must sum to the entry's total.
@@ -1804,6 +1852,11 @@ export interface BusinessExpense {
   salesInvoiceNumber?: string | null
   employeeId?: string | null
   employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
+  /** payeeType=AGENT — the sales agent being paid (commission release). */
+  agentId?: string | null
+  agent?: { id: string; name: string } | null
+  /** The Recurring Expense that made this draft, when one did. */
+  recurringExpense?: { id: string; name: string } | null
   specialAccountType?: SpecialAccountType | null
   liquidatesType?: LiquidatableType | null
   payee?: string | null
@@ -1872,6 +1925,14 @@ export interface ExpenseDocument {
       taxCode: string | null
       /** Scenario 69 Part G — the project or asset a VAT-IN-CAPEX line is for. */
       projectAssetRef?: string | null
+      /** Fuel / vehicle-repair lines — the plate, and what kind of vehicle it is. */
+      plateNo?: string | null
+      vehicleType?: string | null
+      liters?: number | null
+      repairServiceType?: string | null
+      serviceDetail?: string | null
+      /** Commission lines — the Sales Invoice No. whose commission was released. */
+      saleNumber?: string | null
       amount: number
       taxAmount: number
       withholdingTaxCode?: string | null
@@ -1885,6 +1946,8 @@ export interface ExpenseDocument {
      * rows total `netPayable`). */
     withholdingAmount?: number
     netPayable?: number
+    /** The Recurring Expense that made this entry, when one did. */
+    recurringExpense?: { id: string; name: string } | null
     status: string
     payeeType: PayeeType | null
     otherCategory: OtherCategory | null
@@ -1960,7 +2023,112 @@ export interface CreateSpecialAccountBody {
   notes?: string
 }
 
+// ─── Recurring Expenses ──────────────────────────────────────────────────
+export type RecurringFrequency = 'MONTHLY' | 'WEEKLY' | 'QUARTERLY' | 'YEARLY' | 'AS_NEEDED'
+/** The expense a recurring expense makes — an expense's own header fields and lines
+ * (same shape as the Expense form sends) plus the one payment, whose amount is
+ * worked out each time. */
+export interface RecurringExpenseTemplate {
+  payeeType?: PayeeType | null
+  otherCategory?: string | null
+  supplierId?: string | null
+  customerId?: string | null
+  employeeId?: string | null
+  agentId?: string | null
+  payee?: string | null
+  sourceOfFundId?: string | null
+  description?: string | null
+  costCenter?: string | null
+  lines: Array<Record<string, any> & { categoryAccountId: string; amount: number }>
+  payment: { paymentMethod: string; bankAccountId?: string | null; reference?: string | null }
+}
+export interface RecurringExpense {
+  id: string
+  name: string
+  frequency: RecurringFrequency
+  dayOfMonth?: number | null
+  startDate: string
+  endDate?: string | null
+  /** The next due date; null for an "as needed" one. */
+  nextRunDate?: string | null
+  isActive: boolean
+  template: RecurringExpenseTemplate
+  branchId?: string | null
+  lastRunAt?: string | null
+  /** Why the last scheduled run failed; it is tried again the next day. */
+  lastError?: string | null
+  /** The payee by name, and what it usually comes to (the lines, VAT inclusive). */
+  payeeLabel?: string | null
+  usualAmount: number
+  /** The newest visible draft it made. */
+  drafts?: {
+    id: string
+    status: string
+    voucherNumber?: string | null
+    expenseNumber: string
+    expenseDate: string
+  }[]
+}
+export interface RecurringRunSummary {
+  checked: number
+  generated: number
+  failed: { id: string; name: string; reason: string }[]
+}
+export const RecurringExpenses = {
+  list: () => api.get<RecurringExpense[]>('/recurring-expenses'),
+  get: (id: string) => api.get<RecurringExpense>(`/recurring-expenses/${id}`),
+  create: (body: any) => api.post<RecurringExpense>('/recurring-expenses', body),
+  update: (id: string, body: any) => api.patch<RecurringExpense>(`/recurring-expenses/${id}`, body),
+  remove: (id: string) => api.delete(`/recurring-expenses/${id}`),
+  /** "Create draft now" — returns the draft expense it made. */
+  run: (id: string) => api.post<BusinessExpense>(`/recurring-expenses/${id}/run`, {}),
+  /** What the daily job does, on demand. */
+  runDue: () => api.post<RecurringRunSummary>('/recurring-expenses/run-due', {}),
+}
+
+/** The pickers behind a Fuel / Vehicle Repair / Commission expense line. */
+export interface ExpenseVehicleOption {
+  id: string
+  plateNo: string
+  /** The Vehicle Type, as the Drivers screen calls it — the roster's `tag`
+   * column. Blank when none has been entered. */
+  tag?: string | null
+  branchId?: string | null
+}
+/** `<plate number> - <vehicle type>` — how a vehicle reads in a picker. The
+ * roster has no make or model, so the Vehicle Type is the only description it
+ * holds; a vehicle without one reads as its plate alone. Never the driver, and
+ * not the category (Delivery / Service / Collector) either. */
+export function vehicleLabel(v: { plateNo: string; tag?: string | null }): string {
+  const type = v.tag?.trim()
+  return type ? `${v.plateNo} - ${type}` : v.plateNo
+}
+export interface ExpenseAgentOption {
+  id: string
+  name: string
+  branchId?: string | null
+}
+/** One sale credited to an agent. `commission` is what the system accrued on
+ * it (null when the agent had no rate then); `releasedOn` is the live voucher
+ * already carrying it, which the picker hides. */
+export interface ExpenseAgentSale {
+  id: string
+  number: string
+  date: string
+  customerName: string | null
+  subtotal: number
+  totalAmount: number
+  commission: number | null
+  releasedOn: { expenseId: string; voucherNumber: string } | null
+}
+
 export const Expenses = {
+  vehicles: (search?: string) =>
+    api.get<ExpenseVehicleOption[]>('/expenses/lookups/vehicles', search ? { search } : undefined),
+  agents: (search?: string) =>
+    api.get<ExpenseAgentOption[]>('/expenses/lookups/agents', search ? { search } : undefined),
+  agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
+    api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
   list: (params?: {
     search?: string
     status?: string

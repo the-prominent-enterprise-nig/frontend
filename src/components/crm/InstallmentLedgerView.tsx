@@ -61,13 +61,6 @@ export default function InstallmentLedgerView({
     })
   }, [accountId])
 
-  // Scenario 67 — a closed X-Deal was settled by its memo, not by payments;
-  // the memo is the ledger's own credit row, so its number comes from there.
-  const xDealMemoRef =
-    ledger?.account.isXDeal && ledger.account.status === 'closed'
-      ? (ledger.rows.find((r) => r.description === 'X-Deal credit memo')?.ref ?? null)
-      : null
-
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
       <div>
@@ -86,224 +79,246 @@ export default function InstallmentLedgerView({
             {error ?? 'Ledger not found'}
           </div>
         ) : (
-          <>
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-gray-900">Customer Ledger</h1>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      STATUS_STYLES[ledger.account.status] ?? 'bg-gray-100 text-gray-600'
-                    }`}
-                    data-testid="ledger-status"
-                  >
-                    {xDealMemoRef
-                      ? `Settled — X-Deal credit memo ${xDealMemoRef}`
-                      : (STATUS_LABELS[ledger.account.status] ?? ledger.account.status)}
-                  </span>
-                  {ledger.account.isXDeal && (
-                    <XDealBadge reference={ledger.account.xDealReference} />
-                  )}
-                </div>
-                <p className="mt-1 font-mono text-xs text-gray-500">
-                  {ledger.account.accountNumber}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => printCustomerLedgerDocument(ledger)}
-                  className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  <Printer className="h-3.5 w-3.5" /> Print
-                </button>
-                <Link
-                  href={`/crm/installment-accounts/${accountId}`}
-                  className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50"
-                >
-                  Full account details <ArrowUpRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            </div>
-
-            <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Sale</h2>
-              <InfoTable
-                fields={[
-                  {
-                    label: 'Lastname',
-                    value: ledger.account.customer.lastName ?? ledger.account.customer.name,
-                  },
-                  { label: 'Firstname', value: ledger.account.customer.firstName ?? '—' },
-                  { label: 'Middle', value: ledger.account.customer.middleName ?? '—' },
-                  { label: 'Sales Invoice No.', value: ledger.saleReference ?? '—' },
-                  { label: 'SI Date', value: ledger.saleDate ? fmtDate(ledger.saleDate) : '—' },
-                ]}
-              />
-            </section>
-
-            {ledger.account.unitItems.length > 0 && (
-              <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
-                <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Item</h2>
-                <InfoTable
-                  fields={[
-                    { label: 'Brand', value: ledger.account.unitItems[0].brand ?? '—' },
-                    { label: 'Type', value: ledger.account.unitItems[0].itemType ?? '—' },
-                    { label: 'Model', value: ledger.account.unitItems[0].modelNumber ?? '—' },
-                    {
-                      label: 'Serial',
-                      value:
-                        ledger.account.unitItems[0].serialNumber ??
-                        (ledger.account.unitItems.length > 1
-                          ? `+${ledger.account.unitItems.length - 1} more item(s)`
-                          : '—'),
-                    },
-                  ]}
-                />
-              </section>
-            )}
-
-            <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Assignment</h2>
-              <InfoTable
-                fields={[
-                  { label: 'Agent', value: ledger.account.sellingAgent?.name ?? '—' },
-                  {
-                    label: 'Collector',
-                    value: ledger.account.collector
-                      ? `${ledger.account.collector.stubNumber} — ${ledger.account.collector.name}`
-                      : 'Unassigned',
-                  },
-                  {
-                    label: 'FMI',
-                    value: ledger.firstInstallmentDate ? fmtDate(ledger.firstInstallmentDate) : '—',
-                  },
-                ]}
-              />
-            </section>
-
-            <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Financing</h2>
-              <InfoTable
-                fields={[
-                  { label: 'LCP', value: fmtMoney(ledger.account.listedCashPrice) },
-                  { label: 'Down', value: fmtMoney(ledger.account.downPayment) },
-                  { label: 'Amt. Financed', value: fmtMoney(ledger.account.amountFinanced) },
-                  { label: 'Inst. Diff.', value: fmtMoney(ledger.account.interestDifferential) },
-                  { label: 'Scheme', value: ledger.account.priceUseType?.name ?? '—' },
-                  { label: 'MI', value: fmtMoney(ledger.account.monthlyInstallment) },
-                  { label: 'Term', value: `${ledger.account.termMonths} months` },
-                  { label: 'Branch', value: ledger.account.branch?.name ?? '—' },
-                  { label: 'PN', value: fmtMoney(ledger.account.pnv) },
-                  { label: 'IC', value: fmtMoney(ledger.account.insuranceCharge ?? 0) },
-                  { label: 'Total Price', value: fmtMoney(ledger.account.totalPrice) },
-                ]}
-              />
-            </section>
-
-            <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Totals</h2>
-              <InfoTable
-                fields={[
-                  { label: 'Total Payments', value: fmtMoney(ledger.account.totalPayments) },
-                  // Only one running "penalty" figure exists on this account
-                  // (no itemized assessment history) — reused for both.
-                  { label: 'Total Penalty', value: '—' },
-                  { label: 'Penalty Balance', value: fmtMoney(ledger.account.penalty) },
-                  { label: 'Total Rebates', value: fmtMoney(ledger.account.totalRebates) },
-                  { label: 'Total Billing', value: fmtMoney(ledger.account.totalBilling) },
-                  { label: 'Required DP', value: fmtMoney(ledger.account.downPayment) },
-                  { label: 'DP Balance', value: fmtMoney(ledger.account.dpBalance) },
-                  { label: 'Tot. Amt. Due', value: fmtMoney(ledger.account.totalDue) },
-                  { label: 'Tot. Amt. Out', value: fmtMoney(ledger.account.currentBalance) },
-                ]}
-              />
-            </section>
-
-            <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="border-b border-gray-100 p-4 pb-2 text-[14px] font-semibold text-gray-900">
-                Ledger
-              </h2>
-              {ledger.rows.length === 0 ? (
-                <p className="py-6 text-center text-sm text-gray-400">No ledger activity yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-[13px]">
-                    <thead>
-                      <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        <th className="border-r border-gray-100 px-4 py-1.5">Date</th>
-                        <th className="border-r border-gray-100 px-4 py-1.5">Ref</th>
-                        <th className="border-r border-gray-100 px-4 py-1.5 text-right">Inst.</th>
-                        <th className="border-r border-gray-100 px-4 py-1.5">Description</th>
-                        <th className="border-r border-gray-100 px-4 py-1.5 text-right">Debit</th>
-                        <th className="border-r border-gray-100 px-4 py-1.5 text-right">Credit</th>
-                        <th className="border-r border-gray-100 px-4 py-1.5 text-right">Due</th>
-                        <th className="px-4 py-1.5 text-right">Outstanding</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {ledger.rows.map((row, i) => (
-                        <tr key={i}>
-                          <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 text-gray-600">
-                            {fmtDate(row.date)}
-                          </td>
-                          <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 font-mono text-xs text-gray-500">
-                            {row.ref}
-                          </td>
-                          <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-500">
-                            {row.inst > 0 ? row.inst : '—'}
-                          </td>
-                          <td className="border-r border-gray-100 px-4 py-1.5 text-gray-800">
-                            {row.description}
-                          </td>
-                          <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-800">
-                            {row.debit > 0 ? fmtMoney(row.debit) : '—'}
-                          </td>
-                          <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-800">
-                            {row.credit > 0 ? fmtMoney(row.credit) : '—'}
-                          </td>
-                          <td
-                            className={`border-r border-gray-100 px-4 py-1.5 text-right ${row.due < 0 ? 'text-red-600' : 'text-gray-800'}`}
-                          >
-                            {fmtMoney(row.due)}
-                          </td>
-                          <td className="px-4 py-1.5 text-right font-semibold text-gray-900">
-                            {fmtMoney(row.outstanding)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-gray-200 bg-gray-50 text-[13px] font-semibold text-gray-900">
-                        <td className="border-r border-gray-100 px-4 py-1.5" colSpan={4}>
-                          Total
-                        </td>
-                        <td className="border-r border-gray-100 px-4 py-1.5 text-right">
-                          {fmtMoney(
-                            ledger.rows
-                              .filter((r) => !r.displayOnly)
-                              .reduce((sum, r) => sum + r.debit, 0)
-                          )}
-                        </td>
-                        <td className="border-r border-gray-100 px-4 py-1.5 text-right">
-                          {fmtMoney(
-                            ledger.rows
-                              .filter((r) => !r.displayOnly)
-                              .reduce((sum, r) => sum + r.credit, 0)
-                          )}
-                        </td>
-                        <td className="border-r border-gray-100 px-4 py-1.5" />
-                        <td className="px-4 py-1.5" />
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </section>
-          </>
+          <InstallmentLedgerBody ledger={ledger} accountId={accountId} />
         )}
       </div>
     </div>
+  )
+}
+
+/** The ledger itself, once loaded — the Sale/Item/Assignment/Financing/Totals
+ * sections and the Date/Ref/… table. Split out so CustomerLedgerView can draw
+ * the very same view at /ledger?transactionId=acct:<id> without a second
+ * copy of it. `showAccountLink` is false where the CRM installment-account
+ * page isn't reachable (a POS cashier bounces off it). */
+export function InstallmentLedgerBody({
+  ledger,
+  accountId,
+  showAccountLink = true,
+}: {
+  ledger: InstallmentLedger
+  accountId: string
+  showAccountLink?: boolean
+}) {
+  // Scenario 67 — a closed X-Deal was settled by its memo, not by payments;
+  // the memo is the ledger's own credit row, so its number comes from there.
+  const xDealMemoRef =
+    ledger.account.isXDeal && ledger.account.status === 'closed'
+      ? (ledger.rows.find((r) => r.description === 'X-Deal credit memo')?.ref ?? null)
+      : null
+
+  return (
+    <>
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-900">Customer Ledger</h1>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                STATUS_STYLES[ledger.account.status] ?? 'bg-gray-100 text-gray-600'
+              }`}
+              data-testid="ledger-status"
+            >
+              {xDealMemoRef
+                ? `Settled — X-Deal credit memo ${xDealMemoRef}`
+                : (STATUS_LABELS[ledger.account.status] ?? ledger.account.status)}
+            </span>
+            {ledger.account.isXDeal && <XDealBadge reference={ledger.account.xDealReference} />}
+          </div>
+          <p className="mt-1 font-mono text-xs text-gray-500">{ledger.account.accountNumber}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => printCustomerLedgerDocument(ledger)}
+            className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Printer className="h-3.5 w-3.5" /> Print
+          </button>
+          {showAccountLink && (
+            <Link
+              href={`/crm/installment-accounts/${accountId}`}
+              className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50"
+            >
+              Full account details <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
+        </div>
+      </div>
+
+      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Sale</h2>
+        <InfoTable
+          fields={[
+            {
+              label: 'Lastname',
+              value: ledger.account.customer.lastName ?? ledger.account.customer.name,
+            },
+            { label: 'Firstname', value: ledger.account.customer.firstName ?? '—' },
+            { label: 'Middle', value: ledger.account.customer.middleName ?? '—' },
+            { label: 'Sales Invoice No.', value: ledger.saleReference ?? '—' },
+            { label: 'SI Date', value: ledger.saleDate ? fmtDate(ledger.saleDate) : '—' },
+          ]}
+        />
+      </section>
+
+      {ledger.account.unitItems.length > 0 && (
+        <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Item</h2>
+          <InfoTable
+            fields={[
+              { label: 'Brand', value: ledger.account.unitItems[0].brand ?? '—' },
+              { label: 'Type', value: ledger.account.unitItems[0].itemType ?? '—' },
+              { label: 'Model', value: ledger.account.unitItems[0].modelNumber ?? '—' },
+              {
+                label: 'Serial',
+                value:
+                  ledger.account.unitItems[0].serialNumber ??
+                  (ledger.account.unitItems.length > 1
+                    ? `+${ledger.account.unitItems.length - 1} more item(s)`
+                    : '—'),
+              },
+            ]}
+          />
+        </section>
+      )}
+
+      <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Assignment</h2>
+        <InfoTable
+          fields={[
+            { label: 'Agent', value: ledger.account.sellingAgent?.name ?? '—' },
+            {
+              label: 'Collector',
+              value: ledger.account.collector
+                ? `${ledger.account.collector.stubNumber} — ${ledger.account.collector.name}`
+                : 'Unassigned',
+            },
+            {
+              label: 'FMI',
+              value: ledger.firstInstallmentDate ? fmtDate(ledger.firstInstallmentDate) : '—',
+            },
+          ]}
+        />
+      </section>
+
+      <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Financing</h2>
+        <InfoTable
+          fields={[
+            { label: 'LCP', value: fmtMoney(ledger.account.listedCashPrice) },
+            { label: 'Down', value: fmtMoney(ledger.account.downPayment) },
+            { label: 'Amt. Financed', value: fmtMoney(ledger.account.amountFinanced) },
+            { label: 'Inst. Diff.', value: fmtMoney(ledger.account.interestDifferential) },
+            { label: 'Scheme', value: ledger.account.priceUseType?.name ?? '—' },
+            { label: 'MI', value: fmtMoney(ledger.account.monthlyInstallment) },
+            { label: 'Term', value: `${ledger.account.termMonths} months` },
+            { label: 'Branch', value: ledger.account.branch?.name ?? '—' },
+            { label: 'PN', value: fmtMoney(ledger.account.pnv) },
+            { label: 'IC', value: fmtMoney(ledger.account.insuranceCharge ?? 0) },
+            { label: 'Total Price', value: fmtMoney(ledger.account.totalPrice) },
+          ]}
+        />
+      </section>
+
+      <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Totals</h2>
+        <InfoTable
+          fields={[
+            { label: 'Total Payments', value: fmtMoney(ledger.account.totalPayments) },
+            // Only one running "penalty" figure exists on this account
+            // (no itemized assessment history) — reused for both.
+            { label: 'Total Penalty', value: '—' },
+            { label: 'Penalty Balance', value: fmtMoney(ledger.account.penalty) },
+            { label: 'Total Rebates', value: fmtMoney(ledger.account.totalRebates) },
+            { label: 'Total Billing', value: fmtMoney(ledger.account.totalBilling) },
+            { label: 'Required DP', value: fmtMoney(ledger.account.downPayment) },
+            { label: 'DP Balance', value: fmtMoney(ledger.account.dpBalance) },
+            { label: 'Tot. Amt. Due', value: fmtMoney(ledger.account.totalDue) },
+            { label: 'Tot. Amt. Out', value: fmtMoney(ledger.account.currentBalance) },
+          ]}
+        />
+      </section>
+
+      <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <h2 className="border-b border-gray-100 p-4 pb-2 text-[14px] font-semibold text-gray-900">
+          Ledger
+        </h2>
+        {ledger.rows.length === 0 ? (
+          <p className="py-6 text-center text-sm text-gray-400">No ledger activity yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <th className="border-r border-gray-100 px-4 py-1.5">Date</th>
+                  <th className="border-r border-gray-100 px-4 py-1.5">Ref</th>
+                  <th className="border-r border-gray-100 px-4 py-1.5 text-right">Inst.</th>
+                  <th className="border-r border-gray-100 px-4 py-1.5">Description</th>
+                  <th className="border-r border-gray-100 px-4 py-1.5 text-right">Debit</th>
+                  <th className="border-r border-gray-100 px-4 py-1.5 text-right">Credit</th>
+                  <th className="border-r border-gray-100 px-4 py-1.5 text-right">Due</th>
+                  <th className="px-4 py-1.5 text-right">Outstanding</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {ledger.rows.map((row, i) => (
+                  <tr key={i}>
+                    <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 text-gray-600">
+                      {fmtDate(row.date)}
+                    </td>
+                    <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 font-mono text-xs text-gray-500">
+                      {row.ref}
+                    </td>
+                    <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-500">
+                      {row.inst > 0 ? row.inst : '—'}
+                    </td>
+                    <td className="border-r border-gray-100 px-4 py-1.5 text-gray-800">
+                      {row.description}
+                    </td>
+                    <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-800">
+                      {row.debit > 0 ? fmtMoney(row.debit) : '—'}
+                    </td>
+                    <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-800">
+                      {row.credit > 0 ? fmtMoney(row.credit) : '—'}
+                    </td>
+                    <td
+                      className={`border-r border-gray-100 px-4 py-1.5 text-right ${row.due < 0 ? 'text-red-600' : 'text-gray-800'}`}
+                    >
+                      {fmtMoney(row.due)}
+                    </td>
+                    <td className="px-4 py-1.5 text-right font-semibold text-gray-900">
+                      {fmtMoney(row.outstanding)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-gray-200 bg-gray-50 text-[13px] font-semibold text-gray-900">
+                  <td className="border-r border-gray-100 px-4 py-1.5" colSpan={4}>
+                    Total
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-1.5 text-right">
+                    {fmtMoney(
+                      ledger.rows.filter((r) => !r.displayOnly).reduce((sum, r) => sum + r.debit, 0)
+                    )}
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-1.5 text-right">
+                    {fmtMoney(
+                      ledger.rows
+                        .filter((r) => !r.displayOnly)
+                        .reduce((sum, r) => sum + r.credit, 0)
+                    )}
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-1.5" />
+                  <td className="px-4 py-1.5" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
   )
 }
 
