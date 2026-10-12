@@ -3,7 +3,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ChevronRight, GitMerge, X } from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronRight,
+  GitMerge,
+  Mail,
+  MapPin,
+  Phone,
+  Receipt,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import {
   getCustomerPurchases,
@@ -351,48 +361,41 @@ export default function Customer360({
         <p className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-800">{deleteError}</p>
       )}
 
-      {upcomingPayables.length > 0 && (
-        <div
-          className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 ${
-            URGENCY_STRIP_CLASSES[
-              payableUrgency(upcomingPayables[0].status, upcomingPayables[0].dueDate)
-            ]
-          }`}
-        >
-          <div className="text-[13px]">
-            <span className="text-gray-500">Next payment due </span>
-            <span className="font-semibold text-gray-900">
-              {formatPeso(upcomingPayables[0].amountDue)}
-            </span>
-            <span className="text-gray-500">
-              {' '}
-              on {new Date(upcomingPayables[0].dueDate).toLocaleDateString()}
-            </span>
-          </div>
-          <div className="text-[12px] text-gray-500">
-            {upcomingPayables.length} upcoming ·{' '}
-            {formatPeso(upcomingPayables.reduce((sum, p) => sum + p.amountDue, 0))} total
-            <a
-              href="#upcoming-payables"
-              className="ml-2 font-medium text-prominent-orange-700 hover:underline"
-            >
-              View all ↓
-            </a>
-          </div>
-        </div>
-      )}
-
       <div className="mt-6">
         {/* Full width — the Address row wraps to several lines for a real
             PH address, and cramming that into a 1/3-width column read badly
             (developer-flagged, 2026-08-09). */}
         <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Contact</h2>
-          <dl className="space-y-2 text-[13px]">
-            <Row label="Email" value={data.email ?? '—'} />
-            <Row label="Phone" value={data.phone ?? '—'} />
-            <Row label="Address" value={data.address ?? '—'} />
-            <Row label="Tax exempt" value={data.isTaxExempt ? 'Yes' : 'No'} />
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-[14px] font-semibold text-prominent-purple-900">Contact</h2>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                data.isTaxExempt ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <Receipt className="h-3 w-3" aria-hidden />
+              {data.isTaxExempt ? 'Tax exempt' : 'Not tax exempt'}
+            </span>
+          </div>
+          <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
+            <ContactField
+              icon={Mail}
+              label="Email"
+              value={data.email}
+              href={data.email ? `mailto:${data.email}` : undefined}
+            />
+            <ContactField
+              icon={Phone}
+              label="Phone"
+              value={data.phone}
+              href={data.phone ? `tel:${data.phone}` : undefined}
+            />
+            <ContactField
+              icon={MapPin}
+              label="Address"
+              value={data.address}
+              className="sm:col-span-2"
+            />
           </dl>
         </section>
       </div>
@@ -434,13 +437,14 @@ export default function Customer360({
           ) : (
             <>
               <div className={`overflow-x-auto ${historyLoading ? 'opacity-60' : ''}`}>
-                <table className="w-full min-w-[640px] border-collapse text-[13px]">
+                <table className="w-full min-w-[720px] border-collapse text-[13px]">
                   <thead>
                     <tr className="border-b border-gray-200 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                       <th className="px-2 py-2">SI #</th>
-                      <th className="px-2 py-2">SI Date</th>
+                      <th className="px-2 py-2">Sales Invoice Date</th>
                       <th className="px-2 py-2">Unit</th>
                       <th className="px-2 py-2">Payment</th>
+                      <th className="px-2 py-2 text-right">Deducted</th>
                       <th className="px-2 py-2 text-right">Total</th>
                     </tr>
                   </thead>
@@ -577,12 +581,12 @@ export default function Customer360({
                       className="flex w-full items-center justify-between gap-2 rounded-lg -mx-1 px-1 text-left hover:bg-gray-50"
                     >
                       <span className="text-gray-700">
-                        <span className="font-medium text-gray-800">
-                          {productLabel(p.schedule.posTransactionLines)}
+                        <span className="font-mono text-[12px] font-medium text-gray-800">
+                          {p.siNumber}
                         </span>
                         {' · '}
-                        <span className="font-mono text-[11px] text-gray-400">
-                          {p.invoiceNumber}
+                        <span className="font-medium text-gray-800">
+                          {productLabel(p.schedule.posTransactionLines)}
                         </span>
                         {' · '}
                         Payment {p.lineNumber} of {p.totalLines} · due{' '}
@@ -641,6 +645,47 @@ export default function Customer360({
   )
 }
 
+/** One contact detail: an icon tile, a small label above, the value below.
+ * Reads as a card of facts rather than a label/value table — the address is
+ * long and wraps, which a right-aligned row pushed to the far edge of the page. */
+function ContactField({
+  icon: Icon,
+  label,
+  value,
+  href,
+  className = '',
+}: {
+  icon: LucideIcon
+  label: string
+  value?: string | null
+  href?: string
+  className?: string
+}) {
+  return (
+    <div className={`flex min-w-0 items-start gap-3 ${className}`}>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-prominent-purple-50 text-prominent-purple-700">
+        <Icon className="h-4 w-4" aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{label}</dt>
+        <dd className="mt-0.5 break-words text-[13px] font-medium text-prominent-purple-900">
+          {value ? (
+            href ? (
+              <a href={href} className="hover:text-prominent-purple-700 hover:underline">
+                {value}
+              </a>
+            ) : (
+              value
+            )
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
+        </dd>
+      </div>
+    </div>
+  )
+}
+
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
     <div className="flex justify-between gap-3">
@@ -675,10 +720,10 @@ function SiDateFilter({
     'rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[13px] text-gray-800'
   return (
     <div className="flex flex-wrap items-center gap-2 text-[13px] text-gray-600">
-      <span className="font-medium">SI Date</span>
+      <span className="font-medium">Sales Invoice Date</span>
       <input
         type="date"
-        aria-label="SI Date from"
+        aria-label="Sales Invoice Date from"
         value={from}
         max={to || undefined}
         onChange={(e) => onChange(e.target.value, to)}
@@ -687,7 +732,7 @@ function SiDateFilter({
       <span>to</span>
       <input
         type="date"
-        aria-label="SI Date to"
+        aria-label="Sales Invoice Date to"
         value={to}
         min={from || undefined}
         onChange={(e) => onChange(from, e.target.value)}
@@ -757,6 +802,17 @@ function PurchaseRow({ tx, onOpen }: { tx: PosTransaction; onOpen: () => void })
           {INVOICE_TYPE_LABEL[invoiceType]}
         </span>
       </td>
+      {/* What came off the sale before tax — PosTransaction.discountTotal,
+          the gap between Subtotal and Total. Blank for a return, whose row
+          is already the negative of what was sold. */}
+      <td
+        className="whitespace-nowrap px-2 py-2.5 text-right text-gray-600"
+        data-testid="purchase-deducted"
+      >
+        {!isReturn && Number(tx.discountTotal) > 0
+          ? `-${formatPeso(Number(tx.discountTotal))}`
+          : '—'}
+      </td>
       <td
         className={`whitespace-nowrap px-2 py-2.5 text-right font-medium ${isReturn ? 'text-orange-600' : 'text-gray-800'}`}
       >
@@ -794,7 +850,9 @@ type UpcomingPayable = {
   key: string
   schedule: InstallmentSchedule
   invoiceId: string
-  invoiceNumber: string
+  /** The sale's Sales Invoice No. — what the customer holds and what the
+   * ledger prints as Ref. Not the internal POS transaction number. */
+  siNumber: string
   lineNumber: number
   totalLines: number
   dueDate: string
@@ -814,7 +872,13 @@ function flattenUpcomingPayables(schedules: InstallmentSchedule[]): UpcomingPaya
         key: `${schedule.id}-${line.lineNumber}`,
         schedule,
         invoiceId: line.arInvoice.id,
-        invoiceNumber: line.arInvoice.invoiceNumber,
+        // Same fallback chain as the plan header below: the internal
+        // transaction number only stands in for a sale booked before the SI
+        // became required at checkout.
+        siNumber:
+          schedule.posTransaction?.salesInvoiceNumber ??
+          schedule.posTransaction?.transactionNumber ??
+          line.arInvoice.invoiceNumber,
         lineNumber: line.lineNumber,
         totalLines: schedule.lines.length,
         // The LINE's own due date and amount, not the invoice's. They agreed
@@ -860,12 +924,6 @@ const URGENCY_TEXT_CLASSES: Record<PayableUrgency, string> = {
   upcoming: 'text-gray-700',
 }
 
-const URGENCY_STRIP_CLASSES: Record<PayableUrgency, string> = {
-  overdue: 'border-red-200 bg-red-50',
-  dueSoon: 'border-orange-200 bg-orange-50',
-  upcoming: 'border-gray-200 bg-gray-50',
-}
-
 // The plan's overall finished/ongoing state — distinct from
 // InstallmentStatusBadge above, which marks one due-date line's own AR
 // status. closed/early_closed/written_off all mean "no longer active", just
@@ -899,6 +957,13 @@ function InstallmentPlanStatusBadge({ status }: { status: string }) {
   )
 }
 
+// Customer detail says "To Pay" for a posted, unpaid due; DUE_STATUS_LABELS'
+// "Due" stays as-is for POS Collections, which shares it.
+const CUSTOMER_DUE_STATUS_LABELS: Record<string, string> = {
+  ...DUE_STATUS_LABELS,
+  SENT: 'To Pay',
+}
+
 function InstallmentStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     PAID: 'bg-green-100 text-green-700',
@@ -912,7 +977,7 @@ function InstallmentStatusBadge({ status }: { status: string }) {
     <span
       className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}
     >
-      {DUE_STATUS_LABELS[status] ?? status}
+      {CUSTOMER_DUE_STATUS_LABELS[status] ?? status}
     </span>
   )
 }
