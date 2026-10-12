@@ -1,17 +1,18 @@
 import type { ReceiveStockFormValues } from '@/src/schema/inventory/goods-receiving'
+import { classEwtCode, fallbackEwtRate, type EwtRateFor } from '@/src/libs/tax/ewt'
 
 // Mirrors FLAT_VAT_RATE_PERCENT (tax.constants.ts / StockService.receiveStock)
 // — preview only.
 const VAT_RATE = 0.12
 
-// Scenario 55 (Stock-side Manual RR parity) — mirrors manualRrCosting.ts's
-// own constant of the same name exactly: real BIR EWT rates vary by the
-// nature of the payment, not one flat document-wide rate, and a single
-// delivery can mix both (e.g. goods plus an installation/service fee).
-const WITHHOLDING_RATES: Record<string, number> = {
-  goods: 0.01,
-  services: 0.02,
-}
+// Scenario 55 (Stock-side Manual RR parity) — mirrors manualRrCosting.ts: real
+// BIR EWT rates vary by the nature of the payment, not one flat document-wide
+// rate, and a single delivery can mix both (e.g. goods plus an installation /
+// service fee). Scenario 69 Part D: a line's class names a tax code (goods →
+// EWT-GOODS-1, services → EWT-SERV-2) and `rateFor` reads that code's rate off
+// the tax code master, instead of the 1% / 2% that used to live here.
+const lineRate = (cls: string | null | undefined, rateFor: EwtRateFor): number =>
+  rateFor(classEwtCode(cls))
 
 const round2 = (n: number): number => Math.round(n * 100) / 100
 
@@ -39,9 +40,10 @@ export function costFromPricing(
 
 /** Tax withheld on one line — off its discounted, VAT-inclusive total. */
 export function lineWithheld(
-  line: Pick<RrLine, 'quantityReceived' | 'unitCost' | 'isFreebie' | 'withholdingClass'>
+  line: Pick<RrLine, 'quantityReceived' | 'unitCost' | 'isFreebie' | 'withholdingClass'>,
+  rateFor: EwtRateFor = fallbackEwtRate
 ): number {
-  return round2(lineTotal(line) * (WITHHOLDING_RATES[line.withholdingClass ?? ''] ?? 0))
+  return round2(lineTotal(line) * lineRate(line.withholdingClass, rateFor))
 }
 
 /** What one line adds to the supplier's invoice. */
@@ -73,15 +75,17 @@ export type RrTotals = {
  * withholding are computed per line rather than off a single document-wide
  * treatment. A line coded 'VAT' has its typed unitCost treated as
  * VAT-inclusive and 12% is backed out of it; every other code (Non-VAT/
- * Exempt/none) leaves it as-is. A line classed 'goods' withholds 1% of its
- * own net cost, 'services' withholds 2% — summed into one document-level
- * figure.
+ * Exempt/none) leaves it as-is. A line classed 'goods' or 'services' is
+ * withheld at that class's tax code — summed into one document-level figure.
  *
  * Per-line `taxAmount` is deliberately not rolled up here: it exists so an AP
  * bill can match tax line by line, and adding it to a VAT total already
  * derived from the same costs would count the same tax twice.
  */
-export function rrTotals(values: { lines?: RrLine[] }): RrTotals {
+export function rrTotals(
+  values: { lines?: RrLine[] },
+  rateFor: EwtRateFor = fallbackEwtRate
+): RrTotals {
   const lines = values.lines ?? []
   let gross = 0
   let units = 0
@@ -110,7 +114,7 @@ export function rrTotals(values: { lines?: RrLine[] }): RrTotals {
 
   const withheld = round2(
     lines.reduce((sum, line) => {
-      const rate = WITHHOLDING_RATES[line.withholdingClass ?? ''] ?? 0
+      const rate = lineRate(line.withholdingClass, rateFor)
       if (rate === 0) return sum
       // Off the discounted, VAT-inclusive line total (accountant's confirmed computation).
       return sum + lineTotal(line) * rate

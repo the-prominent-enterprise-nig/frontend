@@ -25,6 +25,14 @@ import {
 } from '../../_actions/pos-actions'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
+import { PillCombobox } from '../../checkout/_components/PillInputs'
+import {
+  DELIVERY_FEE_TENDERS,
+  DELIVERY_FEE_TENDER_LABELS,
+  TENDERS_WITH_OPTIONS,
+  type DeliveryFeeTender,
+} from '../../checkout/_utils/delivery'
+import { qrOptionGroup } from '../../checkout/_utils/qr-option-groups'
 import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/data/AccountingV2Data'
 import type {
   PosCustomer,
@@ -167,6 +175,53 @@ function useCollectionsPaymentMethods(branchId: string): CollectionsPaymentOptio
     )
 
   return [...configuredOptions, CHECK_PAYMENT_OPTION]
+}
+
+// The method buttons are POS checkout's own seven (Cash on Hand … Debit/Credit
+// Card, same labels, same order), so a collection is picked the way a sale's
+// payment is. Each one resolves to the same payment method the old dropdown
+// sent; GCash and Billers are QR with their own part of its option list.
+const COLLECTIONS_TILE_METHOD: Record<DeliveryFeeTender, PaymentMethod> = {
+  cash_on_hand: 'CASH',
+  check: 'CHECK',
+  bank_transfer: 'BANK_TRANSFER',
+  gcash: 'QR',
+  billers: 'QR',
+  qr: 'QR',
+  card: 'CARD',
+}
+
+const TILE_OPTION_LABEL: Partial<Record<DeliveryFeeTender, string>> = {
+  bank_transfer: 'Bank',
+  gcash: 'Gateway',
+  billers: 'Biller',
+  qr: 'Gateway',
+  card: 'Card Acquirer',
+}
+
+/** The bank / gateway / biller / acquirer choices a button offers. */
+function tileOptions(
+  tile: DeliveryFeeTender,
+  option: CollectionsPaymentOption | undefined
+): { id: string; name: string }[] {
+  if (!option || !TENDERS_WITH_OPTIONS.includes(tile)) return []
+  return option.method === 'QR'
+    ? option.options.filter((o) => qrOptionGroup(o.name) === tile)
+    : option.options
+}
+
+/** Only the buttons this branch can actually take: Check is always there, the
+ * rest follow the branch's enabled methods, and GCash / Billers need at least
+ * one option of their own to be worth showing. */
+function availableTiles(paymentMethods: CollectionsPaymentOption[]): DeliveryFeeTender[] {
+  return DELIVERY_FEE_TENDERS.filter((tile) => {
+    const option = paymentMethods.find((m) => m.method === COLLECTIONS_TILE_METHOD[tile])
+    if (!option) return false
+    if (option.method !== 'QR') return true
+    // A QR method with no named choices at all still takes plain QR.
+    if (tile === 'qr' && option.options.length === 0) return true
+    return tileOptions(tile, option).length > 0
+  })
 }
 
 // A due is eligible for selection (and payment, via "Pay Selected") once its
@@ -776,7 +831,7 @@ function PaymentPanel({
     amount: '',
     withholdingAmount: '0',
     paymentDate: initialPaymentDateIso,
-    paymentMethodConfigId: '',
+    paymentTile: '' as DeliveryFeeTender | '',
     paymentMethodOptionId: '',
     reference: '',
     bankReferenceNumber: '',
@@ -898,10 +953,19 @@ function PaymentPanel({
   // cashier explicitly picks something else, or the branch's methods don't
   // include what they'd previously picked — derived at render rather than
   // synced into form state via an effect.
-  const selectedPaymentMethod =
-    paymentMethods.find((m) => m.id === form.paymentMethodConfigId) ??
-    paymentMethods.find((m) => m.method === 'CASH') ??
-    paymentMethods[0]
+  const tiles = availableTiles(paymentMethods)
+  const selectedTile: DeliveryFeeTender =
+    tiles.find((t) => t === form.paymentTile) ??
+    (tiles.includes('cash_on_hand') ? 'cash_on_hand' : tiles[0])
+  const selectedPaymentMethod = paymentMethods.find(
+    (m) => m.method === COLLECTIONS_TILE_METHOD[selectedTile]
+  )
+  const selectedTileOptions = tileOptions(selectedTile, selectedPaymentMethod)
+  const selectedTileOptionLabel = TILE_OPTION_LABEL[selectedTile]
+  // A choice left over from a button (or branch) no longer selected is not sent.
+  const selectedOptionId = selectedTileOptions.some((o) => o.id === form.paymentMethodOptionId)
+    ? form.paymentMethodOptionId
+    : undefined
 
   // Rebate/penalty resolved per due from the checkbox state above, against
   // the LIVE suggestion for form.paymentDate (liveLines, not the raw `lines`
@@ -970,7 +1034,7 @@ function PaymentPanel({
         penaltyAmount: resolvedLines[0]?.penaltyAmount ?? 0,
         method: selectedPaymentMethod?.method ?? 'CASH',
         paymentMethodConfigId: selectedPaymentMethod?.configId,
-        paymentMethodOptionId: form.paymentMethodOptionId || undefined,
+        paymentMethodOptionId: selectedOptionId,
         reference: form.reference || undefined,
         bankReferenceNumber: form.bankReferenceNumber || undefined,
         notes: form.notes || undefined,
@@ -1002,7 +1066,7 @@ function PaymentPanel({
         paymentDate: form.paymentDate,
         method: selectedPaymentMethod?.method ?? 'CASH',
         paymentMethodConfigId: selectedPaymentMethod?.configId,
-        paymentMethodOptionId: form.paymentMethodOptionId || undefined,
+        paymentMethodOptionId: selectedOptionId,
         reference: form.reference || undefined,
         bankReferenceNumber: form.bankReferenceNumber || undefined,
         notes: form.notes || undefined,
@@ -1332,45 +1396,46 @@ function PaymentPanel({
 
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
-            <select
-              value={selectedPaymentMethod?.id ?? ''}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  paymentMethodConfigId: e.target.value,
-                  paymentMethodOptionId: '',
-                  bankReferenceNumber: '',
-                })
-              }
-              className={fieldClass}
+            <div
+              className="rounded-lg border border-purple-100 p-2.5"
+              data-testid="collection-method"
             >
-              {paymentMethods.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedPaymentMethod && selectedPaymentMethod.options.length > 0 && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                {selectedPaymentMethod.label}
-              </label>
-              <select
-                value={form.paymentMethodOptionId}
-                onChange={(e) => setForm({ ...form, paymentMethodOptionId: e.target.value })}
-                className={fieldClass}
-              >
-                <option value="">Select {selectedPaymentMethod.label.toLowerCase()}…</option>
-                {selectedPaymentMethod.options.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.name}
-                  </option>
+              <div className="flex flex-wrap gap-1.5">
+                {tiles.map((tile) => (
+                  <button
+                    key={tile}
+                    type="button"
+                    aria-pressed={selectedTile === tile}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        paymentTile: tile,
+                        paymentMethodOptionId: '',
+                        bankReferenceNumber: '',
+                      })
+                    }
+                    className={`min-w-22 flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                      selectedTile === tile
+                        ? 'bg-purple-200 text-purple-700'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    }`}
+                  >
+                    {DELIVERY_FEE_TENDER_LABELS[tile]}
+                  </button>
                 ))}
-              </select>
+              </div>
+              {selectedTileOptions.length > 0 && selectedTileOptionLabel && (
+                <PillCombobox
+                  ariaLabel={selectedTileOptionLabel}
+                  wrapperClassName="mt-1.5"
+                  placeholder={`Select ${selectedTileOptionLabel.toLowerCase()}…`}
+                  options={selectedTileOptions.map((o) => ({ value: o.id, label: o.name }))}
+                  value={selectedOptionId}
+                  onChange={(id) => setForm({ ...form, paymentMethodOptionId: id ?? '' })}
+                />
+              )}
             </div>
-          )}
+          </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">

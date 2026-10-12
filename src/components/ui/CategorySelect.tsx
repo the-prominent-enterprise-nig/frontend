@@ -22,6 +22,10 @@ type Props = {
    * else about the component stays the same. Off by default so existing
    * usages are unaffected. */
   compact?: boolean
+  /** What the closed box shows for the chosen option, when its full name is too long
+   * for the room — e.g. just an account number. The list and search still use the full
+   * name, and the full name is the box's tooltip. */
+  displayValue?: (option: CategorySelectOption) => string
 }
 
 export default function CategorySelect({
@@ -34,6 +38,7 @@ export default function CategorySelect({
   disabled = false,
   'aria-label': ariaLabel,
   compact = false,
+  displayValue,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -127,7 +132,10 @@ export default function CategorySelect({
           ref={inputRef}
           aria-label={ariaLabel}
           disabled={disabled}
-          value={open ? query : (selected?.name ?? '')}
+          value={
+            open ? query : selected ? (displayValue ? displayValue(selected) : selected.name) : ''
+          }
+          title={displayValue && selected ? selected.name : undefined}
           placeholder={placeholder}
           onFocus={() => {
             if (!open) openWithSeed()

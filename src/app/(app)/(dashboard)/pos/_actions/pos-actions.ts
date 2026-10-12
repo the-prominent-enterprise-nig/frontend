@@ -1374,6 +1374,33 @@ export interface CustomerHistoryPage {
   meta: { page: number; limit: number; total: number; pageCount: number }
 }
 
+/** One page of a customer's purchases — one row per sale (Sales Invoice No.),
+ * plus the total of everything in the requested SI Date range, not just this
+ * page. Refunds are already netted off `totalPurchases`. */
+export interface CustomerPurchasesPage {
+  items: PosTransaction[]
+  meta: { page: number; limit: number; total: number; pageCount: number }
+  totals: { purchaseCount: number; totalPurchases: number }
+}
+
+export async function getCustomerPurchases(
+  customerId: string,
+  params: { page?: number; limit?: number; from?: string; to?: string } = {}
+): Promise<ApiResponse<CustomerPurchasesPage>> {
+  try {
+    const result = await api.get<CustomerPurchasesPage>(
+      `/pos/transactions/customer/${customerId}/purchases`,
+      { ...params }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch customer purchases' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch customer purchases' }
+  }
+}
+
 export async function getCustomerHistoryWithPayments(
   customerId: string,
   page = 1,

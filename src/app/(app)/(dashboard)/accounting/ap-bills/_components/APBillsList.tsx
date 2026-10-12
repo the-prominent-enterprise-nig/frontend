@@ -21,11 +21,10 @@ import { printAPBillDocument } from '@/src/libs/print/printInventoryDocument'
 // The statuses a bill can be paid from — received, part-paid, or overdue.
 const PAYABLE = ['RECEIVED', 'PARTIAL', 'OVERDUE']
 
-// What this screen is for: the bills you can still act on. Receive and Record
-// Payment both only apply to these, so a settled invoice is un-actionable noise
-// in the default view — and at the client's data volume it would bury the few
-// rows that matter. Never a hard hide: All is one click away, and search
-// ignores the filter entirely.
+// The bills you can still act on — Receive and Create Voucher both only apply
+// to these. "Open items" is an option in the filter, not the default: the client
+// wants the list to open on All so nothing is hidden until they narrow it
+// themselves. Search ignores the filter either way.
 const OPEN_STATUSES = 'DRAFT,RECEIVED,PARTIAL,OVERDUE'
 const STATUS_VIEWS = [
   { value: OPEN_STATUSES, label: 'Open items' },
@@ -56,7 +55,7 @@ export default function APBillsList() {
   // supported one since Scenario 10. Now also matches supplier name, reference
   // and voucher number, not just the bill number.
   const [search, setSearch] = useState('')
-  const [statusView, setStatusView] = useState(OPEN_STATUSES)
+  const [statusView, setStatusView] = useState('')
   // Scenario 46 — Gmail-style multi-select. Selection is held as ids so it
   // survives a search/filter change; the bar says when some of it is no longer
   // on screen rather than silently dropping it.
@@ -240,7 +239,7 @@ export default function APBillsList() {
     ...(PAYABLE.includes(b.status) && uncommitted(b) > 0.005
       ? [
           {
-            label: 'Record Payment',
+            label: 'Create Voucher',
             icon: PhilippinePeso,
             onClick: () =>
               router.push(
@@ -307,29 +306,9 @@ export default function APBillsList() {
           <p className="text-sm text-gray-500">Supplier bills and payables.</p>
         </div>
         <div className="flex gap-2">
-          {/* Scenario 46 — payment starts here, not on a row: one cheque can
-              settle several of a supplier's invoices, so the bills are picked
-              inside the form.
-
-              Hidden while a selection is active. The action bar shows its own
-              Record Payment then, and that one carries the ticked invoices in
-              the URL — two identically-labelled buttons where only one respects
-              your selection is a trap, and this was the one that silently
-              dropped it. */}
-          {selectedIds.length === 0 && (
-            <Link
-              href="/accounting/ap-bills/payments/new"
-              className="flex items-center gap-2 rounded-lg border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
-            >
-              <PhilippinePeso className="w-4 h-4" /> Record Payment
-            </Link>
-          )}
-          <Link
-            href="/accounting/ap-bills/payments"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-          >
-            <PhilippinePeso className="w-4 h-4" /> Payments
-          </Link>
+          {/* No Create Voucher here — the client asked for it off the header.
+              A voucher starts from ticked invoices (the action bar below), a
+              row's menu, or the Payments page. */}
           <Link
             href="/accounting/ap-bills/new"
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
@@ -367,7 +346,7 @@ export default function APBillsList() {
                 onClick={() => openPaymentForm()}
                 className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800"
               >
-                <PhilippinePeso className="h-4 w-4" /> Record Payment
+                <PhilippinePeso className="h-4 w-4" /> Create Voucher
               </button>
             )}
             <button

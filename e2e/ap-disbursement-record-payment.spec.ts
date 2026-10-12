@@ -2,7 +2,7 @@
  * Scenario 46 Part A+B — Record Payment as a standalone disbursement.
  *
  * Payment no longer starts from a bill row: the AP Invoices header has a
- * single "Record Payment" action, the payee is chosen first, that supplier's
+ * single "Create Voucher" action, the payee is chosen first, that supplier's
  * open invoices appear with checkboxes, and ticking one reveals the rest of
  * the form with the ticked invoices as its lines. One cheque, one voucher,
  * however many invoices it covers.
@@ -19,17 +19,24 @@ import { test, expect } from '@playwright/test'
 import { gotoReady } from './utils'
 
 test.describe('Scenario 46 — Record Payment (AP disbursement)', () => {
-  test('payment starts from the header, not a bill row', async ({ page }) => {
+  test('the AP Invoices header has no Create Voucher; the Payments page does', async ({ page }) => {
     await gotoReady(page, '/accounting/ap-bills')
 
-    // The header action exists and points at the new page.
-    const record = page.getByRole('link', { name: /record payment/i })
+    // The client took Create Voucher (and Payments) off this header — only New
+    // Bill is left. A voucher starts from ticked invoices, a row menu, or the
+    // Payments page.
+    await expect(page.getByRole('link', { name: /create voucher/i })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'New Bill' })).toBeVisible()
+
+    await gotoReady(page, '/accounting/ap-bills/payments')
+    const record = page.getByRole('link', { name: /create voucher/i })
     await expect(record).toBeVisible()
     await expect(record).toHaveAttribute('href', '/accounting/ap-bills/payments/new')
 
-    // The retired per-row affordances are gone: no row-level Record Payment
+    // The retired per-row affordances are gone: no row-level Create Voucher
     // button, and no Voucher panel button.
-    await expect(page.getByRole('button', { name: /^record payment$/i })).toHaveCount(0)
+    await gotoReady(page, '/accounting/ap-bills')
+    await expect(page.getByRole('button', { name: /^create voucher$/i })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^voucher$/i })).toHaveCount(0)
   })
 
@@ -44,8 +51,8 @@ test.describe('Scenario 46 — Record Payment (AP disbursement)', () => {
     await expect(page.getByLabel('Voucher number (generated)')).toHaveCount(0)
 
     // Submitting with nothing selected is refused rather than silently posting.
-    await page.getByRole('button', { name: /^record payment$/i }).click()
-    await expect(page.getByRole('button', { name: /^record payment$/i })).toBeDisabled()
+    await page.getByRole('button', { name: /^create voucher$/i }).click()
+    await expect(page.getByRole('button', { name: /^create voucher$/i })).toBeDisabled()
   })
 
   test('the voucher number is generated, never typed', async ({ page }) => {
@@ -92,7 +99,7 @@ test.describe('Scenario 46 — Record Payment (AP disbursement)', () => {
     // The bar replaces the search row and offers the action.
     const bar = page.getByText(/invoice(s)? selected/)
     await expect(bar).toBeVisible()
-    const record = page.getByRole('button', { name: /record payment/i })
+    const record = page.getByRole('button', { name: /create voucher/i })
     await expect(record).toBeVisible()
 
     await record.click()

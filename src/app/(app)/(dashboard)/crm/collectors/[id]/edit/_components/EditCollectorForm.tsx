@@ -9,6 +9,7 @@ import { getBranches } from '../../../_actions/get-branches'
 import { updateCollectorSchema, type UpdateCollectorInput } from '@/src/schema/crm/collector'
 import type { CollectorStatus } from '@/src/schema/crm/types'
 import CollectorAreaPicker from '@/src/components/crm/CollectorAreaPicker'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type FormState = {
   stubNumber: string
@@ -117,7 +118,7 @@ export default function EditCollectorForm({ id }: { id: string }) {
       </Link>
 
       <h1 className="text-2xl font-semibold text-gray-900">Edit Collector</h1>
-      <p className="mt-1 text-sm text-gray-500">Update stub number, branch, or status.</p>
+      <p className="mt-1 text-sm text-gray-500">Update collector code, branch, or status.</p>
 
       <form
         onSubmit={onSubmit}
@@ -125,7 +126,7 @@ export default function EditCollectorForm({ id }: { id: string }) {
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
-            label="Stub number *"
+            label="Collector code *"
             error={errors.stubNumber}
             value={form.stubNumber}
             onChange={(v) => setField('stubNumber', v)}
@@ -140,37 +141,28 @@ export default function EditCollectorForm({ id }: { id: string }) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="branchId" className="block text-[13px] font-medium text-gray-700">
-              Branch
-            </label>
-            <select
-              id="branchId"
+            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+            <SearchableSelect
               value={form.branchId}
-              onChange={(e) => setField('branchId', e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Unassigned</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setField('branchId', v)}
+              options={branches.map((b) => ({ value: b.id, label: b.name }))}
+              placeholder="Unassigned"
+              clearable
+              className="mt-1 w-full"
+            />
           </div>
 
           <div>
-            <label htmlFor="status" className="block text-[13px] font-medium text-gray-700">
-              Status
-            </label>
-            <select
-              id="status"
+            <label className="block text-[13px] font-medium text-gray-700">Status</label>
+            <SearchableSelect
               value={form.status}
-              onChange={(e) => setField('status', e.target.value as CollectorStatus)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
+              onChange={(v) => setField('status', v as CollectorStatus)}
+              options={[
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' },
+              ]}
+              className="mt-1 w-full"
+            />
           </div>
         </div>
 

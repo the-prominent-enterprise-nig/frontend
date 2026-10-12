@@ -14,6 +14,18 @@ import {
 } from '@/src/schema/inventory/suppliers'
 import { Select } from '@/src/components/ui/Select'
 import CategorySelect from '@/src/components/ui/CategorySelect'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { DEFAULT_WITHHOLDING_CODE, ewtSelectOptions, supplierEwtCode } from '@/src/libs/tax/ewt'
+import {
+  type SupplierVatStatus,
+  SUPPLIER_VAT_STATUSES,
+  SUPPLIER_VAT_STATUS_HINT,
+  SUPPLIER_VAT_STATUS_LABEL,
+  defaultInputVatCode,
+  inputVatShortName,
+  legacyInputVatFlag,
+  supplierVatStatus,
+} from '@/src/libs/tax/input-vat'
 import { MONO, PLEX } from '@/src/libs/design/plex'
 import {
   CURRENCY_OPTIONS,
@@ -71,7 +83,8 @@ const EMPTY_DEFAULTS: CreateSupplierFormValues = {
   alphanumericTaxCode: undefined,
   taxRate: undefined,
   defaultInputVat: 'pct_12',
-  defaultWithholding: 'pct_1',
+  vatStatus: 'VAT',
+  defaultWithholdingTaxCode: DEFAULT_WITHHOLDING_CODE,
   defaultPayableAccountId: undefined,
   defaultExpenseAccountId: undefined,
 }
@@ -104,50 +117,11 @@ function toFormValues(supplier: SupplierDetail): CreateSupplierFormValues {
     alphanumericTaxCode: supplier.alphanumericTaxCode ?? undefined,
     taxRate: supplier.taxRate ?? undefined,
     defaultInputVat: supplier.defaultInputVat ?? 'pct_12',
-    defaultWithholding: supplier.defaultWithholding ?? 'pct_1',
+    vatStatus: supplierVatStatus(supplier),
+    defaultWithholdingTaxCode: supplierEwtCode(supplier),
     defaultPayableAccountId: supplier.defaultPayableAccountId ?? undefined,
     defaultExpenseAccountId: supplier.defaultExpenseAccountId ?? undefined,
   }
-}
-
-/** The two-button pill group the tax defaults use — a choice between exactly
- * two values reads better as both of them side by side than as a dropdown
- * that hides one. */
-function Segmented<T extends string>({
-  value,
-  onChange,
-  options,
-  ariaLabel,
-}: {
-  value: T
-  onChange: (value: T) => void
-  options: { value: T; label: string }[]
-  ariaLabel: string
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      className="flex gap-1 rounded-lg border border-[#e4e4e9] bg-[#faf9fb] p-1"
-    >
-      {options.map((option) => {
-        const isOn = value === option.value
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={isOn}
-            className={`flex-1 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[12.5px] ${
-              isOn ? 'bg-[#5b21b6] font-medium text-white' : 'text-[#5b5b6b] hover:text-[#17171c]'
-            }`}
-          >
-            {option.label}
-          </button>
-        )
-      })}
-    </div>
-  )
 }
 
 export function SupplierFormModal({
@@ -175,6 +149,7 @@ export function SupplierFormModal({
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'bankAccounts' })
+  const ewt = useEwtCodes()
 
   useEffect(() => {
     if (!open) {
@@ -188,6 +163,7 @@ export function SupplierFormModal({
   const name = useWatch({ control, name: 'name' }) ?? ''
   const banks = useWatch({ control, name: 'bankAccounts' }) ?? []
   const paymentTerms = useWatch({ control, name: 'paymentTerms' })
+  const vatStatus = useWatch({ control, name: 'vatStatus' }) ?? 'VAT'
 
   const trimmedCode = code.trim()
   const codeTaken = trimmedCode !== '' && existingCodes.includes(trimmedCode.toLowerCase())
@@ -593,46 +569,59 @@ export function SupplierFormModal({
                 </p>
               </div>
               <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 lg:grid-cols-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className={labelClass}>Default input VAT</label>
+                <div className="flex flex-col gap-1.5" data-testid="supplier-vat-status">
+                  <label className={labelClass}>VAT status</label>
                   <Controller
-                    name="defaultInputVat"
+                    name="vatStatus"
                     control={control}
                     render={({ field }) => (
-                      <Segmented
-                        ariaLabel="Default input VAT"
-                        value={field.value ?? 'pct_12'}
-                        onChange={field.onChange}
-                        options={[
-                          { value: 'pct_12', label: '12%' },
-                          { value: 'none', label: 'None' },
-                        ]}
+                      <Select
+                        value={field.value ?? 'VAT'}
+                        onChange={(value) => {
+                          const status = value as SupplierVatStatus
+                          field.onChange(status)
+                          // The older none / 12% flag follows the status.
+                          setValue('defaultInputVat', legacyInputVatFlag(status), {
+                            shouldDirty: true,
+                          })
+                        }}
+                        options={SUPPLIER_VAT_STATUSES.map((status) => ({
+                          value: status,
+                          label: SUPPLIER_VAT_STATUS_LABEL[status],
+                        }))}
                       />
                     )}
                   />
                   <p className={hintClass}>
-                    Whether receiving from them backs out claimable input VAT.
+                    {SUPPLIER_VAT_STATUS_HINT[vatStatus]} Purchases start as{' '}
+                    <span className="font-medium">
+                      {inputVatShortName(defaultInputVatCode(vatStatus))}
+                    </span>
+                    .
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1.5 lg:col-span-2">
                   <label className={labelClass}>Default withholding</label>
                   <Controller
-                    name="defaultWithholding"
+                    name="defaultWithholdingTaxCode"
                     control={control}
                     render={({ field }) => (
-                      <Segmented
-                        ariaLabel="Default withholding"
-                        value={field.value ?? 'pct_1'}
+                      <Select
+                        value={field.value ?? DEFAULT_WITHHOLDING_CODE}
                         onChange={field.onChange}
-                        options={[
-                          { value: 'pct_1', label: '1%' },
-                          { value: 'none', label: 'None' },
-                        ]}
+                        options={ewtSelectOptions(
+                          ewt.options,
+                          field.value ?? DEFAULT_WITHHOLDING_CODE,
+                          ewt.isLoading
+                        )}
                       />
                     )}
                   />
-                  <p className={hintClass}>Held back from the payment and remitted (BIR 2307).</p>
+                  <p className={hintClass}>
+                    Held back from the payment and remitted (BIR 2307). The rate is read from Tax
+                    Codes on the date of each bill or receipt.
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-1.5">

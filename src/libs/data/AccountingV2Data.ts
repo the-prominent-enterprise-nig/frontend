@@ -1,4 +1,5 @@
 import { api } from '@/src/libs/api/client'
+import type { TaxOverrideEntry } from '@/src/libs/tax/tax-override'
 
 // ============ Fixed Assets v2 (ACC-21) ============
 export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION'
@@ -71,40 +72,6 @@ export const FixedAssetsV2 = {
       body
     ),
   remove: (id: string) => api.delete(`/fixed-assets/${id}`),
-}
-
-// ============ Installment Interest Release (Scenario 29 ACC-04) ============
-export interface PendingInterestReleaseSchedule {
-  installmentScheduleId: string
-  transactionNumber?: string | null
-  periodsEligible: number
-  amount: number
-}
-export interface PendingInterestReleaseResult {
-  asOfDate: string
-  schedules: PendingInterestReleaseSchedule[]
-  totalPending: number
-}
-export interface InterestReleaseRunResultItem {
-  installmentScheduleId: string
-  journalEntryId: string
-  periodsReleased: number
-  amountReleased: number
-}
-export interface InterestReleaseRunResult {
-  asOfDate: string
-  schedulesReleased: number
-  totalReleased: number
-  results: InterestReleaseRunResultItem[]
-  skipped: { installmentScheduleId: string; reason: string }[]
-}
-export const InstallmentInterestRelease = {
-  getPending: (asOfDate?: string) =>
-    api.get<PendingInterestReleaseResult>('/accounting/installment-interest-release/pending', {
-      asOfDate,
-    }),
-  run: (body: { asOfDate?: string }) =>
-    api.post<InterestReleaseRunResult>('/accounting/installment-interest-release/run', body),
 }
 
 // ============ Budgets (ACC-23) ============
@@ -217,6 +184,8 @@ export const Reports = {
     // Scenario 62 — same scoping as the P&L a drill-down came from.
     branchId?: string
     view?: string
+    // One bank's own lines on the shared Cash and Cash Equivalents account.
+    bankAccountId?: string
   }) => api.get<any>('/reports/general-ledger', params as any),
   cashFlow: (startDate: string, endDate: string) =>
     api.get<any>('/reports/cash-flow', { startDate, endDate }),
@@ -538,7 +507,14 @@ export interface ARInvoice {
   // returns the whole Customer row) — the list endpoint's lighter select
   // stops at id/name, so the letterhead block on the detail sheet treats
   // them as optional.
-  customer?: { id: string; name: string; address?: string | null; taxId?: string | null }
+  customer?: {
+    id: string
+    name: string
+    address?: string | null
+    taxId?: string | null
+    /** The customer's own VAT-exempt profile: where a new invoice's class starts. */
+    isTaxExempt?: boolean | null
+  }
   invoiceDate: string
   dueDate: string
   description?: string
@@ -548,6 +524,17 @@ export interface ARInvoice {
   amountPaid: number
   status: string
   costCenter?: string
+  /** Scenario 69 Part F — the invoice's output VAT class (VAT-OUT-12,
+   * VAT-OUT-GOV-12, VAT-OUT-0ZR or VAT-OUT-EXEMPT), the certificate a
+   * zero-rated or exempt one rests on, and who approved it. Null on an invoice
+   * that was never classified (older ones, and ones with no VAT left blank). */
+  outputVatCode?: string | null
+  taxExemptionRef?: string | null
+  outputVatApprovedBy?: string | null
+  outputVatApprovedByName?: string | null
+  /** Scenario 69 Part I — the class when it was changed from the one the invoice
+   * started on, with why, who and when. Null when it was not. */
+  taxOverride?: TaxOverrideEntry[] | null
   payments?: ARPayment[]
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
@@ -621,6 +608,10 @@ export interface ARInvoiceCustomerResult {
   name: string
   phone: string | null
   customerCode: string
+  /** Registered as exempt from VAT, with the certificate on file — a new
+   * invoice for this customer starts VAT-exempt (Scenario 69 Part F). */
+  isTaxExempt?: boolean
+  taxExemptionRef?: string | null
 }
 
 export interface ARReceiptListItem {
@@ -1081,6 +1072,10 @@ export interface APBill {
     purchaseOrderNumber?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
+    // The receipt's own VAT and withholding — Decimal columns, so they arrive
+    // as strings. Present on APBills.get() (findOne includes the whole row).
+    vatAmount?: number | string | null
+    withheldAmount?: number | string | null
     // Line-level detail — populated by APBills.get() (the detail page) and by
     // APBills.list({ withDetail: 'true' }); the plain list view stays on the
     // lighter shape above.
@@ -1155,6 +1150,18 @@ export interface APBill {
   // Reclassified out of AP into WHT Payable when the bill is received, not at
   // payment time. It is NOT a payment: see apOutstanding().
   withholdingAmount?: number
+  /** Scenario 69 Part D — the EWT tax code the withholding was computed at
+   * (EWT-GOODS-1, EWT-RENT-5, EWT-NONE…). Null on a bill that mixed rates
+   * (a receipt with goods and services lines) and on bills from before codes
+   * existed. */
+  withholdingTaxCode?: string | null
+  /** The ATC the code carried when the bill was made; null until NIG's
+   * accountant supplies the ATC list. */
+  withholdingAtc?: string | null
+  /** Scenario 69 Part I — the line input VAT codes and the withholding code that
+   * were changed from the supplier's defaults, with why, who and when. Null when
+   * nothing was. */
+  taxOverride?: TaxOverrideEntry[] | null
   totalAmount: number
   // Cash actually disbursed to the supplier. Never includes withholding.
   amountPaid: number
@@ -1251,6 +1258,18 @@ export interface CreateDisbursementBody {
    * bankAccountId/chequeNumber/method above; the server records that as one
    * source either way, and the voucher number derives from the first. */
   sources?: DisbursementSource[]
+  /** Amounts held back from the supplier on this payment, each credited to a
+   * Chart of Accounts account. The invoices are still settled in full; the
+   * sources fund the allocated total less these. */
+  deductions?: DisbursementDeduction[]
+}
+/** One deduction taken off a payment to a supplier. */
+export interface DisbursementDeduction {
+  accountId: string
+  /** Whose payment it comes out of. Omitted means the voucher's own payee. */
+  supplierId?: string
+  description?: string
+  amount: number
 }
 /** One funding source of a disbursement. */
 export interface DisbursementSource {
@@ -1267,10 +1286,12 @@ export interface DisbursementSource {
 }
 /** One row of the Payments screen — a whole transaction, not one invoice's
  * share of it. `kind: 'payment'` rows are pre-disbursement payments made
- * through the retired per-bill route; they settle exactly one invoice. */
+ * through the retired per-bill route; they settle exactly one invoice.
+ * `kind: 'expense'` rows are paid Expenses, present only when the list is
+ * asked for them (`includeExpenses`); `id` is then the expense's id. */
 export interface APDisbursementListItem {
   id: string
-  kind: 'disbursement' | 'payment'
+  kind: 'disbursement' | 'payment' | 'expense'
   voucherNumber: string | null
   /** UNPAID until a cheque is cut. Raising a voucher posts nothing — it is the
    * authorisation to pay, and settlement is what moves the money. */
@@ -1284,15 +1305,34 @@ export interface APDisbursementListItem {
   method: string | null
   reference: string | null
   bankAccount: { id: string; name: string; accountNumber: string } | null
+  /** What the cheque is for: the invoices settled less any deductions. */
   amount: number
+  /** The invoices settled, before deductions. Absent on payments and expenses. */
+  settledAmount?: number
+  /** What was held back from the supplier, and the account it was credited to. */
+  deductions?: {
+    accountId: string
+    account: { id: string; number: string; name: string } | null
+    supplierId: string | null
+    supplier: { id: string; name: string } | null
+    description: string | null
+    amount: number
+  }[]
   clearedType: string | null
   clearedDate: string | null
   notes: string | null
   journalEntryId: string | null
-  invoices: { billId: string; billNumber: string | null; amount: number }[]
+  invoices: {
+    billId: string
+    billNumber: string | null
+    amount: number
+    /** What this voucher claims of the invoice's withholding. */
+    withholdingAmount?: number
+  }[]
   sources: {
     method: string
     reference: string | null
+    chequeNumber?: string | null
     description: string | null
     amount: number
     bankAccount: { id: string; name: string; accountNumber: string } | null
@@ -1417,7 +1457,13 @@ export const APBills = {
   /** Cancel an unpaid voucher — kept as CANCELLED, not deleted. */
   cancelDisbursement: (id: string) => api.delete(`/ap-bills/disbursements/${id}`),
   /** The Payments screen — one row per transaction. */
-  listDisbursements: (params?: { search?: string; supplierId?: string }) =>
+  listDisbursements: (params?: {
+    search?: string
+    supplierId?: string
+    /** Adds every paid Expense as a row of kind 'expense'. Only the Payments
+     * screen wants these — callers hunting for vouchers to settle do not. */
+    includeExpenses?: boolean
+  }) =>
     api.get<{ items: APDisbursementListItem[]; total: number }>(
       '/ap-bills/disbursements',
       params as any
@@ -1483,8 +1529,19 @@ export interface APBillLine {
    * and RR lines use, so a 3-way match compares like with like. */
   discountedCost?: number | null
   lineTotal: number
+  /** Scenario 69 Part G — the line's input VAT code from the tax code master
+   * (VAT-IN-12, VAT-IN-CAPEX, VAT-IN-NONVAT, VAT-IN-EXEMPT, VAT-IN-OOS). Null,
+   * or one of the older spellings, on a line from before codes. */
   taxCode?: string | null
+  /** Derived from the code's rate on the bill date. */
   taxAmount: number
+  /** The project or asset a VAT-IN-CAPEX line is for. */
+  projectAssetRef?: string | null
+  /** The account this line's net posts to when it is not the bill's own
+   * expense account: a capital good's asset account, an out-of-scope item's
+   * balance-sheet account. */
+  accountId?: string | null
+  account?: { id: string; number: string; name: string } | null
   /** A promotional/zero-cost unit that was still billed as a line. */
   isFreebie?: boolean
   notes?: string | null
@@ -1679,7 +1736,7 @@ export const APPaymentMethods = {
 export type BusinessExpenseStatus = 'DRAFT' | 'RECORDED' | 'VOID'
 // Scenario 40 Gap 1 + Part 2 — Payee is now typed; OTHER unlocks the
 // Special Account list, including CA_LIQUIDATION (Part 2's settlement flow).
-export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'OTHER'
+export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'AGENT' | 'OTHER'
 // Payee → Other sub-choice. UTILITIES/SALARIES_WAGES/PAYROLL behave like
 // SUPPLIER (each line picks its own category); SPECIAL_ACCOUNTS is the
 // pre-existing Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation
@@ -1721,6 +1778,14 @@ export interface BusinessExpenseLine {
   amount: number
   taxCode?: ExpenseTaxCode | string | null
   taxAmount: number
+  /** Scenario 69 Part G — the project or asset a VAT-IN-CAPEX line is for. */
+  projectAssetRef?: string | null
+  /** Scenario 69 Part E — the EWT tax code this line is withheld at, and what
+   * that came to (the code's rate × the amount net of VAT). Null / 0 = not
+   * withheld. The amount is derived server-side, never sent. */
+  withholdingTaxCode?: string | null
+  withholdingAtc?: string | null
+  withholdingAmount?: number
   /** Read-only. Set by the API when this line's account is one of the
    * mapped Special Accounts — it's how an advance or loan line reopens as
    * itself rather than as an ordinary category line. */
@@ -1731,6 +1796,24 @@ export interface BusinessExpenseLine {
   divisionBranch?: { id: string; name: string; code?: string | null } | null
   divisionDepartmentId?: string | null
   divisionDepartment?: { id: string; name: string; code?: string | null } | null
+  /** Fuel / vehicle-repair lines — the vehicle from the fleet roster. */
+  vehicleId?: string | null
+  vehicle?: { id: string; plateNo: string; tag?: string | null } | null
+  /** Fuel lines — litres bought (optional). */
+  liters?: number | null
+  /** Vehicle-repair lines — the kind of job, and a remark on it. */
+  repairServiceType?: string | null
+  serviceDetail?: string | null
+  /** Commission lines — the POS sale whose commission this line releases. */
+  posTransactionId?: string | null
+  posTransaction?: {
+    id: string
+    transactionNumber: string
+    salesInvoiceNumber?: string | null
+    subtotal: number | string
+    /** Whose commission it is — the line's Sales Agent. */
+    sellingAgent?: { id: string; name: string } | null
+  } | null
 }
 // One entry can be paid through several methods at once (e.g. part Cash,
 // part Bank Transfer) — rows must sum to the entry's total.
@@ -1771,6 +1854,11 @@ export interface BusinessExpense {
   salesInvoiceNumber?: string | null
   employeeId?: string | null
   employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
+  /** payeeType=AGENT — the sales agent being paid (commission release). */
+  agentId?: string | null
+  agent?: { id: string; name: string } | null
+  /** Free-text notes on the voucher (the form's ④ Notes). */
+  notes?: string | null
   specialAccountType?: SpecialAccountType | null
   liquidatesType?: LiquidatableType | null
   payee?: string | null
@@ -1779,6 +1867,9 @@ export interface BusinessExpense {
   subtotal: number
   taxAmount: number
   totalAmount: number
+  /** Scenario 69 Part E — withheld from the payee and owed to the BIR; the
+   * payments total totalAmount less this (the cash that actually leaves). */
+  withholdingAmount?: number
   payments: BusinessExpensePayment[]
   costCenter?: string | null
   /** Scenario 47 — set server-side from the creating user's branch; null on
@@ -1834,12 +1925,30 @@ export interface ExpenseDocument {
       lineEmployee: string | null
       linePayee: string | null
       taxCode: string | null
+      /** Scenario 69 Part G — the project or asset a VAT-IN-CAPEX line is for. */
+      projectAssetRef?: string | null
+      /** Fuel / vehicle-repair lines — the plate, and what kind of vehicle it is. */
+      plateNo?: string | null
+      vehicleType?: string | null
+      liters?: number | null
+      repairServiceType?: string | null
+      serviceDetail?: string | null
+      /** Commission lines — the Sales Invoice No. whose commission was released. */
+      saleNumber?: string | null
       amount: number
       taxAmount: number
+      withholdingTaxCode?: string | null
+      withholdingAtc?: string | null
+      withholdingAmount?: number
     }[]
     subtotal: number
     taxAmount: number
     totalAmount: number
+    /** Withheld from the payee, and the cash that actually left (the payment
+     * rows total `netPayable`). */
+    withholdingAmount?: number
+    netPayable?: number
+    notes?: string | null
     status: string
     payeeType: PayeeType | null
     otherCategory: OtherCategory | null
@@ -1915,7 +2024,76 @@ export interface CreateSpecialAccountBody {
   notes?: string
 }
 
+// ─── Recurring Expense list ──────────────────────────────────────────────
+/** One entry on the client's List of Recurring Expenses (rental, electricity, water…):
+ * a name and the account it is filed under. */
+export interface RecurringExpenseType {
+  id: string
+  name: string
+  accountId: string | null
+  account: { id: string; number: string; name: string } | null
+  sortOrder: number
+}
+export const RecurringExpenseTypes = {
+  list: () => api.get<RecurringExpenseType[]>('/recurring-expense-types'),
+  get: (id: string) => api.get<RecurringExpenseType>(`/recurring-expense-types/${id}`),
+  create: (body: { name: string; accountId?: string }) =>
+    api.post<RecurringExpenseType>('/recurring-expense-types', body),
+  /** `accountId: null` clears the account. */
+  update: (id: string, body: { name?: string; accountId?: string | null }) =>
+    api.patch<RecurringExpenseType>(`/recurring-expense-types/${id}`, body),
+  remove: (id: string) => api.delete(`/recurring-expense-types/${id}`),
+}
+
+/** The pickers behind a Fuel / Vehicle Repair / Commission expense line. */
+export interface ExpenseVehicleOption {
+  id: string
+  plateNo: string
+  /** The Vehicle Type, as the Drivers screen calls it — the roster's `tag`
+   * column. Blank when none has been entered. */
+  tag?: string | null
+  branchId?: string | null
+}
+/** `<plate number> - <vehicle type>` — how a vehicle reads in a picker. The
+ * roster has no make or model, so the Vehicle Type is the only description it
+ * holds; a vehicle without one reads as its plate alone. Never the driver, and
+ * not the category (Delivery / Service / Collector) either. */
+export function vehicleLabel(v: { plateNo: string; tag?: string | null }): string {
+  const type = v.tag?.trim()
+  return type ? `${v.plateNo} - ${type}` : v.plateNo
+}
+export interface ExpenseAgentOption {
+  id: string
+  name: string
+  branchId?: string | null
+}
+/** One sale credited to an agent. `commission` is what the system accrued on
+ * it (null when the agent had no rate then); `releasedOn` is the live voucher
+ * already carrying it, which the picker hides. */
+export interface ExpenseAgentSale {
+  id: string
+  number: string
+  /** Whose sale it is — picking it fills a commission line's Sales Agent. */
+  agentId?: string | null
+  agentName?: string | null
+  date: string
+  customerName: string | null
+  subtotal: number
+  totalAmount: number
+  commission: number | null
+  releasedOn: { expenseId: string; voucherNumber: string } | null
+}
+
 export const Expenses = {
+  vehicles: (search?: string) =>
+    api.get<ExpenseVehicleOption[]>('/expenses/lookups/vehicles', search ? { search } : undefined),
+  agents: (search?: string) =>
+    api.get<ExpenseAgentOption[]>('/expenses/lookups/agents', search ? { search } : undefined),
+  agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
+    api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
+  /** The sales a commission line can release — one agent's with `agentId`, any agent's without. */
+  commissionSales: (params?: { agentId?: string; search?: string; excludeExpenseId?: string }) =>
+    api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
   list: (params?: {
     search?: string
     status?: string
@@ -2186,6 +2364,7 @@ export type ChecklistKey =
   | 'fixedAssetDepreciation'
   | 'accruals'
   | 'taxAccruals'
+  | 'taxCodeExceptions'
 
 export interface ChecklistItem {
   done: boolean
@@ -2232,6 +2411,7 @@ export const CHECKLIST_LABELS: Record<ChecklistKey, string> = {
   fixedAssetDepreciation: 'Fixed asset depreciation',
   accruals: 'Accruals',
   taxAccruals: 'Tax accruals',
+  taxCodeExceptions: 'Tax code exceptions reviewed',
 }
 
 export const FiscalPeriods = {
@@ -2251,7 +2431,107 @@ export const FiscalPeriods = {
   remove: (id: string) => api.delete(`/fiscal-periods/${id}`),
 }
 
-// ============ Tax ============
+// ============ Tax Codes (Scenario 69 Part C) ============
+export type TaxCodeType =
+  | 'OUTPUT_VAT'
+  | 'INPUT_VAT'
+  | 'EWT_PAYABLE'
+  | 'CWT_RECEIVABLE'
+  | 'WTC'
+  | 'OTHER'
+export type TaxBaseRule =
+  | 'GROSS'
+  | 'VAT_EXCLUSIVE'
+  | 'VAT_INCLUSIVE_EXTRACT'
+  | 'NET_OF_VAT'
+  | 'FIXED'
+  | 'VARIABLE'
+export type TaxCodeVersionStatus = 'CURRENT' | 'UPCOMING' | 'ENDED'
+/** One VERSION of a tax code. A rate change is a new version with a later
+ * effectiveFrom, so a transaction keeps the rate in force on its own date. */
+export interface TaxCode {
+  id: string
+  code: string
+  name: string
+  taxType: TaxCodeType
+  /** Percent, not a fraction: 12 means 12%. */
+  ratePercent: number
+  baseRule: TaxBaseRule
+  atc: string | null
+  /** The AccountMapping key the tax posts to; null = posts no tax. */
+  accountMappingKey: string | null
+  description: string | null
+  isDefault: boolean
+  requiresApproval: boolean
+  /** Same on every version of a code. */
+  isActive: boolean
+  /** YYYY-MM-DD */
+  effectiveFrom: string
+  effectiveTo: string | null
+  status: TaxCodeVersionStatus
+  createdAt: string
+  updatedAt: string
+}
+export interface TaxCodeListItem extends TaxCode {
+  versionCount: number
+  /** The change already scheduled after this version, if any. */
+  next: { id: string; ratePercent: number; effectiveFrom: string } | null
+}
+export interface TaxCodeInput {
+  code: string
+  name: string
+  taxType: TaxCodeType
+  ratePercent: number
+  baseRule: TaxBaseRule
+  atc?: string | null
+  accountMappingKey?: string | null
+  description?: string | null
+  isDefault?: boolean
+  requiresApproval?: boolean
+  isActive?: boolean
+  effectiveFrom: string
+  effectiveTo?: string | null
+}
+/** What can change on an existing version — the rate and dates cannot. */
+export interface TaxCodeEdit {
+  name?: string
+  description?: string | null
+  atc?: string | null
+  accountMappingKey?: string | null
+  isDefault?: boolean
+  requiresApproval?: boolean
+  /** Applies to every version of the code. */
+  isActive?: boolean
+}
+/** What a picker needs of a code: the version in force today, active codes only. */
+export interface TaxCodeOption {
+  code: string
+  name: string
+  taxType: TaxCodeType
+  /** Percent, not a fraction: 5 means 5%. */
+  ratePercent: number
+  baseRule: TaxBaseRule
+  accountMappingKey: string | null
+  requiresApproval: boolean
+  isDefault: boolean
+}
+export const TaxCodes = {
+  list: (params?: {
+    type?: TaxCodeType
+    search?: string
+    includeInactive?: boolean
+    asOf?: string
+  }) => api.get<TaxCodeListItem[]>('/tax-codes', params),
+  // Scenario 69 Part D — readable by whoever picks a code (supplier, AP bill and
+  // receiving screens), not just the people who maintain the master.
+  options: (type?: TaxCodeType) => api.get<TaxCodeOption[]>('/tax-codes/options', { type }),
+  history: (code: string) => api.get<TaxCode[]>(`/tax-codes/by-code/${encodeURIComponent(code)}`),
+  get: (id: string) => api.get<TaxCode>(`/tax-codes/${id}`),
+  // Posting a code that already exists adds a NEW VERSION of it.
+  create: (body: TaxCodeInput) => api.post<TaxCode>('/tax-codes', body),
+  update: (id: string, body: TaxCodeEdit) => api.patch<TaxCode>(`/tax-codes/${id}`, body),
+}
+
 // ============ Account Mapping ============
 export interface AccountMapping {
   key: string

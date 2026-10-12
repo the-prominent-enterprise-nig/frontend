@@ -21,6 +21,7 @@ const PAYEE_TYPE_LABELS: Record<string, string> = {
   CUSTOMER: 'Customer',
   SUPPLIER: 'Supplier',
   EMPLOYEE: 'Employee',
+  AGENT: 'Sales Agent',
   OTHER: 'Other',
 }
 
@@ -35,6 +36,12 @@ const TAX_CODE_LABELS: Record<string, string> = {
   VAT: 'Input VAT',
   NON_VAT: 'Non-VAT',
   EXEMPT: 'Exempt',
+  // Scenario 69 Part G — and the tax code master's own names for them.
+  'VAT-IN-CAPEX': 'Capital goods',
+  'VAT-IN-12': 'Input VAT',
+  'VAT-IN-NONVAT': 'Non-VAT',
+  'VAT-IN-EXEMPT': 'Exempt',
+  'VAT-IN-OOS': 'Out of scope',
 }
 
 /** MM/DD/YYYY — the format the form's date inputs and the printed voucher use. */
@@ -158,6 +165,11 @@ export default function ExpenseDetail({ id }: { id: string }) {
   // payee type fixes it at the header, where it's already shown.
   const perLinePayee = e.lines.some((l) => l.lineEmployee || l.linePayee)
   const showTax = e.taxAmount > 0
+  // Scenario 69 Part E — what was withheld from the payee (owed to the BIR,
+  // not paid out) and the cash that actually left.
+  const withheld = e.withholdingAmount ?? 0
+  const showWithholding = withheld > 0
+  const netPayable = e.netPayable ?? e.totalAmount - withheld
 
   return (
     <div className="px-4 py-4 sm:px-6 lg:px-8">
@@ -219,79 +231,11 @@ export default function ExpenseDetail({ id }: { id: string }) {
           {e.salesInvoice && <Field label="Sales Invoice">{e.salesInvoice}</Field>}
           {e.costCenter && <Field label="Cost center">{e.costCenter}</Field>}
           {e.description && <Field label="Description">{e.description}</Field>}
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-prominent-purple-900">Lines</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-100 text-[13px]">
-            <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-              <tr>
-                {itemMode && <th className="py-2 pr-4">Item</th>}
-                {perLinePayee && <th className="py-2 pr-4">Recipient</th>}
-                <th className="py-2 pr-4">Account</th>
-                <th className="py-2 pr-4">Description</th>
-                {itemMode && <th className="py-2 pr-4">SI</th>}
-                {itemMode && <th className="py-2 pr-4 text-right">Qty</th>}
-                {itemMode && <th className="py-2 pr-4 text-right">Unit price</th>}
-                {showTax && <th className="py-2 pr-4 text-right">VAT incl.</th>}
-                <th className="py-2 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {e.lines.map((l, i) => (
-                <tr key={i}>
-                  {itemMode && <td className="py-2 pr-4 text-gray-900">{l.item ?? '—'}</td>}
-                  {perLinePayee && (
-                    <td className="py-2 pr-4 text-gray-900">
-                      {l.lineEmployee ?? l.linePayee ?? '—'}
-                    </td>
-                  )}
-                  <td className="py-2 pr-4 text-gray-900">{l.account ?? '—'}</td>
-                  <td className="py-2 pr-4 text-gray-600">{l.description || '—'}</td>
-                  {itemMode && (
-                    <td className="py-2 pr-4 font-mono text-[12px] text-gray-600">
-                      {l.siNumber ?? '—'}
-                    </td>
-                  )}
-                  {itemMode && (
-                    <td className="py-2 pr-4 text-right tabular-nums">{l.qty ?? '—'}</td>
-                  )}
-                  {itemMode && (
-                    <td className="py-2 pr-4 text-right tabular-nums">
-                      {l.unitPrice != null ? fmtMoney(l.unitPrice) : '—'}
-                    </td>
-                  )}
-                  {showTax && (
-                    <td className="py-2 pr-4 text-right tabular-nums">
-                      {fmtMoney(l.taxAmount)}
-                      {l.taxCode && (
-                        <span className="ml-1 text-[11px] text-gray-400">
-                          {TAX_CODE_LABELS[l.taxCode] ?? l.taxCode}
-                        </span>
-                      )}
-                    </td>
-                  )}
-                  <td className="py-2 text-right tabular-nums">{fmtMoney(l.total)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-3 flex justify-end gap-6 text-[13px]">
-          {/* No Subtotal line: amounts are VAT-inclusive, so it was always
-              the same figure as the Total beside it. The VAT is reported as
-              the share of that total which posts to Input VAT. */}
-          {showTax && (
-            <span className="text-gray-500">
-              incl. Input VAT{' '}
-              <span className="tabular-nums text-gray-800">{fmtMoney(e.taxAmount)}</span>
-            </span>
+          {e.notes && (
+            <Field label="Notes">
+              <span className="whitespace-pre-line">{e.notes}</span>
+            </Field>
           )}
-          <span className="font-semibold text-prominent-purple-900">
-            Total <span className="tabular-nums">{fmtMoney(e.totalAmount)}</span>
-          </span>
         </div>
       </section>
 
@@ -328,6 +272,144 @@ export default function ExpenseDetail({ id }: { id: string }) {
             </Link>
           </p>
         )}
+      </section>
+
+      <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-prominent-purple-900">Lines</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-100 text-[13px]">
+            <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+              <tr>
+                {itemMode && <th className="py-2 pr-4">Item</th>}
+                {perLinePayee && <th className="py-2 pr-4">Recipient</th>}
+                <th className="py-2 pr-4">Account</th>
+                <th className="py-2 pr-4">Description</th>
+                {itemMode && <th className="py-2 pr-4">SI</th>}
+                {itemMode && <th className="py-2 pr-4 text-right">Qty</th>}
+                {itemMode && <th className="py-2 pr-4 text-right">Unit price</th>}
+                {showTax && <th className="py-2 pr-4 text-right">VAT incl.</th>}
+                {showWithholding && <th className="py-2 pr-4 text-right">Withholding</th>}
+                <th className="py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {e.lines.map((l, i) => (
+                <tr key={i}>
+                  {itemMode && <td className="py-2 pr-4 text-gray-900">{l.item ?? '—'}</td>}
+                  {perLinePayee && (
+                    <td className="py-2 pr-4 text-gray-900">
+                      {l.lineEmployee ?? l.linePayee ?? '—'}
+                    </td>
+                  )}
+                  <td className="py-2 pr-4 text-gray-900">{l.account ?? '—'}</td>
+                  <td className="py-2 pr-4 text-gray-600">
+                    {l.description || '—'}
+                    {/* Fuel / vehicle repair / commission — the plate, litres,
+                        kind of job, or the sale the commission was released on. */}
+                    {(l.plateNo || l.repairServiceType || l.saleNumber) && (
+                      <span className="mt-0.5 block text-[11px] text-gray-400">
+                        {[
+                          l.plateNo &&
+                            `Plate ${l.plateNo}${l.vehicleType ? ` - ${l.vehicleType}` : ''}`,
+                          l.liters != null && `${l.liters} L`,
+                          l.repairServiceType,
+                          l.serviceDetail,
+                          l.saleNumber && `Sales Invoice ${l.saleNumber}`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    )}
+                    {/* Scenario 69 Part G — what a capital purchase is for. */}
+                    {l.projectAssetRef && (
+                      <span className="mt-0.5 block text-[11px] text-gray-400">
+                        Project / asset: {l.projectAssetRef}
+                      </span>
+                    )}
+                  </td>
+                  {itemMode && (
+                    <td className="py-2 pr-4 font-mono text-[12px] text-gray-600">
+                      {l.siNumber ?? '—'}
+                    </td>
+                  )}
+                  {itemMode && (
+                    <td className="py-2 pr-4 text-right tabular-nums">{l.qty ?? '—'}</td>
+                  )}
+                  {itemMode && (
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      {l.unitPrice != null ? fmtMoney(l.unitPrice) : '—'}
+                    </td>
+                  )}
+                  {showTax && (
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      {fmtMoney(l.taxAmount)}
+                      {l.taxCode && (
+                        <span className="ml-1 text-[11px] text-gray-400">
+                          {TAX_CODE_LABELS[l.taxCode] ?? l.taxCode}
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {showWithholding && (
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      {l.withholdingTaxCode && (l.withholdingAmount ?? 0) > 0 ? (
+                        <>
+                          {fmtMoney(l.withholdingAmount ?? 0)}
+                          <span className="ml-1 text-[11px] text-gray-400">
+                            {l.withholdingTaxCode}
+                            {l.withholdingAtc ? ` · ${l.withholdingAtc}` : ''}
+                          </span>
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  )}
+                  <td className="py-2 text-right tabular-nums">{fmtMoney(l.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {/* The sums, one under another, amounts lined up on the right. Amounts are
+            VAT-inclusive, so the Input VAT is the share of the total that posts to Input
+            VAT and the subtotal is what is left of it. */}
+        <dl className="mt-4 ml-auto w-full max-w-sm space-y-1.5 text-[13px]">
+          {showTax && (
+            <>
+              <div className="flex justify-between gap-6 text-gray-500">
+                <dt>Subtotal (net of VAT)</dt>
+                <dd className="tabular-nums text-gray-800">
+                  {fmtMoney(e.totalAmount - e.taxAmount)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-6 text-gray-500">
+                <dt>Input VAT (included)</dt>
+                <dd className="tabular-nums text-gray-800">{fmtMoney(e.taxAmount)}</dd>
+              </div>
+            </>
+          )}
+          <div
+            className={`flex justify-between gap-6 font-semibold text-prominent-purple-900 ${
+              showTax ? 'border-t border-gray-200 pt-1.5' : ''
+            }`}
+          >
+            <dt>Total</dt>
+            <dd className="tabular-nums">{fmtMoney(e.totalAmount)}</dd>
+          </div>
+          {showWithholding && (
+            <>
+              <div className="flex justify-between gap-6 text-gray-500">
+                <dt>Less: withholding tax</dt>
+                <dd className="tabular-nums text-gray-800">−{fmtMoney(withheld)}</dd>
+              </div>
+              <div className="flex justify-between gap-6 border-t border-gray-200 pt-1.5 text-[14px] font-bold text-prominent-purple-900">
+                <dt>Net payable</dt>
+                <dd className="tabular-nums">{fmtMoney(netPayable)}</dd>
+              </div>
+            </>
+          )}
+        </dl>
       </section>
 
       {/* A receipt often only turns up after the expense is recorded, so

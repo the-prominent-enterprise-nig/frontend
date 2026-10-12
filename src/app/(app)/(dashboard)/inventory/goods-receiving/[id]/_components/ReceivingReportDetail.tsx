@@ -218,7 +218,9 @@ export default function ReceivingReportDetail({
         {record?.receivedByName && <span>Received by {record.receivedByName}</span>}
         {record?.poDate && <span>PO dated {fmtDate(record.poDate)}</span>}
         {record?.withholding === 'pct_1' && (
-          <span>Withholding 1% · {record.withheldAmount ?? 0}</span>
+          // No rate: the receipt can mix goods and services lines, and the rates
+          // are the tax code master's — the amount is what was actually withheld.
+          <span>Withholding · {fmtPHP(record.withheldAmount ?? 0)}</span>
         )}
       </div>
 

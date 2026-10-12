@@ -609,37 +609,56 @@ export default function InstallmentAccountDetail({
                 installment sale one ARInvoice, so arInvoiceId now repeats
                 across every row of this list. lineNumber is unique within one
                 account's history. */}
-            {account.billingHistory.map((bill) => (
-              <li key={bill.lineNumber} className="py-1.5 text-[13px]">
-                <Link
-                  href={`/accounting/ar-invoices/${bill.arInvoiceId}`}
-                  className="-mx-1 flex items-center justify-between gap-2 rounded-lg px-1 hover:bg-gray-50"
-                >
-                  <span className="text-gray-700">
-                    <span className="font-mono text-[11px] text-gray-400">
-                      {bill.invoiceNumber}
-                    </span>
-                    {' · '}
-                    Payment {bill.lineNumber} of {account.billingHistory.length} · due{' '}
-                    {new Date(bill.dueDate).toLocaleDateString()}
-                    {bill.paidOn && (
-                      <span className="text-emerald-600">
-                        {' '}
-                        · paid {new Date(bill.paidOn).toLocaleDateString()}
+            {account.billingHistory.map((bill) => {
+              const paid = Number(bill.amountPaid)
+              const remaining = Math.max(
+                Math.round((Number(bill.totalAmount) - paid) * 100) / 100,
+                0
+              )
+              const paidOn = bill.paidOn ? new Date(bill.paidOn).toLocaleDateString() : null
+              return (
+                <li key={bill.lineNumber} className="py-1.5 text-[13px]">
+                  <Link
+                    href={`/accounting/ar-invoices/${bill.arInvoiceId}`}
+                    className={`-mx-1 flex items-center justify-between gap-2 rounded-lg px-1 hover:bg-gray-50 ${
+                      bill.billed ? '' : 'opacity-60'
+                    }`}
+                  >
+                    <span className="text-gray-700">
+                      <span className="font-mono text-[11px] text-gray-400">
+                        {bill.invoiceNumber}
                       </span>
-                    )}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="font-medium text-gray-800">{peso(bill.totalAmount)}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${INVOICE_STATUS_COLORS[bill.status] ?? 'bg-gray-100 text-gray-600'}`}
-                    >
-                      {INVOICE_STATUS_LABELS[bill.status] ?? bill.status}
+                      {' · '}
+                      Payment {bill.lineNumber} of {account.billingHistory.length} · due{' '}
+                      {new Date(bill.dueDate).toLocaleDateString()}
+                      {bill.status === 'PAID' && paidOn && (
+                        <span className="text-emerald-600"> · paid {paidOn}</span>
+                      )}
+                      {bill.status === 'PARTIAL' && (
+                        <span className="block text-[11px] text-amber-600">
+                          {peso(paid)} paid{paidOn ? ` on ${paidOn}` : ''} · {peso(remaining)}{' '}
+                          remaining
+                        </span>
+                      )}
                     </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium text-gray-800">{peso(bill.totalAmount)}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          bill.billed
+                            ? (INVOICE_STATUS_COLORS[bill.status] ?? 'bg-gray-100 text-gray-600')
+                            : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        {bill.billed
+                          ? (INVOICE_STATUS_LABELS[bill.status] ?? bill.status)
+                          : 'Not yet billed'}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              )
+            })}
           </ul>
         ) : (
           <p className="text-[13px] text-gray-400">

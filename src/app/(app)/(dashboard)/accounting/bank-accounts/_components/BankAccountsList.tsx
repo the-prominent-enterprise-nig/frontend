@@ -98,7 +98,7 @@ export default function BankAccountsList() {
                   onClick={() =>
                     a.glAccountId
                       ? router.push(
-                          `/accounting/general-ledger?accountId=${a.glAccountId}&startDate=`
+                          `/accounting/general-ledger?accountId=${a.glAccountId}&bankAccountId=${a.id}&startDate=`
                         )
                       : setEditing(a)
                   }
@@ -189,24 +189,14 @@ function BankForm({
       setAccounts((data?.items ?? data ?? []) as Account[])
     })()
   }, [])
-  // Only accounts anywhere beneath "Cash and Cash Equivalents" — the balance
-  // sheet rolls these up under it. An already-saved link stays selectable.
+  // Every bank / cash fund posts to the one "Cash and Cash Equivalents"
+  // account (1-01-010) — the chart has no per-bank accounts, and the bank is
+  // told apart by the tag on its ledger lines. An already-saved link to some
+  // other account stays selectable so it isn't silently dropped.
   const cashControl = accounts.find((a) => a.number === '1-01-010')
-  const underCash = new Set<string>()
-  if (cashControl) {
-    const parentOf = new Map(
-      accounts.map((a) => [a.id, (a as any).parentAccountId as string | undefined])
-    )
-    for (const a of accounts) {
-      for (let p = parentOf.get(a.id), i = 0; p && i < 10; p = parentOf.get(p), i++) {
-        if (p === cashControl.id) {
-          underCash.add(a.id)
-          break
-        }
-      }
-    }
-  }
-  const glAccounts = accounts.filter((a) => underCash.has(a.id) || a.id === initial?.glAccountId)
+  const glAccounts = accounts.filter(
+    (a) => a.id === cashControl?.id || a.id === initial?.glAccountId
+  )
   const [saving, setSaving] = useState(false)
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -292,11 +282,7 @@ function BankForm({
               onChange={(e) => setForm({ ...form, glAccountId: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             >
-              <option value="">
-                {initial
-                  ? '— Use default Cash/Bank mapping —'
-                  : '— Create new sub-account under Cash and Cash Equivalents —'}
-              </option>
+              <option value="">— Cash and Cash Equivalents (default) —</option>
               {glAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.number ?? a.code} — {a.name}

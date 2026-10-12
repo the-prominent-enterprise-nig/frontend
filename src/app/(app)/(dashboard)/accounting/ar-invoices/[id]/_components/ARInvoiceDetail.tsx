@@ -12,6 +12,8 @@ import {
   type ARInvoiceMemo,
 } from '@/src/libs/data/AccountingV2Data'
 import { printARInvoiceDocument } from '@/src/libs/print/printInventoryDocument'
+import { outputVatLabel } from '@/src/libs/tax/output-vat'
+import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 import CollectionReceiptSheet, {
   CollectionReceiptDocumentSheet,
   type CollectionReceiptDocument,
@@ -250,7 +252,26 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
         {invoice.status === 'OVERDUE' && daysOverdue > 0 && (
           <span className="font-medium text-red-500">{daysOverdue} days overdue</span>
         )}
+        {/* Scenario 69 Part F — how the invoice was classified for output VAT,
+            and for a zero-rated or exempt one the document it rests on and who
+            signed it off. */}
+        {invoice.outputVatCode && (
+          <span data-testid="invoice-vat-class">
+            {outputVatLabel(invoice.outputVatCode)}
+            {invoice.taxExemptionRef ? ` · ${invoice.taxExemptionRef}` : ''}
+            {invoice.outputVatApprovedBy
+              ? ` · approved by ${invoice.outputVatApprovedByName ?? 'an approver'}`
+              : ''}
+          </span>
+        )}
       </div>
+
+      {/* Scenario 69 Part I — the class changed from its default, and why. */}
+      {invoice.taxOverride && invoice.taxOverride.length > 0 && (
+        <div className="mt-3">
+          <TaxOverrideSummary entries={invoice.taxOverride} testId="invoice-override-summary" />
+        </div>
+      )}
 
       {/* The receivable at a glance. One installment sale is ONE invoice, so
           these three numbers describe the whole contract: what was billed,

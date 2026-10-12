@@ -140,6 +140,8 @@ Distinct from the planning-conversation decisions above — these are recommende
 
 **Status**: not started. Gap 10's model is now resolved (straight-line release of the markup only) — this gap can proceed independently.
 
+> **Superseded 2026-10-11.** The month-end batch built for this gap has been removed. The client's "Computation of Interest Income from Installment Sales" workbook says interest income is recognized **on collection**, not by due date: per monthly installment, interest due = (PN value − amount financed) / terms; a collection recognizes interest first, only up to the amount collected on that due, and the remainder is principal. `ArInvoicesService.applyToDuesAndInvoice` now posts `Dr Unearned Interest Income / Cr Interest Income` inside each collection's own entry (single payment and Pay Selected), `InstallmentScheduleLine.interestReleaseAmount` is the running total recognized per due, and cancelling a payment gives the dues and the interest back (`ARPayment.interestAllocation`). The sale-time entry (Gap 10's deferral of the markup) is unchanged.
+
 ### 13. Subledger has no "Due" figure distinct from "Outstanding" (ACC-05, new — from Collections-to-GL brief)
 
 **Problem**: the brief specifies two computed numbers — Outstanding (total owed, unaffected by bills) and Due (what's fallen due minus what's paid, the collector's number — bills _do_ move this one). Only Outstanding exists today, computed as `totalAmount - amountPaid` in `ar-invoices.service.ts` and `pos-customers.service.ts`'s `listCollectionsCustomers()`. No separate "Due" computation was found anywhere.

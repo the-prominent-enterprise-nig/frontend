@@ -91,7 +91,7 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search stub number or name…"
+            placeholder="Search collector code or name…"
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-prominent-orange-400 focus:outline-none"
           />
         </div>
@@ -167,7 +167,7 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                   <tr>
-                    <th className="px-4 py-3">Stub #</th>
+                    <th className="px-4 py-3">Collector code</th>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Branch</th>
                     <th className="px-4 py-3">Status</th>

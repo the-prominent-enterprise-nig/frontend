@@ -24,6 +24,9 @@ interface TxLine {
   accountId: string
   item: string
   description: string
+  // Not shown or editable — a journal entry is accounts and amounts. Kept only
+  // so editing a draft that already has them sends them back unchanged:
+  // updating replaces every line, so leaving them out would null them.
   quantity: string
   unitPrice: string
   debit: string
@@ -104,13 +107,8 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
     })
   }, [])
 
-  const subtotals = useMemo(
-    () => lines.map((l) => (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0)),
-    [lines]
-  )
   const totalDebit = useMemo(() => lines.reduce((s, l) => s + (Number(l.debit) || 0), 0), [lines])
   const totalCredit = useMemo(() => lines.reduce((s, l) => s + (Number(l.credit) || 0), 0), [lines])
-  const grandTotal = useMemo(() => subtotals.reduce((s, v) => s + v, 0), [subtotals])
   const balanced = Math.abs(totalDebit - totalCredit) < 0.01
 
   const updateLine = (i: number, patch: Partial<TxLine>) =>
@@ -253,15 +251,12 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
                 </button>
               </div>
               <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
-                <table className="w-full text-sm min-w-[900px]">
+                <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
                     <tr>
                       <th className="px-2 py-2 text-left min-w-[160px]">Account</th>
                       <th className="px-2 py-2 text-left min-w-[120px]">Item</th>
                       <th className="px-2 py-2 text-left min-w-[110px]">Description</th>
-                      <th className="px-2 py-2 text-right w-20">Qty</th>
-                      <th className="px-2 py-2 text-right w-28">Unit Price</th>
-                      <th className="px-2 py-2 text-right w-28">Subtotal</th>
                       <th className="px-2 py-2 text-right w-28">Debit</th>
                       <th className="px-2 py-2 text-right w-28">Credit</th>
                       <th className="px-2 py-2 w-8"></th>
@@ -299,31 +294,6 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
                             placeholder="optional"
                             className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-purple-500 outline-none"
                           />
-                        </td>
-                        <td className="px-1 py-1">
-                          <input
-                            type="number"
-                            step="0.001"
-                            min="0"
-                            value={line.quantity}
-                            onChange={(e) => updateLine(i, { quantity: e.target.value })}
-                            placeholder="0"
-                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-purple-500 outline-none text-right"
-                          />
-                        </td>
-                        <td className="px-1 py-1">
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={line.unitPrice}
-                            onChange={(e) => updateLine(i, { unitPrice: e.target.value })}
-                            placeholder="0.00"
-                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-purple-500 outline-none text-right"
-                          />
-                        </td>
-                        <td className="px-2 py-1.5 text-right text-sm text-gray-700 tabular-nums whitespace-nowrap">
-                          {subtotals[i] ? fmt(subtotals[i]) : '—'}
                         </td>
                         <td className="px-1 py-1">
                           <input
@@ -373,13 +343,10 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
                   <tfoot className="bg-gray-50 border-t border-gray-200">
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={3}
                         className="px-2 py-2 text-right text-xs font-semibold text-gray-600"
                       >
                         Total
-                      </td>
-                      <td className="px-2 py-2 text-right text-sm font-bold text-gray-900 tabular-nums">
-                        {grandTotal ? fmt(grandTotal) : '—'}
                       </td>
                       <td
                         className={`px-2 py-2 text-right text-sm font-bold tabular-nums ${balanced ? 'text-emerald-700' : 'text-red-600'}`}

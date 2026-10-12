@@ -69,8 +69,6 @@ export default function ARInvoicesList({
   const [items, setItems] = useState<ARInvoice[]>([])
   const [loading, setLoading] = useState(true)
   const [sweeping, setSweeping] = useState(false)
-  const [editing, setEditing] = useState<ARInvoice | null>(null)
-  const [creating, setCreating] = useState(false)
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
   const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
   const [debitingFor, setDebitingFor] = useState<ARInvoice | null>(null)
@@ -294,7 +292,9 @@ export default function ARInvoicesList({
                 {sweeping ? 'Checking…' : 'Check Overdue'}
               </button>
               <button
-                onClick={() => setCreating(true)}
+                onClick={() =>
+                  router.push(`/accounting/ar-invoices/new?customerId=${customerFilter}`)
+                }
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
               >
                 <Plus className="w-4 h-4" /> New Invoice
@@ -445,7 +445,7 @@ export default function ARInvoicesList({
                     onHistory={() => setHistoryFor(invoice)}
                     onCredit={() => setCreditingFor(invoice)}
                     onDebit={() => setDebitingFor(invoice)}
-                    onEdit={() => setEditing(invoice)}
+                    onEdit={() => router.push(`/accounting/ar-invoices/${invoice.id}/edit`)}
                     onVoid={() => setVoidingFor(invoice)}
                     onDelete={() => setDeletingFor(invoice)}
                   />
@@ -497,20 +497,6 @@ export default function ARInvoicesList({
         </table>
       </div>
 
-      {(creating || editing) && (
-        <InvoiceFormDialog
-          initial={editing}
-          onClose={() => {
-            setCreating(false)
-            setEditing(null)
-          }}
-          onSaved={() => {
-            setCreating(false)
-            setEditing(null)
-            load()
-          }}
-        />
-      )}
       {payingFor && (
         <PaymentDialog
           invoice={payingFor}
@@ -939,216 +925,6 @@ function DeleteInvoiceDialog({
               className="px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg disabled:opacity-50"
             >
               {deleting ? 'Deleting...' : 'Delete Invoice'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function InvoiceFormDialog({
-  initial,
-  onClose,
-  onSaved,
-}: {
-  initial: ARInvoice | null
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [form, setForm] = useState({
-    customerId: initial?.customerId ?? '',
-    invoiceDate: initial?.invoiceDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-    dueDate:
-      initial?.dueDate?.slice(0, 10) ??
-      new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-    description: initial?.description ?? '',
-    subtotal: String(initial?.subtotal ?? ''),
-    taxAmount: String(initial?.taxAmount ?? ''),
-  })
-  const [saving, setSaving] = useState(false)
-
-  // Customer picker — search rather than a full-list <select>, and scoped
-  // to accounting:ar-invoices:read (see ARInvoices.searchCustomers), so an
-  // Accountant without crm:customers:read can still pick one.
-  const [customerLabel, setCustomerLabel] = useState(initial?.customer?.name ?? '')
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
-  const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
-  const [searchingCustomers, setSearchingCustomers] = useState(false)
-  useEffect(() => {
-    if (!customerSearch.trim()) {
-      setCustomerResults([])
-      setCustomerSearchOpen(false)
-      return
-    }
-    const timer = setTimeout(async () => {
-      setSearchingCustomers(true)
-      const res = await ARInvoices.searchCustomers(customerSearch.trim())
-      setCustomerResults(res.data ?? [])
-      setCustomerSearchOpen(true)
-      setSearchingCustomers(false)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [customerSearch])
-
-  // Tax is a flat 12% VAT applied automatically as subtotal changes, but
-  // stays freely editable afterward (matches how POS checkout now applies
-  // the same flat rate).
-  const FLAT_VAT_RATE = 12 // matches backend FLAT_VAT_RATE_PERCENT
-  const onSubtotalChange = (val: string) => {
-    const subtotal = Number(val) || 0
-    const tax = +(subtotal * (FLAT_VAT_RATE / 100)).toFixed(2)
-    setForm({ ...form, subtotal: val, taxAmount: String(tax) })
-  }
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    // The customer field is a search box, not a native <select> — its
-    // visible text isn't what's submitted, so `required` on the input
-    // alone would let a typed-but-never-selected name through with
-    // customerId still empty.
-    if (!form.customerId) return
-    setSaving(true)
-    const payload = {
-      ...form,
-      subtotal: Number(form.subtotal),
-      taxAmount: Number(form.taxAmount || 0),
-    }
-    if (initial) await ARInvoices.update(initial.id, payload)
-    else await ARInvoices.create(payload)
-    setSaving(false)
-    onSaved()
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h3 className="text-lg font-semibold">{initial ? 'Edit Invoice' : 'New Invoice'}</h3>
-          <button onClick={onClose}>
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-        <form onSubmit={submit} className="p-5 space-y-3">
-          <Field label="Customer *">
-            <div className="relative">
-              <input
-                required
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 pr-7 text-sm"
-                placeholder="Search by name or phone…"
-                value={customerLabel || customerSearch}
-                onChange={(e) => {
-                  setCustomerLabel('')
-                  setForm({ ...form, customerId: '' })
-                  setCustomerSearch(e.target.value)
-                }}
-                onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 150)}
-                onFocus={() => customerResults.length > 0 && setCustomerSearchOpen(true)}
-              />
-              {searchingCustomers && (
-                <Loader2
-                  size={14}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
-                />
-              )}
-              {customerSearchOpen && (
-                <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                  {customerResults.length === 0 ? (
-                    <p className="px-3 py-2 text-sm text-gray-500">No customers found</p>
-                  ) : (
-                    customerResults.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
-                        onMouseDown={() => {
-                          setForm({ ...form, customerId: c.id })
-                          setCustomerLabel(c.name)
-                          setCustomerSearch('')
-                          setCustomerSearchOpen(false)
-                        }}
-                      >
-                        <User size={13} className="shrink-0 text-gray-400" />
-                        <div>
-                          <p className="font-medium text-gray-900">{c.name}</p>
-                          {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Invoice Date *">
-              <input
-                required
-                type="date"
-                value={form.invoiceDate}
-                onChange={(e) => setForm({ ...form, invoiceDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Due Date *">
-              <input
-                required
-                type="date"
-                value={form.dueDate}
-                onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-          </div>
-          <Field label="Description">
-            <input
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Subtotal *">
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={form.subtotal}
-                onChange={(e) => onSubtotalChange(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Tax">
-              <input
-                type="number"
-                step="0.01"
-                value={form.taxAmount}
-                onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                title="Auto-calculated as 12% of subtotal — editable"
-              />
-            </Field>
-          </div>
-          <div className="text-right text-sm">
-            <span className="text-gray-500">Total: </span>
-            <span className="font-semibold text-gray-900">
-              {fmtMoney((Number(form.subtotal) || 0) + (Number(form.taxAmount) || 0))}
-            </span>
-          </div>
-          <div className="flex justify-end gap-2 pt-3 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
         </form>

@@ -17,9 +17,9 @@ import { Loader2 } from 'lucide-react'
 import {
   MANUAL_RR_STATUS_LABELS,
   MANUAL_RR_TAX_CODES,
-  MANUAL_RR_WITHHOLDING_CLASSES,
   type ManualReceivingReport,
 } from '@/src/schema/inventory/manual-receiving-reports'
+import { WITHHOLDING_CLASS_NAMES } from '@/src/libs/tax/ewt'
 import { PLEX, MONO } from '../../../../inventory/purchase-orders/_components/procurementTokens'
 import { PANEL } from '../../../../inventory/purchase-orders/_components/receive-po/receiveTokens'
 import { getManualReceivingReport } from '../../../../inventory/manual-receiving-reports/_actions/get-manual-receiving-report'
@@ -38,8 +38,11 @@ const money = (v: string | number) =>
 const taxCodeLabel = (code?: string | null) =>
   MANUAL_RR_TAX_CODES.find((c) => c.value === code)?.label
 
+// No rate here: a posted report shows what was withheld, and the rate in the
+// tax code master can have changed since — a "(1%)" printed from today's
+// master could contradict the amount that was actually taken.
 const withholdingClassLabel = (cls?: string | null) =>
-  MANUAL_RR_WITHHOLDING_CLASSES.find((c) => c.value === cls)?.label
+  cls && WITHHOLDING_CLASS_NAMES[cls] ? `${WITHHOLDING_CLASS_NAMES[cls]} EWT` : undefined
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
