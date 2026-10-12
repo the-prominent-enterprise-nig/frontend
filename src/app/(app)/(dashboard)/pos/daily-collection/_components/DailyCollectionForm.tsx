@@ -5,6 +5,7 @@ import { checkedByOf, type SheetDraftController } from '../_hooks/useSheetDraft'
 import {
   buildCaravanRecapLines,
   buildCollectionRecapLines,
+  withValuesOnly,
   buildFormDenominationLines,
   buildFormLines,
   footerAmount,
@@ -75,7 +76,14 @@ export default function DailyCollectionForm({
 }: Props): React.JSX.Element {
   const draft = edit?.draft ?? null
   const lines = buildFormLines(report)
-  const recap = [...buildCollectionRecapLines(report), ...buildCaravanRecapLines(report)]
+  // Valued lines only, same as the screen panel and the server's own form
+  // sheet — an untaken tender prints as a row of dashes otherwise. The caravan
+  // block is appended unfiltered: its blank spacer and amount-less heading are
+  // deliberate.
+  const recap = [
+    ...withValuesOnly(buildCollectionRecapLines(report)),
+    ...buildCaravanRecapLines(report),
+  ]
   // While editing, the blocks add up what is being typed, so TOTAL and CASH
   // COLLECTED move as the cashier counts rather than only after a save.
   const denominations = buildFormDenominationLines(
@@ -125,10 +133,10 @@ function FormHeader(): React.JSX.Element {
         <th rowSpan={2} className={`${HEAD} w-18`}>
           Date
         </th>
-        <th rowSpan={2} className={`${HEAD} w-13`}>
+        <th rowSpan={2} className={`${HEAD} w-24`}>
           SI#
         </th>
-        <th rowSpan={2} className={`${HEAD} w-47.5`}>
+        <th rowSpan={2} className={`${HEAD} w-36.5`}>
           Customer
         </th>
         <th rowSpan={2} className={`${HEAD} w-21.5`}>
@@ -192,7 +200,7 @@ function LedgerBody({
             )}
             {line.span > 0 && (
               <>
-                <td rowSpan={line.span} className={`${CELL} text-center`}>
+                <td rowSpan={line.span} className={`${CELL} break-all text-center leading-tight`}>
                   {line.si}
                 </td>
                 <td rowSpan={line.span} className={`${CELL} uppercase`}>

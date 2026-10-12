@@ -1488,6 +1488,8 @@ export interface Branch {
   name: string
   isMainBranch?: boolean
   isTemporary?: boolean
+  /** Scenario 60 — the branch hosting a caravan; null for an ordinary branch. */
+  hostBranchId?: string | null
   eventName?: string | null
   addressLine1?: string | null
 }
@@ -3030,6 +3032,12 @@ export interface CashInTransitSessionRow {
   cashierName: string | null
   closedAt: string
   amount: number
+  /** Card and e-wallet money in processors' clearing accounts, banked in the
+   * same deposit as `amount`. Absent on an older API. */
+  clearingAmount?: number
+  /** The New Receipts this session's deposit took in — set on one session
+   * per deposit, so they are counted once. */
+  newReceiptsAmount?: number
   journalEntryId: string | null
   /** Scenario 61 Part 5 — the draft deposit reserving this session, if any:
    * still owed to the bank, but not selectable for another deposit. */
@@ -3046,6 +3054,12 @@ export interface CashInTransitHistoryRow {
   cashierName: string | null
   closedAt: string
   amount: number
+  /** Card and e-wallet money in processors' clearing accounts, banked in the
+   * same deposit as `amount`. Absent on an older API. */
+  clearingAmount?: number
+  /** The New Receipts this session's deposit took in — set on one session
+   * per deposit, so they are counted once. */
+  newReceiptsAmount?: number
   citClearedAt: string | null
   depositedTo: string | null
   depositDate: string | null

@@ -64,31 +64,64 @@ export interface FormLine {
   span: number
   /** Scenario 60 Part 4 — the caravan this sale's units came out of, if any. */
   caravan?: string
+  /** The other counter this collection was taken at — a satellite office
+   * filing under this branch, or a caravan register. Absent on the branch's
+   * own rows, so only a row whose cash is in another drawer carries a tag. */
+  sourceCounter?: string
 }
 
+/**
+ * Every collection of the day as ledger lines, in the order the branch took
+ * the money — cash and non-cash together.
+ *
+ * The report splits `rows` (cash) from `nonCashRows` for its TOTALS, which are
+ * cash-only by design. The ledger does not want that split: a customer who
+ * paid by card belongs where they actually paid, not in a separate block
+ * after everyone who paid cash. So the two come back together here and sort
+ * by timestamp.
+ *
+ * The running BALANCE still moves on cash alone — it means "cash in the
+ * drawer", and a card payment never entered it — so a non-cash line shows its
+ * amount with a blank balance and leaves the column where it was.
+ */
 function collectionLines(report: DailyCollectionReport): {
   lines: FormLine[]
   running: number
 } {
   let running = 0
-  const lines = report.rows.map((r): FormLine => {
-    running += r.amount
+  const ordered = [...report.rows, ...(report.nonCashRows ?? [])].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  )
+  const lines = ordered.map((r): FormLine => {
+    // BALANCE is the cash THIS branch is still holding, so a collection taken
+    // at another counter — a satellite office or a caravan register — does
+    // not move it, and leaves its own balance cell blank. It is still in the
+    // ledger and in TOTAL COLLECTED; see the "at other counters" block.
+    const heldHere = r.isCash && !r.sourceCounter
+    if (heldHere) running += r.amount
     return {
       type: 'collection',
       si: r.siNumber ?? '',
       customer: r.customerName,
       desc: formKind(r),
-      office: r.channel === 'OFFICE' ? (r.crNumber ?? '') : '',
-      field: r.channel === 'FIELD' ? (r.crNumber ?? '') : '',
-      others: r.channel === 'OTHERS' ? (r.crNumber ?? '') : '',
+      // Three separate facts under CASH RECEIPT: the booklet number, who
+      // collected it in the field, and — under OTHERS — the caravan a sale's
+      // units came out of plus, when the cash is in another drawer, the
+      // counter that took it. These used to be one receipt number routed into
+      // whichever of the three matched the row's channel, which left two
+      // blank on every row.
+      office: r.crNumber ?? '',
+      field: r.collectorLabel ?? '',
+      others: [r.sourceCounter, r.caravan].filter(Boolean).join(' · '),
       cashInvoice: r.cashInvoiceNumber ?? '',
       ppd: r.ppd,
       penalty: r.penalty,
       debit: r.amount,
       credit: null,
-      balance: running,
+      balance: heldHere ? running : null,
       span: 1,
       caravan: r.caravan ?? undefined,
+      sourceCounter: r.sourceCounter ?? undefined,
     }
   })
   return { lines, running }
@@ -112,31 +145,9 @@ function mergeCustomerRuns(lines: FormLine[]): void {
   }
 }
 
-/** A non-cash sale or down payment as a ledger line: DESC says COD or DP, and
- * the BALANCE is left blank because the money never went into the drawer. */
-function nonCashLine(r: DailyCollectionRow): FormLine {
-  return {
-    type: 'collection',
-    si: r.siNumber ?? '',
-    customer: r.customerName,
-    desc: formKind(r),
-    office: r.channel === 'OFFICE' ? (r.crNumber ?? '') : '',
-    field: r.channel === 'FIELD' ? (r.crNumber ?? '') : '',
-    others: '',
-    cashInvoice: r.cashInvoiceNumber ?? '',
-    ppd: r.ppd,
-    penalty: r.penalty,
-    debit: r.amount,
-    credit: null,
-    balance: null,
-    span: 1,
-  }
-}
-
 export function buildFormLines(report: DailyCollectionReport): FormLine[] {
   const { lines, running: afterCollections } = collectionLines(report)
   mergeCustomerRuns(lines)
-  lines.push(...(report.nonCashRows ?? []).map(nonCashLine))
 
   let running = afterCollections
   for (const d of report.deposits) {
@@ -202,6 +213,14 @@ export interface FooterLine {
   indent?: boolean
   /** The on-screen explanation of the label. The printed form ignores it. */
   note?: string
+  /** Which part of the recap this line belongs to, for the screen panel,
+   * which groups what the paper form prints as one column. The printed form
+   * and the Excel export ignore it and keep the client's own flat order.
+   *
+   * `placement` is a line that says where the cash is rather than what kind
+   * of collection it was — the screen shows those together in their own
+   * group, so it draws them from the report directly and skips them here. */
+  group?: 'cash' | 'placement' | 'nonCash'
 }
 
 /** Accounting parentheses for a deduction: `(4,720.00)`. */
@@ -210,82 +229,59 @@ export function footerAmount(line: FooterLine): string {
   return line.negate ? `(${peso(line.amount)})` : peso(line.amount)
 }
 
-/** Which line of the client's form a non-cash tender prints on. Mirrors the
- * backend's `bucketForTender` (src/pos/tender-key.ts); change one, change the
- * other. */
-type TenderLine = 'GCASH' | 'CHECK' | 'CARD' | 'OTHER NON-CASH'
+/** Provider names the client's closing sheet calls something else: Soundpay
+ * is the gateway behind GCash. */
+const PROVIDER_LINE_ALIAS: Record<string, string> = { SOUNDPAY: 'GCASH' }
 
-const TENDER_LINE_BY_METHOD: Record<string, TenderLine> = {
-  qr: 'GCASH',
-  gcash: 'GCASH',
-  maya: 'GCASH',
-  cheque: 'CHECK',
-  check: 'CHECK',
-  card: 'CARD',
+/**
+ * The line a non-cash tender prints on, named the way the client's SAMPLE FOR
+ * CLOSING SESSION names it: CHECK, GCASH, CARD-Maya, ECPAY, MAYA, or a bank by
+ * name. Mirrors the backend form sheet's `tenderLine`; change one, change the
+ * other.
+ */
+export function tenderLine(tender: string): string {
+  const [method, provider = ''] = tender.split('::')
+  const name = provider.trim()
+  if (method === 'check' || method === 'cheque') return 'CHECK'
+  if (method === 'bank_transfer') return name || 'BANK'
+  if (method === 'card') return name ? `CARD-${name}` : 'CARD'
+  if (method === 'qr' || method === 'gcash' || method === 'maya') {
+    const label = (name || (method === 'maya' ? 'MAYA' : 'GCASH')).toUpperCase()
+    return PROVIDER_LINE_ALIAS[label] ?? label
+  }
+  return 'OTHER NON-CASH'
 }
 
-const BANK_METHOD = 'bank_transfer'
-
-function nonCashByLine(report: DailyCollectionReport): Record<TenderLine, number> {
-  const totals: Record<TenderLine, number> = {
-    GCASH: 0,
-    CHECK: 0,
-    CARD: 0,
-    'OTHER NON-CASH': 0,
-  }
+/** One line per provider, a down payment and a plain sale on it together.
+ * CHECK and GCASH lead and are kept at zero — pre-printed on the client's
+ * form; the screen drops empty rows itself (`withValuesOnly`). */
+function nonCashLines(report: DailyCollectionReport): FooterLine[] {
+  const totals = new Map<string, number>([
+    ['CHECK', 0],
+    ['GCASH', 0],
+  ])
   for (const t of report.nonCash ?? []) {
-    const method = t.tender.split('::')[0]
-    if (method === BANK_METHOD || t.kind === 'DP') continue
-    totals[TENDER_LINE_BY_METHOD[method] ?? 'OTHER NON-CASH'] += t.amount
+    const label = tenderLine(t.tender)
+    totals.set(label, (totals.get(label) ?? 0) + t.amount)
   }
-  return totals
-}
-
-/** The recap group a non-cash tender prints under. */
-function groupOf(tender: string): TenderLine | 'BANK' {
-  const method = tender.split('::')[0]
-  if (method === BANK_METHOD) return 'BANK'
-  return TENDER_LINE_BY_METHOD[method] ?? 'OTHER NON-CASH'
-}
-
-/** Non-cash down payments, one line each, named like the tender line they
- * belong to: `GCASH`, or the bank's name. */
-function dpLines(report: DailyCollectionReport): FooterLine[] {
-  return (report.nonCash ?? [])
-    .filter((t) => t.kind === 'DP')
-    .map((t) => ({
-      label: groupOf(t.tender) === 'BANK' ? t.tender.split('::')[1] || 'BANK' : groupOf(t.tender),
-      amount: t.amount || null,
-      negate: false,
-      emphasis: false,
-    }))
-}
-
-/** One line per bank, labelled with the bank's name: `BDO`. A bank transfer with
- * no bank recorded falls back to a bare `BANK`. */
-function bankLines(report: DailyCollectionReport): FooterLine[] {
-  return (report.nonCash ?? [])
-    .filter((t) => groupOf(t.tender) === 'BANK' && t.kind !== 'DP')
-    .map((t) => ({
-      label: t.tender.split('::')[1] || 'BANK',
-      amount: t.amount || null,
-      negate: false,
-      emphasis: false,
-    }))
+  return [...totals.entries()].map(([label, amount]) => ({
+    label,
+    amount: amount || null,
+    negate: false,
+    emphasis: false,
+    group: 'nonCash' as const,
+  }))
 }
 
 /**
  * The bottom-left block as the client's form has it (Alimodian sample,
  * 2026-09-23): COD, DP, MI (part-payments included), OTHERS with DC, the
- * highlighted TOTAL COLLECTION, then GCASH (QR included), one BANK line per
- * bank, and CHECK. A card swipe or other
- * non-cash tender has no line on their form, so it gets one only on a day
- * that took some — never silently dropped. Mirrored by the backend's Excel
- * form sheet.
+ * highlighted TOTAL COLLECTION, then the non-cash tenders one per provider,
+ * as the client's SAMPLE FOR CLOSING SESSION itemises them: CHECK, GCASH,
+ * CARD-Maya, ECPAY, MAYA. Mirrored by the backend's Excel form sheet.
  */
 export function buildCollectionRecapLines(report: DailyCollectionReport): FooterLine[] {
   const kind = (k: CollectionKind): number => report.byKind[k] ?? 0
-  const nonCash = nonCashByLine(report)
   const line = (label: string, amount: number, extra: Partial<FooterLine> = {}): FooterLine => ({
     label,
     amount: amount || null,
@@ -295,19 +291,58 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
   })
 
   return [
-    line('COD', kind('COD')),
-    line('DP', kind('DP')),
+    line('COD', kind('COD'), { group: 'cash' }),
+    line('DP', kind('DP'), { group: 'cash' }),
     // A full payment (FP) is still an instalment collection: it counts here.
-    line('MI', kind('MI') + kind('MI-PARTIAL') + kind('FP')),
-    line('OTHERS', kind('DC'), { sub: 'DC' }),
-    line('TOTAL COLLECTION', report.totalCollection, { emphasis: true, highlight: true }),
-    line('GCASH', nonCash.GCASH),
-    ...bankLines(report),
-    ...dpLines(report),
-    line('CHECK', nonCash.CHECK),
-    ...(nonCash.CARD ? [line('CARD', nonCash.CARD)] : []),
-    ...(nonCash['OTHER NON-CASH'] ? [line('OTHER NON-CASH', nonCash['OTHER NON-CASH'])] : []),
+    line('MI', kind('MI') + kind('MI-PARTIAL') + kind('FP'), { group: 'cash' }),
+    // DC and the day's New Receipts (Scenario 70 G3) share the client's own
+    // OTHERS line — neither settles a sale or a due.
+    line('OTHERS', kind('DC') + kind('OTHERS'), { sub: 'DC', group: 'cash' }),
+    line('TOTAL COLLECTION', report.totalCollection, {
+      emphasis: true,
+      highlight: true,
+      group: 'cash',
+    }),
+    // Mirrors the backend form sheet's own line (daily-collection.form-sheet.ts)
+    // — this recap and that one must never print different figures for the
+    // same day. Only drawn while a session is still open, so a final form is
+    // unchanged; the signed denomination count can only cover the settled
+    // part, and without this line the gap reads as a shortage.
+    ...(report.pendingCashOnHand > 0.005
+      ? [
+          line('NOT YET COUNTED (open drawers)', report.pendingCashOnHand, {
+            sub: 'incl. float',
+            group: 'placement',
+          }),
+        ]
+      : []),
+    // Cash another counter took — a satellite office filing under this branch
+    // (Branch.reportsToBranchId), or a caravan register. Same reason as the
+    // line above: it is in TOTAL COLLECTION but not in this drawer, so
+    // without it the count reads as a shortage. One named row each, which
+    // needs no heading and no collective noun — a caravan is not a satellite
+    // branch, and the client's own data uses that word for something else
+    // (the `_Satellite` sub-locations in the Item Master).
+    ...report.offsiteCash.map((c) => line(`At ${c.name}`, c.amount, { group: 'placement' })),
+    ...nonCashLines(report),
   ]
+}
+
+/**
+ * The recap with its empty rows dropped — for the SCREEN panel only.
+ *
+ * `line()` maps 0 to null, so a tender the branch never took renders as a row
+ * of dashes (GCASH —, CHECK —, a bank with nothing on it). On the screen that
+ * is just noise. On the printed form and the Excel export it is NOT: GCASH and
+ * CHECK are pre-printed rows on the client's own form and have to appear even
+ * blank, which is why the filter lives here rather than in the builder both
+ * renderers share.
+ *
+ * Emphasised and highlighted lines always survive: TOTAL COLLECTION reading
+ * 0.00 is a fact about the day, not an empty row.
+ */
+export function withValuesOnly(lines: FooterLine[]): FooterLine[] {
+  return lines.filter((l) => l.emphasis || l.highlight || l.amount !== null)
 }
 
 /**
@@ -366,17 +401,27 @@ export function sumDenominations(counts: Record<string, number>): number {
  * Where the drawer stands against the day's cash collections.
  *
  * The count is taken with the float still in the till, so the float — not the
- * deposit — is what stands between the counted total and TOTAL COLLECTION
- * (CASH). Both the printed form and the screen's verdict read this, so the
- * two can never reach different conclusions about the same drawer.
+ * deposit — is what stands between the counted total and the SETTLED cash
+ * collection. Both the printed form and the screen's verdict read this, so
+ * the two can never reach different conclusions about the same drawer.
+ *
+ * Measured against settled cash, NOT TOTAL COLLECTION: since 2026-10-09 the
+ * report carries sales from sessions that are still open, and those drawers
+ * have not been counted. Comparing the count to a total that includes them
+ * would report every open session as a cash short that is not real.
  */
 export interface CashPosition {
   /** Everything in the drawer at counting time, float included. */
   denominationTotal: number
-  /** The drawer less the opening float — what the cash collections must meet. */
+  /** The drawer less the opening float — what the SETTLED cash collection
+   * must meet. */
   cashCollected: number
-  /** Positive is over, negative is short. */
+  /** Positive is over, negative is short. Against settled cash only. */
   variance: number
+  /** Cash taken on still-open sessions, with no count behind it yet. Shown
+   * beside the verdict so the reader knows the reconciliation is partial;
+   * zero once the day's sessions have all closed. */
+  pendingCashOnHand: number
   /** Within half a centavo, which is as close as a peso form can ask. */
   balanced: boolean
 }
@@ -387,12 +432,13 @@ export function cashPosition(
 ): CashPosition {
   const denominationTotal = sumDenominations(counts)
   const cashCollected = denominationTotal - report.openingFloat
-  const variance = cashCollected - report.totalCollection
+  const variance = cashCollected - report.settledCashCollection
 
   return {
     denominationTotal,
     cashCollected,
     variance,
+    pendingCashOnHand: report.pendingCashOnHand,
     balanced: Math.abs(variance) < 0.005,
   }
 }
