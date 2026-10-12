@@ -102,6 +102,7 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
+import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
 import { PillCombobox, PillSelect } from './_components/PillInputs'
 import {
@@ -113,8 +114,6 @@ import {
   parseDeliveryFee,
   resolveDeliveryAddress,
   type CustomerAddress,
-  TENDERS_WITH_OPTIONS,
-  type DeliveryFeeTender,
   type DeliveryState,
 } from './_utils/delivery'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
@@ -1720,20 +1719,17 @@ export default function CheckoutPage() {
   // Scenario 66 — the delivery fee as entered (0 while blank or not yet a
   // valid amount).
   const deliveryFeeAmount = delivery.enabled ? (parseDeliveryFee(delivery.fee) ?? 0) : 0
-  // Scenario 68 — the checkout totals the delivery fee in: when the sale
-  // collects anything, the cashier takes sale + fee as one payment, so the
-  // payment box's Total, Amount received, change and "Underpaid" all use
-  // collectTarget. Only the sale's own part (tenderTarget) is ever sent to
-  // addPayment — the fee is recorded by create() on its own receipt and JE,
-  // so revenue, VAT and drawer cash never count it twice. When the sale
-  // collects nothing (charge, ₱0 X-Deal) the fee is taken on its own, with
-  // the Delivery section's Paid with.
-  const deliveryFeeWithSale = tenderTarget > 0 ? deliveryFeeAmount : 0
-  const collectTarget = Math.round((tenderTarget + deliveryFeeWithSale) * 100) / 100
+  // Scenario 70 — the fee is paid with its own tender (the Delivery section's
+  // Paid with), on its own CR, never through the sale's payment box. So the
+  // payment box's Total, Amount received, change and "Underpaid" measure the
+  // sale alone (tenderTarget). The Totals (Order Summary and the block above
+  // Confirm) are the sale's too; the fee is only a note under them — it is a
+  // collection on its own CR, not part of the sale. This undoes Scenario 68's
+  // "fee rides on the sale's tender" and its "Total = items + fee".
 
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
-  const balance = Math.max(0, Math.round((collectTarget - totalPaid) * 100) / 100)
-  const change = totalPaid > collectTarget ? Math.round((totalPaid - collectTarget) * 100) / 100 : 0
+  const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
+  const change = totalPaid > tenderTarget ? Math.round((totalPaid - tenderTarget) * 100) / 100 : 0
 
   // Reserve mode has no tax/promo concept — SkuReservationsService values a
   // reservation as a flat item.sellingPrice × quantity, so the deposit cap
@@ -2023,22 +2019,35 @@ export default function CheckoutPage() {
   // box that will not take a number.
   //
   // Re-apply once the lines actually exist. Keyed on application + line count
-  // so it runs once per real change rather than on every render, and skipped
-  // when a down payment is already present so a figure the cashier typed is
-  // never overwritten.
+  // so it runs once per real change rather than on every render — after that
+  // the cashier is free to change the term or the down payment (Scenario 70:
+  // nothing is locked, and the server doesn't check them against the
+  // application).
+  //
+  // Two reasons to apply: a line has no down payment yet, or a line's term
+  // isn't the one the application ended on. The second is the cart that went
+  // out to raise the application on 5 months and came back restored "as the
+  // cashier left it" — every line already had the 5-month down payment, so the
+  // old down-payment-only guard skipped it and checkout kept 5 months though
+  // the application said 12. A typed down payment is still never lowered
+  // (applyCreditApplicationTerms only raises it), and an application with no
+  // term leaves the lines' own.
   const appliedTermsKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (!creditApplicationId || inhouseInstallmentCartLines.length === 0) return
     const key = `${creditApplicationId}:${inhouseInstallmentCartLines.length}`
     if (appliedTermsKeyRef.current === key) return
+    // The list may not have landed yet — try again when it does.
+    const application = approvedCreditApplications.find((a) => a.id === creditApplicationId)
+    if (!application) return
+    appliedTermsKeyRef.current = key
     const missingDownPayment = inhouseInstallmentCartLines.some(
       (l) => !(parseFloat(l.downPaymentInput ?? '') > 0)
     )
-    if (!missingDownPayment) {
-      appliedTermsKeyRef.current = key
-      return
-    }
-    appliedTermsKeyRef.current = key
+    const termDiffers =
+      !!application.financingTermId &&
+      inhouseInstallmentCartLines.some((l) => l.financingTermId !== application.financingTermId)
+    if (!missingDownPayment && !termDiffers) return
     applyCreditApplicationTerms(creditApplicationId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creditApplicationId, inhouseInstallmentCartLines.length, approvedCreditApplications])
@@ -3114,39 +3123,6 @@ export default function CheckoutPage() {
     }
   }
 
-  /**
-   * Scenario 68 — when the fee is paid with the sale's own payment, its
-   * Paid with is the sale's tender, with the same details: Cash's
-   * sub-choice (check number, bank / gateway / biller, verified at
-   * register) or the card (acquirer, Straight / Installment and term).
-   */
-  function deliveryWithSaleTender(): DeliveryState {
-    if (deliveryFeeWithSale <= 0) return delivery
-    if (hasCreditCardLine) {
-      return {
-        ...delivery,
-        tender: 'card',
-        checkNumber: '',
-        optionId: cardTerminalOptionId,
-        bankVerified: false,
-        cardTxnMode,
-        cardTerm: cardTxnMode === 'installment' ? cardInstallmentTerm : undefined,
-      }
-    }
-    // Paid with has the sale's Cash choices one for one (GCash and Billers
-    // record as QR with their option, as the sale's do).
-    const tender: DeliveryFeeTender = cashSubMode === 'card' ? 'cash_on_hand' : cashSubMode
-    return {
-      ...delivery,
-      tender,
-      checkNumber: tender === 'check' ? checkNumber : '',
-      optionId: TENDERS_WITH_OPTIONS.includes(tender) ? cashPaymentOptionId : undefined,
-      bankVerified: tender === 'bank_transfer' && bankTransferVerifiedAtRegister,
-      cardTxnMode: 'straight',
-      cardTerm: undefined,
-    }
-  }
-
   function preferredPaymentMethodKey(): PosPaymentMethod | null {
     if (hasCreditCardLine) return 'card'
     if (hasCashLine) {
@@ -3347,7 +3323,7 @@ export default function CheckoutPage() {
         return
       }
       const problem = deliveryProblem(
-        deliveryWithSaleTender(),
+        delivery,
         deliveryCustomerAddress,
         payments.filter((p) => p.amount > 0).map((p) => p.referenceNumber)
       )
@@ -3617,7 +3593,7 @@ export default function CheckoutPage() {
               : undefined,
           salesInvoiceNumber: invoiceNumberInput.trim(),
           // Scenario 66 — nothing at all when delivery is off.
-          ...deliveryPayload(deliveryWithSaleTender(), deliveryCustomerAddress),
+          ...deliveryPayload(delivery, deliveryCustomerAddress),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
           // tpfApprovedAmount is deliberately not sent (client request,
@@ -4005,19 +3981,16 @@ export default function CheckoutPage() {
               deliverTo: delivery.deliverTo.trim(),
               address: resolveDeliveryAddress(delivery, deliveryCustomerAddress).address,
               fee: deliveryFeeAmount,
-              // Scenario 68 — what the fee was actually paid with: the
-              // sale's own tender when it rode along with the sale.
+              // What the fee was paid with — its own tender, chosen in the
+              // Delivery section.
               tenderLabel:
                 deliveryFeeAmount > 0
-                  ? (() => {
-                      const paid = deliveryWithSaleTender()
-                      return deliveryFeeTenderLabel(
-                        paid,
-                        deliveryFeeOptions(paid.tender, configuredMethods).find(
-                          (o) => o.id === paid.optionId
-                        )?.name
-                      )
-                    })()
+                  ? deliveryFeeTenderLabel(
+                      delivery,
+                      deliveryFeeOptions(delivery.tender, configuredMethods).find(
+                        (o) => o.id === delivery.optionId
+                      )?.name
+                    )
                   : null,
               feeCr: deliveryFeeAmount > 0 ? delivery.feeCr.trim() : null,
             }
@@ -4905,22 +4878,6 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* Scenario 66 — beside the other once-per-sale details, above the
-              Order Summary, so the fee is never read as part of the Total. */}
-          {saleMode === 'sale' && (
-            <DeliverySection
-              state={delivery}
-              setState={setDelivery}
-              customerName={selectedCustomer?.name ?? null}
-              customerAddress={deliveryCustomerAddress}
-              customerAddressLoading={deliveryAddressLoading}
-              unavailableReason={deliveryUnavailableReason}
-              configuredMethods={configuredMethods}
-              feeFollowsSale={tenderTarget > 0}
-              fmt={fmt}
-            />
-          )}
-
           {/* QMS tab origin banner */}
           {fromTab && (
             <div className="flex items-center gap-2 px-5 py-2 bg-amber-50 border-b border-amber-200">
@@ -4934,25 +4891,25 @@ export default function CheckoutPage() {
 
           {/* Order summary */}
           <div className="border-b border-purple-200 p-5">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-700">
+            <p className="mb-4 text-sm font-bold uppercase tracking-wider text-prominent-purple-900">
               Order Summary
             </p>
-            <div className="space-y-1.5 text-sm">
+            <div className="space-y-2 text-base">
               {/* Cart — moved into Order Summary so it's always visible next
                   to the totals, instead of scrolled past at the bottom of
                   the catalog list. */}
               {cart.length > 0 && (
-                <div className="max-h-72 overflow-y-auto rounded-lg border border-purple-100 bg-white">
-                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-2 backdrop-blur-sm">
+                <div className="max-h-[28rem] overflow-y-auto rounded-xl border border-purple-200 bg-white">
+                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white/95 px-5 py-3 backdrop-blur-sm">
                     <div className="flex items-center gap-2">
-                      <ShoppingCart size={12} className="text-purple-500" />
-                      <span className="text-xs font-semibold text-gray-700">
+                      <ShoppingCart size={16} className="text-purple-500" />
+                      <span className="text-sm font-semibold text-gray-700">
                         Cart · {displayGroups.length} item{displayGroups.length !== 1 ? 's' : ''}
                       </span>
                     </div>
                   </div>
                   <div className="scroll-fade-x overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                    <table className="min-w-full text-base">
                       <tbody className="divide-y divide-gray-50">
                         {displayGroups.map((group) => {
                           const line = group[0]
@@ -4963,8 +4920,8 @@ export default function CheckoutPage() {
                           return (
                             <Fragment key={line.lineId}>
                               <tr className="group hover:bg-gray-50">
-                                <td className="px-4 py-2">
-                                  <p className="text-xs font-medium text-gray-900">
+                                <td className="px-5 py-4">
+                                  <p className="text-base font-semibold text-prominent-purple-900">
                                     {itemDisplayLabel({
                                       name: line.itemName,
                                       brandName: line.brandName,
@@ -4972,11 +4929,13 @@ export default function CheckoutPage() {
                                       modelNumber: line.modelNumber,
                                     })}
                                     {isGrouped && (
-                                      <span className="ml-1 text-gray-400">× {groupQty}</span>
+                                      <span className="ml-1.5 font-medium text-gray-500">
+                                        × {groupQty}
+                                      </span>
                                     )}
                                   </p>
                                   {line.sku && (
-                                    <p className="text-[10px] text-gray-400">{line.sku}</p>
+                                    <p className="mt-0.5 text-xs text-gray-500">{line.sku}</p>
                                   )}
                                   {line.isSerialTracked &&
                                     (isGrouped ? (
@@ -4987,19 +4946,19 @@ export default function CheckoutPage() {
                                               group.find((l) => !l.serialNumberId)!
                                             )
                                           }
-                                          className="mt-0.5 text-[10px] font-medium text-amber-500 underline-offset-2 hover:underline"
+                                          className="mt-1 text-xs font-semibold text-amber-600 underline-offset-2 hover:underline"
                                         >
                                           ⚠ {group.filter((l) => !l.serialNumberId).length} of{' '}
                                           {groupQty} serial{groupQty !== 1 ? 's' : ''} needed
                                         </button>
                                       ) : (
-                                        <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px]">
-                                          <span className="text-gray-400">SN:</span>
+                                        <p className="mt-1 flex flex-wrap gap-x-1 text-xs">
+                                          <span className="text-gray-500">SN:</span>
                                           {group.map((l, i) => (
                                             <button
                                               key={l.lineId}
                                               onClick={() => setSerialPickerTarget(l)}
-                                              className="font-medium text-green-600 underline-offset-2 hover:underline"
+                                              className="font-semibold text-green-700 underline-offset-2 hover:underline"
                                             >
                                               {l.serialNumberLabel}
                                               {i < group.length - 1 ? ',' : ''}
@@ -5010,7 +4969,7 @@ export default function CheckoutPage() {
                                     ) : (
                                       <button
                                         onClick={() => setSerialPickerTarget(line)}
-                                        className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
+                                        className={`mt-1 text-xs font-semibold underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-700' : 'text-amber-600'}`}
                                       >
                                         {line.serialNumberId
                                           ? `SN: ${line.serialNumberLabel}`
@@ -5018,20 +4977,19 @@ export default function CheckoutPage() {
                                       </button>
                                     ))}
                                   {lineTaxRate != null ? (
-                                    <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
+                                    <span className="ml-1.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
                                       {line.taxRate == null
                                         ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
                                         : `VAT ${lineTaxRate}%`}
                                     </span>
                                   ) : (
-                                    <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
+                                    <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold text-gray-500">
                                       No Tax
                                     </span>
                                   )}
                                   {saleMode !== 'reserve' && (
-                                    <div className="mt-1">
+                                    <div className="mt-2 max-w-64">
                                       <PriceUseSelector
-                                        compact
                                         priceUseTypes={priceUseTypes}
                                         value={line.priceUseTypeId ?? ''}
                                         onChange={(id) =>
@@ -5045,8 +5003,8 @@ export default function CheckoutPage() {
                                     </div>
                                   )}
                                 </td>
-                                <td className="px-3 py-2">
-                                  <div className="flex items-center justify-center gap-1">
+                                <td className="px-3 py-4">
+                                  <div className="flex items-center justify-center gap-2">
                                     <button
                                       onClick={() =>
                                         line.isSerialTracked
@@ -5056,9 +5014,10 @@ export default function CheckoutPage() {
                                             : setQty(line.itemId, line.quantity - 1)
                                       }
                                       disabled={!!cancellationReqId}
-                                      className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
+                                      aria-label="Decrease quantity"
+                                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:border-purple-400 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
                                     >
-                                      <Minus size={10} />
+                                      <Minus size={16} />
                                     </button>
                                     {line.allowDecimal ? (
                                       <div className="flex flex-col items-center gap-0.5">
@@ -5071,16 +5030,16 @@ export default function CheckoutPage() {
                                             const v = parseFloat(e.target.value)
                                             if (!isNaN(v) && v > 0) setQty(line.itemId, v)
                                           }}
-                                          className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                          className="w-20 rounded-lg border border-gray-300 px-2 py-2 text-center text-base font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                         />
                                         {line.uomCode && (
-                                          <span className="text-[9px] text-gray-400 uppercase">
+                                          <span className="text-[11px] text-gray-500 uppercase">
                                             {line.uomCode}
                                           </span>
                                         )}
                                       </div>
                                     ) : (
-                                      <span className="w-6 text-center text-xs font-semibold">
+                                      <span className="min-w-8 text-center text-lg font-bold text-gray-900">
                                         {line.isSerialTracked ? groupQty : line.quantity}
                                       </span>
                                     )}
@@ -5100,13 +5059,14 @@ export default function CheckoutPage() {
                                               })
                                             : setQty(line.itemId, line.quantity + 1)
                                       }
-                                      className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                                      aria-label="Increase quantity"
+                                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:border-purple-400 hover:bg-purple-50 hover:text-purple-700"
                                     >
-                                      <Plus size={10} />
+                                      <Plus size={16} />
                                     </button>
                                   </div>
                                 </td>
-                                <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
+                                <td className="px-3 py-4 text-right text-lg font-bold text-gray-900">
                                   {line.priceResolved ? (
                                     <div className="flex flex-col items-end gap-0.5">
                                       {fmt(
@@ -5120,7 +5080,7 @@ export default function CheckoutPage() {
                                       {line.priceOverrideBy && (
                                         <button
                                           onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                          className="text-[9px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
+                                          className="text-[11px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
                                           title={`Overridden by ${line.priceOverrideApproverName ?? 'a manager'}`}
                                         >
                                           Overridden
@@ -5128,24 +5088,26 @@ export default function CheckoutPage() {
                                       )}
                                     </div>
                                   ) : !line.priceUseTypeId ? (
-                                    <span className="text-[10px] font-medium text-gray-400">
+                                    <span className="text-xs font-medium text-gray-500">
                                       — Select Price Use
                                     </span>
                                   ) : (
                                     <button
                                       onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                      className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
+                                      className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
                                     >
                                       No price — Override
                                     </button>
                                   )}
                                 </td>
-                                <td className="px-3 py-2 text-right">
+                                <td className="py-4 pr-4 pl-1 text-right">
                                   <button
                                     onClick={() => removeFromCart(line.itemId)}
-                                    className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
+                                    aria-label="Remove item"
+                                    title="Remove item"
+                                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
                                   >
-                                    <X size={12} />
+                                    <X size={18} />
                                   </button>
                                 </td>
                               </tr>
@@ -5158,11 +5120,11 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <div className="flex justify-between text-gray-700">
+              <div className="flex justify-between pt-1 text-base text-gray-700">
                 <span>
                   Subtotal ({cart.length} item{cart.length !== 1 ? 's' : ''})
                 </span>
-                <span>{fmt(vatExclSubtotalForBackend)}</span>
+                <span className="font-medium">{fmt(vatExclSubtotalForBackend)}</span>
               </div>
               {promoDiscount > 0 && (
                 <div className="flex justify-between text-green-600">
@@ -5173,7 +5135,7 @@ export default function CheckoutPage() {
               {cart.length > 0 &&
                 !isTaxExempt &&
                 (hasMixedTaxRates || uniformLineTaxRate != null) && (
-                  <div className="flex justify-between text-gray-700 text-xs">
+                  <div className="flex justify-between text-sm text-gray-600">
                     <span>
                       {hasMixedTaxRates
                         ? 'Mixed VAT rates'
@@ -5185,7 +5147,7 @@ export default function CheckoutPage() {
                   </div>
                 )}
               {isTaxExempt && (
-                <div className="flex justify-between text-green-600 text-xs">
+                <div className="flex justify-between text-sm text-green-700">
                   <span>
                     {outputVatCode === OUTPUT_VAT_ZERO_RATED ? 'Zero-rated' : 'VAT-exempt'}
                   </span>
@@ -5193,23 +5155,23 @@ export default function CheckoutPage() {
                 </div>
               )}
             </div>
-            {/* Scenario 68 — the fee is totaled in at checkout; it is still
-                posted on its own receipt and JE, never as part of the sale. */}
-            {deliveryFeeAmount > 0 && (
-              <div
-                className="mt-3 flex items-center justify-between text-xs text-purple-700"
-                data-testid="order-summary-delivery-fee"
-              >
-                <span>Delivery fee</span>
-                <span className="font-semibold">{fmt(deliveryFeeAmount)}</span>
-              </div>
-            )}
             <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
               <span className="text-sm font-semibold text-gray-700">Total</span>
               <span className="text-2xl font-bold text-gray-900" data-testid="order-summary-total">
-                {fmt(Math.round((totalAmount + deliveryFeeAmount) * 100) / 100)}
+                {fmt(totalAmount)}
               </span>
             </div>
+            {/* Scenario 70 — the delivery fee is a note under the Total, never
+                part of it: it is collected on its own receipt and JE. */}
+            {deliveryFeeAmount > 0 && (
+              <div
+                className="mt-2 flex items-center justify-between gap-3 text-xs text-purple-700"
+                data-testid="order-summary-delivery-fee"
+              >
+                <span>Delivery fee — collected on its own CR, not part of the sale</span>
+                <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
+              </div>
+            )}
 
             {/* VAT treatment (Scenario 69 Part F). Not offered on a table tab's
                 sale: it already exists, so there is nothing left to classify. */}
@@ -6275,6 +6237,63 @@ export default function CheckoutPage() {
             )}
           </div>
 
+          {/* Scenario 70 — Delivery follows the Order Summary: Deliver
+              to / address, then the fee with its OWN Paid with and CR, apart
+              from the sale's payment. The Total follows, then the sale's
+              payment fields under it, then Confirm. */}
+          {saleMode === 'sale' && (
+            <DeliverySection
+              state={delivery}
+              setState={setDelivery}
+              customerName={selectedCustomer?.name ?? null}
+              customerAddress={deliveryCustomerAddress}
+              customerAddressLoading={deliveryAddressLoading}
+              unavailableReason={deliveryUnavailableReason}
+              configuredMethods={configuredMethods}
+              fmt={fmt}
+            />
+          )}
+
+          {/* Scenario 70 — the Total comes first, then the payment fields under it
+              (Amount received, CR Number, Change), then Confirm. It is
+              the sale's own figure (what the register collects for the items);
+              the delivery fee under it is a note, not part of it — the fee is a
+              collection on its own CR, paid in the Delivery section above, and
+              never part of the sale. */}
+          {saleMode === 'sale' &&
+            cart.length > 0 &&
+            (tenderTarget > 0 || deliveryFeeAmount > 0) && (
+              <div className="border-t border-purple-200 p-5" data-testid="checkout-totals">
+                {tenderTarget > 0 && (
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-semibold text-gray-700">
+                      {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
+                      <span
+                        className="text-2xl font-bold text-gray-900"
+                        data-testid="checkout-grand-total"
+                      >
+                        {fmt(tenderTarget)}
+                      </span>
+                    </span>
+                  </div>
+                )}
+                {deliveryFeeAmount > 0 && (
+                  <div
+                    className={`flex items-center justify-between gap-3 text-xs text-purple-700 ${
+                      tenderTarget > 0 ? 'mt-2' : ''
+                    }`}
+                    data-testid="checkout-fee-total"
+                  >
+                    <span>Delivery fee — collected on its own CR, not part of the sale</span>
+                    <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
           {/* Payment */}
           <div className="flex-1 p-5">
             {saleMode === 'reserve' && (
@@ -6291,22 +6310,11 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {saleMode === 'sale' && tenderTarget <= 0 && deliveryFeeAmount > 0 ? (
-              // Scenario 68 — only the fee is taken here; its tender and its
-              // own CR are in the Delivery section.
-              <div className="space-y-1" data-testid="payment-delivery-fee-only">
-                <div className="flex items-center justify-between text-lg font-bold text-gray-900">
-                  <span>Total</span>
-                  <span>{fmt(deliveryFeeAmount)}</span>
-                </div>
-                <p className="text-xs text-purple-700">
-                  The delivery fee — paid with the Delivery section&apos;s Paid with, on its own
-                  Delivery CR Number. Nothing else is collected at checkout for this cart.
-                </p>
-              </div>
-            ) : saleMode === 'sale' && tenderTarget <= 0 ? (
+            {saleMode === 'sale' && tenderTarget <= 0 ? (
               <p className="rounded-lg bg-gray-100 px-3 py-2 text-center text-xs text-gray-500">
-                Nothing to collect at checkout for this cart.
+                Nothing to collect for the items at checkout for this cart.
+                {deliveryFeeAmount > 0 &&
+                  ' The delivery fee is paid in the Delivery section below.'}
               </p>
             ) : saleMode === 'reserve' && payments.length === 0 ? (
               <button
@@ -6317,19 +6325,6 @@ export default function CheckoutPage() {
               </button>
             ) : payments.length === 0 ? null : (
               <div className="space-y-2">
-                {saleMode === 'sale' && (
-                  <div className="flex items-center justify-between text-lg font-bold text-gray-900">
-                    <span>Total</span>
-                    <span data-testid="payment-total">{fmt(collectTarget)}</span>
-                  </div>
-                )}
-                {/* Scenario 68 — totaled in; still receipted on its own CR. */}
-                {saleMode === 'sale' && deliveryFeeWithSale > 0 && (
-                  <p className="text-xs text-purple-700" data-testid="payment-delivery-fee">
-                    Includes the delivery fee of {fmt(deliveryFeeWithSale)}, receipted on its own
-                    Delivery CR Number.
-                  </p>
-                )}
                 {payments.map((p, i) => {
                   if (saleMode === 'sale') {
                     // Method is fully decided by Item Payment Mode above (Cash's
@@ -6337,20 +6332,27 @@ export default function CheckoutPage() {
                     // picker or split-tender here, just how much was received.
                     return (
                       <div key={i} className="space-y-1">
-                        <label className="text-xs font-medium text-gray-500">Amount received</label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          aria-label="Amount received"
-                          className="w-full rounded-lg border border-purple-200 px-3 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                          placeholder="0.00"
-                          value={p.amount === 0 ? '' : p.amount}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value)
-                            updatePayment(i, { amount: isNaN(val) ? 0 : val })
-                          }}
-                        />
+                        <label className="block text-[13px] text-gray-700">Amount received</label>
+                        {/* Scenario 70 — large and written from the left, with the
+                            peso sign in front, like the Delivery fee field. */}
+                        <div className="relative">
+                          <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-base font-semibold text-gray-500">
+                            ₱
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            aria-label="Amount received"
+                            className="w-full rounded-lg border-2 border-purple-200 bg-white py-3 pl-9 pr-3 text-base font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:text-sm placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                            placeholder="0.00"
+                            value={p.amount === 0 ? '' : p.amount}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value)
+                              updatePayment(i, { amount: isNaN(val) ? 0 : val })
+                            }}
+                          />
+                        </div>
                       </div>
                     )
                   }
@@ -6514,13 +6516,22 @@ export default function CheckoutPage() {
             )}
 
             {/* Totals */}
-            {(saleMode === 'reserve' ? payments.length > 0 : tenderTarget > 0) &&
+            {/* Scenario 70 — a sale shows only the Change (no "Total Tendered"
+                row: the Amount received just above says it); a reservation
+                keeps its Deposit Tendered and what remains. */}
+            {(saleMode === 'reserve' ? payments.length > 0 : tenderTarget > 0 && change > 0.009) &&
               payments.length > 0 && (
-                <div className="mt-4 space-y-1.5 border-t border-purple-200 pt-4 text-sm">
-                  <div className="flex justify-between text-gray-700">
-                    <span>{saleMode === 'reserve' ? 'Deposit Tendered' : 'Total Tendered'}</span>
-                    <span className="font-mono font-medium text-gray-700">{fmt(totalPaid)}</span>
-                  </div>
+                <div
+                  className={`space-y-1.5 text-sm ${
+                    saleMode === 'reserve' ? 'mt-4 border-t border-purple-200 pt-4' : 'mt-3'
+                  }`}
+                >
+                  {saleMode === 'reserve' && (
+                    <div className="flex justify-between text-gray-700">
+                      <span>Deposit Tendered</span>
+                      <span className="font-mono font-medium text-gray-700">{fmt(totalPaid)}</span>
+                    </div>
+                  )}
                   {saleMode === 'reserve' ? (
                     reserveBalance > 0.009 && (
                       <div className="flex items-center justify-between rounded-lg bg-gray-200 px-3 py-2 text-gray-700">
@@ -7462,15 +7473,11 @@ function SuccessScreen({
   // the receipt has to lead with the collected figure rather than imply the
   // customer paid the lot.
   const totalTendered = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
-  // Scenario 68 — the delivery fee is collected with the sale, so what was
-  // tendered can include it. It is never part of the sale (its own receipt),
-  // so it comes off before working out what the sale itself took.
+  // Scenario 70 — the delivery fee is paid with its own tender on its own
+  // receipt, so the sale's payments (and the change on them) are the sale's
+  // alone.
   const deliveryFeeCollected = success.delivery?.fee ?? 0
-  const feeInTender = totalTendered > 0 ? deliveryFeeCollected : 0
-  const paidNow = Math.max(
-    0,
-    Math.round((totalTendered - success.change - feeInTender) * 100) / 100
-  )
+  const paidNow = Math.max(0, Math.round((totalTendered - success.change) * 100) / 100)
   const notCollectedHere = Math.max(0, Math.round((totalAmount - paidNow) * 100) / 100)
   const tpfOutcomes = installmentOutcomes.filter((o) => o.installmentProvider === 'tpf')
   const allTpf = tpfOutcomes.length > 0 && tpfOutcomes.length === installmentOutcomes.length
@@ -7485,12 +7492,13 @@ function SuccessScreen({
           : allInhouse
             ? 'Financed on installment'
             : 'Financed / billed to account'
+  // What the sale itself took at this register.
+  const saleCollected = notCollectedHere > 0 ? paidNow : totalAmount
   // Everything taken at this register: the sale's part plus the fee.
-  const headlineAmount =
-    Math.round(((notCollectedHere > 0 ? paidNow : totalAmount) + deliveryFeeCollected) * 100) / 100
-  // Worth spelling out only when the cash handed over isn't the headline
-  // figure — otherwise it just repeats the number directly above it.
-  const showTendered = totalTendered > 0 && Math.abs(totalTendered - headlineAmount) >= 0.01
+  const headlineAmount = Math.round((saleCollected + deliveryFeeCollected) * 100) / 100
+  // Worth spelling out only when the cash handed over for the sale isn't the
+  // sale's collected figure — otherwise it just repeats the number above it.
+  const showTendered = totalTendered > 0 && Math.abs(totalTendered - saleCollected) >= 0.01
 
   const borderColor = success.offlineBuffered
     ? 'border-amber-200'
@@ -7745,7 +7753,13 @@ function SuccessScreen({
           <div className="border-t border-gray-100 bg-gray-50 px-6 py-4 text-center">
             {(notCollectedHere > 0 || deliveryFeeCollected > 0) && (
               <div className="mb-3 space-y-1">
-                <div className="flex justify-between text-[11px] text-gray-500">
+                {/* Scenario 70 — the sale and the delivery fee on their own lines:
+                    two documents (the invoice and the fee's CR). The fee is part
+                    of what was collected, not part of the sale total. */}
+                <div
+                  className="flex justify-between text-[11px] text-gray-500"
+                  data-testid="success-sale-total-line"
+                >
                   <span>Sale total</span>
                   <span className="font-medium text-gray-700">{fmt(totalAmount)}</span>
                 </div>
@@ -7760,7 +7774,7 @@ function SuccessScreen({
                     className="flex justify-between text-[11px] text-gray-500"
                     data-testid="success-delivery-fee-line"
                   >
-                    <span>Delivery fee (own CR)</span>
+                    <span>Delivery fee (own CR, not part of the sale)</span>
                     <span className="font-medium text-gray-700">+{fmt(deliveryFeeCollected)}</span>
                   </div>
                 )}
