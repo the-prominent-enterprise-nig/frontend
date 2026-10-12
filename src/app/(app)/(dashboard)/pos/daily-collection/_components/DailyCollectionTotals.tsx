@@ -29,7 +29,6 @@ const LINE_NOTES: Record<string, string> = {
   DP: 'Down payment',
   MI: 'Monthly instalment, incl. FP',
   OTHERS: 'DC — delivery charge',
-  CHECK: 'Cheque',
   CARD: 'Card swipe',
   'OTHER NON-CASH': 'Gift card, store credit, TPF',
 }
@@ -163,7 +162,7 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
       )}
 
       <div className="mt-auto flex items-baseline justify-between gap-3 border-t border-gray-200 bg-gray-50 px-4 py-3">
-        <span className="text-sm font-semibold text-gray-900">Grand total collected</span>
+        <span className="text-sm font-semibold text-gray-900">Total branch collection</span>
         <span className={`${FIGURE} text-base font-semibold`}>
           {peso(report.grandTotalCollection)}
         </span>

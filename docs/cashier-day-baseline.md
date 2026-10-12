@@ -157,9 +157,10 @@ its way out: run the ledger half first, then seed, then the screen half.
 Without the seed the frontend tests skip, with the command in the skip
 message — a missing fixture is not a regression. The same script, run with the
 dev `.env` instead, puts the day in front of a human: open
-`/pos/daily-collection`, pick **E2E Cashier Day Baseline Branch**, and the two
-sheets are the client's own day.
+`/pos/daily-collection`, pick **Mabini**, and the two sheets are the client's
+own day.
 
-Everything either half creates is named `E2E-BASE`, and both clear the previous
-baseline day off that branch before ringing up a new one — run them as often as
-you like and there is still one day there.
+The day is rung up at the real Mabini branch (`PMIB`); everything either half
+creates there is named `E2E-BASE`, and both clear the previous baseline day
+off that branch before ringing up a new one — run them as often as you like
+and there is still one day there.

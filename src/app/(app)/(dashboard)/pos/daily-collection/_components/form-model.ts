@@ -229,82 +229,59 @@ export function footerAmount(line: FooterLine): string {
   return line.negate ? `(${peso(line.amount)})` : peso(line.amount)
 }
 
-/** Which line of the client's form a non-cash tender prints on. Mirrors the
- * backend's `bucketForTender` (src/pos/tender-key.ts); change one, change the
- * other. */
-type TenderLine = 'GCASH' | 'CHECK' | 'CARD' | 'OTHER NON-CASH'
+/** Provider names the client's closing sheet calls something else: Soundpay
+ * is the gateway behind GCash. */
+const PROVIDER_LINE_ALIAS: Record<string, string> = { SOUNDPAY: 'GCASH' }
 
-const TENDER_LINE_BY_METHOD: Record<string, TenderLine> = {
-  qr: 'GCASH',
-  gcash: 'GCASH',
-  maya: 'GCASH',
-  cheque: 'CHECK',
-  check: 'CHECK',
-  card: 'CARD',
+/**
+ * The line a non-cash tender prints on, named the way the client's SAMPLE FOR
+ * CLOSING SESSION names it: CHECK, GCASH, CARD-Maya, ECPAY, MAYA, or a bank by
+ * name. Mirrors the backend form sheet's `tenderLine`; change one, change the
+ * other.
+ */
+export function tenderLine(tender: string): string {
+  const [method, provider = ''] = tender.split('::')
+  const name = provider.trim()
+  if (method === 'check' || method === 'cheque') return 'CHECK'
+  if (method === 'bank_transfer') return name || 'BANK'
+  if (method === 'card') return name ? `CARD-${name}` : 'CARD'
+  if (method === 'qr' || method === 'gcash' || method === 'maya') {
+    const label = (name || (method === 'maya' ? 'MAYA' : 'GCASH')).toUpperCase()
+    return PROVIDER_LINE_ALIAS[label] ?? label
+  }
+  return 'OTHER NON-CASH'
 }
 
-const BANK_METHOD = 'bank_transfer'
-
-function nonCashByLine(report: DailyCollectionReport): Record<TenderLine, number> {
-  const totals: Record<TenderLine, number> = {
-    GCASH: 0,
-    CHECK: 0,
-    CARD: 0,
-    'OTHER NON-CASH': 0,
-  }
+/** One line per provider, a down payment and a plain sale on it together.
+ * CHECK and GCASH lead and are kept at zero — pre-printed on the client's
+ * form; the screen drops empty rows itself (`withValuesOnly`). */
+function nonCashLines(report: DailyCollectionReport): FooterLine[] {
+  const totals = new Map<string, number>([
+    ['CHECK', 0],
+    ['GCASH', 0],
+  ])
   for (const t of report.nonCash ?? []) {
-    const method = t.tender.split('::')[0]
-    if (method === BANK_METHOD || t.kind === 'DP') continue
-    totals[TENDER_LINE_BY_METHOD[method] ?? 'OTHER NON-CASH'] += t.amount
+    const label = tenderLine(t.tender)
+    totals.set(label, (totals.get(label) ?? 0) + t.amount)
   }
-  return totals
-}
-
-/** The recap group a non-cash tender prints under. */
-function groupOf(tender: string): TenderLine | 'BANK' {
-  const method = tender.split('::')[0]
-  if (method === BANK_METHOD) return 'BANK'
-  return TENDER_LINE_BY_METHOD[method] ?? 'OTHER NON-CASH'
-}
-
-/** Non-cash down payments, one line each, named like the tender line they
- * belong to: `GCASH`, or the bank's name. */
-function dpLines(report: DailyCollectionReport): FooterLine[] {
-  return (report.nonCash ?? [])
-    .filter((t) => t.kind === 'DP')
-    .map((t) => ({
-      label: groupOf(t.tender) === 'BANK' ? t.tender.split('::')[1] || 'BANK' : groupOf(t.tender),
-      amount: t.amount || null,
-      negate: false,
-      emphasis: false,
-    }))
-}
-
-/** One line per bank, labelled with the bank's name: `BDO`. A bank transfer with
- * no bank recorded falls back to a bare `BANK`. */
-function bankLines(report: DailyCollectionReport): FooterLine[] {
-  return (report.nonCash ?? [])
-    .filter((t) => groupOf(t.tender) === 'BANK' && t.kind !== 'DP')
-    .map((t) => ({
-      label: t.tender.split('::')[1] || 'BANK',
-      amount: t.amount || null,
-      negate: false,
-      emphasis: false,
-    }))
+  return [...totals.entries()].map(([label, amount]) => ({
+    label,
+    amount: amount || null,
+    negate: false,
+    emphasis: false,
+    group: 'nonCash' as const,
+  }))
 }
 
 /**
  * The bottom-left block as the client's form has it (Alimodian sample,
  * 2026-09-23): COD, DP, MI (part-payments included), OTHERS with DC, the
- * highlighted TOTAL COLLECTION, then GCASH (QR included), one BANK line per
- * bank, and CHECK. A card swipe or other
- * non-cash tender has no line on their form, so it gets one only on a day
- * that took some — never silently dropped. Mirrored by the backend's Excel
- * form sheet.
+ * highlighted TOTAL COLLECTION, then the non-cash tenders one per provider,
+ * as the client's SAMPLE FOR CLOSING SESSION itemises them: CHECK, GCASH,
+ * CARD-Maya, ECPAY, MAYA. Mirrored by the backend's Excel form sheet.
  */
 export function buildCollectionRecapLines(report: DailyCollectionReport): FooterLine[] {
   const kind = (k: CollectionKind): number => report.byKind[k] ?? 0
-  const nonCash = nonCashByLine(report)
   const line = (label: string, amount: number, extra: Partial<FooterLine> = {}): FooterLine => ({
     label,
     amount: amount || null,
@@ -347,14 +324,7 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
     // branch, and the client's own data uses that word for something else
     // (the `_Satellite` sub-locations in the Item Master).
     ...report.offsiteCash.map((c) => line(`At ${c.name}`, c.amount, { group: 'placement' })),
-    line('GCASH', nonCash.GCASH, { group: 'nonCash' }),
-    ...bankLines(report).map((l) => ({ ...l, group: 'nonCash' as const })),
-    ...dpLines(report).map((l) => ({ ...l, group: 'nonCash' as const })),
-    line('CHECK', nonCash.CHECK, { group: 'nonCash' }),
-    ...(nonCash.CARD ? [line('CARD', nonCash.CARD, { group: 'nonCash' })] : []),
-    ...(nonCash['OTHER NON-CASH']
-      ? [line('OTHER NON-CASH', nonCash['OTHER NON-CASH'], { group: 'nonCash' })]
-      : []),
+    ...nonCashLines(report),
   ]
 }
 

@@ -32,7 +32,7 @@ import { gotoReady } from './utils'
  * regression.
  */
 
-const BASELINE_BRANCH = 'E2E Cashier Day Baseline Branch'
+const BASELINE_BRANCH = 'Mabini'
 
 const SEED_HINT =
   'The cashier day baseline is not in this database for today — seed it with ' +
@@ -98,23 +98,17 @@ test.describe('POS — the cashier day baseline on screen', () => {
     await expect(figure(page, '500.00').first()).toBeVisible()
     await expect(row(page, 'Total cash')).toContainText('17,425.00')
 
-    // The non-cash block: the card down payment, the two QR/e-wallet
-    // collections (3,500.00 of Soundpay and Maya QR, 2,940.00 of ECPay on its
-    // own DP line), the bond check taken on a New Receipt, and the three
-    // financiers' balances.
-    await expect(figure(page, '7,500.00').first()).toBeVisible()
-    await expect(figure(page, '3,500.00').first()).toBeVisible()
-    await expect(figure(page, '2,940.00').first()).toBeVisible()
-    await expect(figure(page, '56,000.00').first()).toBeVisible()
-    await expect(figure(page, '76,000.00').first()).toBeVisible()
+    // The non-cash block, one line per provider as the client's closing
+    // itemises it: the bond check, GCASH (Soundpay), CARD-Maya, ECPAY, MAYA.
+    await expect(row(page, 'CHECK')).toContainText('56,000.00')
+    await expect(row(page, 'GCASH')).toContainText('2,000.00')
+    await expect(row(page, 'CARD-Maya')).toContainText('7,500.00')
+    await expect(row(page, 'ECPAY')).toContainText('2,940.00')
+    await expect(row(page, 'MAYA')).toContainText('1,500.00')
 
-    // What the screen totals the day at today. The client's own sheet says
-    // 87,365.00; the difference is the 76,000.00 of TPF balances — money no
-    // one has collected yet, which the report still counts as collected
-    // (backend gap test G7). The figure here is deliberately the current one,
-    // so this test fails the moment that is fixed and both halves of the
-    // baseline move together.
-    await expect(row(page, 'Grand total collected')).toContainText('163,365.00')
+    // The sheet's TOTAL BRANCH COLLECTION — the 76,000.00 the financiers owe
+    // is a receivable, not a collection (G7).
+    await expect(row(page, 'Total branch collection')).toContainText('87,365.00')
   })
 
   test('the Daily Sales Monitoring sheet reads back the day’s three cuts', async ({ page }) => {
@@ -151,7 +145,7 @@ test.describe('POS — the cashier day baseline on screen', () => {
     await gotoReady(page, '/pos/undeposited-funds')
     // Scope the cards to this branch, so another branch's deposits cannot
     // stand in for the baseline's.
-    await page.getByRole('textbox', { name: 'All branches' }).fill('E2E Cashier')
+    await page.getByRole('textbox', { name: 'All branches' }).fill(BASELINE_BRANCH)
     await page.getByText(BASELINE_BRANCH, { exact: false }).first().click()
 
     // One deposit, carrying the sheet's own TOTAL BRANCH COLLECTION: the

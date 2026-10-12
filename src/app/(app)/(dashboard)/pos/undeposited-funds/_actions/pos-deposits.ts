@@ -33,7 +33,23 @@ export interface PosDeposit {
   clearedAt: string | null
   journalEntryId: string | null
   sessions: PosDepositSession[]
+  /** Scenario 70 G8 — the slips accounting itemised; empty on a deposit
+   * recorded before slips existed. */
+  lines?: PosDepositLine[]
+  /** G11 — the New Receipts banked with the sessions. */
+  newReceipts?: { id: string; number: string | null; payerName: string; amount: number }[]
   attachmentCount?: number
+}
+
+/** One recorded slip, as the deposit detail shows it. */
+export interface PosDepositLine {
+  id: string
+  amount: string | number
+  reference: string | null
+  note: string | null
+  bankAccount: { id: string; name: string; accountNumber: string | null }
+  /** Null for the branch's own cash (1-01-010). */
+  clearsAccount: { id: string; number: string | null; name: string } | null
 }
 
 /** Scenario 70 G8 — one slip: a bank, an amount, and what it empties. */
@@ -43,6 +59,8 @@ export interface PosDepositLineInput {
   /** A processor's clearing account; omitted for the branch's own cash. */
   clearsAccountId?: string
   note?: string
+  /** This bank's own deposit slip / reference number. */
+  reference?: string
 }
 
 export interface CreatePosDepositInput {

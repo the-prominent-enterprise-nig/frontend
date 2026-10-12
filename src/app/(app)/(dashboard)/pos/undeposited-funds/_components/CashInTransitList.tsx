@@ -31,6 +31,19 @@ import {
 } from './PosDepositsView'
 
 const SESSIONS_KEY = 'undeposited-sessions'
+const NEW_RECEIPTS_KEY = 'unbanked-new-receipts'
+
+/** The branch's New Receipts still to be banked — or every branch's, for no
+ * branch. Money taken at the counter against no sale, banked with the day. */
+function useUnbankedReceipts(branchId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: [NEW_RECEIPTS_KEY, branchId],
+    queryFn: () =>
+      AcknowledgementReceipts.list({ branchId: branchId ?? undefined, unbanked: 'true' }),
+    enabled,
+    staleTime: 0,
+  })
+}
 
 /** Where a session's cash is: still to bank, in a deposit waiting on
  * accounting, or banked. */
@@ -45,12 +58,27 @@ interface LedgerRow {
   terminalCode: string | null
   cashierName: string | null
   closedAt: string
+  /** The session's whole branch collection: `cash` plus `clearing`. */
   amount: number
+  /** What sits in Undeposited Funds — drawer cash and cheques. The cash
+   * slips of a deposit must come to this exactly. */
+  cash: number
+  /** Card and e-wallet money waiting in processors' clearing accounts. */
+  clearing: number
   status: LedgerStatus
   /** The deposit it is in, when it is in one with a record. */
   depositId: string | null
   bankName: string | null
   depositDate: string | null
+}
+
+function amounts(
+  cash: number,
+  clearing: number | undefined
+): Pick<LedgerRow, 'amount' | 'cash' | 'clearing'> {
+  const c = Number(cash || 0)
+  const k = Number(clearing || 0)
+  return { amount: c + k, cash: c, clearing: k }
 }
 
 function fromOutstanding(r: CashInTransitSessionRow): LedgerRow {
@@ -61,7 +89,7 @@ function fromOutstanding(r: CashInTransitSessionRow): LedgerRow {
     terminalCode: r.terminalCode,
     cashierName: r.cashierName,
     closedAt: r.closedAt,
-    amount: Number(r.amount || 0),
+    ...amounts(r.amount, r.clearingAmount),
     status: r.pendingDeposit ? 'awaiting' : 'to_deposit',
     depositId: r.pendingDeposit?.id ?? null,
     bankName: r.pendingDeposit?.bankName ?? null,
@@ -77,7 +105,7 @@ function fromDeposited(r: CashInTransitHistoryRow): LedgerRow {
     terminalCode: r.terminalCode,
     cashierName: r.cashierName,
     closedAt: r.closedAt,
-    amount: Number(r.amount || 0),
+    ...amounts(r.amount, r.clearingAmount),
     status: 'deposited',
     depositId: r.posDepositId,
     bankName: r.depositedTo,
@@ -205,6 +233,7 @@ export function CashInTransitList({
     selection.clear()
     void queryClient.invalidateQueries({ queryKey: [SESSIONS_KEY] })
     void queryClient.invalidateQueries({ queryKey: ['undeposited-branches'] })
+    void queryClient.invalidateQueries({ queryKey: [NEW_RECEIPTS_KEY] })
     refreshDeposits(queryClient)
   }
 
@@ -280,7 +309,6 @@ export function CashInTransitList({
         <DepositForm
           accounts={ledger.accounts}
           sessions={depositing}
-          totalAmount={depositing.reduce((sum, r) => sum + r.amount, 0)}
           branchId={depositing[0]?.branchId ?? null}
           onClose={() => setDepositing(null)}
           onSaved={() => {
@@ -702,15 +730,20 @@ function SummaryCards({
   branchId: string | null
 }): React.JSX.Element {
   const summary = useDepositSummary(branchId).data?.data
+  const receipts = useUnbankedReceipts(branchId).data?.data ?? []
   const toDeposit = rows.filter((r) => r.status === 'to_deposit')
-  const undeposited = toDeposit.reduce((sum, r) => sum + r.amount, 0)
+  const undeposited =
+    toDeposit.reduce((sum, r) => sum + r.amount, 0) +
+    receipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
   const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <SummaryCard
         label="Undeposited"
         amount={undeposited}
-        note={`${plural(toDeposit.length, 'session')} to deposit`}
+        note={`${plural(toDeposit.length, 'session')}${
+          receipts.length ? ` and ${plural(receipts.length, 'New Receipt')}` : ''
+        } to deposit`}
         tone="text-amber-700"
       />
       <SummaryCard
@@ -758,6 +791,15 @@ interface Slip {
   /** A processor's clearing account; empty means the branch's own cash. */
   clearsAccountId: string
   note: string
+  /** This bank's own deposit slip number — each bank issues its own. */
+  reference: string
+}
+
+/** The slips' own numbers, joined — the deposit's reference, capped at the
+ * 100 characters it is stored in. */
+function slipReferences(slips: Slip[]): string | undefined {
+  const refs = [...new Set(slips.map((s) => s.reference.trim()).filter(Boolean))]
+  return refs.length ? refs.join(', ').slice(0, 100) : undefined
 }
 
 /** Centavos, so a tally of typed amounts cannot drift into 0.004 differences. */
@@ -768,19 +810,18 @@ const EMPTY_SLIP: Slip = {
   amount: '',
   clearsAccountId: '',
   note: '',
+  reference: '',
 }
 
 function DepositForm({
   accounts,
   sessions,
-  totalAmount,
   branchId,
   onClose,
   onSaved,
 }: {
   accounts: BankAccount[]
   sessions: LedgerRow[]
-  totalAmount: number
   branchId: string | null
   onClose: () => void
   onSaved: () => void
@@ -790,10 +831,11 @@ function DepositForm({
     // hours of every Manila morning, so the deposit opened with yesterday's
     // date on it and posted there unless somebody noticed.
     depositDate: new Date().toLocaleDateString('en-CA'),
-    reference: '',
   })
   const [slips, setSlips] = useState<Slip[]>([{ ...EMPTY_SLIP }])
-  const [pickedReceipts, setPickedReceipts] = useState<Set<string>>(new Set())
+  // Receipts start ticked — the client banks the whole day in one deposit —
+  // so what is tracked is the ones accounting leaves out.
+  const [skippedReceipts, setSkippedReceipts] = useState<Set<string>>(new Set())
   const [files, setFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -801,40 +843,45 @@ function DepositForm({
   // The branch's New Receipts still to be banked — money taken at the counter
   // against no sale, which sits in the branch's cash like any collection
   // (Scenario 70 G11) and is banked on the same slip run.
-  const newReceipts = useQuery({
-    queryKey: ['unbanked-new-receipts', branchId],
-    queryFn: () =>
-      AcknowledgementReceipts.list({ branchId: branchId ?? undefined, unbanked: 'true' }),
-    enabled: !!branchId,
-    staleTime: 0,
-  })
+  const newReceipts = useUnbankedReceipts(branchId, !!branchId)
   const receipts = newReceipts.data?.data ?? []
 
   // The chart, for the "clears" column: a slip either empties the branch's
   // own cash or one processor's clearing account.
   const chart = useQuery({
     queryKey: ['deposit-clearing-accounts'],
-    queryFn: () => getAccounts({ limit: 500 }),
+    queryFn: () => getAccounts({ search: 'clearing' }),
     staleTime: 5 * 60_000,
   })
-  const clearingOptions = (chart.data?.data?.items ?? [])
+  // `/accounts` answers with a bare array, not the paginated shape its type
+  // claims — reading `.items` alone left this list empty.
+  const chartData: unknown = chart.data?.data
+  const chartAccounts: Account[] = Array.isArray(chartData)
+    ? chartData
+    : ((chartData as { items?: Account[] } | undefined)?.items ?? [])
+  const clearingOptions = chartAccounts
     .filter((a: Account) => /clearing/i.test(a.name))
     .map((a: Account) => ({
       value: a.id,
       label: a.number ? `${a.number} — ${a.name}` : a.name,
     }))
 
-  const receiptsTotal = receipts
-    .filter((r) => pickedReceipts.has(r.id))
-    .reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
+  const pickedReceipts = receipts.filter((r) => !skippedReceipts.has(r.id))
+  const receiptsTotal = pickedReceipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
   /** What the branch's own cash slips have to come to. */
-  const outstanding = round2(totalAmount + receiptsTotal)
+  const outstanding = round2(sessions.reduce((sum, s) => sum + s.cash, 0) + receiptsTotal)
+  /** What the processors' clearing accounts hold for these sessions. */
+  const clearingTotal = round2(sessions.reduce((sum, s) => sum + s.clearing, 0))
+  /** The client's TOTAL BRANCH COLLECTION: everything this deposit banks. */
+  const branchCollection = round2(outstanding + clearingTotal)
   const slipAmount = (slip: Slip): number => Number(slip.amount) || 0
   const cashSlips = round2(
     slips.filter((s) => !s.clearsAccountId).reduce((sum, s) => sum + slipAmount(s), 0)
   )
+  const clearingSlips = round2(
+    slips.filter((s) => s.clearsAccountId).reduce((sum, s) => sum + slipAmount(s), 0)
+  )
   const difference = round2(outstanding - cashSlips)
-  const slipsTotal = round2(slips.reduce((sum, s) => sum + slipAmount(s), 0))
   const incomplete = slips.some((s) => !s.bankAccountId || slipAmount(s) <= 0)
 
   const setSlip = (i: number, patch: Partial<Slip>) =>
@@ -849,15 +896,18 @@ function DepositForm({
     const res = await createPosDeposit({
       bankAccountId: slips[0].bankAccountId,
       sessionIds: sessions.map((s) => s.sessionId),
-      newReceiptIds: [...pickedReceipts],
+      newReceiptIds: pickedReceipts.map((r) => r.id),
       lines: slips.map((s) => ({
         bankAccountId: s.bankAccountId,
         amount: slipAmount(s),
         clearsAccountId: s.clearsAccountId || undefined,
         note: s.note || undefined,
+        reference: s.reference.trim() || undefined,
       })),
       depositDate: form.depositDate,
-      reference: form.reference || undefined,
+      // The deposit's own reference — what the list searches and the Daily
+      // Collection Report prints — is the slips' numbers together.
+      reference: slipReferences(slips),
     })
     if (!res.success || !res.data) {
       setSaving(false)
@@ -883,11 +933,12 @@ function DepositForm({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      {/* Header and footer stay put; only the middle scrolls, so however
-          many files are attached the Record deposit button is never pushed
-          out of view. */}
-      <div className="flex w-full max-w-3xl max-h-[90vh] flex-col rounded-lg bg-white shadow-xl">
+    <div className="absolute inset-0 z-40 flex bg-white">
+      {/* Fills the content area (the layout's `main` frame), leaving the side
+          and top navigation in view: one slip per bank needs the room. Header
+          and footer stay put; only the middle scrolls, so however many files
+          are attached the Record deposit button is never pushed out of view. */}
+      <div className="flex h-full w-full flex-col bg-white">
         <div className="flex shrink-0 items-center justify-between px-5 py-4 border-b">
           <h3 className="text-lg font-semibold">Record deposit</h3>
           <button onClick={onClose}>
@@ -900,7 +951,7 @@ function DepositForm({
               Saved as a draft — accounting checks the slip and clears it, which posts the deposit
               on the date below.
             </p>
-            <DepositSessions sessions={sessions} totalAmount={totalAmount} />
+            <DepositSessions sessions={sessions} />
 
             {receipts.length > 0 && (
               <div className="rounded-lg border border-gray-200">
@@ -912,9 +963,9 @@ function DepositForm({
                     <li key={r.id} className="flex items-center gap-3 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
-                        checked={pickedReceipts.has(r.id)}
+                        checked={!skippedReceipts.has(r.id)}
                         onChange={() =>
-                          setPickedReceipts((prev) => {
+                          setSkippedReceipts((prev) => {
                             const next = new Set(prev)
                             if (next.has(r.id)) next.delete(r.id)
                             else next.add(r.id)
@@ -940,9 +991,7 @@ function DepositForm({
                 accepting a figure worked out for them. */}
             <div className="rounded-lg border border-gray-200">
               <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Slips — one per bank
-                </p>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Slips</p>
                 <button
                   type="button"
                   onClick={() => setSlips((prev) => [...prev, { ...EMPTY_SLIP }])}
@@ -953,7 +1002,10 @@ function DepositForm({
               </div>
               <div className="space-y-3 p-3">
                 {slips.map((slip, i) => (
-                  <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_7rem_1fr_auto]">
+                  <div
+                    key={i}
+                    className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_8rem_12rem_1fr_auto]"
+                  >
                     <SearchableSelect
                       value={slip.bankAccountId}
                       onChange={(value) => setSlip(i, { bankAccountId: value })}
@@ -972,6 +1024,14 @@ function DepositForm({
                       placeholder="Amount"
                       aria-label={`Slip ${i + 1} amount`}
                       className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right font-mono text-sm tabular-nums"
+                    />
+                    <input
+                      value={slip.reference}
+                      onChange={(e) => setSlip(i, { reference: e.target.value })}
+                      placeholder="Reference no."
+                      aria-label={`Slip ${i + 1} reference`}
+                      maxLength={100}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
                     />
                     <SearchableSelect
                       value={slip.clearsAccountId}
@@ -992,43 +1052,35 @@ function DepositForm({
                   </div>
                 ))}
               </div>
-              <div className="flex items-baseline justify-between border-t border-gray-200 px-3 py-2 text-sm">
-                <span className="text-gray-600">
-                  Cash slips {fmtMoney(cashSlips)} of {fmtMoney(outstanding)}
-                </span>
-                <span
-                  className={`font-mono tabular-nums ${
-                    Math.abs(difference) < 0.005 ? 'text-green-700' : 'text-amber-700'
-                  }`}
-                >
-                  {Math.abs(difference) < 0.005
-                    ? `Balanced · ${fmtMoney(slipsTotal)} in total`
-                    : `${fmtMoney(Math.abs(difference))} ${difference > 0 ? 'short' : 'over'}`}
-                </span>
+              <div className="border-t border-gray-200 py-1">
+                <TallyRow label="Cash and cheques" slips={cashSlips} due={outstanding} />
+                {/* Not enforced: a processor's payout can arrive net of its
+                    fees, which accounting reads off the settlement report. */}
+                {clearingTotal > 0 && (
+                  <TallyRow
+                    label="Card and e-wallet"
+                    slips={clearingSlips}
+                    due={clearingTotal}
+                    note="fine if a processor took fees"
+                  />
+                )}
+                <div className="flex items-baseline justify-between border-t border-gray-100 px-3 pt-2 pb-1 text-sm font-semibold text-gray-900">
+                  <span>Total branch collection</span>
+                  <span className="font-mono tabular-nums">{fmtMoney(branchCollection)}</span>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="block text-xs font-medium text-gray-600 mb-1">Deposit Date *</span>
-                <input
-                  required
-                  type="date"
-                  value={form.depositDate}
-                  onChange={(e) => setForm({ ...form, depositDate: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                />
-              </label>
-              <label className="block">
-                <span className="block text-xs font-medium text-gray-600 mb-1">Reference</span>
-                <input
-                  value={form.reference}
-                  onChange={(e) => setForm({ ...form, reference: e.target.value })}
-                  placeholder="Deposit slip / reference number"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                />
-              </label>
-            </div>
+            <label className="block sm:w-1/2">
+              <span className="block text-xs font-medium text-gray-600 mb-1">Deposit Date *</span>
+              <input
+                required
+                type="date"
+                value={form.depositDate}
+                onChange={(e) => setForm({ ...form, depositDate: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </label>
             <AttachmentsPanel
               entityType={POS_DEPOSIT_ENTITY}
               title="Proof of deposit"
@@ -1071,15 +1123,38 @@ function DepositForm({
   )
 }
 
-/** What is being banked, so it can be checked before it is recorded. */
-function DepositSessions({
-  sessions,
-  totalAmount,
+/** One line of the slips' tally: what they come to against what is due. */
+function TallyRow({
+  label,
+  slips,
+  due,
+  note,
 }: {
-  sessions: LedgerRow[]
-  totalAmount: number
-}): React.JSX.Element | null {
+  label: string
+  slips: number
+  due: number
+  note?: string
+}): React.JSX.Element {
+  const diff = round2(due - slips)
+  const balanced = Math.abs(diff) < 0.005
+  return (
+    <div className="flex items-baseline justify-between gap-3 px-3 py-1.5 text-sm">
+      <span className="text-gray-600">
+        {label} {fmtMoney(slips)} of {fmtMoney(due)}
+      </span>
+      <span className={`font-mono tabular-nums ${balanced ? 'text-green-700' : 'text-amber-700'}`}>
+        {balanced
+          ? 'Balanced'
+          : `${fmtMoney(Math.abs(diff))} ${diff > 0 ? 'short' : 'over'}${note ? ` · ${note}` : ''}`}
+      </span>
+    </div>
+  )
+}
+
+/** What is being banked, so it can be checked before it is recorded. */
+function DepositSessions({ sessions }: { sessions: LedgerRow[] }): React.JSX.Element | null {
   if (sessions.length === 0) return null
+  const totalAmount = sessions.reduce((sum, s) => sum + s.amount, 0)
   return (
     <div className="rounded-lg border border-gray-200">
       <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm">

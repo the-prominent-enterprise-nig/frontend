@@ -85,8 +85,8 @@ export function DepositDetailLoader({
   const deposit = query.data?.data
   if (!deposit) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <Loader2 className="h-6 w-6 animate-spin text-white" />
+      <div className="absolute inset-0 z-40 flex items-center justify-center bg-white">
+        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
       </div>
     )
   }
@@ -131,20 +131,29 @@ export function DepositDetail({
   const attachmentCount = attachments.data?.data?.length ?? 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b px-5 py-4">
+    // Fills the content area like Record deposit, leaving the navigation in
+    // view; the header stays put and the body scrolls.
+    <div className="absolute inset-0 z-40 flex bg-white">
+      <div className="flex h-full w-full flex-col bg-white">
+        <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
           <div>
             {/* The status lives with the title, not loose above the list. */}
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-semibold">
-                Deposit to {deposit.bankAccount.name} · {fmtDate(deposit.depositDate)}
+                {/* With slips the money went to several banks; the header's own
+                    bank is only the first slip's. */}
+                {deposit.lines?.length
+                  ? `Deposit · ${fmtDate(deposit.depositDate)}`
+                  : `Deposit to ${deposit.bankAccount.name} · ${fmtDate(deposit.depositDate)}`}
               </h3>
               <StatusChip status={deposit.status} />
             </div>
             <p className="text-xs text-gray-500">
               {fmtMoney(Number(deposit.amount))} · {deposit.sessions.length} session
               {deposit.sessions.length === 1 ? '' : 's'}
+              {deposit.lines?.length
+                ? ` · ${deposit.lines.length} slip${deposit.lines.length === 1 ? '' : 's'}`
+                : ''}
               {deposit.reference ? ` · Ref ${deposit.reference}` : ''}
             </p>
           </div>
@@ -152,8 +161,9 @@ export function DepositDetail({
             <X className="h-5 w-5 text-gray-500" />
           </button>
         </div>
-        <div className="space-y-4 p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           <SessionList deposit={deposit} />
+          <SlipList deposit={deposit} />
           <AttachmentsPanel
             entityType={POS_DEPOSIT_ENTITY}
             entityId={deposit.id}
@@ -162,19 +172,21 @@ export function DepositDetail({
             readOnly={!isDraft || !canManage}
             onChanged={onChanged}
           />
-          {isDraft && (
-            <DraftActions
-              deposit={deposit}
-              canManage={canManage}
-              canVerify={canVerify}
-              hasAttachments={attachmentCount > 0}
-              onDone={() => {
-                onChanged()
-                onClose()
-              }}
-            />
-          )}
         </div>
+        {/* Pinned below the scrolling body, so attaching files never moves
+            Cancel draft or Clear & post. */}
+        {isDraft && (
+          <DraftActions
+            deposit={deposit}
+            canManage={canManage}
+            canVerify={canVerify}
+            hasAttachments={attachmentCount > 0}
+            onDone={() => {
+              onChanged()
+              onClose()
+            }}
+          />
+        )}
       </div>
     </div>
   )
@@ -184,18 +196,66 @@ function SessionList({ deposit }: { deposit: PosDeposit }): React.JSX.Element {
   return (
     <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 text-sm">
       {deposit.sessions.map((s) => (
-        <li key={s.id} className="flex justify-between gap-4 px-3 py-2">
-          <span>
-            {s.terminal?.name ?? 'Terminal'} ·{' '}
-            {[s.cashier?.firstName, s.cashier?.lastName].filter(Boolean).join(' ') ||
-              s.cashier?.name ||
-              'Cashier'}{' '}
-            · closed {fmtDate(s.closedAt)}
-          </span>
-          <span className="font-medium">{fmtMoney(Number(s.undepositedAmount ?? 0))}</span>
+        // Named, not priced: the slips below are the figures accounting checks.
+        <li key={s.id} className="px-3 py-2">
+          {s.terminal?.name ?? 'Terminal'} ·{' '}
+          {[s.cashier?.firstName, s.cashier?.lastName].filter(Boolean).join(' ') ||
+            s.cashier?.name ||
+            'Cashier'}{' '}
+          · closed {fmtDate(s.closedAt)}
         </li>
       ))}
     </ul>
+  )
+}
+
+/** The slips as recorded — each bank, its amount and slip number, and the
+ * account it empties. */
+function SlipList({ deposit }: { deposit: PosDeposit }): React.JSX.Element | null {
+  const lines = deposit.lines ?? []
+  if (lines.length === 0) return null
+  return (
+    <div>
+      {lines.length > 0 && (
+        <table className="w-full overflow-hidden rounded-lg border border-gray-200 text-sm">
+          <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+            <tr>
+              <th className="px-3 py-2 text-left">Clears</th>
+              <th className="px-3 py-2 text-right">Amount</th>
+              <th className="px-3 py-2 text-left">Bank</th>
+              <th className="px-3 py-2 text-left">Reference no.</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {lines.map((l) => (
+              <tr key={l.id}>
+                <td className="px-3 py-2">
+                  {l.clearsAccount
+                    ? `${l.clearsAccount.number ?? ''} ${l.clearsAccount.name}`.trim()
+                    : '1-01-010 Cash and Cash Equivalents'}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(Number(l.amount))}</td>
+                <td className="px-3 py-2">{l.bankAccount.name}</td>
+                <td className="px-3 py-2 text-gray-600">{l.reference ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+/** What Clear & post will do, in one line: the amount, how many banks the
+ * slips went to (one for a deposit recorded before slips existed), the date. */
+function ClearSummary({ deposit }: { deposit: PosDeposit }): React.JSX.Element {
+  const banks = new Set((deposit.lines ?? []).map((l) => l.bankAccount.id)).size || 1
+  return (
+    <p>
+      Posts <strong>{fmtMoney(Number(deposit.amount))}</strong> to {banks} bank
+      {banks === 1 ? '' : 's'}, dated <strong>{fmtDate(deposit.depositDate)}</strong>. This
+      can&apos;t be undone.
+    </p>
   )
 }
 
@@ -238,7 +298,7 @@ function DraftActions({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-5 py-3">
       {canVerify && !hasAttachments && (
         <p className="mr-auto text-xs text-amber-700">Attach the deposit slip before clearing.</p>
       )}
@@ -262,11 +322,7 @@ function DraftActions({
           title={confirm === 'clear' ? 'Clear and post this deposit?' : 'Cancel this draft?'}
           message={
             confirm === 'clear' ? (
-              <p>
-                Posts <strong>{fmtMoney(Number(deposit.amount))}</strong> Dr{' '}
-                {deposit.bankAccount.name} / Cr Undeposited Funds, dated{' '}
-                <strong>{fmtDate(deposit.depositDate)}</strong>. This cannot be undone here.
-              </p>
+              <ClearSummary deposit={deposit} />
             ) : (
               <p>Its sessions go back to Undeposited Funds and can be put in another deposit.</p>
             )
