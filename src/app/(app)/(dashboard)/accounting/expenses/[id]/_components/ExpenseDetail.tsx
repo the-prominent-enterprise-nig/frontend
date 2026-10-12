@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Ban, CheckCircle, Loader2, Pencil, Printer, Repeat, Trash2 } from 'lucide-react'
+import { ArrowLeft, Ban, CheckCircle, Loader2, Pencil, Printer, Trash2 } from 'lucide-react'
 import { Expenses, fmtMoney, type ExpenseDocument } from '@/src/libs/data/AccountingV2Data'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocument'
@@ -142,13 +142,6 @@ export default function ExpenseDetail({ id }: { id: string }) {
   // View (this is it), so the same expense offers the same actions wherever
   // it is looked at.
   const menuItems: RowMenuItem[] = [
-    // Any expense can become the template for a recurring one: the form opens
-    // already filled in, and only the schedule is left to say.
-    {
-      label: 'Make recurring',
-      icon: Repeat,
-      onClick: () => router.push(`/accounting/recurring-expenses/new?from=${id}`),
-    },
     ...(e.status === 'DRAFT'
       ? [
           { label: 'Record', icon: CheckCircle, onClick: record, variant: 'success' as const },
@@ -210,15 +203,6 @@ export default function ExpenseDetail({ id }: { id: string }) {
         {e.voucherNumber && (
           <span className="font-mono text-[12px] text-gray-500">{e.expenseNumber}</span>
         )}
-        {e.recurringExpense && (
-          <Link
-            href="/accounting/recurring-expenses"
-            title="This draft was made by a recurring expense"
-            className="inline-flex items-center gap-1 rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-semibold text-prominent-purple-700 hover:underline"
-          >
-            <Repeat className="h-3 w-3" /> {e.recurringExpense.name}
-          </Link>
-        )}
       </div>
 
       <section className="mt-3 rounded-lg border border-gray-200 bg-white p-5">
@@ -241,23 +225,53 @@ export default function ExpenseDetail({ id }: { id: string }) {
           <Field label="Total">
             <span className="font-semibold tabular-nums">{fmtMoney(e.totalAmount)}</span>
           </Field>
-          {showWithholding && (
-            <>
-              <Field label="Withholding tax">
-                <span className="tabular-nums">−{fmtMoney(withheld)}</span>
-              </Field>
-              <Field label="Net payable">
-                <span className="font-semibold tabular-nums">{fmtMoney(netPayable)}</span>
-              </Field>
-            </>
-          )}
           {e.payeeAddress && <Field label="Address">{e.payeeAddress}</Field>}
           {e.payeeTin && <Field label="Payee's TIN">{e.payeeTin}</Field>}
           {e.paidFor.length > 0 && <Field label="Supplier invoices">{e.paidFor.join(', ')}</Field>}
           {e.salesInvoice && <Field label="Sales Invoice">{e.salesInvoice}</Field>}
           {e.costCenter && <Field label="Cost center">{e.costCenter}</Field>}
           {e.description && <Field label="Description">{e.description}</Field>}
+          {e.notes && (
+            <Field label="Notes">
+              <span className="whitespace-pre-line">{e.notes}</span>
+            </Field>
+          )}
         </div>
+      </section>
+
+      {/* One entry can be settled through several methods at once, each with
+          its own reference and amount — the list only has room for the first. */}
+      <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-prominent-purple-900">Payment</h2>
+        {e.payments.length === 0 ? (
+          <p className="py-4 text-center text-[13px] text-gray-400">No payment methods recorded.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {e.payments.map((p, i) => (
+              <li key={i} className="flex items-center justify-between gap-3 py-2.5 text-[13px]">
+                <div>
+                  <span className="text-gray-800">{p.paymentMethod.replace(/_/g, ' ')}</span>
+                  {p.bankAccount && <span className="text-gray-500"> · {p.bankAccount}</span>}
+                  {p.reference && <span className="text-gray-500"> · {p.reference}</span>}
+                </div>
+                <span className="shrink-0 font-semibold tabular-nums text-gray-900">
+                  {fmtMoney(p.amount)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {e.journalEntryId && (
+          <p className="mt-3 text-[12px] text-gray-500">
+            Posted to the GL ·{' '}
+            <Link
+              href={`/accounting/journal-entries/${e.journalEntryId}`}
+              className="text-purple-600 hover:underline"
+            >
+              view journal entry
+            </Link>
+          </p>
+        )}
       </section>
 
       <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
@@ -357,66 +371,45 @@ export default function ExpenseDetail({ id }: { id: string }) {
             </tbody>
           </table>
         </div>
-        <div className="mt-3 flex justify-end gap-6 text-[13px]">
-          {/* No Subtotal line: amounts are VAT-inclusive, so it was always
-              the same figure as the Total beside it. The VAT is reported as
-              the share of that total which posts to Input VAT. */}
+        {/* The sums, one under another, amounts lined up on the right. Amounts are
+            VAT-inclusive, so the Input VAT is the share of the total that posts to Input
+            VAT and the subtotal is what is left of it. */}
+        <dl className="mt-4 ml-auto w-full max-w-sm space-y-1.5 text-[13px]">
           {showTax && (
-            <span className="text-gray-500">
-              incl. Input VAT{' '}
-              <span className="tabular-nums text-gray-800">{fmtMoney(e.taxAmount)}</span>
-            </span>
-          )}
-          <span className="font-semibold text-prominent-purple-900">
-            Total <span className="tabular-nums">{fmtMoney(e.totalAmount)}</span>
-          </span>
-          {showWithholding && (
             <>
-              <span className="text-gray-500">
-                Less withholding tax{' '}
-                <span className="tabular-nums text-gray-800">−{fmtMoney(withheld)}</span>
-              </span>
-              <span className="font-semibold text-prominent-purple-900">
-                Net payable <span className="tabular-nums">{fmtMoney(netPayable)}</span>
-              </span>
+              <div className="flex justify-between gap-6 text-gray-500">
+                <dt>Subtotal (net of VAT)</dt>
+                <dd className="tabular-nums text-gray-800">
+                  {fmtMoney(e.totalAmount - e.taxAmount)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-6 text-gray-500">
+                <dt>Input VAT (included)</dt>
+                <dd className="tabular-nums text-gray-800">{fmtMoney(e.taxAmount)}</dd>
+              </div>
             </>
           )}
-        </div>
-      </section>
-
-      {/* One entry can be settled through several methods at once, each with
-          its own reference and amount — the list only has room for the first. */}
-      <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-prominent-purple-900">Payment</h2>
-        {e.payments.length === 0 ? (
-          <p className="py-4 text-center text-[13px] text-gray-400">No payment methods recorded.</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {e.payments.map((p, i) => (
-              <li key={i} className="flex items-center justify-between gap-3 py-2.5 text-[13px]">
-                <div>
-                  <span className="text-gray-800">{p.paymentMethod.replace(/_/g, ' ')}</span>
-                  {p.bankAccount && <span className="text-gray-500"> · {p.bankAccount}</span>}
-                  {p.reference && <span className="text-gray-500"> · {p.reference}</span>}
-                </div>
-                <span className="shrink-0 font-semibold tabular-nums text-gray-900">
-                  {fmtMoney(p.amount)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {e.journalEntryId && (
-          <p className="mt-3 text-[12px] text-gray-500">
-            Posted to the GL ·{' '}
-            <Link
-              href={`/accounting/journal-entries/${e.journalEntryId}`}
-              className="text-purple-600 hover:underline"
-            >
-              view journal entry
-            </Link>
-          </p>
-        )}
+          <div
+            className={`flex justify-between gap-6 font-semibold text-prominent-purple-900 ${
+              showTax ? 'border-t border-gray-200 pt-1.5' : ''
+            }`}
+          >
+            <dt>Total</dt>
+            <dd className="tabular-nums">{fmtMoney(e.totalAmount)}</dd>
+          </div>
+          {showWithholding && (
+            <>
+              <div className="flex justify-between gap-6 text-gray-500">
+                <dt>Less: withholding tax</dt>
+                <dd className="tabular-nums text-gray-800">−{fmtMoney(withheld)}</dd>
+              </div>
+              <div className="flex justify-between gap-6 border-t border-gray-200 pt-1.5 text-[14px] font-bold text-prominent-purple-900">
+                <dt>Net payable</dt>
+                <dd className="tabular-nums">{fmtMoney(netPayable)}</dd>
+              </div>
+            </>
+          )}
+        </dl>
       </section>
 
       {/* A receipt often only turns up after the expense is recorded, so

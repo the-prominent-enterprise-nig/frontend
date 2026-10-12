@@ -18,7 +18,6 @@ import {
   ClipboardList,
   ClipboardX,
   Coins,
-  Repeat,
   Contact,
   CreditCard,
   FileBarChart,
@@ -37,7 +36,6 @@ import {
   PackageCheck,
   Receipt,
   ReceiptText,
-  Percent,
   PhilippinePeso,
   ScrollText,
   Settings,
@@ -198,14 +196,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
       },
       {
-        // Scenario 69 Part C — sits beside Account Mapping: that screen says
-        // which GL account each tax posts to, this one says what the tax is.
-        label: 'Tax Codes',
-        href: '/accounting/tax-codes',
-        icon: Percent,
-        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_CODES_READ,
-      },
-      {
         label: 'AR Invoices',
         href: '/accounting/ar-invoices',
         icon: Receipt,
@@ -244,15 +234,8 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/expenses',
         icon: Coins,
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
-      },
-      {
-        // Expenses that come round again (rent, electricity…): saved once, a draft
-        // is made on each due date. Same permission as Expenses — it is an expense
-        // that has not happened yet.
-        label: 'Recurring Expenses',
-        href: '/accounting/recurring-expenses',
-        icon: Repeat,
-        requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+        // Recurring Expenses is a tab under Expenses, not a sidebar item of its own,
+        // so Expenses stays lit on its sub-pages.
         usePrefix: true,
       },
       {
@@ -333,21 +316,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: FileBarChart,
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
-      {
-        // Scenario 69 Part H — VAT and withholding tax reports. Open to whoever
-        // reads the financial reports; a branch user sees their own branch.
-        label: 'Tax Reports',
-        href: '/accounting/tax-reports',
-        icon: ScrollText,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      {
-        // The VAT settlement and withholding tax remittance: company-level.
-        label: 'Tax Closing',
-        href: '/accounting/tax-closing',
-        icon: Landmark,
-        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_CLOSING_READ,
-      },
+      // Tax Codes, Tax Reports and Tax Closing are hidden from the nav (not on main yet).
+      // Their routes still load: /accounting/tax-codes, /accounting/tax-reports,
+      // /accounting/tax-closing.
       // Scenario 62 — raw data from every module, read-only. Business Owner
       // only; exact permission so the Accountant's accounting:* can't reach.
       {

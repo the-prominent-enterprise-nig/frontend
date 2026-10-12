@@ -42,8 +42,10 @@ async function pickCustom(page: Page, combo: Locator, option: string | RegExp): 
 /** Picks an account in the line's searchable Account picker. */
 async function pickAccount(page: Page, name: string): Promise<void> {
   await expect(async () => {
-    await page.locator('[aria-label="Account"]').first().click()
-    await page.keyboard.type(name)
+    const account = page.locator('[aria-label="Account"]').first()
+    await account.click()
+    // fill, not type: a retry must replace the text, not pile onto it.
+    await account.fill(name)
     await page.locator('div.fixed button', { hasText: name }).first().click({ timeout: 2_000 })
   }).toPass({ timeout: 15_000 })
 }
@@ -52,11 +54,20 @@ async function pickAccount(page: Page, name: string): Promise<void> {
 // goes blank once Other is picked, so it cannot be found by its label).
 const payeeType = (page: Page) =>
   page.getByRole('combobox', { name: /^(— Select —|Customer|Supplier|Employee|Other)$/ }).first()
-const paymentAmount = (page: Page) =>
-  page
-    .locator('label', { hasText: /^Amount$/ })
-    .locator('input')
-    .first()
+
+/** The form's required Paid from (Bank/Cash) and, on the one line, its Division — the
+ * client's form marks both, so Save draft is refused until they are picked. Takes the
+ * first real option of each list (the first button is the "— Select —" placeholder). */
+async function pickPaidFromAndDivision(page: Page): Promise<void> {
+  await expect(async () => {
+    await page.locator('[aria-label="Select source of fund"]').click()
+    await page.locator('body > div.fixed button').nth(1).click({ timeout: 2_000 })
+  }).toPass({ timeout: 15_000 })
+  await expect(async () => {
+    await page.locator('[aria-label="Division"]').first().click()
+    await page.locator('body > div.fixed button').nth(1).click({ timeout: 2_000 })
+  }).toPass({ timeout: 15_000 })
+}
 
 test.describe('Expenses — withholding tax', () => {
   test('a rent expense shows what is withheld, what is left to pay, and the payment follows it', async ({
@@ -86,21 +97,16 @@ test.describe('Expenses — withholding tax', () => {
     await expect(withholding).toContainText('EWT-RENT-5 · 5%')
     await expect(withholding).toContainText('−₱2,500.00 withheld')
     const form = page.locator('form')
-    await expect(form).toContainText('Total: ₱56,000.00')
+    await expect(form.getByText('Total Amount').locator('..')).toContainText('₱56,000.00')
     await expect(form).toContainText('Less: withholding tax: −₱2,500.00')
     await expect(form).toContainText('Net payable: ₱53,500.00')
-    // The one payment is the cash that leaves, not the whole amount.
-    await expect(paymentAmount(page)).toHaveValue('53500.00')
+    // The one payment is the cash that leaves, not the whole amount — it has no
+    // amount box of its own any more; the saved draft's payment is checked below.
 
     // The marker lets the saved draft be found again.
     const marker = `E2E-S69E-${Date.now()}`
-    await fillStable(
-      page
-        .locator('label', { hasText: /^Description$/ })
-        .locator('input')
-        .first(),
-      marker
-    )
+    await fillStable(page.locator('input[aria-label="Description"]'), marker)
+    await pickPaidFromAndDivision(page)
     const [saved] = await Promise.all([
       page.waitForResponse(
         (r) => r.url().endsWith('/api/expenses') && r.request().method() === 'POST'
@@ -127,6 +133,30 @@ test.describe('Expenses — withholding tax', () => {
     const detail = page.locator('main, body').first()
     await expect(detail).toContainText('EWT-RENT-5')
     await expect(detail).toContainText('₱53,500.00')
+  })
+
+  test('a withholding code can be picked before the amount is typed', async ({ page }) => {
+    await gotoReady(page, '/accounting/expenses/new')
+    await expect(page.getByRole('heading', { name: 'New Expense' })).toBeVisible({
+      timeout: 15_000,
+    })
+    await pickCustom(page, payeeType(page), 'Supplier')
+    await pickAccount(page, 'Rent Expense')
+
+    // The amount is required but not typed yet — that must not lock the box.
+    const withholding = page.locator('[data-testid="line-withholding"]').first()
+    await expect(withholding.getByRole('combobox')).toBeEnabled()
+    await pickCustom(page, withholding.getByRole('combobox'), /EWT-RENT-5/)
+    await expect(withholding).toContainText('EWT-RENT-5')
+
+    // And the withheld figure follows once the amount arrives.
+    await fillStable(page.locator('input[aria-label="Amount"]').first(), '56000')
+    await pickCustom(
+      page,
+      page.getByRole('combobox', { name: /Non-VAT|Input VAT|Exempt/ }).first(),
+      'Input VAT'
+    )
+    await expect(withholding).toContainText('−₱2,500.00 withheld')
   })
 
   test('a saved draft reopens on the amount that was typed, with its code and its payment', async ({
@@ -169,7 +199,6 @@ test.describe('Expenses — withholding tax', () => {
     await expect(page.locator('[data-testid="line-withholding"]').first()).toContainText(
       'EWT-RENT-5 · 5%'
     )
-    await expect(paymentAmount(page)).toHaveValue('53500')
     await expect(page.locator('form')).toContainText('Net payable: ₱53,500.00')
   })
 
@@ -187,9 +216,9 @@ test.describe('Expenses — withholding tax', () => {
     await expect(column.first()).toBeVisible()
 
     // ...unless the entry is a payroll run: compensation, not an EWT matter.
-    await pickCustom(page, page.getByRole('combobox', { name: /None|Payroll/ }).first(), 'Payroll')
+    await page.getByRole('checkbox', { name: 'Payroll' }).check()
     await expect(column).toHaveCount(0)
-    await pickCustom(page, page.getByRole('combobox', { name: /None|Payroll/ }).first(), /None/)
+    await page.getByRole('checkbox', { name: 'Payroll' }).uncheck()
     await expect(column.first()).toBeVisible()
 
     // A customer refund is not a purchase either.

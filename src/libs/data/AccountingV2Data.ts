@@ -1811,6 +1811,8 @@ export interface BusinessExpenseLine {
     transactionNumber: string
     salesInvoiceNumber?: string | null
     subtotal: number | string
+    /** Whose commission it is — the line's Sales Agent. */
+    sellingAgent?: { id: string; name: string } | null
   } | null
 }
 // One entry can be paid through several methods at once (e.g. part Cash,
@@ -1855,8 +1857,8 @@ export interface BusinessExpense {
   /** payeeType=AGENT — the sales agent being paid (commission release). */
   agentId?: string | null
   agent?: { id: string; name: string } | null
-  /** The Recurring Expense that made this draft, when one did. */
-  recurringExpense?: { id: string; name: string } | null
+  /** Free-text notes on the voucher (the form's ④ Notes). */
+  notes?: string | null
   specialAccountType?: SpecialAccountType | null
   liquidatesType?: LiquidatableType | null
   payee?: string | null
@@ -1946,8 +1948,7 @@ export interface ExpenseDocument {
      * rows total `netPayable`). */
     withholdingAmount?: number
     netPayable?: number
-    /** The Recurring Expense that made this entry, when one did. */
-    recurringExpense?: { id: string; name: string } | null
+    notes?: string | null
     status: string
     payeeType: PayeeType | null
     otherCategory: OtherCategory | null
@@ -2023,67 +2024,25 @@ export interface CreateSpecialAccountBody {
   notes?: string
 }
 
-// ─── Recurring Expenses ──────────────────────────────────────────────────
-export type RecurringFrequency = 'MONTHLY' | 'WEEKLY' | 'QUARTERLY' | 'YEARLY' | 'AS_NEEDED'
-/** The expense a recurring expense makes — an expense's own header fields and lines
- * (same shape as the Expense form sends) plus the one payment, whose amount is
- * worked out each time. */
-export interface RecurringExpenseTemplate {
-  payeeType?: PayeeType | null
-  otherCategory?: string | null
-  supplierId?: string | null
-  customerId?: string | null
-  employeeId?: string | null
-  agentId?: string | null
-  payee?: string | null
-  sourceOfFundId?: string | null
-  description?: string | null
-  costCenter?: string | null
-  lines: Array<Record<string, any> & { categoryAccountId: string; amount: number }>
-  payment: { paymentMethod: string; bankAccountId?: string | null; reference?: string | null }
-}
-export interface RecurringExpense {
+// ─── Recurring Expense list ──────────────────────────────────────────────
+/** One entry on the client's List of Recurring Expenses (rental, electricity, water…):
+ * a name and the account it is filed under. */
+export interface RecurringExpenseType {
   id: string
   name: string
-  frequency: RecurringFrequency
-  dayOfMonth?: number | null
-  startDate: string
-  endDate?: string | null
-  /** The next due date; null for an "as needed" one. */
-  nextRunDate?: string | null
-  isActive: boolean
-  template: RecurringExpenseTemplate
-  branchId?: string | null
-  lastRunAt?: string | null
-  /** Why the last scheduled run failed; it is tried again the next day. */
-  lastError?: string | null
-  /** The payee by name, and what it usually comes to (the lines, VAT inclusive). */
-  payeeLabel?: string | null
-  usualAmount: number
-  /** The newest visible draft it made. */
-  drafts?: {
-    id: string
-    status: string
-    voucherNumber?: string | null
-    expenseNumber: string
-    expenseDate: string
-  }[]
+  accountId: string | null
+  account: { id: string; number: string; name: string } | null
+  sortOrder: number
 }
-export interface RecurringRunSummary {
-  checked: number
-  generated: number
-  failed: { id: string; name: string; reason: string }[]
-}
-export const RecurringExpenses = {
-  list: () => api.get<RecurringExpense[]>('/recurring-expenses'),
-  get: (id: string) => api.get<RecurringExpense>(`/recurring-expenses/${id}`),
-  create: (body: any) => api.post<RecurringExpense>('/recurring-expenses', body),
-  update: (id: string, body: any) => api.patch<RecurringExpense>(`/recurring-expenses/${id}`, body),
-  remove: (id: string) => api.delete(`/recurring-expenses/${id}`),
-  /** "Create draft now" — returns the draft expense it made. */
-  run: (id: string) => api.post<BusinessExpense>(`/recurring-expenses/${id}/run`, {}),
-  /** What the daily job does, on demand. */
-  runDue: () => api.post<RecurringRunSummary>('/recurring-expenses/run-due', {}),
+export const RecurringExpenseTypes = {
+  list: () => api.get<RecurringExpenseType[]>('/recurring-expense-types'),
+  get: (id: string) => api.get<RecurringExpenseType>(`/recurring-expense-types/${id}`),
+  create: (body: { name: string; accountId?: string }) =>
+    api.post<RecurringExpenseType>('/recurring-expense-types', body),
+  /** `accountId: null` clears the account. */
+  update: (id: string, body: { name?: string; accountId?: string | null }) =>
+    api.patch<RecurringExpenseType>(`/recurring-expense-types/${id}`, body),
+  remove: (id: string) => api.delete(`/recurring-expense-types/${id}`),
 }
 
 /** The pickers behind a Fuel / Vehicle Repair / Commission expense line. */
@@ -2114,6 +2073,9 @@ export interface ExpenseAgentOption {
 export interface ExpenseAgentSale {
   id: string
   number: string
+  /** Whose sale it is — picking it fills a commission line's Sales Agent. */
+  agentId?: string | null
+  agentName?: string | null
   date: string
   customerName: string | null
   subtotal: number
@@ -2129,6 +2091,9 @@ export const Expenses = {
     api.get<ExpenseAgentOption[]>('/expenses/lookups/agents', search ? { search } : undefined),
   agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
     api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
+  /** The sales a commission line can release — one agent's with `agentId`, any agent's without. */
+  commissionSales: (params?: { agentId?: string; search?: string; excludeExpenseId?: string }) =>
+    api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
   list: (params?: {
     search?: string
     status?: string

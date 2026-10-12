@@ -1,7 +1,13 @@
 /**
  * Client item #10 — Fuel, Vehicle Repair & Maintenance and Sales Commission
  * expense lines carry extra fields, decided by the line's own account
- * (Account.expenseKind), shown on a detail row under the line.
+ * (Account.expenseKind). They are columns of the line table, as on the client's
+ * form: Plate Number / Liters, Repair/Service Type / Service Detail, and Sales
+ * Invoice No. / Sales Agent — each there when any line needs it and blank on the
+ * lines that don't.
+ *
+ * Also guards the form's shape (the four numbered sections; Paid from replacing the
+ * payment method rows; Division required on every line).
  *
  * UI contract only: the rules the server enforces (plate required, service type
  * required, the sale must be the agent's, a sale is released once) are proven in
@@ -10,11 +16,12 @@
  * path needs an agent with a sale, which the seed does not create, so it stops at
  * "pick the agent first".
  *
- * Self-cleaning: never submits the form, so nothing is created.
+ * Self-cleaning: never submits the form (the Save draft clicks below are all stopped
+ * by validation), so nothing is created.
  */
 
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady } from './utils'
+import { fillStable, gotoReady } from './utils'
 
 async function pickPayee(page: Page, label: string) {
   // The payee dropdown reads "— Select —" until chosen, then shows its value.
@@ -39,6 +46,10 @@ async function pickAccount(page: Page, typed: string, full: string) {
   await page.getByText(full, { exact: true }).first().click()
 }
 
+/** One line of the table, by what its account is for (the row carries `data-kind`). */
+const kindRow = (page: Page, kind: string) =>
+  page.locator(`[data-testid="expense-line"][data-kind="${kind}"]`)
+
 // Tall enough that a line's dropdown opens inside the window however long the header
 // above it grows (it now carries an Attachments card); a fixed popup cannot be
 // scrolled into view.
@@ -56,14 +67,20 @@ test.describe('Expense lines — Fuel, Vehicle Repair, Commission', () => {
     await pickPayee(page, 'Supplier')
     await pickAccount(page, 'Fuel and', '6-04-010 — Fuel and Lubricants')
 
-    const fuel = page.locator('[data-testid="line-kind-fuel"]')
+    const fuel = kindRow(page, 'FUEL')
     await expect(fuel).toBeVisible()
-    await expect(fuel.getByText('Plate No. *')).toBeVisible()
+    await expect(page.getByText('Plate Number *', { exact: true })).toBeVisible()
+    await expect(page.getByText('Liters (optional)', { exact: true })).toBeVisible()
     // The type is part of the plate's label (`<plate> - <type>`), not a box of its own.
-    await expect(fuel.getByText('Vehicle Type')).toHaveCount(0)
-    await expect(fuel.getByText('Liters (optional)')).toBeVisible()
+    await expect(page.getByText('Vehicle Type')).toHaveCount(0)
+    // The client's mockup had a "Vehicle (Auto)" column; it was left out on purpose.
+    await expect(page.getByText(/Vehicle \(Auto\)/)).toHaveCount(0)
     // The roster lists a driver per vehicle; an expense line is not tied to one.
-    await expect(fuel.getByText(/driver/i)).toHaveCount(0)
+    await expect(page.locator('form').getByText(/driver/i)).toHaveCount(0)
+    // Only Fuel's columns: nothing for repairs or commissions.
+    await expect(page.getByText('Service Type *')).toHaveCount(0)
+    await expect(page.getByText('Sales Invoice No. *')).toHaveCount(0)
+    await expect(page.getByTestId('expense-kind-chip')).toHaveText(/fuel expense/i)
 
     // Any roster vehicle will do — take the first real option (the first button in
     // the open list is the "— Select —" placeholder).
@@ -83,13 +100,13 @@ test.describe('Expense lines — Fuel, Vehicle Repair, Commission', () => {
     expect(plateText).not.toMatch(/Delivery|Service|Collector/)
     await firstOption.click()
     await expect(plate).toHaveValue(plateText)
-    await expect(fuel.getByText(/driver/i)).toHaveCount(0)
+    await expect(page.locator('form').getByText(/driver/i)).toHaveCount(0)
   })
 
   test('a plate the roster lists twice shows as two distinguishable vehicles', async ({ page }) => {
     await pickPayee(page, 'Supplier')
     await pickAccount(page, 'Fuel and', '6-04-010 — Fuel and Lubricants')
-    const plate = page.locator('[data-testid="line-kind-fuel"] [aria-label="Plate number"]')
+    const plate = kindRow(page, 'FUEL').locator('[aria-label="Plate number"]')
     await plate.click()
     await page.keyboard.type('60109')
     // The seeded roster lists 60109 as a Delivery TOP DOWN, a Service AIRCOOL and a
@@ -114,19 +131,23 @@ test.describe('Expense lines — Fuel, Vehicle Repair, Commission', () => {
     await expect(page.getByText('Tag / Area')).toHaveCount(0)
   })
 
-  test('moving the line to Vehicle Repairs swaps the row and asks for the kind of job', async ({
+  test('moving the line to Vehicle Repairs swaps the columns and asks for the kind of job', async ({
     page,
   }) => {
     await pickPayee(page, 'Supplier')
     await pickAccount(page, 'Fuel and', '6-04-010 — Fuel and Lubricants')
-    await expect(page.locator('[data-testid="line-kind-fuel"]')).toBeVisible()
+    await expect(kindRow(page, 'FUEL')).toBeVisible()
+    await expect(page.getByText('Liters (optional)', { exact: true })).toBeVisible()
 
     await pickAccount(page, 'Vehicle Rep', '6-04-030 — Vehicle Repairs and Maintenance')
-    const repair = page.locator('[data-testid="line-kind-vehicle_repair"]')
+    const repair = kindRow(page, 'VEHICLE_REPAIR')
     await expect(repair).toBeVisible()
-    await expect(page.locator('[data-testid="line-kind-fuel"]')).toHaveCount(0)
-    await expect(repair.getByText('Repair/Service Type *')).toBeVisible()
-    await expect(repair.getByText('Service detail / remarks')).toBeVisible()
+    await expect(kindRow(page, 'FUEL')).toHaveCount(0)
+    await expect(page.getByText('Service Type *')).toBeVisible()
+    await expect(page.getByText('Service Detail', { exact: true })).toBeVisible()
+    // Liters is Fuel's; with no Fuel line left its column goes.
+    await expect(page.getByText('Liters (optional)', { exact: true })).toHaveCount(0)
+    await expect(page.getByTestId('expense-kind-chip')).toHaveText(/repair & maintenance expense/i)
 
     await repair.getByText('— Select —').last().click()
     for (const type of ['Oil Change', 'Tires', 'Battery', 'Others']) {
@@ -134,22 +155,88 @@ test.describe('Expense lines — Fuel, Vehicle Repair, Commission', () => {
     }
   })
 
-  test('an account with no kind gets no detail row', async ({ page }) => {
+  test('an account with no kind gets no extra columns', async ({ page }) => {
     await pickPayee(page, 'Supplier')
     await pickAccount(page, 'Rent', '6-03-010 — Rent Expense')
-    await expect(page.locator('[data-testid^="line-kind-"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="expense-line"]')).toHaveAttribute('data-kind', '')
+    await expect(page.getByText('Plate Number *')).toHaveCount(0)
+    await expect(page.getByText('Sales Invoice No. *')).toHaveCount(0)
+    await expect(page.getByTestId('expense-kind-chip')).toHaveCount(0)
   })
 
-  test('Sales Agent payee: a commission line asks for the agent before an invoice', async ({
+  test('the form follows the client layout: four sections, Paid from, no payment-method rows', async ({
+    page,
+  }) => {
+    for (const heading of ['Header Information', 'Expense Details', 'Attachments', 'Notes']) {
+      await expect(page.getByRole('heading', { name: new RegExp(heading, 'i') })).toBeVisible()
+    }
+    await expect(page.getByText('Paid from (Bank/Cash) *')).toBeVisible()
+    await expect(page.getByText('Reference Number')).toBeVisible()
+    // The voucher number is issued on save — nothing to type on a new entry.
+    await expect(page.getByText('Voucher #')).toHaveCount(0)
+    await expect(page.getByText('Total Amount')).toBeVisible()
+    // The method, the amount and splitting a payment across several are gone: one
+    // payment, the total less any withholding, from the fund chosen above.
+    await expect(page.locator('form').getByText(/payment method/i)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /add payment/i })).toHaveCount(0)
+    await expect(page.getByLabel('Notes')).toBeVisible()
+  })
+
+  test('Save draft waits for Paid from, then for a Division on every line — nothing is sent', async ({
+    page,
+  }) => {
+    const writes: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().endsWith('/api/expenses')) writes.push(r.url())
+    })
+    await pickPayee(page, 'Supplier')
+    await pickAccount(page, 'Rent', '6-03-010 — Rent Expense')
+    await fillStable(page.locator('input[aria-label="Amount"]').first(), '100')
+
+    await page.getByRole('button', { name: 'Save draft' }).click()
+    await expect(page.getByText('Pick where this is paid from (Bank/Cash).')).toBeVisible()
+
+    await page.locator('[aria-label="Select source of fund"]').click()
+    await page.locator('body > div.fixed button').nth(1).click()
+    await page.getByRole('button', { name: 'Save draft' }).click()
+    await expect(page.getByText('Every line needs a Division.')).toBeVisible()
+    expect(writes).toEqual([])
+  })
+
+  test('Sales Agent payee: a commission line reads its agent from the payee', async ({ page }) => {
+    await pickPayee(page, 'Sales Agent')
+    await expect(page.getByText('Sales Agent *').first()).toBeVisible()
+    // Only the agent's own picker — not the customer / employee / supplier ones.
+    await expect(page.getByText('Customer *')).toHaveCount(0)
+    await expect(page.getByText('Employee *')).toHaveCount(0)
+
+    await pickAccount(page, 'Commissions - S', '6-01-040 — Commissions - Sales')
+    const commission = kindRow(page, 'AGENT_COMMISSION')
+    await expect(commission).toBeVisible()
+    await expect(page.getByText('Sales Invoice No. *')).toBeVisible()
+    await expect(page.getByTestId('expense-kind-chip')).toHaveText(/sales commission expense/i)
+    // The invoice picker is there from the start; the agent column reads the payee.
+    await expect(commission.locator('[aria-label="Sales agent"]')).toHaveText('—')
+    // No plate / liters / repair columns on a commission-only entry.
+    await expect(page.getByText('Plate Number *')).toHaveCount(0)
+  })
+
+  test("Sales Agent payee: the line's Sales Agent column is the payee, read-only", async ({
     page,
   }) => {
     await pickPayee(page, 'Sales Agent')
-    await expect(page.getByText('Sales Agent *').first()).toBeVisible()
-
     await pickAccount(page, 'Commissions - S', '6-01-040 — Commissions - Sales')
-    const commission = page.locator('[data-testid="line-kind-agent_commission"]')
-    await expect(commission).toBeVisible()
-    await expect(commission.getByText(/Pick the Sales Agent above first/)).toBeVisible()
+    const commission = kindRow(page, 'AGENT_COMMISSION')
+    await expect(commission.locator('[aria-label="Sales agent"]')).toHaveText('—')
+
+    await page.locator('[aria-label="Select sales agent"]').click()
+    const firstAgent = page.locator('body > div.fixed button').nth(1)
+    await expect(firstAgent).toBeVisible({ timeout: 10_000 })
+    const agent = (await firstAgent.innerText()).trim()
+    await firstAgent.click()
+    // Whoever the payee is, the column names — one cheque pays one agent, so a line
+    // cannot credit another.
+    await expect(commission.locator('[aria-label="Sales agent"]')).toHaveText(agent)
   })
 
   test('Payee Other: no Special Account column for a Fuel line, back as soon as another line needs it', async ({
@@ -167,20 +254,48 @@ test.describe('Expense lines — Fuel, Vehicle Repair, Commission', () => {
     // A Fuel line has no use for one — no such ledger, and the detail row says
     // what it is for. With nothing else on the entry, the column goes entirely.
     await pickAccount(page, 'Fuel and', '6-04-010 — Fuel and Lubricants')
-    await expect(page.locator('[data-testid="line-kind-fuel"]')).toBeVisible()
+    await expect(kindRow(page, 'FUEL')).toBeVisible()
     await expect(header).toHaveCount(0)
     await expect(box).toHaveCount(0)
 
     // Another (still blank) line needs it, so the column comes back for the table;
     // the Fuel line's own cell stays empty.
-    await page.getByText('Add line').click()
+    await page.getByRole('button', { name: 'Add Line' }).click()
     await expect(header).toHaveCount(1)
     await expect(box).toHaveCount(1)
   })
 
-  test('Commissions - Sales is an ordinary line on any other payee', async ({ page }) => {
+  test('Commissions - Sales is a commission on any payee: Sales Invoice No. and its own Sales Agent, payee untouched', async ({
+    page,
+  }) => {
     await pickPayee(page, 'Supplier')
     await pickAccount(page, 'Commissions - S', '6-01-040 — Commissions - Sales')
-    await expect(page.locator('[data-testid="line-kind-agent_commission"]')).toHaveCount(0)
+    const commission = kindRow(page, 'AGENT_COMMISSION')
+    await expect(commission).toBeVisible()
+    await expect(page.getByText('Sales Invoice No. *')).toBeVisible()
+    await expect(page.getByText('Sales Agent *')).toBeVisible()
+    await expect(page.getByTestId('expense-kind-chip')).toHaveText(/sales commission expense/i)
+    // The payee is still a Supplier — nothing moved the entry to a Sales Agent.
+    await expect(page.locator('[aria-label="Select supplier"]')).toBeVisible()
+    await expect(page.locator('[aria-label="Select sales agent"]')).toHaveCount(0)
+
+    // The line's own agent is picked on the line.
+    const lineAgent = commission.locator('[aria-label="Line sales agent"]')
+    await expect(lineAgent).toBeVisible()
+    await lineAgent.click()
+    const firstAgent = page.locator('body > div.fixed button').nth(1)
+    await expect(firstAgent).toBeVisible({ timeout: 10_000 })
+    const agent = (await firstAgent.innerText()).trim()
+    await firstAgent.click()
+    await expect(lineAgent).toHaveValue(agent)
+  })
+
+  test('a payroll run can still name Commissions - Sales as an ordinary line', async ({ page }) => {
+    await pickPayee(page, 'Other')
+    await page.getByRole('checkbox', { name: 'Payroll' }).check()
+    await pickAccount(page, 'Commissions - S', '6-01-040 — Commissions - Sales')
+    await expect(kindRow(page, 'AGENT_COMMISSION')).toHaveCount(0)
+    await expect(page.getByText('Sales Invoice No. *')).toHaveCount(0)
+    await expect(page.locator('[aria-label="Select sales agent"]')).toHaveCount(0)
   })
 })

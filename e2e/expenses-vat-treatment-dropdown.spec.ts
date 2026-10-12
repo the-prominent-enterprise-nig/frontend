@@ -32,7 +32,7 @@ test.describe('Accounting — Expense line VAT treatment', () => {
       timeout: 5_000,
     })
     // The total is the bare amount: the VAT is inside it, not on top.
-    await expect(page.getByText('Total:').locator('..')).toContainText('₱1,000.00')
+    await expect(page.getByText('Total Amount').locator('..')).toContainText('₱1,000.00')
 
     // Non-VAT has no VAT to show.
     await pickFromCustomSelect(page, 'Input VAT', 'Non-VAT')
@@ -55,9 +55,7 @@ test.describe('Accounting — Expense line VAT treatment', () => {
     // Other, then called a payroll run: VAT on a salary would post to the books.
     await pickFromCustomSelect(page, 'Customer', 'Other')
     await expect(page.getByRole('combobox', { name: 'Input VAT' })).toBeVisible()
-    const category = page.locator('label', { hasText: 'Category' }).getByRole('combobox')
-    await category.click()
-    await page.getByRole('option', { name: 'Payroll', exact: true }).click()
+    await page.getByRole('checkbox', { name: 'Payroll' }).check()
     await expect(page.getByRole('combobox', { name: 'Non-VAT' }).first()).toBeVisible()
   })
 })

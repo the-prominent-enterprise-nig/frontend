@@ -283,6 +283,19 @@ test.describe('Expenses — a capital purchase', () => {
   const payeeType = (page: Page) =>
     page.getByRole('combobox', { name: /^(— Select —|Customer|Supplier|Employee|Other)$/ }).first()
 
+  // The form's required Paid from (Bank/Cash) and the line's Division — Save draft is
+  // refused until both are picked. Takes the first real option of each list.
+  async function pickPaidFromAndDivision(page: Page): Promise<void> {
+    await expect(async () => {
+      await page.locator('[aria-label="Select source of fund"]').click()
+      await page.locator('body > div.fixed button').nth(1).click({ timeout: 2_000 })
+    }).toPass({ timeout: 15_000 })
+    await expect(async () => {
+      await page.locator('[aria-label="Division"]').first().click()
+      await page.locator('body > div.fixed button').nth(1).click({ timeout: 2_000 })
+    }).toPass({ timeout: 15_000 })
+  }
+
   test('asks for the project / asset and offers only property and equipment accounts', async ({
     page,
   }) => {
@@ -316,6 +329,8 @@ test.describe('Expenses — a capital purchase', () => {
     await pickAccountIn(page, account, 'Office Equipment')
 
     await fillStable(page.locator('input[aria-label="Amount"]').first(), '112000')
+
+    await pickPaidFromAndDivision(page)
 
     // The tag is required.
     await page.getByRole('button', { name: 'Save draft' }).click()

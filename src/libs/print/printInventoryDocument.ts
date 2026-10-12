@@ -2168,7 +2168,20 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   // against the invoice but never leaves it.
   const withholding = Number(p.withholdingAmount ?? 0)
   const amount = Number(p.amount ?? p.totalAmount ?? 0) + withholding
-  const netPaid = amount - withholding
+  // Deductions never leave the bank either: they are held back from the supplier
+  // and credited to the account each was mapped to. Total less withholding and
+  // deductions is what was actually paid.
+  type Deduction = {
+    account?: { number?: string | null; name?: string | null } | null
+    supplier?: string | null
+    description?: string | null
+    amount?: number | null
+  }
+  const deductions: Deduction[] = Array.isArray(p.deductions) ? (p.deductions as Deduction[]) : []
+  const deductionsTotal = Number(p.deductionsTotal ?? 0)
+  // Input VAT inside the invoices' total — informational, never taken off.
+  const vat = Number(p.vatAmount ?? 0)
+  const netPaid = amount - withholding - deductionsTotal
 
   const reference = p.chequeNumber
     ? `CK#${esc(p.chequeNumber)}`
@@ -2176,7 +2189,14 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       ? esc(p.reference)
       : '—'
 
-  type Inv = { billNumber?: string | null; description?: string | null; amount?: number }
+  type Inv = {
+    billNumber?: string | null
+    description?: string | null
+    amount?: number
+    // What this voucher claims of the invoice's withholding — the row prints
+    // amount + this, the invoice's own figure, so the table adds up to Total.
+    withholdingAmount?: number
+  }
   const invoices: Inv[] =
     Array.isArray(p.invoices) && p.invoices.length
       ? (p.invoices as Inv[])
@@ -2240,10 +2260,44 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
           <td>${esc(account?.name || '—')}</td>
           ${showInvoiceSi ? `<td>${esc(inv.billNumber || '—')}</td>` : ''}
           ${showInvoiceDescription ? `<td>${esc(inv.description || '—')}</td>` : ''}
-          <td class="right">${fmt(Number(inv.amount ?? 0))}</td>
+          <td class="right">${fmt(Number(inv.amount ?? 0) + Number(inv.withholdingAmount ?? 0))}</td>
         </tr>`
     )
     .join('')
+
+  // Deductions sit in the same table, under the account they come off: the
+  // invoices are settled in full and these are credited back, so they read as
+  // negatives and the table nets to Amount paid.
+  const deductionRows = deductions
+    .map((d) => {
+      const accountLabel = d.account
+        ? [d.account.number, d.account.name].filter(Boolean).join(' — ')
+        : '—'
+      // The payee is already in the header, so a supplier is named only when the
+      // deduction is taken from someone else.
+      const other = d.supplier && d.supplier !== p.payee ? d.supplier : null
+      const note = [d.description, other].filter(Boolean).join(' · ')
+      return `<tr>
+          <td>${esc(accountLabel)}${
+            !showInvoiceDescription && note
+              ? `<br><span style="font-size:11.5px;color:#666">Deduction · ${esc(note)}</span>`
+              : ''
+          }</td>
+          ${showInvoiceSi ? '<td>—</td>' : ''}
+          ${showInvoiceDescription ? `<td>${esc(note || 'Deduction')}</td>` : ''}
+          <td class="right">${fmt(-Number(d.amount ?? 0))}</td>
+        </tr>`
+    })
+    .join('')
+
+  // Total, the tax lines and Amount paid close the same table. Total is what the invoices
+  // come to; the withholding is taken off it, and so are the deductions listed
+  // above; the VAT is already inside it, so it is shown but never subtracted.
+  const footSpan = 1 + (showInvoiceSi ? 1 : 0) + (showInvoiceDescription ? 1 : 0)
+  const closingRows = `<tr class="foot"><td colspan="${footSpan}">Total</td><td class="right">${fmt(amount)}</td></tr>
+        <tr><td colspan="${footSpan}">Less: Withholding tax</td><td class="right">${fmt(withholding)}</td></tr>
+        <tr class="muted"><td colspan="${footSpan}">Input VAT (included in Total)</td><td class="right">${fmt(vat)}</td></tr>
+        <tr class="foot net"><td colspan="${footSpan}">Amount paid</td><td class="right">${fmt(netPaid)}</td></tr>`
 
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Poppins, Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
@@ -2266,10 +2320,9 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f3f4f6; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; font-variant-numeric: tabular-nums; }
-    table.totals { width: auto; margin-left: auto; margin-top: 12px; }
-    table.totals td { border: 0; border-bottom: 1px solid #eee; padding: 5px 10px; text-align: right; font-size: 13px; }
-    table.totals td.value { min-width: 140px; font-variant-numeric: tabular-nums; }
-    table.totals tr.grand td { border-bottom: 0; border-top: 1px solid #999; font-weight: 700; }
+    tr.foot td { font-weight: 700; }
+    tr.net td { background: #f9fafb; }
+    tr.muted td { color: #666; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -2324,13 +2377,7 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
           <th class="right">Total</th>
         </tr>
       </thead>
-      <tbody>${accountRows}</tbody>
-    </table>
-
-    <table class="totals">
-      <tr><td>Amount paid</td><td class="value">${fmt(netPaid)}</td></tr>
-      ${withholding > 0 ? `<tr><td>Withholding tax</td><td class="value">${fmt(withholding)}</td></tr>` : ''}
-      <tr class="grand"><td>Total</td><td class="value">${fmt(amount)}</td></tr>
+      <tbody>${accountRows}${deductionRows}${closingRows}</tbody>
     </table>
 
     <div class="signatures">
@@ -2792,6 +2839,10 @@ export function printEmployeeCashLoanVoucherDocument(data: unknown): void {
  * signature family as buildExpenseVoucherHtml() above; the body is the one
  * thing a transfer has that an expense doesn't: a From and a To account,
  * each with its own amount leg, instead of a payee and N expense lines.
+ *
+ * The client's mark-up (2026-10-12): no From/To block up top (the table's
+ * two legs already say it), no Clearing Date (a back-end field, not paper),
+ * and no "Journal entry" footnote.
  */
 export function buildInterAccountTransferVoucherHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
@@ -2854,19 +2905,9 @@ export function buildInterAccountTransferVoucherHtml(data: unknown): string {
     </div>
 
     <div class="info">
-      <div class="party">
-        <p class="meta-label">From</p>
-        <p class="party-name">${esc(source.name) || '—'}</p>
-        <p class="party-address">${bankLine(source)}</p>
-        <p class="meta-label" style="margin-top:12px">To</p>
-        <p class="party-name">${esc(destination.name) || '—'}</p>
-        <p class="party-address">${bankLine(destination)}</p>
-      </div>
       <div class="meta">
         <p class="meta-label">Date</p>
         <p class="meta-value">${fmtDate(t.date)}</p>
-        <p class="meta-label">Clearing Date</p>
-        <p class="meta-value">${fmtDate(t.clearingDate)}</p>
         <p class="meta-label">Reference</p>
         <p class="meta-value">${t.reference ? esc(t.reference) : '—'}</p>
         <p class="meta-label">VOUCHER #</p>
@@ -2904,7 +2945,6 @@ export function buildInterAccountTransferVoucherHtml(data: unknown): string {
         </tr>
       </tbody>
     </table>
-    ${t.journalEntryCode ? `<p class="sub" style="margin-top:8px">Journal entry: ${esc(t.journalEntryCode)}</p>` : ''}
 
     <div class="signatures">
       <div class="sig-block">
