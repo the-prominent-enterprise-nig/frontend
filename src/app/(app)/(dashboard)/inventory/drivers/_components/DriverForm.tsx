@@ -172,12 +172,12 @@ export function DriverForm({
               )}
             </div>
           )}
-          <Field label="Tag / Area" error={errors.tag}>
+          <Field label="Vehicle Type" error={errors.tag}>
             <input
               id="tag"
               value={form.tag}
               onChange={(e) => setField('tag', e.target.value)}
-              placeholder="e.g. TOP DOWN, TRUCK, AIRCOOL"
+              placeholder="e.g. TRUCK, TOP DOWN"
               className={INPUT}
             />
           </Field>

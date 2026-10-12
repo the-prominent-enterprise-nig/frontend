@@ -21,10 +21,9 @@ import { ChevronDown, ChevronUp, Copy, Trash2, X } from 'lucide-react'
 import Tooltip from '@/src/components/ui/Tooltip'
 import type { ReceiveStockFormValues } from '@/src/schema/inventory/goods-receiving'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
-import {
-  MANUAL_RR_TAX_CODES,
-  MANUAL_RR_WITHHOLDING_CLASSES,
-} from '@/src/schema/inventory/manual-receiving-reports'
+import { MANUAL_RR_TAX_CODES } from '@/src/schema/inventory/manual-receiving-reports'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { withholdingClassOptions } from '@/src/libs/tax/ewt'
 import { ItemSearchCombobox } from '../../../purchase-requests/_components/ItemSearchCombobox'
 import { MONO } from '../../../purchase-orders/_components/procurementTokens'
 import { SerialCaptureDrawer } from '../../../purchase-orders/_components/receive-po/SerialCaptureDrawer'
@@ -144,13 +143,14 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
   } = props
 
   const watched = useWatch({ control, name: `lines.${lineIndex}` })
+  const { rateFor } = useEwtCodes()
   // Field-level resolver errors for this row, so SRP / discounts / unit cost
   // turn red like Qty and Item do instead of failing the post with only a toast.
   const { errors: formErrors } = useFormState({ control })
   const rowErrors = showErrors ? formErrors.lines?.[lineIndex] : undefined
   const qty = Number(watched?.quantityReceived) || 0
   const total = computeLineTotal(line)
-  const withheld = lineWithheld(line)
+  const withheld = lineWithheld(line, rateFor)
   const hasError = issues.some((issue) => issue.kind === 'error')
   const [taxOpen, setTaxOpen] = useState(false)
   const [discountsOpen, setDiscountsOpen] = useState(false)
@@ -444,7 +444,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
                 aria-label="Withholding"
                 className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
               >
-                {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
+                {withholdingClassOptions(rateFor).map((cls) => (
                   <option key={cls.value} value={cls.value}>
                     {cls.label}
                   </option>

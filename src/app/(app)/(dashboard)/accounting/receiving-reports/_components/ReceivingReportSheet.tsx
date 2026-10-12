@@ -33,6 +33,10 @@ export interface ReceivingReportDocument {
     poDate?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
+    /** Input VAT carved out of the unit costs and the tax withheld at
+     * receiving — Decimal columns, so they can arrive as strings. */
+    vatAmount?: number | string | null
+    withheldAmount?: number | string | null
     /** The delivery crew, printed on the sheet's "Driver/Helper" line. Either
      * can be absent — a delivery often arrives with a driver and no helper. */
     driverName?: string | null
@@ -127,6 +131,10 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
       totalAmount += qty * Number(l.unitCost)
     }
   }
+
+  const vatAmount = Number(rr.vatAmount ?? 0)
+  const withheldAmount = Number(rr.withheldAmount ?? 0)
+  const hasTax = hasAnyCost && (vatAmount > 0 || withheldAmount > 0)
 
   return (
     <div className="bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
@@ -270,6 +278,26 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
                 {hasAnyCost ? ` — ${fmtAmount(totalAmount)}` : ''}
               </td>
             </tr>
+            {hasTax && (
+              <>
+                <tr>
+                  <td className={`${TD} text-right`}>Input VAT</td>
+                  <td className={`${TD} text-right tabular-nums`}>{fmtAmount(vatAmount)}</td>
+                </tr>
+                <tr>
+                  <td className={`${TD} text-right`}>Less: Withholding tax</td>
+                  <td className={`${TD} text-right tabular-nums`}>
+                    {withheldAmount > 0 ? `- ${fmtAmount(withheldAmount)}` : fmtAmount(0)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className={`${TD} text-right`}>Net payable</td>
+                  <td className={`${TD} text-right tabular-nums`}>
+                    {fmtAmount(totalAmount + vatAmount - withheldAmount)}
+                  </td>
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>

@@ -23,10 +23,11 @@ import {
 import { ChevronDown, ChevronUp, Copy, Trash2 } from 'lucide-react'
 import {
   MANUAL_RR_TAX_CODES,
-  MANUAL_RR_WITHHOLDING_CLASSES,
   type CreateManualReceivingReportFormValues,
   type ManualReceivingReportLineFormValues,
 } from '@/src/schema/inventory/manual-receiving-reports'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { withholdingClassOptions } from '@/src/libs/tax/ewt'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { MONO } from '../../../../inventory/purchase-orders/_components/procurementTokens'
@@ -88,6 +89,7 @@ export default function ManualRrLineRow({
   lineErrors,
 }: Props) {
   const line = useWatch({ control, name: `lines.${index}` })
+  const { rateFor } = useEwtCodes()
   const qty = Number(line?.quantityReceived) || 0
   const {
     fields: discountFields,
@@ -343,7 +345,7 @@ export default function ManualRrLineRow({
                 aria-label="Withholding"
                 className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
               >
-                {MANUAL_RR_WITHHOLDING_CLASSES.map((cls) => (
+                {withholdingClassOptions(rateFor).map((cls) => (
                   <option key={cls.value} value={cls.value}>
                     {cls.label}
                   </option>

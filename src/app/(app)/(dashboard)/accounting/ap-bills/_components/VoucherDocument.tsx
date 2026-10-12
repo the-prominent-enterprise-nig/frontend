@@ -21,6 +21,9 @@ export interface VoucherInvoice {
   billNumber?: string | null
   description?: string | null
   amount?: number | null
+  /** What this voucher claims of the invoice's withholding. The row prints
+   * amount + this — the invoice's own figure — so the table adds up to Total. */
+  withholdingAmount?: number | null
 }
 
 export interface VoucherSource {
@@ -29,6 +32,14 @@ export interface VoucherSource {
   description?: string | null
   amount?: number | null
   bankAccount?: { name?: string | null; accountNumber?: string | null } | null
+}
+
+/** An amount held back from the supplier on this payment. */
+export interface VoucherDeduction {
+  account?: { number?: string | null; name?: string | null } | null
+  supplier?: string | null
+  description?: string | null
+  amount?: number | null
 }
 
 export interface VoucherDocumentEnvelope {
@@ -51,6 +62,10 @@ export interface VoucherDocumentEnvelope {
     amount?: number | null
     totalAmount?: number | null
     withholdingAmount?: number | null
+    /** Input VAT inside the invoices' total — informational, not taken off. */
+    vatAmount?: number | null
+    deductions?: VoucherDeduction[]
+    deductionsTotal?: number | null
     invoices?: VoucherInvoice[]
     sources?: VoucherSource[]
   }
@@ -60,8 +75,6 @@ export interface VoucherDocumentEnvelope {
 // one page read as the same paper.
 const TH = 'border border-gray-300 bg-gray-100 px-2.5 py-[7px] text-left font-bold'
 const TD = 'border border-gray-300 px-2.5 py-[7px] align-top'
-const TOTAL_LABEL = 'border-b border-gray-100 px-2.5 py-[5px] text-right'
-const TOTAL_VALUE = 'border-b border-gray-100 px-2.5 py-[5px] text-right tabular-nums'
 
 function docDate(v: string | Date | undefined | null): string {
   return v ? new Date(v).toLocaleDateString('en-PH') : '—'
@@ -103,7 +116,13 @@ export default function VoucherDocument({
   // settled against the invoice but never leaves the bank.
   const amount = Number(p.amount ?? p.totalAmount ?? 0) + Number(p.withholdingAmount ?? 0)
   const withholding = Number(p.withholdingAmount ?? 0)
-  const netPaid = amount - withholding
+  // Deductions never leave the bank either: they stay with the payer and are
+  // credited to the account each was mapped to. Total less withholding and
+  // deductions is what was actually paid.
+  const deductions = p.deductions ?? []
+  const deductionsTotal = Number(p.deductionsTotal ?? 0)
+  const vat = Number(p.vatAmount ?? 0)
+  const netPaid = amount - withholding - deductionsTotal
 
   const reference = p.chequeNumber ? `CK#${p.chequeNumber}` : (p.reference ?? '—')
 
@@ -121,6 +140,8 @@ export default function VoucherDocument({
   // when one cheque settled several bills and they differ.
   const voucherDescription = p.notes ? String(p.notes) : null
   const showInvoiceDescription = invoices.length > 1
+  // The closing rows put their label across every column but the amount.
+  const footSpan = 1 + (showInvoiceSi ? 1 : 0) + (showInvoiceDescription ? 1 : 0)
 
   const sources: VoucherSource[] = p.sources?.length
     ? p.sources
@@ -245,34 +266,66 @@ export default function VoucherDocument({
                   {showInvoiceSi && <td className={TD}>{inv.billNumber || '—'}</td>}
                   {showInvoiceDescription && <td className={TD}>{inv.description || '—'}</td>}
                   <td className={`${TD} text-right tabular-nums`}>
-                    {fmtMoney(Number(inv.amount ?? 0))}
+                    {fmtMoney(Number(inv.amount ?? 0) + Number(inv.withholdingAmount ?? 0))}
                   </td>
                 </tr>
               )
             })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-3 flex justify-end">
-        <table className="border-collapse text-[13px]">
-          <tbody>
+            {/* Deductions sit in the same table, under the account they come off:
+                the invoices are settled in full and these are credited back, so
+                they read as negatives. */}
+            {deductions.map((d, i) => {
+              const accountLabel = d.account
+                ? [d.account.number, d.account.name].filter(Boolean).join(' — ')
+                : '—'
+              // The payee is already in the header, so a supplier is named only
+              // when the deduction is taken from someone else.
+              const other = d.supplier && d.supplier !== p.payee ? d.supplier : null
+              const note = [d.description, other].filter(Boolean).join(' · ')
+              return (
+                <tr key={`ded-${i}`}>
+                  <td className={TD}>
+                    {accountLabel}
+                    {!showInvoiceDescription && note && (
+                      <span className="block text-[11.5px] text-gray-500">Deduction · {note}</span>
+                    )}
+                  </td>
+                  {showInvoiceSi && <td className={TD}>—</td>}
+                  {showInvoiceDescription && <td className={TD}>{note || 'Deduction'}</td>}
+                  <td className={`${TD} text-right tabular-nums`}>
+                    {fmtMoney(-Number(d.amount ?? 0))}
+                  </td>
+                </tr>
+              )
+            })}
+            {/* Total, the tax lines and Amount paid close the same table. Total is what the
+                invoices come to; the withholding is taken off it, and so are the
+                deductions listed above; the VAT is already inside it, so it is
+                shown but never subtracted. */}
             <tr>
-              <td className={TOTAL_LABEL}>Amount paid</td>
-              <td className={`${TOTAL_VALUE} min-w-[140px]`}>{fmtMoney(netPaid)}</td>
-            </tr>
-            {withholding > 0 && (
-              <tr>
-                <td className={TOTAL_LABEL}>Withholding tax</td>
-                <td className={`${TOTAL_VALUE} min-w-[140px]`}>{fmtMoney(withholding)}</td>
-              </tr>
-            )}
-            <tr>
-              <td className="border-t border-gray-400 px-2.5 py-[5px] text-right font-bold">
+              <td colSpan={footSpan} className={`${TD} font-bold`}>
                 Total
               </td>
-              <td className="border-t border-gray-400 px-2.5 py-[5px] text-right font-bold tabular-nums">
-                {fmtMoney(amount)}
+              <td className={`${TD} text-right font-bold tabular-nums`}>{fmtMoney(amount)}</td>
+            </tr>
+            <tr>
+              <td colSpan={footSpan} className={`${TD}`}>
+                Less: Withholding tax
+              </td>
+              <td className={`${TD} text-right tabular-nums`}>{fmtMoney(withholding)}</td>
+            </tr>
+            <tr className="text-gray-500">
+              <td colSpan={footSpan} className={`${TD}`}>
+                Input VAT (included in Total)
+              </td>
+              <td className={`${TD} text-right tabular-nums`}>{fmtMoney(vat)}</td>
+            </tr>
+            <tr>
+              <td colSpan={footSpan} className={`${TD} bg-gray-50 font-bold`}>
+                Amount paid
+              </td>
+              <td className={`${TD} bg-gray-50 text-right font-bold tabular-nums`}>
+                {fmtMoney(netPaid)}
               </td>
             </tr>
           </tbody>

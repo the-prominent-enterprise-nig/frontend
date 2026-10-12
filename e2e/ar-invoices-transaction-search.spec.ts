@@ -2,8 +2,13 @@ import { test, expect } from '@playwright/test'
 import { gotoReady, fillStable } from './utils'
 
 let createdCustomerId: string | undefined
+const createdInvoiceIds: string[] = []
 
 test.afterEach(async ({ page }) => {
+  // A DRAFT invoice can be deleted (the app only hides it).
+  for (const id of createdInvoiceIds.splice(0)) {
+    await page.request.delete(`/api/ar-invoices/${id}`).catch(() => {})
+  }
   // Soft-deletes (sets deletedAt) — drops out of the Customers list
   // immediately, consistent with pos-transaction-detail-invoices.spec.ts.
   if (createdCustomerId) {
@@ -154,6 +159,10 @@ test("the New Invoice form's customer picker is a search box, not a full-list <s
   // the same accounting-scoped endpoint as the list filter above, since
   // an Accountant (accounting:* only) doesn't hold the CRM permission
   // that full list required.
+  //
+  // The form is its own page now (not a dialog — the client does not want
+  // create flows in modals), reached from a customer's own page, which
+  // carries that customer over.
   const applicantName = `E2E New Invoice Customer ${Date.now()}`
   const customerRes = await page.request.post('/api/crm/customers', {
     data: { name: applicantName, customerType: 'individual', phone: '09170006633' },
@@ -165,11 +174,19 @@ test("the New Invoice form's customer picker is a search box, not a full-list <s
   // reached one level deeper, from a customer's own dedicated page.
   await gotoReady(page, `/accounting/ar-invoices/customer/${customer.id}`)
   await page.getByRole('button', { name: 'New Invoice' }).click()
+  await expect(page).toHaveURL(/\/accounting\/ar-invoices\/new\?customerId=/, { timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'New Invoice' })).toBeVisible()
 
-  const dialog = page.locator('.max-w-xl')
-  const customerInput = dialog.getByPlaceholder('Search by name or phone…')
-  const resultOption = dialog.getByText(applicantName, { exact: true })
+  // The customer the button was pressed on is already in the picker...
+  const customerInput = page.getByPlaceholder('Search by name or phone…')
+  await expect(customerInput).toHaveValue(applicantName, { timeout: 15_000 })
+
+  // ...and the picker is still a search box: typing finds a customer by name.
+  const resultOption = page.getByText(applicantName, { exact: true })
   await expect(async () => {
+    // Cleared first: typing the very value already there would change nothing,
+    // so no search would run.
+    await customerInput.fill('')
     await fillStable(customerInput, applicantName)
     await expect(resultOption).toBeVisible({ timeout: 3_000 })
   }).toPass({ timeout: 15_000 })
@@ -179,9 +196,17 @@ test("the New Invoice form's customer picker is a search box, not a full-list <s
   // input itself — proves customerId actually got set, not just typed text.
   await expect(customerInput).toHaveValue(applicantName)
 
-  await dialog.getByLabel('Subtotal *').fill('1000')
-  await dialog.getByRole('button', { name: 'Save' }).click()
+  await page.getByLabel('Subtotal *').fill('1000')
+  const [saved] = await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().endsWith('/api/ar-invoices') && r.request().method() === 'POST'
+    ),
+    page.getByRole('button', { name: 'Save' }).click(),
+  ])
+  expect(saved.status()).toBe(201)
+  createdInvoiceIds.push((await saved.json()).id)
 
-  await expect(dialog).toBeHidden({ timeout: 10_000 })
+  // Saving lands on the invoice itself.
+  await expect(page).toHaveURL(/\/accounting\/ar-invoices\/[0-9a-f-]{36}$/, { timeout: 15_000 })
   await expect(page.getByText(applicantName, { exact: false }).first()).toBeVisible()
 })

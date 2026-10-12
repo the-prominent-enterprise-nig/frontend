@@ -1,5 +1,6 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
 import type { CustomerType, CustomerLifecycleStatus } from '@/src/schema/crm/types'
+import type { AccountClass, CashFlowClass } from '@/src/libs/accounting/account-classification'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -29,13 +30,45 @@ export interface Account {
    * gets a Special Account to pick. Set per account in the database; see
    * the client's own "SPECIAL ACCOUNTS" list. */
   isSpecialAccountControl?: boolean
+  /** Which extra fields an expense line posting here carries: FUEL (plate,
+   * litres), VEHICLE_REPAIR (plate, service type, remarks) or
+   * AGENT_COMMISSION (the sale being released). Null for every other account.
+   * Set in the database — see ExpenseKind on the API. */
+  expenseKind?: 'FUEL' | 'VEHICLE_REPAIR' | 'AGENT_COMMISSION' | null
   /** Balance-sheet/income-statement classification (REVENUE, ASSET,
    * ACCOUNTS_RECEIVABLE, …) — finer-grained than `type`. Drives whether an
    * expense line posting here gets a Sales Invoice field to pick. */
   category?: string
+  /** The client's account type (Cost of Sales, Operating Expenses, …) — `type`
+   * is its base type. Null on a row written outside the Chart of Accounts
+   * form and seed. */
+  accountClass?: AccountClass | null
+  /** Cash Flow section set on the account; null = follows the category. */
+  cashFlowClass?: CashFlowClass | null
+  parentAccountId?: string | null
+  /** Present on the single-account read. */
+  parentAccount?: {
+    id: string
+    number: string
+    name: string
+    accountClass?: AccountClass | null
+  } | null
   isActive: boolean
   createdAt?: string
   updatedAt?: string
+}
+
+/** What the Chart of Accounts form sends. `type` is not here: the server
+ * derives the base type from `accountClass`. `cashFlowClass` / `parentAccountId`
+ * null clear the field. */
+export interface AccountInput {
+  number: string
+  name: string
+  accountClass: AccountClass
+  category?: string | null
+  cashFlowClass?: CashFlowClass | null
+  parentAccountId?: string | null
+  description?: string | null
 }
 
 export interface GeneralLedger {
@@ -133,13 +166,14 @@ export function getAccountById(id: string) {
   })
 }
 
-export function createAccount(
-  data: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>
-): Promise<ApiResponse<Account>> {
+export function createAccount(data: AccountInput): Promise<ApiResponse<Account>> {
   return api.post<Account>('/accounts', data)
 }
 
-export function updateAccount(id: string, data: Partial<Account>): Promise<ApiResponse<Account>> {
+export function updateAccount(
+  id: string,
+  data: Partial<AccountInput>
+): Promise<ApiResponse<Account>> {
   return api.put<Account>(`/accounts/${id}`, data)
 }
 

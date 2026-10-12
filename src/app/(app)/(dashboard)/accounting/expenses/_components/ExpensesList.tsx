@@ -9,6 +9,20 @@ import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocu
 import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import ExpensesTabs from './ExpensesTabs'
+
+const STATUS_OPTIONS = [
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'RECORDED', label: 'Recorded' },
+  { value: 'VOID', label: 'Void' },
+]
+
+// Same height and focus ring as the Search box beside them.
+const FILTER_CHROME = {
+  idle: 'h-10 border-zinc-200',
+  focused: 'h-10 border-purple-500 ring-2 ring-purple-500',
+}
 
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -179,11 +193,9 @@ export default function ExpensesList() {
     else alert(res.message || res.error || 'Could not build the voucher')
   }
 
-  const selectCls =
-    'h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-purple-500'
-
   return (
     <div className="p-6">
+      <ExpensesTabs />
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-prominent-purple-900">Expenses</h2>
@@ -209,43 +221,36 @@ export default function ExpensesList() {
             className="h-10 w-full rounded-lg border border-zinc-200 bg-white pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
-        <select
+        <SearchableSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          aria-label="Filter by status"
-          className={selectCls}
-        >
-          <option value="">All statuses</option>
-          <option value="DRAFT">Draft</option>
-          <option value="RECORDED">Recorded</option>
-          <option value="VOID">Void</option>
-        </select>
-        <select
+          onChange={setStatusFilter}
+          options={STATUS_OPTIONS}
+          placeholder="All statuses"
+          chrome={FILTER_CHROME}
+          clearable
+          portal
+          className="w-40 text-zinc-700"
+        />
+        <SearchableSelect
           value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          aria-label="Filter by account"
-          className={`${selectCls} max-w-[260px]`}
-        >
-          <option value="">All accounts</option>
-          {expenseAccounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-        <select
+          onChange={setCategoryFilter}
+          options={expenseAccounts.map((a) => ({ value: a.id, label: a.name }))}
+          placeholder="All accounts"
+          chrome={FILTER_CHROME}
+          clearable
+          portal
+          className="w-64 text-zinc-700"
+        />
+        <SearchableSelect
           value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
-          aria-label="Filter by branch"
-          className={selectCls}
-        >
-          <option value="">All branches</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+          onChange={setBranchFilter}
+          options={branches.map((b) => ({ value: b.id, label: b.name }))}
+          placeholder="All branches"
+          chrome={FILTER_CHROME}
+          clearable
+          portal
+          className="w-48 text-zinc-700"
+        />
       </div>
 
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">

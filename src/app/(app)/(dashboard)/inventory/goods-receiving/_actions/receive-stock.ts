@@ -51,11 +51,10 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<Received
     // collects Application Type or a header VAT/withholding treatment at
     // all (see ReceiveStockFormSchema's own comment). applicationType is
     // still required by the DTO, so it's sent as a fixed value rather than
-    // carried through form state; perLineTax switches receiveStock() onto
-    // the per-line taxCode/withholdingClass model Manual RR uses instead of
-    // the header-driven one every other caller still gets.
+    // carried through form state. perLineTax (sent only by the Create RR
+    // screen) is passed through in `rest`; a caller that omits it, like
+    // Receive Against PO, keeps the supplier-driven VAT/withholding model.
     applicationType: 'new_stock' as const,
-    perLineTax: true,
     ...(receivedAt && receivedAt.trim() ? { receivedAt: receivedAt.trim() } : {}),
     ...(modeOfTransfer && modeOfTransfer.trim() ? { modeOfTransfer: modeOfTransfer.trim() } : {}),
     ...(purchaseOrderNumber && purchaseOrderNumber.trim()

@@ -43,6 +43,7 @@ export default async function PosCustomerLedgerPage({
         backHref={`/pos/customers/${id}`}
         backLabel="Back to customer"
         canEdit={false}
+        showAccountLink={false}
       />
     </div>
   )

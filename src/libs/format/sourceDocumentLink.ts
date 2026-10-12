@@ -39,8 +39,6 @@ export function sourceDocumentLink(je: JournalSource): SourceLink | null {
 
   switch (je.sourceModule) {
     case 'AR':
-      if (starts('Installment interest release') || no.startsWith('INT-REL-'))
-        return { href: '/accounting/installment-interest-release', kind: 'Interest Release' }
       if (starts('Installment Plan'))
         return no ? { href: `/pos/transactions?search=${q(no)}`, kind: 'POS Transaction' } : null
       if (starts('Penalty assessed:'))

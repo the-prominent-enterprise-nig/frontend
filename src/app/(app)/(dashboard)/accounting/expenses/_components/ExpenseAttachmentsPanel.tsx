@@ -25,6 +25,10 @@ type Props = {
    * uploadStagedExpenseAttachments). */
   expenseId?: string
   readOnly?: boolean
+  /** Replaces the "Attachments" heading — the Expense form numbers it (③). */
+  title?: React.ReactNode
+  /** No card around it — for a form that lays its sections out flat. */
+  bare?: boolean
   staged?: File[]
   onStagedChange?: (files: File[]) => void
 }
@@ -39,6 +43,8 @@ type Props = {
 export default function ExpenseAttachmentsPanel({
   expenseId,
   readOnly,
+  title,
+  bare,
   staged = [],
   onStagedChange,
 }: Props) {
@@ -130,10 +136,10 @@ export default function ExpenseAttachmentsPanel({
       }))
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+    <div className={bare ? '' : 'rounded-lg border border-zinc-200 bg-white p-4'}>
       <div className="mb-3 flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-sm font-medium text-prominent-purple-900">Attachments</h3>
+          {title ?? <h3 className="text-sm font-medium text-prominent-purple-900">Attachments</h3>}
           <p className="text-xs text-zinc-500">
             The receipt, invoice or approval memo backing this expense.
             {isStaging && ' Uploads when you save.'}
@@ -163,7 +169,7 @@ export default function ExpenseAttachmentsPanel({
               ) : (
                 <Upload className="h-3.5 w-3.5" />
               )}
-              Attach
+              Add attachment
             </button>
           </>
         )}

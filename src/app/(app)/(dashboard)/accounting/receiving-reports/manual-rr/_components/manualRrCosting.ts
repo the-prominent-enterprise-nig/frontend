@@ -1,4 +1,5 @@
 import type { CreateManualReceivingReportFormValues } from '@/src/schema/inventory/manual-receiving-reports'
+import { classEwtCode, fallbackEwtRate, type EwtRateFor } from '@/src/libs/tax/ewt'
 
 // Scenario 53 (2nd pass) — mirrors goods-receiving/create-rr/rrTotals.ts's
 // costFromPricing(): SRP walked through the discount chain, in order. A
@@ -45,22 +46,22 @@ export type ManualRrTotals = {
 // Real BIR EWT rates vary by the nature of the payment, not one flat
 // document-wide rate — goods and services are withheld differently, and a
 // single delivery can mix both. Independent of taxCode: a line can be
-// VAT + Goods, Exempt + Services, etc.
-const WITHHOLDING_RATES: Record<string, number> = {
-  goods: 0.01,
-  services: 0.02,
-}
+// VAT + Goods, Exempt + Services, etc. Scenario 69 Part D: a line's class names
+// a tax code (goods → EWT-GOODS-1, services → EWT-SERV-2) and `rateFor` reads
+// that code's rate off the tax code master, instead of the 1% / 2% that used to
+// live here.
 
 /**
  * Preview-only, mirrors the server's post()-time math exactly (developer
  * decision, 2026-09-20): both VAT and withholding are per line, not a
  * document-wide toggle. A line coded 'VAT' has its unitCost treated as
  * VAT-inclusive and 12% backed out of it; every other code (Non-VAT/Exempt/
- * none) leaves it as-is. A line classed 'goods' withholds 1% of its own net
- * cost, 'services' withholds 2% — summed into one document-level figure.
+ * none) leaves it as-is. A line classed 'goods' or 'services' is withheld at
+ * that class's tax code — summed into one document-level figure.
  */
 export function manualRrTotals(
-  values: Pick<CreateManualReceivingReportFormValues, 'lines'>
+  values: Pick<CreateManualReceivingReportFormValues, 'lines'>,
+  rateFor: EwtRateFor = fallbackEwtRate
 ): ManualRrTotals {
   const lines = values.lines ?? []
   const gross = lines.reduce((sum, line) => sum + lineTotal(line), 0)
@@ -74,7 +75,7 @@ export function manualRrTotals(
   const net = round2(gross - vat)
   const withheld = round2(
     lines.reduce((sum, line) => {
-      const rate = WITHHOLDING_RATES[line.withholdingClass ?? ''] ?? 0
+      const rate = rateFor(classEwtCode(line.withholdingClass))
       return rate === 0 ? sum : sum + lineTotal(line) * rate
     }, 0)
   )

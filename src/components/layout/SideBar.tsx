@@ -234,6 +234,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/expenses',
         icon: Coins,
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+        // Recurring Expenses is a tab under Expenses, not a sidebar item of its own,
+        // so Expenses stays lit on its sub-pages.
+        usePrefix: true,
       },
       {
         section: 'Accounting',
@@ -313,6 +316,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: FileBarChart,
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
+      // Tax Codes, Tax Reports and Tax Closing are hidden from the nav (not on main yet).
+      // Their routes still load: /accounting/tax-codes, /accounting/tax-reports,
+      // /accounting/tax-closing.
       // Scenario 62 — raw data from every module, read-only. Business Owner
       // only; exact permission so the Accountant's accounting:* can't reach.
       {

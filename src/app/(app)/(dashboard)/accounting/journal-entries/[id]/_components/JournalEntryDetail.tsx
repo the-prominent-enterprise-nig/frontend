@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle2, Printer } from 'lucide-react'
 import { getJournalEntryById, type JournalEntry } from '@/src/libs/data/AccountingData'
@@ -68,19 +68,22 @@ export default function JournalEntryDetail({ id }: { id: string }) {
     description: entry.description,
   })
   // Most entries are not about items at all — a collection is cash in and a
-  // receivable down, a VAT accrual is one account against another. Showing
-  // Item/Qty/Unit Price/Subtotal on those printed four columns of dashes on
-  // every row. They appear only when at least one line actually has that
-  // detail, which today means the revenue/COGS/inventory lines a sale raises,
-  // and anything hand-keyed with a quantity.
-  const showItemColumns = transactions.some(
-    (t) => t.item != null || t.quantity != null || t.unitPrice != null
-  )
-  const totalSubtotal = transactions.reduce((s, t) => {
-    const q = t.quantity ?? 0
-    const u = t.unitPrice ?? 0
-    return s + q * u
-  }, 0)
+  // receivable down, a VAT accrual is one account against another. An Item
+  // column of dashes on every row says nothing, so it appears only when at
+  // least one line is for an item, which today means the revenue/COGS/
+  // inventory lines a sale raises. Qty, Unit Price and Subtotal are not shown
+  // at all: an entry is accounts and amounts, and those belong to the document
+  // it came from.
+  const showItemColumn = transactions.some((t) => t.item != null)
+  // A sale posts its revenue side and its stock side (Dr Cost of Sales / Cr
+  // Inventory) in one entry. Keep the two blocks together with a gap between
+  // them; order within each block is unchanged.
+  const isStockLine = (t: (typeof transactions)[number]) =>
+    t.account?.category === 'INVENTORY' || t.account?.category === 'COGS'
+  const lineGroups = [
+    transactions.filter((t) => !isStockLine(t)),
+    transactions.filter(isStockLine),
+  ].filter((g) => g.length > 0)
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
@@ -199,71 +202,54 @@ export default function JournalEntryDetail({ id }: { id: string }) {
           <p className="py-6 text-center text-[13px] text-gray-400">No transaction lines.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[560px] text-sm">
               <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
                   <th className="py-2 pr-4">Account</th>
-                  {showItemColumns && <th className="py-2 pr-4">Item</th>}
+                  {showItemColumn && <th className="py-2 pr-4">Item</th>}
                   <th className="py-2 pr-4">Description</th>
-                  {showItemColumns && (
-                    <>
-                      <th className="py-2 pr-4 text-right">Qty</th>
-                      <th className="py-2 pr-4 text-right">Unit Price</th>
-                      <th className="py-2 pr-4 text-right">Subtotal</th>
-                    </>
-                  )}
                   <th className="py-2 pr-4 text-right">Debit</th>
                   <th className="py-2 text-right">Credit</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {transactions.map((t, i) => {
-                  const qty = t.quantity
-                  const unitPrice = t.unitPrice
-                  const subtotal = qty != null && unitPrice != null ? qty * unitPrice : null
-                  return (
-                    <tr key={t.id ?? i}>
-                      <td className="py-2 pr-4 text-gray-900">
-                        {t.account ? `${t.account.number} — ${t.account.name}` : t.accountId}
-                      </td>
-                      {showItemColumns && (
-                        <td className="py-2 pr-4 text-gray-600">{t.item?.name ?? '—'}</td>
-                      )}
-                      <td className="py-2 pr-4 text-gray-500">{t.description || '—'}</td>
-                      {showItemColumns && (
-                        <>
-                          <td className="py-2 pr-4 text-right tabular-nums">{qty ?? '—'}</td>
-                          <td className="py-2 pr-4 text-right tabular-nums">
-                            {unitPrice != null ? formatMoney(unitPrice) : '—'}
-                          </td>
-                          <td className="py-2 pr-4 text-right tabular-nums">
-                            {subtotal != null ? formatMoney(subtotal) : '—'}
-                          </td>
-                        </>
-                      )}
-                      <td className="py-2 pr-4 text-right font-medium tabular-nums">
-                        {t.debit ? formatMoney(t.debit) : '—'}
-                      </td>
-                      <td className="py-2 text-right font-medium tabular-nums">
-                        {t.credit ? formatMoney(t.credit) : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
+              {lineGroups.map((group, gi) => (
+                <Fragment key={gi}>
+                  {gi > 0 && (
+                    <tbody aria-hidden="true">
+                      <tr>
+                        <td colSpan={showItemColumn ? 5 : 4} className="h-10 bg-gray-100 p-0" />
+                      </tr>
+                    </tbody>
+                  )}
+                  <tbody className="divide-y divide-gray-100">
+                    {group.map((t, i) => (
+                      <tr key={t.id ?? i}>
+                        <td className="py-2 pr-4 text-gray-900">
+                          {t.account ? `${t.account.number} — ${t.account.name}` : t.accountId}
+                        </td>
+                        {showItemColumn && (
+                          <td className="py-2 pr-4 text-gray-600">{t.item?.name ?? '—'}</td>
+                        )}
+                        <td className="py-2 pr-4 text-gray-500">{t.description || '—'}</td>
+                        <td className="py-2 pr-4 text-right font-medium tabular-nums">
+                          {t.debit ? formatMoney(t.debit) : '—'}
+                        </td>
+                        <td className="py-2 text-right font-medium tabular-nums">
+                          {t.credit ? formatMoney(t.credit) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Fragment>
+              ))}
               <tfoot className="border-t border-gray-300">
                 <tr>
                   <td
-                    colSpan={showItemColumns ? 5 : 2}
+                    colSpan={showItemColumn ? 3 : 2}
                     className="py-2 pr-4 text-right font-semibold text-gray-600"
                   >
                     Total
                   </td>
-                  {showItemColumns && (
-                    <td className="py-2 pr-4 text-right font-bold tabular-nums">
-                      {formatMoney(totalSubtotal)}
-                    </td>
-                  )}
                   <td className="py-2 pr-4 text-right font-bold tabular-nums">
                     {formatMoney(entry.totalDebit)}
                   </td>

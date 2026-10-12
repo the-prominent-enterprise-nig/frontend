@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { CollectorStatusEnum } from './types'
 
 export const createCollectorSchema = z.object({
-  stubNumber: z.string().min(1, 'Stub number is required').max(20),
+  stubNumber: z.string().min(1, 'Collector code is required').max(50),
   name: z.string().min(1, 'Name is required').max(255),
   branchId: z
     .string()

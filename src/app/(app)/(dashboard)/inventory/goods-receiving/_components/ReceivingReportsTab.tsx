@@ -401,7 +401,7 @@ export default function ReceivingReportsTab({
     enabled: isCreateOpen,
   })
   const receiveMutation = useMutation({
-    mutationFn: (data: ReceiveStockFormValues) => receiveStock(data),
+    mutationFn: (data: ReceiveStockFormValues) => receiveStock({ ...data, perLineTax: true }),
     onSuccess: (result) => {
       if (result.success) {
         showToast({ title: 'Stock received', description: result.message, status: 'success' })

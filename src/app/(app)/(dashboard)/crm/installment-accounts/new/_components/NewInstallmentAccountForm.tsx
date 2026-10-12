@@ -142,7 +142,7 @@ export default function NewInstallmentAccountForm() {
               error={errors.accountNumber}
               value={form.accountNumber}
               onChange={(v) => setField('accountNumber', v)}
-              placeholder="IA-0001"
+              placeholder="0001"
             />
             <div>
               <label htmlFor="termMonths" className="block text-[13px] font-medium text-gray-700">

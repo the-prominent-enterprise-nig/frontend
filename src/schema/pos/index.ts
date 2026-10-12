@@ -298,6 +298,18 @@ export interface PosTransaction {
   currency: string
   fxRate?: number | null
   isTaxExempt: boolean
+  /** Scenario 69 Part F — the sale's output VAT class (VAT-OUT-12,
+   * VAT-OUT-0ZR or VAT-OUT-EXEMPT). Null on a sale from before classification
+   * existed: read it as VAT-OUT-12, or VAT-OUT-EXEMPT when isTaxExempt. */
+  outputVatCode?: string | null
+  /** The certificate / reference a zero-rated or exempt sale rests on. */
+  taxExemptionRef?: string | null
+  /** The manager who approved a zero-rated or exempt sale, and their name. */
+  outputVatApprovedBy?: string | null
+  outputVatApprovedByName?: string | null
+  /** Scenario 69 Part I — the class when it was changed from the one the sale
+   * started on, with why, who and when. Null when it was not. */
+  taxOverride?: import('@/src/libs/tax/tax-override').TaxOverrideEntry[] | null
   isOfflineSynced?: boolean
   status: PosTransactionStatus
   occurredAt: string
@@ -533,8 +545,17 @@ export interface CreateTransactionInput {
   xDealDownPaymentCheckNumber?: string
   xDealDownPaymentMethodOptionId?: string
   xDealDownPaymentVerifiedAtRegister?: boolean
+  /** The sale's output VAT class (Scenario 69 Part F): VAT-OUT-12 when left
+   * out, or VAT-OUT-0ZR / VAT-OUT-EXEMPT, which need taxExemptionRef and a
+   * manager's approval (managerOverride + managerUserId). */
+  outputVatCode?: string
+  /** Older shorthand for outputVatCode VAT-OUT-EXEMPT. */
   isTaxExempt?: boolean
   taxExemptionRef?: string
+  /** Scenario 69 Part I — why the class is not the one the sale started on
+   * (VAT-OUT-12, or VAT-OUT-EXEMPT for a tax-exempt customer). Required when it
+   * is not. */
+  taxOverrideReason?: string
   /** Set when a manager has PIN-approved an override (receiptless return,
    * discount threshold, or charge-sale credit/terms block). */
   managerOverride?: boolean
@@ -649,6 +670,10 @@ export interface PosCustomer {
   email?: string
   customerType?: 'individual' | 'business' | 'employee'
   businessCategory?: 'private' | 'government'
+  /** Registered as exempt from VAT, with the certificate on file — checkout
+   * starts that customer's sale VAT-exempt (Scenario 69 Part F). */
+  isTaxExempt?: boolean
+  taxExemptionRef?: string | null
 }
 
 // Checkout's buyer picker — an Employee not yet linked to a Customer.
