@@ -54,7 +54,7 @@ const ALL_STATUSES: TransferStatus[] = [
   'cancelled',
 ]
 
-export function useTransferManager() {
+export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } = {}) {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
@@ -63,6 +63,10 @@ export function useTransferManager() {
   // Scenario 56 — multi-select; each OR's within itself.
   const [fromWarehouseFilter, setFromWarehouseFilter] = useState<string[]>([])
   const [toWarehouseFilter, setToWarehouseFilter] = useState<string[]>([])
+  // Either end — a caravan heading's "View transfers" (in and out of it).
+  const [anyWarehouseFilter, setAnyWarehouseFilter] = useState<string[]>(
+    opts.initialAnyWarehouseIds ?? []
+  )
   const [search, setSearch] = useState('')
   const [selectedTransfer, setSelectedTransfer] = useState<TransferSummary | null>(null)
 
@@ -73,9 +77,10 @@ export function useTransferManager() {
       status: statusFilter,
       fromWarehouseIds: fromWarehouseFilter,
       toWarehouseIds: toWarehouseFilter,
+      anyWarehouseIds: anyWarehouseFilter,
       search: search || undefined,
     }),
-    [page, limit, statusFilter, fromWarehouseFilter, toWarehouseFilter, search]
+    [page, limit, statusFilter, fromWarehouseFilter, toWarehouseFilter, anyWarehouseFilter, search]
   )
 
   const transfersQuery = useQuery({
@@ -96,6 +101,7 @@ export function useTransferManager() {
         status,
         fromWarehouseFilter,
         toWarehouseFilter,
+        anyWarehouseFilter,
         search,
       ],
       queryFn: () =>
@@ -105,6 +111,7 @@ export function useTransferManager() {
           status,
           fromWarehouseIds: fromWarehouseFilter,
           toWarehouseIds: toWarehouseFilter,
+          anyWarehouseIds: anyWarehouseFilter,
           search: search || undefined,
         }),
       placeholderData: keepPreviousData,
@@ -467,6 +474,11 @@ export function useTransferManager() {
       setToWarehouseFilter(v)
       setPage(1)
     },
+    anyWarehouseFilter,
+    setAnyWarehouseFilter: (v: string[]) => {
+      setAnyWarehouseFilter(v)
+      setPage(1)
+    },
     search,
     setSearch: (v: string) => {
       setSearch(v)
@@ -476,6 +488,7 @@ export function useTransferManager() {
       setStatusFilter(undefined)
       setFromWarehouseFilter([])
       setToWarehouseFilter([])
+      setAnyWarehouseFilter([])
       setSearch('')
       setPage(1)
     },

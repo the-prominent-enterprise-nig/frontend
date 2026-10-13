@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import ExportButton from '@/src/components/common/ExportButton'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { showToast } from '@/src/components/ui/toast'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
@@ -216,10 +217,10 @@ export default function DailyCollectionView({
             {/* Two lines tall whichever tab is open, so the toggle below it stays put. */}
             <p className="mt-0.5 min-h-10 text-sm text-gray-500">{subhead}</p>
             {!showRollup && (
-              <div className="mt-3 flex flex-wrap items-center gap-3">
+              <div className="mt-3 flex flex-col items-start gap-2">
                 <SheetTabs value={sheetView} onChange={setSheetView} disabled={editing} />
                 {report && (
-                  <SheetFamilyTabs report={report} onOpen={openSheet} disabled={editing} />
+                  <SheetFamilyPicker report={report} onOpen={openSheet} disabled={editing} />
                 )}
               </div>
             )}
@@ -421,10 +422,14 @@ function SheetTabs({
 
 /**
  * A host branch and the caravans it runs, each filing its own sheet
- * (2026-10-13). Shown only when the host has a caravan trading that day, so
- * an ordinary branch's header is unchanged.
+ * (2026-10-13), as one dropdown: the branch first, then its caravans under
+ * their own heading. A dropdown rather than buttons because caravan labels
+ * are long ("Dumalag Public Market — Dumalag Caravan") and a host can run
+ * several at once; it is searchable for the same reason. Shown only when the
+ * host has a caravan trading that day, so an ordinary branch's header is
+ * unchanged.
  */
-function SheetFamilyTabs({
+function SheetFamilyPicker({
   report,
   onOpen,
   disabled,
@@ -438,38 +443,26 @@ function SheetFamilyTabs({
     : report.branchId
       ? { id: report.branchId, name: report.branchName }
       : null
-  if (!host || report.hostedCaravans.length === 0) return null
-  const links = [
-    { link: host, isHost: true },
-    ...report.hostedCaravans.map((link) => ({ link, isHost: false })),
-  ]
+  const caravans = report.hostedCaravans
+  if (!host || caravans.length === 0) return null
 
   return (
-    <div
-      role="tablist"
-      aria-label="Branch and caravan sheets"
-      className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-white p-0.5"
-    >
-      {links.map(({ link, isHost }) => {
-        const active = link.id === report.branchId
-        return (
-          <button
-            key={link.id}
-            role="tab"
-            aria-selected={active}
-            disabled={disabled}
-            onClick={() => onOpen(link, isHost)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${
-              active
-                ? 'bg-prominent-purple-100 text-prominent-purple-900'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            {link.name}
-          </button>
-        )
-      })}
-    </div>
+    <SearchableSelect
+      value={report.branchId ?? ''}
+      onChange={(id) => {
+        if (id === host.id) onOpen(host, true)
+        const caravan = caravans.find((c) => c.id === id)
+        if (caravan) onOpen(caravan, false)
+      }}
+      options={[
+        { value: host.id, label: host.name, group: 'Branch' },
+        ...caravans.map((c) => ({ value: c.id, label: c.name, group: 'Caravans' })),
+      ]}
+      placeholder="Choose a sheet"
+      disabled={disabled}
+      portal
+      className="w-96 max-w-full text-sm text-gray-700"
+    />
   )
 }
 

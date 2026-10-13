@@ -41,24 +41,27 @@ export function caravanLabel(branch: CaravanFields): string {
 }
 
 /**
- * The second line under a caravan shown by its host branch's name (the
- * transfer screens): its event, then where it is set up —
- * "Ajuy Caravan · Lemery".
+ * A caravan led by where it is set up, then its event —
+ * "Sebaste Plaza — Caravan · Pista". Staff tell caravans apart by place
+ * first. The backend's caravanLabelWithPlace() words it the same, so the
+ * Daily Collection and the screens agree. Location is optional, so a
+ * caravan without one falls back to its event label.
  */
-export function caravanSubtitle(branch: CaravanFields): string {
-  const event = (branch.eventName ?? branch.name).trim()
+export function caravanLabelWithPlace(branch: CaravanFields): string {
   const location = branch.addressLine1?.trim()
-  return location ? `${event} · ${location}` : event
+  const label = caravanLabel(branch)
+  return location ? `${location} — ${label}` : label
 }
 
-/**
- * A caravan named by where it is set up rather than its event — for branch
- * pickers, where staff look for the place: "Caravan · Lemery". Location is
- * optional, so a caravan without one falls back to its event label.
- */
+/** The second line under a caravan shown by its host branch's name (the
+ * transfer screens). */
+export function caravanSubtitle(branch: CaravanFields): string {
+  return caravanLabelWithPlace(branch)
+}
+
+/** A caravan in a branch picker, where staff look for the place. */
 export function caravanPlaceLabel(branch: CaravanFields): string {
-  const location = branch.addressLine1?.trim()
-  return location ? `Caravan · ${location}` : caravanLabel(branch)
+  return caravanLabelWithPlace(branch)
 }
 
 /** A branch's name in a branch picker — a caravan reads by its place. */

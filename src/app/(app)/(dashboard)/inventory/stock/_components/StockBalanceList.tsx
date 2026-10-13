@@ -42,8 +42,8 @@ function itemTitle(
 
 // Matches the label map already used on the price list screens.
 const REGION_OPTIONS = [
-  { value: 'panay', label: 'Panay' },
-  { value: 'negros', label: 'Negros' },
+  { value: 'panay', label: 'Panay Warehouse' },
+  { value: 'negros', label: 'Negros Warehouse' },
 ]
 
 // The five states the filter offers. The first four are exactly the badge the
@@ -276,7 +276,7 @@ export default function StockBalanceList({
 
           {/* Operations — the client's name for region. */}
           <SearchableSelect
-            className="w-[168px]"
+            className="w-[216px]"
             value={region ?? ''}
             onChange={(v) => setRegion((v || undefined) as 'panay' | 'negros' | undefined)}
             placeholder="All Operations"
