@@ -1,6 +1,14 @@
 'use client'
 
-import { useState, type FocusEvent, type InputHTMLAttributes, type Ref } from 'react'
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FocusEvent,
+  type InputHTMLAttributes,
+  type Ref,
+} from 'react'
 
 /** Keep digits and the first decimal point only. A pasted "₱6,190.00" becomes
  * "6190.00"; letters, a minus sign and a second "." never get in. */
@@ -21,7 +29,28 @@ export function formatMoney(n: number): string {
   return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-/** The value as plain text for editing: no commas, no forced trailing zeros. */
+/** Commas in the whole-peso part only, the rest exactly as typed:
+ * "12345" → "12,345", "12345." → "12,345.", "12345.6" → "12,345.6". */
+export function groupThousands(plain: string): string {
+  const dot = plain.indexOf('.')
+  const whole = dot === -1 ? plain : plain.slice(0, dot)
+  const rest = dot === -1 ? '' : plain.slice(dot)
+  return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + rest
+}
+
+/** Where the caret goes in `formatted` so it sits after the same `count`
+ * digits (and ".") it sat after before the commas moved. */
+function caretAfter(formatted: string, count: number): number {
+  if (count <= 0) return 0
+  let seen = 0
+  for (let i = 0; i < formatted.length; i++) {
+    if (formatted[i] !== ',') seen++
+    if (seen === count) return i + 1
+  }
+  return formatted.length
+}
+
+/** The value as plain text: no commas, no forced trailing zeros. */
 function toPlain(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return ''
   return typeof value === 'number' ? String(value) : sanitizeMoney(value)
@@ -32,6 +61,34 @@ function toDisplay(value: string | number | null | undefined): string {
   if (plain === '' || plain === '.') return ''
   const n = Number(plain)
   return Number.isFinite(n) ? formatMoney(n) : plain
+}
+
+/** The plain text after one keystroke, and how many of its characters sit
+ * before the caret. Backspace/Delete on a comma removes the digit beside it —
+ * otherwise the comma would just come straight back and the key would seem
+ * dead. */
+function readKeystroke(
+  e: ChangeEvent<HTMLInputElement>,
+  previous: string
+): { plain: string; before: number } {
+  const el = e.target
+  const caret = el.selectionStart ?? el.value.length
+  const plain = sanitizeMoney(el.value)
+  const before = sanitizeMoney(el.value.slice(0, caret)).length
+  if (plain !== previous) return { plain, before }
+  const inputType = (e.nativeEvent as InputEvent).inputType
+  if (inputType === 'deleteContentBackward' && before > 0) {
+    return { plain: plain.slice(0, before - 1) + plain.slice(before), before: before - 1 }
+  }
+  if (inputType === 'deleteContentForward' && before < plain.length) {
+    return { plain: plain.slice(0, before) + plain.slice(before + 1), before }
+  }
+  return { plain, before }
+}
+
+function assignRef(ref: Ref<HTMLInputElement> | undefined, el: HTMLInputElement | null): void {
+  if (typeof ref === 'function') ref(el)
+  else if (ref) ref.current = el
 }
 
 type Props = Omit<
@@ -48,12 +105,13 @@ type Props = Omit<
 }
 
 /**
- * The peso amount input for POS (Scenario 71, item 2). It reads "12,345.67"
- * when not focused and takes raw keystrokes while focused, so a typed "." or
- * "12.0" survives instead of being turned into a number and echoed back.
- * Commas never reach the parent, the API or the clipboard — the parent only
- * ever sees plain text it can `Number()`. On blur the amount is rounded to
- * centavos.
+ * The peso amount input for POS (Scenario 71, item 2). Commas appear as the
+ * cashier types ("25000" reads "25,000" straight away) and the caret stays
+ * where they were typing; leaving the field adds the centavos ("25,000.00")
+ * and rounds to them. A typed "." or "12.0" survives — the field keeps the
+ * text being typed rather than turning it into a number and echoing it back.
+ * Commas never reach the parent, the API or the clipboard: the parent only
+ * ever sees plain text it can `Number()`.
  *
  * Styling is the caller's: pass the same classes the field had before.
  */
@@ -66,8 +124,20 @@ export function MoneyInput({
   ref,
   ...rest
 }: Props): React.ReactElement {
-  // What the cashier is typing, verbatim, while the field has focus.
+  // What the cashier is typing (plain, no commas) while the field has focus.
   const [draft, setDraft] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  // Characters (digits and ".") the caret should sit after once React has
+  // re-rendered the field with its commas moved.
+  const pendingCaret = useRef<number | null>(null)
+
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (pendingCaret.current === null || !el || draft === null) return
+    const at = caretAfter(el.value, pendingCaret.current)
+    pendingCaret.current = null
+    el.setSelectionRange(at, at)
+  })
 
   const handleFocus = (e: FocusEvent<HTMLInputElement>): void => {
     setDraft(toPlain(value))
@@ -87,22 +157,28 @@ export function MoneyInput({
     onBlur?.(e)
   }
 
+  const handleChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    const { plain, before } = readKeystroke(e, draft ?? toPlain(value))
+    pendingCaret.current = before
+    setDraft(plain)
+    onValueChange(plain)
+  }
+
   return (
     <input
       {...rest}
-      ref={ref}
+      ref={(el) => {
+        inputRef.current = el
+        assignRef(ref, el)
+      }}
       type="text"
       inputMode="decimal"
       autoComplete="off"
       placeholder={placeholder}
-      value={draft ?? toDisplay(value)}
+      value={draft === null ? toDisplay(value) : groupThousands(draft)}
       onFocus={handleFocus}
       onBlur={handleBlur}
-      onChange={(e) => {
-        const plain = sanitizeMoney(e.target.value)
-        setDraft(plain)
-        onValueChange(plain)
-      }}
+      onChange={handleChange}
     />
   )
 }

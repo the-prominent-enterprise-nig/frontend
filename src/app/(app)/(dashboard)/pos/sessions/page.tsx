@@ -21,7 +21,7 @@ import { PosDateShort } from '../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { isoDateOf } from '../daily-collection/_utils/business-date'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import { MoneyInput } from '@/src/components/ui/MoneyInput'
+import { MoneyInput, sanitizeMoney } from '@/src/components/ui/MoneyInput'
 import {
   RefreshCw,
   Monitor,
@@ -578,7 +578,10 @@ function OpenSessionModal({
             value={form.openingCash}
             onValueChange={(v) => setForm((p) => ({ ...p, openingCash: v }))}
             onBlur={(e) =>
-              setForm((p) => ({ ...p, openingCash: (parseFloat(e.target.value) || 0).toFixed(2) }))
+              setForm((p) => ({
+                ...p,
+                openingCash: (parseFloat(sanitizeMoney(e.target.value)) || 0).toFixed(2),
+              }))
             }
           />
         </Field>

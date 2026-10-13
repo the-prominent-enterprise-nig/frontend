@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable, fillStable, openCustomSelect } from './utils'
+import { gotoReady, clickStable, fillStable, fillMoneyStable, openCustomSelect } from './utils'
 
 // Scenario 01 Gap 4 — installment sales now require a down payment of at
 // least 10% of the line's sale amount (backend enforcement + IF-01..IF-14
@@ -230,7 +230,7 @@ test.describe('POS Checkout — installment down payment floor', () => {
     // endpoint already rejects this with a clear reason
     // ("downPayment cannot exceed the total sale amount"), it just wasn't
     // being surfaced.
-    await fillStable(page.getByPlaceholder('Down payment'), '999999')
+    await fillMoneyStable(page.getByPlaceholder('Down payment'), '999999')
     await expect(page.getByText(/downPayment cannot exceed the total sale amount/i)).toBeVisible({
       timeout: 10_000,
     })

@@ -8,6 +8,7 @@ import {
 import {
   gotoReady,
   fillStable,
+  fillMoneyStable,
   sweepE2ECustomers,
   sweepE2EPriceLists,
   sweepE2EPriceUseTypes,
@@ -584,7 +585,7 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await pickFirstTerm(page)
     await expect(page.getByTestId('dp-payment-mode-toggle')).toHaveCount(0)
 
-    await fillStable(page.getByLabel('X-Deal cash portion'), '3000')
+    await fillMoneyStable(page.getByLabel('X-Deal cash portion'), '3000')
     await expect(page.getByTestId('x-deal-down-payment')).toContainText(
       'is cleared by the X-Deal credit memo'
     )
@@ -598,7 +599,7 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await fillStable(page.getByLabel('Check Number'), '0012345')
 
     await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
-    await fillStable(page.getByLabel('Amount received'), '3000')
+    await fillMoneyStable(page.getByLabel('Amount received'), '3000')
     await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), cr)
 
     // The Owner may approve, so it completes here.
@@ -643,13 +644,13 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await xDealCheckbox(page).check()
     await xDealReference(page).fill(`XD-REF-XPF02-${Date.now()}`)
     await pickFirstTerm(page)
-    await fillStable(page.getByLabel('X-Deal cash portion'), String(ITEM_PRICE))
+    await fillMoneyStable(page.getByLabel('X-Deal cash portion'), String(ITEM_PRICE))
     await page
       .getByTestId('dp-payment-mode-toggle')
       .getByRole('button', { name: 'Cash', exact: true })
       .click()
     await fillStable(page.getByLabel('Sales Invoice No.'), `SI-XPF02-${Date.now()}`)
-    await fillStable(page.getByLabel('Amount received'), String(ITEM_PRICE))
+    await fillMoneyStable(page.getByLabel('Amount received'), String(ITEM_PRICE))
     await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), `CR-XPF02-${Date.now()}`)
 
     let posted = false
@@ -680,13 +681,13 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await xDealCheckbox(page).check()
     await pickFirstTerm(page)
     await xDealReference(page).fill(reference)
-    await fillStable(page.getByLabel('X-Deal cash portion'), '2000')
+    await fillMoneyStable(page.getByLabel('X-Deal cash portion'), '2000')
     await page
       .getByTestId('dp-payment-mode-toggle')
       .getByRole('button', { name: 'Cash', exact: true })
       .click()
     await fillStable(page.getByLabel('Sales Invoice No.'), `SI-XPF03-${Date.now()}`)
-    await fillStable(page.getByLabel('Amount received'), '2000')
+    await fillMoneyStable(page.getByLabel('Amount received'), '2000')
     await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), cr)
     await page.getByRole('button', { name: /Create Installment Plan/ }).click()
     await expect(page.getByText('Pending Approval', { exact: true })).toBeVisible({

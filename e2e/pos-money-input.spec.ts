@@ -197,14 +197,19 @@ async function typeAndBlur(field: Locator, text: string): Promise<void> {
   await field.blur()
 }
 
-/** S71-1-F08's one pass on any money field: commas on blur, raw on focus. */
+/** S71-1-F08's one pass on any money field: commas while typing, centavos
+ * added on leaving, and the same figure back when clicked into again. */
 async function expectMoneyField(field: Locator): Promise<void> {
   await expect(field).toBeVisible({ timeout: 15_000 })
   await expect(field).toHaveAttribute('inputmode', 'decimal')
-  await typeAndBlur(field, '1234567.8')
+  await field.click()
+  await field.fill('')
+  await field.pressSequentially('1234567.8')
+  await expect(field).toHaveValue('1,234,567.8')
+  await field.blur()
   await expect(field).toHaveValue('1,234,567.80')
   await field.click()
-  await expect(field).toHaveValue('1234567.8')
+  await expect(field).toHaveValue('1,234,567.8')
   await field.blur()
 }
 
@@ -232,18 +237,44 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     await request.dispose()
   })
 
-  test('S71-1-F01 / F02 / F05 / F09: Amount received shows commas when left, raw while editing, keeps a typed ".", refuses letters and a minus, and is at least 52px tall', async ({
+  test('S71-1-F01 / F02 / F05 / F09: Amount received puts commas in as you type, keeps the caret and a typed ".", adds centavos on leaving, refuses letters and a minus, and is at least 52px tall', async ({
     page,
   }) => {
     await openCheckoutWithItem(page)
     const field = amountReceived(page)
     await expect(field).toBeVisible({ timeout: 15_000 })
 
-    // F01
+    // F01 — commas appear while typing (Kian, 2026-10-13: "no need to click
+    // anywhere"); leaving adds the centavos; clicking back in keeps them off.
+    await field.click()
+    await field.pressSequentially('25000')
+    await expect(field).toHaveValue('25,000')
+    await field.blur()
+    await expect(field).toHaveValue('25,000.00')
     await typeAndBlur(field, '12345.6')
     await expect(field).toHaveValue('12,345.60')
     await field.click()
-    await expect(field).toHaveValue('12345.6')
+    await expect(field).toHaveValue('12,345.6')
+
+    // Typing in the middle keeps the caret where the cashier is typing:
+    // "1,234" with the caret at the start, type 9 → "91,234", then 8 lands
+    // after the 9, not at the end.
+    await field.fill('1234')
+    await expect(field).toHaveValue('1,234')
+    await field.press('Home')
+    await field.press('9')
+    await expect(field).toHaveValue('91,234')
+    await field.press('8')
+    await expect(field).toHaveValue('981,234')
+
+    // Backspace just after a comma removes the digit before it, not nothing:
+    // "1,234" with the caret after the comma → "234".
+    await field.fill('1234')
+    await field.press('Home')
+    await field.press('ArrowRight')
+    await field.press('ArrowRight')
+    await field.press('Backspace')
+    await expect(field).toHaveValue('234')
 
     // F02 — the PO discount bug ("12." collapsing to 12) must not come back.
     await field.fill('')
@@ -259,6 +290,9 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     await field.fill('')
     await field.pressSequentially('-1a2.3.4')
     await expect(field).toHaveValue('12.34')
+    await field.fill('')
+    await field.pressSequentially('12a34b5')
+    await expect(field).toHaveValue('12,345')
     await field.blur()
 
     // Edge cases: half a centavo rounds up; the biggest figure fits; clearing
@@ -290,7 +324,7 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
       await field.click()
       await field.fill('')
       await page.keyboard.press('ControlOrMeta+V')
-      await expect(field).toHaveValue('6190' + (pasted.includes('.') ? '.00' : ''))
+      await expect(field).toHaveValue('6,190' + (pasted.includes('.') ? '.00' : ''))
       await field.blur()
       await expect(field).toHaveValue('6,190.00')
     }

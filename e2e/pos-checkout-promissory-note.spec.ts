@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs, clickStable, fillStable, openCustomSelect } from './utils'
+import {
+  gotoReady,
+  loginAs,
+  clickStable,
+  fillStable,
+  fillMoneyStable,
+  openCustomSelect,
+} from './utils'
 
 // Scenario 17, Part 7 — Promissory Note generation + signature gate.
 // Backend generation/gate enforcement is covered by
@@ -163,7 +170,7 @@ async function submitInstallmentSale(
     .first()
     .innerText()
   const minDownPayment = minHintText.match(/[\d,]+\.\d{2}/)![0].replace(/,/g, '')
-  await fillStable(page.getByPlaceholder('Down payment'), minDownPayment)
+  await fillMoneyStable(page.getByPlaceholder('Down payment'), minDownPayment)
   await clickStable(
     page.getByRole('button', { name: 'Add payment method' }),
     page.getByPlaceholder('0.00')

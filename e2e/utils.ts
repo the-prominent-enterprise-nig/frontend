@@ -26,6 +26,18 @@ export async function fillStable(locator: Locator, value: string): Promise<void>
 }
 
 /**
+ * fillStable for a POS peso field (Scenario 71's MoneyInput), which shows
+ * thousands commas as you type: "8000" reads back as "8,000". Pass the plain
+ * figure; the check expects it with commas.
+ */
+export async function fillMoneyStable(locator: Locator, plain: string): Promise<void> {
+  const [whole, ...rest] = plain.split('.')
+  const shown =
+    whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (rest.length ? `.${rest.join('')}` : '')
+  await fillStable(locator, shown)
+}
+
+/**
  * fillStable only proves a field's value at the instant it's checked — on a
  * multi-field form, an earlier field can still get silently reset by a LATER
  * hydration reconciliation that happens after its own check passed but before

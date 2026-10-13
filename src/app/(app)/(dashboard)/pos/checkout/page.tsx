@@ -46,7 +46,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import { MoneyInput } from '@/src/components/ui/MoneyInput'
+import { MoneyInput, sanitizeMoney } from '@/src/components/ui/MoneyInput'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
   itemLookup,
@@ -5750,7 +5750,7 @@ export default function CheckoutPage() {
                                       // never below the 10% floor) rather than
                                       // fighting the cashier's typing keystroke by
                                       // keystroke.
-                                      const parsed = parseFloat(e.target.value)
+                                      const parsed = parseFloat(sanitizeMoney(e.target.value))
                                       if (!Number.isFinite(parsed)) return
                                       setLineDownPaymentInput(
                                         groupLineIds,
@@ -5876,7 +5876,7 @@ export default function CheckoutPage() {
                                     }
                                     onValueChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
                                     onBlur={(e) => {
-                                      const parsed = parseFloat(e.target.value)
+                                      const parsed = parseFloat(sanitizeMoney(e.target.value))
                                       if (!Number.isFinite(parsed)) return
                                       setLineDownPaymentInput(
                                         groupLineIds,

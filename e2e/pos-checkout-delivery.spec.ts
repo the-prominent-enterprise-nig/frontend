@@ -8,6 +8,7 @@ import {
 import {
   gotoReady,
   fillStable,
+  fillMoneyStable,
   sweepE2ECustomers,
   sweepE2EPriceLists,
   sweepE2EPriceUseTypes,
@@ -261,7 +262,7 @@ async function readyCashSale(page: Page, customerName: string, salesInvoiceNumbe
 }
 
 async function fillPayment(page: Page, cr: string, amount = '100000'): Promise<void> {
-  await fillStable(page.getByLabel('Amount received'), amount)
+  await fillMoneyStable(page.getByLabel('Amount received'), amount)
   // The label is the payment method's own reference label ("CR Number" by
   // default), so match its start rather than one exact spelling.
   await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), cr)
@@ -427,7 +428,7 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     const received = page.getByLabel('Amount received')
     await received.click()
     await page.keyboard.press('ControlOrMeta+V')
-    await expect(received).toHaveValue('8000.00')
+    await expect(received).toHaveValue('8,000.00')
   })
 
   test("DT-F02: the sale's Amount received covers the sale only — paying the sale total alone is enough, the fee is paid separately", async ({
