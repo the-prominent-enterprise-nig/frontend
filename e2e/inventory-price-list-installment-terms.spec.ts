@@ -145,7 +145,7 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     // The down payment starts collapsed behind a static "10% min" badge —
     // reveal the editable input (pre-filled with the current value) to read it.
     await clickStable(
-      page.getByRole('button', { name: 'Change amount' }),
+      page.getByRole('button', { name: 'Edit down payment' }),
       page.getByPlaceholder('Down payment')
     )
     await expect(page.getByPlaceholder('Down payment')).toHaveValue(CURATED_DOWN_PAYMENT, {

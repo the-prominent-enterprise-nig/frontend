@@ -94,7 +94,7 @@ test.describe('PR #199 — down payment at the till', () => {
     await expect(panel).toContainText('₱3,380.00', { timeout: 15_000 })
     await expect(panel).toContainText('Rate card')
     await expect(panel).toContainText('Set by the rate card for this term')
-    await expect(panel.getByRole('button', { name: 'Change amount' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Edit down payment' })).toHaveCount(0)
     await expect(panel).not.toContainText('30%')
     // The card's 3-month monthly, from that down payment.
     await expect(panel).toContainText('₱4,845.00', { timeout: 15_000 })
@@ -103,7 +103,7 @@ test.describe('PR #199 — down payment at the till', () => {
     await pickTerm(panel, page, '6 months')
     await expect(panel).toContainText('₱3,380.00', { timeout: 15_000 })
     await expect(panel).toContainText('₱2,650.00', { timeout: 15_000 })
-    await expect(panel.getByRole('button', { name: 'Change amount' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Edit down payment' })).toHaveCount(0)
   })
 
   test('a term the card does not quote is editable from the 10% minimum; moving onto a card term locks it again', async ({
@@ -123,7 +123,7 @@ test.describe('PR #199 — down payment at the till', () => {
     await expect(panel).toContainText('₱3,510.00')
 
     // Type a different figure…
-    await panel.getByRole('button', { name: 'Change amount' }).click()
+    await panel.getByRole('button', { name: 'Edit down payment' }).click()
     // The editor replaces the panel's "Down payment" heading, so it is found
     // on the page — this cart has the one line.
     const box = page.getByPlaceholder('Down payment')
@@ -136,7 +136,7 @@ test.describe('PR #199 — down payment at the till', () => {
     await pickTerm(panel, page, '12 months')
     await expect(panel).toContainText('₱3,510.00', { timeout: 15_000 })
     await expect(panel).toContainText('Set by the rate card for this term')
-    await expect(panel.getByRole('button', { name: 'Change amount' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Edit down payment' })).toHaveCount(0)
     await expect(panel).toContainText('₱1,340.00', { timeout: 15_000 })
   })
 
@@ -150,7 +150,7 @@ test.describe('PR #199 — down payment at the till', () => {
     await pickTerm(panel, page, '3 months')
     await expect(panel).toContainText('10% min', { timeout: 15_000 })
     await expect(panel).toContainText('Fixed at 10% of the sale amount')
-    await expect(panel.getByRole('button', { name: 'Change amount' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Edit down payment' })).toBeVisible()
     await expect(panel).not.toContainText('Rate card')
   })
 })

@@ -808,6 +808,46 @@ Re-run: `pos-money-input` 8/8; `pos-checkout-x-deal` 13 pass · 1 fail (same bas
 
 Not changed: `pos-collections-rebate`'s rebate locator (the rebate became a checkbox before this scenario; that spec already fails at its demo-item setup).
 
+### Part 2 — the down-payment field (item 6), 2026-10-13
+
+**Decided before building (Kian, 2026-10-13), after blaming the code:** the read-only down-payment box with its dotted "Change amount" link is **Chloe's** (`265bdf2e`, 2026-08-19 — deliberately "doesn't read as an editable box"), and so is the TPF 10% floor (FE `787d8577`, BE `4dab609b`, 2026-09-02). Kian chose to **keep Chloe's box** and only turn her "Change amount" link into a clear **✎ Edit** button (instead of the always-open field the item text above proposed), and to **allow a ₱0 TPF down payment** as the client asked ("in tpf pwede 0") — that one cannot be met without lifting her TPF floor. **Tell Chloe before this merges.**
+
+**Built.**
+
+- FE: in both of Chloe's boxes (inhouse and TPF) the dotted "Change amount" link is now an outlined **Edit** button with a pencil (`aria-label="Edit down payment"`). Everything else in her box — the figure, the "Rate card" / "10% min" pill, the hints, "Use the minimum instead", the rate-card lock (no Edit on a card term) — is unchanged.
+- FE, TPF only: the pill reads **"No minimum"** (or "Rate card"); the field's hint reads "Any amount up to ₱X — ₱0 if the financier funds it all."; the submit check allows 0 (still refuses below 0 or above the sale); a blank field still asks for a figure, ₱0 typed is fine; a cart of nothing but TPF lines with ₱0 down collects nothing, so it asks for **no down payment method** (`dpCollectsNothing`, alongside Scenario 68's X-Deal case) and shows "Nothing to collect".
+- BE: `validateAndPrepare` drops the 10% floor for a TPF line (inhouse keeps it); a TPF down payment can't be negative or above the line. The existing rules already handle 0: a CR only when the down payment is above 0, no down-payment `PosPayment`, the whole amount on the TPF receivable.
+- In-house is unchanged: never 0, 10% floor, rate-card term fixed (D6).
+
+**Tests.**
+
+- Backend unit `transactions.service.spec`: **184/184** (5 new: S71-2-U01 TPF 0 with no CR, and 1 peso with a CR, accepted; U02 TPF > 0 with no CR refused; U03 TPF negative / above the sale refused; U04 inhouse 0 refused). U04's other cases and U05 are the existing floor / rate-card tests, unchanged.
+- Backend e2e `pos-tpf-installment`: TPF-07 and TPF-08 asserted the 10% floor; now **TPF-07 / S71-2-B01 / B02** (a TPF sale with ₱0 down and no CR is held, approved and posted: only the `tpf` payment row at the full amount, one JE debit line on the receivable, balanced, no collection receipt for the customer → nothing for the ledger or Daily Collection Report) and **TPF-08 / S71-2-B03** (under the old floor, with a CR, accepted). Suite 13 pass · 1 fail = baseline (TPF-11).
+- New Playwright `e2e/pos-checkout-down-payment-edit.spec.ts`: **2/2** — S71-2-F01/F02/F05 (inhouse: Chloe's box with ₱1,200.00 and "10% min", no "Change amount", an Edit button that opens the field at 1,200.00 with "Must be at least ₱1,200.00") and S71-2-F04 (TPF: "No minimum", Edit → 0 → "0.00", provider + reference, no down payment method, "Nothing to collect", no Amount received, "Create Installment Plan" enabled; nothing is sold). S71-2-F03 (rate-card term locked, no Edit) is `pr199-checkout-down-payment`; S71-2-F06 (EAL / X-Deal unchanged) is `pos-checkout-x-deal` and `pos-employee-appliance-loan-checkout`.
+- Spec churn (selector only): `pr199-checkout-down-payment` ×5 and `inventory-price-list-installment-terms` ×1, `'Change amount'` → `'Edit down payment'`.
+- Checks: FE `tsc` clean, ESLint on `checkout/page.tsx` 10 warnings = development's 10; BE `tsc` clean, ESLint 1 warning = development's (spec `:1692`, untouched); Prettier clean.
+
+**Test DB:** applied the 23 pending migrations to `the-prominent-enterprise-test` (Kian's go-ahead) so the backend e2e could run.
+
+**Baseline → after Part 2 (one suite per command):**
+
+| Suite                                         | Repo | Baseline                        | After Part 2              | Verdict                                     |
+| --------------------------------------------- | ---- | ------------------------------- | ------------------------- | ------------------------------------------- |
+| `pos-installment-financing`                   | BE   | 30/30                           | 30/30                     | Pass                                        |
+| `pos-tpf-installment`                         | BE   | 13 pass · 1 fail (TPF-11)       | 13 pass · 1 fail (TPF-11) | Same; TPF-07/08 now the S71 cases           |
+| `pos-tpf-sale-returns`                        | BE   | 4 fail (expected VAT-inflated)  | 4 fail                    | Same                                        |
+| `pos-employee-appliance-loan-checkout`        | BE   | 7/7                             | 7/7                       | Pass                                        |
+| `pos-x-deal-checkout`                         | BE   | 34/34                           | 34/34                     | Pass                                        |
+| `credit-application-financing`                | BE   | 34/34                           | 34/34                     | Pass                                        |
+| `cashier-day-baseline`                        | BE   | 27 fail (no COA on the test DB) | 27 fail                   | Same                                        |
+| `pr199-checkout-down-payment`                 | FE   | 4/4                             | 4/4                       | Pass                                        |
+| `pos-checkout-installment-credit-application` | FE   | 3/3                             | 3/3                       | Pass                                        |
+| `pos-checkout-x-deal`                         | FE   | 13 pass · 1 fail                | 13 pass · 1 fail          | Same test and line                          |
+| `inventory-price-list-installment-terms`      | FE   | 1 pass · 1 fail                 | 1 pass · 1 fail           | Same ("Manage Items" link, before checkout) |
+| `pos-money-input`                             | FE   | 8/8                             | 8/8                       | Pass                                        |
+
+**Not changed (pre-existing, reported):** in Chloe's editor, "Use the minimum instead" only closes the editor and keeps the typed figure; for TPF the "minimum" is now ₱0.
+
 ## Next scenario (Kian, 2026-10-13)
 
 The scenario after this one takes these two. Its number is claimed when it starts, after checking open PRs, branches and docs again.

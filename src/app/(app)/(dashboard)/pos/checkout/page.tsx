@@ -31,6 +31,7 @@ import {
   Printer,
   FileSignature,
   IdCard,
+  Pencil,
 } from 'lucide-react'
 import {
   computePricingTotals,
@@ -1709,6 +1710,10 @@ export default function CheckoutPage() {
     chargeCartLines.length === 0 &&
     inhouseInstallmentCartLines.length === 0
   const tpfCollectedAtRegister = isPureTpfCart ? tpfDownPaymentsTotal : tpfLinesTotal
+  // Scenario 71 — with a ₱0 TPF down payment a cart of nothing but TPF lines
+  // collects nothing at this register, like an X-Deal with no cash portion:
+  // there is no down payment method to choose.
+  const dpCollectsNothing = xDealCollectsNothing || (isPureTpfCart && tpfDownPaymentsTotal <= 0)
 
   // The down payment is tendered through this same Total pool — one CR
   // Number, one payment method, one balance. It's split back out only when
@@ -3396,31 +3401,16 @@ export default function CheckoutPage() {
         setError("Enter the financier's reference number for the TPF-financed item(s).")
         return
       }
-      // Same 10% floor as inhouse — the financier funds only the balance,
-      // so a missing down payment isn't "financed in full", it's unbilled.
+      // Scenario 71 — a TPF down payment has no minimum: ₱0 is allowed when
+      // the financier funds the whole sale (client, 2026-10-07: "in tpf
+      // pwede 0"). Chloe's 10% floor here (787d8577) was lifted for that, on
+      // Kian's decision of 2026-10-13. It still can't exceed the sale.
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
         const downPayment = lineDownPayment(l)
-        // Scenario 60 — an Employee Appliance Loan waives the down payment
-        // (and the ">0" / 10%-floor checks below) entirely.
-        if (!downPaymentWaived && downPayment <= 0) {
-          setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
-          return
-        }
-        if (downPayment > lineAmount) {
+        if (downPayment < 0 || downPayment > lineAmount) {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
-          return
-        }
-        // Waived for an Employee Appliance Loan or an X-Deal. A TPF line's monthly is the
-        // financier's, so only the floor applies — never the card's figure.
-        if (
-          !downPaymentWaived &&
-          downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
-        ) {
-          setError(
-            `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
-          )
           return
         }
       }
@@ -3466,7 +3456,7 @@ export default function CheckoutPage() {
     // Down payment — forced explicit choice before its amount can even be
     // tendered, same as before the down payment shared this pool.
     // An X-Deal with nothing paid now has nothing to choose a method for.
-    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !xDealCollectsNothing) {
+    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !dpCollectsNothing) {
       setError(
         xDealActive
           ? 'Choose how the cash portion will be paid — Cash or Credit/Debit Card.'
@@ -5788,13 +5778,20 @@ export default function CheckoutPage() {
                                       {fmt(downPaymentValue)}
                                     </span>
                                     {fixedDownPayment == null && (
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                        className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                      >
-                                        Change amount
-                                      </button>
+                                      <>
+                                        {/* Scenario 71 item 6 — the client asked for the down payment to
+                                      read as obviously editable. Chloe's box stays as
+                                      she built it; only her small "Change amount" link
+                                      becomes a clear Edit button (Kian, 2026-10-13). */}
+                                        <button
+                                          type="button"
+                                          aria-label="Edit down payment"
+                                          onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                          className="flex shrink-0 items-center gap-1 rounded-lg border border-prominent-purple-300 bg-white px-2.5 py-1 text-xs font-semibold text-prominent-purple-700 hover:border-prominent-purple-500 hover:bg-prominent-purple-50"
+                                        >
+                                          <Pencil size={12} /> Edit
+                                        </button>
+                                      </>
                                     )}
                                   </div>
                                 </div>
@@ -5885,7 +5882,9 @@ export default function CheckoutPage() {
                                   <p className="text-xs text-gray-500">
                                     {employeeApplianceLoanActive
                                       ? `Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`
-                                      : `Must be at least ${fmt(minDownPaymentWhole)} and no more than ${fmt(lineSaleAmount)}.`}
+                                      : // Scenario 71 — a TPF down payment may be ₱0
+                                        // (client, 2026-10-07: "in tpf pwede 0").
+                                        `Any amount up to ${fmt(lineSaleAmount)} — ₱0 if the financier funds it all.`}
                                   </p>
                                   {!employeeApplianceLoanActive && (
                                     <button
@@ -5906,19 +5905,24 @@ export default function CheckoutPage() {
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
                                       {curatedDownPaymentWhole !== null
                                         ? 'Rate card'
-                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
+                                        : 'No minimum'}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex items-center gap-2 pl-4">
                                     <span className="text-[15px] font-bold text-prominent-purple-800">
                                       {fmt(downPaymentValue)}
                                     </span>
+                                    {/* Scenario 71 item 6 — the client asked for the down payment to
+                                      read as obviously editable. Chloe's box stays as
+                                      she built it; only her small "Change amount" link
+                                      becomes a clear Edit button (Kian, 2026-10-13). */}
                                     <button
                                       type="button"
+                                      aria-label="Edit down payment"
                                       onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                      className="flex shrink-0 items-center gap-1 rounded-lg border border-prominent-purple-300 bg-white px-2.5 py-1 text-xs font-semibold text-prominent-purple-700 hover:border-prominent-purple-500 hover:bg-prominent-purple-50"
                                     >
-                                      Change amount
+                                      <Pencil size={12} /> Edit
                                     </button>
                                   </div>
                                 </div>
@@ -5985,7 +5989,7 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 )}
-                {installmentCartLines.length > 0 && !xDealCollectsNothing && (
+                {installmentCartLines.length > 0 && !dpCollectsNothing && (
                   <div
                     data-testid="dp-payment-mode-toggle"
                     className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
@@ -6544,9 +6548,11 @@ export default function CheckoutPage() {
                 !skipsCreditApplication
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
+              // Scenario 71 — ₱0 is a valid TPF down payment; only a field
+              // left blank still asks for a figure.
               const tpfMissingDownPayment =
                 !downPaymentWaived &&
-                tpfInstallmentCartLines.some((l) => !(parseFloat(l.downPaymentInput ?? '0') > 0))
+                tpfInstallmentCartLines.some((l) => (l.downPaymentInput ?? '').trim() === '')
               const missingHrLoanNumber =
                 employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
               const missingXDealReference = xDealActive && !xDealReference.trim()
@@ -6579,7 +6585,7 @@ export default function CheckoutPage() {
                               : saleMode === 'sale' &&
                                   installmentCartLines.length > 0 &&
                                   !installmentPaymentMethod &&
-                                  !xDealCollectsNothing
+                                  !dpCollectsNothing
                                 ? xDealActive
                                   ? 'Choose how the cash portion is paid'
                                   : 'Choose a down payment method'
