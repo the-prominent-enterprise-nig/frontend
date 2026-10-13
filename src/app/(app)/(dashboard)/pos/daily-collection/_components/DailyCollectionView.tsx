@@ -13,7 +13,7 @@ import { getDailySalesMonitoring } from '../_actions/get-daily-sales-monitoring'
 import { saveDailyCollectionSheet } from '../_actions/save-daily-collection-sheet'
 import { useSheetDraft } from '../_hooks/useSheetDraft'
 import { todayIso } from '../_utils/business-date'
-import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
+import type { DailyCollectionReport, SheetLink } from '@/src/schema/pos/daily-collection'
 import type { DailySalesMonitoringReport } from '@/src/schema/pos/daily-sales-monitoring'
 import DailyCollectionActionBar from './DailyCollectionActionBar'
 import DailyCollectionForm from './DailyCollectionForm'
@@ -86,25 +86,42 @@ export default function DailyCollectionView({
     linkedDate && /^\d{4}-\d{2}-\d{2}$/.test(linkedDate) ? linkedDate : todayIso()
   )
 
+  const [editing, setEditing] = useState(false)
+  const queryClient = useQueryClient()
+  // A branch-assigned user's pick among their branch's caravans, each of which
+  // files its own sheet. Null is their own branch's.
+  const [caravanId, setCaravanId] = useState<string | null>(null)
+
   // Runs once per link, not on every render: after this the switcher is the
-  // user's again, and re-applying the URL would fight them.
+  // user's again, and re-applying the URL would fight them. A branch-assigned
+  // user can only be linked to a caravan their branch runs — the API answers
+  // with their own branch's sheet for anything else.
   useEffect(() => {
-    if (linkedBranchId && linkedBranchId !== branchId) {
+    if (!linkedBranchId) return
+    if (sessionBranchId) {
+      setCaravanId(linkedBranchId === sessionBranchId ? null : linkedBranchId)
+    } else if (linkedBranchId !== branchId) {
       setBranch({ id: linkedBranchId, name: linkedBranchName ?? '' })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedBranchId])
-  const [editing, setEditing] = useState(false)
-  const queryClient = useQueryClient()
 
   // A branch-assigned user is pinned to their own branch — the switcher
   // cannot move them and neither can the roll-up, because the API would hand
-  // back their branch anyway. Everyone else follows the switcher, and no
-  // branch picked means the owner's roll-up rather than a merged ledger
-  // nobody signs: the question at that level is which branch still owes a
-  // count.
-  const scopedBranchId = sessionBranchId ?? branchId
+  // back their branch anyway — or to a caravan it hosts. Everyone else
+  // follows the switcher, and no branch picked means the owner's roll-up
+  // rather than a merged ledger nobody signs: the question at that level is
+  // which branch still owes a count.
+  const scopedBranchId = sessionBranchId ? (caravanId ?? sessionBranchId) : branchId
   const showRollup = sessionBranchId === null && branchId === null
+
+  // Moves between a host's sheet and its caravans'. A branch-assigned user
+  // stays on their own branch's family, so their pick is local; everyone else
+  // moves the POS switcher, as the roll-up does.
+  function openSheet(link: SheetLink, isHost: boolean): void {
+    if (sessionBranchId) setCaravanId(isHost ? null : link.id)
+    else setBranch(link)
+  }
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['pos-daily-collection', date, scopedBranchId],
@@ -167,11 +184,10 @@ export default function DailyCollectionView({
   const position = report ? cashPosition(report, draftCounts ?? report.denominations) : null
   const reportCompanyName = report?.companyName || companyName
 
-  // Scenario 60 — whichever branch the report came back for wins over the
-  // POS switcher's own label. The switcher offers caravans (checkout sells
-  // from one), but a caravan has no Daily Collection: the API answers with
-  // the branch hosting it, so the chrome has to name that branch too rather
-  // than captioning Antique's form "Caravan · Pandan".
+  // Whichever branch the report came back for wins over the POS switcher's
+  // own label: a satellite office has no Daily Collection of its own, and the
+  // API answers with the branch it files under, so the chrome has to name
+  // that branch too. A caravan files its own and comes back as itself.
   const reportBranchName =
     report?.branchName ?? salesReport?.branchName ?? sessionBranchName ?? branchName
 
@@ -200,8 +216,11 @@ export default function DailyCollectionView({
             {/* Two lines tall whichever tab is open, so the toggle below it stays put. */}
             <p className="mt-0.5 min-h-10 text-sm text-gray-500">{subhead}</p>
             {!showRollup && (
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-3">
                 <SheetTabs value={sheetView} onChange={setSheetView} disabled={editing} />
+                {report && (
+                  <SheetFamilyTabs report={report} onOpen={openSheet} disabled={editing} />
+                )}
               </div>
             )}
           </div>
@@ -396,6 +415,60 @@ function SheetTabs({
           {view === 'collection' ? 'Collection report' : 'Sales monitoring'}
         </button>
       ))}
+    </div>
+  )
+}
+
+/**
+ * A host branch and the caravans it runs, each filing its own sheet
+ * (2026-10-13). Shown only when the host has a caravan trading that day, so
+ * an ordinary branch's header is unchanged.
+ */
+function SheetFamilyTabs({
+  report,
+  onOpen,
+  disabled,
+}: {
+  report: DailyCollectionReport
+  onOpen: (link: SheetLink, isHost: boolean) => void
+  disabled: boolean
+}): React.JSX.Element | null {
+  const host: SheetLink | null = report.isCaravan
+    ? report.hostBranch
+    : report.branchId
+      ? { id: report.branchId, name: report.branchName }
+      : null
+  if (!host || report.hostedCaravans.length === 0) return null
+  const links = [
+    { link: host, isHost: true },
+    ...report.hostedCaravans.map((link) => ({ link, isHost: false })),
+  ]
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Branch and caravan sheets"
+      className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-white p-0.5"
+    >
+      {links.map(({ link, isHost }) => {
+        const active = link.id === report.branchId
+        return (
+          <button
+            key={link.id}
+            role="tab"
+            aria-selected={active}
+            disabled={disabled}
+            onClick={() => onOpen(link, isHost)}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${
+              active
+                ? 'bg-prominent-purple-100 text-prominent-purple-900'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            {link.name}
+          </button>
+        )
+      })}
     </div>
   )
 }

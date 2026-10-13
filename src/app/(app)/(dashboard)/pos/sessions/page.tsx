@@ -57,19 +57,6 @@ function formatCurrency(n: number) {
   )
 }
 
-/**
- * Whether this shift was rung up at a caravan — a temporary Branch row
- * (`Branch.isTemporary`) parked at a host.
- *
- * Read off the TERMINAL, not the branch: for a caravan terminal `branchId`
- * holds the HOST branch and the caravan itself sits on `caravanBranchId`, so
- * `terminal.branch.isTemporary` is false on exactly the sessions this is
- * meant to catch (see PosTerminalsService's branch resolution).
- */
-function isCaravanSession(session: PosSession): boolean {
-  return Boolean(session.terminal?.caravanBranchId ?? session.terminal?.caravanBranch)
-}
-
 type ModalState =
   | { type: 'none' }
   | { type: 'open' }
@@ -95,10 +82,12 @@ export default function SessionsPage() {
 
   if (status !== 'authorized' || !session) return null
 
-  // A caravan's register is stored on its host, so the host's list includes
-  // it — shown only under the caravan itself, not under the host.
+  // A caravan's register is stored on its host. The host runs its caravans,
+  // so its list shows their sessions beside its own (each row is named by
+  // place, "Caravan · …"); picking the caravan shows its sessions alone.
   const sessions: PosSession[] = (data?.data ?? []).filter(
-    (s) => !branchId || terminalPlaceId(s.terminal) === branchId
+    (s) =>
+      !branchId || terminalPlaceId(s.terminal) === branchId || s.terminal?.branchId === branchId
   )
 
   async function handleOpen(form: OpenSessionInput) {
@@ -120,11 +109,8 @@ export default function SessionsPage() {
    * longer pops up is not lost: the posted variance and its GL entry stay one
    * button to the left on the session's own row.
    *
-   * A CARAVAN (temporary branch) closes the old way, on the reconciliation
-   * modal. A caravan has no Daily Collection Report of its own — its takings
-   * roll into the host branch's form (`terminal.branch` IS the host; the
-   * caravan is `terminal.caravanBranch`), so sending the cashier there would
-   * drop them on somebody else's sheet instead of their own closing figures.
+   * A caravan's register lands on the caravan's own sheet, which it files
+   * apart from its host's (2026-10-13).
    */
   async function handleClose(id: string, form: CloseSessionInput) {
     setError('')
@@ -134,7 +120,7 @@ export default function SessionsPage() {
       return
     }
     const closed = modal.type === 'close' ? modal.session : null
-    if (closed && !isCaravanSession(closed)) {
+    if (closed) {
       setModal({ type: 'none' })
       goToCollectionReport(closed, 'collection')
       return
@@ -164,11 +150,13 @@ export default function SessionsPage() {
    */
   function goToCollectionReport(target: PosSession, view: 'collection' | 'sales') {
     const date = isoDateOf(target.openedAt)
-    const branch = target.terminal?.branch
+    // A caravan's register files the caravan's own sheet, so it is read off
+    // the terminal's place, not `terminal.branch` (the host).
+    const placeId = terminalPlaceId(target.terminal)
     const query = new URLSearchParams({ date, view })
-    if (branch) {
-      query.set('branchId', branch.id)
-      query.set('branchName', branch.name)
+    if (placeId) {
+      query.set('branchId', placeId)
+      query.set('branchName', terminalPlaceName(target.terminal) ?? '')
     }
     router.push(`/pos/daily-collection?${query.toString()}`)
   }
@@ -283,11 +271,7 @@ export default function SessionsPage() {
                     setError('')
                     setModal({ type: 'close', session: s })
                   }}
-                  // A caravan has no Daily Collection of its own — its cash is
-                  // counted on the host's — so its closed shift offers no report.
-                  onViewCollectionReport={
-                    s.terminal?.caravanBranchId ? undefined : () => handleViewCollectionReport(s)
-                  }
+                  onViewCollectionReport={() => handleViewCollectionReport(s)}
                 />
               ))}
             </>
