@@ -6,9 +6,19 @@ import { z } from 'zod'
  * DESC-type subtotals, a denomination block and the day's deposits.
  */
 /** FP — full payment: the collection that settles an account. */
+/** FMI — the first monthly instalment of a contract. */
 /** OTHERS — a New Receipt: money the branch took in against no sale and no
  * due, like a refunded performance bond (Scenario 70 G3). */
-export const CollectionKindSchema = z.enum(['COD', 'DP', 'DC', 'MI', 'MI-PARTIAL', 'FP', 'OTHERS'])
+export const CollectionKindSchema = z.enum([
+  'COD',
+  'DP',
+  'DC',
+  'MI',
+  'FMI',
+  'MI-PARTIAL',
+  'FP',
+  'OTHERS',
+])
 export type CollectionKind = z.infer<typeof CollectionKindSchema>
 
 export const DailyCollectionRowSchema = z.object({
@@ -257,6 +267,7 @@ export const COLLECTION_KINDS: CollectionKind[] = [
   'DP',
   'DC',
   'MI',
+  'FMI',
   'MI-PARTIAL',
   'FP',
   'OTHERS',

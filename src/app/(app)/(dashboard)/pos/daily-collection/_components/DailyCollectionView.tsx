@@ -439,10 +439,8 @@ function SalesMonitoringBody({
 function EditingNote(): React.JSX.Element {
   return (
     <p className="mb-3 rounded-xl border border-prominent-orange-200 bg-prominent-orange-50 px-4 py-3 text-sm text-prominent-orange-900 print:hidden">
-      Editing the form&apos;s handwritten half: the two signatories, the remarks line and the
-      denomination count — including the COINS amount, which is typed as pesos rather than a piece
-      count. The collections, deposits and totals are read from the day&apos;s transactions and
-      cannot be typed over.
+      You can edit the signatories, remarks and cash count. Collections, deposits and totals come
+      from the day&apos;s transactions and can&apos;t be changed here.
     </p>
   )
 }

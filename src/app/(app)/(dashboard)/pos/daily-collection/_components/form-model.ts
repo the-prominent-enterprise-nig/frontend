@@ -10,9 +10,9 @@ import type {
  * the exported workbook can be checked against one shape.
  *
  * Everything here mirrors the client's own paper form: a running ledger of
- * cash and non-cash sales (the BALANCE counts cash only) whose SI#/CUSTOMER cell
- * merges down a customer's several DESC lines,
- * a deposit line that credits the balance back to nil, a DESC-type subtotal
+ * cash and non-cash sales (the BALANCE runs over every one of them) whose
+ * SI#/CUSTOMER cell merges down a customer's several DESC lines,
+ * credit lines that take the balance back to nil, a DESC-type subtotal
  * block and a denomination count. The service hands over cash and non-cash
  * rows separately; the day's non-cash take also arrives pre-aggregated per
  * provider, as its own block below the cash recap.
@@ -46,6 +46,9 @@ export function pesoOrDash(amount: number | null): string {
 
 export interface FormLine {
   type: 'collection' | 'deposit'
+  /** What a credit line is, printed in the DATE cell: DEPOSIT, NON-CASH or
+   * UNDEPOSITED. Empty on a collection line. */
+  creditLabel: string
   si: string
   customer: string
   desc: string
@@ -80,9 +83,9 @@ export interface FormLine {
  * after everyone who paid cash. So the two come back together here and sort
  * by timestamp.
  *
- * The running BALANCE still moves on cash alone — it means "cash in the
- * drawer", and a card payment never entered it — so a non-cash line shows its
- * amount with a blank balance and leaves the column where it was.
+ * The running BALANCE moves on every line, cash or not, at any counter — the
+ * credit lines below the collections (`creditLines`) are what bring it back
+ * to nil, so the CREDIT column balances the DEBIT column.
  */
 function collectionLines(report: DailyCollectionReport): {
   lines: FormLine[]
@@ -93,14 +96,10 @@ function collectionLines(report: DailyCollectionReport): {
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   )
   const lines = ordered.map((r): FormLine => {
-    // BALANCE is the cash THIS branch is still holding, so a collection taken
-    // at another counter — a satellite office or a caravan register — does
-    // not move it, and leaves its own balance cell blank. It is still in the
-    // ledger and in TOTAL COLLECTED; see the "at other counters" block.
-    const heldHere = r.isCash && !r.sourceCounter
-    if (heldHere) running += r.amount
+    running += r.amount
     return {
       type: 'collection',
+      creditLabel: '',
       si: r.siNumber ?? '',
       customer: r.customerName,
       desc: formKind(r),
@@ -118,7 +117,7 @@ function collectionLines(report: DailyCollectionReport): {
       penalty: r.penalty,
       debit: r.amount,
       credit: null,
-      balance: heldHere ? running : null,
+      balance: running,
       span: 1,
       caravan: r.caravan ?? undefined,
       sourceCounter: r.sourceCounter ?? undefined,
@@ -146,42 +145,34 @@ function mergeCustomerRuns(lines: FormLine[]): void {
 }
 
 export function buildFormLines(report: DailyCollectionReport): FormLine[] {
-  const { lines, running: afterCollections } = collectionLines(report)
+  const { lines, running } = collectionLines(report)
   mergeCustomerRuns(lines)
+  return [...lines, ...creditLines(report, running)]
+}
 
-  let running = afterCollections
-  for (const d of report.deposits) {
+/**
+ * The CREDIT column, entered until the running balance is nil, as the
+ * client's form closes a day: one line per deposit — the bank and the date it
+ * was banked — then whatever is left as UNDEPOSITED. Each line carries the balance as
+ * it stands after it.
+ */
+function creditLines(report: DailyCollectionReport, opening: number): FormLine[] {
+  let running = opening
+  const lines = report.deposits.map((d) => {
     running -= d.amount
-    lines.push({
-      type: 'deposit',
-      si: '',
-      customer:
-        `${d.bankName}${d.reference ? ` (${d.reference})` : ''} ${formatFormDate(d.depositedAt)}`.toUpperCase(),
-      desc: '',
-      office: '',
-      field: '',
-      others: '',
-      cashInvoice: '',
-      ppd: 0,
-      penalty: 0,
-      debit: null,
-      credit: d.amount,
-      balance: running,
-      span: 1,
-    })
-  }
-  if (running > 0.005) lines.push(undepositedLine(running))
+    const text = `${d.bankName} ${formatFormDate(d.depositedAt)}`
+    return creditLine('DEPOSIT', text, d.amount, running)
+  })
+  if (running > 0.005) lines.push(creditLine('UNDEPOSITED', 'UNDEPOSITED FUNDS', running, 0))
   return lines
 }
 
-/** Cash still in the drawer with no deposit against it yet: the balance the
- * form has not yet credited back to nil. Shown so an undeposited day reads as
- * open, not as a form someone forgot to finish. */
-function undepositedLine(balance: number): FormLine {
+function creditLine(label: string, text: string, credit: number, balance: number): FormLine {
   return {
     type: 'deposit',
+    creditLabel: label,
     si: '',
-    customer: 'UNDEPOSITED FUNDS',
+    customer: text.toUpperCase(),
     desc: '',
     office: '',
     field: '',
@@ -190,7 +181,7 @@ function undepositedLine(balance: number): FormLine {
     ppd: 0,
     penalty: 0,
     debit: null,
-    credit: null,
+    credit,
     balance,
     span: 1,
   }
@@ -208,7 +199,7 @@ export interface FooterLine {
   /** A deduction, printed in accounting parentheses. */
   negate: boolean
   emphasis: boolean
-  /** Sits under a block heading — the non-cash tender lines. A flag rather
+  /** Sits under a block heading — the caravan lines. A flag rather
    * than padding in the label, since HTML collapses leading spaces. */
   indent?: boolean
   /** The on-screen explanation of the label. The printed form ignores it. */
@@ -220,7 +211,7 @@ export interface FooterLine {
    * `placement` is a line that says where the cash is rather than what kind
    * of collection it was — the screen shows those together in their own
    * group, so it draws them from the report directly and skips them here. */
-  group?: 'cash' | 'placement' | 'nonCash'
+  group?: 'cash' | 'placement'
 }
 
 /** Accounting parentheses for a deduction: `(4,720.00)`. */
@@ -229,59 +220,37 @@ export function footerAmount(line: FooterLine): string {
   return line.negate ? `(${peso(line.amount)})` : peso(line.amount)
 }
 
-/** Provider names the client's closing sheet calls something else: Soundpay
- * is the gateway behind GCash. */
-const PROVIDER_LINE_ALIAS: Record<string, string> = { SOUNDPAY: 'GCASH' }
-
-/**
- * The line a non-cash tender prints on, named the way the client's SAMPLE FOR
- * CLOSING SESSION names it: CHECK, GCASH, CARD-Maya, ECPAY, MAYA, or a bank by
- * name. Mirrors the backend form sheet's `tenderLine`; change one, change the
- * other.
- */
-export function tenderLine(tender: string): string {
-  const [method, provider = ''] = tender.split('::')
-  const name = provider.trim()
-  if (method === 'check' || method === 'cheque') return 'CHECK'
-  if (method === 'bank_transfer') return name || 'BANK'
-  if (method === 'card') return name ? `CARD-${name}` : 'CARD'
-  if (method === 'qr' || method === 'gcash' || method === 'maya') {
-    const label = (name || (method === 'maya' ? 'MAYA' : 'GCASH')).toUpperCase()
-    return PROVIDER_LINE_ALIAS[label] ?? label
+/** The day's collections per DESC kind, cash and non-cash together — the
+ * ledger's own debits, so the recap is a rundown of exactly what it lists.
+ * `byKind` on the report is cash-only and cannot be used for this. */
+function kindTotals(report: DailyCollectionReport): Map<CollectionKind, number> {
+  const totals = new Map<CollectionKind, number>()
+  for (const r of [...report.rows, ...(report.nonCashRows ?? [])]) {
+    totals.set(r.kind, (totals.get(r.kind) ?? 0) + r.amount)
   }
-  return 'OTHER NON-CASH'
+  return totals
 }
 
-/** One line per provider, a down payment and a plain sale on it together.
- * CHECK and GCASH lead and are kept at zero — pre-printed on the client's
- * form; the screen drops empty rows itself (`withValuesOnly`). */
-function nonCashLines(report: DailyCollectionReport): FooterLine[] {
-  const totals = new Map<string, number>([
-    ['CHECK', 0],
-    ['GCASH', 0],
-  ])
-  for (const t of report.nonCash ?? []) {
-    const label = tenderLine(t.tender)
-    totals.set(label, (totals.get(label) ?? 0) + t.amount)
-  }
-  return [...totals.entries()].map(([label, amount]) => ({
-    label,
-    amount: amount || null,
-    negate: false,
-    emphasis: false,
-    group: 'nonCash' as const,
-  }))
+/** Names only what the day's OTHERS line actually holds. */
+function othersNote(deliveryCharges: number, newReceipts: number): string | undefined {
+  const hasDc = Math.abs(deliveryCharges) > 0.005
+  const hasNr = Math.abs(newReceipts) > 0.005
+  if (hasDc && hasNr) return 'Delivery charges and new receipts'
+  if (hasDc) return 'Delivery charges'
+  if (hasNr) return 'New receipts'
+  return undefined
 }
 
 /**
  * The bottom-left block as the client's form has it (Alimodian sample,
- * 2026-09-23): COD, DP, MI (part-payments included), OTHERS with DC, the
- * highlighted TOTAL COLLECTION, then the non-cash tenders one per provider,
- * as the client's SAMPLE FOR CLOSING SESSION itemises them: CHECK, GCASH,
- * CARD-Maya, ECPAY, MAYA. Mirrored by the backend's Excel form sheet.
+ * 2026-09-23): COD, DP, MI (part-payments included), OTHERS with DC, then the
+ * highlighted TOTAL COLLECTION — every collection of the day, cash or not.
+ * The non-cash providers are not itemised here: the ledger's CREDIT column
+ * already names each bank they were banked to.
  */
 export function buildCollectionRecapLines(report: DailyCollectionReport): FooterLine[] {
-  const kind = (k: CollectionKind): number => report.byKind[k] ?? 0
+  const totals = kindTotals(report)
+  const kind = (k: CollectionKind): number => totals.get(k) ?? 0
   const line = (label: string, amount: number, extra: Partial<FooterLine> = {}): FooterLine => ({
     label,
     amount: amount || null,
@@ -293,16 +262,27 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
   return [
     line('COD', kind('COD'), { group: 'cash' }),
     line('DP', kind('DP'), { group: 'cash' }),
-    // A full payment (FP) is still an instalment collection: it counts here.
-    line('MI', kind('MI') + kind('MI-PARTIAL') + kind('FP'), { group: 'cash' }),
-    // DC and the day's New Receipts (Scenario 70 G3) share the client's own
-    // OTHERS line — neither settles a sale or a due.
-    line('OTHERS', kind('DC') + kind('OTHERS'), { sub: 'DC', group: 'cash' }),
-    line('TOTAL COLLECTION', report.totalCollection, {
-      emphasis: true,
-      highlight: true,
+    // A first instalment (FMI) and a full payment (FP) are still instalment
+    // collections: they count here.
+    line('MI', kind('MI') + kind('FMI') + kind('MI-PARTIAL') + kind('FP'), {
       group: 'cash',
     }),
+    // DC and the day's New Receipts (Scenario 70 G3) share the client's own
+    // OTHERS line — neither settles a sale or a due.
+    line('OTHERS', kind('DC') + kind('OTHERS'), {
+      sub: 'DC',
+      note: othersNote(kind('DC'), kind('OTHERS')),
+      group: 'cash',
+    }),
+    line(
+      'TOTAL COLLECTION',
+      [...totals.values()].reduce((sum, v) => sum + v, 0),
+      {
+        emphasis: true,
+        highlight: true,
+        group: 'cash',
+      }
+    ),
     // Mirrors the backend form sheet's own line (daily-collection.form-sheet.ts)
     // — this recap and that one must never print different figures for the
     // same day. Only drawn while a session is still open, so a final form is
@@ -324,7 +304,6 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
     // branch, and the client's own data uses that word for something else
     // (the `_Satellite` sub-locations in the Item Master).
     ...report.offsiteCash.map((c) => line(`At ${c.name}`, c.amount, { group: 'placement' })),
-    ...nonCashLines(report),
   ]
 }
 

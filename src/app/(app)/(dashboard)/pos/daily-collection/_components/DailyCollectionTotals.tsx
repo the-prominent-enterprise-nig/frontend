@@ -27,10 +27,7 @@ import {
 const LINE_NOTES: Record<string, string> = {
   COD: 'Cash on delivery',
   DP: 'Down payment',
-  MI: 'Monthly instalment, incl. FP',
-  OTHERS: 'DC — delivery charge',
-  CARD: 'Card swipe',
-  'OTHER NON-CASH': 'Gift card, store credit, TPF',
+  MI: 'Monthly instalment, incl. FMI and FP',
 }
 
 const PANE_HEAD =
@@ -72,8 +69,8 @@ export default function DailyCollectionTotals({ report, edit }: Props): React.JS
 }
 
 /**
- * What the branch collected, in the client's own order: the cash by kind, the
- * cash total, then the non-cash tenders and the day's grand total. One list,
+ * What the branch collected, in the client's own order: every collection of
+ * the day by kind, cash and non-cash, then TOTAL COLLECTION. One list,
  * no sub-grouping — the client asked for the shape of their own form, not a
  * breakdown of it (2026-10-09).
  *
@@ -86,15 +83,11 @@ export default function DailyCollectionTotals({ report, edit }: Props): React.JS
  * The figures come from the same `buildCollectionRecapLines` the printed form
  * uses, so no amount here can disagree with the paper.
  *
- * Only the rows carrying a value are drawn (`withValuesOnly`). The printed
- * form and the Excel export deliberately keep their blank GCASH/CHECK rows,
- * which are pre-printed on the client's form; this panel is a working view,
- * so an untaken tender is noise rather than a row someone fills in by hand.
+ * Only the rows carrying a value are drawn (`withValuesOnly`).
  */
 function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.Element {
   const lines = withValuesOnly(buildCollectionRecapLines(report))
   const cash = lines.filter((l) => l.group === 'cash')
-  const nonCash = lines.filter((l) => l.group === 'nonCash')
 
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
@@ -102,7 +95,7 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
       {cash.map((line, i) =>
         line.highlight ? (
           <div key={line.label} className={`${ROW} border-y border-yellow-200 bg-yellow-50 py-3`}>
-            <span className="font-semibold text-gray-900">Total cash</span>
+            <span className="font-semibold text-gray-900">Total collection</span>
             <span className={`${FIGURE} text-base font-semibold`}>{peso(line.amount ?? 0)}</span>
           </div>
         ) : (
@@ -128,16 +121,6 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
         <PlainRow key={counter.id} label={`At ${counter.name}`} amount={counter.amount} />
       ))}
 
-      {nonCash.map((line, i) => (
-        <RecapRow
-          key={`${i}-${line.label}`}
-          label={line.label}
-          amount={line.amount}
-          note={line.note ?? LINE_NOTES[line.label]}
-          indent={line.indent}
-        />
-      ))}
-
       {/* Scenario 60 Part 4 — how much of the day came from the caravans this
           branch hosts. Already inside the totals, so it sits below them. */}
       {report.caravanSales.length > 0 && (
@@ -160,13 +143,6 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
           </div>
         </>
       )}
-
-      <div className="mt-auto flex items-baseline justify-between gap-3 border-t border-gray-200 bg-gray-50 px-4 py-3">
-        <span className="text-sm font-semibold text-gray-900">Total branch collection</span>
-        <span className={`${FIGURE} text-base font-semibold`}>
-          {peso(report.grandTotalCollection)}
-        </span>
-      </div>
     </div>
   )
 }
