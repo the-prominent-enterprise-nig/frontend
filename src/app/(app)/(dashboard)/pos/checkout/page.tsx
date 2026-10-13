@@ -103,6 +103,7 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
+import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
 import { PillCombobox, PillSelect } from './_components/PillInputs'
 import {
@@ -634,8 +635,6 @@ export default function CheckoutPage() {
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
-  // Scenario 71 — the "Exact amount" tick under Amount received.
-  const [exactAmount, setExactAmount] = useState(false)
   // Scenario 37 — card details captured once via the Payment Mode toggle
   // (transaction-scoped, see hasCreditCardLine), then carried into whatever
   // Card payment row gets added below.
@@ -1797,16 +1796,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (saleMode !== 'sale' || tenderTarget > 0 || payments.length === 0) return
     setPayments([])
-    setExactAmount(false)
   }, [saleMode, tenderTarget, payments.length])
-
-  // Scenario 71 — while "Exact amount" is ticked, Amount received holds
-  // exactly what is collected now, and follows it if the cart changes.
-  useEffect(() => {
-    if (!exactAmount || saleMode !== 'sale' || payments.length === 0) return
-    if (Math.abs(payments[0].amount - tenderTarget) < 0.005) return
-    setPayments((prev) => prev.map((p, i) => (i === 0 ? { ...p, amount: tenderTarget } : p)))
-  }, [exactAmount, saleMode, tenderTarget, payments])
 
   // Scenario 37 — keep every payment row that's still on its default (the
   // cashier hasn't picked a different method from the row's own dropdown)
@@ -3223,7 +3213,6 @@ export default function CheckoutPage() {
     setPromoResult(null)
     setPromoInput('')
     setPayments([])
-    setExactAmount(false)
     setShowParkModal(false)
     setParkLabel('')
   }
@@ -4050,7 +4039,6 @@ export default function CheckoutPage() {
     setPromoResult(null)
     setPromoError('')
     setPayments([])
-    setExactAmount(false)
     setError('')
     setSuccess(null)
     setPendingApproval(null)
@@ -5168,8 +5156,20 @@ export default function CheckoutPage() {
                 </div>
               )}
             </div>
-            {/* Scenario 71 (Kian, 2026-10-13): the Total moved down to sit just
-                above Delivery, next to where the sale is paid. */}
+            {/* Scenario 71 (Kian, 2026-10-13): no "Total" line here any more —
+                the one Total is Scenario 70's, just above the payment fields
+                (with its Copy), so the page never shows the same total twice. */}
+            {/* Scenario 70 — the delivery fee is a note under the Total, never
+                part of it: it is collected on its own receipt and JE. */}
+            {deliveryFeeAmount > 0 && (
+              <div
+                className="mt-2 flex items-center justify-between gap-3 text-xs text-purple-700"
+                data-testid="order-summary-delivery-fee"
+              >
+                <span>Delivery fee — collected on its own CR, not part of the sale</span>
+                <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
+              </div>
+            )}
 
             {/* VAT treatment (Scenario 69 Part F). Not offered on a table tab's
                 sale: it already exists, so there is nothing left to classify. */}
@@ -6218,35 +6218,6 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Scenario 71 (Kian, 2026-10-13): the one Total, just above Delivery
-              — the last thing before the sale is paid. It used to close the
-              Order Summary, far above the payment fields, and Scenario 70 had
-              repeated it above Amount received. The delivery fee stays a note
-              under it, never part of it: it is collected on its own receipt
-              and JE (Scenario 70). */}
-          {cart.length > 0 && (
-            <div className="border-t border-purple-200 px-5 py-4" data-testid="checkout-total">
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm font-semibold text-gray-700">Total</span>
-                <span
-                  className="text-2xl font-bold text-gray-900"
-                  data-testid="order-summary-total"
-                >
-                  {fmt(totalAmount)}
-                </span>
-              </div>
-              {deliveryFeeAmount > 0 && (
-                <div
-                  className="mt-2 flex items-center justify-between gap-3 text-xs text-purple-700"
-                  data-testid="order-summary-delivery-fee"
-                >
-                  <span>Delivery fee — collected on its own CR, not part of the sale</span>
-                  <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Scenario 70 — Delivery follows the Order Summary: Deliver
               to / address, then the fee with its OWN Paid with and CR, apart
               from the sale's payment. The Total follows, then the sale's
@@ -6264,29 +6235,43 @@ export default function CheckoutPage() {
             />
           )}
 
-          {/* Scenario 71 (Kian, 2026-10-13): one Total only (above Delivery).
-              Scenario 70 put a second "Total" here, above the payment fields;
-              on a plain sale it was the same figure twice. It now shows only
-              when the counter collects less than the Total today (an
-              installment's down payment, an X-Deal's cash portion), as
-              "Collect now", so it never reads as a second total. */}
+          {/* Scenario 70 — the Total comes first, then the payment fields under it
+              (Amount received, CR Number, Change), then Confirm. It is
+              the sale's own figure (what the register collects for the items);
+              the delivery fee under it is a note, not part of it — the fee is a
+              collection on its own CR, paid in the Delivery section above, and
+              never part of the sale. */}
           {saleMode === 'sale' &&
             cart.length > 0 &&
-            tenderTarget > 0 &&
-            Math.abs(tenderTarget - totalAmount) >= 0.01 && (
-              <div
-                className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-lg bg-purple-50 px-3 py-2.5"
-                data-testid="checkout-collect-now"
-              >
-                <span className="text-sm text-purple-800">
-                  <span className="font-semibold">Collect now</span>
-                  <span className="block text-xs text-purple-600">
-                    The rest of the Total is not paid at this counter today.
-                  </span>
-                </span>
-                <span className="shrink-0 text-lg font-bold text-purple-900">
-                  {fmt(tenderTarget)}
-                </span>
+            (tenderTarget > 0 || deliveryFeeAmount > 0) && (
+              <div className="border-t border-purple-200 p-5" data-testid="checkout-totals">
+                {tenderTarget > 0 && (
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-semibold text-gray-700">
+                      {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
+                      <span
+                        className="text-2xl font-bold text-gray-900"
+                        data-testid="checkout-grand-total"
+                      >
+                        {fmt(tenderTarget)}
+                      </span>
+                    </span>
+                  </div>
+                )}
+                {deliveryFeeAmount > 0 && (
+                  <div
+                    className={`flex items-center justify-between gap-3 text-xs text-purple-700 ${
+                      tenderTarget > 0 ? 'mt-2' : ''
+                    }`}
+                    data-testid="checkout-fee-total"
+                  >
+                    <span>Delivery fee — collected on its own CR, not part of the sale</span>
+                    <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -6339,32 +6324,9 @@ export default function CheckoutPage() {
                             aria-label="Amount received"
                             className="w-full rounded-lg border-2 border-purple-200 bg-white py-3 pl-9 pr-3 text-base font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:text-sm placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                             value={p.amount === 0 ? '' : p.amount}
-                            onValueChange={(v) => {
-                              // Typing your own figure means it is no longer "exact".
-                              setExactAmount(false)
-                              updatePayment(i, { amount: Number(v) || 0 })
-                            }}
+                            onValueChange={(v) => updatePayment(i, { amount: Number(v) || 0 })}
                           />
                         </div>
-                        {/* Scenario 71 (Kian, 2026-10-13) — fills the box with
-                            what is collected now (the Total, or the "Collect
-                            now" figure), replacing Scenario 70's Copy button.
-                            Unticking empties it again. */}
-                        {i === 0 && (
-                          <label className="flex w-fit cursor-pointer items-center gap-2 pt-1 text-sm text-gray-700">
-                            <input
-                              type="checkbox"
-                              data-testid="exact-amount"
-                              checked={exactAmount}
-                              onChange={(e) => {
-                                setExactAmount(e.target.checked)
-                                updatePayment(i, { amount: e.target.checked ? tenderTarget : 0 })
-                              }}
-                              className="h-5 w-5 cursor-pointer rounded border-purple-300 text-purple-600 focus:ring-purple-500"
-                            />
-                            Exact amount
-                          </label>
-                        )}
                       </div>
                     )
                   }

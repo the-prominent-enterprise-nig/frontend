@@ -311,7 +311,7 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(52)
   })
 
-  test('S71-1-F03 / F04: a pasted "6,190.00" or "₱6,190" is read as 6190; "Exact amount" fills the box and settles the sale; there is one Total, above Delivery', async ({
+  test('S71-1-F03 / F04: a pasted "6,190.00" or "₱6,190" is read as 6190; Copy beside the Total pastes straight in and settles the sale', async ({
     page,
   }) => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -329,33 +329,22 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
       await expect(field).toHaveValue('6,190.00')
     }
 
-    // F04 (Kian, 2026-10-13: a tickbox instead of Scenario 70's Copy) —
-    // "Exact amount" fills the box with the ₱12,345.60 due: no Change, no
-    // shortfall. Typing your own figure unticks it; unticking empties it.
-    const exact = page.getByTestId('exact-amount')
-    await expect(page.getByTestId('checkout-total-copy')).toHaveCount(0)
-    await exact.check()
+    // F04 — Copy still puts the plain amount on the clipboard (no comma) and
+    // it pays the ₱12,345.60 sale exactly: no Change, no shortfall.
+    await page.getByTestId('checkout-total-copy').click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('12345.60')
+    await field.click()
+    await field.fill('')
+    await page.keyboard.press('ControlOrMeta+V')
+    await field.blur()
     await expect(field).toHaveValue('12,345.60')
     await expect(page.getByText('Change', { exact: true })).toHaveCount(0)
-    await field.click()
-    await field.pressSequentially('0')
-    await expect(exact).not.toBeChecked()
-    await field.blur()
-    await exact.check()
-    await expect(field).toHaveValue('12,345.60')
-    await exact.uncheck()
-    await expect(field).toHaveValue('')
 
-    // One Total on a plain sale (Kian, 2026-10-13), and it sits just above
-    // Delivery, before the payment — no second figure above Amount received.
-    await expect(page.getByTestId('order-summary-total')).toHaveText('₱12,345.60')
+    // One Total (Kian, 2026-10-13): Scenario 70's, with its Copy, above the
+    // payment; the Order Summary no longer repeats it.
+    await expect(page.getByTestId('checkout-grand-total')).toHaveText('₱12,345.60')
+    await expect(page.getByTestId('order-summary-total')).toHaveCount(0)
     await expect(page.getByText('Total', { exact: true })).toHaveCount(1)
-    await expect(page.getByTestId('checkout-collect-now')).toHaveCount(0)
-    const totalY = (await page.getByTestId('order-summary-total').boundingBox())!.y
-    const deliveryY = (await page.getByTestId('delivery-section').boundingBox())!.y
-    const fieldY = (await field.boundingBox())!.y
-    expect(totalY).toBeLessThan(deliveryY)
-    expect(deliveryY).toBeLessThan(fieldY)
 
     // An overpayment shows the Change, worked out from the plain number.
     await typeAndBlur(field, '20000')
@@ -432,7 +421,7 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     expect(amounts.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(ITEM_PRICE)
   })
 
-  test('S71-1-F08 (checkout): the X-Deal cash portion formats the same way, and a part-paid sale shows "Collect now" rather than a second Total', async ({
+  test('S71-1-F08 (checkout): the X-Deal cash portion and the split-payment field format the same way', async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F08XD')
@@ -448,10 +437,6 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     await expect(cashPortion).toBeVisible({ timeout: 15_000 })
     await typeAndBlur(cashPortion, '1234.5')
     await expect(cashPortion).toHaveValue('1,234.50')
-    // Less than the Total is collected today: a "Collect now" line, not a
-    // second Total.
-    await expect(page.getByTestId('checkout-collect-now')).toContainText('₱1,234.50')
-    await expect(page.getByText('Total', { exact: true })).toHaveCount(1)
     expect((await cashPortion.boundingBox())!.height).toBeGreaterThanOrEqual(52)
   })
 
