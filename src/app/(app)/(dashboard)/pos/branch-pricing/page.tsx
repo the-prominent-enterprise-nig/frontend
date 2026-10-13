@@ -17,6 +17,7 @@ import type {
 } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
@@ -511,13 +512,11 @@ function PricingModal({
         )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Price (₱)">
-            <input
+            <MoneyInput
               className="input"
-              type="number"
-              min={0}
-              step={0.01}
+              aria-label="Price"
               value={form.price === 0 ? '' : form.price}
-              onChange={(e) => setForm((p) => ({ ...p, price: parseFloat(e.target.value) || 0 }))}
+              onValueChange={(v) => setForm((p) => ({ ...p, price: Number(v) || 0 }))}
             />
           </Field>
           <Field label="Tax Rate (%)">

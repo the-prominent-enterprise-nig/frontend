@@ -1,6 +1,7 @@
 'use client'
 
 import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import type { SheetDraftController } from '../_hooks/useSheetDraft'
 import {
   buildCollectionRecapLines,
@@ -274,14 +275,11 @@ function DenominationPane({
                   <span className={`${FIGURE} text-xs text-gray-500`}>{line.count ?? ''}</span>
                 ))}
               {coins && edit ? (
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
+                <MoneyInput
                   aria-label="Total amount in coins"
                   className={`${INPUT} w-28`}
                   value={edit.draft?.denominations.coins ?? ''}
-                  onChange={(e) => edit.setDenomination('coins', e.target.value)}
+                  onValueChange={(v) => edit.setDenomination('coins', v)}
                 />
               ) : (
                 <span

@@ -1,6 +1,7 @@
 'use client'
 
 import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import { checkedByOf, type SheetDraftController } from '../_hooks/useSheetDraft'
 import {
   buildCaravanRecapLines,
@@ -389,14 +390,11 @@ function DenominationAmount({
   if (!edit || line.face !== 'coins') return <>{footerAmount(line)}</>
 
   return (
-    <input
-      type="number"
-      min={0}
-      step={0.01}
+    <MoneyInput
       aria-label="Total amount in coins"
       className={`${FIELD} text-right tabular-nums`}
       value={edit.draft?.denominations.coins ?? ''}
-      onChange={(e) => edit.setDenomination('coins', e.target.value)}
+      onValueChange={(v) => edit.setDenomination('coins', v)}
     />
   )
 }

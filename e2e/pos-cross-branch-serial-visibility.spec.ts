@@ -62,7 +62,7 @@ async function openBagoSession(page: import('@playwright/test').Page) {
     await expect(terminalSelect).toHaveValue(/.+/)
   }).toPass({ timeout: 10_000 })
 
-  await page.getByRole('spinbutton').fill('1000')
+  await page.getByLabel('Opening Cash').fill('1000')
 
   await expect(async () => {
     await page.getByRole('button', { name: 'Open Session' }).click()

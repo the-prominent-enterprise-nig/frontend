@@ -3,6 +3,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Check, MapPin, Truck } from 'lucide-react'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import type { PaymentMethodConfig } from '@/src/schema/pos'
 import {
   CARD_INSTALLMENT_TERMS,
@@ -275,13 +276,11 @@ export default function DeliverySection({
               <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-base font-semibold text-gray-500">
                 ₱
               </span>
-              <input
+              <MoneyInput
                 id="delivery-fee"
-                type="text"
-                inputMode="decimal"
                 aria-label="Delivery fee"
                 value={state.fee}
-                onChange={(e) => setState((s) => ({ ...s, fee: e.target.value }))}
+                onValueChange={(v) => setState((s) => ({ ...s, fee: v }))}
                 placeholder="0.00 — leave blank for free delivery"
                 className="w-full rounded-lg border-2 border-purple-200 bg-white py-3 pl-9 pr-3 text-base font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:text-sm placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
               />

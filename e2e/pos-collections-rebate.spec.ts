@@ -163,7 +163,7 @@ test('Collect Payment pre-fills the rebate at ppd, nets it out of the suggested 
   // Neither field has htmlFor/id association (same as every other field in
   // this modal — Amount received, Payment date, etc.) — positional, matching
   // pos-collections-same-day-guard.spec.ts's own convention for this file.
-  const amountInput = page.locator('input[type="number"]').first()
+  const amountInput = page.getByLabel('Amount received')
   const rebateInput = page.locator('input[type="number"]').nth(1)
 
   // Pre-filled at ppd, and Amount received is netted (outstanding - ppd) so

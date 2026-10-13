@@ -21,6 +21,7 @@ import { PosDateShort } from '../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { isoDateOf } from '../daily-collection/_utils/business-date'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import {
   RefreshCw,
   Monitor,
@@ -571,13 +572,11 @@ function OpenSessionModal({
           </div>
         </Field>
         <Field label="Opening Cash (₱)">
-          <input
+          <MoneyInput
             className="input"
-            type="number"
-            min={0}
-            step={0.01}
+            aria-label="Opening Cash"
             value={form.openingCash}
-            onChange={(e) => setForm((p) => ({ ...p, openingCash: e.target.value }))}
+            onValueChange={(v) => setForm((p) => ({ ...p, openingCash: v }))}
             onBlur={(e) =>
               setForm((p) => ({ ...p, openingCash: (parseFloat(e.target.value) || 0).toFixed(2) }))
             }
@@ -1659,15 +1658,10 @@ function CloseSessionModal({
                     COINS line on the client's Daily Collection Report form. */}
                 <div className="grid grid-cols-[62px_minmax(0,1fr)_96px] items-center gap-2.5 border-t border-[#f4f4f6] px-4 py-2.5">
                   <span className="text-[12px] font-medium text-[#3d3d4a]">Coins</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    inputMode="decimal"
-                    placeholder="0.00"
+                  <MoneyInput
                     aria-label="Loose coin total"
                     value={coins}
-                    onChange={(e) => setCoins(e.target.value)}
+                    onValueChange={setCoins}
                     className={`${inputChrome} text-right tabular-nums`}
                   />
                   <span
@@ -2084,13 +2078,11 @@ function HandoverModal({
         </div>
 
         <Field label="Declared Cash (₱)">
-          <input
+          <MoneyInput
             className="input"
-            type="number"
-            min={0}
-            step={0.01}
+            aria-label="Declared Cash"
             value={declaredCash === 0 ? '' : declaredCash}
-            onChange={(e) => setDeclaredCash(parseFloat(e.target.value) || 0)}
+            onValueChange={(v) => setDeclaredCash(Number(v) || 0)}
           />
         </Field>
         <Field label="Notes">

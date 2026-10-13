@@ -9,7 +9,7 @@ test.describe('POS — opening balance', () => {
     await gotoReady(page, '/pos/sessions')
     await page.getByRole('button', { name: 'Open Session' }).first().click()
 
-    const openingCash = page.locator('input[type="number"]').first()
+    const openingCash = page.getByLabel('Opening Cash')
     await expect(openingCash).toBeVisible()
     // The till legitimately opens empty — a blank field left cashiers unsure
     // whether zero had been accepted at all.

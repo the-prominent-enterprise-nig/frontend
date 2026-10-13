@@ -46,6 +46,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
   itemLookup,
@@ -5710,18 +5711,11 @@ export default function CheckoutPage() {
                                       X-Deal · optional
                                     </span>
                                   </div>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={0.01}
-                                    inputMode="decimal"
+                                  <MoneyInput
                                     aria-label="X-Deal cash portion"
-                                    placeholder="0.00"
                                     value={line.downPaymentInput ?? ''}
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
-                                    className="mt-1 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                    onValueChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
+                                    className="mt-1 min-h-[52px] w-full rounded-lg border border-purple-200 bg-white px-3 py-2.5 text-right text-base font-semibold outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="mt-1 text-xs text-prominent-purple-500">
                                     {(parseFloat(line.downPaymentInput ?? '') || 0) > 0
@@ -5737,10 +5731,7 @@ export default function CheckoutPage() {
                                 </div>
                               ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
                                 <>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
+                                  <MoneyInput
                                     placeholder={
                                       employeeApplianceLoanActive
                                         ? 'Down payment (optional)'
@@ -5753,9 +5744,7 @@ export default function CheckoutPage() {
                                         ? ''
                                         : (line.downPaymentInput ?? '')
                                     }
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
+                                    onValueChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
                                     onBlur={(e) => {
                                       // Normalize to a whole peso on blur (round up,
                                       // never below the 10% floor) rather than
@@ -5768,7 +5757,7 @@ export default function CheckoutPage() {
                                         Math.ceil(parsed).toFixed(2)
                                       )
                                     }}
-                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                    className="min-h-[52px] w-full rounded-lg border border-purple-200 px-3 py-2.5 text-right text-base font-semibold outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
                                     {employeeApplianceLoanActive
@@ -5872,10 +5861,7 @@ export default function CheckoutPage() {
                                 </div>
                               ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
                                 <>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
+                                  <MoneyInput
                                     placeholder={
                                       employeeApplianceLoanActive
                                         ? 'Down payment (optional)'
@@ -5888,9 +5874,7 @@ export default function CheckoutPage() {
                                         ? ''
                                         : (line.downPaymentInput ?? '')
                                     }
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
+                                    onValueChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
                                     onBlur={(e) => {
                                       const parsed = parseFloat(e.target.value)
                                       if (!Number.isFinite(parsed)) return
@@ -5899,7 +5883,7 @@ export default function CheckoutPage() {
                                         Math.ceil(parsed).toFixed(2)
                                       )
                                     }}
-                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                    className="min-h-[52px] w-full rounded-lg border border-purple-200 px-3 py-2.5 text-right text-base font-semibold outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
                                     {employeeApplianceLoanActive
@@ -6339,18 +6323,11 @@ export default function CheckoutPage() {
                           <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-base font-semibold text-gray-500">
                             ₱
                           </span>
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
+                          <MoneyInput
                             aria-label="Amount received"
                             className="w-full rounded-lg border-2 border-purple-200 bg-white py-3 pl-9 pr-3 text-base font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:text-sm placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                            placeholder="0.00"
                             value={p.amount === 0 ? '' : p.amount}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value)
-                              updatePayment(i, { amount: isNaN(val) ? 0 : val })
-                            }}
+                            onValueChange={(v) => updatePayment(i, { amount: Number(v) || 0 })}
                           />
                         </div>
                       </div>
@@ -6428,17 +6405,11 @@ export default function CheckoutPage() {
                             className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-700"
                           />
                         </div>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          className="w-28 rounded-lg border border-purple-200 px-2 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                          placeholder="0.00"
+                        <MoneyInput
+                          aria-label="Payment amount"
+                          className="min-h-[52px] w-40 rounded-lg border border-purple-200 px-3 py-2.5 text-right font-mono text-base outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                           value={p.amount === 0 ? '' : p.amount}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value)
-                            updatePayment(i, { amount: isNaN(val) ? 0 : val })
-                          }}
+                          onValueChange={(v) => updatePayment(i, { amount: Number(v) || 0 })}
                         />
                         <button
                           aria-label="Remove payment method"

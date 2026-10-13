@@ -1,6 +1,7 @@
 'use client'
 
 import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
+import { formatMoney } from '@/src/components/ui/MoneyInput'
 import { getTransactions } from '../../_actions/pos-actions'
 
 type Props = {
@@ -36,7 +37,7 @@ export function TransactionSearchCombobox({ value, onChange, error, initialLabel
         return (res.data ?? []).slice(0, 20).map((t) => ({
           id: t.id,
           primary: t.transactionNumber,
-          secondary: `₱${Number(t.totalAmount).toFixed(2)} — ${new Date(t.occurredAt).toLocaleDateString()}`,
+          secondary: `₱${formatMoney(Number(t.totalAmount))} — ${new Date(t.occurredAt).toLocaleDateString()}`,
         }))
       }}
     />

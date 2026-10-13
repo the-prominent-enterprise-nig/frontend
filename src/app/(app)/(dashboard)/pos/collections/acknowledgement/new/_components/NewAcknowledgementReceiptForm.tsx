@@ -14,6 +14,7 @@ import {
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import SegmentedControl from '@/src/components/ui/SegmentedControl'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { useBranches } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePos'
 
@@ -290,12 +291,11 @@ export default function NewAcknowledgementReceiptForm({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Amount" required>
-            <input
+            <MoneyInput
               required
-              type="number"
-              step="0.01"
+              aria-label="Amount"
               value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              onValueChange={(v) => setForm({ ...form, amount: v })}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
             />
           </Field>

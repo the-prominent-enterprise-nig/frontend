@@ -2,6 +2,7 @@
 
 import { Controller, type Control, type FieldErrors } from 'react-hook-form'
 import { Select } from '@/src/components/ui/Select'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import type { CreateCreditApplicationFormValues } from '@/src/schema/credit/applications'
 
 const fieldClass =
@@ -67,12 +68,13 @@ export function PaperRecordFields({ control, errors }: Props) {
             name="lcp"
             control={control}
             render={({ field }) => (
-              <input
-                {...field}
+              <MoneyInput
+                name={field.name}
+                ref={field.ref}
+                onBlur={field.onBlur}
                 value={field.value ?? ''}
-                type="number"
-                min={0}
-                step="0.01"
+                onValueChange={field.onChange}
+                aria-label="LCP"
                 className={fieldClass}
               />
             )}
@@ -87,12 +89,13 @@ export function PaperRecordFields({ control, errors }: Props) {
             name="ppdRebate"
             control={control}
             render={({ field }) => (
-              <input
-                {...field}
+              <MoneyInput
+                name={field.name}
+                ref={field.ref}
+                onBlur={field.onBlur}
                 value={field.value ?? ''}
-                type="number"
-                min={0}
-                step="0.01"
+                onValueChange={field.onChange}
+                aria-label="PPD rebate"
                 className={fieldClass}
               />
             )}

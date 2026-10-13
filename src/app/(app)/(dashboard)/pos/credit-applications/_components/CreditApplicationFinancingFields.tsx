@@ -23,6 +23,7 @@ import {
 } from '../../_actions/pos-actions'
 import { DEFAULT_VAT_RATE } from '../../_actions/pos-constants'
 import { Select } from '@/src/components/ui/Select'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import type { FinancingTerm, InstallmentPreview } from '@/src/schema/pos'
 import { DOWN_PAYMENT_FLOOR_RATE, isCardTerm } from '@/src/libs/constants/financing'
 
@@ -521,11 +522,13 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
             name={'downPayment' as Path<T>}
             control={control}
             render={({ field }) => (
-              <input
-                {...field}
+              <MoneyInput
+                name={field.name}
+                ref={field.ref}
+                onBlur={field.onBlur}
                 value={(field.value as string | undefined) ?? ''}
-                type="text"
-                inputMode="decimal"
+                onValueChange={field.onChange}
+                aria-label="Down Payment"
                 readOnly={fixedDownPayment != null}
                 placeholder={
                   fixedDownPayment == null && downPaymentFloor > 0

@@ -12,6 +12,7 @@ import { PosDate } from '../_components/PosDate'
 import type { PromoCode, CreatePromoCodeInput, UpdatePromoCodeInput } from '@/src/schema/pos'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -329,24 +330,33 @@ function PromoModal({
           </div>
         </Field>
         <Field label="Discount Value">
-          <input
-            className="input"
-            type="number"
-            min={0}
-            value={form.discountValue}
-            onChange={(e) =>
-              setForm((p) => ({ ...p, discountValue: parseFloat(e.target.value) || 0 }))
-            }
-          />
+          {/* A peso amount only for a fixed-amount promo; a percentage stays a plain number. */}
+          {form.discountType === 'fixed_amount' ? (
+            <MoneyInput
+              className="input"
+              aria-label="Discount Value"
+              value={form.discountValue === 0 ? '' : form.discountValue}
+              onValueChange={(v) => setForm((p) => ({ ...p, discountValue: Number(v) || 0 }))}
+            />
+          ) : (
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={form.discountValue}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, discountValue: parseFloat(e.target.value) || 0 }))
+              }
+            />
+          )}
         </Field>
         <Field label="Min Purchase Amount">
-          <input
+          <MoneyInput
             className="input"
-            type="number"
-            min={0}
+            aria-label="Min Purchase Amount"
             placeholder="Optional"
             value={form.minPurchaseAmount}
-            onChange={(e) => setForm((p) => ({ ...p, minPurchaseAmount: e.target.value }))}
+            onValueChange={(v) => setForm((p) => ({ ...p, minPurchaseAmount: v }))}
           />
         </Field>
         <Field label="Max Total Uses">

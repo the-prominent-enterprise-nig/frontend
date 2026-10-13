@@ -131,7 +131,7 @@ test.describe('POS Collections — same-day duplicate payment guard', () => {
     // payment is what actually isolates the same-day guard's own badge.
     await due1.getByRole('button', { name: 'Collect' }).click()
     await expect(page.getByRole('heading', { name: 'Collect Payment' })).toBeVisible()
-    await fillStable(page.locator('input[type="number"]').first(), '1')
+    await fillStable(page.getByLabel('Amount received'), '1')
     await page.getByRole('button', { name: 'Collect payment' }).click()
     await expect(page.getByRole('heading', { name: 'Collect Payment' })).not.toBeVisible({
       timeout: 10_000,
@@ -178,7 +178,7 @@ test.describe('POS Collections — same-day duplicate payment guard', () => {
     await due3.getByRole('button', { name: 'Collect' }).click()
     await expect(page.getByRole('heading', { name: 'Collect Payment' })).toBeVisible()
     await fillStable(page.locator('input[type="date"]'), yesterday)
-    await fillStable(page.locator('input[type="number"]').first(), '1')
+    await fillStable(page.getByLabel('Amount received'), '1')
     await expect(page.getByText('not today — make sure that').first()).toBeVisible()
     await page.getByRole('button', { name: 'Collect payment' }).click()
     await expect(page.getByRole('heading', { name: 'Collect Payment' })).not.toBeVisible({

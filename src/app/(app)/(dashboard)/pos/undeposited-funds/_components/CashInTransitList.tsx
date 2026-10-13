@@ -21,6 +21,7 @@ import {
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import AttachmentsPanel, { uploadAndAttach } from '@/src/components/common/AttachmentsPanel'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { showToast } from '@/src/components/ui/toast'
 import { createPosDeposit } from '../_actions/pos-deposits'
@@ -923,10 +924,9 @@ function SlipRow({
         placeholder={BRANCH_CASH_LABEL}
         portal
       />
-      <input
-        inputMode="decimal"
+      <MoneyInput
         value={slip.amount}
-        onChange={(e) => onChange({ amount: e.target.value })}
+        onValueChange={(v) => onChange({ amount: v })}
         placeholder="Amount"
         aria-label={`${label} amount`}
         className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right font-mono text-sm tabular-nums"

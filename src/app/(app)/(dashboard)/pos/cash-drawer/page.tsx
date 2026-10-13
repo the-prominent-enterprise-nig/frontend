@@ -7,6 +7,7 @@ import type { CashDrawerEvent, CreateCashDrawerEventInput } from '@/src/schema/p
 import { PosDateTime, PosDateShort } from '../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
@@ -331,15 +332,11 @@ function CreateEventModal({
             {needsAmount && (
               <div>
                 <label className="mb-1 block text-xs font-semibold text-gray-600">Amount (₱)</label>
-                <input
+                <MoneyInput
                   className="input"
-                  type="number"
-                  min={0}
-                  step={0.01}
+                  aria-label="Amount"
                   value={form.amount === 0 ? '' : form.amount}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, amount: parseFloat(e.target.value) || 0 }))
-                  }
+                  onValueChange={(v) => setForm((p) => ({ ...p, amount: Number(v) || 0 }))}
                 />
               </div>
             )}

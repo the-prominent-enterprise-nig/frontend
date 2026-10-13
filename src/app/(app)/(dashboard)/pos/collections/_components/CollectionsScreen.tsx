@@ -25,6 +25,7 @@ import {
 } from '../../_actions/pos-actions'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import { useMe } from '@/src/hooks/useMe'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { PillCombobox } from '../../checkout/_components/PillInputs'
 import {
@@ -1404,12 +1405,11 @@ function PaymentPanel({
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Amount received <span className="text-red-500">*</span>
               </label>
-              <input
+              <MoneyInput
                 required
-                type="number"
-                step="0.01"
+                aria-label="Amount received"
                 value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                onValueChange={(v) => setForm({ ...form, amount: v })}
                 className={fieldClass}
               />
             </div>

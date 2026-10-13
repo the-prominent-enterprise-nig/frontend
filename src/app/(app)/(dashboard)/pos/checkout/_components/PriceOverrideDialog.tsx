@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { X, KeyRound, ShieldCheck } from 'lucide-react'
 import { validatePriceOverrideByPin } from '../../_actions/pos-actions'
+import { MoneyInput, formatMoney } from '@/src/components/ui/MoneyInput'
 
 type Props = {
   itemName: string
@@ -76,19 +77,16 @@ export default function PriceOverrideDialog({ itemName, currentPrice, onClose, o
               <label className="mb-1 block text-xs font-semibold text-gray-600">
                 New Unit Price (₱)
               </label>
-              <input
+              <MoneyInput
                 autoFocus
-                type="number"
-                min={0}
-                step="0.01"
-                className="input font-mono text-sm"
-                placeholder="0.00"
+                aria-label="New Unit Price"
+                className="input font-mono text-base"
                 value={newPrice}
-                onChange={(e) => setNewPrice(e.target.value)}
+                onValueChange={setNewPrice}
               />
               {currentPrice !== null && (
                 <p className="mt-1 text-[10px] text-gray-400">
-                  Currently resolved at ₱{currentPrice.toFixed(2)}
+                  Currently resolved at ₱{formatMoney(currentPrice)}
                 </p>
               )}
             </div>

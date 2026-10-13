@@ -18,6 +18,7 @@ import type {
   PosCustomer,
 } from '@/src/schema/pos'
 import { PosDateTime } from '../../_components/PosDate'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 
 const eventTypeColor: Record<string, string> = {
   earned: 'bg-green-100 text-green-700',
@@ -251,15 +252,11 @@ export default function LoyaltyClient({
                     </p>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-500">₱</span>
-                      <input
+                      <MoneyInput
                         id="loyalty-points-value"
-                        type="number"
-                        min={0}
-                        step="any"
-                        placeholder="0"
-                        className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                        className="w-28 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                         value={pointsValue === '0' ? '' : pointsValue}
-                        onChange={(e) => setPointsValue(e.target.value)}
+                        onValueChange={setPointsValue}
                       />
                       <span className="text-sm text-gray-500">per point</span>
                     </div>

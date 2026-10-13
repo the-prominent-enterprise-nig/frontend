@@ -11,6 +11,7 @@ import { RefreshCw, CreditCard, Plus, X, ChevronDown, History } from 'lucide-rea
 import type { GiftCard, IssueGiftCardInput, GiftCardHistoryEntry } from '@/src/schema/pos'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { MoneyInput } from '@/src/components/ui/MoneyInput'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -326,15 +327,11 @@ function IssueModal({
                     className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
                   />
                 </div>
-                <input
+                <MoneyInput
                   className="input flex-1"
-                  type="number"
-                  min={1}
-                  step={0.01}
+                  aria-label="Initial Value"
                   value={form.initialValue === 0 ? '' : form.initialValue}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, initialValue: parseFloat(e.target.value) || 0 }))
-                  }
+                  onValueChange={(v) => setForm((p) => ({ ...p, initialValue: Number(v) || 0 }))}
                 />
               </div>
             </Field>
