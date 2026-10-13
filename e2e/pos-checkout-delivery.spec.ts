@@ -410,26 +410,17 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     expect(changeY).toBeLessThan(confirmY)
   })
 
-  test('DT-F07 (Scenario 70; beside Amount received since Scenario 71): Copy puts the plain amount on the clipboard — no peso sign, no commas — and it pastes into Amount received', async ({
+  test('DT-F07 (Scenario 70; a tickbox since Scenario 71): "Exact amount" fills Amount received with the sale total — never the delivery fee', async ({
     page,
   }) => {
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
     const customer = await createCustomer(page.request, 'DTF07', withAddress)
     await readyCashSale(page, customer.name, `SI-DTF07-${Date.now()}`)
-    // The delivery fee is not part of the Total, so it is not what gets copied.
+    // The delivery fee is not part of the Total, so it is not what gets filled in.
     await toggle(page).check()
     await fillStable(feeInput(page), '150')
 
-    const copyButton = page.getByTestId('checkout-total-copy')
-    await expect(copyButton).toContainText('Copy')
-    await copyButton.click()
-    await expect(copyButton).toContainText('Copied')
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('8000.00')
-
-    const received = page.getByLabel('Amount received')
-    await received.click()
-    await page.keyboard.press('ControlOrMeta+V')
-    await expect(received).toHaveValue('8,000.00')
+    await page.getByTestId('exact-amount').check()
+    await expect(page.getByLabel('Amount received')).toHaveValue('8,000.00')
   })
 
   test("DT-F02: the sale's Amount received covers the sale only — paying the sale total alone is enough, the fee is paid separately", async ({

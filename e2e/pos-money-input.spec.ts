@@ -311,7 +311,7 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(52)
   })
 
-  test('S71-1-F03 / F04: a pasted "6,190.00" or "₱6,190" is read as 6190; Copy beside the Total pastes straight in and settles the sale', async ({
+  test('S71-1-F03 / F04: a pasted "6,190.00" or "₱6,190" is read as 6190; "Exact amount" fills the box and settles the sale; there is one Total, above Delivery', async ({
     page,
   }) => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -329,25 +329,33 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
       await expect(field).toHaveValue('6,190.00')
     }
 
-    // F04 — Copy still puts the plain amount on the clipboard (no comma) and
-    // it pays the ₱12,345.60 sale exactly: no Change, no shortfall.
-    await page.getByTestId('checkout-total-copy').click()
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('12345.60')
-    await field.click()
-    await field.fill('')
-    await page.keyboard.press('ControlOrMeta+V')
-    await field.blur()
+    // F04 (Kian, 2026-10-13: a tickbox instead of Scenario 70's Copy) —
+    // "Exact amount" fills the box with the ₱12,345.60 due: no Change, no
+    // shortfall. Typing your own figure unticks it; unticking empties it.
+    const exact = page.getByTestId('exact-amount')
+    await expect(page.getByTestId('checkout-total-copy')).toHaveCount(0)
+    await exact.check()
     await expect(field).toHaveValue('12,345.60')
     await expect(page.getByText('Change', { exact: true })).toHaveCount(0)
+    await field.click()
+    await field.pressSequentially('0')
+    await expect(exact).not.toBeChecked()
+    await field.blur()
+    await exact.check()
+    await expect(field).toHaveValue('12,345.60')
+    await exact.uncheck()
+    await expect(field).toHaveValue('')
 
-    // One Total on a plain sale (Kian, 2026-10-13): the Order Summary's, with
-    // no second figure above the payment; Copy sits beside Amount received.
+    // One Total on a plain sale (Kian, 2026-10-13), and it sits just above
+    // Delivery, before the payment — no second figure above Amount received.
     await expect(page.getByTestId('order-summary-total')).toHaveText('₱12,345.60')
     await expect(page.getByText('Total', { exact: true })).toHaveCount(1)
     await expect(page.getByTestId('checkout-collect-now')).toHaveCount(0)
-    const copyY = (await page.getByTestId('checkout-total-copy').boundingBox())!.y
+    const totalY = (await page.getByTestId('order-summary-total').boundingBox())!.y
+    const deliveryY = (await page.getByTestId('delivery-section').boundingBox())!.y
     const fieldY = (await field.boundingBox())!.y
-    expect(Math.abs(fieldY - copyY)).toBeLessThan(80)
+    expect(totalY).toBeLessThan(deliveryY)
+    expect(deliveryY).toBeLessThan(fieldY)
 
     // An overpayment shows the Change, worked out from the plain number.
     await typeAndBlur(field, '20000')
