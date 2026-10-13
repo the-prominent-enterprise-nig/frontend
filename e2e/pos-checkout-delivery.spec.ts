@@ -368,10 +368,12 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     // Order Summary: the Total is still the items; the fee is a note.
     await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,000.00')
     await expect(page.getByTestId('order-summary-delivery-fee')).toContainText('₱150.00')
-    // The Total at the very bottom is the sale's too, with the fee as a note
-    // under it. Nothing anywhere adds the two.
-    await expect(page.getByTestId('checkout-grand-total')).toHaveText('₱8,000.00')
-    await expect(page.getByTestId('checkout-fee-total')).toContainText('₱150.00')
+    // Scenario 71: there is one Total (the Order Summary's) and the fee note
+    // appears once, under it — no second Total or fee note above the payment.
+    await expect(page.getByTestId('checkout-collect-now')).toHaveCount(0)
+    await expect(
+      page.getByText('Delivery fee — collected on its own CR, not part of the sale')
+    ).toHaveCount(1)
     await expect(page.getByText('Total w/ delivery fee')).toHaveCount(0)
     await expect(page.getByText('₱8,150.00')).toHaveCount(0)
     // The fee has its own Paid with and its own CR — never the sale's tender.
@@ -380,7 +382,7 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await expect(feeCr(page)).toBeVisible()
   })
 
-  test("DT-F06 (Scenario 70): the order down the panel is Delivery, then the Total, then the sale's Amount received and CR, then Confirm", async ({
+  test("DT-F06 (Scenario 70, one Total since Scenario 71): the order down the panel is the Order Summary Total, Delivery, then the sale's Amount received and CR, then Confirm", async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'DTF06', withAddress)
@@ -391,13 +393,12 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     const y = async (locator: ReturnType<Page['getByTestId']>) => (await locator.boundingBox())!.y
     const summaryY = await y(page.getByTestId('order-summary-total'))
     const deliveryY = await y(section(page))
-    const totalY = await y(page.getByTestId('checkout-grand-total'))
     const amountReceivedY = (await page.getByLabel('Amount received').boundingBox())!.y
     const crY = (await page.getByRole('textbox', { name: /^CR Number/ }).boundingBox())!.y
     const confirmY = (await confirm(page).boundingBox())!.y
     expect(summaryY).toBeLessThan(deliveryY)
-    expect(deliveryY).toBeLessThan(totalY)
-    expect(totalY).toBeLessThan(amountReceivedY)
+    // Scenario 71 removed the second Total that sat between these two.
+    expect(deliveryY).toBeLessThan(amountReceivedY)
     expect(amountReceivedY).toBeLessThan(crY)
     expect(crY).toBeLessThan(confirmY)
     // A sale has no "Total Tendered" row; it keeps only the Change, which comes
@@ -409,7 +410,7 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     expect(changeY).toBeLessThan(confirmY)
   })
 
-  test('DT-F07 (Scenario 70): Copy beside the Total puts the plain amount on the clipboard — no peso sign, no commas — and it pastes into Amount received', async ({
+  test('DT-F07 (Scenario 70; beside Amount received since Scenario 71): Copy puts the plain amount on the clipboard — no peso sign, no commas — and it pastes into Amount received', async ({
     page,
   }) => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])

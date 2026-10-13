@@ -340,6 +340,15 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     await expect(field).toHaveValue('12,345.60')
     await expect(page.getByText('Change', { exact: true })).toHaveCount(0)
 
+    // One Total on a plain sale (Kian, 2026-10-13): the Order Summary's, with
+    // no second figure above the payment; Copy sits beside Amount received.
+    await expect(page.getByTestId('order-summary-total')).toHaveText('₱12,345.60')
+    await expect(page.getByText('Total', { exact: true })).toHaveCount(1)
+    await expect(page.getByTestId('checkout-collect-now')).toHaveCount(0)
+    const copyY = (await page.getByTestId('checkout-total-copy').boundingBox())!.y
+    const fieldY = (await field.boundingBox())!.y
+    expect(Math.abs(fieldY - copyY)).toBeLessThan(80)
+
     // An overpayment shows the Change, worked out from the plain number.
     await typeAndBlur(field, '20000')
     await expect(field).toHaveValue('20,000.00')
@@ -415,7 +424,7 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     expect(amounts.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(ITEM_PRICE)
   })
 
-  test('S71-1-F08 (checkout): the X-Deal cash portion and the split-payment field format the same way', async ({
+  test('S71-1-F08 (checkout): the X-Deal cash portion formats the same way, and a part-paid sale shows "Collect now" rather than a second Total', async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F08XD')
@@ -431,6 +440,10 @@ test.describe('POS money input (Scenario 71 Part 1)', () => {
     await expect(cashPortion).toBeVisible({ timeout: 15_000 })
     await typeAndBlur(cashPortion, '1234.5')
     await expect(cashPortion).toHaveValue('1,234.50')
+    // Less than the Total is collected today: a "Collect now" line, not a
+    // second Total.
+    await expect(page.getByTestId('checkout-collect-now')).toContainText('₱1,234.50')
+    await expect(page.getByText('Total', { exact: true })).toHaveCount(1)
     expect((await cashPortion.boundingBox())!.height).toBeGreaterThanOrEqual(52)
   })
 

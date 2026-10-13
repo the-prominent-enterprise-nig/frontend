@@ -5,10 +5,10 @@ import { Check, Copy } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 
 /**
- * Scenario 70 — a "Copy" beside the checkout Total. It copies the amount as a
- * plain number ("6190.00": no peso sign, no thousands commas), so it pastes
- * straight into Amount received — a number input rejects "₱6,190.00" — or into
- * a card terminal or a payment app.
+ * Scenario 70 — a "Copy" for the amount to collect, beside Amount received
+ * since Scenario 71. It copies the amount as a plain number ("6190.00": no peso
+ * sign, no thousands commas), so it pastes into a card terminal or a payment
+ * app as well as into Amount received.
  */
 export default function CopyAmountButton({ amount, testId }: { amount: number; testId?: string }) {
   const [copied, setCopied] = useState(false)

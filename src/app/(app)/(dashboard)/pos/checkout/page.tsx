@@ -6238,43 +6238,30 @@ export default function CheckoutPage() {
             />
           )}
 
-          {/* Scenario 70 — the Total comes first, then the payment fields under it
-              (Amount received, CR Number, Change), then Confirm. It is
-              the sale's own figure (what the register collects for the items);
-              the delivery fee under it is a note, not part of it — the fee is a
-              collection on its own CR, paid in the Delivery section above, and
-              never part of the sale. */}
+          {/* Scenario 71 (Kian, 2026-10-13): one Total only — the Order Summary's.
+              Scenario 70 put a second "Total" here, above the payment fields;
+              on a plain sale it was the same figure twice. It now shows only
+              when the counter collects less than the Total today (an
+              installment's down payment, an X-Deal's cash portion), as
+              "Collect now", so it never reads as a second total. The delivery
+              fee's note stays in the Order Summary only. */}
           {saleMode === 'sale' &&
             cart.length > 0 &&
-            (tenderTarget > 0 || deliveryFeeAmount > 0) && (
-              <div className="border-t border-purple-200 p-5" data-testid="checkout-totals">
-                {tenderTarget > 0 && (
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-semibold text-gray-700">
-                      {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
-                    </span>
-                    <span className="flex items-center gap-3">
-                      <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
-                      <span
-                        className="text-2xl font-bold text-gray-900"
-                        data-testid="checkout-grand-total"
-                      >
-                        {fmt(tenderTarget)}
-                      </span>
-                    </span>
-                  </div>
-                )}
-                {deliveryFeeAmount > 0 && (
-                  <div
-                    className={`flex items-center justify-between gap-3 text-xs text-purple-700 ${
-                      tenderTarget > 0 ? 'mt-2' : ''
-                    }`}
-                    data-testid="checkout-fee-total"
-                  >
-                    <span>Delivery fee — collected on its own CR, not part of the sale</span>
-                    <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
-                  </div>
-                )}
+            tenderTarget > 0 &&
+            Math.abs(tenderTarget - totalAmount) >= 0.01 && (
+              <div
+                className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-lg bg-purple-50 px-3 py-2.5"
+                data-testid="checkout-collect-now"
+              >
+                <span className="text-sm text-purple-800">
+                  <span className="font-semibold">Collect now</span>
+                  <span className="block text-xs text-purple-600">
+                    The rest of the Total is not paid at this counter today.
+                  </span>
+                </span>
+                <span className="shrink-0 text-lg font-bold text-purple-900">
+                  {fmt(tenderTarget)}
+                </span>
               </div>
             )}
 
@@ -6316,7 +6303,16 @@ export default function CheckoutPage() {
                     // picker or split-tender here, just how much was received.
                     return (
                       <div key={i} className="space-y-1">
-                        <label className="block text-[13px] text-gray-700">Amount received</label>
+                        {/* Copy sits by the field it pastes into (Scenario 71:
+                            it used to sit on a second Total above). It copies
+                            what is collected now — the Total, or the "Collect
+                            now" figure when that is less. */}
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="block text-[13px] text-gray-700">Amount received</label>
+                          {i === 0 && (
+                            <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
+                          )}
+                        </div>
                         {/* Scenario 70 — large and written from the left, with the
                             peso sign in front, like the Delivery fee field. */}
                         <div className="relative">
