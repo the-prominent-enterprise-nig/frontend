@@ -13,7 +13,10 @@ import 'react-phone-number-input/style.css'
  */
 export function toDisplayPhoneValue(raw: string): string | undefined {
   if (!raw) return undefined
-  if (raw.startsWith('+')) return raw
+  // Already international, but often saved for reading ("+63 917 000 6666"):
+  // E.164 is "+" and digits only, so drop the spaces/dashes rather than
+  // handing PhoneInput a value it logs an error for on every mount.
+  if (raw.startsWith('+')) return raw.replace(/[^\d+]/g, '')
   try {
     const parsed = parsePhoneNumber(raw, 'PH')
     return parsed?.isValid() ? parsed.number : undefined
