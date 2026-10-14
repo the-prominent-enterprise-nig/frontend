@@ -81,13 +81,31 @@ const BASE_CSS = `
   .sig { flex: 1; text-align: center; border-top: 1px solid #17171c; padding-top: 6px; }
   .sig b { display: block; font-size: 13px; }
   .sig span { font-size: 11px; color: #5b5b6b; }
-  .watermark { position: fixed; top: 42%; left: 0; right: 0; text-align: center; font-size: 96px; font-weight: 800; color: rgba(180, 35, 24, .09); transform: rotate(-24deg); pointer-events: none; }
+  /* One sheet per printed page (the Delivery Receipt, then its debit memo),
+     each carrying its own watermark — the collection report's one-form-per-
+     page layout. */
+  .sheet { position: relative; }
+  .sheet + .sheet { break-before: page; page-break-before: always; margin-top: 40px; }
+  /* A long Delivery Receipt runs onto more pages; these never split across a
+     page break (the debit memo still always starts on a page of its own). */
+  tr, .sigs, .purpose-box, .note, .totals { break-inside: avoid; page-break-inside: avoid; }
+  thead { display: table-header-group; }
+  @media print { .sheet + .sheet { margin-top: 0; } }
+  .watermark { position: absolute; top: 38%; left: 0; right: 0; text-align: center; font-size: 96px; font-weight: 800; color: rgba(180, 35, 24, .09); transform: rotate(-24deg); pointer-events: none; }
   .print-btn { margin: 20px 0 0; padding: 7px 18px; background: #5b21b6; color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; }
   /* A zero page margin is what makes the browser drop its own header and
      footer (date, title, about:blank, page count); the body's padding
      becomes the printed margin instead. */
   @page { size: A4; margin: 0; }
-  @media print { body { padding: 14mm 16mm; } .print-btn { display: none; } }
+  /* The margin lives on each sheet, not the body: body padding only reaches
+     the top of page 1, so the debit memo's page started flush with the paper
+     edge. box-decoration-break repeats it on every page a long sheet spills
+     onto. */
+  @media print {
+    body { padding: 0; }
+    .sheet { padding: 14mm 16mm; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    .print-btn { display: none; }
+  }
 `
 
 function letterhead(title: string, doc: PrintDocumentEnvelope): string {
@@ -111,6 +129,13 @@ const signatures = (labels: string[]): string =>
     .map((l) => `<div class="sig"><b>${esc(l)}</b><span>Name / signature / date</span></div>`)
     .join('')}</div>`
 
+function page(title: string, sheets: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(title)}</title><style>${BASE_CSS}</style></head><body>
+    ${sheets}
+    <button class="print-btn" onclick="window.print()">Print</button>
+  </body></html>`
+}
+
 function openWindow(html: string): void {
   const win = window.open('', '_blank', 'width=1000,height=800')
   if (!win) return
@@ -130,7 +155,7 @@ function purposeBox(dr: DrDetail): string {
       return `<span style="white-space:nowrap;${on ? 'font-weight:700' : ''}">${on ? '&#9746;' : '&#9744;'} ${esc(label)}${detail}</span>`
     })
     .join('')
-  return `<div style="border:1px solid #c9c9d3;border-radius:6px;padding:10px 14px;margin-top:16px;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline">
+  return `<div class="purpose-box" style="border:1px solid #c9c9d3;border-radius:6px;padding:10px 14px;margin-top:16px;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline">
     <b>Purpose:</b>${boxes}</div>`
 }
 
@@ -156,15 +181,15 @@ function itemsTable(dr: DrDetail): string {
   </table>`
 }
 
-export function buildDeliveryReceiptHtml(data: PrintDocumentEnvelope): string {
+function deliveryReceiptSheet(data: PrintDocumentEnvelope): string {
   const dr = data.document as unknown as DrDetail
   const config = DR_PURPOSE_CONFIG[dr.purpose]
   const unofficial = dr.status === 'draft' || dr.status === 'pending_approval'
   const voided = dr.status === 'voided' || dr.status === 'rejected'
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(dr.drNumber)}</title><style>${BASE_CSS}</style></head><body>
+  return `<section class="sheet">
     ${unofficial ? '<div class="watermark">DRAFT</div>' : voided ? `<div class="watermark">${dr.status === 'voided' ? 'VOID' : 'REJECTED'}</div>` : ''}
     ${letterhead('Delivery receipt', data)}
-    ${config.withDebitMemo ? field('Debit memo no.', dr.debitMemo?.memoNumber ?? '') : ''}
+    ${config.withDebitMemo ? field('Debit memo no.', (dr.debitMemo ?? dr.supplierDebitMemo)?.memoNumber ?? '') : ''}
     <div class="row">${field('DR no.', dr.drNumber)}${field('Date', fmtDate(dr.issueDate))}</div>
     <div class="row">${field('Issued from', dr.branch?.name ?? dr.warehouse.name)}${field('Department', dr.department?.name ?? '')}</div>
     ${field('Delivered to', dr.deliveredTo ?? '')}
@@ -178,15 +203,26 @@ export function buildDeliveryReceiptHtml(data: PrintDocumentEnvelope): string {
     ${dr.remarks ? `<p style="margin:0 0 6px">${esc(dr.remarks)}</p>` : ''}
     <p style="margin:0">Received the above merchandise in good order and condition.</p>
     ${signatures(['Prepared by', 'Approved by', 'Delivered by', 'Received by'])}
-    <div style="margin-top:28px;background:#f1f1f4;border-radius:6px;padding:10px 14px;font-size:11.5px">
+    <div class="note" style="margin-top:28px;background:#f1f1f4;border-radius:6px;padding:10px 14px;font-size:11.5px">
       <b>System note:</b> ${esc(systemNote(dr.purpose))}
     </div>
-    <button class="print-btn" onclick="window.print()">Print</button>
-  </body></html>`
+  </section>`
 }
 
-export function printDeliveryReceipt(data: PrintDocumentEnvelope): void {
-  openWindow(buildDeliveryReceiptHtml(data))
+/** The Delivery Receipt, followed on its own page by its debit memo when it
+ * has one — one print job, like the collection report's forms. */
+export function buildDeliveryReceiptHtml(
+  data: PrintDocumentEnvelope,
+  memo?: PrintDocumentEnvelope | null
+): string {
+  return page(data.documentNumber, deliveryReceiptSheet(data) + (memo ? debitMemoSheet(memo) : ''))
+}
+
+export function printDeliveryReceipt(
+  data: PrintDocumentEnvelope,
+  memo?: PrintDocumentEnvelope | null
+): void {
+  openWindow(buildDeliveryReceiptHtml(data, memo))
 }
 
 // ─── Debit memo ───────────────────────────────────────────────────────────────
@@ -207,28 +243,38 @@ function memoLines(memo: IdmDetail): string {
     <thead><tr><th style="width:30%">Account</th><th>Description</th><th class="r" style="width:16%">Debit amount</th><th class="r" style="width:16%">Credit amount</th></tr></thead>
     <tbody>${rows}${'<tr class="blank"><td></td><td></td><td></td><td></td></tr>'.repeat(blanks)}</tbody>
   </table>
-  <table style="width:320px;margin-left:auto;margin-top:16px">
+  <table class="totals" style="width:320px;margin-left:auto;margin-top:16px">
     <tr><th>Total debit</th><td class="r"><b>${fmtAmount(memo.totalDebit)}</b></td></tr>
     <tr><th>Total credit</th><td class="r"><b>${fmtAmount(memo.totalCredit)}</b></td></tr>
   </table>`
 }
 
-export function buildDebitMemoHtml(data: PrintDocumentEnvelope): string {
-  const memo = data.document as unknown as IdmDetail
+/** A supplier debit memo printed in the same form carries two more facts. */
+type PrintableMemo = IdmDetail & {
+  supplier?: { name: string } | null
+  appliedTo?: string | null
+}
+
+function debitMemoSheet(data: PrintDocumentEnvelope): string {
+  const memo = data.document as unknown as PrintableMemo
   const purpose = memo.purpose ? DR_PURPOSE_CONFIG[memo.purpose].label : ''
   const mark = memo.status === 'DRAFT' ? 'DRAFT' : memo.status === 'VOID' ? 'VOID' : ''
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(memo.memoNumber)}</title><style>${BASE_CSS}</style></head><body>
+  return `<section class="sheet">
     ${mark ? `<div class="watermark">${mark}</div>` : ''}
     ${letterhead('Debit memo', data)}
     <div class="row">${field('Debit memo no.', memo.memoNumber)}${field('Date', fmtDate(memo.memoDate))}</div>
     ${field('Purpose', purpose)}
+    ${memo.supplier ? `<div class="row">${field('Supplier', memo.supplier.name)}${field('Applied to', memo.appliedTo ?? 'Not yet applied — accounting picks the invoice')}</div>` : ''}
     <div class="row">${field('Branch', memo.branch?.name ?? '')}${field('Department', memo.department?.name ?? '')}</div>
     <div class="row">${field('Reference', memo.referenceNo ?? memo.deliveryReceipt?.drNumber ?? '')}${field('Reference date', fmtDate(memo.referenceDate))}</div>
     ${field('Reason / details', memo.reason ?? '')}
     ${memoLines(memo)}
     ${signatures(['Prepared by', 'Noted by', 'Approved by'])}
-    <button class="print-btn" onclick="window.print()">Print</button>
-  </body></html>`
+  </section>`
+}
+
+export function buildDebitMemoHtml(data: PrintDocumentEnvelope): string {
+  return page(data.documentNumber, debitMemoSheet(data))
 }
 
 export function printDebitMemo(data: PrintDocumentEnvelope): void {

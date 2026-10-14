@@ -2,7 +2,18 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { Ban, Check, ChevronDown, ChevronRight, PackageX, Pencil, Plus, Search } from 'lucide-react'
+import {
+  Ban,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  PackageX,
+  Pencil,
+  Plus,
+  Printer,
+  Search,
+} from 'lucide-react'
+import { printMemo } from '../_lib/print-memo'
 import { fmtDate, fmtMoney, SupplierDebitMemos } from '@/src/libs/data/AccountingV2Data'
 import type { SupplierDebitMemo } from '@/src/libs/data/AccountingV2Data'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -152,6 +163,8 @@ function MemoRowActions({
   const primary = isDraft && canApprove && !awaitingDr ? 'approve' : editable ? 'edit' : null
 
   const menuItems: RowMenuItem[] = [
+    // Every memo prints, whatever its state — a draft carries a watermark.
+    { label: 'Print', icon: Printer, onClick: () => void printMemo('supplier', memo.id) },
     ...(editable && primary !== 'edit'
       ? [
           {

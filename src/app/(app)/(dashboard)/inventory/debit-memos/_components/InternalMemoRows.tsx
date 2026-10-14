@@ -5,6 +5,7 @@ import { MONO } from '@/src/libs/design/plex'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import type { IdmDetail } from '@/src/schema/accounting/inventory-debit-memos'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import { PrintMemoIconButton } from './PrintMemoIconButton'
 
 // Scenario 72 — an internal DMINV memo as a row of the Debit Memos list,
 // beside the supplier returns. Read-only here: accounting edits and posts it
@@ -110,16 +111,19 @@ export function InternalMemoRow({
         <StatusChip status={memo.status} />
       </td>
       <td className="whitespace-nowrap px-3 py-3 text-right text-[11.5px] text-[#8b8b9b]">
-        {canOpenMemo ? (
-          <Link
-            href={`/accounting/debit-memos/inventory/${memo.id}`}
-            className="font-medium text-[#3f1490] hover:underline"
-          >
-            {memo.status === 'DRAFT' ? 'Edit & post' : 'Open'}
-          </Link>
-        ) : (
-          'Accounting posts'
-        )}
+        <span className="inline-flex items-center justify-end gap-2">
+          <PrintMemoIconButton kind="internal" id={memo.id} />
+          {canOpenMemo ? (
+            <Link
+              href={`/accounting/debit-memos/inventory/${memo.id}`}
+              className="font-medium text-[#3f1490] hover:underline"
+            >
+              {memo.status === 'DRAFT' ? 'Edit & post' : 'Open'}
+            </Link>
+          ) : (
+            'Accounting posts'
+          )}
+        </span>
       </td>
     </tr>
   )
@@ -152,6 +156,7 @@ export function InternalMemoCard({
           <span className={`${MONO} text-[13px] font-semibold text-[#17171c]`}>
             {fmtMoney(memo.totalDebit)}
           </span>
+          <PrintMemoIconButton kind="internal" id={memo.id} />
         </div>
       </div>
     </li>

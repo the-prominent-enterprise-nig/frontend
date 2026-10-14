@@ -23,7 +23,7 @@ import {
 } from '@/src/schema/inventory/delivery-receipts'
 import { saveDeliveryReceipt } from '../_actions/save-delivery-receipt'
 import { submitDeliveryReceipt } from '../_actions/submit-delivery-receipt'
-import { getDeliveryReceiptDocument } from '../_actions/get-delivery-receipt-document'
+import { getDeliveryReceiptPrint } from '../_actions/get-delivery-receipt-document'
 import { printDeliveryReceipt } from '@/src/libs/print/printDeliveryReceipt'
 import { emptyDrForm } from '../_lib/dr-form-values'
 import { fmtPeso } from '../_lib/dr-format'
@@ -88,10 +88,14 @@ export default function DrForm({ draft }: Props): React.JSX.Element {
   async function onPrintPreview(values: DrFormValues): Promise<void> {
     setBusy('print')
     const id = await persist(values)
-    const doc = id ? await getDeliveryReceiptDocument(id) : null
+    // A return to supplier drafts its memo with the DR, so the preview
+    // carries it too.
+    const doc = id
+      ? await getDeliveryReceiptPrint(id, values.purpose === 'return_to_supplier')
+      : null
     setBusy(null)
     if (!id) return
-    if (doc?.success && doc.data) printDeliveryReceipt(doc.data)
+    if (doc?.success && doc.data) printDeliveryReceipt(doc.data.dr, doc.data.memo)
     else showToast({ title: 'Saved, but the preview could not load', status: 'error' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
     if (!draft) router.push(`/inventory/delivery-receipts/${id}`)

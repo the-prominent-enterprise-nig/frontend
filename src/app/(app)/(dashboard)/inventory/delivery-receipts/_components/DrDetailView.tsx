@@ -8,9 +8,7 @@ import { DR_PURPOSE_CONFIG } from '@/src/libs/inventory/delivery-receipt-purpose
 import type { DrDetail } from '@/src/schema/inventory/delivery-receipts'
 import { DR_STATUS_META, drStatusLabel, fmtDrDate, fmtPeso } from '../_lib/dr-format'
 import { BTN_GHOST, DrShell, HeaderFigure, NumberChip, Section } from './drFormUi'
-import { PrintButton } from './PrintButton'
-import { printDeliveryReceipt } from '@/src/libs/print/printDeliveryReceipt'
-import { getDeliveryReceiptDocument } from '../_actions/get-delivery-receipt-document'
+import { DrPrintButton } from './DrPrintButton'
 
 const BACK_HREF = '/inventory/stock-transaction?tab=delivery-receipts'
 
@@ -50,10 +48,7 @@ export default function DrDetailView({
           <Link href={BACK_HREF} className={BTN_GHOST}>
             Back
           </Link>
-          <PrintButton
-            load={() => getDeliveryReceiptDocument(dr.id)}
-            print={printDeliveryReceipt}
-          />
+          <DrPrintButton id={dr.id} hasMemo={!!memo} />
           {actions}
         </>
       }

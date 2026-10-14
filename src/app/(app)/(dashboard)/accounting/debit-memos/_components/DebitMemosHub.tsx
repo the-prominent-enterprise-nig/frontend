@@ -26,6 +26,7 @@ import { SupplierDebitMemoDetail } from '@/src/components/accounting/SupplierDeb
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import type { IdmDetail } from '@/src/schema/accounting/inventory-debit-memos'
 import { getInventoryDebitMemos } from '../inventory/_actions/inventory-debit-memos'
+import { PrintMemoIconButton } from '../../../inventory/debit-memos/_components/PrintMemoIconButton'
 
 const CUSTOMER_TYPE_LABELS: Record<DebitMemoType, string> = {
   unit_replacement: 'Unit Replacement',
@@ -281,23 +282,29 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
             <InventoryMemoSummary memo={r.inventory!} />
           )
         }
-        renderActions={(r) =>
-          // Supplier memos are read-only here — approve, finalize and void all
-          // belong to Inventory, where the physical return is handled.
-          r.kind === 'customer' && r.status === 'ISSUED' && canVoidCustomer ? (
-            <Tooltip label="Void debit memo">
-              <button
-                type="button"
-                onClick={() => voidCustomerMemo(r.id)}
-                disabled={voiding === r.id}
-                aria-label="Void debit memo"
-                className="rounded p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-50"
-              >
-                <Ban className="h-4 w-4" />
-              </button>
-            </Tooltip>
-          ) : null
-        }
+        renderActions={(r) => (
+          <span className="inline-flex items-center gap-1">
+            {r.kind !== 'customer' && (
+              <PrintMemoIconButton
+                kind={r.kind === 'supplier' ? 'supplier' : 'internal'}
+                id={r.id}
+              />
+            )}
+            {r.kind === 'customer' && r.status === 'ISSUED' && canVoidCustomer && (
+              <Tooltip label="Void debit memo">
+                <button
+                  type="button"
+                  onClick={() => voidCustomerMemo(r.id)}
+                  disabled={voiding === r.id}
+                  aria-label="Void debit memo"
+                  className="rounded p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Ban className="h-4 w-4" />
+                </button>
+              </Tooltip>
+            )}
+          </span>
+        )}
       />
       {/* No invoice is chosen up front — the dialog asks for it as its first
           field, so the form is visible while the choice is being made. */}
