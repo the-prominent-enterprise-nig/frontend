@@ -63,7 +63,7 @@ test.describe('Excel pivot exports — Accounting Reports hub', () => {
 
   for (const { tab, filename, pivot } of tabs) {
     test(`${tab}: Export to Excel downloads the report`, async ({ page }) => {
-      await gotoReady(page, `/accounting/reports?tab=${tab}`)
+      await gotoReady(page, `/reports?tab=${tab}`)
       await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({
         timeout: 15_000,
       })
@@ -73,7 +73,7 @@ test.describe('Excel pivot exports — Accounting Reports hub', () => {
   }
 
   test('P&L export carries the branch and view picked on screen', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=pnl')
+    await gotoReady(page, '/reports?tab=pnl')
     const branch = page.getByLabel('Branch', { exact: true })
     await expect(branch).toBeVisible({ timeout: 15_000 })
     // The first real branch — option 0 is "All Branches".
@@ -91,7 +91,7 @@ test.describe('Excel pivot exports — Accounting Reports hub', () => {
   })
 
   test('Customer Statement: no export until a customer is picked', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=customer-statement')
+    await gotoReady(page, '/reports?tab=customer-statement')
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({
       timeout: 15_000,
     })
@@ -107,7 +107,7 @@ test.describe('Excel pivot exports — Accounting Reports hub', () => {
   })
 
   test('Expenses keeps its own button — the bar does not add a second', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=expenses')
+    await gotoReady(page, '/reports?tab=expenses')
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({
       timeout: 15_000,
     })
@@ -119,7 +119,7 @@ test.describe('Excel pivot exports — Accounting Reports hub', () => {
   })
 
   test('BI Summary has nothing to export', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=bi')
+    await gotoReady(page, '/reports?tab=bi')
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({
       timeout: 15_000,
     })

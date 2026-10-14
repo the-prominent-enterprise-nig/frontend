@@ -30,7 +30,7 @@ export const QUICK_ACTIONS = [
     id: 'view-reports',
     label: 'View Reports',
     icon: BarChart2,
-    href: '/accounting/reports',
+    href: '/reports',
     color: 'bg-amber-100 text-amber-700 hover:bg-amber-200',
   },
   {

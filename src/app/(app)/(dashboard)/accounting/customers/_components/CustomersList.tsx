@@ -192,7 +192,7 @@ export default function CustomersList({ session }: Props) {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Link
-                            href={`/accounting/reports?tab=customer-statement&customerId=${c.id}`}
+                            href={`/reports?tab=customer-statement&customerId=${c.id}`}
                             title="View statement — open balance and payment history"
                             className="p-1.5 text-purple-700 hover:bg-purple-50 rounded"
                           >

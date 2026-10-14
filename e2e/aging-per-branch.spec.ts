@@ -175,7 +175,7 @@ test.describe('CRM — AR Aging per branch (Scenario 47)', () => {
   })
 
   test('is reachable from the accounting Reports hub too', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=ar-aging')
+    await gotoReady(page, '/reports?tab=ar-aging')
 
     await expect(page.getByRole('heading', { name: 'AR Aging Report' })).toBeVisible({
       timeout: 15_000,
