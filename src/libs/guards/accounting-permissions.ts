@@ -194,6 +194,13 @@ export const ACCOUNTING_PERMISSIONS = {
   SUPPLIER_DEBIT_MEMOS_FINALIZE: 'accounting:supplier-debit-memos:finalize',
   SUPPLIER_DEBIT_MEMOS_VOID: 'accounting:supplier-debit-memos:void',
 
+  // Scenario 72 — the internal DMINV memo a Delivery Receipt drafts.
+  INVENTORY_DEBIT_MEMOS_READ: 'accounting:inventory-debit-memos:read',
+  INVENTORY_DEBIT_MEMOS_CREATE: 'accounting:inventory-debit-memos:create',
+  INVENTORY_DEBIT_MEMOS_UPDATE: 'accounting:inventory-debit-memos:update',
+  INVENTORY_DEBIT_MEMOS_APPROVE: 'accounting:inventory-debit-memos:approve',
+  INVENTORY_DEBIT_MEMOS_VOID: 'accounting:inventory-debit-memos:void',
+
   // Scenario 62 — Business Owner only. Checked with hasExactPermission(),
   // never can()/hasPermission(): the Accountant's 'accounting:*' wildcard
   // must not reach it (the backend's QueryCenterGuard enforces the same).
@@ -344,6 +351,15 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:supplier-debit-memos:finalize':
     'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
   'accounting:supplier-debit-memos:void': 'Void a supplier debit memo',
+  'accounting:inventory-debit-memos:read': 'View inventory debit memos (DMINV)',
+  'accounting:inventory-debit-memos:create':
+    'Raise a standalone inventory debit memo (journal entry only)',
+  'accounting:inventory-debit-memos:update':
+    'Edit the accounts and amounts on a draft inventory debit memo',
+  'accounting:inventory-debit-memos:approve':
+    'Post an inventory debit memo — moves its Delivery Receipt stock and posts the journal entry',
+  'accounting:inventory-debit-memos:void':
+    'Void a posted inventory debit memo, reversing stock and GL',
   'accounting:query-center:read':
     'Data Query Center — browse and export raw data from every module (Business Owner only)',
   'accounting:*': 'Wildcard full accounting access',

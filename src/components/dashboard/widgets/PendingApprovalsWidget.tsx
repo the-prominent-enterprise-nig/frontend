@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ShoppingBag, RotateCcw, XCircle, ArrowLeftRight } from 'lucide-react'
+import { ShoppingBag, RotateCcw, XCircle, ArrowLeftRight, Truck } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { getPendingReturnRefundRequests } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
+import { getDeliveryReceipts } from '@/src/app/(app)/(dashboard)/inventory/delivery-receipts/_actions/get-delivery-receipts'
+import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 type ApprovalItem = {
@@ -62,7 +64,10 @@ export default function PendingApprovalsWidget() {
         limit: 20,
         branchId: branchId ?? undefined,
       }),
-    ]).then(([poRes, returnRes, mgrTransfers, hqTransfers]) => {
+      // Scenario 72 — branch-scoped server-side; a role without DR access
+      // gets a failed response and contributes nothing.
+      getDeliveryReceipts({ status: 'pending_approval', limit: 20 }),
+    ]).then(([poRes, returnRes, mgrTransfers, hqTransfers, drRes]) => {
       if (cancelled) return
 
       const poItems: ApprovalItem[] = (poRes.data?.data ?? []).map((po) => ({
@@ -114,7 +119,18 @@ export default function PendingApprovalsWidget() {
         badgeStyle: 'bg-purple-100 text-purple-700',
       }))
 
-      const all = [...poItems, ...voidItems, ...refundItems, ...transferItems].sort(
+      const drItems: ApprovalItem[] = (drRes.data?.data ?? []).map((dr) => ({
+        id: `dr-${dr.id}`,
+        icon: Truck,
+        iconStyle: 'text-emerald-600 bg-emerald-50',
+        label: `Delivery Receipt ${dr.drNumber}`,
+        sub: `${dr.warehouse.name} · ${drPurposeLabel(dr.purpose)}`,
+        createdAt: dr.createdAt,
+        badge: 'DR',
+        badgeStyle: 'bg-emerald-100 text-emerald-700',
+      }))
+
+      const all = [...poItems, ...voidItems, ...refundItems, ...transferItems, ...drItems].sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )
       setItems(all)

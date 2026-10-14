@@ -8,6 +8,9 @@ export type ItemSearchMeta = {
   costPrice: number | null
   isSerialTracked: boolean
   isBatchTracked: boolean
+  /** Scenario 72 — the Delivery Receipt's Model / Brand columns. */
+  modelNumber?: string | null
+  brandName?: string | null
 }
 
 type Props = {
@@ -50,6 +53,8 @@ async function searchCatalog(
         costPrice: item.costPrice ?? null,
         isSerialTracked: item.isSerialTracked ?? false,
         isBatchTracked: item.isBatchTracked ?? false,
+        modelNumber: item.modelNumber ?? null,
+        brandName: item.brand?.name ?? null,
       } satisfies ItemSearchMeta,
     }))
 }
