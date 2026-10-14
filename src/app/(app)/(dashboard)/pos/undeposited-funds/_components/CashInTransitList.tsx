@@ -22,7 +22,7 @@ import AttachmentsPanel, { uploadAndAttach } from '@/src/components/common/Attac
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { showToast } from '@/src/components/ui/toast'
-import { createPosDeposit } from '../_actions/pos-deposits'
+import { createPosDeposit, listPosDeposits, type PosDeposit } from '../_actions/pos-deposits'
 import {
   SlipEditor,
   clearsAccountOf,
@@ -46,15 +46,21 @@ const SESSIONS_KEY = 'undeposited-sessions'
 const NEW_RECEIPTS_KEY = 'unbanked-new-receipts'
 
 /** The branch's New Receipts still to be banked — or every branch's, for no
- * branch. Money taken at the counter against no sale, banked with the day. */
+ * branch. Money taken at the counter against no sale, banked with the day.
+ * Each one's `amount` is what is left of it after any short deposit. */
 function useUnbankedReceipts(branchId: string | null, enabled = true) {
   return useQuery({
     queryKey: [NEW_RECEIPTS_KEY, branchId],
     queryFn: () =>
       AcknowledgementReceipts.list({ branchId: branchId ?? undefined, unbanked: 'true' }),
+    select: (res) => ({ ...res, data: res.data?.map(leftOfReceipt) }),
     enabled,
     staleTime: 0,
   })
+}
+
+function leftOfReceipt(r: AcknowledgementReceipt): AcknowledgementReceipt {
+  return { ...r, amount: round2(Number(r.amount ?? 0) - Number(r.depositedAmount ?? 0)) }
 }
 
 /** Where a session's cash is: still to bank, in a deposit waiting on
@@ -62,8 +68,12 @@ function useUnbankedReceipts(branchId: string | null, enabled = true) {
 type LedgerStatus = 'to_deposit' | 'awaiting' | 'deposited'
 type StatusFilter = LedgerStatus | 'all'
 
-/** One row of the Undeposited Funds table — a session, wherever it is. */
+/** One row of the Undeposited Funds table — a session, wherever it is. A
+ * session a deposit took only part of has a row for what is still to deposit
+ * and one per draft holding the rest. */
 interface LedgerRow {
+  /** Unique per row: the session, or the session and the draft holding it. */
+  key: string
   sessionId: string
   branchId: string
   branchName: string
@@ -77,6 +87,9 @@ interface LedgerRow {
   cash: number
   /** Card and e-wallet money waiting in processors' clearing accounts. */
   clearing: number
+  /** What earlier deposits already banked of a To-deposit session — a short
+   * deposit leaves the rest here, still to deposit. */
+  deposited: number
   status: LedgerStatus
   /** The deposit it is in, when it is in one with a record. */
   depositId: string | null
@@ -95,24 +108,78 @@ function amounts(
   return { amount: c + k + Number(receipts || 0), cash: c, clearing: k }
 }
 
-function fromOutstanding(r: CashInTransitSessionRow): LedgerRow {
-  return {
+/** A session still in the drawer: what is left to deposit, if anything, and
+ * a row per draft waiting on accounting for part of it. */
+function fromOutstanding(r: CashInTransitSessionRow): LedgerRow[] {
+  const base = {
     sessionId: r.sessionId,
     branchId: r.branchId ?? 'none',
     branchName: r.branchName ?? 'No branch',
     terminalCode: r.terminalCode,
     cashierName: r.cashierName,
     closedAt: r.closedAt,
-    ...amounts(r.amount, r.clearingAmount, r.newReceiptsAmount),
-    status: r.pendingDeposit ? 'awaiting' : 'to_deposit',
-    depositId: r.pendingDeposit?.id ?? null,
-    bankName: r.pendingDeposit?.bankName ?? null,
-    depositDate: r.pendingDeposit?.depositDate ?? null,
+  }
+  // An older API sends only the one draft, holding the session whole.
+  const pending =
+    r.pendingDeposits ??
+    (r.pendingDeposit
+      ? [{ ...r.pendingDeposit, amount: r.amount + Number(r.clearingAmount ?? 0) }]
+      : [])
+  const left = r.pendingDeposits ? Number(r.amount) + Number(r.clearingAmount ?? 0) : 0
+  const toDeposit: LedgerRow[] =
+    left > 0.005 || pending.length === 0
+      ? [
+          {
+            ...base,
+            key: r.sessionId,
+            ...amounts(r.amount, r.clearingAmount, r.newReceiptsAmount),
+            deposited: Number(r.depositedAmount ?? 0),
+            status: 'to_deposit',
+            depositId: null,
+            bankName: null,
+            depositDate: null,
+          },
+        ]
+      : []
+  return [
+    ...toDeposit,
+    ...pending.map(
+      (p): LedgerRow => ({
+        ...base,
+        key: `${r.sessionId}:${p.id}`,
+        ...amounts(p.amount, 0, 0),
+        deposited: 0,
+        status: 'awaiting',
+        depositId: p.id,
+        bankName: p.bankName,
+        depositDate: p.depositDate,
+      })
+    ),
+  ]
+}
+
+/** A draft of New Receipts alone — no session to hang its row on. */
+function fromReceiptsDraft(d: PosDeposit): LedgerRow {
+  return {
+    key: d.id,
+    sessionId: d.id,
+    branchId: d.branchId,
+    branchName: d.branchName ?? 'No branch',
+    terminalCode: 'New Receipts',
+    cashierName: d.newReceipts?.map((r) => r.number ?? r.payerName).join(', ') ?? null,
+    closedAt: d.createdAt,
+    ...amounts(Number(d.amount), 0, 0),
+    deposited: 0,
+    status: 'awaiting',
+    depositId: d.id,
+    bankName: d.bankAccount.name,
+    depositDate: d.depositDate,
   }
 }
 
 function fromDeposited(r: CashInTransitHistoryRow): LedgerRow {
   return {
+    key: `${r.sessionId}:deposited`,
     sessionId: r.sessionId,
     branchId: r.branchId ?? 'none',
     branchName: r.branchName ?? 'No branch',
@@ -120,11 +187,19 @@ function fromDeposited(r: CashInTransitHistoryRow): LedgerRow {
     cashierName: r.cashierName,
     closedAt: r.closedAt,
     ...amounts(r.amount, r.clearingAmount, r.newReceiptsAmount),
+    deposited: 0,
     status: 'deposited',
     depositId: r.posDepositId,
     bankName: r.depositedTo,
     depositDate: r.depositDate ?? r.citClearedAt,
   }
+}
+
+/** A To-deposit session a short deposit already banked some of. */
+const isPartial = (r: LedgerRow): boolean => r.status === 'to_deposit' && r.deposited > 0
+
+function statusText(r: LedgerRow): string {
+  return isPartial(r) ? 'Partially deposited' : STATUS_TEXT[r.status]
 }
 
 const STATUS_TEXT: Record<LedgerStatus, string> = {
@@ -149,7 +224,7 @@ function exportLedgerCsv(rows: LedgerRow[]): void {
     r.terminalCode ?? '',
     r.cashierName ?? '',
     fmtDate(r.closedAt),
-    STATUS_TEXT[r.status],
+    statusText(r),
     r.bankName ?? '',
     r.depositDate ? fmtDate(r.depositDate) : '',
     r.amount,
@@ -197,11 +272,11 @@ function foldReceipts(
   for (const receipt of receipts) {
     const host = latest.get(receipt.branchId ?? 'none')
     if (!host) loose.push(receipt)
-    else extra.set(host.sessionId, (extra.get(host.sessionId) ?? 0) + Number(receipt.amount ?? 0))
+    else extra.set(host.key, (extra.get(host.key) ?? 0) + Number(receipt.amount ?? 0))
   }
   return {
     rows: rows.map((r) =>
-      extra.has(r.sessionId) ? { ...r, amount: r.amount + (extra.get(r.sessionId) ?? 0) } : r
+      extra.has(r.key) ? { ...r, amount: r.amount + (extra.get(r.key) ?? 0) } : r
     ),
     loose,
   }
@@ -299,7 +374,22 @@ export function CashInTransitList({
       ? unbanked.filter((r) => receiptMatches(r, search))
       : []
   const selection = useSingleBranchSelection(ledger.rows)
-  const [depositing, setDepositing] = useState<LedgerRow[] | null>(null)
+  // The sessions being deposited, and their branch — which is all there is
+  // for a deposit of New Receipts alone.
+  const [depositing, setDepositing] = useState<{
+    sessions: LedgerRow[]
+    branchId: string
+    branchName: string
+  } | null>(null)
+  const depositSelection = (): void => {
+    const first = selection.rows[0]
+    if (!first) return
+    setDepositing({
+      sessions: selection.rows,
+      branchId: first.branchId,
+      branchName: first.branchName,
+    })
+  }
   const [openDepositId, setOpenDepositId] = useState<string | null>(null)
 
   /** After any deposit action: the table, the cards and the branch totals. */
@@ -341,7 +431,7 @@ export function CashInTransitList({
               range under Deposited / All) used to wrap it onto a new line. */}
           {canManage && (
             <button
-              onClick={() => setDepositing(selection.rows)}
+              onClick={depositSelection}
               disabled={selection.rows.length === 0}
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800 disabled:opacity-50"
             >
@@ -371,6 +461,9 @@ export function CashInTransitList({
         canManage={canManage}
         selection={selection}
         onOpenDeposit={setOpenDepositId}
+        onDepositReceipts={(group) =>
+          setDepositing({ sessions: [], branchId: group.branchId, branchName: group.branchName })
+        }
         empty={ledger.loading ? 'Loading...' : 'Nothing here for these filters.'}
       />
       {ledger.capped && (
@@ -382,8 +475,9 @@ export function CashInTransitList({
       {depositing && (
         <DepositForm
           accounts={ledger.accounts}
-          sessions={depositing}
-          branchId={depositing[0]?.branchId ?? null}
+          sessions={depositing.sessions}
+          branchId={depositing.branchId}
+          branchName={depositing.branchName}
           onClose={() => setDepositing(null)}
           onSaved={() => {
             setDepositing(null)
@@ -432,11 +526,25 @@ function useLedger(
     enabled: wantsDeposited,
     staleTime: 0,
   })
+  const drafts = useQuery({
+    queryKey: [SESSIONS_KEY, 'drafts', branchId],
+    queryFn: () =>
+      listPosDeposits({ status: 'draft', pageSize: 100, ...(branchId ? { branchId } : {}) }),
+    staleTime: 0,
+  })
   const accounts = useQuery({
     queryKey: ['bank-accounts-list'],
     queryFn: () => BankAccounts.list(),
   })
-  const open = (outstanding.data?.data ?? []).map(fromOutstanding)
+  const sessionRows = (outstanding.data?.data ?? []).flatMap(fromOutstanding)
+  // Drafts holding no session — New Receipts alone — get a row of their own.
+  const onSessions = new Set(sessionRows.map((r) => r.depositId))
+  const open = [
+    ...sessionRows,
+    ...(drafts.data?.data?.items ?? [])
+      .filter((d) => d.sessions.length === 0 && !onSessions.has(d.id))
+      .map(fromReceiptsDraft),
+  ]
   const banked = wantsDeposited ? (deposited.data?.data ?? []).map(fromDeposited) : []
   return {
     rows: [...open, ...banked],
@@ -601,6 +709,7 @@ function LedgerTable({
   canManage,
   selection,
   onOpenDeposit,
+  onDepositReceipts,
   empty,
 }: {
   groups: BranchGroup[]
@@ -608,6 +717,7 @@ function LedgerTable({
   canManage: boolean
   selection: Selection
   onOpenDeposit: (id: string) => void
+  onDepositReceipts: (group: BranchGroup) => void
   empty: string
 }): React.JSX.Element {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -651,6 +761,7 @@ function LedgerTable({
               canManage={canManage}
               selection={selection}
               onOpenDeposit={onOpenDeposit}
+              onDepositReceipts={() => onDepositReceipts(group)}
               columns={columns}
             />
           ))
@@ -668,6 +779,7 @@ function BranchRows({
   canManage,
   selection,
   onOpenDeposit,
+  onDepositReceipts,
   columns,
 }: {
   group: BranchGroup
@@ -676,9 +788,13 @@ function BranchRows({
   canManage: boolean
   selection: Selection
   onOpenDeposit: (id: string) => void
+  onDepositReceipts: () => void
   columns: number
 }): React.JSX.Element {
   const selectable = group.rows.filter((r) => r.status === 'to_deposit')
+  // New Receipts with no session left to ride on — what a short deposit
+  // left unbanked — are deposited on their own.
+  const receiptsAlone = canManage && selectable.length === 0 && group.receipts.length > 0
   const allPicked = selectable.length > 0 && selectable.every((r) => selection.has(r.sessionId))
   const Chevron = open ? ChevronDown : ChevronRight
   return (
@@ -697,22 +813,32 @@ function BranchRows({
           </td>
         )}
         <td colSpan={columns - (canManage ? 2 : 1)} className="px-3 py-2">
-          <button onClick={onToggleOpen} className="flex items-center gap-2 text-left">
-            <Chevron className="h-4 w-4 text-gray-400" />
-            <span className="font-semibold text-gray-900">{group.branchName}</span>
-            <span className="text-xs text-gray-500">
-              {group.rows.length} session{group.rows.length === 1 ? '' : 's'}
-              {group.receipts.length > 0 &&
-                ` · ${group.receipts.length} New Receipt${group.receipts.length === 1 ? '' : 's'}`}
-            </span>
-          </button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button onClick={onToggleOpen} className="flex items-center gap-2 text-left">
+              <Chevron className="h-4 w-4 text-gray-400" />
+              <span className="font-semibold text-gray-900">{group.branchName}</span>
+              <span className="text-xs text-gray-500">
+                {group.rows.length} session{group.rows.length === 1 ? '' : 's'}
+                {group.receipts.length > 0 &&
+                  ` · ${group.receipts.length} New Receipt${group.receipts.length === 1 ? '' : 's'}`}
+              </span>
+            </button>
+            {receiptsAlone && (
+              <button
+                onClick={onDepositReceipts}
+                className="flex items-center gap-1.5 rounded-lg border border-purple-200 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-50"
+              >
+                <Landmark className="h-3.5 w-3.5" /> Record deposit
+              </button>
+            )}
+          </div>
         </td>
         <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmtMoney(group.total)}</td>
       </tr>
       {open &&
         group.rows.map((r) => (
           <SessionRow
-            key={r.sessionId}
+            key={r.key}
             row={r}
             canManage={canManage}
             selection={selection}
@@ -742,7 +868,11 @@ function ReceiptRow({
       <td className="px-3 py-2 text-xs">{fmtDate(receipt.paymentDate)}</td>
       <td className="px-3 py-2 text-xs text-gray-400">—</td>
       <td className="px-3 py-2">
-        <span className="text-xs text-gray-500">To deposit · New Receipt</span>
+        {Number(receipt.depositedAmount ?? 0) > 0 ? (
+          <PartialChip banked={Number(receipt.depositedAmount)} />
+        ) : (
+          <span className="text-xs text-gray-500">To deposit · New Receipt</span>
+        )}
       </td>
       <td className="px-3 py-2 text-right">{fmtMoney(Number(receipt.amount ?? 0))}</td>
     </tr>
@@ -800,6 +930,11 @@ function SessionRow({
  * column. No bank: a deposit goes to several, one per slip, and the stored
  * one is only the first slip's. */
 function StatusCell({ row }: { row: LedgerRow }): React.JSX.Element {
+  // Still To deposit (it filters and ticks as one), but a short deposit
+  // banked some of it: the amount is what is left.
+  if (isPartial(row)) {
+    return <PartialChip banked={row.deposited} />
+  }
   if (row.status === 'to_deposit') {
     return <span className="text-xs text-gray-500">To deposit</span>
   }
@@ -814,6 +949,19 @@ function StatusCell({ row }: { row: LedgerRow }): React.JSX.Element {
     <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
       Awaiting
     </span>
+  )
+}
+
+/** Partially deposited, with how much is already in deposits on hover. */
+function PartialChip({ banked }: { banked: number }): React.JSX.Element {
+  return (
+    <Tooltip
+      label={`${fmtMoney(banked)} already in deposits (cleared or awaiting clearing) — the amount shown is what is left`}
+    >
+      <span className="whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">
+        Partially deposited
+      </span>
+    </Tooltip>
   )
 }
 
@@ -883,12 +1031,14 @@ function DepositForm({
   accounts,
   sessions,
   branchId,
+  branchName,
   onClose,
   onSaved,
 }: {
   accounts: BankAccount[]
   sessions: LedgerRow[]
-  branchId: string | null
+  branchId: string
+  branchName: string
   onClose: () => void
   onSaved: () => void
 }) {
@@ -901,7 +1051,7 @@ function DepositForm({
   // against no sale, which sits in the branch's cash like any collection
   // (Scenario 70 G11). Banked with the day, so always part of this deposit;
   // accounting enters a cheque like any other bank, on a slip of its own.
-  const newReceipts = useUnbankedReceipts(branchId, !!branchId)
+  const newReceipts = useUnbankedReceipts(branchId)
   const receipts = newReceipts.data?.data ?? []
 
   const receiptsTotal = receipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
@@ -913,7 +1063,9 @@ function DepositForm({
   const difference = round2(outstanding - cashSlips)
   // Why Record deposit is disabled, so the button never just sits greyed out.
   const blockedReason =
-    sessions.length === 0 ? 'Select at least one session to deposit.' : slipsProblem(slips)
+    sessions.length === 0 && receipts.length === 0
+      ? 'Select at least one session to deposit.'
+      : slipsProblem(slips)
   // Not a block: the amounts are accounting's own itemisation. Said on hover
   // so an over or short is a choice, not a typo nobody saw.
   const cashNote =
@@ -976,7 +1128,7 @@ function DepositForm({
         </div>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-            <DepositSessions sessions={sessions} />
+            <DepositSessions sessions={sessions} branchName={branchName} receipts={receipts} />
 
             <SlipEditor slips={slips} onChange={setSlips} accounts={accounts} />
 
@@ -987,7 +1139,7 @@ function DepositForm({
               staged={files}
               onStagedChange={setFiles}
             />
-            {sessions.length === 0 && (
+            {sessions.length === 0 && receipts.length === 0 && (
               <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
                 No sessions selected. Close this, tick the sessions to deposit, and try again.
               </div>
@@ -1028,22 +1180,37 @@ function DepositForm({
 }
 
 /**
- * Which sessions are being banked — named, not totalled. The client's "Note
- * to Warp" points here: no worked-out figure, so accounting itemises each
- * bank and its amount on the slips instead (Scenario 70 G12).
+ * Which sessions and New Receipts are being banked — named, not totalled. The
+ * client's "Note to Warp" points here: no worked-out figure, so accounting
+ * itemises each bank and its amount on the slips instead (Scenario 70 G12).
  */
-function DepositSessions({ sessions }: { sessions: LedgerRow[] }): React.JSX.Element | null {
-  if (sessions.length === 0) return null
+function DepositSessions({
+  sessions,
+  branchName,
+  receipts,
+}: {
+  sessions: LedgerRow[]
+  branchName: string
+  receipts: AcknowledgementReceipt[]
+}): React.JSX.Element | null {
+  if (sessions.length === 0 && receipts.length === 0) return null
+  const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
   return (
     <div className="rounded-lg border border-gray-200">
       <div className="border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900">
-        {sessions[0].branchName} · {sessions.length} session{sessions.length === 1 ? '' : 's'}
+        {branchName} · {plural(sessions.length, 'session')}
+        {receipts.length > 0 && ` · ${plural(receipts.length, 'New Receipt')}`}
       </div>
       <ul className="max-h-40 divide-y divide-gray-100 overflow-y-auto text-sm">
         {sessions.map((s) => (
           <li key={s.sessionId} className="truncate px-3 py-1.5 text-gray-700">
             {s.terminalCode ?? 'Terminal'} · {s.cashierName ?? 'Cashier'} · closed{' '}
             {fmtDate(s.closedAt)}
+          </li>
+        ))}
+        {receipts.map((r) => (
+          <li key={r.id} className="truncate px-3 py-1.5 text-gray-700">
+            {r.number ?? 'New Receipt'} · {r.payerName}
           </li>
         ))}
       </ul>

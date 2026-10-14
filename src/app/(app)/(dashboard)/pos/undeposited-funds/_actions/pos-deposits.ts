@@ -17,6 +17,9 @@ export interface PosDepositSession {
   undepositedAmount: string | number | null
   terminal: { name: string } | null
   cashier: { name: string | null; firstName: string | null; lastName: string | null } | null
+  /** What this deposit banked of it once cleared — less than the session
+   * held when the deposit came up short. Null on a draft. */
+  bankedAmount?: number | null
 }
 
 export interface PosDeposit {
@@ -37,7 +40,13 @@ export interface PosDeposit {
    * recorded before slips existed. */
   lines?: PosDepositLine[]
   /** G11 — the New Receipts banked with the sessions. */
-  newReceipts?: { id: string; number: string | null; payerName: string; amount: number }[]
+  newReceipts?: {
+    id: string
+    number: string | null
+    payerName: string
+    amount: number
+    bankedAmount?: number | null
+  }[]
   attachmentCount?: number
 }
 

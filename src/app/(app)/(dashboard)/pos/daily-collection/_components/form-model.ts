@@ -152,11 +152,27 @@ export function buildFormLines(report: DailyCollectionReport): FormLine[] {
 
 /**
  * The CREDIT column, entered until the running balance is nil, as the
- * client's form closes a day: one line per deposit — the bank and the date it
- * was banked — then whatever is left as UNDEPOSITED. Each line carries the balance as
- * it stands after it.
+ * client's form closes a day — one group per tender (CASH, GCASH, CARD —
+ * MAYA), so the method never drops off the form. What a tender has banked is
+ * a DEPOSIT line with the bank and the date added after the method; what it
+ * has not is an UNDEPOSITED line under the same method. Each line carries the
+ * balance as it stands after it.
  */
 function creditLines(report: DailyCollectionReport, opening: number): FormLine[] {
+  if (!report.credits.length) return legacyCreditLines(report, opening)
+  let running = opening
+  return report.credits.map((c) => {
+    running -= c.amount
+    const balance = Math.abs(running) < 0.005 ? 0 : running
+    if (!c.bankName) return creditLine('UNDEPOSITED', c.label, c.amount, balance)
+    const bank = `${c.bankName} ${formatFormDate(c.depositedAt ?? '')}`
+    return creditLine('DEPOSIT', [c.label, bank].filter(Boolean).join(' · '), c.amount, balance)
+  })
+}
+
+/** A report without the per-tender breakdown: one line per deposit, then a
+ * single UNDEPOSITED FUNDS line for the rest. */
+function legacyCreditLines(report: DailyCollectionReport, opening: number): FormLine[] {
   let running = opening
   const lines = report.deposits.map((d) => {
     running -= d.amount
