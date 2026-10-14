@@ -245,7 +245,11 @@ function TransferLineRow({
       ? (crossBranchStockQuery.data?.data?.find((b) => b.warehouse.id === fromWarehouseId)
           ?.availableQty ?? 0)
       : undefined
-  const showAvailability = !!fromWarehouseId && !!selectedItemId && available !== undefined
+  // A line pinned to one unit from the stockbook is that unit, not a draw on
+  // the shelf — it may be one in repair, which the in-stock count leaves out.
+  const pinnedSerialId = useWatch({ control, name: `lines.${index}.serialNumberId` })
+  const showAvailability =
+    !pinnedSerialId && !!fromWarehouseId && !!selectedItemId && available !== undefined
   const exceedsAvailable = showAvailability && quantityValue > (available ?? 0)
 
   const quantityController = useController({ control, name: `lines.${index}.quantity` })
