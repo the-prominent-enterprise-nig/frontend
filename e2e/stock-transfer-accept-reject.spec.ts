@@ -178,6 +178,10 @@ test.describe('Inventory — Stock Transfer accept/reject + receiving report', (
       modal.getByRole('button', { name: 'Mark Received' }),
       modal.getByRole('button', { name: 'Confirm Receipt' })
     )
+    // Serial units start unticked (Scenario 71 item 23); a quantity-only
+    // line has no such control and already defaults to the full amount.
+    const markAll = modal.getByRole('button', { name: 'Mark all received' })
+    if (await markAll.isVisible()) await markAll.click()
     await modal.getByRole('button', { name: 'Confirm Receipt' }).click()
     // `.first()` because the detail panel is an in-page overlay, so the list
     // behind it is still in the DOM — "Received" also matches that table's

@@ -535,16 +535,27 @@ export function buildStockTransferHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Shown for any serial-tracked line (Scenario 71 item 19), not only once a
+  // serial is assigned — a pre-dispatch sheet reads "Assigned at dispatch".
   const hasSerialLine = lines.some(
-    (l) => (l.serialNumber as Record<string, unknown> | null)?.serialNumber
+    (l) =>
+      (l.serialNumber as Record<string, unknown> | null)?.serialNumber ||
+      (l.item as { isSerialTracked?: boolean } | undefined)?.isSerialTracked
   )
+  // Only a not-yet-dispatched transfer's empty serial is "to come".
+  const awaitingDispatch = [
+    'pending_manager_approval',
+    'requested',
+    'pending_hq_approval',
+    'draft',
+  ].includes(String(transfer.status))
   // Blank (—) until the transfer is received.
   const receipts = transferReceipts(transfer)
 
   let totalQty = 0
   const rows = lines
     .map((l, i) => {
-      const item = l.item as { name?: string } | undefined
+      const item = l.item as { name?: string; isSerialTracked?: boolean } | undefined
       const serial = (l.serialNumber as Record<string, unknown> | null)?.serialNumber as
         | string
         | undefined
@@ -553,7 +564,7 @@ export function buildStockTransferHtml(data: unknown): string {
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(item?.name) || '—'}</td>
-        ${hasSerialLine ? `<td class="mono">${esc(serial) || '—'}</td>` : ''}
+        ${hasSerialLine ? `<td class="mono">${esc(serial) || (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')}</td>` : ''}
         <td class="right">${qty}</td>
       </tr>`
     })

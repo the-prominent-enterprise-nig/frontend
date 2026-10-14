@@ -15,6 +15,9 @@ export type SearchableSelectOption = {
   /** Options sharing a group sit under one small heading. Pass them already
    * ordered by group — a heading is drawn wherever the group changes. */
   group?: string
+  /** Secondary text beside the label. Display only — never type-filtered,
+   * so adding it can't change what any picker matches. */
+  description?: React.ReactNode
 }
 
 /** Same label ignoring case; and for numbers, the same number ("09" = "9"). */
@@ -443,7 +446,16 @@ export default function SearchableSelect(props: Props) {
                     : 'text-gray-800'
                 }`}
               >
-                {opt.label}
+                {opt.description ? (
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span>{opt.label}</span>
+                    <span className="whitespace-nowrap text-[11.5px] text-gray-500">
+                      {opt.description}
+                    </span>
+                  </span>
+                ) : (
+                  opt.label
+                )}
                 {isSelected(opt.value) && <Check className="h-3.5 w-3.5 shrink-0" />}
               </button>
             </div>

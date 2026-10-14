@@ -54,6 +54,27 @@ function lineTotals(lines: TransferSummary['lines']): { total: number; received:
   }
 }
 
+/** Scenario 71 item 19 — the units a transfer carries, by serial, so the
+ * list answers "which unit went where" without opening each one. Shows the
+ * first two; the full set is in the hover title and the detail drawer. */
+function TransferSerials({ lines }: { lines: TransferSummary['lines'] }) {
+  const serials = (lines ?? [])
+    .map((l) => l.serialNumber?.serialNumber)
+    .filter((sn): sn is string => !!sn)
+  if (serials.length === 0) return null
+  const shown = serials.slice(0, 2).join(', ')
+  const more = serials.length - 2
+  return (
+    <p
+      title={serials.join(', ')}
+      className={`${MONO} mt-1 truncate text-[12px] font-medium text-[#17171c]`}
+    >
+      {shown}
+      {more > 0 && <span className="text-[#8b8b9b]"> +{more} more</span>}
+    </p>
+  )
+}
+
 function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
   const { total, received } = lineTotals(lines)
   if (!total) return <span className="text-[#c9c9d3]">—</span>
@@ -696,6 +717,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             />
                             <DirectionTag direction={directionFor(tr, session.branchId)} />
                           </div>
+                          <TransferSerials lines={tr.lines} />
                         </td>
                         <td className="px-[18px] py-[13px]">
                           <div className="flex flex-col items-end gap-px">

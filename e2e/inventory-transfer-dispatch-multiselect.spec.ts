@@ -176,6 +176,8 @@ test.describe('Inventory — Stock Transfer dispatch multi-select & RR link', ()
       modal.getByRole('button', { name: 'Confirm Receipt' }),
       { timeout: 15_000 }
     )
+    // Serial units start unticked (Scenario 71 item 23) — confirm them all.
+    await modal.getByRole('button', { name: 'Mark all received' }).click()
     await clickStable(
       modal.getByRole('button', { name: 'Confirm Receipt' }),
       modal.getByText('Received', { exact: true }).first(),

@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable, clickStable } from './utils'
+import { test, expect, type Locator, type Page } from '@playwright/test'
+import { gotoReady, fillStable, clickStable, cancelStockTransfer } from './utils'
 
 // Scenario 71 — inventory client feedback batch, UI side. Backend
 // correctness (orderDate on create/update/convert, '' location → null) is
@@ -186,5 +186,255 @@ test.describe('Scenario 71 — Part 1: PO Date and optional Location', () => {
     // given its destination later.
     await fillStable(page.locator('input[type="date"]'), '2026-10-01')
     await expect(warning).toHaveCount(0)
+  })
+})
+
+/** Creates and accepts a 2-unit serial-tracked transfer, opens its detail
+ * drawer, and returns the drawer plus the transfer id (to cancel after). */
+async function openAcceptedSerialTransfer(
+  page: Page,
+  /** Runs after accept, before the drawer opens — to move it further along. */
+  beforeOpen?: (t: { id: string; fromId: string; itemId: string }) => Promise<void>
+): Promise<{ transferId: string; modal: Locator }> {
+  const reason = `E2E-S71-DISPATCH-${Date.now()}`
+  const warehouses = ((
+    await (await page.request.get('/api/inventory/warehouses?limit=200&status=active')).json()
+  ).data ?? []) as { id: string; branchId: string | null }[]
+  const branchWarehouses = warehouses.filter((w) => w.branchId)
+
+  // A source with ≥2 in-stock serials of one item — not a fixed SKU, same
+  // approach as inventory-transfer-dispatch-multiselect.spec.ts.
+  let fromId: string | undefined
+  let itemId: string | undefined
+  for (const w of branchWarehouses) {
+    const serials = ((
+      await (
+        await page.request.get('/api/inventory/serial-numbers', {
+          params: { warehouseId: w.id, status: 'in_stock', limit: '200' },
+        })
+      ).json()
+    ).data ?? []) as { itemId: string }[]
+    const counts = new Map<string, number>()
+    for (const sn of serials) counts.set(sn.itemId, (counts.get(sn.itemId) ?? 0) + 1)
+    const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]
+    if (best && best[1] >= 2) {
+      fromId = w.id
+      itemId = best[0]
+      break
+    }
+  }
+  expect(fromId, 'a warehouse with ≥2 in-stock serials of one item').toBeTruthy()
+  const toId = branchWarehouses.find((w) => w.id !== fromId)!.id
+
+  const createRes = await page.request.post('/api/inventory/transfers', {
+    data: {
+      fromWarehouseId: fromId,
+      toWarehouseId: toId,
+      transferDate: new Date().toISOString().split('T')[0],
+      reason,
+      lines: [
+        { itemId, quantity: 1 },
+        { itemId, quantity: 1 },
+      ],
+    },
+  })
+  expect(createRes.ok(), await createRes.text()).toBeTruthy()
+  const transfer = (await createRes.json()) as { id: string }
+
+  expect(
+    (await page.request.patch(`/api/inventory/transfers/${transfer.id}/accept`, { data: {} })).ok()
+  ).toBeTruthy()
+  if (beforeOpen) await beforeOpen({ id: transfer.id, fromId: fromId!, itemId: itemId! })
+
+  await gotoReady(page, '/inventory/transfers')
+  await expect(async () => {
+    await page.locator('tbody tr').first().click()
+    await expect(page.getByRole('heading', { name: 'Transfer Details' })).toBeVisible({
+      timeout: 3_000,
+    })
+    if (
+      !(await page
+        .getByText(reason, { exact: true })
+        .isVisible()
+        .catch(() => false))
+    ) {
+      await page.getByRole('button', { name: 'Close dialog' }).click()
+      throw new Error('opened transfer is not the one just created — retrying')
+    }
+  }).toPass({ timeout: 20_000 })
+  const modal = page.locator('.fixed.inset-0.z-50')
+  return { transferId: transfer.id, modal }
+}
+
+test.describe('Scenario 71 — Part 4: dispatch legibility', () => {
+  test('serials show pre-dispatch, the picker carries ages, pills are legible, the drawer is wider', async ({
+    page,
+  }) => {
+    const { transferId, modal } = await openAcceptedSerialTransfer(page)
+    try {
+      // Item 21 — wider than the old 860px cap (viewport is 1280px).
+      const panel = modal.locator('div.max-w-\\[min\\(1200px\\,96vw\\)\\]').first()
+      expect((await panel.boundingBox())!.width).toBeGreaterThan(900)
+
+      // Item 19 — pre-dispatch, the Serial column is there and says why
+      // it's blank.
+      await expect(modal.getByText('Assigned at dispatch').first()).toBeVisible()
+
+      await clickStable(
+        modal.getByRole('button', { name: 'Dispatch' }),
+        modal.getByRole('button', { name: 'Confirm Dispatch' }),
+        { timeout: 15_000 }
+      )
+
+      // Item 17 — each serial option carries its inbound age beside it.
+      const picker = modal.getByPlaceholder('Search serial number…')
+      await picker.click()
+      const option = page.locator('[data-testid="searchable-select-option"]').first()
+      await expect(option).toBeVisible({ timeout: 10_000 })
+      await expect(option).toContainText(/Inbound \S/)
+      await option.click()
+      await page.keyboard.press('Escape')
+
+      // Item 20 — the assigned pill is near-black and monospaced.
+      const pill = modal.locator('span.rounded-full.font-mono.bg-prominent-purple-50').first()
+      await expect(pill).toBeVisible()
+      await expect(pill).toHaveCSS('color', 'rgb(23, 23, 28)')
+    } finally {
+      await cancelStockTransfer(page.request, transferId)
+    }
+  })
+})
+
+test.describe('Scenario 71 — Part 5: driver and vehicle are separate', () => {
+  test('a driver pick fills the driver only, a vehicle pick fills the plate only', async ({
+    page,
+  }) => {
+    const { transferId, modal } = await openAcceptedSerialTransfer(page)
+    try {
+      await clickStable(
+        modal.getByRole('button', { name: 'Dispatch' }),
+        modal.getByRole('button', { name: 'Confirm Dispatch' }),
+        { timeout: 15_000 }
+      )
+      const driver = modal.getByPlaceholder('e.g. Juan dela Cruz')
+      const plate = modal.getByPlaceholder('e.g. ABC 1234')
+
+      // The roster dropdowns are portalled to <body> (VehicleAutocompleteInput).
+      const firstOption = page.locator('div.fixed.max-h-56 button').first()
+
+      // Driver Name lists driver names; a pick fills the driver only.
+      await driver.click()
+      await expect(firstOption).toBeVisible({ timeout: 10_000 })
+      const driverName = (await firstOption.innerText()).trim()
+      await firstOption.click()
+      await expect(driver).toHaveValue(driverName)
+      await expect(plate).toHaveValue('')
+
+      // Vehicle Plate lists plates; a pick fills the plate only.
+      await plate.click()
+      await expect(firstOption).toBeVisible({ timeout: 10_000 })
+      await firstOption.click()
+      await expect(plate).not.toHaveValue('')
+      await expect(driver).toHaveValue(driverName)
+    } finally {
+      await cancelStockTransfer(page.request, transferId)
+    }
+  })
+})
+
+/** Dispatches an accepted serial transfer through the API, assigning the
+ * source's first free in-stock units; returns its line ids. */
+async function dispatchByApi(
+  page: Page,
+  { id, fromId, itemId }: { id: string; fromId: string; itemId: string }
+): Promise<string[]> {
+  const detail = await (await page.request.get(`/api/inventory/transfers/${id}`)).json()
+  const lineIds = (detail.lines as { id: string }[]).map((l) => l.id)
+  const serials = ((
+    await (
+      await page.request.get('/api/inventory/serial-numbers', {
+        params: {
+          warehouseId: fromId,
+          itemId,
+          status: 'in_stock',
+          freeForTransfer: 'true',
+          limit: '2',
+        },
+      })
+    ).json()
+  ).data ?? []) as { id: string }[]
+  const dispatched = await page.request.patch(`/api/inventory/transfers/${id}/dispatch`, {
+    data: {
+      vehiclePlate: 'E2E 071',
+      carrierName: 'E2E Carrier',
+      serialAssignments: lineIds.map((lineId, i) => ({
+        lineId,
+        serialNumberId: serials[i].id,
+      })),
+    },
+  })
+  expect(dispatched.ok(), await dispatched.text()).toBeTruthy()
+  return lineIds
+}
+
+test.describe('Scenario 71 — partial receive leaves the rest in transit', () => {
+  // Not self-cleaning: a dispatched/received transfer is a real stock
+  // movement and can't be cancelled — same tradeoff
+  // inventory-transfer-dispatch-multiselect.spec.ts documents.
+  test('a unit left unticked shows "Not received yet", not "Lost in Transit"', async ({ page }) => {
+    const { modal } = await openAcceptedSerialTransfer(page, async (t) => {
+      const lineIds = await dispatchByApi(page, t)
+      const id = t.id
+      const received = await page.request.patch(`/api/inventory/transfers/${id}/receive`, {
+        data: {
+          receivedDate: new Date().toISOString().split('T')[0],
+          deliveryReceiptNumber: 'DR-E2E-071',
+          lines: [
+            { stockTransferLineId: lineIds[0], quantityReceived: 1 },
+            { stockTransferLineId: lineIds[1], quantityReceived: 0 },
+          ],
+        },
+      })
+      expect(received.ok(), await received.text()).toBeTruthy()
+    })
+
+    await expect(modal.getByText('Not received yet')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByText('Lost in Transit')).toHaveCount(0)
+  })
+})
+
+test.describe('Scenario 71 — Part 6: receive defaults and Create Transfer copy', () => {
+  // Leaves one dispatched (in-transit) transfer behind — can't be cancelled.
+  test('serials start unticked, an empty receipt is refused, Mark all ticks them', async ({
+    page,
+  }) => {
+    const { modal } = await openAcceptedSerialTransfer(page, async (t) => {
+      await dispatchByApi(page, t)
+    })
+    await clickStable(
+      modal.getByRole('button', { name: 'Receive' }),
+      modal.getByRole('button', { name: 'Confirm Receipt' }),
+      { timeout: 15_000 }
+    )
+    const boxes = modal.locator('input[type="checkbox"]')
+    await expect(boxes).toHaveCount(2)
+    for (const box of await boxes.all()) await expect(box).not.toBeChecked()
+
+    await modal.getByRole('button', { name: 'Confirm Receipt' }).click()
+    await expect(modal.getByText('Tick at least one unit')).toBeVisible()
+
+    await modal.getByRole('button', { name: 'Mark all received' }).click()
+    for (const box of await boxes.all()) await expect(box).toBeChecked()
+  })
+
+  test('the Create Transfer item search no longer claims to search serials', async ({ page }) => {
+    await gotoReady(page, '/inventory/transfers')
+    await clickStable(
+      page.getByRole('button', { name: /New transfer/i }).first(),
+      page.getByRole('heading', { name: 'New Stock Transfer' })
+    )
+    // SearchCombobox renders its placeholder as text, not an attribute.
+    await expect(page.getByText('Add item — search name or SKU…')).toBeVisible()
+    await expect(page.getByText(/search name, SKU, or serial/)).toHaveCount(0)
   })
 })

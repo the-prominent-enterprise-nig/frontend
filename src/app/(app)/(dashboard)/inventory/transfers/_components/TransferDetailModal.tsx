@@ -59,8 +59,18 @@ import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
 import { warehouseLabel } from '@/src/schema/inventory/warehouses'
 import { LocationName } from './transferStatus'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
+import { formatAge } from '@/src/libs/format/date'
 
 /** A transfer line's unit, opening its history when the line has one. */
+/** Statuses in which a serial-tracked line has no unit yet because the
+ * source hasn't dispatched — the only time "Assigned at dispatch" is true. */
+const PRE_DISPATCH_STATUSES: string[] = [
+  'pending_manager_approval',
+  'requested',
+  'pending_hq_approval',
+  'draft',
+]
+
 function LineSerial({
   line,
 }: {
@@ -339,7 +349,16 @@ function ItemSerialGroup({
                 multiple
                 value={pickedSerialIds}
                 onChange={handleMultiSelectChange}
-                options={serialOptions.map((s) => ({ value: s.id, label: s.serialNumber }))}
+                options={serialOptions.map((s) => ({
+                  value: s.id,
+                  label: s.serialNumber,
+                  // Scenario 71 item 17 — the inbound age beside the serial
+                  // (the Serial Numbers list's "Inbound Age": since its
+                  // original RR), so the oldest unit can go out first.
+                  description: s.firstReceivedAt
+                    ? `Inbound ${formatAge(s.firstReceivedAt)}`
+                    : undefined,
+                }))}
                 loading={serialsQuery.isLoading}
                 loadingLabel="Loading serials…"
                 placeholder="Search serial number…"
@@ -382,7 +401,9 @@ function ItemSerialGroup({
             {filledIndices.map((i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-1.5 rounded-full bg-prominent-purple-100 py-1 pl-3 pr-1.5 text-xs font-medium text-prominent-purple-700"
+                // Scenario 71 item 20 — the serial is read off the screen and
+                // checked against a physical sticker: near-black, larger, mono.
+                className="inline-flex items-center gap-1.5 rounded-full border border-prominent-purple-200 bg-prominent-purple-50 py-1 pl-3 pr-1.5 font-mono text-[13.5px] font-semibold text-[#17171c]"
               >
                 {allAssignments[i]?.serialLabel || allAssignments[i]?.serialNumberId}
                 {allAssignments[i]?.override && (
@@ -861,7 +882,15 @@ export default function TransferDetailModal({
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
-  const hasSerialLine = !!transfer?.lines?.some((line) => line.serialNumber?.serialNumber)
+  // Scenario 71 item 19 — the column shows for any serial-tracked line, not
+  // only once a serial is assigned, so a pre-dispatch transfer says which
+  // lines will carry one ("Assigned at dispatch") instead of hiding it.
+  // Only before dispatch is a missing serial "to come" — afterwards (or on a
+  // rejected/cancelled request that never left) it is simply absent.
+  const awaitingDispatch = PRE_DISPATCH_STATUSES.includes(status)
+  const hasSerialLine = !!transfer?.lines?.some(
+    (line) => line.serialNumber?.serialNumber || line.item?.isSerialTracked
+  )
   const isReceivedStatus = status === 'received' || status === 'partially_received'
   const totalUnits = (transfer?.lines ?? []).reduce((sum, l) => sum + Number(l.quantity), 0)
   const receivedUnits = (transfer?.lines ?? []).reduce(
@@ -971,10 +1000,12 @@ export default function TransferDetailModal({
     if (!transfer) return
     // Only lines not yet at their full dispatched quantity are actionable —
     // on a first receive that's every line; on a reopened partially_received
-    // transfer it's just what's still short. Default each to its full
-    // remaining amount — the common case is everything arrived; the user
-    // reduces the number or unchecks a serial only for the exceptional
-    // shortfall.
+    // transfer it's just what's still short. Serial lines start unticked
+    // (Scenario 71 item 23): ticking each unit is the receiver saying they
+    // physically saw it, so a pre-ticked box would let a delivery be
+    // confirmed unseen — "Mark all received" keeps a complete one to a
+    // click. Quantity lines still default to the full remaining amount;
+    // there is no per-unit sighting to confirm there.
     const outstanding = (transfer.lines ?? []).filter(
       (line) => Number(line.receivedQuantity ?? 0) < Number(line.quantity)
     )
@@ -999,7 +1030,9 @@ export default function TransferDetailModal({
         itemLabel:
           (line.id && labelByLineId.get(line.id)) || line.item?.name || line.itemId || undefined,
         itemId: line.itemId ?? line.item?.id ?? '',
-        quantityReceived: Number(line.quantity) - Number(line.receivedQuantity ?? 0),
+        quantityReceived: line.serialNumberId
+          ? 0
+          : Number(line.quantity) - Number(line.receivedQuantity ?? 0),
       })),
       extraLines: [],
     })
@@ -1008,6 +1041,16 @@ export default function TransferDetailModal({
 
   async function handleReceiveSubmit(data: ReceiveTransferFormValues) {
     if (!transfer) return
+    // With serials unticked by default, an untouched form would post a
+    // receipt of nothing — refuse it rather than record an empty RR.
+    const receivedAny =
+      data.lines.some((l) => Number(l.quantityReceived) > 0) || (data.extraLines?.length ?? 0) > 0
+    if (!receivedAny) {
+      receiveForm.setError('root', {
+        message: 'Tick at least one unit (or enter a quantity) to record a receipt.',
+      })
+      return
+    }
     const result = await onReceive(transfer.id, {
       ...data,
       notes: data.notes || undefined,
@@ -1085,9 +1128,14 @@ export default function TransferDetailModal({
   // Picking a roster entry from either field fills both — driverName and
   // vehiclePlate are the only two fields the Vehicle model actually carries
   // (phone/license/carrier stay manual, they're not in the fleet sheet).
+  // Scenario 71 item 22 — a pick fills the plate only. The driver is no
+  // longer tied to the vehicle: the roster's driverName column is unreliable
+  // (some rows hold a model like "D-MAX"), and who drives varies per trip.
   function pickDispatchVehicle(vehicle: VehicleSummary) {
-    dispatchForm.setValue('driverName', vehicle.driverName ?? '', { shouldValidate: true })
     dispatchForm.setValue('vehiclePlate', vehicle.plateNo, { shouldValidate: true })
+  }
+  function pickDispatchDriver(vehicle: VehicleSummary) {
+    dispatchForm.setValue('driverName', vehicle.driverName ?? '', { shouldValidate: true })
   }
 
   return (
@@ -1100,7 +1148,7 @@ export default function TransferDetailModal({
     <div onClick={onClose} className="fixed inset-0 z-50 flex justify-end bg-[#17171c]/40">
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`${PLEX} flex h-full w-full max-w-[min(860px,94vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
+        className={`${PLEX} flex h-full w-full max-w-[min(1200px,96vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
       >
         {/* Header — the transfer's own reference is the title, the way the
             design has it; "Transfer Details" stays as the dialog's accessible
@@ -1386,8 +1434,14 @@ export default function TransferDetailModal({
                             )}
                           </td>
                           {hasSerialLine && (
-                            <td className="px-3 py-2 font-mono text-xs text-zinc-500">
-                              {line.receiptCorrectedFromSerial ? (
+                            <td className="px-3 py-2 font-mono text-[13px] text-[#17171c]">
+                              {awaitingDispatch &&
+                              !line.serialNumber?.serialNumber &&
+                              line.item?.isSerialTracked ? (
+                                <span className="font-sans text-xs italic text-zinc-400">
+                                  Assigned at dispatch
+                                </span>
+                              ) : line.receiptCorrectedFromSerial ? (
                                 <span
                                   title={`Corrected at receipt — was ${line.receiptCorrectedFromSerial.serialNumber}.${line.receiptCorrectionReason ? ` ${line.receiptCorrectionReason}` : ''}`}
                                 >
@@ -1416,6 +1470,12 @@ export default function TransferDetailModal({
                                 line.serialNumber?.status === 'lost_in_transit' ? (
                                   <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
                                     Lost in Transit
+                                  </span>
+                                ) : Number(line.receivedQuantity ?? 0) < 1 ? (
+                                  // Scenario 71 — left unticked on a partial
+                                  // receive: still on its way, not lost.
+                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                    Not received yet
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
@@ -1642,11 +1702,12 @@ export default function TransferDetailModal({
                       control={dispatchForm.control}
                       render={({ field }) => (
                         <VehicleAutocompleteInput
+                          mode="driver"
                           value={field.value ?? ''}
                           onChange={field.onChange}
-                          onPickVehicle={pickDispatchVehicle}
+                          onPickVehicle={pickDispatchDriver}
                           search={searchDispatchVehicles}
-                          queryKey={`dispatch-vehicle-search-${transfer?.id}`}
+                          queryKey={`dispatch-driver-search-${transfer?.id}`}
                           placeholder="e.g. Juan dela Cruz"
                           error={dispatchForm.formState.errors.driverName?.message}
                         />
@@ -1760,9 +1821,28 @@ export default function TransferDetailModal({
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Items Received
-                  </label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-xs font-medium text-zinc-600">
+                      Items Received
+                    </label>
+                    {receiveLineFields.some((f) => f.isSerial) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          receiveLineFields.forEach((f, i) => {
+                            if (f.isSerial) {
+                              receiveForm.setValue(`lines.${i}.quantityReceived`, 1, {
+                                shouldDirty: true,
+                              })
+                            }
+                          })
+                        }
+                        className="text-xs font-medium text-prominent-purple-600 hover:text-prominent-purple-800 hover:underline"
+                      >
+                        Mark all received
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
                     {receiveLineFields.map((lineField, idx) => (
                       <div
@@ -1939,6 +2019,11 @@ export default function TransferDetailModal({
                     )}
                   />
                 </div>
+                {receiveForm.formState.errors.root && (
+                  <p className="text-xs text-red-600">
+                    {receiveForm.formState.errors.root.message}
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <button
                     type="button"

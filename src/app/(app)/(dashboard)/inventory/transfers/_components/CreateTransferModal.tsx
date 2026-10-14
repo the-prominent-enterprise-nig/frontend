@@ -934,7 +934,7 @@ export default function CreateTransferModal({
                       // "add another" state instead of showing the last pick.
                       setAddItemKey((k) => k + 1)
                     }}
-                    placeholder="Add item — search name, SKU, or serial…"
+                    placeholder="Add item — search name or SKU…"
                     stockWarehouseId={fromId || undefined}
                   />
                 </div>
