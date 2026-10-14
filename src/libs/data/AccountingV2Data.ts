@@ -760,6 +760,9 @@ export interface AcknowledgementReceipt {
   account?: { id: string; name: string; number: string | null } | null
   reason: string | null
   amount: number
+  /** What cleared deposits have banked of it — above 0 for one a short
+   * deposit left partly to bank. */
+  depositedAmount?: number | string
   paymentDate: string
   /** Which of the two this record is — drives which title/download shows on
    * the detail page. Null on records saved before this field existed. */
