@@ -19,7 +19,6 @@ import {
   ShieldCheck,
   Loader2,
   ChevronDown,
-  ChevronUp,
   ChevronRight,
   KeyRound,
   WifiOff,
@@ -60,7 +59,6 @@ import {
   getLoyaltyByCustomer,
   earnPoints,
   redeemPoints,
-  getCustomerTransactions,
   getActiveLoyaltyProgram,
   getActivePosConfig,
   getSellingAgents,
@@ -351,16 +349,6 @@ const REF_METHODS: PosPaymentMethod[] = [
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 
-/** One line of "what was on this sale" for the past-purchases list.
- *
- * Quantities are only shown when >1 — "2x Kolin Aircon" is worth saying,
- * "1x" on every other row is noise. Beyond two items it degrades to a
- * "+N more" count rather than overflowing the row; the full detail lives on
- * the transaction itself.
- *
- * itemName is resolved server-side (PosTransactionLine has no name column);
- * a line whose item has since been deleted falls back to "Item" rather than
- * rendering an empty row. */
 // A caravan's register (stored on its host) reads as the caravan, so it
 // can't be mistaken for one of the host's own: "Caravan · Lemery · TN-01".
 function sessionTerminalLabel(s: {
@@ -377,21 +365,6 @@ function sessionTerminalLabel(s: {
 // Where a session's register physically is: its caravan, else its branch.
 function sessionPlaceId(s: { terminal?: PosSession['terminal'] }): string | undefined {
   return terminalPlaceId(s.terminal)
-}
-
-function summariseItems(
-  lines: { itemName?: string | null; quantity: number }[] | undefined
-): string {
-  if (!lines?.length) return 'No items'
-
-  const label = (l: { itemName?: string | null; quantity: number }): string => {
-    const name = l.itemName?.trim() || 'Item'
-    return Number(l.quantity) > 1 ? `${Number(l.quantity)}x ${name}` : name
-  }
-
-  const shown = lines.slice(0, 2).map(label).join(', ')
-  const rest = lines.length - 2
-  return rest > 0 ? `${shown} +${rest} more` : shown
 }
 
 /** Brand / Group / Model instead of the long free-text name, wherever all
@@ -423,6 +396,76 @@ function customerDisplayName(c: PosCustomer) {
  * maths and an already-applied promo's chip are untouched — so turning this back
  * on restores it with nothing else to change. */
 const SHOW_PROMO_ENTRY = false
+
+/** "Override the credit application" is hidden at the developer's request
+ * (2026-10-15): waiving the credit application and typing the terms reaches the
+ * same sale. Only the checkbox and its picker are gone — the backend, the
+ * review flag and an already-recorded override on a past sale are untouched —
+ * so turning this back on restores it with nothing else to change. */
+const SHOW_CREDIT_OVERRIDE = false
+
+/** The down payment on an installment row. It is a field from the start — a
+ * figure with a "Change amount" link read as fixed, and cashiers did not find
+ * out they could edit it. Prefilled with what the sale will use; when the rate
+ * card fixes the amount for the chosen term it is a figure, not a field. */
+function DownPaymentField({
+  badge,
+  value,
+  fixedDisplay,
+  error,
+  onChange,
+  onBlur,
+}: {
+  badge: string
+  value: string
+  /** Set when the rate card fixes the amount — shown as a figure. */
+  fixedDisplay?: string
+  /** Shown under the field, which turns red — so a missing down payment is
+   * caught where it is typed, not only when Checkout is pressed. */
+  error?: string
+  onChange: (next: string) => void
+  onBlur: (current: string) => void
+}) {
+  return (
+    <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[13px] font-semibold text-prominent-purple-700">Down payment</span>
+        <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+          {badge}
+        </span>
+      </div>
+      {fixedDisplay !== undefined ? (
+        <div className="mt-1 pl-4">
+          <span className="text-[15px] font-bold text-prominent-purple-800">{fixedDisplay}</span>
+        </div>
+      ) : (
+        <input
+          type="number"
+          min={0}
+          step={1}
+          inputMode="decimal"
+          aria-label="Down payment"
+          data-testid="down-payment-input"
+          placeholder="Down payment"
+          value={value}
+          aria-invalid={error ? true : undefined}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={(e) => onBlur(e.target.value)}
+          className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-right text-[15px] font-bold text-prominent-purple-800 outline-none [appearance:textfield] focus:ring-2 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+            error
+              ? 'border-red-400 focus:border-red-500 focus:ring-red-100'
+              : 'border-purple-200 focus:border-prominent-purple-400 focus:ring-prominent-purple-100'
+          }`}
+        />
+      )}
+      {error && fixedDisplay === undefined && (
+        <p role="alert" data-testid="down-payment-error" className="mt-1 text-xs text-red-600">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
 
 /** Scenario 71 — the statuses a credit application override may use: those already
  * decided, and those still waiting for a decision. A declined or cancelled one never. */
@@ -665,8 +708,6 @@ export default function CheckoutPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<PosCustomer | null>(null)
   const [loyaltyAccount, setLoyaltyAccount] = useState<LoyaltyAccount | null>(null)
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null)
-  const [customerHistory, setCustomerHistory] = useState<PosTransaction[]>([])
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<PosCustomer[]>([])
   // Not-yet-linked employees matching the same search — shown alongside
@@ -829,17 +870,10 @@ export default function CheckoutPage() {
     Record<string, boolean>
   >({})
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  // Down payment is a flat 10%-of-sale-amount floor, never a function of the
-  // chosen term — shown by default as a fixed stat so it doesn't read as an
-  // editable box that mysteriously never changes. Keyed by line.lineId (the
-  // same key the displayGroups card uses) so each item's reveal is independent.
-  const [downPaymentEditOpen, setDownPaymentEditOpen] = useState<Record<string, boolean>>({})
-
   // Scenario 37 — the tender row's method already comes from Item Payment
   // Mode by default (see preferredPaymentMethodKey) — showing an always-open
   // dropdown for the same choice reads as asking twice. Default to a plain
-  // label instead, same "reveal on demand" pattern as downPaymentEditOpen
-  // above. Keyed by row index.
+  // label instead, same "reveal on demand" idea. Keyed by row index.
   const [paymentMethodEditOpen, setPaymentMethodEditOpen] = useState<Record<number, boolean>>({})
 
   // Scenario 17 Part 6 — every installment sale requires an approved,
@@ -1861,11 +1895,6 @@ export default function CheckoutPage() {
   // pool, so the toggle labels itself with the combined figure.
   const allDownPaymentsTotal =
     Math.round((installmentDownPaymentsTotal + tpfDownPaymentsTotal) * 100) / 100
-  // What the financier itself funds, once the customer's down payment is out.
-  const tpfFinancedTotal = Math.max(
-    0,
-    Math.round((tpfLinesTotal - tpfDownPaymentsTotal) * 100) / 100
-  )
   // A cart that's nothing BUT TPF lines is the one case the backend records
   // the financier's own settlement for by itself, at create time (see
   // transactions.service.ts's pure-TPF block) — so the register must collect
@@ -2148,7 +2177,9 @@ export default function CheckoutPage() {
     setCreditApplicationWaived(customerId ? pendingResumedWaiverRef.current : false)
     pendingResumedWaiverRef.current = false
     // Same for an override — it names one of THIS customer's applications.
-    setCreditApplicationOverridden(customerId ? pendingResumedOverrideRef.current : false)
+    setCreditApplicationOverridden(
+      SHOW_CREDIT_OVERRIDE && customerId ? pendingResumedOverrideRef.current : false
+    )
     pendingResumedOverrideRef.current = false
     setEmployeeApplianceLoanChecked(isEmployeeCustomer && !resumedXDeal)
   }, [selectedCustomer?.id, isEmployeeCustomer])
@@ -2600,18 +2631,12 @@ export default function CheckoutPage() {
     setCustomerSearchOpen(false)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
-    const [loyaltyRes, histRes] = await Promise.all([
-      getLoyaltyByCustomer(customer.id),
-      getCustomerTransactions(customer.id),
-    ])
+    const loyaltyRes = await getLoyaltyByCustomer(customer.id)
     if (loyaltyRes.success && loyaltyRes.data) {
       setLoyaltyAccount(loyaltyRes.data)
       const programRes = await getActiveLoyaltyProgram()
       if (programRes.success && programRes.data) setLoyaltyProgram(programRes.data)
     }
-    if (histRes.success) setCustomerHistory((histRes.data ?? []).slice(0, 5))
   }
 
   // "New Customer" leaves checkout for POS's own create form
@@ -2739,8 +2764,6 @@ export default function CheckoutPage() {
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setCustomerSearch('')
   }
 
@@ -3488,10 +3511,6 @@ export default function CheckoutPage() {
     if (termId) setLineFinancingTermId(lineIds, termId)
   }
 
-  function toggleDownPaymentEdit(lineId: string) {
-    setDownPaymentEditOpen((prev) => ({ ...prev, [lineId]: !prev[lineId] }))
-  }
-
   function setQty(itemId: string, qty: number) {
     const line = cart.find((l) => l.itemId === itemId)
     if (line?.isSerialTracked) {
@@ -3820,8 +3839,6 @@ export default function CheckoutPage() {
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setPromoResult(null)
     setPromoInput('')
     setPayments([])
@@ -4034,31 +4051,21 @@ export default function CheckoutPage() {
         setError("Enter the financier's reference number for the TPF-financed item(s).")
         return
       }
-      // Same 10% floor as inhouse — the financier funds only the balance,
+      // Same "never 0" rule as inhouse — the financier funds only the balance,
       // so a missing down payment isn't "financed in full", it's unbilled.
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
         const downPayment = lineDownPayment(l)
         // Scenario 60 — an Employee Appliance Loan waives the down payment
-        // (and the ">0" / 10%-floor checks below) entirely.
+        // (and the ">0" check below) entirely. There is no percentage floor
+        // (2026-10-15): any amount above 0 will do.
         if (!downPaymentWaived && downPayment <= 0) {
           setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
           return
         }
         if (downPayment > lineAmount) {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
-          return
-        }
-        // Waived for an Employee Appliance Loan or an X-Deal. A TPF line's monthly is the
-        // financier's, so only the floor applies — never the card's figure.
-        if (
-          !downPaymentWaived &&
-          downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
-        ) {
-          setError(
-            `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
-          )
           return
         }
       }
@@ -4100,19 +4107,11 @@ export default function CheckoutPage() {
         }
         continue
       }
-      // 0.005 (half a centavo) tolerance absorbs float noise from the
-      // tax-inclusive/exclusive price conversion above — without it, typing
-      // the exact rounded-to-centavo value shown by the "Min" hint below
-      // can land a hair under the true unrounded floor and be rejected.
-      // Waived entirely for an Employee Appliance Loan (development) or an
-      // X-Deal (Scenario 67 / 68).
-      if (
-        !downPaymentFree &&
-        downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
-      ) {
-        setError(
-          `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
-        )
+      // No percentage floor (2026-10-15): the down payment can be as low as
+      // the cashier sets it, but never 0. Waived entirely for an Employee
+      // Appliance Loan (development) or an X-Deal (Scenario 67 / 68).
+      if (!downPaymentFree && downPayment <= 0) {
+        setError(`${l.itemName} needs a down payment — it can be small, but not 0.`)
         return
       }
     }
@@ -4714,8 +4713,6 @@ export default function CheckoutPage() {
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setCustomerSearch('')
     setPromoInput('')
     setPromoResult(null)
@@ -5388,15 +5385,6 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {customerHistory.length > 0 && (
-                      <button
-                        onClick={() => setHistoryOpen((v) => !v)}
-                        className="flex items-center gap-0.5 text-xs font-medium text-purple-400 hover:text-purple-700"
-                      >
-                        {historyOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-                        {customerHistory.length} past
-                      </button>
-                    )}
                     <button
                       onClick={clearCustomer}
                       aria-label="Clear customer"
@@ -5406,37 +5394,6 @@ export default function CheckoutPage() {
                     </button>
                   </div>
                 </div>
-
-                {historyOpen && customerHistory.length > 0 && (
-                  <div className="mt-1 divide-y divide-gray-300 rounded-lg border border-purple-200 bg-gray-200">
-                    {customerHistory.map((tx) => (
-                      <div
-                        key={tx.id}
-                        className="flex items-center justify-between px-3 py-1.5 text-xs"
-                      >
-                        {/* What they bought, not the receipt id — a cashier
-                            recognises "Kolin 1.5HP Split Type" instantly and
-                            can never recognise POS-1788852307273-E863R. The
-                            number is kept on the title for lookups. */}
-                        <span
-                          className="min-w-0 flex-1 truncate pr-2 text-gray-700"
-                          title={tx.transactionNumber}
-                        >
-                          {summariseItems(tx.lines)}
-                        </span>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span className="text-gray-700">
-                            {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                          <span className="font-semibold text-gray-800">{fmt(tx.totalAmount)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
 
                 {/* Approved credit applications on file — visible as soon as the
                     customer is picked, not only once the cart has an installment
@@ -5633,11 +5590,7 @@ export default function CheckoutPage() {
                   />
                   <span>
                     <span className="font-medium text-prominent-purple-900">X-Deal</span>
-                    <span className="block text-gray-700">
-                      {isOffline
-                        ? 'Unavailable offline'
-                        : 'Inhouse installment, no credit application. Part of it may be paid now as the cash portion; an X-Deal credit memo clears the rest automatically when the sale is approved'}
-                    </span>
+                    {isOffline && <span className="block text-gray-700">Unavailable offline</span>}
                   </span>
                 </label>
                 {xDealChecked && (
@@ -5655,118 +5608,6 @@ export default function CheckoutPage() {
                       if (error === 'Enter the X-Deal reference.') setError('')
                     }}
                   />
-                )}
-              </div>
-            )}
-
-            {/* Scenario 71 — waive the credit application. Offered once there
-                is an in-house installment line to waive it for; an X-Deal,
-                an Employee Appliance Loan and a government institution already
-                need none. No approval here: it needs a reason and a note in
-                the order summary and management reviews it at the end of the
-                day. */}
-            {saleMode === 'sale' && canWaiveCreditApplication && (
-              <div
-                data-testid="credit-waiver-panel"
-                className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
-              >
-                <label className="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    data-testid="credit-waiver-checkbox"
-                    checked={creditApplicationWaived}
-                    disabled={isOffline}
-                    onChange={(e) => toggleCreditApplicationWaiver(e.target.checked)}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    <span className="font-medium text-prominent-purple-900">
-                      Waive the credit application
-                    </span>
-                    <span className="block text-gray-700">
-                      {isOffline
-                        ? 'Unavailable offline'
-                        : 'Flagged for management review. The down payment, term and monthly installment come from the price list and can be changed.'}
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
-
-            {/* Scenario 71 — override the credit application: sell on one that does not
-                cover this cart or is not approved yet. Like the waiver it needs no
-                approval here — a reason and a note in the order summary, and
-                management reviews it at the end of the day. */}
-            {saleMode === 'sale' && canWaiveCreditApplication && (
-              <div
-                data-testid="credit-override-panel"
-                className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
-              >
-                <label className="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    data-testid="credit-override-checkbox"
-                    checked={creditApplicationOverridden}
-                    disabled={isOffline}
-                    onChange={(e) => toggleCreditApplicationOverride(e.target.checked)}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    <span className="font-medium text-prominent-purple-900">
-                      Override the credit application
-                    </span>
-                    <span className="block text-gray-700">
-                      {isOffline
-                        ? 'Unavailable offline'
-                        : "Sell on an application that doesn't cover this cart or isn't approved yet. Flagged for management review."}
-                    </span>
-                  </span>
-                </label>
-
-                {creditApplicationOverriddenActive && (
-                  <div className="mt-2.5 space-y-2" data-testid="credit-override-body">
-                    <p className="rounded-lg bg-amber-100 px-3 py-2 text-[13px] text-amber-800">
-                      Credit application overridden. The sale posts against the application you
-                      pick, even if it doesn&apos;t cover this cart or isn&apos;t approved yet, and
-                      is flagged for review.
-                    </p>
-                    <Select
-                      value={creditApplicationId}
-                      onChange={(v) => {
-                        setCreditApplicationId(v)
-                        if (v) applyCreditApplicationTerms(v, overrideApplications)
-                      }}
-                      options={overrideApplicationOptions}
-                      placeholder={
-                        overrideApplicationsLoading
-                          ? 'Loading…'
-                          : overrideApplications.length === 0
-                            ? 'No application to override'
-                            : 'Select the application to override…'
-                      }
-                      disabled={overrideApplicationsLoading || overrideApplications.length === 0}
-                      compact
-                    />
-                    {!overrideApplicationsLoading && overrideApplications.length === 0 && (
-                      <p className="text-[12px] text-amber-700">
-                        This customer has no application that can be overridden. Waive the credit
-                        application instead, or raise one from Credit Applications.
-                      </p>
-                    )}
-                    {(() => {
-                      const diff = creditOverrideSnapshot()
-                      return diff ? (
-                        <div
-                          className="space-y-0.5 rounded-lg bg-prominent-purple-50 px-3 py-2 text-[12px] text-prominent-purple-800"
-                          data-testid="credit-override-diff"
-                        >
-                          {creditOverrideLines(diff).map((line) => (
-                            <p key={line}>{line}</p>
-                          ))}
-                        </div>
-                      ) : null
-                    })()}
-                  </div>
                 )}
               </div>
             )}
@@ -6640,6 +6481,120 @@ export default function CheckoutPage() {
                           )}
                         </div>
                       )}
+
+                    {/* Scenario 71 — the ways round the credit application sit right
+                        here, beside the "New credit application" button, so a cashier
+                        who finds the requirement does not have to scroll back up the
+                        page for them. */}
+                    {/* Scenario 71 — waive the credit application. Offered once there
+                is an in-house installment line to waive it for; an X-Deal,
+                an Employee Appliance Loan and a government institution already
+                need none. No approval here: it needs a reason and a note in
+                the order summary and management reviews it at the end of the
+                day. */}
+                    {saleMode === 'sale' && canWaiveCreditApplication && (
+                      <div
+                        data-testid="credit-waiver-panel"
+                        className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
+                      >
+                        <label className="flex items-start gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            data-testid="credit-waiver-checkbox"
+                            checked={creditApplicationWaived}
+                            disabled={isOffline}
+                            onChange={(e) => toggleCreditApplicationWaiver(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium text-prominent-purple-900">
+                              Waive the credit application
+                            </span>
+                            {isOffline && (
+                              <span className="block text-gray-700">Unavailable offline</span>
+                            )}
+                          </span>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* Scenario 71 — override the credit application: sell on one that does not
+                cover this cart or is not approved yet. Like the waiver it needs no
+                approval here — a reason and a note in the order summary, and
+                management reviews it at the end of the day. */}
+                    {SHOW_CREDIT_OVERRIDE && saleMode === 'sale' && canWaiveCreditApplication && (
+                      <div
+                        data-testid="credit-override-panel"
+                        className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
+                      >
+                        <label className="flex items-start gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            data-testid="credit-override-checkbox"
+                            checked={creditApplicationOverridden}
+                            disabled={isOffline}
+                            onChange={(e) => toggleCreditApplicationOverride(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium text-prominent-purple-900">
+                              Override the credit application
+                            </span>
+                            {isOffline && (
+                              <span className="block text-gray-700">Unavailable offline</span>
+                            )}
+                          </span>
+                        </label>
+
+                        {creditApplicationOverriddenActive && (
+                          <div className="mt-2.5 space-y-2" data-testid="credit-override-body">
+                            <p className="rounded-lg bg-amber-100 px-3 py-2 text-[13px] text-amber-800">
+                              Credit application overridden. The sale posts against the application
+                              you pick, even if it doesn&apos;t cover this cart or isn&apos;t
+                              approved yet, and is flagged for review.
+                            </p>
+                            <Select
+                              value={creditApplicationId}
+                              onChange={(v) => {
+                                setCreditApplicationId(v)
+                                if (v) applyCreditApplicationTerms(v, overrideApplications)
+                              }}
+                              options={overrideApplicationOptions}
+                              placeholder={
+                                overrideApplicationsLoading
+                                  ? 'Loading…'
+                                  : overrideApplications.length === 0
+                                    ? 'No application to override'
+                                    : 'Select the application to override…'
+                              }
+                              disabled={
+                                overrideApplicationsLoading || overrideApplications.length === 0
+                              }
+                              compact
+                            />
+                            {!overrideApplicationsLoading && overrideApplications.length === 0 && (
+                              <p className="text-[12px] text-amber-700">
+                                This customer has no application that can be overridden. Waive the
+                                credit application instead, or raise one from Credit Applications.
+                              </p>
+                            )}
+                            {(() => {
+                              const diff = creditOverrideSnapshot()
+                              return diff ? (
+                                <div
+                                  className="space-y-0.5 rounded-lg bg-prominent-purple-50 px-3 py-2 text-[12px] text-prominent-purple-800"
+                                  data-testid="credit-override-diff"
+                                >
+                                  {creditOverrideLines(diff).map((line) => (
+                                    <p key={line}>{line}</p>
+                                  ))}
+                                </div>
+                              ) : null
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -6729,8 +6684,6 @@ export default function CheckoutPage() {
                       (line.downPaymentInput
                         ? parseFloat(line.downPaymentInput) || 0
                         : (curatedDownPaymentWhole ?? minDownPaymentWhole)))
-                  const downPaymentEditingThisLine =
-                    !!downPaymentEditOpen[line.lineId] && fixedDownPayment == null
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
                       {/* Name only, as a label for the config below — price
@@ -6846,20 +6799,14 @@ export default function CheckoutPage() {
                                       : 'The X-Deal credit memo clears the whole sale when it is approved.'}
                                   </p>
                                 </div>
-                              ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
+                              ) : employeeApplianceLoanActive ? (
                                 <>
                                   <input
                                     type="number"
                                     min={0}
                                     step={1}
-                                    placeholder={
-                                      employeeApplianceLoanActive
-                                        ? 'Down payment (optional)'
-                                        : 'Down payment'
-                                    }
-                                    autoFocus={!employeeApplianceLoanActive}
+                                    placeholder="Down payment (optional)"
                                     value={
-                                      employeeApplianceLoanActive &&
                                       line.downPaymentAutoForPriceListItemId !== undefined
                                         ? ''
                                         : (line.downPaymentInput ?? '')
@@ -6882,56 +6829,52 @@ export default function CheckoutPage() {
                                     className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
-                                    {employeeApplianceLoanActive
-                                      ? `Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`
-                                      : `Must be at least ${fmt(minDownPaymentWhole)} and no more than ${fmt(lineSaleAmount)}.`}
+                                    {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
                                   </p>
-                                  {!employeeApplianceLoanActive && (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Use the minimum instead
-                                    </button>
-                                  )}
                                 </>
                               ) : (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null
-                                        ? 'Rate card'
-                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 flex items-center gap-2 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(downPaymentValue)}
-                                    </span>
-                                    {fixedDownPayment == null && (
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                        className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                      >
-                                        Change amount
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
+                                <DownPaymentField
+                                  badge={
+                                    curatedDownPaymentWhole !== null
+                                      ? 'Rate card'
+                                      : `${DOWN_PAYMENT_FLOOR_LABEL} default`
+                                  }
+                                  value={line.downPaymentInput ?? downPaymentValue.toFixed(2)}
+                                  fixedDisplay={
+                                    fixedDownPayment != null ? fmt(downPaymentValue) : undefined
+                                  }
+                                  error={
+                                    !downPaymentFree &&
+                                    fixedDownPayment == null &&
+                                    downPaymentValue <= 0
+                                      ? 'A down payment is required — it can be small, but not 0.'
+                                      : undefined
+                                  }
+                                  onChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
+                                  onBlur={(v) => {
+                                    // Whole pesos, rounded up, never below the 10% floor —
+                                    // normalised on blur rather than fighting the typing.
+                                    const parsed = parseFloat(v)
+                                    // Left empty, the field goes back to the figure the sale will use.
+                                    if (!Number.isFinite(parsed)) {
+                                      setLineDownPaymentInput(
+                                        groupLineIds,
+                                        downPaymentValue.toFixed(2)
+                                      )
+                                      return
+                                    }
+                                    setLineDownPaymentInput(
+                                      groupLineIds,
+                                      Math.ceil(parsed).toFixed(2)
+                                    )
+                                  }}
+                                />
                               )}
-                              {!downPaymentFree && (
+                              {!downPaymentFree && fixedDownPayment != null && (
                                 <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                   <span className="text-prominent-purple-400">●</span>
-                                  {fixedDownPayment != null
-                                    ? 'Set by the rate card for this term — its monthly installment is calculated from this down payment.'
-                                    : curatedDownPaymentWhole !== null
-                                      ? `From the rate card — the minimum accepted is ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount.`
-                                      : `Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
+                                  Set by the rate card for this term — its monthly installment is
+                                  calculated from this down payment.
                                 </p>
                               )}
                               {line.financingTermId && (
@@ -7001,20 +6944,14 @@ export default function CheckoutPage() {
                                     </span>
                                   </div>
                                 </div>
-                              ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
+                              ) : employeeApplianceLoanActive ? (
                                 <>
                                   <input
                                     type="number"
                                     min={0}
                                     step={1}
-                                    placeholder={
-                                      employeeApplianceLoanActive
-                                        ? 'Down payment (optional)'
-                                        : 'Down payment'
-                                    }
-                                    autoFocus={!employeeApplianceLoanActive}
+                                    placeholder="Down payment (optional)"
                                     value={
-                                      employeeApplianceLoanActive &&
                                       line.downPaymentAutoForPriceListItemId !== undefined
                                         ? ''
                                         : (line.downPaymentInput ?? '')
@@ -7033,51 +6970,47 @@ export default function CheckoutPage() {
                                     className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
-                                    {employeeApplianceLoanActive
-                                      ? `Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`
-                                      : `Must be at least ${fmt(minDownPaymentWhole)} and no more than ${fmt(lineSaleAmount)}.`}
+                                    {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
                                   </p>
-                                  {!employeeApplianceLoanActive && (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Use the minimum instead
-                                    </button>
-                                  )}
                                 </>
                               ) : (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null
-                                        ? 'Rate card'
-                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 flex items-center gap-2 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(downPaymentValue)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Change amount
-                                    </button>
-                                  </div>
-                                </div>
+                                <DownPaymentField
+                                  badge={
+                                    curatedDownPaymentWhole !== null
+                                      ? 'Rate card'
+                                      : `${DOWN_PAYMENT_FLOOR_LABEL} default`
+                                  }
+                                  value={line.downPaymentInput ?? downPaymentValue.toFixed(2)}
+                                  fixedDisplay={
+                                    fixedDownPayment != null ? fmt(downPaymentValue) : undefined
+                                  }
+                                  error={
+                                    !downPaymentFree &&
+                                    fixedDownPayment == null &&
+                                    downPaymentValue <= 0
+                                      ? 'A down payment is required — it can be small, but not 0.'
+                                      : undefined
+                                  }
+                                  onChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
+                                  onBlur={(v) => {
+                                    // Whole pesos, rounded up, never below the 10% floor —
+                                    // normalised on blur rather than fighting the typing.
+                                    const parsed = parseFloat(v)
+                                    // Left empty, the field goes back to the figure the sale will use.
+                                    if (!Number.isFinite(parsed)) {
+                                      setLineDownPaymentInput(
+                                        groupLineIds,
+                                        downPaymentValue.toFixed(2)
+                                      )
+                                      return
+                                    }
+                                    setLineDownPaymentInput(
+                                      groupLineIds,
+                                      Math.ceil(parsed).toFixed(2)
+                                    )
+                                  }}
+                                />
                               )}
-                              <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500">
-                                Collected here; the financier funds the{' '}
-                                {fmt(Math.max(0, lineSaleAmount - downPaymentValue))} balance and
-                                owns the schedule. Their details are entered once, just below.
-                              </p>
                             </>
                           )}
                         </div>
@@ -7090,12 +7023,6 @@ export default function CheckoutPage() {
                     <p className="text-xs font-medium text-prominent-purple-700">
                       {tpfInstallmentCartLines.length} item
                       {tpfInstallmentCartLines.length !== 1 ? 's' : ''} on TPF installment
-                    </p>
-                    <p className="mt-1 text-[13px] text-prominent-purple-500">
-                      {fmt(tpfDownPaymentsTotal)} down payment collected from the customer now;{' '}
-                      {fmt(tpfFinancedTotal)} funded by the financier
-                      {isPureTpfCart ? ' (recorded automatically, not tendered here)' : ''}. No
-                      local schedule — the financier owns the amortization.
                     </p>
                     <div className="mt-2.5 space-y-2">
                       <div>
@@ -7130,7 +7057,7 @@ export default function CheckoutPage() {
                         placeholder="Financier's reference number *"
                         value={tpfReferenceNumber}
                         onChange={(e) => setTpfReferenceNumber(e.target.value)}
-                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                        className="w-full rounded-lg border border-prominent-purple-200 bg-white px-3 py-2 text-sm font-semibold text-prominent-purple-900 outline-none placeholder:font-normal placeholder:text-gray-400 focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                       />
                     </div>
                   </div>
@@ -7709,6 +7636,14 @@ export default function CheckoutPage() {
               const tpfMissingDownPayment =
                 !downPaymentWaived &&
                 tpfInstallmentCartLines.some((l) => !(parseFloat(l.downPaymentInput ?? '0') > 0))
+              // An in-house line whose down payment is the cashier's to set and is 0 —
+              // the field above says so too; a typed plan and a rate-card-fixed
+              // line have their own rules.
+              const inhouseMissingDownPayment =
+                !downPaymentFree &&
+                inhouseInstallmentCartLines.some(
+                  (l) => !l.manualPlan && lineCardDownPayment(l) == null && lineDownPayment(l) <= 0
+                )
               const missingHrLoanNumber =
                 employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
               const missingXDealReference = xDealActive && !xDealReference.trim()
@@ -7738,40 +7673,42 @@ export default function CheckoutPage() {
                             ? 'Select a financing term for every installment item'
                             : saleMode === 'sale' && installmentMissingCreditApplication
                               ? 'Select an approved credit application'
-                              : saleMode === 'sale' &&
-                                  installmentCartLines.length > 0 &&
-                                  !installmentPaymentMethod &&
-                                  !xDealCollectsNothing
-                                ? xDealActive
-                                  ? 'Choose how the cash portion is paid'
-                                  : 'Choose a down payment method'
-                                : saleMode === 'sale' && tpfMissingReference
-                                  ? 'Select a TPF provider and enter a reference number'
-                                  : saleMode === 'sale' && tpfMissingDownPayment
-                                    ? 'Enter the down payment for the TPF-financed item(s)'
-                                    : saleMode === 'sale' && missingHrLoanNumber
-                                      ? 'Enter the HR appliance loan application number'
-                                      : saleMode === 'sale' && missingXDealReference
-                                        ? 'Enter the X-Deal reference'
-                                        : saleMode === 'sale' &&
-                                            !hasChargeOrInstallmentLine &&
-                                            !selectedCustomer
-                                          ? 'Select a customer'
-                                          : saleMode === 'sale' && balance > 0.009
-                                            ? `Underpaid by ${fmt(balance)}`
-                                            : saleMode === 'sale' && loyaltyOverBalance
-                                              ? 'Insufficient loyalty points'
-                                              : needsManagerOverride && !managerOverrideApproved
-                                                ? 'Manager override required'
-                                                : cart.some((l) => l.isSerialTracked)
-                                                  ? 'Checkout'
-                                                  : saleMode === 'reserve'
-                                                    ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                    : allCharge
-                                                      ? 'Issue Charge Invoice'
-                                                      : allInstallment
-                                                        ? 'Create Installment Plan'
-                                                        : 'Confirm Sale'
+                              : saleMode === 'sale' && inhouseMissingDownPayment
+                                ? 'Enter a down payment — it can be small, but not 0'
+                                : saleMode === 'sale' &&
+                                    installmentCartLines.length > 0 &&
+                                    !installmentPaymentMethod &&
+                                    !xDealCollectsNothing
+                                  ? xDealActive
+                                    ? 'Choose how the cash portion is paid'
+                                    : 'Choose a down payment method'
+                                  : saleMode === 'sale' && tpfMissingReference
+                                    ? 'Select a TPF provider and enter a reference number'
+                                    : saleMode === 'sale' && tpfMissingDownPayment
+                                      ? 'Enter the down payment for the TPF-financed item(s)'
+                                      : saleMode === 'sale' && missingHrLoanNumber
+                                        ? 'Enter the HR appliance loan application number'
+                                        : saleMode === 'sale' && missingXDealReference
+                                          ? 'Enter the X-Deal reference'
+                                          : saleMode === 'sale' &&
+                                              !hasChargeOrInstallmentLine &&
+                                              !selectedCustomer
+                                            ? 'Select a customer'
+                                            : saleMode === 'sale' && balance > 0.009
+                                              ? `Underpaid by ${fmt(balance)}`
+                                              : saleMode === 'sale' && loyaltyOverBalance
+                                                ? 'Insufficient loyalty points'
+                                                : needsManagerOverride && !managerOverrideApproved
+                                                  ? 'Manager override required'
+                                                  : cart.some((l) => l.isSerialTracked)
+                                                    ? 'Checkout'
+                                                    : saleMode === 'reserve'
+                                                      ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                      : allCharge
+                                                        ? 'Issue Charge Invoice'
+                                                        : allInstallment
+                                                          ? 'Create Installment Plan'
+                                                          : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'
@@ -8743,9 +8680,6 @@ function SuccessScreen({
                           {fmt(o.financedBalance ?? 0)}
                         </span>
                       </div>
-                      <span className="opacity-70">
-                        No local schedule — the financier owns the amortization.
-                      </span>
                     </>
                   ) : o.installmentPreview ? (
                     <>

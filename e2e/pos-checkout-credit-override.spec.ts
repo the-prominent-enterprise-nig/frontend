@@ -277,7 +277,9 @@ async function startInstallmentCart(
   await expect(page.getByTestId('credit-override-panel')).toBeVisible({ timeout: 15_000 })
 }
 
-test.describe('POS Checkout — overriding the credit application (Scenario 71 Part 5)', () => {
+// The override checkbox is hidden (SHOW_CREDIT_OVERRIDE in checkout/page.tsx, 2026-10-15) —
+// waive + typed terms covers the same sale. Re-enable with that flag, then drop the .skip.
+test.describe.skip('POS Checkout — overriding the credit application (Scenario 71 Part 5)', () => {
   test.describe.configure({ timeout: 120_000 })
 
   test.beforeAll(async ({ playwright }, testInfo) => {

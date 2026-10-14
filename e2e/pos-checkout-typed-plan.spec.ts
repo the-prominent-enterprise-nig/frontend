@@ -343,7 +343,7 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
     await expect(page.getByTestId('typed-plan-summary')).toContainText('× 12')
     // The Financing Term picker and the 10% floor are gone.
     await expect(page.getByRole('combobox', { name: 'Select a term…' })).toHaveCount(0)
-    await expect(page.getByText(/10% min|Fixed at 10%/)).toHaveCount(0)
+    await expect(page.getByText(/10% default|Fixed at 10%/)).toHaveCount(0)
 
     const section = exceptionSection(page)
     await expect(section).toBeVisible()
