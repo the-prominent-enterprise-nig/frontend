@@ -42,6 +42,10 @@ export type CheckoutHandoff<TLine = unknown> = {
    * the till, where price, tax and UoM are resolved, rather than guessed on
    * the page that happens to hold the application. */
   creditApplicationId?: string
+  /** Scenario 72 Part 6 — an approved "sales invoice to follow" Delivery
+   * Receipt. Carried instead of lines: the cart is built at the till from
+   * the DR's own lines and the units it holds. */
+  deliveryReceiptId?: string
   /** Scenario 64 item 28 — the two numbers a cashier reads off paper booklets
    * before leaving the till to raise a credit application: the Sales Invoice
    * No., and the collection-receipt (CR) number on each payment row.

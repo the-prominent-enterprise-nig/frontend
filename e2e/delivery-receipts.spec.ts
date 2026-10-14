@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, fillStable, pickComboboxOption, ensureItemStock } from './utils'
+import { gotoReady, fillStable, pickComboboxOption, ensureItemStock, clickStable } from './utils'
 
 // Scenario 72 — outbound Delivery Receipts.
 //
@@ -18,6 +18,10 @@ import { gotoReady, fillStable, pickComboboxOption, ensureItemStock } from './ut
 // Part 5: the printed Delivery Receipt (DRAFT-watermarked until approved,
 // the chosen purpose ticked) and the printed debit memo.
 //
+// Part 6: an approved "sales invoice to follow" DR goes to POS with
+// Proceed to POS and arrives at checkout with its customer, its held unit on
+// the line, and the "Invoicing DR…" banner.
+//
 // Cleanup: drafts are deleted, and any still-pending DR whose reason carries
 // E2E_TAG is rejected. Approved and posted DRs are voided by the tests that
 // make them.
@@ -31,11 +35,12 @@ async function firstPlainItemSku(page: Page): Promise<string> {
   return (await firstPlainItem(page)).sku
 }
 
-async function firstPlainItem(page: Page): Promise<{ sku: string; name: string }> {
+async function firstPlainItem(page: Page): Promise<{ id: string; sku: string; name: string }> {
   const res = await page.request.get('/api/inventory/items', {
     params: { limit: '100', lifecycle: 'active' },
   })
   const items = ((await res.json()).data ?? []) as {
+    id: string
     sku: string
     name: string
     isSerialTracked: boolean
@@ -321,7 +326,11 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     await drWin.close()
 
     await gotoReady(page, `/inventory/delivery-receipts/${id}`)
-    await page.getByRole('button', { name: 'Approve', exact: true }).first().click()
+    // Freshly loaded: retry the click until hydration has attached it.
+    await clickStable(
+      page.getByRole('button', { name: 'Approve', exact: true }).first(),
+      page.getByText(/A debit memo is drafted for accounting/)
+    )
     await page.getByRole('button', { name: 'Approve', exact: true }).last().click()
     const memoLink = page.getByRole('link', { name: /^DMINV0926-\d{3,}$/ })
     await expect(memoLink).toBeVisible({ timeout: 15_000 })
@@ -336,5 +345,83 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     await expect(memoWin.getByText('Total debit')).toBeVisible()
     await expect(memoWin.getByText('Noted by')).toBeVisible()
     await memoWin.close()
+  })
+
+  test('Proceed to POS arrives at checkout with the held unit and the DR banner', async ({
+    page,
+    request,
+  }) => {
+    type Row = Record<string, unknown> & { id: string }
+    const json = async (url: string, params: Record<string, string> = {}) =>
+      (await request.get(url, { params })).json()
+    const terminals = await json('/api/pos/terminals', { limit: '200' })
+    const terminal = ((terminals.data ?? terminals) as Row[]).find(
+      (t) => t.terminalCode === 'TN-B1-01'
+    )
+    test.skip(!terminal, 'no TN-B1-01 terminal in this database')
+    const warehouses = (await json('/api/inventory/warehouses', { limit: '200', status: 'active' }))
+      .data as Row[]
+    const warehouse = warehouses.find((w) => w.branchId === terminal!.branchId)!
+    const serials = (
+      await json('/api/inventory/serial-numbers', {
+        warehouseId: warehouse.id,
+        status: 'in_stock',
+        limit: '5',
+      })
+    ).data as (Row & { serialNumber: string; item?: { id: string } | null; itemId?: string })[]
+    // A held serial when the branch has one; otherwise a plain item, which
+    // still proves the hand-off (customer, line, banner).
+    const serial = serials[0]
+    const plain = serial ? null : await firstPlainItem(page)
+    const customers = (await json('/api/inventory/delivery-receipts/lookups/customers')) as Row[]
+
+    const created = await request.post('/api/inventory/delivery-receipts', {
+      data: {
+        purpose: 'sales_invoice_to_follow',
+        issueDate: new Date().toISOString().slice(0, 10),
+        warehouseId: warehouse.id,
+        customerId: customers[0].id,
+        reason: `${E2E_TAG} proceed to POS`,
+        lines: serial
+          ? [{ itemId: serial.item?.id ?? serial.itemId, serialNumberId: serial.id }]
+          : [{ itemId: plain!.id, quantity: 1 }],
+      },
+    })
+    expect(created.ok()).toBe(true)
+    const dr = await created.json()
+    expect((await request.post(`/api/inventory/delivery-receipts/${dr.id}/submit`)).ok()).toBe(true)
+    expect((await request.post(`/api/inventory/delivery-receipts/${dr.id}/approve`)).ok()).toBe(
+      true
+    )
+
+    const open = (await json('/api/pos/sessions', { status: 'open', limit: '100' })) as {
+      data?: Row[]
+    }
+    let sessionId = (open.data ?? []).find((s) => s.terminalId === terminal!.id)?.id
+    let openedHere = false
+    if (!sessionId) {
+      const opened = await request.post('/api/pos/sessions/open', {
+        data: { terminalId: terminal!.id, openingCash: 1000 },
+      })
+      expect(opened.ok()).toBe(true)
+      sessionId = (await opened.json()).id
+      openedHere = true
+    }
+
+    try {
+      await gotoReady(page, `/inventory/delivery-receipts/${dr.id}`)
+      await page.getByRole('button', { name: 'Proceed to POS' }).click()
+      await page.waitForURL(/\/pos\/checkout/, { timeout: 30_000 })
+      await expect(page.getByText(`Invoicing ${dr.drNumber}`, { exact: false })).toBeVisible({
+        timeout: 45_000,
+      })
+      await expect(page.getByText(serial ? serial.serialNumber : plain!.name).first()).toBeVisible()
+    } finally {
+      if (openedHere && sessionId) {
+        await request.post(`/api/pos/sessions/${sessionId}/close`, {
+          data: { declaredClosingCash: 1000 },
+        })
+      }
+    }
   })
 })

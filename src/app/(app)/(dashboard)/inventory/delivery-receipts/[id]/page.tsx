@@ -9,6 +9,8 @@ import DrForm from '../_components/DrForm'
 import DrDetailView from '../_components/DrDetailView'
 import { DrApprovalActions } from '../_components/DrApprovalActions'
 import { DrVoidAction } from '../_components/DrVoidAction'
+import { DrProceedToPos } from '../_components/DrProceedToPos'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 
 export const metadata = { title: 'Delivery Receipt' }
@@ -47,12 +49,25 @@ export default async function Page({
     : dr.debitMemo && can(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
       ? `/accounting/debit-memos/inventory/${dr.debitMemo.id}`
       : undefined
+  // Scenario 72 Part 6 — an approved sales invoice to follow is rung up at
+  // POS by whoever can sell there.
+  const canSell =
+    dr.status === 'approved' &&
+    dr.purpose === 'sales_invoice_to_follow' &&
+    can(session, POS_PERMISSIONS.TRANSACTIONS_CREATE)
   return (
     <DrDetailView
       dr={dr}
       memoHref={memoHref}
       actions={
-        canDecide ? <DrApprovalActions dr={dr} /> : canVoid ? <DrVoidAction dr={dr} /> : undefined
+        canDecide ? (
+          <DrApprovalActions dr={dr} />
+        ) : canVoid || canSell ? (
+          <>
+            {canVoid && <DrVoidAction dr={dr} />}
+            {canSell && <DrProceedToPos dr={dr} userId={session.id} />}
+          </>
+        ) : undefined
       }
     />
   )

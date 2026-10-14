@@ -177,6 +177,8 @@ export const DrDetailSchema = z.object({
   debitMemo: DebitMemoRefSchema,
   /** Return to supplier only (Scenario 72 Part 8) — drafted with the DR. */
   supplierDebitMemo: DebitMemoRefSchema,
+  /** Scenario 72 Part 6 — the POS sale that invoiced a sales invoice to follow. */
+  posTransaction: z.object({ id: z.string(), transactionNumber: z.string() }).nullable().optional(),
   lines: z.array(DrLineSchema),
 })
 export type DrDetail = z.infer<typeof DrDetailSchema>

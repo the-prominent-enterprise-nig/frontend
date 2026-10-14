@@ -105,6 +105,9 @@ export default function DrDetailView({
           <Pair label="Reason / details" value={dr.reason} wide />
           <Pair label="Submitted" value={dr.submittedAt ? fmtDrDate(dr.submittedAt) : null} />
           <Pair label="Approved" value={dr.approvedAt ? fmtDrDate(dr.approvedAt) : null} />
+          {dr.posTransaction && (
+            <Pair label="Invoiced as" value={dr.posTransaction.transactionNumber} mono />
+          )}
         </dl>
       </Section>
       <Section title="Items">
