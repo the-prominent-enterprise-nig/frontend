@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Landmark, Plus, X, Pencil, Trash2 } from 'lucide-react'
 import {
   useTpfProviders,
@@ -10,6 +10,7 @@ import {
 } from '../../../_hooks/usePos'
 import type { CreateTpfProviderInput, UpdateTpfProviderInput, TpfProvider } from '@/src/schema/pos'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { getGLAccounts, type GLAccount } from '../../../_actions/pos-actions'
 
 type ModalState =
   | { type: 'none' }
@@ -25,8 +26,22 @@ export function TpfProviderList({ canManage }: { canManage: boolean }) {
 
   const [modal, setModal] = useState<ModalState>({ type: 'none' })
   const [error, setError] = useState('')
+  const [accounts, setAccounts] = useState<GLAccount[]>([])
 
   const providers: TpfProvider[] = data?.data ?? []
+
+  // The chart gives each partner its own receivable ("AR - Third-Party Financing
+  // - Tonik"); the accounts are needed to name it here.
+  useEffect(() => {
+    getGLAccounts().then((res) => {
+      if (res.success) setAccounts(res.data ?? [])
+    })
+  }, [])
+  const accountLabel = (id?: string | null) => {
+    if (!id) return null
+    const a = accounts.find((x) => x.id === id)
+    return a ? `${a.number ?? a.code} · ${a.name}` : null
+  }
 
   async function handleCreate(input: CreateTpfProviderInput) {
     setError('')
@@ -127,6 +142,9 @@ export function TpfProviderList({ canManage }: { canManage: boolean }) {
                     Name
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Receivable account
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Status
                   </th>
                   {canManage && <th className="px-5 py-3" />}
@@ -136,6 +154,11 @@ export function TpfProviderList({ canManage }: { canManage: boolean }) {
                 {providers.map((p) => (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="px-5 py-3 font-medium text-gray-800">{p.name}</td>
+                    <td className="px-5 py-3 text-gray-600">
+                      {accountLabel(p.glAccountId) ?? (
+                        <span className="text-gray-400">Other Partners (shared)</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -192,6 +215,7 @@ export function TpfProviderList({ canManage }: { canManage: boolean }) {
         <TpfProviderModal
           title="New TPF Provider"
           error={error}
+          accounts={accounts}
           isSubmitting={createMutation.isPending}
           onClose={() => setModal({ type: 'none' })}
           onSubmit={(input) => handleCreate(input as CreateTpfProviderInput)}
@@ -202,6 +226,7 @@ export function TpfProviderList({ canManage }: { canManage: boolean }) {
           title="Edit TPF Provider"
           initial={modal.provider}
           error={error}
+          accounts={accounts}
           isSubmitting={updateMutation.isPending}
           onClose={() => setModal({ type: 'none' })}
           onSubmit={(input) => handleUpdate(modal.provider.id, input)}
@@ -224,6 +249,7 @@ function TpfProviderModal({
   title,
   initial,
   error,
+  accounts,
   isSubmitting,
   onClose,
   onSubmit,
@@ -231,12 +257,18 @@ function TpfProviderModal({
   title: string
   initial?: TpfProvider
   error: string
+  accounts: GLAccount[]
   isSubmitting: boolean
   onClose: () => void
   onSubmit: (input: CreateTpfProviderInput | UpdateTpfProviderInput) => Promise<void>
 }) {
   const isEdit = !!initial
   const [name, setName] = useState(initial?.name ?? '')
+  const [glAccountId, setGlAccountId] = useState(initial?.glAccountId ?? '')
+  const [payableAccountId, setPayableAccountId] = useState(initial?.payableAccountId ?? '')
+  const sortedAccounts = [...accounts].sort((a, b) =>
+    (a.number ?? a.code ?? '').localeCompare(b.number ?? b.code ?? '', undefined, { numeric: true })
+  )
 
   return (
     <>
@@ -267,6 +299,48 @@ function TpfProviderModal({
                 placeholder="e.g. Home Credit"
               />
             </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Receivable account
+              </label>
+              <select
+                value={glAccountId}
+                onChange={(e) => setGlAccountId(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100"
+              >
+                <option value="">
+                  {isEdit ? 'Other Partners (shared)' : 'Match by name, else Other Partners'}
+                </option>
+                {sortedAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.number ?? a.code} · {a.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-400">
+                What this partner owes NIG after a financed sale, until it settles.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Payable account (returns after settlement)
+              </label>
+              <select
+                value={payableAccountId}
+                onChange={(e) => setPayableAccountId(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100"
+              >
+                <option value="">Due to Financing Partners (shared)</option>
+                {sortedAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.number ?? a.code} · {a.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-400">
+                What NIG owes back when a sale the partner already paid for is returned.
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
@@ -278,7 +352,21 @@ function TpfProviderModal({
               Cancel
             </button>
             <button
-              onClick={() => onSubmit(isEdit ? { name } : { name })}
+              onClick={() =>
+                onSubmit(
+                  isEdit
+                    ? {
+                        name,
+                        glAccountId: glAccountId || null,
+                        payableAccountId: payableAccountId || null,
+                      }
+                    : {
+                        name,
+                        ...(glAccountId ? { glAccountId } : {}),
+                        ...(payableAccountId ? { payableAccountId } : {}),
+                      }
+                )
+              }
               disabled={isSubmitting || !name.trim()}
               className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800 disabled:opacity-50"
             >

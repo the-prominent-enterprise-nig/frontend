@@ -175,4 +175,5 @@ export const journalHref = (journalEntryId: string | null): string | null =>
 export const SETTLEMENT_TYPE_LABEL = {
   VAT_SETTLEMENT: 'VAT settlement',
   WHT_REMITTANCE: 'Withholding tax remittance',
+  INCOME_TAX_CLOSING: 'Income tax closing',
 } as const

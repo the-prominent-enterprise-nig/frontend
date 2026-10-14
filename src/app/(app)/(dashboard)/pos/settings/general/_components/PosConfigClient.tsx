@@ -21,6 +21,7 @@ export default function PosConfigClient() {
   const [success, setSuccess] = useState(false)
 
   const [discountThreshold, setDiscountThreshold] = useState<string>('20')
+  const [priceOverrideFlagPct, setPriceOverrideFlagPct] = useState<string>('10')
   const [receiptlessReturnDays, setReceiptlessReturnDays] = useState<string>('7')
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const [defaultPricingMode, setDefaultPricingMode] = useState<'inclusive' | 'exclusive'>(
@@ -35,6 +36,7 @@ export default function PosConfigClient() {
           const c = configRes.data
           setConfig(c)
           setDiscountThreshold(String(c.discountOverrideThreshold ?? 20))
+          setPriceOverrideFlagPct(String(c.priceOverrideFlagPct ?? 10))
           setReceiptlessReturnDays(String(c.receiptlessReturnDays ?? 7))
           setAllowNegativeStock(c.allowNegativeStock ?? false)
           setDefaultPricingMode(c.defaultPricingMode ?? 'exclusive')
@@ -52,6 +54,8 @@ export default function PosConfigClient() {
       existingId: config?.id,
       discountOverrideThreshold:
         discountThreshold === '' ? 0 : Math.max(0, Math.min(100, Number(discountThreshold))),
+      priceOverrideFlagPct:
+        priceOverrideFlagPct === '' ? 0 : Math.max(0, Math.min(100, Number(priceOverrideFlagPct))),
       receiptlessReturnDays:
         receiptlessReturnDays === '' ? 0 : Math.max(0, Number(receiptlessReturnDays)),
       allowNegativeStock,
@@ -68,6 +72,7 @@ export default function PosConfigClient() {
       const saved = res.data as PosConfig
       setConfig(saved)
       setDiscountThreshold(String(saved.discountOverrideThreshold ?? 20))
+      setPriceOverrideFlagPct(String(saved.priceOverrideFlagPct ?? 10))
       setReceiptlessReturnDays(String(saved.receiptlessReturnDays ?? 7))
       setAllowNegativeStock(saved.allowNegativeStock ?? false)
       setDefaultPricingMode(saved.defaultPricingMode ?? 'exclusive')
@@ -117,6 +122,33 @@ export default function PosConfigClient() {
                 onChange={(e) => setDiscountThreshold(e.target.value)}
               />
               <span className="text-sm text-gray-500">% discount</span>
+            </div>
+          </div>
+
+          {/* Scenario 71 — where the end-of-day Override Review starts flagging */}
+          <div className="border-t border-gray-100 pt-4">
+            <label
+              htmlFor="price-override-flag-pct"
+              className="mb-1 block text-sm font-semibold text-gray-700"
+            >
+              Price Override Flag Threshold (%)
+            </label>
+            <p className="mb-2 text-xs text-gray-500">
+              A price override charged further below list than this is flagged in the end-of-day
+              Override Review. It never blocks a sale.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                id="price-override-flag-pct"
+                type="number"
+                min={0}
+                max={100}
+                placeholder="0"
+                className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                value={priceOverrideFlagPct === '0' ? '' : priceOverrideFlagPct}
+                onChange={(e) => setPriceOverrideFlagPct(e.target.value)}
+              />
+              <span className="text-sm text-gray-500">% below list</span>
             </div>
           </div>
 

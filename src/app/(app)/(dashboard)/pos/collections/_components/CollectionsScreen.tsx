@@ -666,8 +666,14 @@ export default function CollectionsScreen() {
                       className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2.5 text-[13px] text-zinc-500">
+                        {/* The Sales Invoice / Delivery Receipt No. the customer holds —
+                            the internal POS-<epoch> number means nothing outside the
+                            system. Only a sale booked before it was required falls
+                            back to it. */}
                         <span className="font-mono">
-                          {s.posTransaction?.transactionNumber ?? s.id}
+                          {s.posTransaction?.salesInvoiceNumber?.trim() ||
+                            s.posTransaction?.transactionNumber ||
+                            s.id}
                         </span>
                         <span>
                           {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
