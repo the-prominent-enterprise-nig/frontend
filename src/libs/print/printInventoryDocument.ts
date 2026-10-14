@@ -3,7 +3,7 @@ import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   receivingReportSourceName,
   receivingReportSourceSubtitle,
-  receivingReportSourceRef,
+  receivingReportMetaSlots,
 } from '@/src/libs/format/receiving-report'
 import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
@@ -86,7 +86,6 @@ export function buildReceivingReportHtml(
   const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
-  const warehouse = rr.warehouse as { name?: string; branch?: { name?: string } | null } | undefined
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
 
@@ -96,18 +95,11 @@ export function buildReceivingReportHtml(
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
-  // `Ref` is the supplier-document number (their DR, or the SI when no DR was
-  // given). The source document is a separate reference and gets its own
-  // slot, paired with its own date in `Dated` — both were reachable from the
-  // record all along but never printed, and `Dated` sat hardcoded as an
-  // em-dash with nothing to fill it.
-  //
-  // Which source that is depends on where the stock came from: "P.O. No."
-  // dated by `poDate` on a supplier receipt, "Transfer No." dated by the
-  // dispatch date on one that arrived from another branch. The on-screen
-  // sheet makes the same swap through this same formatter.
-  const sourceRef = receivingReportSourceRef(rr as Parameters<typeof receivingReportSourceRef>[0])
+  // Reference, then the source document and its date — or, on a customer
+  // return, the sales invoice it came back from. The on-screen sheet renders
+  // the same slots through this same formatter.
+  const metaSlots = receivingReportMetaSlots(rr as Parameters<typeof receivingReportMetaSlots>[0])
+  const supplierAddress = (rr.supplier as { address?: string | null } | null | undefined)?.address
   // The supplier on a bought-in delivery, the sending branch on one that came
   // from another branch — a transfer receipt has no supplier to name.
   const sourceName = receivingReportSourceName(
@@ -205,24 +197,24 @@ export function buildReceivingReportHtml(
       <div class="party">
         <p class="party-name">${esc(sourceName) || '—'}</p>
         ${sourceSubtitle ? `<p class="party-address">${esc(sourceSubtitle)}</p>` : ''}
+        ${supplierAddress ? `<p class="party-address">${esc(supplierAddress)}</p>` : ''}
         ${driverHelper ? `<p class="party-address">Driver/Helper: ${esc(driverHelper)}</p>` : ''}
       </div>
       <div class="meta">
-        <p class="meta-label">No.</p>
+        <p class="meta-label">RR No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Date</p>
+        <p class="meta-label">RR Date</p>
         <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
-        <p class="meta-label">Ref</p>
-        <p class="meta-value">${esc(ref) || '—'}</p>
-        <p class="meta-label">${esc(sourceRef.label)}</p>
-        <p class="meta-value">${esc(sourceRef.code) || '—'}</p>
-        <p class="meta-label">Dated</p>
-        <p class="meta-value">${sourceRef.dated ? fmtDate(sourceRef.dated) : '—'}</p>
+        ${metaSlots
+          .map(
+            (slot) => `<p class="meta-label">${esc(slot.label)}</p>
+        <p class="meta-value">${slot.isDate ? fmtDate(slot.value) : esc(slot.value) || '—'}</p>`
+          )
+          .join('')}
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
-        <p class="party-address">Branch: ${esc(warehouse?.branch?.name ?? warehouse?.name) || '—'}</p>
       </div>
     </div>
 

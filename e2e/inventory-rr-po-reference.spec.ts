@@ -54,7 +54,7 @@ async function ensureSupplier(page: import('@playwright/test').Page): Promise<st
 }
 
 test.describe('Inventory — receiving report PO reference', () => {
-  test('shows the P.O. No. on both the sheet and the printed document', async ({ page }) => {
+  test('shows the PO No. on both the sheet and the printed document', async ({ page }) => {
     await gotoReady(page, '/inventory/stock?tab=reports')
 
     const warehouses = await (
@@ -102,14 +102,14 @@ test.describe('Inventory — receiving report PO reference', () => {
     const printButton = page.getByRole('button', { name: 'Print' })
     await expect(printButton).toBeVisible({ timeout: 15_000 })
     // The sheet: label present, and the value is the PO this receipt named.
-    await expect(page.getByText('P.O. No.', { exact: true })).toBeVisible()
+    await expect(page.getByText('PO No.', { exact: true })).toBeVisible()
     await expect(page.getByText(PO_NUMBER, { exact: true })).toBeVisible()
 
     const [popup] = await Promise.all([page.waitForEvent('popup'), printButton.click()])
     await popup.waitForLoadState('domcontentloaded')
-    // The printed paper must agree with the sheet, on both the new label
-    // and the `Dated` slot that used to be a hardcoded em-dash.
-    await expect(popup.getByText('P.O. No.', { exact: true })).toBeVisible()
+    // The printed paper must agree with the sheet, on both the label and
+    // the PO Date slot that used to be a hardcoded em-dash.
+    await expect(popup.getByText('PO No.', { exact: true })).toBeVisible()
     await expect(popup.getByText(PO_NUMBER, { exact: true })).toBeVisible()
     await expect(popup.getByText('9/1/2026', { exact: true })).toBeVisible()
     await popup.close()

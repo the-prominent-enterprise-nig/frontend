@@ -1,10 +1,10 @@
 'use client'
 
 import {
+  receivingReportMetaSlots,
   receivingReportReasonLabel,
   receivingReportSourceName,
   receivingReportSourceSubtitle,
-  receivingReportSourceRef,
 } from '@/src/libs/format/receiving-report'
 import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
@@ -27,7 +27,7 @@ export interface ReceivingReportDocument {
     code: string
     receivedAt: string
     receivedByName?: string | null
-    supplier?: { name?: string | null } | null
+    supplier?: { name?: string | null; address?: string | null } | null
     warehouse?: { name?: string | null; branch?: { name?: string | null } | null } | null
     purchaseOrderNumber?: string | null
     poDate?: string | null
@@ -71,7 +71,9 @@ export interface ReceivingReportDocument {
       unitCost?: number | string | null
       isFreebie?: boolean
       serialNumbers?: string[] | null
-      purchaseOrderLine?: { purchaseOrder?: { code?: string | null } | null } | null
+      purchaseOrderLine?: {
+        purchaseOrder?: { code?: string | null; orderDate?: string | null } | null
+      } | null
       item?: {
         name?: string | null
         modelNumber?: string | null
@@ -114,9 +116,7 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
   const rr = doc.document
   const enterprise = doc.enterprise
   const lines = rr.lines ?? []
-  const sourceRef = receivingReportSourceRef(rr)
-  const returnedFrom = rr.returnedInvoices?.length ? rr.returnedInvoices : null
-  const isReturn = rr.reason === 'repair_return' || rr.reason === 'repossession'
+  const metaSlots = receivingReportMetaSlots(rr)
 
   // The print builder's own running totals: units always, money only when
   // at least one line carries a cost (a transfer-sourced receipt has none).
@@ -166,6 +166,9 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
           {receivingReportSourceSubtitle(rr) && (
             <p className="text-gray-700">{receivingReportSourceSubtitle(rr)}</p>
           )}
+          {/* Only a supplier receipt has an address to show: a transfer has no
+              supplier, and a return's customer address is not fetched. */}
+          {rr.supplier?.address && <p className="text-gray-700">{rr.supplier.address}</p>}
           {/* Scenario 55 (Stock-side Manual RR parity, follow-up) — omitted
               rather than printed as "Driver/Helper: —": the standalone
               Create RR screen no longer collects either name at all, so
@@ -177,44 +180,23 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
           )}
         </div>
         <div className="text-right">
-          <MetaPair label="No." value={doc.documentNumber ?? rr.code} />
-          <MetaPair label="Date" value={docDate(rr.receivedAt)} />
-          {isReturn ? (
-            // A return has no supplier paperwork or PO — what it points back
-            // at is the sales invoice the unit was sold on. A receipt posted
-            // before the invoice was saved shows neither slot rather than a
-            // supplier's blank ones.
-            returnedFrom && (
-              <>
-                <MetaPair
-                  label="Invoice No."
-                  value={returnedFrom.map((i) => i.number).join(', ')}
-                />
-                <MetaPair label="Dated" value={docDate(returnedFrom[0].date ?? null)} />
-              </>
-            )
-          ) : (
-            <>
-              <MetaPair
-                label="Ref"
-                value={rr.deliveryReceiptNumber || rr.supplierInvoiceNumber || '—'}
-              />
-              {/* "P.O. No." on a supplier receipt, "Transfer No." on one that
-                  came from another branch — the slot names what the receipt
-                  actually points back at. */}
-              <MetaPair label={sourceRef.label} value={sourceRef.code ?? '—'} />
-              <MetaPair label="Dated" value={docDate(sourceRef.dated)} />
-            </>
-          )}
+          <MetaPair label="RR No." value={doc.documentNumber ?? rr.code} />
+          <MetaPair label="RR Date" value={docDate(rr.receivedAt)} />
+          {/* Reference, then the PO or transfer and its date — or a return's
+              sales invoice. Shared with the printed RR so the two agree. */}
+          {metaSlots.map((slot) => (
+            <MetaPair
+              key={slot.label}
+              label={slot.label}
+              value={slot.isDate ? docDate(slot.value) : (slot.value ?? '—')}
+            />
+          ))}
         </div>
         <div className="md:border-l md:border-gray-300 md:pl-7">
           <p className="font-bold text-prominent-purple-900">
             {enterprise?.companyLegalName ?? '—'}
           </p>
           <p className="mt-1 whitespace-pre-line text-gray-700">{enterprise?.address || '—'}</p>
-          <p className="mt-1 text-gray-700">
-            Branch: {rr.warehouse?.branch?.name ?? rr.warehouse?.name ?? '—'}
-          </p>
         </div>
       </div>
 

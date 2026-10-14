@@ -37,22 +37,27 @@ export function receivingReportPoCode(
 
 /**
  * The source document a receiving report points back at, as the printed
- * sheet's third meta slot states it.
+ * sheet's fourth and fifth meta slots state it.
  *
- * That slot has always been labelled "P.O. No.", which is right for the two
- * supplier routes (Receive Against PO, or a typed-in number) but wrong for
- * the third: stock arriving from another branch has no purchase order at
- * all. Those receipts printed an empty "P.O. No." while the number that
- * actually identifies the delivery — the transfer it came on — appeared
+ * That slot used to be labelled "P.O. No." regardless, which is right for
+ * the two supplier routes (Receive Against PO, or a typed-in number) but
+ * wrong for the third: stock arriving from another branch has no purchase
+ * order at all. Those receipts printed an empty "P.O. No." while the number
+ * that actually identifies the delivery — the transfer it came on — appeared
  * nowhere on the paper.
  *
  * So the slot is labelled by what the receipt is, rather than assumed to be
- * a PO. The `dated` half is the same swap: a supplier receipt pairs the PO
- * with `poDate`, a transfer receipt pairs the transfer with the date it was
- * dispatched.
+ * a PO, and its date slot follows it: "PO Date" beside "PO No.", "Transfer
+ * Date" beside "Transfer No." (Scenario 69 items 2 and 5 — the client wants
+ * every label spelled out).
  *
- * Returns the label even when there is no reference to put in it, so the
- * sheet keeps its fixed four-slot shape and callers render their own blank.
+ * The PO date is the typed `poDate` where the clerk entered one off the
+ * supplier's paper, otherwise the linked PO's own `orderDate`. A receipt
+ * made through Receive Against PO never sets `poDate`, so without the
+ * fallback its PO Date always printed blank (Scenario 69 item 1).
+ *
+ * Returns the labels even when there is no reference to put in them, so the
+ * sheet keeps its fixed shape and callers render their own blank.
  *
  * Structurally typed for the same reason receivingReportPoCode() is: the
  * typed record and the loose print envelope both pass through unchanged.
@@ -61,6 +66,11 @@ export function receivingReportSourceRef(
   report:
     | (Parameters<typeof receivingReportPoCode>[0] & {
         poDate?: string | Date | null
+        lines?: {
+          purchaseOrderLine?: {
+            purchaseOrder?: { code?: string | null; orderDate?: string | Date | null } | null
+          } | null
+        }[]
         stockTransfer?: {
           transferNumber?: string | null
           transferDate?: string | Date | null
@@ -68,20 +78,82 @@ export function receivingReportSourceRef(
       })
     | null
     | undefined
-): { label: string; code: string | null; dated: string | Date | null } {
+): { label: string; code: string | null; datedLabel: string; dated: string | Date | null } {
   const transfer = report?.stockTransfer
   if (transfer) {
     return {
       label: 'Transfer No.',
       code: transfer.transferNumber?.trim() || null,
+      datedLabel: 'Transfer Date',
       dated: transfer.transferDate ?? null,
     }
   }
   return {
-    label: 'P.O. No.',
+    label: 'PO No.',
     code: receivingReportPoCode(report),
-    dated: report?.poDate ?? null,
+    datedLabel: 'PO Date',
+    dated: report?.poDate ?? linkedPoOrderDate(report),
   }
+}
+
+/** The order date of the PO a receipt's lines were received against. */
+function linkedPoOrderDate(
+  report: Parameters<typeof receivingReportSourceRef>[0]
+): string | Date | null {
+  for (const line of report?.lines ?? []) {
+    const date = line.purchaseOrderLine?.purchaseOrder?.orderDate
+    if (date) return date
+  }
+  return null
+}
+
+/** One label/value pair in the sheet's meta column. */
+export interface ReceivingReportMetaSlot {
+  label: string
+  value: string | null
+  /** A date the caller formats its own way; a plain string otherwise. */
+  isDate?: boolean
+}
+
+/**
+ * The meta column after RR No. and RR Date, in print order — shared so the
+ * printed RR and the on-screen sheet cannot drift apart again.
+ *
+ * A supplier or transfer receipt: Reference (their DR, or the SI when no DR
+ * was given), then the source document and its date. A customer return has
+ * no supplier paperwork or PO — it points back at the sales invoice the unit
+ * was sold on — so it gets Invoice No. and Invoice Date instead, and nothing
+ * at all when the receipt was posted before that invoice was saved.
+ */
+export function receivingReportMetaSlots(
+  report:
+    | (Parameters<typeof receivingReportSourceRef>[0] & {
+        reason?: string | null
+        deliveryReceiptNumber?: string | null
+        supplierInvoiceNumber?: string | null
+        returnedInvoices?: { number: string; date?: string | null }[] | null
+      })
+    | null
+    | undefined
+): ReceivingReportMetaSlot[] {
+  if (report?.reason === 'repair_return' || report?.reason === 'repossession') {
+    const invoices = report.returnedInvoices ?? []
+    if (!invoices.length) return []
+    return [
+      { label: 'Invoice No.', value: invoices.map((i) => i.number).join(', ') },
+      { label: 'Invoice Date', value: invoices[0].date ?? null, isDate: true },
+    ]
+  }
+  const source = receivingReportSourceRef(report)
+  const dated = source.dated instanceof Date ? source.dated.toISOString() : source.dated
+  return [
+    {
+      label: 'Reference',
+      value: report?.deliveryReceiptNumber || report?.supplierInvoiceNumber || null,
+    },
+    { label: source.label, value: source.code },
+    { label: source.datedLabel, value: dated, isDate: true },
+  ]
 }
 
 /**
