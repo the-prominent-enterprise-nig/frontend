@@ -197,11 +197,11 @@ test.describe('Inventory — purchase order delivery destination', () => {
       page.getByText('Download PDF', { exact: true }).click(),
     ])
     await popup.waitForLoadState('domcontentloaded')
-    // Two lines: "Deliver to <location>", then the street address.
+    // Two lines: the location in bold, then the street address.
     // locationLabel() decides the location name, so it matches what staff
     // call the place everywhere else in the app — the branch, not the
     // warehouse's own "{branch} Warehouse".
-    await expect(popup.locator('.delivery-label')).toHaveText(`Deliver to ${branch.name}`)
+    await expect(popup.locator('.delivery-label')).toHaveText(branch.name)
     // The address comes off the BRANCH: every Warehouse.address in the data
     // is null, which is why this block printed one bare line before.
     const detail = popup.locator('.delivery-address')

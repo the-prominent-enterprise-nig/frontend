@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useQuery } from '@tanstack/react-query'
 import { PackageCheck, X } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -11,7 +10,6 @@ import { useEwtCodes } from '@/src/hooks/useEwtCodes'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
-import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { MONO, PLEX } from './procurementTokens'
 import { DeliveryDetailsPanel, DR_FIELD_ID } from './receive-po/DeliveryDetailsPanel'
 import { ReceiptTotalsPanel } from './receive-po/ReceiptTotalsPanel'
@@ -29,6 +27,7 @@ import {
   type Blocker,
   type IssueFix,
   type IssueLine,
+  NO_LOCATION_RECEIVE_MESSAGE,
 } from './receive-po/receiveIssues'
 import {
   ReceivePoFormSchema,
@@ -65,17 +64,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   // The withholding preview follows the tax code master's rate for the
   // supplier's EWT code, the same one the server posts at.
   const { rateFor } = useEwtCodes()
-  // Scenario 27 — goods are always received into one of the real warehouses
-  // now, never a branch's own local stock, so this is unconditionally the
-  // standalone-only list.
-  const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup', 'standalone'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
-    enabled: !!po,
-    staleTime: 5 * 60 * 1000,
-  })
-  const warehouses = warehousesQuery.data?.data?.data ?? []
-
   const [submitted, setSubmitted] = useState(false)
   const [drawers, setDrawers] = useState<Record<number, LineDrawer>>({})
   const [editingPricing, setEditingPricing] = useState<Record<number, boolean>>({})
@@ -204,12 +192,17 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     rateFor
   )
 
-  const blockers = collectBlockers(
-    issueLines,
-    poLines,
-    watched.deliveryReceiptNumber ?? '',
-    labelFor
-  )
+  const blockers: Blocker[] = [
+    // Scenario 71 — a PO with no location is a drop-ship: its destination is
+    // only the delivery instructions, and how such a receipt is booked
+    // (no stock, and debiting what instead of Inventory) is still with the
+    // accountant. Until then it can't be received at all rather than being
+    // booked into a location the goods never reached.
+    ...(po && !po.warehouseId
+      ? [{ key: 'no-location', kind: 'error' as const, text: NO_LOCATION_RECEIVE_MESSAGE }]
+      : []),
+    ...collectBlockers(issueLines, poLines, watched.deliveryReceiptNumber ?? '', labelFor),
+  ]
 
   const warnings = collectWarnings(issueLines, poLines, labelFor)
 
@@ -471,7 +464,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
               control={control}
               errors={errors}
               po={po}
-              warehouses={warehouses}
               showErrors={showErrors}
               deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
               recap={[

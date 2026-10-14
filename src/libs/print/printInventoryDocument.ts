@@ -675,7 +675,8 @@ function buildPurchaseOrderHtml(
   const lines = Array.isArray(po.lines) ? (po.lines as Record<string, unknown>[]) : []
   const enterprise = doc.enterprise
 
-  // Where the goods actually go: "Deliver to <location>" with the street
+  // Where the goods actually go, laid out like the supplier block: the
+  // location in bold (or, on a drop-ship, the instructions), the street
   // address beneath it.
   //
   // This used to print only the free-text `deliveryInstructions` note, so a
@@ -780,6 +781,7 @@ function buildPurchaseOrderHtml(
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
@@ -788,6 +790,7 @@ function buildPurchaseOrderHtml(
     .delivery-label { font-weight: 700; margin: 0 0 2px; }
     .delivery-address { margin: 0; color: #333; }
     .delivery-note { margin: 2px 0 0; color: #333; }
+    .delivery-label.delivery-note { margin: 0 0 2px; color: inherit; white-space: pre-line; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
@@ -838,9 +841,9 @@ function buildPurchaseOrderHtml(
     ${
       destinationName || destinationAddress || po.deliveryInstructions
         ? `<div class="delivery">
-      <p class="delivery-label">Deliver to${destinationName ? ` ${esc(destinationName)}` : ''}</p>
+      ${destinationName ? `<p class="delivery-label">${esc(destinationName)}</p>` : ''}
       ${destinationAddress ? `<p class="delivery-address">${esc(destinationAddress)}</p>` : ''}
-      ${po.deliveryInstructions ? `<p class="delivery-note">${esc(po.deliveryInstructions)}</p>` : ''}
+      ${po.deliveryInstructions ? `<p class="${destinationName ? 'delivery-note' : 'delivery-label delivery-note'}">${esc(po.deliveryInstructions)}</p>` : ''}
     </div>`
         : ''
     }

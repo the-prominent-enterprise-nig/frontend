@@ -11,6 +11,7 @@ import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSea
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from './procurementTokens'
+import { NoDestinationWarning } from './NoDestinationWarning'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,9 @@ type Props = {
   /** Rendered into the summary rail's footer by the parent, so the sticky
    * action bar and the rail agree on what submitting will do. */
   submitted?: boolean
+  /** Whether the "Where should this be delivered?" warning may show yet — held back
+   * on a brand-new, untouched form so it doesn't greet every buyer. */
+  warnNoDestination?: boolean
 }
 
 const EMPTY_LINE = {
@@ -83,6 +87,7 @@ export function PurchaseOrderFormFields({
   initialSupplierLabel,
   initialWarehouseLabel,
   submitted,
+  warnNoDestination,
 }: Props): React.ReactElement {
   const [openLines, setOpenLines] = useState<Record<string, boolean>>({})
   const searchRef = useRef<HTMLDivElement>(null)
@@ -99,6 +104,7 @@ export function PurchaseOrderFormFields({
           initialSupplierLabel={initialSupplierLabel}
           initialWarehouseLabel={initialWarehouseLabel}
           submitted={submitted}
+          warnNoDestination={warnNoDestination}
         />
         <OrderSummaryRail control={control} />
       </div>
@@ -127,6 +133,7 @@ function PurchaseDetailsCard({
   initialSupplierLabel,
   initialWarehouseLabel,
   submitted,
+  warnNoDestination,
 }: {
   control: Control<CreatePoFormValues>
   register: UseFormRegister<CreatePoFormValues>
@@ -134,8 +141,10 @@ function PurchaseDetailsCard({
   initialSupplierLabel?: string
   initialWarehouseLabel?: string
   submitted?: boolean
+  warnNoDestination?: boolean
 }): React.ReactElement {
   const instructions = useWatch({ control, name: 'deliveryInstructions' })
+  const warehouseId = useWatch({ control, name: 'warehouseId' })
 
   return (
     <div className={CARD}>
@@ -163,17 +172,36 @@ function PurchaseDetailsCard({
             locks the field once this is set). Every location is on offer,
             the standalone warehouses and each branch's own stock location
             alike, so ordering for another branch doesn't need a separate
-            transfer afterward. */}
-        <Field label="Location" required>
+            transfer afterward. Optional — a drop-ship PO goes from the
+            supplier straight to the customer and never lands at one. */}
+        <Field label="Location">
           <Controller
             name="warehouseId"
             control={control}
             render={({ field }) => (
               <WarehouseSearchCombobox
-                value={field.value}
+                value={field.value ?? ''}
                 onChange={field.onChange}
                 error={errors.warehouseId?.message}
                 initialLabel={initialWarehouseLabel}
+              />
+            )}
+          />
+        </Field>
+
+        {/* On a request this is the date the PO it converts into will carry
+            (a submitted request becomes its PO straight away). */}
+        <Field label="PO Date" error={errors.orderDate?.message}>
+          <Controller
+            name="orderDate"
+            control={control}
+            render={({ field }) => (
+              <input
+                type="date"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                className="h-10 w-full rounded-lg border border-[#d3d3db] px-3 text-[13px] text-[#3d3d4a] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
               />
             )}
           />
@@ -201,6 +229,12 @@ function PurchaseDetailsCard({
           />
           {errors.deliveryInstructions && (
             <ErrorLine message={errors.deliveryInstructions.message ?? ''} />
+          )}
+        </div>
+
+        <div className="min-[1240px]:col-span-2 empty:hidden">
+          {warnNoDestination && (
+            <NoDestinationWarning warehouseId={warehouseId} deliveryInstructions={instructions} />
           )}
         </div>
       </div>

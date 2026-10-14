@@ -5,6 +5,7 @@ import { api, type ApiResponse } from '@/src/libs/api/client'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
+import { DESTINATION_REQUIRED_MESSAGE } from '@/src/schema/inventory/purchase-orders'
 
 export async function sendPurchaseOrder(id: string): Promise<ApiResponse<{ id: string }>> {
   const session = await getSessionOrNull()
@@ -23,8 +24,9 @@ export async function sendPurchaseOrder(id: string): Promise<ApiResponse<{ id: s
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')
-    const msg =
+    const raw =
       typeof result.message === 'string' ? result.message : JSON.stringify(result.message ?? '')
+    const msg = raw.includes('po_destination_required') ? DESTINATION_REQUIRED_MESSAGE : raw
     return {
       success: false,
       error: errStr || 'Failed to send purchase order',

@@ -16,6 +16,8 @@ type Props = {
   iconColorClass: string
   summary: ReactNode
   message: string
+  /** Shown under the message — a heads-up that doesn't block confirming. */
+  notice?: ReactNode
   confirmLabel: string
   confirmingLabel: string
   confirmButtonClass: string
@@ -31,6 +33,7 @@ export function ConfirmActionModal({
   iconColorClass,
   summary,
   message,
+  notice,
   confirmLabel,
   confirmingLabel,
   confirmButtonClass,
@@ -65,6 +68,7 @@ export function ConfirmActionModal({
         <div className="space-y-4 px-6 py-4">
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3">{summary}</div>
           <p className="text-sm text-zinc-600">{message}</p>
+          {notice}
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
