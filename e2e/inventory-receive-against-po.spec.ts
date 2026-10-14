@@ -57,10 +57,12 @@ async function createReceivablePo(page: Page): Promise<Fixture> {
   expect(created.ok(), `PO create failed: ${await created.text()}`).toBe(true)
   const po = (await created.json()) as { id: string; code: string }
 
-  // `approved` is the earliest receivable status, and reaching it needs no
-  // supplier-facing side effects (unlike `sent`).
+  // Only a `sent` PO offers Receive in the list now (an approved one shows
+  // Send), so the fixture goes approve → send.
   const approved = await page.request.patch(`/api/procurement/purchase-orders/${po.id}/approve`)
   expect(approved.ok(), `PO approve failed: ${await approved.text()}`).toBe(true)
+  const sent = await page.request.patch(`/api/procurement/purchase-orders/${po.id}/send`)
+  expect(sent.ok(), `PO send failed: ${await sent.text()}`).toBe(true)
 
   return { poId: po.id, poCode: po.code }
 }
@@ -69,11 +71,19 @@ async function createReceivablePo(page: Page): Promise<Fixture> {
  * action, the same tradeoff the other procurement specs make. Never throws:
  * cleanup runs in afterEach regardless of where a test body failed. */
 async function cancelPo(page: Page, poId: string): Promise<void> {
-  await page.request
+  const cancelled = await page.request
     .patch(`/api/procurement/purchase-orders/${poId}/cancel`, {
       data: { reason: 'E2E fixture cleanup' },
     })
-    .catch(() => {})
+    .catch(() => null)
+  // A sent PO can't be cancelled — close() is its only way out.
+  if (!cancelled?.ok()) {
+    await page.request
+      .patch(`/api/procurement/purchase-orders/${poId}/close`, {
+        data: { reason: 'E2E fixture cleanup' },
+      })
+      .catch(() => {})
+  }
 }
 
 /** Opens the receive screen on the PO this spec built, found by its own code
@@ -91,7 +101,7 @@ async function openReceiveScreen(page: Page, poCode: string): Promise<void> {
   await expect(search).toBeVisible({ timeout: 20_000 })
   await fillStable(search, poCode)
 
-  // approved renders Receive as an icon button (aria-label "Receive stock").
+  // A sent PO renders Receive as a primary button (aria-label "Receive stock").
   const receive = page.getByRole('button', { name: /^Receive( stock)?$/ })
   await expect(receive.first()).toBeVisible({ timeout: 20_000 })
   await receive.first().click()
@@ -114,25 +124,21 @@ test.describe('Inventory — Receive stock against a PO', () => {
     fixture = null
   })
 
-  test('shows the delivery and refuses to move on without a DR number', async ({ page }) => {
+  test('shows the delivery and refuses to post without a DR number', async ({ page }) => {
     await expect(page.getByText('Purchase Orders ›', { exact: false })).toBeVisible()
-    await expect(page.getByText('PO receiving progress')).toBeVisible()
     await expect(page.getByText('Delivery details')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Receive all remaining' })).toBeVisible()
-
-    // Nothing has been received against a freshly approved PO, so the whole
-    // order is still outstanding.
-    await expect(page.getByText('0 of 8 units received so far')).toBeVisible()
 
     // The DR number is the one thing receiving cannot proceed without: it is
     // on the paper the driver hands over with the goods, so it always exists
     // at this moment (the supplier's invoice often follows days later).
     await expect(page.getByText('Needs DR number')).toBeVisible()
-    await expect(page.getByText('Delivery receipt number is required.')).toBeVisible()
+    await expect(page.getByText('Delivery receipt number is required.').first()).toBeVisible()
 
-    await page.getByRole('button', { name: 'Review receipt' }).click()
-    // Still on the entry stage — the review panel never opened.
-    await expect(page.getByText('Confirm this receipt')).toHaveCount(0)
+    // Posting is refused while a blocker stands — the screen stays open.
+    await page.getByRole('button', { name: 'Receive stock' }).click()
+    await expect(page.getByText(/must be resolved first/).first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('heading', { name: 'Receive stock against PO' })).toBeVisible()
 
     await fillStable(
       page.getByPlaceholder('As printed on the delivery receipt'),
@@ -162,15 +168,16 @@ test.describe('Inventory — Receive stock against a PO', () => {
     await page.getByRole('button', { name: 'Increase quantity' }).first().click()
     await expect(qty).toHaveValue('3')
 
-    // Down is unrestricted — a short delivery is legitimate, and says so.
+    // Down is unrestricted — a short delivery is legitimate (and, by design,
+    // not flagged: the PO simply stays open for the next receipt).
     await page.getByRole('button', { name: 'Decrease quantity' }).first().click()
     await expect(qty).toHaveValue('2')
-    await expect(page.getByText('Short delivery', { exact: false }).first()).toBeVisible()
   })
 
-  test('blocks the review step until every serial on the line is unique', async ({ page }) => {
-    const serials = page.getByPlaceholder(/^Scan or type serial /)
-    await expect(serials).toHaveCount(3)
+  test('blocks posting until every serial on the line is unique', async ({ page }) => {
+    // Serial-tracked lines open with their serial drawer expanded.
+    const serials = page.getByPlaceholder(/^Serial \d+$/)
+    await expect(serials).toHaveCount(3, { timeout: 10_000 })
 
     await fillStable(
       page.getByPlaceholder('As printed on the delivery receipt'),
@@ -184,45 +191,24 @@ test.describe('Inventory — Receive stock against a PO', () => {
     await fillStable(serials.nth(2), 'E2E-DUP-0003')
 
     await expect(page.getByText('Already used on this receipt.').first()).toBeVisible()
+    await expect(page.getByText(/Duplicate serial E2E-DUP-0001/i).first()).toBeVisible()
 
-    await page.getByRole('button', { name: 'Review receipt' }).click()
-    await expect(page.getByText('Confirm this receipt')).toHaveCount(0)
-
-    // Making it unique clears the block and the review panel opens.
+    // Making it unique clears the block.
     await fillStable(serials.nth(1), 'E2E-DUP-0002')
     await expect(page.getByText('Already used on this receipt.')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Review receipt' }).click()
-    await expect(page.getByText('Confirm this receipt')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/Duplicate serial/i)).toHaveCount(0)
   })
 
-  test('requires the acknowledgement tick before the receipt will post', async ({ page }) => {
+  test('refuses to post while serial numbers are still missing', async ({ page }) => {
     await fillStable(
       page.getByPlaceholder('As printed on the delivery receipt'),
       'DR-E2E-RECEIVE-03'
     )
-    const serials = page.getByPlaceholder(/^Scan or type serial /)
-    for (let i = 0; i < 3; i += 1) {
-      await fillStable(serials.nth(i), `E2E-ACK-000${i + 1}`)
-    }
+    // Three units ordered on the serial line, none captured.
+    await expect(page.getByText(/units? still needs? serial numbers?/).first()).toBeVisible()
 
-    await page.getByRole('button', { name: 'Review receipt' }).click()
-    await expect(page.getByText('Confirm this receipt')).toBeVisible({ timeout: 10_000 })
-    await expect(
-      page.getByText('Posting updates inventory on hand and cannot be undone', { exact: false })
-    ).toBeVisible()
-
-    // Posting without ticking is refused, and nothing is sent.
-    await page.getByRole('button', { name: 'Confirm & receive stock' }).click()
-    await expect(page.getByText('Tick the confirmation before posting')).toBeVisible({
-      timeout: 10_000,
-    })
-    await expect(page.getByText('Stock received and posted to inventory')).toHaveCount(0)
-
-    // Back to quantities returns to the working surface with the entry intact.
-    await page.getByRole('button', { name: 'Back to quantities' }).click()
-    await expect(page.getByText('Confirm this receipt')).toHaveCount(0)
-    await expect(page.getByPlaceholder('As printed on the delivery receipt')).toHaveValue(
-      'DR-E2E-RECEIVE-03'
-    )
+    await page.getByRole('button', { name: 'Receive stock' }).click()
+    await expect(page.getByText(/must be resolved first/).first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('heading', { name: 'Receive stock against PO' })).toBeVisible()
   })
 })

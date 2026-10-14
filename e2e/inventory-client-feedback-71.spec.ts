@@ -1,5 +1,11 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { gotoReady, fillStable, clickStable, cancelStockTransfer } from './utils'
+import {
+  gotoReady,
+  fillStable,
+  clickStable,
+  cancelStockTransfer,
+  pickComboboxOption,
+} from './utils'
 
 // Scenario 71 — inventory client feedback batch, UI side. Backend
 // correctness (orderDate on create/update/convert, '' location → null) is
@@ -112,7 +118,7 @@ test.describe('Scenario 71 — Part 1: PO Date and optional Location', () => {
 
       // Destination is the PO's own delivery instructions, read-only, with
       // no location picker — and receiving is blocked until drop-ship
-      // booking is decided.
+      // booking is decided (deferred).
       await expect(
         page.getByText('Please deliver to Brgy. Igang, Pototan Covered Gym')
       ).toBeVisible()
@@ -436,5 +442,156 @@ test.describe('Scenario 71 — Part 6: receive defaults and Create Transfer copy
     // SearchCombobox renders its placeholder as text, not an attribute.
     await expect(page.getByText('Add item — search name or SKU…')).toBeVisible()
     await expect(page.getByText(/search name, SKU, or serial/)).toHaveCount(0)
+  })
+})
+
+test.describe('Scenario 71 — Part 8: PO item search follows the supplier', () => {
+  test("lists the supplier's items, tags off-list ones", async ({ page }) => {
+    const supplier = ((await (await page.request.get('/api/suppliers?limit=1')).json()).data ??
+      [])[0] as { id: string; name: string }
+    const items = ((
+      await (await page.request.get('/api/inventory/items', { params: { limit: '2' } })).json()
+    ).data ?? []) as { id: string; sku: string }[]
+    const [onList, offList] = items
+
+    const linked = await page.request.post(`/api/suppliers/${supplier.id}/items`, {
+      data: { itemId: onList.id },
+    })
+    expect(linked.ok(), await linked.text()).toBeTruthy()
+
+    try {
+      await gotoReady(page, '/inventory/purchase-orders?tab=requests')
+      await clickStable(
+        page.getByRole('button', { name: /New Stock Request/ }).first(),
+        page.getByRole('heading', { name: 'New Purchase Request' })
+      )
+      await page
+        .getByRole('button', { name: /Search supplier/ })
+        .first()
+        .click()
+      const supplierInput = page.locator('input[placeholder*="Search supplier"]')
+      await supplierInput.fill(supplier.name)
+      await page
+        .locator('div.fixed.z-100 button')
+        .filter({ hasText: supplier.name })
+        .first()
+        .click()
+
+      await page
+        .getByRole('button', { name: /to add a line/ })
+        .first()
+        .click()
+      const itemInput = page.locator('input[placeholder*="to add a line"]')
+      const list = page.locator('div.fixed.z-100')
+
+      await itemInput.fill(onList.sku)
+      const own = list.locator('button').filter({ hasText: onList.sku }).first()
+      await expect(own).toBeVisible({ timeout: 10_000 })
+      await expect(own).not.toContainText("Not on supplier's list")
+
+      await itemInput.fill(offList.sku)
+      const other = list.locator('button').filter({ hasText: offList.sku }).first()
+      await expect(other).toBeVisible({ timeout: 10_000 })
+      await expect(other).toContainText("Not on supplier's list")
+    } finally {
+      await page.request.delete(`/api/suppliers/${supplier.id}/items/${onList.id}`)
+    }
+  })
+})
+
+test.describe('Scenario 71 — item 18: units ticked in the General Stockbook', () => {
+  test('are not asked for again at dispatch', async ({ page }) => {
+    // A free in-stock unit at a branch — what the stockbook lets you tick.
+    const warehouses = ((
+      await (await page.request.get('/api/inventory/warehouses?limit=200&status=active')).json()
+    ).data ?? []) as { id: string; branchId: string | null }[]
+    let serial: { id: string; serialNumber: string } | undefined
+    for (const w of warehouses.filter((x) => x.branchId)) {
+      const rows = ((
+        await (
+          await page.request.get('/api/inventory/serial-numbers', {
+            params: { warehouseId: w.id, status: 'in_stock', freeForTransfer: 'true', limit: '1' },
+          })
+        ).json()
+      ).data ?? []) as { id: string; serialNumber: string }[]
+      if (rows[0]) {
+        serial = rows[0]
+        break
+      }
+    }
+    expect(serial, 'a free in-stock unit at a branch').toBeTruthy()
+    const reason = `E2E-S71-STOCKBOOK-${Date.now()}`
+
+    await gotoReady(page, '/inventory/serial-numbers')
+    // The list's search box can be reset by a late hydration pass — retry
+    // the fill until the unit's own row (and its checkbox) actually shows.
+    const searchBox = page.getByPlaceholder(
+      'Search serial, brand, model, category, RR or supplier…'
+    )
+    const tick = page.getByRole('checkbox', { name: `Select ${serial!.serialNumber}` })
+    await expect(async () => {
+      await searchBox.fill(serial!.serialNumber)
+      await expect(tick).toBeVisible({ timeout: 4_000 })
+    }).toPass({ timeout: 30_000 })
+    await tick.check()
+    // Navigates to Transfers with the ticked unit as a draft — a plain click,
+    // since the button is gone once the page changes (clickStable re-clicks).
+    await page.getByRole('button', { name: 'Stock Transfer' }).click()
+    await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toBeVisible({
+      timeout: 20_000,
+    })
+    await pickComboboxOption(page, 'Search destination branch…')
+    await page.getByPlaceholder('e.g. Rebalancing stock for upcoming campaign').fill(reason)
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Submit Request' }).click()
+      await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toHaveCount(0, {
+        timeout: 3_000,
+      })
+    }).toPass({ timeout: 15_000 })
+
+    const list = ((await (await page.request.get('/api/inventory/transfers?limit=50')).json())
+      .data ?? []) as { id: string; reason?: string | null }[]
+    const created = list.find((t) => t.reason === reason)
+    expect(created, 'the new transfer').toBeTruthy()
+    try {
+      const detail = await (
+        await page.request.get(`/api/inventory/transfers/${created!.id}`)
+      ).json()
+      expect((detail.lines as { serialNumberId?: string | null }[])[0].serialNumberId).toBe(
+        serial!.id
+      )
+      const accepted = await page.request.patch(`/api/inventory/transfers/${created!.id}/accept`, {
+        data: {},
+      })
+      expect(accepted.ok(), await accepted.text()).toBeTruthy()
+
+      await gotoReady(page, '/inventory/transfers')
+      await expect(async () => {
+        await page.locator('tbody tr').first().click()
+        await expect(page.getByRole('heading', { name: 'Transfer Details' })).toBeVisible({
+          timeout: 3_000,
+        })
+        if (
+          !(await page
+            .getByText(reason, { exact: true })
+            .isVisible()
+            .catch(() => false))
+        ) {
+          await page.getByRole('button', { name: 'Close dialog' }).click()
+          throw new Error('opened transfer is not the one just created — retrying')
+        }
+      }).toPass({ timeout: 20_000 })
+      const modal = page.locator('.fixed.inset-0.z-50')
+      await clickStable(
+        modal.getByRole('button', { name: 'Dispatch' }),
+        modal.getByRole('button', { name: 'Confirm Dispatch' }),
+        { timeout: 15_000 }
+      )
+      // The ticked unit is shown, locked — and there is nothing to pick.
+      await expect(modal.getByText('all 1 picked by the requester', { exact: false })).toBeVisible()
+      await expect(modal.getByPlaceholder('Search serial number…')).toHaveCount(0)
+    } finally {
+      await cancelStockTransfer(page.request, created!.id)
+    }
   })
 })

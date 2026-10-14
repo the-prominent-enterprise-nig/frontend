@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFieldArray, useWatch, Controller } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form'
 import { ChevronDown, ChevronUp, Copy, RotateCcw, Trash2 } from 'lucide-react'
 import type { CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
@@ -9,6 +10,7 @@ import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { getSupplierItems } from '../../suppliers/_actions/get-supplier-items'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from './procurementTokens'
 import { NoDestinationWarning } from './NoDestinationWarning'
@@ -399,6 +401,18 @@ function LineItemsCard({
   searchRef: React.RefObject<HTMLDivElement | null>
 }): React.ReactElement {
   const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
+  // Scenario 71 — the search lists the chosen supplier's approved items.
+  const supplierId = useWatch({ control, name: 'supplierId' })
+  const supplierItemsQuery = useQuery({
+    queryKey: ['supplier-items', supplierId],
+    queryFn: () => getSupplierItems(supplierId),
+    enabled: !!supplierId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const noSupplierItems =
+    !!supplierId &&
+    supplierItemsQuery.isSuccess &&
+    (supplierItemsQuery.data?.data ?? []).length === 0
 
   // Names/SKUs for lines the form only knows by itemId: seeded from the
   // record being edited, then extended as the catalog search adds lines.
@@ -443,8 +457,14 @@ function LineItemsCard({
             onChange={() => {}}
             onSelect={addFromCatalog}
             compact
+            supplierId={supplierId || undefined}
             placeholder="Search item by name or SKU to add a line…"
           />
+          {noSupplierItems && (
+            <p className="mt-1 text-[11px] text-[#8b8b9b]">
+              No approved items on file for this supplier — searching the full catalog.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button

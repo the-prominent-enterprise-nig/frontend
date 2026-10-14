@@ -242,8 +242,12 @@ function TransferLineRow({
   const available = isSerialTracked
     ? serialAvailabilityQuery.data?.data?.total
     : crossBranchStockQuery.isSuccess
-      ? (crossBranchStockQuery.data?.data?.find((b) => b.warehouse.id === fromWarehouseId)
-          ?.availableQty ?? 0)
+      ? // Decimal columns arrive as strings ("99.0000") — the line schema's
+        // availableQty is a number, and a string there silently fails it.
+        Number(
+          crossBranchStockQuery.data?.data?.find((b) => b.warehouse.id === fromWarehouseId)
+            ?.availableQty ?? 0
+        )
       : undefined
   const showAvailability = !!fromWarehouseId && !!selectedItemId && available !== undefined
   const exceedsAvailable = showAvailability && quantityValue > (available ?? 0)

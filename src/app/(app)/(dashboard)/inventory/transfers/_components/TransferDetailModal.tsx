@@ -29,6 +29,7 @@ import {
   UserCheck,
   AlertTriangle,
   ExternalLink,
+  Lock,
 } from 'lucide-react'
 import {
   DispatchTransferFormSchema,
@@ -196,6 +197,7 @@ function ItemSerialGroup({
   itemLabel,
   fromWarehouseId,
   slotIndices,
+  pinnedSerials = [],
   canOverride,
   errors,
 }: {
@@ -205,6 +207,9 @@ function ItemSerialGroup({
   itemLabel: string
   fromWarehouseId: string | undefined
   slotIndices: number[]
+  /** Units the requester already picked (Scenario 71 item 18) — shown
+   * locked, never re-asked; the backend only re-verifies them. */
+  pinnedSerials?: string[]
   canOverride: boolean
   errors?: FieldErrors<DispatchTransferFormValues>['serialAssignments']
 }) {
@@ -297,11 +302,30 @@ function ItemSerialGroup({
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-zinc-600">
-        {itemLabel} <span className="text-red-500">*</span>{' '}
+        {itemLabel} {slotIndices.length > 0 && <span className="text-red-500">*</span>}{' '}
         <span className="font-normal text-zinc-400">
-          ({filledIndices.length} of {slotIndices.length} assigned)
+          {slotIndices.length === 0
+            ? `(all ${pinnedSerials.length} picked by the requester)`
+            : pinnedSerials.length > 0
+              ? `(${pinnedSerials.length} picked by the requester · ${filledIndices.length} of ${slotIndices.length} left to assign)`
+              : `(${filledIndices.length} of ${slotIndices.length} assigned)`}
         </span>
       </label>
+
+      {pinnedSerials.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {pinnedSerials.map((sn) => (
+            <span
+              key={sn}
+              title="Picked by the requester — re-verified at dispatch, not chosen again"
+              className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-100 py-1 pl-2.5 pr-3 font-mono text-[13.5px] font-semibold text-[#17171c]"
+            >
+              <Lock className="h-3 w-3 text-zinc-400" aria-hidden />
+              {sn}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div>
         {firstEmptyIndex !== undefined && (
@@ -771,19 +795,34 @@ export default function TransferDetailModal({
   // itself watches that.
   const serialGroups = useMemo(() => {
     const order: string[] = []
-    const byItemId = new Map<string, { itemLabel: string; slotIndices: number[] }>()
-    serialAssignmentFields.forEach((f, i) => {
-      const key = f.itemId ?? ''
-      const existing = byItemId.get(key)
-      if (existing) {
-        existing.slotIndices.push(i)
-      } else {
-        byItemId.set(key, { itemLabel: f.itemLabel ?? 'Item', slotIndices: [i] })
+    const byItemId = new Map<
+      string,
+      { itemLabel: string; slotIndices: number[]; pinnedSerials: string[] }
+    >()
+    const groupFor = (key: string, label: string) => {
+      let g = byItemId.get(key)
+      if (!g) {
+        g = { itemLabel: label, slotIndices: [], pinnedSerials: [] }
+        byItemId.set(key, g)
         order.push(key)
       }
+      return g
+    }
+    // Units the requester pinned at request time (Scenario 71 item 18) sit
+    // in the same item's group, shown locked — so a part-picked line reads
+    // as "2 picked, pick 1 more" rather than asking for units again.
+    ;(transfer?.lines ?? []).forEach((line) => {
+      if (!line.item?.isSerialTracked || !line.serialNumberId) return
+      const key = line.itemId ?? line.item?.id ?? ''
+      groupFor(key, line.item?.name ?? 'Item').pinnedSerials.push(
+        line.serialNumber?.serialNumber ?? line.serialNumberId
+      )
+    })
+    serialAssignmentFields.forEach((f, i) => {
+      groupFor(f.itemId ?? '', f.itemLabel ?? 'Item').slotIndices.push(i)
     })
     return order.map((itemId) => ({ itemId, ...byItemId.get(itemId)! }))
-  }, [serialAssignmentFields])
+  }, [serialAssignmentFields, transfer?.lines])
 
   const receiveForm = useForm<ReceiveTransferFormValues>({
     resolver: zodResolver(ReceiveTransferFormSchema),
@@ -1661,7 +1700,7 @@ export default function TransferDetailModal({
                   />
                 </div>
 
-                {serialAssignmentFields.length > 0 && (
+                {serialGroups.length > 0 && (
                   <div>
                     <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                       Assign Serial Numbers
@@ -1680,6 +1719,7 @@ export default function TransferDetailModal({
                           itemLabel={g.itemLabel}
                           fromWarehouseId={transfer?.fromWarehouse?.id}
                           slotIndices={g.slotIndices}
+                          pinnedSerials={g.pinnedSerials}
                           canOverride={canOverrideSerial}
                           errors={dispatchForm.formState.errors.serialAssignments}
                         />
