@@ -291,3 +291,52 @@ Superseded on 2026-10-14 by the answered decisions. Eight parts, in order, each 
 
 - The GL defects from Scenario 46 (inventory credited at the memo price, not cost) are unchanged — out of scope as before.
 - A voucher covering several bills stamps the memo with its first bill; the deduction itself is apportioned across all of them as before.
+
+---
+
+## Implementation Log
+
+Built 2026-10-14 → 2026-10-15 on `feat/scenario-72-delivery-receipt` in both repos, one part at a time, each confirmed by the developer before the next. Committed by the developer; not pushed, no PR yet.
+
+| Part                                           | What landed                                                                                                                                                                                                                                                                                                       | Commits (frontend / backend)                  |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| 1 — Foundations                                | `DeliveryReceipt` + lines, `InventoryDebitMemo` + lines, purpose / status enums, `issue_out` stock type and serial `issued`; `DR` (six-digit) and `DMINV0926-` series; `inventory:delivery-receipts:*` permissions; office-use (`1-03-040`) and redeemed-unit (`6-02-020`) mapping keys; branch-scoped draft CRUD | `d1e5bef7` / `19bb11c`, `ca6c5a2`             |
+| 2 — Form, list, hub tab                        | Full-screen DR form: purpose (SearchableSelect) with its info box below, department for Office use, raffle occasion, CRM customer for Sales invoice to follow, item/serial lines at read-only system cost, staged attachments, Save draft / Submit for approval                                                   | `d1e5bef7`                                    |
+| 3 — Approve / reject                           | Branch Manager (or the Business Owner, on their own DR) approves or rejects. Memo purposes draft the DMINV memo and move nothing; no-memo purposes move stock. Approval-queue entries                                                                                                                             | `d1e5bef7`                                    |
+| 4 — DMINV memo                                 | Accountant edits and posts (stock + JE in one transaction), void reverses both; standalone memo (JE only); DR void flow; one merged Debit Memos list (Type filter = kind, one New debit memo button); shared list pager                                                                                           | `772c8e63`                                    |
+| 5 — Printables                                 | DR print (purpose checkboxes, four signatures) and debit memo print; one Print on the DR prints its memo as page two, on a new page; supplier memos get a print envelope too                                                                                                                                      | `521c3fe0`, `b9314133` / `43b8e9c`, `075385e` |
+| 6 — Sales invoice to follow + Proceed to POS   | Approved DR holds its units for its customer; only the POS sale that invoices it (`deliveryReceiptId`) can claim them; DR becomes `invoiced`, exactly once. Cash / charge only — installment refused (developer decision)                                                                                         | `9a53ba62` / `2d40c58`                        |
+| 7 — Repair purposes replace the UDS steps (D5) | See below                                                                                                                                                                                                                                                                                                         | `812d677c` / `06672f9`                        |
+| 8 — Return to supplier + S71 14/15/16          | See _Progress — Part 8_ above (built by a parallel session)                                                                                                                                                                                                                                                       | —                                             |
+
+### Part 7 — repair purposes, 2026-10-15
+
+**Backend**
+
+- Migration `20261015120000_delivery_receipt_uds`: `delivery_receipts.udsId` (FK to the UDS).
+- New `DeliveryReceiptRepairService`. A repair DR (For repair to service center / Repaired unit to customer / Unrepaired unit to customer) needs a UDS; its lines, warehouse and recipient (provider or customer) are derived from the sheet server-side on every save — the client's are ignored.
+- Eligibility is the UDS's own: to service center = `assertDispatchable` (repairable, received); repaired to customer = customer unit, status `repaired`; unrepaired to customer = customer unit, assessed unrepairable; both customer legs then `assertReleasable`. Checked on submit and again inside the approval transaction.
+- One open DR (pending / approved / posted) per sheet per leg — a second is refused `409 uds_already_on_delivery_receipt:DRxxxxxx`.
+- Approval runs the UDS step in the DR's transaction (`dispatchToProviderTx` / `releaseToCustomerTx`, split out of `UdsService`) with the DR number as that leg's receipt — replacing `DRC-` for the release — and marks the DR `posted`. No memo, no JE. A repair DR cannot be voided (`repair_delivery_receipt_cannot_void`).
+- `GET /inventory/delivery-receipts/lookups/uds?purpose=` lists eligible sheets (branch-scoped, minus those on an open DR for the leg).
+- `UNAVAILABLE_PURPOSES` is now empty: every purpose is submittable.
+
+**Frontend**
+
+- DR form: a **Repair ticket (UDS)** SearchableSelect for repair purposes; picking one fills the unit (read-only list, no Add item), locks the issuing branch and shows the provider or customer read-only. Changing purpose clears the ticket.
+- `/inventory/delivery-receipts/new?purpose=…&udsId=…` presets both.
+- UDS list: Send to Service Centre → **Create DR to Service Centre**, Release to Customer → **Create DR to Customer** (repaired or unrepaired by the sheet's state), hidden without DR create permission. The dispatch / release modals and their server actions are deleted; the backend endpoints remain.
+- DR detail: Repair ticket (UDS) row; no Void on a repair DR.
+
+**Tests**
+
+- Backend: `delivery-receipt-repair` 9/9 (derive + dispatch, duplicate leg, lookup, unrepairable refused, repaired release with DR number + serial sold, not-yet-repaired refused, unrepaired release + void refused, other branch 404, `uds_required`). `delivery-receipts` 47/47 (the old `purpose_not_available_yet` test now expects `uds_required`); `delivery-receipt-pos-sale` and `inventory-debit-memos` pass.
+- Frontend: `e2e/delivery-receipts.spec.ts` all green, including UDS list → Create DR to Service Centre → submit → approve → UDS `at_provider` with a `DR…` dispatch number.
+- Manually: a repair DR (DR000004 from UDS-20261015-BSWX) created on the dev DB for the developer's walkthrough.
+
+**Open**
+
+- `repair-transfer.e2e-spec.ts` (backend) fails at setup — the test DB has no in-stock Cebu serials left. Data depletion, not this change.
+- 7 UDS Playwright tests fail: six in `repair-transfer-uds.spec.ts` time out on the Create UDS modal's serial picker (likely the same empty test data), one in `uds-status-band-and-trail.spec.ts` can't find "Gate pass out". Neither touches the removed buttons; not yet confirmed against clean HEAD.
+- `POST /inventory/delivery-receipts` still requires `warehouseId` for a repair purpose even though the server overwrites it from the UDS. The form always sends it; only direct API callers notice.
+- Frontend commit `812d677c` also carries a 3-line `PriceTierModal.tsx` change from another session.
