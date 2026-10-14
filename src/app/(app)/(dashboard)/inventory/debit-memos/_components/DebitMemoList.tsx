@@ -1,17 +1,8 @@
 'use client'
 
-import { Fragment, useState, type ReactNode } from 'react'
-import {
-  Ban,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  PackageX,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-} from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import Link from 'next/link'
+import { Ban, Check, ChevronDown, ChevronRight, PackageX, Pencil, Plus, Search } from 'lucide-react'
 import { fmtDate, fmtMoney, SupplierDebitMemos } from '@/src/libs/data/AccountingV2Data'
 import type { SupplierDebitMemo } from '@/src/libs/data/AccountingV2Data'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -21,11 +12,27 @@ import { showToast } from '@/src/components/ui/toast'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { Select } from '@/src/components/ui/Select'
-import { MONO, PLEX } from '@/src/libs/design/plex'
-import { linesLabel, returningLabel, shownStatus, STATUS_META } from '../_lib/debit-memo-format'
-import { useDebitMemos, type DebitMemoStatusFilter } from '../_hooks/useDebitMemos'
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
+import { MONO, PLEX, STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import {
+  appliedLabel,
+  linesLabel,
+  returningLabel,
+  shownStatus,
+  STATUS_META,
+} from '../_lib/debit-memo-format'
+import { MEMO_PAGE_SIZE, useDebitMemos, type DebitMemoStatusFilter } from '../_hooks/useDebitMemos'
+import {
+  MEMO_TYPE_OPTIONS,
+  SUPPLIER_PURPOSE,
+  useInternalMemos,
+  type MemoTypeFilter,
+} from '../_hooks/useInternalMemos'
+import type { IdmDetail } from '@/src/schema/accounting/inventory-debit-memos'
 import { MemoDetailPanel } from './MemoDetailPanel'
 import DebitMemoFormModal from './DebitMemoFormModal'
+import { InternalMemoCard, InternalMemoRow, TypeChip } from './InternalMemoRows'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import WaybillPanel from './WaybillPanel'
 
 // Hand-rolled rather than built on the shared MemoTable: this list carries
@@ -36,10 +43,14 @@ import WaybillPanel from './WaybillPanel'
 /** A row action waiting on its confirmation. */
 type PendingAction = { memo: SupplierDebitMemo; action: 'approve' | 'void' }
 
+/** One row of the merged list — a supplier return or an internal memo. */
+type MemoRow = { kind: 'supplier'; memo: SupplierDebitMemo } | { kind: 'internal'; memo: IdmDetail }
+
 /** What each confirmation says. The two sit together rather than inline at
  * their buttons because the wording is the only thing that separates them,
- * and both describe the same three consequences in the same order — the GL,
- * the stock and the invoice. */
+ * and both describe the same consequences in the same order — the stock and
+ * the GL. No invoice moves here: accounting applies the memo to one from the
+ * AP voucher (Scenario 72 Part 8). */
 function confirmCopy(pending: PendingAction): {
   title: string
   message: ReactNode
@@ -53,9 +64,9 @@ function confirmCopy(pending: PendingAction): {
       title: `Approve ${memo.memoNumber}?`,
       message: (
         <p>
-          This posts it straight away — the stock moves, the journal entry is posted, and the
-          invoice balance drops by <strong>{fmtMoney(memo.amount)}</strong>. Accounting can see it
-          from then on.
+          This posts it straight away — the stock moves and the journal entry is posted, holding{' '}
+          <strong>{fmtMoney(memo.amount)}</strong> as due from the supplier. Accounting can see it
+          from then on, and applies it to one of the supplier&apos;s invoices from the AP voucher.
         </p>
       ),
       confirmLabel: 'Approve',
@@ -67,8 +78,14 @@ function confirmCopy(pending: PendingAction): {
     message:
       memo.status === 'FINAL' ? (
         <p>
-          This reverses its journal entry, restores the stock and rolls the invoice balance back by{' '}
-          <strong>{fmtMoney(memo.amount)}</strong>.
+          This reverses its journal entry and restores the stock
+          {memo.apBill ? (
+            <>
+              {' '}
+              and rolls the invoice balance back by <strong>{fmtMoney(memo.amount)}</strong>
+            </>
+          ) : null}
+          .{memo.deliveryReceipt ? ` ${memo.deliveryReceipt.drNumber} is voided with it.` : ''}
         </p>
       ) : (
         <p>It has posted nothing, so there is nothing to reverse.</p>
@@ -121,10 +138,18 @@ function MemoRowActions({
 }) {
   const isVoid = memo.status === 'VOID'
   const isDraft = memo.status === 'DRAFT'
+  // Applied on an AP voucher: the voucher's deduction carries its amount, so
+  // the memo is locked until the voucher lets go of it (Scenario 72 Part 8).
+  const isApplied = !!memo.appliedDeduction
+  // Drafted with its "Return units to supplier" DR, a memo waits on the
+  // Branch Manager: it can be repriced now, but posts (or is withdrawn) only
+  // once the DR is approved (Scenario 72 Part 8).
+  const drStatus = memo.deliveryReceipt?.status
+  const awaitingDr = drStatus === 'draft' || drStatus === 'pending_approval'
   // A posted memo is editable too — saving one re-posts it rather than
-  // raising a second document. Only a void memo is closed to edits.
-  const editable = !isVoid && canCreate
-  const primary = isDraft && canApprove ? 'approve' : editable ? 'edit' : null
+  // raising a second document. A void or applied memo is closed to edits.
+  const editable = !isVoid && !isApplied && canCreate
+  const primary = isDraft && canApprove && !awaitingDr ? 'approve' : editable ? 'edit' : null
 
   const menuItems: RowMenuItem[] = [
     ...(editable && primary !== 'edit'
@@ -136,7 +161,7 @@ function MemoRowActions({
           },
         ]
       : []),
-    ...(!isVoid && canVoid
+    ...(!isVoid && !isApplied && !awaitingDr && canVoid
       ? [{ label: 'Void', icon: Ban, onClick: onVoid, variant: 'danger' as const }]
       : []),
   ]
@@ -175,6 +200,12 @@ function MemoRowActions({
   )
 }
 
+/**
+ * Every debit memo in one list (Scenario 72): supplier returns, raised and
+ * approved here, and the internal DMINV memos delivery receipts draft, read
+ * here and posted by accounting. Two documents underneath, told apart by a
+ * Type filter and chip, behind one "New debit memo" button.
+ */
 export default function DebitMemoList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_CREATE)
   const canApprove = hasPermission(session, INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_APPROVE)
@@ -194,6 +225,44 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
     error,
     refetch,
   } = useDebitMemos()
+
+  const [type, setType] = useState<MemoTypeFilter>('all')
+  const [requestedPage, setRequestedPage] = useState(1)
+  const canOpenMemo = hasPermission(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
+  const canCreateInternal = hasPermission(
+    session,
+    ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_CREATE
+  )
+  const internal = useInternalMemos(filters, type)
+
+  const rows: MemoRow[] = useMemo(() => {
+    const supplierRows: MemoRow[] =
+      type === 'all' || type === SUPPLIER_PURPOSE
+        ? memos.map((memo) => ({ kind: 'supplier', memo }))
+        : []
+    const internalRows: MemoRow[] = internal.memos.map((memo) => ({ kind: 'internal', memo }))
+    return [...supplierRows, ...internalRows].sort((a, b) => {
+      const byDate = new Date(b.memo.memoDate).getTime() - new Date(a.memo.memoDate).getTime()
+      return byDate !== 0 ? byDate : b.memo.memoNumber.localeCompare(a.memo.memoNumber)
+    })
+  }, [memos, internal.memos, type])
+
+  // Paged after merging, same as the hook pages the supplier memos alone.
+  const pageCount = Math.max(1, Math.ceil(rows.length / MEMO_PAGE_SIZE))
+  const page = Math.min(requestedPage, pageCount)
+  const pageStart = (page - 1) * MEMO_PAGE_SIZE
+  const pageRows = rows.slice(pageStart, pageStart + MEMO_PAGE_SIZE)
+
+  function applyFilters(patch: Parameters<typeof setFilters>[0]) {
+    setFilters(patch)
+    setRequestedPage(1)
+  }
+  function clearFilters() {
+    resetFilters()
+    setType('all')
+    setRequestedPage(1)
+  }
+  const anyFilter = hasActiveFilters || type !== 'all'
 
   const [busy, setBusy] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -235,22 +304,23 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
       title: action === 'approve' ? 'Memo approved' : 'Memo voided',
       description:
         action === 'approve'
-          ? 'Stock moved, the journal entry posted, and the invoice balance reduced. Accounting can see it now.'
-          : 'Any posting, stock movement and invoice change has been reversed.',
+          ? 'Stock moved and the journal entry posted. Accounting can see it now and applies it to an invoice from the AP voucher.'
+          : 'Any posting and stock movement has been reversed.',
       status: 'success',
     })
     refetch()
   }
 
   const pills: { value: DebitMemoStatusFilter; label: string; count: number }[] = [
-    { value: 'all', label: 'All', count: stats.total },
-    { value: 'DRAFT', label: 'Draft', count: stats.drafts },
-    { value: 'FINAL', label: 'Approved', count: stats.approved },
-    { value: 'VOID', label: 'Void', count: stats.voided },
+    { value: 'all', label: 'All', count: stats.total + internal.stats.total },
+    { value: 'DRAFT', label: 'Draft', count: stats.drafts + internal.stats.drafts },
+    { value: 'FINAL', label: 'Approved / posted', count: stats.approved + internal.stats.approved },
+    { value: 'VOID', label: 'Void', count: stats.voided + internal.stats.voided },
   ]
 
-  const isEmptyOverall = !isLoading && allMemos.length === 0
-  const isFilteredEmpty = !isLoading && allMemos.length > 0 && memos.length === 0
+  const loading = isLoading || internal.isLoading
+  const isEmptyOverall = !loading && allMemos.length === 0 && internal.all.length === 0
+  const isFilteredEmpty = !loading && !isEmptyOverall && rows.length === 0
 
   return (
     <div
@@ -264,31 +334,16 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
             {/* Says "back out" because the Returns screen moves stock the
                 opposite way and the two names can't tell them apart. */}
             <p className="mt-1 text-sm text-[#5b5b6b]">
-              Stock going <strong>back out</strong> to a supplier, deducted from one of their open
-              invoices.
+              Supplier returns going <strong>back out</strong> to a supplier, and the internal memos
+              approved delivery receipts draft for accounting.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg border border-[#e4e4e9] bg-white px-3 py-2 text-sm font-medium text-[#3d3d4a] hover:border-[#d3d3db] hover:bg-[#fbfbfc] disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            {canCreate && (
-              <button
-                type="button"
-                onClick={openNew}
-                className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-3 py-2 text-sm font-medium text-white hover:bg-[#4a189b] sm:px-4"
-              >
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New debit memo</span>
-                <span className="sm:hidden">New</span>
-              </button>
-            )}
+            <NewMemoMenu
+              canSupplier={canCreate}
+              canInternal={canCreateInternal}
+              onSupplier={openNew}
+            />
           </div>
         </div>
 
@@ -299,15 +354,26 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
             <input
               type="search"
               value={filters.query}
-              onChange={(e) => setFilters({ query: e.target.value })}
+              onChange={(e) => applyFilters({ query: e.target.value })}
               placeholder="Search memo no., invoice, DR, supplier, or item…"
               className="w-full rounded-lg border border-[#e4e4e9] bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#5b21b6] focus:ring-1 focus:ring-[#5b21b6]"
+            />
+          </div>
+          <div className="w-60">
+            <Select
+              value={type}
+              onChange={(value) => {
+                setType(value as MemoTypeFilter)
+                setRequestedPage(1)
+              }}
+              options={MEMO_TYPE_OPTIONS}
+              compact
             />
           </div>
           <div className="w-56">
             <Select
               value={filters.supplierId}
-              onChange={(value) => setFilters({ supplierId: value })}
+              onChange={(value) => applyFilters({ supplierId: value })}
               options={[
                 { value: 'all', label: 'All suppliers' },
                 ...suppliers.map((s) => ({ value: s.id, label: s.name })),
@@ -315,10 +381,10 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
               compact
             />
           </div>
-          {hasActiveFilters && (
+          {anyFilter && (
             <button
               type="button"
-              onClick={resetFilters}
+              onClick={clearFilters}
               className="rounded-lg px-3 py-2 text-sm font-medium text-[#3f1490] hover:bg-[#f1ebfb]"
             >
               Clear filters
@@ -334,7 +400,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
               <button
                 key={pill.value}
                 type="button"
-                onClick={() => setFilters({ status: pill.value })}
+                onClick={() => applyFilters({ status: pill.value })}
                 aria-pressed={isOn}
                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
                   isOn
@@ -361,18 +427,19 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
 
         {/* Table */}
         <div
-          className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
+          className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white shadow-sm transition-opacity ${isFetching || internal.isFetching ? 'opacity-60' : ''}`}
         >
-          {isLoading ? (
+          {loading ? (
             <div className="p-8 text-center text-sm text-[#8b8b9b]">Loading debit memos…</div>
           ) : isEmptyOverall ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
               <PackageX className="mb-3 h-10 w-10 text-[#c9c9d3]" />
               <p className="text-sm font-medium text-[#3d3d4a]">No debit memos yet</p>
               <p className="mt-1 max-w-lg text-xs leading-relaxed text-[#5b5b6b]">
-                Raise one when defective or wrongly shipped stock goes back to a supplier. The memo
-                takes the units out of your branch and reduces what you owe on one of that
-                supplier&apos;s open invoices.
+                Raise one when defective or wrongly shipped stock goes back to a supplier, or
+                approve a &quot;Return units to supplier&quot; delivery receipt. The memo takes the
+                units out of your branch; accounting then applies it to one of that supplier&apos;s
+                invoices.
               </p>
               {canCreate && (
                 <button
@@ -396,7 +463,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
               </p>
               <button
                 type="button"
-                onClick={resetFilters}
+                onClick={clearFilters}
                 className="mt-4 rounded-lg border border-[#e4e4e9] px-4 py-2 text-sm font-medium text-[#3d3d4a] hover:border-[#d3d3db] hover:bg-[#fbfbfc]"
               >
                 Clear search and filters
@@ -406,7 +473,17 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
             <>
               {/* Mobile: card list */}
               <ul className="divide-y divide-[#eeeef1] md:hidden">
-                {memos.map((memo) => {
+                {pageRows.map((row) => {
+                  if (row.kind === 'internal') {
+                    return (
+                      <InternalMemoCard
+                        key={row.memo.id}
+                        memo={row.memo}
+                        canOpenMemo={canOpenMemo}
+                      />
+                    )
+                  }
+                  const memo = row.memo
                   const isOpen = expanded === memo.id
                   return (
                     <li key={memo.id} className="p-4">
@@ -423,8 +500,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                             {memo.memoNumber}
                           </span>
                           <span className="mt-0.5 block truncate text-xs text-[#3d3d4a]">
-                            {memo.supplier?.name ?? '—'} ·{' '}
-                            {memo.apBill?.billNumber ?? 'SI not yet numbered'}
+                            {memo.supplier?.name ?? '—'} · {appliedLabel(memo).text}
                           </span>
                           <span className="mt-0.5 block truncate text-[11px] text-[#8b8b9b]">
                             {fmtDate(memo.memoDate)} · {returningLabel(memo)}
@@ -478,20 +554,30 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                     {/* align-bottom so a heading that wraps to two lines still
                         sits on the same baseline as the ones that don't. */}
                     <tr
-                      className={`border-b border-[#eeeef1] bg-[#fbfbfc] text-left align-bottom ${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+                      className={`border-b border-[#eeeef1] bg-[#fbfbfc] text-left align-bottom ${STOCK_TABLE_HEAD}`}
                     >
                       <th className="w-[4%] px-2 py-3" />
                       <th className="w-[16%] px-4 py-3">Memo</th>
-                      <th className="w-[14%] px-4 py-3">Supplier</th>
-                      <th className="w-[13%] whitespace-nowrap px-4 py-3">Supplier invoice</th>
-                      <th className="w-[14%] px-4 py-3">Returning</th>
+                      <th className="w-[14%] px-4 py-3">Supplier / purpose</th>
+                      <th className="w-[13%] whitespace-nowrap px-4 py-3">Applied to / DR</th>
+                      <th className="w-[14%] px-4 py-3">Returning / dept.</th>
                       <th className="w-[13%] px-4 py-3 text-right">Value</th>
                       <th className="w-[12%] px-3 py-3">Status</th>
                       <th className="w-[14%] px-3 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#eeeef1]">
-                    {memos.map((memo) => {
+                    {pageRows.map((row) => {
+                      if (row.kind === 'internal') {
+                        return (
+                          <InternalMemoRow
+                            key={row.memo.id}
+                            memo={row.memo}
+                            canOpenMemo={canOpenMemo}
+                          />
+                        )
+                      }
+                      const memo = row.memo
                       const isOpen = expanded === memo.id
                       return (
                         <Fragment key={memo.id}>
@@ -521,7 +607,8 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                               >
                                 {memo.memoNumber}
                               </button>
-                              <span className="mt-0.5 block text-[10.5px] text-[#8b8b9b]">
+                              <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-[#8b8b9b]">
+                                <TypeChip internal={false} />
                                 {fmtDate(memo.memoDate)}
                                 {memo.finalizedAt && ` · posted ${fmtDate(memo.finalizedAt)}`}
                               </span>
@@ -532,17 +619,14 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                               </span>
                             </td>
                             <td className="px-4 py-3">
-                              {/* The supplier's own invoice number, as printed
-                                  on their invoice — this system never generates
-                                  one. A bill scaffolded off a goods receipt has
-                                  none until somebody types the real one in. */}
+                              {/* The supplier invoice accounting applied the
+                                  memo to from the AP voucher — none until then
+                                  (Scenario 72 Part 8). */}
                               <span
-                                className={`${MONO} block truncate text-[12px] text-[#3d3d4a]`}
-                                title={memo.apBill?.billNumber ?? 'Not yet numbered'}
+                                className={`${MONO} block truncate text-[12px] ${appliedLabel(memo).pending ? 'text-[#8a4b06]' : 'text-[#3d3d4a]'}`}
+                                title={appliedLabel(memo).text}
                               >
-                                {memo.apBill?.billNumber ?? (
-                                  <span className="text-[#8a4b06]">Not numbered</span>
-                                )}
+                                {appliedLabel(memo).text}
                               </span>
                             </td>
                             <td className="px-4 py-3">
@@ -599,20 +683,17 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                 </table>
               </div>
 
-              <div className="border-t border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 text-[11.5px] text-[#5b5b6b]">
-                Showing {memos.length} of {allMemos.length}{' '}
-                {allMemos.length === 1 ? 'memo' : 'memos'}
-              </div>
+              <ListFooterPager
+                page={page}
+                pageCount={pageCount}
+                shown={pageRows.length}
+                total={rows.length}
+                noun={rows.length === 1 ? 'memo' : 'memos'}
+                onPageChange={setRequestedPage}
+              />
             </>
           )}
         </div>
-
-        <p className="max-w-3xl text-xs leading-relaxed text-[#8b8b9b]">
-          Approving is the step that posts the memo — it moves the stock, posts the journal entry
-          and reduces the invoice. Accounting sees it only once it is approved. Editing a memo that
-          has already posted re-posts it — one memo under one number, with the correction visible in
-          the ledger.
-        </p>
       </div>
 
       {pending && (
@@ -637,6 +718,88 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
           refetch()
         }}
       />
+    </div>
+  )
+}
+
+/**
+ * One "New debit memo" for both kinds. With only one kind allowed it is a
+ * plain button; with both it asks which. An internal memo is raised on its
+ * own page in Accounting (journal entry only — a DR's memo comes from the DR).
+ */
+function NewMemoMenu({
+  canSupplier,
+  canInternal,
+  onSupplier,
+}: {
+  canSupplier: boolean
+  canInternal: boolean
+  onSupplier: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+  if (!canSupplier && !canInternal) return null
+  const buttonClass =
+    'flex items-center gap-2 rounded-lg bg-[#5b21b6] px-3 py-2 text-sm font-medium text-white hover:bg-[#4a189b] sm:px-4'
+  const label = (
+    <>
+      <Plus className="h-4 w-4" />
+      <span className="hidden sm:inline">New debit memo</span>
+      <span className="sm:hidden">New</span>
+    </>
+  )
+  if (!canInternal) {
+    return (
+      <button type="button" onClick={onSupplier} className={buttonClass}>
+        {label}
+      </button>
+    )
+  }
+  const item = 'block w-full px-3 py-2 text-left text-sm hover:bg-[#f6f6f8]'
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={buttonClass}
+      >
+        {label}
+        <ChevronDown className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-lg border border-[#e4e4e9] bg-white py-1 shadow-lg">
+          {canSupplier && (
+            <button
+              type="button"
+              className={item}
+              onClick={() => {
+                setOpen(false)
+                onSupplier()
+              }}
+            >
+              <span className="font-medium text-[#17171c]">Supplier return</span>
+              <span className="block text-[11.5px] text-[#8b8b9b]">
+                Stock going back to a supplier
+              </span>
+            </button>
+          )}
+          <Link href="/accounting/debit-memos/inventory/new" className={item}>
+            <span className="font-medium text-[#17171c]">Internal (DMINV)</span>
+            <span className="block text-[11.5px] text-[#8b8b9b]">
+              A journal entry only — no stock moves
+            </span>
+          </Link>
+        </div>
+      )}
     </div>
   )
 }

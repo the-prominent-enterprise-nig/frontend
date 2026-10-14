@@ -61,9 +61,8 @@ export const DR_PURPOSE_CONFIG: Record<DrPurpose, DrPurposeConfig> = {
     label: 'Return units to supplier',
     withDebitMemo: true,
     effect:
-      'When approved, a supplier debit memo is drafted for accounting. Posting it moves the stock out and records what the supplier owes back; accounting applies it to an invoice later.',
+      'A supplier debit memo is drafted with this DR and follows it while it is a draft. Once the Branch Manager approves, accounting posts the memo — the stock moves out and what the supplier owes back is recorded — and applies it to an invoice later.',
     counterparty: 'supplier',
-    comingLater: true,
   },
   to_service_center: {
     label: 'For repair to service center',

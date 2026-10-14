@@ -175,6 +175,8 @@ export const DrDetailSchema = z.object({
   voidReason: z.string().nullable(),
   createdAt: z.string(),
   debitMemo: DebitMemoRefSchema,
+  /** Return to supplier only (Scenario 72 Part 8) — drafted with the DR. */
+  supplierDebitMemo: DebitMemoRefSchema,
   lines: z.array(DrLineSchema),
 })
 export type DrDetail = z.infer<typeof DrDetailSchema>
@@ -191,6 +193,8 @@ export const DrSummarySchema = z.object({
   warehouse: z.object({ id: z.string(), name: z.string() }),
   department: z.object({ id: z.string(), name: z.string() }).nullable(),
   debitMemo: DebitMemoRefSchema,
+  /** Return to supplier only (Scenario 72 Part 8) — drafted with the DR. */
+  supplierDebitMemo: DebitMemoRefSchema,
   _count: z.object({ lines: z.number() }),
 })
 export type DrSummary = z.infer<typeof DrSummarySchema>

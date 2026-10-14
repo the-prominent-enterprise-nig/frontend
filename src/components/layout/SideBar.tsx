@@ -271,9 +271,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Debit Memos',
         href: '/accounting/debit-memos',
         icon: FilePlus,
+        usePrefix: true,
         requiredPermission: [
           ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
           ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
+          ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ,
         ],
       },
       {

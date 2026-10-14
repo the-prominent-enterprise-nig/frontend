@@ -20,6 +20,7 @@ export default async function DebitMemosPage() {
   const hasAccess = canAny(session, [
     ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
     ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
+    ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ,
   ])
 
   if (!hasAccess) redirect('/403')

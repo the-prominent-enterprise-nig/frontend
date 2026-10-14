@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Plus, RefreshCw, X, ArrowRight, Search } from 'lucide-react'
+import { Plus, X, ArrowRight, Search } from 'lucide-react'
 import { useTransferManager } from '../_hooks/useTransferManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -15,6 +15,7 @@ import TransferDetailModal from './TransferDetailModal'
 import { consumeStockTransferDraft } from './stockTransferDraft'
 import { LocationName, STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
 // The five stages the design tracks: the three live ones plus both terminal
 // outcomes, so the band reads as the whole life of a transfer rather than
@@ -216,7 +217,6 @@ export default function TransferList({ session }: { session: SessionUser }) {
     isReceiving,
     cancelTransfer,
     isCancelling,
-    refetch,
   } = useTransferManager()
 
   // accept/reject/dispatch are source-branch-only and receive is
@@ -378,7 +378,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
     value: wh.id,
     label: branchLabel(wh),
   }))
-  const th = `${MONO} px-[18px] py-[10px] text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`
+  const th = `${STOCK_TABLE_HEAD} px-[18px] py-[10px]`
 
   return (
     <div className={`${PLEX} min-h-full w-full bg-zinc-50 text-[#17171c] antialiased`}>
@@ -392,15 +392,6 @@ export default function TransferList({ session }: { session: SessionUser }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-[9px]">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-[7px] rounded-lg border border-[#d3d3db] bg-white px-[14px] py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2] hover:bg-[#faf9fb] disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
             {canCreate && (
               <button
                 type="button"

@@ -8,6 +8,7 @@ import {
   APBills,
   APBillSuppliers,
   BankAccounts,
+  SupplierDebitMemos,
   apOutstanding,
   fmtMoney,
   type APBill,
@@ -15,6 +16,7 @@ import {
   type APBillSupplierOption,
   type BankAccount,
   type APBillLineDiscount,
+  type SupplierDebitMemo,
 } from '@/src/libs/data/AccountingV2Data'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
@@ -65,15 +67,35 @@ interface DeductionRow {
   supplierId: string
   description: string
   amount: string
+  /** Scenario 72 Part 8 — this row applies a posted supplier debit memo. Its
+   * account (Due from Suppliers) and amount are the memo's, so the row is
+   * read-only; the server decides both whatever is sent. */
+  supplierDebitMemoId?: string
+  memoNumber?: string
+  /** The memo's supplier, so a change of payee drops it. */
+  memoSupplierId?: string
 }
 
 function blankDeduction(): DeductionRow {
   return { accountId: '', supplierId: '', description: '', amount: '' }
 }
 
+function memoDeduction(memo: SupplierDebitMemo): DeductionRow {
+  return {
+    accountId: '',
+    supplierId: '',
+    description: `Debit memo ${memo.memoNumber}`,
+    amount: String(memo.amount),
+    supplierDebitMemoId: memo.id,
+    memoNumber: memo.memoNumber,
+    memoSupplierId: memo.supplierId,
+  }
+}
+
 /** A row nobody has started filling in is not a deduction, just an empty line
  * left on screen — it is dropped rather than rejected. */
 function isBlankDeduction(d: DeductionRow): boolean {
+  if (d.supplierDebitMemoId) return false
   return !d.accountId && !d.description.trim() && !(Number(d.amount) > 0)
 }
 
@@ -309,6 +331,9 @@ export default function RecordPaymentForm() {
   // the cash that leaves is smaller by this, and each row is credited to the
   // Chart of Accounts account picked for it.
   const [deductions, setDeductions] = useState<DeductionRow[]>([])
+  // The payee's posted supplier debit memos that no voucher has applied yet —
+  // what the "Apply a debit memo" picker offers (Scenario 72 Part 8).
+  const [unappliedMemos, setUnappliedMemos] = useState<SupplierDebitMemo[]>([])
   const [coaAccounts, setCoaAccounts] = useState<Account[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -354,6 +379,10 @@ export default function RecordPaymentForm() {
           supplierId: d.supplierId && d.supplierId !== found.supplierId ? d.supplierId : '',
           description: d.description ?? '',
           amount: String(d.amount),
+          // Kept so saving the voucher keeps applying the same memo.
+          supplierDebitMemoId: d.supplierDebitMemoId ?? undefined,
+          memoNumber: d.supplierDebitMemo?.memoNumber,
+          memoSupplierId: d.supplierDebitMemoId ? (found.supplierId ?? undefined) : undefined,
         }))
       )
       // Decided with the voucher too, for the same reason.
@@ -367,6 +396,16 @@ export default function RecordPaymentForm() {
       }))
     })
   }, [voucherId])
+
+  // The memos on offer follow the payee. Whatever an earlier payee had on
+  // offer is ignored rather than cleared, so no state is set synchronously.
+  useEffect(() => {
+    if (!supplierId) return
+    SupplierDebitMemos.list({ supplierId, unapplied: 'true' }).then((r) =>
+      setUnappliedMemos(r.data?.items ?? [])
+    )
+  }, [supplierId])
+  const memosOnOffer = unappliedMemos.filter((m) => m.supplierId === supplierId)
 
   // Beat 2 — choosing the payee loads their open bills. Selection resets with
   // it: an allocation against a previous supplier's bill must never survive.
@@ -622,6 +661,7 @@ export default function RecordPaymentForm() {
     // would otherwise be dropped silently and the supplier paid in full.
     const filledDeductions = deductions.filter((d) => !isBlankDeduction(d))
     for (const [i, d] of filledDeductions.entries()) {
+      if (d.supplierDebitMemoId) continue
       if (!d.accountId)
         return setError(`Pick the Chart of Accounts account for deduction ${i + 1}.`)
       if (!(Number(d.amount) > 0)) return setError(`Deduction ${i + 1} needs an amount above zero.`)
@@ -635,6 +675,7 @@ export default function RecordPaymentForm() {
       supplierId: d.supplierId || undefined,
       description: d.description.trim() || undefined,
       amount: Number(d.amount),
+      supplierDebitMemoId: d.supplierDebitMemoId,
     }))
     for (const src of sources) {
       if (!src.bankAccountId) return setError('Pick the bank or cash account this is paid from.')
@@ -844,6 +885,10 @@ export default function RecordPaymentForm() {
             // ordinary browse-and-pick form.
             setConfirmedIds(null)
             setSupplierId(id ?? '')
+            // A debit memo only applies to its own supplier's bills.
+            setDeductions((prev) =>
+              prev.filter((d) => !d.supplierDebitMemoId || d.memoSupplierId === id)
+            )
           }}
           options={supplierOptions}
           placeholder="— Select a supplier —"
@@ -1321,86 +1366,107 @@ export default function RecordPaymentForm() {
                     account you map it to.
                   </p>
                   <div className="space-y-2">
-                    {deductions.map((d, idx) => (
-                      <div key={idx} className="flex flex-wrap items-end gap-2">
-                        <span className="pb-2 text-[13px] text-gray-400">{idx + 1}.</span>
-                        <label className="block w-72">
-                          <span className="mb-1 block text-[11px] text-gray-500">
-                            Chart of Accounts *
-                          </span>
-                          <CategorySelect
-                            compact
-                            aria-label={`Chart of accounts for deduction ${idx + 1}`}
-                            noun="accounts"
-                            value={d.accountId}
-                            disabled={!!settleId}
-                            onChange={(id) => setDeduction(idx, { accountId: id ?? '' })}
-                            options={accountOptions}
-                            placeholder="— Select —"
-                          />
-                        </label>
-                        <label className="block w-56">
-                          <span className="mb-1 block text-[11px] text-gray-500">Supplier</span>
-                          <CategorySelect
-                            compact
-                            aria-label={`Supplier for deduction ${idx + 1}`}
-                            noun="suppliers"
-                            value={d.supplierId || supplierId}
-                            disabled={!!settleId}
-                            onChange={(id) =>
-                              setDeduction(idx, { supplierId: id && id !== supplierId ? id : '' })
-                            }
-                            options={supplierOptions}
-                            placeholder="— Select —"
-                          />
-                        </label>
-                        <label className="block min-w-48 flex-1">
-                          <span className="mb-1 block text-[11px] text-gray-500">Description</span>
-                          <input
-                            value={d.description}
-                            disabled={!!settleId}
-                            maxLength={500}
-                            aria-label={`Description for deduction ${idx + 1}`}
-                            onChange={(e) => setDeduction(idx, { description: e.target.value })}
-                            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
-                          />
-                        </label>
-                        <label className="block w-36">
-                          <span className="mb-1 block text-[11px] text-gray-500">Amount *</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            aria-label={`Amount for deduction ${idx + 1}`}
-                            value={d.amount}
-                            disabled={!!settleId}
-                            onChange={(e) => setDeduction(idx, { amount: e.target.value })}
-                            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
-                          />
-                        </label>
-                        {!settleId && (
-                          <button
-                            type="button"
-                            aria-label={`Remove deduction ${idx + 1}`}
-                            onClick={() =>
-                              setDeductions((prev) => prev.filter((_, i) => i !== idx))
-                            }
-                            className="mb-1.5 rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                    {deductions.map((d, idx) =>
+                      d.supplierDebitMemoId ? (
+                        <MemoDeductionRow
+                          key={d.supplierDebitMemoId}
+                          index={idx}
+                          row={d}
+                          readOnly={!!settleId}
+                          onRemove={() => setDeductions((prev) => prev.filter((_, i) => i !== idx))}
+                        />
+                      ) : (
+                        <div key={idx} className="flex flex-wrap items-end gap-2">
+                          <span className="pb-2 text-[13px] text-gray-400">{idx + 1}.</span>
+                          <label className="block w-72">
+                            <span className="mb-1 block text-[11px] text-gray-500">
+                              Chart of Accounts *
+                            </span>
+                            <CategorySelect
+                              compact
+                              aria-label={`Chart of accounts for deduction ${idx + 1}`}
+                              noun="accounts"
+                              value={d.accountId}
+                              disabled={!!settleId}
+                              onChange={(id) => setDeduction(idx, { accountId: id ?? '' })}
+                              options={accountOptions}
+                              placeholder="— Select —"
+                            />
+                          </label>
+                          <label className="block w-56">
+                            <span className="mb-1 block text-[11px] text-gray-500">Supplier</span>
+                            <CategorySelect
+                              compact
+                              aria-label={`Supplier for deduction ${idx + 1}`}
+                              noun="suppliers"
+                              value={d.supplierId || supplierId}
+                              disabled={!!settleId}
+                              onChange={(id) =>
+                                setDeduction(idx, { supplierId: id && id !== supplierId ? id : '' })
+                              }
+                              options={supplierOptions}
+                              placeholder="— Select —"
+                            />
+                          </label>
+                          <label className="block min-w-48 flex-1">
+                            <span className="mb-1 block text-[11px] text-gray-500">
+                              Description
+                            </span>
+                            <input
+                              value={d.description}
+                              disabled={!!settleId}
+                              maxLength={500}
+                              aria-label={`Description for deduction ${idx + 1}`}
+                              onChange={(e) => setDeduction(idx, { description: e.target.value })}
+                              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
+                            />
+                          </label>
+                          <label className="block w-36">
+                            <span className="mb-1 block text-[11px] text-gray-500">Amount *</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              aria-label={`Amount for deduction ${idx + 1}`}
+                              value={d.amount}
+                              disabled={!!settleId}
+                              onChange={(e) => setDeduction(idx, { amount: e.target.value })}
+                              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
+                            />
+                          </label>
+                          {!settleId && (
+                            <button
+                              type="button"
+                              aria-label={`Remove deduction ${idx + 1}`}
+                              onClick={() =>
+                                setDeductions((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                              className="mb-1.5 rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      )
+                    )}
                   </div>
                   {!settleId && (
-                    <button
-                      type="button"
-                      onClick={() => setDeductions((prev) => [...prev, blankDeduction()])}
-                      className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-purple-700 hover:underline"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Add deduction
-                    </button>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setDeductions((prev) => [...prev, blankDeduction()])}
+                        className="inline-flex items-center gap-1 text-[13px] font-medium text-purple-700 hover:underline"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add deduction
+                      </button>
+                      <DebitMemoPicker
+                        memos={memosOnOffer.filter(
+                          (m) => !deductions.some((d) => d.supplierDebitMemoId === m.id)
+                        )}
+                        hasSupplier={!!supplierId}
+                        onPick={(memo) => setDeductions((prev) => [...prev, memoDeduction(memo)])}
+                      />
+                    </div>
                   )}
                 </div>
               )}
@@ -1474,5 +1540,83 @@ export default function RecordPaymentForm() {
         </Link>
       </div>
     </form>
+  )
+}
+
+/** A deduction that applies a supplier debit memo (Scenario 72 Part 8). The
+ * memo posted to Due from Suppliers when it was approved; applying it here
+ * credits that account back and takes its full amount off this payment. */
+function MemoDeductionRow({
+  index,
+  row,
+  readOnly,
+  onRemove,
+}: {
+  index: number
+  row: DeductionRow
+  readOnly: boolean
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-purple-100 bg-purple-50/50 px-2.5 py-2">
+      <span className="text-[13px] text-gray-400">{index + 1}.</span>
+      <span className="font-mono text-[13px] font-medium text-purple-800">
+        {row.memoNumber ?? 'Debit memo'}
+      </span>
+      <span className="min-w-48 flex-1 text-[12px] text-gray-500">
+        Supplier debit memo · credited to Due from Suppliers
+      </span>
+      <span className="w-36 text-right text-[13px] tabular-nums text-gray-800">
+        {fmtMoney(Number(row.amount))}
+      </span>
+      {!readOnly && (
+        <button
+          type="button"
+          aria-label={`Remove debit memo ${row.memoNumber ?? index + 1}`}
+          onClick={onRemove}
+          className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** The payee's posted, unapplied supplier debit memos, one pick at a time. */
+function DebitMemoPicker({
+  memos,
+  hasSupplier,
+  onPick,
+}: {
+  memos: SupplierDebitMemo[]
+  hasSupplier: boolean
+  onPick: (memo: SupplierDebitMemo) => void
+}) {
+  if (!hasSupplier) return null
+  if (memos.length === 0) {
+    return (
+      <span className="text-[12px] text-gray-400">No unapplied debit memos for this supplier</span>
+    )
+  }
+  return (
+    <div className="w-72">
+      <CategorySelect
+        compact
+        aria-label="Apply a supplier debit memo"
+        noun="debit memos"
+        value={undefined}
+        onChange={(id) => {
+          const memo = memos.find((m) => m.id === id)
+          if (memo) onPick(memo)
+        }}
+        options={memos.map((m) => ({
+          id: m.id,
+          name: `${m.memoNumber} — ${fmtMoney(m.amount)}${m.deliveryReceipt ? ` (${m.deliveryReceipt.drNumber})` : ''}`,
+          depth: 0,
+        }))}
+        placeholder="Apply a supplier debit memo…"
+      />
+    </div>
   )
 }

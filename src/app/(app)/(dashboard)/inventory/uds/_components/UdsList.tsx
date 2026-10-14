@@ -10,10 +10,8 @@ import {
   Paperclip,
   ArrowRight,
   AlertTriangle,
-  RefreshCw,
   X,
 } from 'lucide-react'
-import Tooltip from '@/src/components/ui/Tooltip'
 import UdsStatusBand from './UdsStatusBand'
 import { STATUS_CONFIG, ASSESSMENT_CONFIG, REASON_DOT, TRANSFER_STATUS_LABELS } from './udsDisplay'
 import { useUdsManager } from '../_hooks/useUdsManager'
@@ -44,6 +42,7 @@ import type {
   SetRepairProviderFormValues,
   WriteOffUdsFormValues,
 } from '@/src/schema/inventory/uds'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
 // Same control chrome as the Stock Returns filter row, so the two screens'
 // narrowings look and focus alike.
@@ -144,7 +143,6 @@ export default function UdsList({ session }: { session: SessionUser }) {
     isLoading,
     isFetching,
     error,
-    refetch,
     statusCounts,
     statusFilter,
     reasonFilter,
@@ -247,18 +245,6 @@ export default function UdsList({ session }: { session: SessionUser }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-[9px]">
-            <Tooltip label="Reload the list">
-              <button
-                type="button"
-                onClick={() => refetch()}
-                disabled={isFetching}
-                aria-label="Refresh"
-                className="flex items-center gap-[7px] rounded-lg border border-[#d3d3db] bg-white px-[14px] py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2] hover:bg-[#faf9fb] disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh</span>
-              </button>
-            </Tooltip>
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
@@ -336,28 +322,18 @@ export default function UdsList({ session }: { session: SessionUser }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Document
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Units / Provider
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Route
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
+                  <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Document</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Status</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Units / Provider</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Route</th>
+                    <th className={`hidden px-4 py-3 text-left md:table-cell ${STOCK_TABLE_HEAD}`}>
                       Latest document
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
+                    <th className={`hidden px-4 py-3 text-left sm:table-cell ${STOCK_TABLE_HEAD}`}>
                       Issued
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Actions
-                    </th>
+                    <th className={`px-4 py-3 text-right ${STOCK_TABLE_HEAD}`}>Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">

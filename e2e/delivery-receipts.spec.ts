@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, fillStable, pickComboboxOption } from './utils'
+import { gotoReady, fillStable, pickComboboxOption, ensureItemStock } from './utils'
 
 // Scenario 72 — outbound Delivery Receipts.
 //
@@ -11,9 +11,13 @@ import { gotoReady, fillStable, pickComboboxOption } from './utils'
 // self-approval block), which drafts its DMINV memo; and rejects one with a
 // reason.
 //
+// Part 4: the DR's DMINV memo opened from the DR, posted (the DR shows
+// Posted), listed in Inventory → Debit Memos beside the supplier returns, and voided; and a
+// standalone memo raised from Accounting → Debit Memos.
+//
 // Cleanup: drafts are deleted, and any still-pending DR whose reason carries
-// E2E_TAG is rejected. An approved DR stays (with its draft memo) until the
-// void in Part 4 can undo it.
+// E2E_TAG is rejected. Approved and posted DRs are voided by the tests that
+// make them.
 
 const E2E_TAG = 'E2E-DR'
 const createdDrIds: string[] = []
@@ -21,24 +25,30 @@ let departmentId: string | null = null
 let departmentName = ''
 
 async function firstPlainItemSku(page: Page): Promise<string> {
+  return (await firstPlainItem(page)).sku
+}
+
+async function firstPlainItem(page: Page): Promise<{ sku: string; name: string }> {
   const res = await page.request.get('/api/inventory/items', {
     params: { limit: '100', lifecycle: 'active' },
   })
   const items = ((await res.json()).data ?? []) as {
     sku: string
+    name: string
     isSerialTracked: boolean
     isService?: boolean
     isBundle?: boolean
   }[]
   const item = items.find((i) => !i.isSerialTracked && !i.isService && !i.isBundle)
   if (!item) throw new Error('no non-serial active item in the catalog')
-  return item.sku
+  return item
 }
 
-async function openNewForm(page: Page): Promise<void> {
+/** Opens the form and picks the first issuing branch; returns its name. */
+async function openNewForm(page: Page): Promise<string> {
   await gotoReady(page, '/inventory/delivery-receipts/new')
   await expect(page.getByRole('heading', { name: 'New delivery receipt' })).toBeVisible()
-  await pickComboboxOption(page, 'Select branch…')
+  return pickComboboxOption(page, 'Select branch…')
 }
 
 async function addItem(page: Page, sku: string): Promise<void> {
@@ -76,6 +86,19 @@ async function saveDraftAndGetId(page: Page): Promise<string> {
 }
 
 test.describe('Delivery Receipts — Scenario 72', () => {
+  // The TanStack Query devtools toggle (dev-only) floats over the bottom-right
+  // of the action bar and intercepts clicks on its last button — same fix as
+  // manual-receiving-report.spec.ts, applied to every page load here.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      document.addEventListener('DOMContentLoaded', () => {
+        const style = document.createElement('style')
+        style.textContent = '.tsqd-parent-container { display: none !important; }'
+        document.head.appendChild(style)
+      })
+    })
+  })
+
   test.beforeAll(async ({ request }) => {
     departmentName = `${E2E_TAG} Dept ${Date.now()}`
     const res = await request.post('/api/departments', { data: { name: departmentName } })
@@ -86,15 +109,22 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     for (const id of createdDrIds) {
       await request.delete(`/api/inventory/delivery-receipts/${id}`)
     }
-    const pending = await request.get('/api/inventory/delivery-receipts', {
-      params: { status: 'pending_approval', limit: '100' },
-    })
-    for (const dr of ((await pending.json()).data ?? []) as { id: string }[]) {
-      const detail = await (await request.get(`/api/inventory/delivery-receipts/${dr.id}`)).json()
-      if (!String(detail.reason ?? '').startsWith(E2E_TAG)) continue
-      await request.post(`/api/inventory/delivery-receipts/${dr.id}/reject`, {
-        data: { reason: 'E2E cleanup' },
+    // Pending ones are rejected; approved ones voided (which also voids their
+    // draft memo and releases their held units).
+    for (const [status, action] of [
+      ['pending_approval', 'reject'],
+      ['approved', 'void'],
+    ] as const) {
+      const res = await request.get('/api/inventory/delivery-receipts', {
+        params: { status, limit: '100' },
       })
+      for (const dr of ((await res.json()).data ?? []) as { id: string }[]) {
+        const detail = await (await request.get(`/api/inventory/delivery-receipts/${dr.id}`)).json()
+        if (!String(detail.reason ?? '').startsWith(E2E_TAG)) continue
+        await request.post(`/api/inventory/delivery-receipts/${dr.id}/${action}`, {
+          data: { reason: 'E2E cleanup' },
+        })
+      }
     }
     if (departmentId) await request.delete(`/api/departments/${departmentId}`)
   })
@@ -153,9 +183,14 @@ test.describe('Delivery Receipts — Scenario 72', () => {
   })
 
   /** Fills and submits a DR from the form; returns its id. */
-  async function submitFromForm(page: Page, purpose: string, reason: string): Promise<string> {
-    const sku = await firstPlainItemSku(page)
-    await openNewForm(page)
+  /** Fills and submits a DR from the form; returns its id, branch and item. */
+  async function submitFromForm(
+    page: Page,
+    purpose: string,
+    reason: string
+  ): Promise<{ id: string; branch: string; itemName: string }> {
+    const { sku, name } = await firstPlainItem(page)
+    const branch = await openNewForm(page)
     if (purpose !== 'Office use') await pickOption(page, 'Select purpose…', purpose)
     else await pickOption(page, 'Select department…', departmentName)
     await fillReason(page, reason)
@@ -163,7 +198,7 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     await page.getByRole('button', { name: 'Submit for approval' }).click()
     await page.waitForURL(/\/inventory\/delivery-receipts\/[0-9a-f-]{36}$/, { timeout: 20_000 })
     await expect(page.getByText('Pending approval')).toBeVisible()
-    return page.url().split('/').pop()!
+    return { id: page.url().split('/').pop()!, branch, itemName: name }
   }
 
   test('the Business Owner approves a DR they raised, drafting its debit memo', async ({
@@ -188,5 +223,80 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     await confirm.click()
     await expect(page.getByText('Rejected:')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('Wrong item')).toBeVisible()
+  })
+
+  async function pickAccount(page: Page, index: number, number: string): Promise<void> {
+    const input = page.getByLabel('Account', { exact: true }).nth(index)
+    await input.click()
+    await input.fill(number)
+    await page
+      .getByRole('button', { name: new RegExp(`^${number} — `) })
+      .first()
+      .click()
+  }
+
+  test('accounting posts the DR memo, then voids it', async ({ page }) => {
+    test.skip(!departmentId, 'could not create a department fixture')
+    const {
+      id: drId,
+      branch,
+      itemName,
+    } = await submitFromForm(page, 'Office use', 'memo post and void')
+    // Posting checks on-hand quantity for real, so put the unit on the shelf.
+    await ensureItemStock(page, { branchName: branch, itemQuery: itemName, quantity: 1 })
+    await page.getByRole('button', { name: 'Approve', exact: true }).first().click()
+    await page.getByRole('button', { name: 'Approve', exact: true }).last().click()
+    const memoLink = page.getByRole('link', { name: /^DMINV0926-\d{3,}$/ })
+    await expect(memoLink).toBeVisible({ timeout: 15_000 })
+    const memoNumber = (await memoLink.innerText()).trim()
+    await memoLink.click()
+    await expect(page.getByRole('heading', { name: 'Debit memo' })).toBeVisible()
+    // The drafted lines carry the estimated cost — zero for this catalog item,
+    // so the accountant types the amounts, as they would for real.
+    await fillStable(page.getByLabel('Debit amount').first(), '1000')
+    await fillStable(page.getByLabel('Credit amount').nth(1), '1000')
+    await expect(page.getByText('Balanced')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Post', exact: true }).first().click()
+    await page.getByRole('button', { name: 'Post', exact: true }).last().click()
+    await expect(page.getByText('Posted', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+
+    await gotoReady(page, `/inventory/delivery-receipts/${drId}`)
+    await expect(page.getByText('Posted', { exact: true }).first()).toBeVisible()
+
+    await gotoReady(page, '/inventory/stock-transaction?tab=debit-memos')
+    // Supplier returns and internal memos share one list.
+    await expect(page.getByRole('link', { name: memoNumber })).toBeVisible({ timeout: 15_000 })
+
+    await page.getByRole('link', { name: memoNumber }).first().click()
+    await page.waitForURL(/\/accounting\/debit-memos\/inventory\/[0-9a-f-]{36}$/, {
+      timeout: 20_000,
+    })
+    await expect(page.getByRole('heading', { name: 'Debit memo' })).toBeVisible()
+    await page.getByRole('button', { name: /Void/ }).first().click()
+    await fillStable(page.getByLabel('Reason', { exact: true }), 'E2E cleanup')
+    await page.getByRole('button', { name: 'Void memo' }).click()
+    await expect(page.getByText('Voided:')).toBeVisible({ timeout: 15_000 })
+  })
+
+  test('accounting raises a standalone memo from the hub', async ({ page }) => {
+    await gotoReady(page, '/accounting/debit-memos')
+    await page.getByRole('link', { name: 'New inventory memo' }).click()
+    await expect(page.getByRole('heading', { name: 'New debit memo' })).toBeVisible()
+    await pickAccount(page, 0, '6-02-010')
+    await pickAccount(page, 1, '1-01-162')
+    await fillStable(page.getByLabel('Debit amount').first(), '500')
+    await fillStable(page.getByLabel('Credit amount').nth(1), '500')
+    await expect(page.getByText('Balanced')).toBeVisible()
+    await page.getByRole('button', { name: 'Save as draft' }).click()
+    await page.waitForURL(/\/accounting\/debit-memos\/inventory\/[0-9a-f-]{36}$/, {
+      timeout: 20_000,
+    })
+    await expect(page.getByText(/^DMINV0926-\d{3,}$/).first()).toBeVisible()
+    // A standalone draft voids cleanly — nothing posted, no DR.
+    await page.getByRole('button', { name: /Void/ }).first().click()
+    await fillStable(page.getByLabel('Reason', { exact: true }), 'E2E cleanup')
+    await page.getByRole('button', { name: 'Void memo' }).click()
+    await expect(page.getByText('Voided:')).toBeVisible({ timeout: 15_000 })
   })
 })

@@ -16,11 +16,16 @@ const BACK_HREF = '/inventory/stock-transaction?tab=delivery-receipts'
 export default function DrDetailView({
   dr,
   actions,
+  memoHref,
 }: {
   dr: DrDetail
   actions?: ReactNode
+  /** The memo's page, for those who may open it (accounting). */
+  memoHref?: string
 }): React.JSX.Element {
   const config = DR_PURPOSE_CONFIG[dr.purpose]
+  // Either kind: a return to supplier's is a supplier debit memo (Part 8).
+  const memo = dr.debitMemo ?? dr.supplierDebitMemo
   return (
     <DrShell
       title="Delivery receipt"
@@ -66,11 +71,18 @@ export default function DrDetailView({
         <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
           <Pair label="DR no." value={dr.drNumber} mono />
           {config.withDebitMemo && (
-            <Pair
-              label="Debit memo no."
-              value={dr.debitMemo?.memoNumber ?? 'Assigned on approval'}
-              mono
-            />
+            <div>
+              <dt className="text-[11.5px] text-[#8b8b9b]">Debit memo no.</dt>
+              <dd className={`mt-0.5 text-[13px] ${MONO}`}>
+                {memo && memoHref ? (
+                  <Link href={memoHref} className="font-medium text-[#3f1490] hover:underline">
+                    {memo.memoNumber}
+                  </Link>
+                ) : (
+                  (memo?.memoNumber ?? 'Assigned on approval')
+                )}
+              </dd>
+            </div>
           )}
           <Pair label="Issue date" value={fmtDrDate(dr.issueDate)} />
           <Pair label="Issuing branch" value={dr.branch?.name ?? dr.warehouse.name} />

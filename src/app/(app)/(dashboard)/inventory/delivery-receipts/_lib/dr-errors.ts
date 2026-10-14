@@ -26,6 +26,9 @@ const DR_ERROR_MESSAGES: Record<string, string> = {
   supplier_required: 'Pick the supplier.',
   delivery_receipt_not_pending:
     'This DR is no longer waiting for approval — someone already decided it.',
+  delivery_receipt_cannot_void:
+    'Only an approved or posted DR can be voided — delete a draft, or reject a pending one.',
+  insufficient_stock: 'Not enough stock is left at the issuing branch for one of the items.',
   purpose_not_available_yet:
     'This purpose can be saved as a draft but not submitted yet — its approval step is still being built.',
 }

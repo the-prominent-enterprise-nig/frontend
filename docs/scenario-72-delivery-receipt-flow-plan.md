@@ -100,7 +100,7 @@ Unchanged: memos already applied to a bill, and the standalone **New debit memo*
 
 ### One Debit Memos list for both kinds — developer decision, 2026-10-14
 
-The client calls both documents "debit memo", and the DR shows the memo number for every memo purpose. So the **Inventory → Debit Memos** tab lists **both** supplier returns (`SDM-…`) and internal memos (`DMINV0926-…`), with a **Type** filter and column, each row linking to its DR. The two stay separate models: a supplier and an AP bill mean nothing on an internal memo. Inventory staff only view DMINV rows; editing and posting them is the Accountant's job, in **Accounting → Debit Memos**. Built in **Part 4**.
+The client calls both documents "debit memo", and the DR shows the memo number for every memo purpose. So the **Inventory → Debit Memos** tab lists **both** supplier returns (`SDM-…`) and internal memos (`DMINV0926-…`), with a **Type** filter and column, each row linking to its DR. The two stay separate models: a supplier and an AP bill mean nothing on an internal memo. Inventory staff only view DMINV rows; editing and posting them is the Accountant's job, in **Accounting → Debit Memos**. Built in **Part 4**. Refined the same day (developer): no Supplier/Internal switch — **one merged list** (Type filter + chip, shared search and status pills) and **one New debit memo** button that asks Supplier return or Internal (DMINV); the latter only for those who may create one.
 
 ---
 
@@ -267,3 +267,27 @@ Superseded on 2026-10-14 by the answered decisions. Eight parts, in order, each 
 
 - **POS "Delivery Receipt" payment mode** (`pos/checkout/page.tsx:5556-5586`) — a cash-behaving stub whose DR number is never captured (Scenario 66 D10). Same name, unrelated feature; the standing constraint is that it stays as built. Worth one line to the client so nobody expects the two to connect.
 - **Supplier debit memo GL defects** from Scenario 46 (inventory credited at negotiated amount, input VAT not reversed, JE branch-null) — pre-existing; fix inside Part 7 only if it touches those lines anyway.
+
+---
+
+## Progress — Part 8 (Return to supplier + S71 items 14/15/16), 2026-10-14
+
+**Backend**
+
+- Migration `20261014200000_supplier_debit_memo_unapplied`: `supplier_debit_memos.apBillId` nullable (FK now `SET NULL`), new `deliveryReceiptId` (unique), new `ap_disbursement_deductions.supplierDebitMemoId` (unique). Existing memos keep their bill.
+- New mapping key `DUE_FROM_SUPPLIERS` → `1-01-162` (seeded by `seedPH`; existing DBs need the mapping set once in Settings → Account Mapping, or a re-seed).
+- Supplier debit memo: created with `supplierId`, no invoice. Approval posts **Dr Due from Suppliers / Cr Inventory** and touches no bill. Memos raised before Part 8 (bill named, no voucher link) still settle their bill directly (`settlesBill`).
+- AP voucher: a deduction with `supplierDebitMemoId` applies the memo — account forced to Due from Suppliers, amount to the memo's; the memo takes the voucher's (first) bill. Edit, settle and cancel of the voucher keep or release the link. An applied memo can't be edited or voided until the voucher lets go of it.
+- DR: `return_to_supplier` is submittable. **Creating the DR drafts the supplier memo** (S71 item 16, read literally on 2026-10-14 — supersedes "on approval"): supplier, branch, units from the DR, priced at estimated cost. While the DR is a draft, every DR edit refreshes the memo (a unit accounting repriced keeps its price; charges stay); deleting the DR deletes it, rejecting voids it. The memo can't be approved or voided until the Branch Manager approves the DR. Approving the memo issues the units through the DR (held → issued) and marks the DR posted; voiding the memo voids the DR; voiding the DR voids the memo. The memo's goods stay the DR's — only prices and charges change.
+
+**Frontend**
+
+- Inventory → Debit Memos form: no invoice picker; supplier + branch only; a picked item defaults to its cost on file. A DR-drafted memo locks units, supplier and branch.
+- List / detail / Accounting hub: "Applied to" shows the bill once a voucher applies the memo, else "Not yet applied".
+- AP voucher (Record Payment): "Apply a supplier debit memo" picker under Deductions, offering the payee's posted, unapplied memos as read-only deduction rows.
+- DR form: Return to supplier no longer "draft only"; DR detail and list show the supplier memo number.
+
+**Not done / open**
+
+- The GL defects from Scenario 46 (inventory credited at the memo price, not cost) are unchanged — out of scope as before.
+- A voucher covering several bills stamps the memo with its first bill; the deduction itself is apportioned across all of them as before.

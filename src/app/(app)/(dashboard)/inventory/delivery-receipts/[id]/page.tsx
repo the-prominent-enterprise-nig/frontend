@@ -8,6 +8,8 @@ import { drToFormValues } from '../_lib/dr-form-values'
 import DrForm from '../_components/DrForm'
 import DrDetailView from '../_components/DrDetailView'
 import { DrApprovalActions } from '../_components/DrApprovalActions'
+import { DrVoidAction } from '../_components/DrVoidAction'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 
 export const metadata = { title: 'Delivery Receipt' }
 
@@ -33,5 +35,25 @@ export default async function Page({
   const canDecide =
     dr.status === 'pending_approval' &&
     can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE)
-  return <DrDetailView dr={dr} actions={canDecide ? <DrApprovalActions dr={dr} /> : undefined} />
+  const canVoid =
+    (dr.status === 'approved' || dr.status === 'posted') &&
+    can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_VOID)
+  // A return to supplier's memo is a supplier debit memo, which lives on the
+  // Inventory → Debit Memos list rather than a page of its own.
+  const memoHref = dr.supplierDebitMemo
+    ? can(session, INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ)
+      ? '/inventory/debit-memos'
+      : undefined
+    : dr.debitMemo && can(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
+      ? `/accounting/debit-memos/inventory/${dr.debitMemo.id}`
+      : undefined
+  return (
+    <DrDetailView
+      dr={dr}
+      memoHref={memoHref}
+      actions={
+        canDecide ? <DrApprovalActions dr={dr} /> : canVoid ? <DrVoidAction dr={dr} /> : undefined
+      }
+    />
+  )
 }

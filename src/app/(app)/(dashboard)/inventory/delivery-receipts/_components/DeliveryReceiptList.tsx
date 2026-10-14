@@ -3,10 +3,11 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, RefreshCw, Search, Truck } from 'lucide-react'
+import { Plus, Search, Truck } from 'lucide-react'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { PLEX, MONO } from '@/src/libs/design/plex'
+import { PLEX, MONO, STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import type { DrStatus, DrSummary } from '@/src/schema/inventory/delivery-receipts'
 import { getDeliveryReceipts } from '../_actions/get-delivery-receipts'
@@ -55,11 +56,7 @@ export default function DeliveryReceiptList({
       className={`min-h-full w-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px] ${PLEX}`}
     >
       <div className="mx-auto max-w-7xl space-y-5">
-        <ListHeader
-          canCreate={canCreate}
-          fetching={query.isFetching}
-          onRefresh={() => query.refetch()}
-        />
+        <ListHeader canCreate={canCreate} />
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1 sm:max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b8b9b]" />
@@ -95,24 +92,25 @@ export default function DeliveryReceiptList({
           ) : rows.length === 0 ? (
             <EmptyState filtered={status !== 'all' || !!search.trim()} canCreate={canCreate} />
           ) : (
-            <DrTable rows={rows} />
+            <>
+              <DrTable rows={rows} />
+              <ListFooterPager
+                page={page}
+                pageCount={Math.ceil(total / PAGE_SIZE)}
+                shown={rows.length}
+                total={total}
+                noun={total === 1 ? 'delivery receipt' : 'delivery receipts'}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </div>
-        {total > PAGE_SIZE && <Pager page={page} total={total} onPage={setPage} />}
       </div>
     </div>
   )
 }
 
-function ListHeader({
-  canCreate,
-  fetching,
-  onRefresh,
-}: {
-  canCreate: boolean
-  fetching: boolean
-  onRefresh: () => void
-}): React.JSX.Element {
+function ListHeader({ canCreate }: { canCreate: boolean }): React.JSX.Element {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="max-w-2xl">
@@ -122,18 +120,7 @@ function ListHeader({
           sales invoice to follow.
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={fetching}
-          className="flex items-center gap-2 rounded-lg border border-[#e4e4e9] bg-white px-3 py-2 text-sm font-medium text-[#3d3d4a] hover:border-[#d3d3db] hover:bg-[#fbfbfc] disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${fetching ? 'animate-spin' : ''}`} />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
-        {canCreate && <NewDrLink />}
-      </div>
+      <div className="flex shrink-0 items-center gap-2">{canCreate && <NewDrLink />}</div>
     </div>
   )
 }
@@ -219,16 +206,16 @@ function DrTable({ rows }: { rows: DrSummary[] }): React.JSX.Element {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[860px] text-left text-[13px]">
-        <thead className="border-b border-[#eeeef1] bg-[#fbfbfc] text-[11px] uppercase tracking-[.06em] text-[#8b8b9b]">
+        <thead className={`border-b border-[#eeeef1] bg-[#fbfbfc] ${STOCK_TABLE_HEAD}`}>
           <tr>
-            <th className="px-4 py-2.5 font-medium">DR no.</th>
-            <th className="px-4 py-2.5 font-medium">Purpose</th>
-            <th className="px-4 py-2.5 font-medium">Delivered to</th>
-            <th className="px-4 py-2.5 font-medium">Issued from</th>
-            <th className="px-4 py-2.5 font-medium">Issue date</th>
-            <th className="px-4 py-2.5 text-right font-medium">Items</th>
-            <th className="px-4 py-2.5 font-medium">Debit memo</th>
-            <th className="px-4 py-2.5 font-medium">Status</th>
+            <th className="px-4 py-2.5">DR no.</th>
+            <th className="px-4 py-2.5">Purpose</th>
+            <th className="px-4 py-2.5">Delivered to</th>
+            <th className="px-4 py-2.5">Issued from</th>
+            <th className="px-4 py-2.5">Issue date</th>
+            <th className="px-4 py-2.5 text-right">Items</th>
+            <th className="px-4 py-2.5">Debit memo</th>
+            <th className="px-4 py-2.5">Status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#eeeef1]">
@@ -278,7 +265,7 @@ function DrRow({ dr }: { dr: DrSummary }): React.JSX.Element {
       </td>
       <td>
         <Link href={href} className={`${cell} ${MONO} text-[#5b5b6b]`}>
-          {dr.debitMemo?.memoNumber ?? '—'}
+          {(dr.debitMemo ?? dr.supplierDebitMemo)?.memoNumber ?? '—'}
         </Link>
       </td>
       <td>
@@ -291,37 +278,5 @@ function DrRow({ dr }: { dr: DrSummary }): React.JSX.Element {
         </Link>
       </td>
     </tr>
-  )
-}
-
-function Pager({
-  page,
-  total,
-  onPage,
-}: {
-  page: number
-  total: number
-  onPage: (p: number) => void
-}): React.JSX.Element {
-  const pages = Math.ceil(total / PAGE_SIZE)
-  const btn =
-    'rounded-lg border border-[#e4e4e9] bg-white px-3 py-1.5 text-sm text-[#3d3d4a] hover:border-[#d3d3db] disabled:opacity-40'
-  return (
-    <div className="flex items-center justify-end gap-2 text-sm text-[#5b5b6b]">
-      <span>
-        Page {page} of {pages}
-      </span>
-      <button type="button" className={btn} disabled={page <= 1} onClick={() => onPage(page - 1)}>
-        Previous
-      </button>
-      <button
-        type="button"
-        className={btn}
-        disabled={page >= pages}
-        onClick={() => onPage(page + 1)}
-      >
-        Next
-      </button>
-    </div>
   )
 }

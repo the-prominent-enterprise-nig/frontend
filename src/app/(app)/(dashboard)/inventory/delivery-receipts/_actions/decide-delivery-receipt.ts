@@ -44,3 +44,23 @@ export async function rejectDeliveryReceipt(
   revalidate(id)
   return { success: true, data: { id }, message: 'Rejected' }
 }
+
+/** Branch Manager void of an approved or posted DR — reverses whatever it
+ * posted and puts its units back on the shelf. */
+export async function voidDeliveryReceipt(
+  id: string,
+  reason: string
+): Promise<ApiResponse<{ id: string }>> {
+  const session = await getSessionOrNull()
+  if (!session || !can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_VOID)) {
+    return { success: false, error: 'Forbidden', message: 'You cannot void delivery receipts' }
+  }
+  if (!reason.trim())
+    return { success: false, error: 'Validation failed', message: 'Give a reason' }
+  const result = await api.post(`/inventory/delivery-receipts/${id}/void`, {
+    reason: reason.trim(),
+  })
+  if (!result.success) return drFailure(result, 'Failed to void')
+  revalidate(id)
+  return { success: true, data: { id }, message: 'Voided' }
+}

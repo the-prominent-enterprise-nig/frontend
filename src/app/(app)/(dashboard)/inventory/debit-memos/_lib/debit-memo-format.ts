@@ -91,3 +91,18 @@ export function lineNet(line: Partial<SupplierDebitMemoLineValues> | undefined):
 export function lineGross(line: Partial<SupplierDebitMemoLineValues> | undefined): number {
   return lineNet(line) + (Number(line?.taxAmount) || 0)
 }
+
+/** Where a memo stands against the supplier's invoices. Since Scenario 72
+ * Part 8 a memo names no invoice when it is raised: once approved it waits
+ * for accounting to apply it from an AP voucher, and only then has a bill.
+ * A memo raised before Part 8 carries the bill it named from the start. */
+export function appliedLabel(memo: SupplierDebitMemo): { text: string; pending: boolean } {
+  if (memo.apBill) {
+    return {
+      text: memo.apBill.billNumber ?? 'SI not yet numbered',
+      pending: !memo.apBill.billNumber,
+    }
+  }
+  if (memo.status === 'FINAL') return { text: 'Not yet applied', pending: true }
+  return { text: '—', pending: false }
+}

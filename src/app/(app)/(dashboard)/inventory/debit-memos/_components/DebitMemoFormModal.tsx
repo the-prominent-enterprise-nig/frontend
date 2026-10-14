@@ -1,27 +1,26 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
-import type { Control, Resolver } from 'react-hook-form'
+import type { Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Trash2 } from 'lucide-react'
 import {
-  APBills,
   SupplierDebitMemos,
-  apOutstanding,
-  fmtDate,
   fmtMoney,
-  type APBill,
   type SupplierDebitMemo,
 } from '@/src/libs/data/AccountingV2Data'
 import {
-  buildSupplierDebitMemoFormSchema,
+  SupplierDebitMemoFormSchema,
   type SupplierDebitMemoFormValues,
   type SupplierDebitMemoLineValues,
 } from '@/src/schema/accounting/supplier-debit-memos'
-import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
-import { purchaseOrdersApi } from '@/src/libs/api/procurement'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
+import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { getAccounts } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
@@ -40,8 +39,6 @@ type Props = {
   /** The memo being edited — a draft, or one that has already posted. Omit to
    * raise a new one. */
   memo?: SupplierDebitMemo | null
-  /** Pre-selects the invoice when arriving from an AP bill. */
-  initialApBillId?: string
 }
 
 const cardClass = 'rounded-xl border border-[#e4e4e9] bg-white'
@@ -125,12 +122,12 @@ function lineKind(line: Partial<SupplierDebitMemoLineValues> | undefined): 'good
   return line?.kind ?? (line?.itemId ? 'goods' : 'charge')
 }
 
-/** Live totals, mirroring the server's own arithmetic so the running card and
- * the schema's outstanding-balance check agree with what will actually post.
+/** Live totals, mirroring the server's own arithmetic so the running card
+ * agrees with what will actually post.
  *
  * Every line adds. Returned goods and supplier concessions (support,
- * sponsorship) both reduce what we owe, so both count toward the total — and
- * the total is what comes off the supplier's invoice. */
+ * sponsorship) both count toward what the supplier owes back — the total
+ * accounting later applies to one of their invoices. */
 function useLineTotals(control: Control<SupplierDebitMemoFormValues>) {
   const lines = useWatch({ control, name: 'lines' })
   return useMemo(() => {
@@ -153,70 +150,33 @@ function useLineTotals(control: Control<SupplierDebitMemoFormValues>) {
   }, [lines])
 }
 
-export default function DebitMemoFormModal({
-  open,
-  onClose,
-  onSaved,
-  memo,
-  initialApBillId,
-}: Props) {
+export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Props) {
   const isEdit = !!memo
   // Editing this one is not a draft edit: saving reverses what it posted and
-  // posts it again. The warning, the extra confirmation and the balance it is
-  // allowed to reach all key off this.
+  // posts it again. The warning and the extra confirmation key off this.
   const isPosted = memo?.status === 'FINAL'
+  // Drafted by a "Return units to supplier" DR on approval (Scenario 72 Part
+  // 8). What goes back, how many, from where and to whom is the DR's — the
+  // memo may reprice the goods and add charges, nothing more.
+  const fromDr = memo?.deliveryReceipt ?? null
   // The validated values waiting on the re-post confirmation, so the dialog
   // only ever appears over a form that would actually save.
   const [confirmingRepost, setConfirmingRepost] = useState<SupplierDebitMemoFormValues | null>(null)
-  // Seeded once on mount. The parent gives this modal a `key` that changes per
-  // open, so it remounts with fresh state rather than needing an effect to
-  // re-sync when `memo` changes underneath it.
-  const [supplierId, setSupplierId] = useState<string>(memo?.supplierId ?? '')
   const [saving, setSaving] = useState(false)
   // Held here while creating, then uploaded once the memo has an id — an
   // attachment needs an entityId to point at.
   const [stagedWaybills, setStagedWaybills] = useState<File[]>([])
-
-  // Only the chosen supplier's open bills can be deducted against — but any
-  // of them, not just the one the damaged unit arrived on.
-  const billsQuery = useQuery({
-    queryKey: ['ap-bills-open', supplierId],
-    queryFn: () => APBills.list({ supplierId }),
-    enabled: open && !!supplierId,
-    staleTime: 60_000,
-  })
-  // The memo's own bill is always listed: a posted memo may have settled it
-  // outright, and its own effect must not be what stops it being edited.
-  const openBills = (billsQuery.data?.data?.items ?? []).filter(
-    (b: APBill) => ['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status) || b.id === memo?.apBillId
-  )
-
-  // The schema's cap depends on which bill is selected, but useForm only reads
-  // `resolver` once. A ref lets the stable resolver below see the current
-  // outstanding balance instead of the one that happened to be selected on
-  // first render.
-  const outstandingRef = useRef<number>(Number.MAX_SAFE_INTEGER)
-  const resolver = useCallback<Resolver<SupplierDebitMemoFormValues>>(
-    (values, context, options) =>
-      zodResolver(buildSupplierDebitMemoFormSchema(outstandingRef.current))(
-        values,
-        context,
-        options
-      ),
-    []
-  )
 
   const {
     control,
     handleSubmit,
     reset,
     setValue,
-    getValues,
     formState: { errors, isSubmitted },
   } = useForm<SupplierDebitMemoFormValues>({
-    resolver,
+    resolver: zodResolver(SupplierDebitMemoFormSchema),
     defaultValues: {
-      apBillId: memo?.apBillId ?? initialApBillId ?? '',
+      supplierId: memo?.supplierId ?? '',
       memoNumber: memo?.memoNumber ?? undefined,
       warehouseId: memo?.warehouseId ?? '',
       memoDate: (memo?.memoDate ?? new Date().toISOString()).slice(0, 10),
@@ -228,9 +188,8 @@ export default function DebitMemoFormModal({
           itemId: l.itemId ?? undefined,
           serialNumberId: l.serialNumberId ?? undefined,
           // Approving resolves a goods line's account to Inventory and writes
-          // it back. The picker lists revenue accounts only, so it cannot show
-          // that — but it is the account that actually posted, so it is kept
-          // and sent back unchanged.
+          // it back — the account that actually posted, so it is kept and
+          // sent back unchanged.
           accountId: l.accountId ?? undefined,
           sourceApBillId: l.sourceApBillId ?? undefined,
           description: l.description ?? undefined,
@@ -285,288 +244,50 @@ export default function DebitMemoFormModal({
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
   const totals = useLineTotals(control)
   const watchedLines = useWatch({ control, name: 'lines' })
-  const selectedBillId = useWatch({ control, name: 'apBillId' })
+  const supplierId = useWatch({ control, name: 'supplierId' })
   const selectedWarehouseId = useWatch({ control, name: 'warehouseId' })
-  const selectedBill = openBills.find((b) => b.id === selectedBillId)
 
-  // A line only means anything once it is settled who the goods go back to,
-  // which invoice they come off and where they leave from: until then there
-  // is no invoice to price the item from and no stock to check it against.
-  const contextReady = !!supplierId && !!selectedBillId && !!selectedWarehouseId
+  // A line only means anything once it is settled who the goods go back to
+  // and where they leave from — the item search lists that branch's stock
+  // first.
+  const contextReady = !!supplierId && !!selectedWarehouseId
 
-  // A posted memo has already taken its amount off its bill, so that amount is
-  // added back before the cap is judged — mirroring the server's own
-  // `alreadyApplied`. Otherwise raising a ₱500 memo to ₱800 would be refused
-  // by the ₱500 it had itself removed.
-  //
-  // Net of withholding, via apOutstanding: the withheld slice left Accounts
-  // Payable at receive() and is owed to the BIR, so a returned-goods credit
-  // cannot reach it.
-  const outstanding = selectedBill
-    ? apOutstanding(selectedBill) +
-      (isPosted && selectedBill.id === memo!.apBillId ? memo!.amount : 0)
-    : null
-
-  // Keep the resolver's view current. Written in an effect rather than during
-  // render (refs are not render-time state), which is soon enough: validation
-  // only runs on submit, long after this has settled. No selection yet means
-  // no cap to check against — the server enforces it regardless.
-  useEffect(() => {
-    outstandingRef.current = outstanding ?? Number.MAX_SAFE_INTEGER
-  }, [outstanding])
-
-  // What the chosen invoice actually billed. The list endpoint returns bills
-  // without their lines, so the selected one is fetched in full — this is the
-  // source both the picker below and the prefilled prices read from.
-  const billDetailQuery = useQuery({
-    queryKey: ['ap-bill-detail', selectedBillId],
-    queryFn: () => APBills.get(selectedBillId),
-    enabled: open && !!selectedBillId,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  // Every memo already raised against this invoice, so the picker can say how
-  // many of each item have gone back already. Void ones are excluded — they
-  // returned nothing in the end — as is this memo itself while it is being
-  // edited, or its own quantities would read as somebody else's.
-  const priorMemosQuery = useQuery({
-    queryKey: ['supplier-debit-memos-for-bill', selectedBillId],
-    queryFn: () => SupplierDebitMemos.list({ apBillId: selectedBillId }),
-    enabled: open && !!selectedBillId,
-    staleTime: 60_000,
-  })
-  const returnedByItemId = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const prior of priorMemosQuery.data?.data?.items ?? []) {
-      if (prior.status === 'VOID' || prior.id === memo?.id) continue
-      for (const line of prior.lines ?? []) {
-        if (!line.itemId) continue
-        map[line.itemId] = (map[line.itemId] ?? 0) + Number(line.quantity)
-      }
-    }
-    return map
-  }, [priorMemosQuery.data, memo?.id])
-
-  // One row per item the invoice covers, with the two figures that decide how
-  // much of it can still go back.
-  //
-  // Two sources, in order. A bill raised since Scenario 46 carries its own
-  // APBillLine rows. A bill scaffolded off a goods receipt carries none — nor
-  // does any bill entered before then — and the record of what arrived, at
-  // what cost, lives on the receiving reports matched to it instead. The AP
-  // bill detail page reads that same fallback; without it this picker would
-  // tell most invoices they bill nothing and send everyone to the item search.
-  //
-  // Lines are folded together by item: an invoice may bill the same item on
-  // two lines, or across two receipts, and picker rows that each claimed the
-  // whole returned quantity would both read wrong.
-  const { invoiceItems, itemSource } = useMemo(() => {
-    const bill = billDetailQuery.data?.data
-    const ownLines = (bill?.lines ?? []).filter((l) => l.itemId)
-    const receipts = bill?.goodsReceipts ?? []
-    const receiptLines = receipts.flatMap((r) => r.lines ?? []).filter((l) => l.item?.id)
-
-    type Raw = {
-      itemId: string
-      sku: string
-      name: string
-      qty: number
-      unitPrice: number
-      tax: number
-    }
-    const raw: Raw[] =
-      ownLines.length > 0
-        ? ownLines.map((l) => ({
-            itemId: l.itemId as string,
-            sku: l.item?.sku ?? '',
-            name: l.item?.name ?? 'Item',
-            qty: Number(l.quantity) || 0,
-            unitPrice: Number(l.unitPrice) || 0,
-            tax: Number(l.taxAmount) || 0,
-          }))
-        : receiptLines.map((l) => ({
-            itemId: l.item!.id,
-            sku: l.item?.sku ?? '',
-            name: l.item?.name ?? 'Item',
-            qty: Number(l.quantityReceived) || 0,
-            // unitCost is the flattened per-unit cost — receiving resolves an
-            // srp + discount chain into it, and discountedCost only records
-            // why. It is null only on a manual receipt that never carried one.
-            unitPrice: Number(l.unitCost ?? l.discountedCost ?? 0) || 0,
-            tax: Number(l.taxAmount) || 0,
-          }))
-
-    const byItem = new Map<
-      string,
-      { itemId: string; sku: string; name: string; billed: number; value: number; tax: number }
-    >()
-    for (const line of raw) {
-      const row = byItem.get(line.itemId) ?? {
-        itemId: line.itemId,
-        sku: line.sku,
-        name: line.name,
-        billed: 0,
-        value: 0,
-        tax: 0,
-      }
-      row.billed += line.qty
-      row.value += line.qty * line.unitPrice
-      row.tax += line.tax
-      byItem.set(line.itemId, row)
-    }
-
-    return {
-      itemSource: (ownLines.length > 0 ? 'invoice' : raw.length > 0 ? 'receipts' : 'none') as
-        | 'invoice'
-        | 'receipts'
-        | 'none',
-      invoiceItems: [...byItem.values()].map((row) => {
-        const returned = returnedByItemId[row.itemId] ?? 0
-        return {
-          ...row,
-          unitPrice: row.billed > 0 ? row.value / row.billed : 0,
-          taxPerUnit: row.billed > 0 ? row.tax / row.billed : 0,
-          returned,
-          remaining: Math.max(row.billed - returned, 0),
-        }
-      }),
-    }
-  }, [billDetailQuery.data, returnedByItemId])
-
-  // The PO the chosen invoice was raised against, if there is one. Used only
-  // for items the invoice itself does not price — a bill scaffolded off a
-  // goods receipt carries no lines of its own, and the PO is then the only
-  // record of what was agreed.
-  const purchaseOrderId = selectedBill?.purchaseOrderId ?? null
-  const poQuery = useQuery({
-    queryKey: ['debit-memo-po-prices', purchaseOrderId],
-    queryFn: () => purchaseOrdersApi.get(purchaseOrderId!),
-    enabled: open && !!purchaseOrderId,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  })
-  // itemId → unit price. A zero-priced line (a freebie) prefills nothing:
-  // there is no value to deduct for it. The invoice overrides the PO — what
-  // they billed is what comes off the bill, whatever was ordered.
-  const priceByItemId = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const line of poQuery.data?.data?.lines ?? []) {
-      const price = Number(line.unitPrice)
-      if (line.itemId && price > 0) map[line.itemId] = price
-    }
-    for (const row of invoiceItems) {
-      if (row.unitPrice > 0) map[row.itemId] = row.unitPrice
-    }
-    return map
-  }, [poQuery.data, invoiceItems])
-
-  // Who last set each line's Unit Price — this form ('auto') or the person
-  // filling it in ('manual') — keyed by the field array's own stable id. An
-  // auto amount is re-resolved whenever the invoice behind it changes; a typed
-  // one is never overwritten.
-  const amountOwnerRef = useRef<Record<string, 'auto' | 'manual'>>({})
-
-  /** Fills a line's Unit Price from the invoice (or the PO behind it) when the
-   * item is on one. Runs on every pick: the amount showing describes the item
-   * that was there before, so it is replaced — or cleared, when neither
-   * prices the new item. */
-  const applySourcePrice = useCallback(
-    (index: number, itemId: string): void => {
-      const fieldId = fields[index]?.id
-      // The account showing belongs to the item that was there before, the
-      // same as the amount does. Cleared here so the prefill resolves the new
-      // one — a deliberate override of the old item has no claim on this one.
+  /** A picked item comes in at its cost on file — with no invoice to read a
+   * price from, that is the honest default, and the person can type the
+   * figure the supplier agreed to over it. The account showing belonged to
+   * the item that was there before, so it is cleared for the prefill. */
+  const applyItemCost = useCallback(
+    (index: number, option: SearchComboboxOption): void => {
       setValue(`lines.${index}.accountId`, '')
-      const price = itemId ? priceByItemId[itemId] : undefined
-      if (price != null) {
-        setValue(`lines.${index}.unitPrice`, price)
-        if (fieldId) amountOwnerRef.current[fieldId] = 'auto'
-      } else if (fieldId && amountOwnerRef.current[fieldId] === 'auto') {
-        setValue(`lines.${index}.unitPrice`, 0)
-        delete amountOwnerRef.current[fieldId]
-      }
+      const meta = option.meta as ItemSearchMeta | undefined
+      setValue(`lines.${index}.unitPrice`, Number(meta?.costPrice ?? 0))
     },
-    [fields, priceByItemId, setValue]
+    [setValue]
   )
 
-  /** The person typed in this line's Unit Price — leave it alone from here on. */
-  const claimAmount = useCallback(
-    (index: number): void => {
-      const fieldId = fields[index]?.id
-      if (fieldId) amountOwnerRef.current[fieldId] = 'manual'
-    },
-    [fields]
-  )
-
-  // Re-resolve every prefilled amount against the invoice now selected. This
-  // is what keeps an amount honest when the invoice is switched after the
-  // lines were filled in: a price from the old invoice would otherwise sit
-  // there looking like it came from this one.
-  useEffect(() => {
-    getValues('lines').forEach((line, index) => {
-      const fieldId = fields[index]?.id
-      const owner = fieldId ? amountOwnerRef.current[fieldId] : undefined
-      if (owner === 'manual') return
-      const price = line.itemId ? priceByItemId[line.itemId] : undefined
-      const blank = !(Number(line.unitPrice) > 0)
-      if (price != null && (blank || owner === 'auto')) {
-        setValue(`lines.${index}.unitPrice`, price)
-        if (fieldId) amountOwnerRef.current[fieldId] = 'auto'
-      } else if (price == null && owner === 'auto' && fieldId) {
-        setValue(`lines.${index}.unitPrice`, 0)
-        delete amountOwnerRef.current[fieldId]
-      }
-    })
-  }, [priceByItemId, fields, getValues, setValue])
-
-  // What each item is called, for the lines this form fills in on the user's
-  // behalf. SearchCombobox only ever learns a label by the user picking a
-  // search result, so a line whose itemId was set by the picker above — or
-  // loaded back off a saved memo — renders as an empty "Search item…" box
-  // unless it is handed one. Built in the same shape a pick would have
-  // produced, so a prefilled row and a searched row read identically.
+  // What each item is called, for lines loaded back off a saved memo.
+  // SearchCombobox only ever learns a label by the user picking a search
+  // result, so such a row would render as an empty "Search item…" box.
   const itemLabelById = useMemo(() => {
     const map: Record<string, string> = {}
-    const put = (id: string, name: string, sku?: string | null) => {
-      map[id] = sku ? `${name} (${sku})` : name
-    }
     for (const line of memo?.lines ?? []) {
-      if (line.itemId && line.item) put(line.itemId, line.item.name, line.item.sku)
+      if (line.itemId && line.item) {
+        map[line.itemId] = line.item.sku ? `${line.item.name} (${line.item.sku})` : line.item.name
+      }
     }
-    for (const row of invoiceItems) put(row.itemId, row.name, row.sku)
     return map
-  }, [memo?.lines, invoiceItems])
+  }, [memo?.lines])
 
   const pickedItemIds = useMemo(
     () => new Set((watchedLines ?? []).map((l) => l?.itemId).filter(Boolean) as string[]),
     [watchedLines]
   )
 
-  /** Ticking an invoice row adds it to the goods below at the quantity that
-   * can still go back, priced as the invoice priced it; unticking takes it
-   * away again. */
-  function toggleInvoiceItem(row: (typeof invoiceItems)[number]): void {
-    const existing = getValues('lines').findIndex((l) => l?.itemId === row.itemId)
-    if (existing >= 0) {
-      remove(existing)
-      return
-    }
-    const quantity = row.remaining > 0 ? row.remaining : 1
-    const tax = Number((row.taxPerUnit * quantity).toFixed(2))
-    append({
-      ...emptyGoodsLine,
-      itemId: row.itemId,
-      quantity,
-      unitPrice: row.unitPrice,
-      taxAmount: tax > 0 ? tax : ('' as const),
-    })
-  }
-
   // Which rows sit in which table. Read off `fields` rather than the watched
-  // values: useFieldArray updates it synchronously, so a line added by the
-  // picker cannot spend a render in the charges below before its `kind`
-  // arrives. Indexes are kept because every control on a row addresses itself
-  // as `lines.${index}.…`, and filtering would otherwise renumber them.
+  // values: useFieldArray updates it synchronously, so a new line cannot
+  // spend a render in the wrong table before its `kind` arrives. Indexes are
+  // kept because every control on a row addresses itself as `lines.${index}.…`,
+  // and filtering would otherwise renumber them.
   const goodsRows = fields
     .map((field, index) => ({ field, index }))
     .filter(({ field }) => lineKind(field) === 'goods')
@@ -602,32 +323,12 @@ export default function DebitMemoFormModal({
     }
   }, [resolvedAccounts, goodsRows, watchedLines, setValue])
 
-  // Lines asking to return more than the invoice has left. Not blocking: the
-  // hybrid model lets a memo settle against any of the supplier's open
-  // invoices, so an item that was billed elsewhere legitimately has nothing
-  // left on this one. The server's only quantity control is stock on hand.
-  //
-  // Recomputed each render rather than memoized — it reads the watched
-  // quantities, which change on every keystroke anyway, over a handful of
-  // lines.
-  const overReturned: { index: number; name: string; remaining: number }[] = []
-  for (const { index } of goodsRows) {
-    const line = watchedLines?.[index]
-    if (!line?.itemId) continue
-    const billed = invoiceItems.find((r) => r.itemId === line.itemId)
-    if (!billed) continue
-    if ((Number(line.quantity) || 0) > billed.remaining) {
-      overReturned.push({ index, name: billed.name, remaining: billed.remaining })
-    }
-  }
-
   // What stands between this memo and a save, said in the bar at the bottom
   // rather than only as red text beside a field somebody has scrolled past.
   // Blocking issues are the ones the schema or the server will refuse;
   // cautions are the ones a person should look at and may still overrule.
   const blocking: string[] = []
   if (!supplierId) blocking.push('Pick the supplier the stock goes back to.')
-  if (!selectedBillId) blocking.push('Pick the open invoice this is deducted from.')
   if (!selectedWarehouseId) blocking.push('Pick the branch the units leave.')
   if (fields.length === 0) blocking.push('Nothing is going back — add an item or a charge.')
   const unpickedItems = goodsRows.filter(({ index }) => !watchedLines?.[index]?.itemId).length
@@ -644,11 +345,6 @@ export default function DebitMemoFormModal({
       `${unaccountedCharges} ${unaccountedCharges === 1 ? 'charge has' : 'charges have'} no account to credit.`
     )
   }
-  if (outstanding !== null && totals.total > outstanding + 0.01) {
-    blocking.push(
-      `This memo is ${fmtMoney(totals.total)} but the invoice has only ${fmtMoney(outstanding)} left on it.`
-    )
-  }
 
   const cautions: string[] = []
   const unexplained = goodsRows.filter(
@@ -659,9 +355,12 @@ export default function DebitMemoFormModal({
       `${unexplained} item ${unexplained === 1 ? 'line has' : 'lines have'} no reason — the supplier will ask.`
     )
   }
-  if (overReturned.length > 0) {
+  const unpriced = goodsRows.filter(
+    ({ index }) => watchedLines?.[index]?.itemId && !(Number(watchedLines[index].unitPrice) > 0)
+  ).length
+  if (unpriced > 0) {
     cautions.push(
-      `${overReturned.length} ${overReturned.length === 1 ? 'line asks' : 'lines ask'} for more than this invoice has left to return.`
+      `${unpriced} item ${unpriced === 1 ? 'line has' : 'lines have'} no unit price — nothing is claimed for ${unpriced === 1 ? 'it' : 'them'}.`
     )
   }
   // Deliberately silent about a missing delivery receipt number and a missing
@@ -679,7 +378,7 @@ export default function DebitMemoFormModal({
   async function save(data: SupplierDebitMemoFormValues) {
     setSaving(true)
     const payload = {
-      apBillId: data.apBillId,
+      supplierId: data.supplierId,
       warehouseId: data.warehouseId,
       memoNumber: data.memoNumber || undefined,
       memoDate: data.memoDate,
@@ -762,7 +461,7 @@ export default function DebitMemoFormModal({
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-start gap-0.5 sm:items-end">
-            <span className="text-[11px] text-[#5b5b6b]">Deducted from invoice</span>
+            <span className="text-[11px] text-[#5b5b6b]">Claimed from the supplier</span>
             <span className={`${MONO} text-xl font-semibold tracking-tight text-[#17171c]`}>
               {fmtMoney(totals.total)}
             </span>
@@ -783,19 +482,36 @@ export default function DebitMemoFormModal({
               <div className="rounded-xl border border-[#f5e2c6] bg-[#fffdf8] px-4 py-3 text-xs text-[#8a4b06]">
                 <p className="font-semibold">This memo has already posted. Saving re-posts it.</p>
                 <p className="mt-1 leading-relaxed">
-                  Its journal entry is reversed and a revised one posted, the stock it took out goes
-                  back and the new quantities come out, and the invoice is re-deducted. It stays one
-                  memo under one number, and you become its approver.
+                  Its journal entry is reversed and a revised one posted
+                  {fromDr
+                    ? ''
+                    : ', and the stock it took out goes back and the new quantities come out'}
+                  . It stays one memo under one number, and you become its approver.
                 </p>
               </div>
             )}
 
-            {/* ── Supplier & invoice ───────────────────────────── */}
+            {fromDr && (
+              <div className="rounded-xl border border-[#ddd0f7] bg-[#faf7ff] px-4 py-3 text-xs text-[#3f1490]">
+                <p className="font-semibold">Drafted from delivery receipt {fromDr.drNumber}</p>
+                <p className="mt-1 leading-relaxed text-[#5b5b6b]">
+                  The units, the supplier and the branch are the DR&apos;s — edit the DR to change
+                  them. You can change what each unit is claimed at and add charges here.
+                  {fromDr.status === 'approved' || fromDr.status === 'posted'
+                    ? ''
+                    : ' It can be approved once the Branch Manager approves the DR.'}
+                </p>
+              </div>
+            )}
+
+            {/* ── Supplier & branch ────────────────────────────── */}
             <section className={`${cardClass} px-4 py-4 md:px-5`}>
               <div className="mb-4">
-                <h3 className={sectionHeadClass}>Supplier &amp; invoice</h3>
+                <h3 className={sectionHeadClass}>Supplier &amp; branch</h3>
                 <p className={sectionNoteClass}>
-                  Who the stock goes back to, and which open invoice this comes off.
+                  Who the stock goes back to, and where it leaves from. No invoice is picked here —
+                  accounting applies the posted memo to one of the supplier&apos;s invoices from the
+                  AP voucher.
                 </p>
               </div>
 
@@ -804,122 +520,53 @@ export default function DebitMemoFormModal({
                   <label className={`${labelClass} mb-1.5`}>
                     Supplier <span className="text-[#b42318]">*</span>
                   </label>
-                  <SupplierSearchCombobox
-                    value={supplierId}
-                    onChange={(id) => {
-                      setSupplierId(id)
-                      // The invoice belonged to the old supplier — keeping it
-                      // selected would deduct this memo off somebody else's
-                      // bill.
-                      setValue('apBillId', '')
-                    }}
-                    initialLabel={memo?.supplier?.name}
-                  />
+                  {fromDr ? (
+                    <p className={`${fieldClass} bg-[#f7f7f8] text-[#5b5b6b]`}>
+                      {memo?.supplier?.name ?? '—'}
+                    </p>
+                  ) : (
+                    <Controller
+                      name="supplierId"
+                      control={control}
+                      render={({ field }) => (
+                        <SupplierSearchCombobox
+                          value={field.value}
+                          onChange={field.onChange}
+                          initialLabel={memo?.supplier?.name}
+                        />
+                      )}
+                    />
+                  )}
+                  {errors.supplierId && (
+                    <p className="mt-1 text-[11px] text-[#b42318]">{errors.supplierId.message}</p>
+                  )}
                 </div>
                 <div>
                   <label className={`${labelClass} mb-1.5`}>
                     Returning from <span className="text-[#b42318]">*</span>
                   </label>
-                  <Controller
-                    name="warehouseId"
-                    control={control}
-                    render={({ field }) => (
-                      <WarehouseSearchCombobox
-                        value={field.value}
-                        onChange={field.onChange}
-                        error={errors.warehouseId?.message}
-                        initialLabel={memo?.warehouse ? locationLabel(memo.warehouse) : undefined}
-                      />
-                    )}
-                  />
+                  {fromDr ? (
+                    <p className={`${fieldClass} bg-[#f7f7f8] text-[#5b5b6b]`}>
+                      {memo?.warehouse ? locationLabel(memo.warehouse) : '—'}
+                    </p>
+                  ) : (
+                    <Controller
+                      name="warehouseId"
+                      control={control}
+                      render={({ field }) => (
+                        <WarehouseSearchCombobox
+                          value={field.value}
+                          onChange={field.onChange}
+                          error={errors.warehouseId?.message}
+                          initialLabel={memo?.warehouse ? locationLabel(memo.warehouse) : undefined}
+                        />
+                      )}
+                    />
+                  )}
                   <p className="mt-1 text-[11px] text-[#8b8b9b]">
                     The branch the units physically leave.
                   </p>
                 </div>
-              </div>
-
-              <div className="mt-4">
-                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                  <label className={labelClass}>
-                    Deduct from which open supplier invoice?{' '}
-                    <span className="text-[#b42318]">*</span>
-                  </label>
-                  {!supplierId && (
-                    <span className="text-[11px] text-[#8b8b9b]">
-                      Pick a supplier to see their open invoices
-                    </span>
-                  )}
-                </div>
-
-                {!supplierId ? (
-                  <div className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-xs text-[#8b8b9b]">
-                    Pick a supplier first.
-                  </div>
-                ) : billsQuery.isLoading ? (
-                  <div className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-xs text-[#8b8b9b]">
-                    Loading open invoices…
-                  </div>
-                ) : openBills.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-xs text-[#8b8b9b]">
-                    This supplier has no open invoices to deduct from.
-                  </div>
-                ) : (
-                  <Controller
-                    name="apBillId"
-                    control={control}
-                    render={({ field }) => (
-                      <div className="grid gap-2 lg:grid-cols-2">
-                        {openBills.map((bill) => {
-                          const isOn = field.value === bill.id
-                          return (
-                            <button
-                              key={bill.id}
-                              type="button"
-                              onClick={() => field.onChange(bill.id)}
-                              aria-pressed={isOn}
-                              className={`flex items-start gap-3 rounded-lg border px-3 py-3 text-left ${
-                                isOn
-                                  ? 'border-[#5b21b6] bg-[#faf7ff]'
-                                  : 'border-[#e4e4e9] bg-white hover:border-[#d3d3db]'
-                              }`}
-                            >
-                              <span
-                                className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${isOn ? 'border-[#5b21b6]' : 'border-[#d3d3db]'}`}
-                              >
-                                <span
-                                  className={`h-2 w-2 rounded-full ${isOn ? 'bg-[#5b21b6]' : 'bg-transparent'}`}
-                                />
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span
-                                  className={`${MONO} block truncate text-[12.5px] font-semibold text-[#17171c]`}
-                                >
-                                  {bill.billNumber ?? 'SI not yet numbered'}
-                                </span>
-                                <span className="mt-0.5 block truncate text-[11px] text-[#5b5b6b]">
-                                  {fmtDate(bill.billDate)} · due {fmtDate(bill.dueDate)}
-                                </span>
-                              </span>
-                              <span className="shrink-0 text-right">
-                                <span
-                                  className={`${MONO} block text-[13px] font-semibold text-[#17171c]`}
-                                >
-                                  {fmtMoney(apOutstanding(bill))}
-                                </span>
-                                <span className="block text-[10.5px] text-[#8b8b9b]">
-                                  open balance
-                                </span>
-                              </span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                  />
-                )}
-                {errors.apBillId && (
-                  <p className="mt-1.5 text-[11px] text-[#b42318]">{errors.apBillId.message}</p>
-                )}
               </div>
 
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -944,10 +591,10 @@ export default function DebitMemoFormModal({
               <section
                 className={`${cardClass} flex flex-col items-center gap-1.5 border-dashed px-5 py-10 text-center`}
               >
-                <h3 className={sectionHeadClass}>Pick the supplier, invoice and branch first</h3>
+                <h3 className={sectionHeadClass}>Pick the supplier and branch first</h3>
                 <p className={`${sectionNoteClass} max-w-md`}>
-                  What the invoice billed is what prices a returned unit, and the branch is what its
-                  stock is checked against — so the items open once all three are settled.
+                  The branch is what a returned unit&apos;s stock is checked against, so the items
+                  open once both are settled.
                 </p>
               </section>
             ) : (
@@ -955,77 +602,10 @@ export default function DebitMemoFormModal({
                 <div className="border-b border-[#eeeef1] px-4 py-3.5 md:px-5">
                   <h3 className={sectionHeadClass}>What is going back?</h3>
                   <p className={sectionNoteClass}>
-                    Tick what {selectedBill?.billNumber ?? 'this invoice'} covers to add it at the
-                    cost it came in at, or search for anything it does not cover.
+                    {fromDr
+                      ? `The units on ${fromDr.drNumber}, at what each is claimed back at.`
+                      : 'Search for each item going back. It comes in at its cost on file — type over it with what the supplier agreed to credit.'}
                   </p>
-                </div>
-
-                {/* Add from the invoice */}
-                <div className="border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-3.5 md:px-5">
-                  <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                    <span className={monoHeadClass}>
-                      {itemSource === 'receipts' ? 'Delivered against' : 'Billed on'}{' '}
-                      {selectedBill?.billNumber ?? 'this invoice'}
-                    </span>
-                    {itemSource !== 'receipts' && (
-                      <span className="text-[11px] text-[#8b8b9b]">
-                        Quantities left are what this invoice has not already had returned
-                      </span>
-                    )}
-                  </div>
-                  {billDetailQuery.isLoading ? (
-                    <p className="py-3 text-xs text-[#8b8b9b]">Loading the invoice&apos;s lines…</p>
-                  ) : invoiceItems.length === 0 ? (
-                    <p className="py-3 text-xs text-[#8b8b9b]">
-                      Neither this invoice nor the receiving reports behind it lists any items —
-                      search for what is going back below.
-                    </p>
-                  ) : (
-                    <ul className="grid gap-2 lg:grid-cols-2">
-                      {invoiceItems.map((row) => {
-                        const isOn = pickedItemIds.has(row.itemId)
-                        return (
-                          <li key={row.itemId}>
-                            <button
-                              type="button"
-                              onClick={() => toggleInvoiceItem(row)}
-                              aria-pressed={isOn}
-                              className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left ${
-                                isOn
-                                  ? 'border-[#5b21b6] bg-white'
-                                  : 'border-[#e4e4e9] bg-white hover:border-[#d3d3db]'
-                              }`}
-                            >
-                              <span
-                                className={`mt-0.5 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-[5px] border text-[10px] ${
-                                  isOn
-                                    ? 'border-[#5b21b6] bg-[#5b21b6] text-white'
-                                    : 'border-[#d3d3db] bg-white text-transparent'
-                                }`}
-                              >
-                                ✓
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[12.5px] font-medium text-[#17171c]">
-                                  {row.name}
-                                </span>
-                                <span
-                                  className={`${MONO} mt-0.5 block truncate text-[10.5px] text-[#5b5b6b]`}
-                                >
-                                  {row.sku ? `${row.sku} · ` : ''}
-                                  {row.billed} billed · {row.returned} returned · {row.remaining}{' '}
-                                  can go back
-                                </span>
-                              </span>
-                              <span className={`${MONO} shrink-0 text-[12px] text-[#5b5b6b]`}>
-                                {fmtMoney(row.unitPrice)}
-                              </span>
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
                 </div>
 
                 {/* Goods lines */}
@@ -1038,8 +618,7 @@ export default function DebitMemoFormModal({
 
                   {goodsRows.length === 0 ? (
                     <p className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-xs text-[#8b8b9b]">
-                      Nothing added yet — tick a billed item above, or add a line to search the
-                      catalog.
+                      Nothing added yet — add a line to search for what is going back.
                     </p>
                   ) : (
                     // Header and rows share one scroll container so they can
@@ -1060,7 +639,6 @@ export default function DebitMemoFormModal({
 
                       <div className="space-y-3">
                         {goodsRows.map(({ field, index }) => {
-                          const over = overReturned.find((o) => o.index === index)
                           const description = watchedLines?.[index]?.description ?? ''
                           return (
                             <div key={field.id} className="space-y-1.5">
@@ -1070,9 +648,9 @@ export default function DebitMemoFormModal({
                                 initialItemLabel={
                                   field.itemId ? itemLabelById[field.itemId] : undefined
                                 }
-                                onItemPicked={(itemId) => applySourcePrice(index, itemId)}
-                                onAmountEdited={() => claimAmount(index)}
-                                overQuantity={!!over}
+                                onItemSelect={(option) => applyItemCost(index, option)}
+                                stockWarehouseId={selectedWarehouseId}
+                                locked={!!fromDr}
                                 stockAccountOptions={stockAccountOptions}
                                 accountsLoading={accountsQuery.isLoading}
                               />
@@ -1098,25 +676,20 @@ export default function DebitMemoFormModal({
                                     </button>
                                   )
                                 })}
-                                {over && (
-                                  <span className="inline-flex items-center gap-1 text-[11px] text-[#8a4b06]">
-                                    <AlertTriangle className="h-3 w-3" />
-                                    Only {over.remaining} of {over.name} can still go back on this
-                                    invoice
-                                  </span>
-                                )}
                                 {/* Sits here rather than at the end of the row
                                     above: this line wraps to the container, so
                                     the control stays in view however far the
-                                    columns have to scroll. */}
-                                <button
-                                  type="button"
-                                  onClick={() => remove(index)}
-                                  className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Remove line
-                                </button>
+                                    columns have to scroll. A DR's units stay. */}
+                                {!fromDr && (
+                                  <button
+                                    type="button"
+                                    onClick={() => remove(index)}
+                                    className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Remove line
+                                  </button>
+                                )}
                               </div>
                             </div>
                           )
@@ -1125,7 +698,9 @@ export default function DebitMemoFormModal({
                     </div>
                   )}
 
-                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <div
+                    className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 ${fromDr ? 'hidden' : ''}`}
+                  >
                     <button
                       type="button"
                       onClick={() => append(emptyGoodsLine)}
@@ -1180,13 +755,7 @@ export default function DebitMemoFormModal({
 
             {/* ── Running total ────────────────────────────────── */}
             {contextReady && (
-              <section
-                className={`rounded-xl border bg-white px-4 py-4 md:px-5 ${
-                  outstanding !== null && totals.total > outstanding + 0.01
-                    ? 'border-[#f3c9c5]'
-                    : 'border-[#e4e4e9]'
-                }`}
-              >
+              <section className="rounded-xl border border-[#e4e4e9] bg-white px-4 py-4 md:px-5">
                 <TotalRow
                   label="Items going back"
                   note={
@@ -1207,14 +776,9 @@ export default function DebitMemoFormModal({
                 />
                 <TotalRow
                   strong
-                  label={`Deducted from ${selectedBill?.billNumber ?? 'the invoice'}`}
-                  note={
-                    outstanding !== null
-                      ? `balance ${fmtMoney(outstanding)} → ${fmtMoney(outstanding - totals.total)}`
-                      : ''
-                  }
+                  label="Claimed from the supplier"
+                  note="Held in Due from Suppliers once approved, until accounting applies it to an invoice"
                   value={fmtMoney(totals.total)}
-                  bad={outstanding !== null && totals.total > outstanding + 0.01}
                 />
               </section>
             )}
@@ -1308,7 +872,7 @@ export default function DebitMemoFormModal({
                 <>
                   <p className="text-[11.5px] font-medium text-[#0b6644]">Ready to save</p>
                   <p className="truncate text-[11.5px] text-[#5b5b6b]">
-                    {fmtMoney(totals.total)} off {selectedBill?.billNumber ?? 'the invoice'}
+                    {fmtMoney(totals.total)} claimed from the supplier
                   </p>
                 </>
               )}
@@ -1361,9 +925,11 @@ export default function DebitMemoFormModal({
           message={
             <>
               <p>
-                Its journal entry is reversed and a revised one posted, the stock it took out goes
-                back and the new quantities come out, and the invoice is deducted again — now by{' '}
-                <strong>{fmtMoney(totals.total)}</strong> instead of{' '}
+                Its journal entry is reversed and a revised one posted
+                {fromDr
+                  ? ''
+                  : ', and the stock it took out goes back and the new quantities come out'}{' '}
+                — now for <strong>{fmtMoney(totals.total)}</strong> instead of{' '}
                 <strong>{fmtMoney(memo!.amount)}</strong>.
               </p>
               <p>
@@ -1416,15 +982,15 @@ function TotalRow({
   )
 }
 
-/** One returned-goods line: an item, how many, and what it comes off the
- * invoice at. */
+/** One returned-goods line: an item, how many, and what the supplier is
+ * asked to credit for it. */
 function LineRow({
   control,
   index,
   initialItemLabel,
-  onItemPicked,
-  onAmountEdited,
-  overQuantity,
+  onItemSelect,
+  stockWarehouseId,
+  locked,
   stockAccountOptions,
   accountsLoading,
 }: {
@@ -1435,18 +1001,17 @@ function LineRow({
   /** The picker shows a loading placeholder rather than an empty list while
    * the chart is still on its way. */
   accountsLoading: boolean
-  /** What to show for an item this row did not have picked through it — one
-   * added from the invoice above, or loaded off a saved memo. Read once, when
-   * the row mounts, which is why it comes down as a prop rather than being
-   * looked up from the watched value. */
+  /** What to show for an item loaded off a saved memo. Read once, when the
+   * row mounts, which is why it comes down as a prop rather than being looked
+   * up from the watched value. */
   initialItemLabel?: string
-  /** Prefills this line's Unit Price from the invoice, or the PO behind it. */
-  onItemPicked: (itemId: string) => void
-  /** Hands the Unit Price over to whoever typed in it, so no later prefill
-   * overwrites their figure. */
-  onAmountEdited: () => void
-  /** Asking for more than the invoice has left — flagged, not refused. */
-  overQuantity: boolean
+  /** Prefills this line's Unit Price from the picked item's cost on file. */
+  onItemSelect: (option: SearchComboboxOption) => void
+  /** The branch the units leave — its stock is listed first in the search. */
+  stockWarehouseId?: string
+  /** A DR-drafted memo: the item and quantity are the DR's, only the price
+   * and the rest of the row can change. */
+  locked: boolean
 }) {
   // Scoped to this line, so typing in one row re-renders only that row.
   const line = useWatch({ control, name: `lines.${index}` })
@@ -1458,12 +1023,12 @@ function LineRow({
         render={({ field }) => (
           <ItemSearchCombobox
             value={field.value ?? ''}
-            onChange={(itemId) => {
-              field.onChange(itemId)
-              onItemPicked(itemId)
-            }}
+            onChange={field.onChange}
+            onSelect={onItemSelect}
             initialLabel={initialItemLabel}
             placeholder="Search item…"
+            stockWarehouseId={stockWarehouseId || undefined}
+            disabled={locked}
             compact
           />
         )}
@@ -1515,7 +1080,8 @@ function LineRow({
             onChange={(e) => field.onChange(e.target.value === '' ? NaN : e.target.valueAsNumber)}
             placeholder="1"
             aria-label="Quantity"
-            className={`${cellClass} text-right ${overQuantity ? 'border-[#e0a94f] bg-[#fffdf8]' : ''}`}
+            disabled={locked}
+            className={`${cellClass} text-right disabled:bg-[#f7f7f8] disabled:text-[#5b5b6b]`}
           />
         )}
       />
@@ -1528,10 +1094,7 @@ function LineRow({
             min="0"
             step="0.01"
             value={Number.isNaN(field.value) ? '' : field.value}
-            onChange={(e) => {
-              field.onChange(e.target.value === '' ? NaN : e.target.valueAsNumber)
-              onAmountEdited()
-            }}
+            onChange={(e) => field.onChange(e.target.value === '' ? NaN : e.target.valueAsNumber)}
             placeholder="0.00"
             aria-label="Unit price"
             className={`${cellClass} text-right`}
