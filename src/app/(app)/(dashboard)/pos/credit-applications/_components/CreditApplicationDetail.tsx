@@ -425,7 +425,6 @@ export default function CreditApplicationDetail({
     application.ppdRebate != null ||
     !!application.firstDueDate ||
     !!application.downPaymentCollection ||
-    !!application.posDraftReference ||
     application.applicantIsUnitUser != null ||
     !!application.transcribedAt ||
     !!application.installmentAccountId
@@ -845,10 +844,6 @@ export default function CreditApplicationDetail({
                 <dd className="mt-0.5 capitalize text-zinc-900">
                   {application.downPaymentCollection ?? '—'}
                 </dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">POS Draft / Quote</dt>
-                <dd className="mt-0.5 text-zinc-900">{application.posDraftReference || '—'}</dd>
               </div>
               <div>
                 <dt className="text-zinc-500">Installment Account</dt>
