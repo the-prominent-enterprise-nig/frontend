@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady } from './utils'
+import { fillStable, gotoReady } from './utils'
 
 /**
  * Scenario 69 Part 2 — the RR printable, on the on-screen sheet and the
@@ -8,7 +8,8 @@ import { gotoReady } from './utils'
  *
  *  - labels spelled out: RR No. / RR Date / Reference / PO No. / PO Date
  *  - the supplier's address under its name
- *  - no Branch line (under the supplier it read as the supplier's branch)
+ *  - the receiving branch on its own line above the item table, not under
+ *    the supplier (where it read as the supplier's branch)
  *
  * Seeds its own standalone receipt through the API. The PO Date fallback to a
  * linked PO's order date is covered by the backend's
@@ -41,7 +42,9 @@ async function ensureSupplier(page: Page): Promise<string> {
 }
 
 test.describe('Scenario 69 — RR printable', () => {
-  test('spells the labels out and shows the supplier address', async ({ page }) => {
+  test('spells the labels out, shows the supplier address and the branch above the table', async ({
+    page,
+  }) => {
     await gotoReady(page, '/inventory/stock?tab=reports')
 
     const warehouses = await (
@@ -88,8 +91,11 @@ test.describe('Scenario 69 — RR printable', () => {
     }
     const supplierAddress = page.getByText(SUPPLIER_ADDRESS, { exact: true })
     await expect(supplierAddress).toBeVisible()
-    // No Branch line: under the supplier it read as the supplier's branch.
-    await expect(page.getByText(/^Branch: /)).toHaveCount(0)
+    // The receiving branch: its own line above the table, not under the
+    // supplier, where it read as the supplier's branch.
+    const branchLine = page.locator('p', { hasText: /^Branch: / })
+    await expect(branchLine).toHaveCount(1)
+    await expect(supplierAddress.locator('..').getByText(/Branch:/)).toHaveCount(0)
 
     // The paper.
     const [popup] = await Promise.all([page.waitForEvent('popup'), printButton.click()])
@@ -101,7 +107,50 @@ test.describe('Scenario 69 — RR printable', () => {
     await expect(
       popup.locator('.party .party-address', { hasText: SUPPLIER_ADDRESS })
     ).toBeVisible()
-    await expect(popup.getByText(/^Branch: /)).toHaveCount(0)
+    await expect(popup.locator('.rr-branch')).toHaveCount(1)
+    await expect(popup.locator('.rr-branch + table')).toHaveCount(1)
+    await expect(popup.locator('.party', { hasText: 'Branch:' })).toHaveCount(0)
+    await popup.close()
+  })
+
+  test('the printed transfer spells its labels out and names its RR', async ({ page }) => {
+    // Any already-received transfer will do: this only reads and prints.
+    const listed = await (
+      await page.request.get('/api/inventory/transfers?status=received&limit=1')
+    ).json()
+    const transfer = listed.data?.[0] as { id: string; transferNumber: string } | undefined
+    test.skip(!transfer, 'no received transfer in this database')
+    const detail = await (await page.request.get(`/api/inventory/transfers/${transfer!.id}`)).json()
+    const rrCodes = ((detail.data ?? detail).goodsReceipts ?? []).map(
+      (r: { code: string }) => r.code
+    ) as string[]
+
+    await gotoReady(page, '/inventory/transfers')
+    await fillStable(
+      page.getByPlaceholder('Search transfer #, item, SKU, or serial…'),
+      transfer!.transferNumber
+    )
+    const row = page.locator('tbody tr', { hasText: transfer!.transferNumber })
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await row.click()
+    await expect(page.getByRole('heading', { name: 'Transfer Details' })).toBeVisible({
+      timeout: 15_000,
+    })
+
+    const [popup] = await Promise.all([
+      page.waitForEvent('popup'),
+      page.getByRole('button', { name: 'Print', exact: true }).click(),
+    ])
+    await popup.waitForLoadState('domcontentloaded')
+    for (const label of ['Transfer No.', 'Transfer Date', 'RR No.', 'RR Date']) {
+      await expect(popup.locator('.meta-label', { hasText: label }).first()).toBeVisible()
+    }
+    const rrNo = popup.locator('.meta-label', { hasText: 'RR No.' }).locator('+ .meta-value')
+    for (const code of rrCodes) await expect(rrNo).toContainText(code)
+    if (rrCodes.length) {
+      const rrDate = popup.locator('.meta-label', { hasText: 'RR Date' }).locator('+ .meta-value')
+      await expect(rrDate).not.toHaveText('—')
+    }
     await popup.close()
   })
 })

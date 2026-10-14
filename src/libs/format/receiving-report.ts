@@ -244,3 +244,30 @@ export function receivingReportReasonLabel(
   if (report?.reason === 'repossession') return 'Repossession'
   return null
 }
+
+/**
+ * The branch that received the delivery, with its street address — printed
+ * on its own line above the item table (Scenario 69 item 7), not under the
+ * supplier, where it read as the supplier's branch.
+ *
+ * Branch name in preference to the warehouse's own, as everywhere else on
+ * the RR. `addressLine1` alone: the stored street address already carries
+ * the city, so adding `city` would repeat it. Null when there is nothing to
+ * name.
+ */
+export function receivingReportBranchLine(
+  report:
+    | {
+        warehouse?: {
+          name?: string | null
+          branch?: { name?: string | null; addressLine1?: string | null } | null
+        } | null
+      }
+    | null
+    | undefined
+): { name: string; address: string | null } | null {
+  const warehouse = report?.warehouse
+  const name = warehouse?.branch?.name || warehouse?.name
+  if (!name) return null
+  return { name, address: warehouse?.branch?.addressLine1?.trim() || null }
+}

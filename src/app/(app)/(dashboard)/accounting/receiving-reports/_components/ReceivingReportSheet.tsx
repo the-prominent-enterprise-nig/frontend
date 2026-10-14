@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  receivingReportBranchLine,
   receivingReportMetaSlots,
   receivingReportReasonLabel,
   receivingReportSourceName,
@@ -28,7 +29,10 @@ export interface ReceivingReportDocument {
     receivedAt: string
     receivedByName?: string | null
     supplier?: { name?: string | null; address?: string | null } | null
-    warehouse?: { name?: string | null; branch?: { name?: string | null } | null } | null
+    warehouse?: {
+      name?: string | null
+      branch?: { name?: string | null; addressLine1?: string | null } | null
+    } | null
     purchaseOrderNumber?: string | null
     poDate?: string | null
     deliveryReceiptNumber?: string | null
@@ -117,6 +121,7 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
   const enterprise = doc.enterprise
   const lines = rr.lines ?? []
   const metaSlots = receivingReportMetaSlots(rr)
+  const branch = receivingReportBranchLine(rr)
 
   // The print builder's own running totals: units always, money only when
   // at least one line carries a cost (a transfer-sourced receipt has none).
@@ -200,7 +205,16 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
         </div>
       </div>
 
-      <div className="mt-7 overflow-x-auto">
+      {/* The receiving branch and its address, on its own line above the
+          items (Scenario 69 item 7). Shared with the printed RR. */}
+      {branch && (
+        <p className="mt-6 text-gray-700">
+          <span className="font-bold text-prominent-purple-900">Branch:</span> {branch.name}
+          {branch.address && `, ${branch.address}`}
+        </p>
+      )}
+
+      <div className={branch ? 'mt-3 overflow-x-auto' : 'mt-7 overflow-x-auto'}>
         <table className="w-full border-collapse text-[12.5px]">
           <thead>
             <tr>

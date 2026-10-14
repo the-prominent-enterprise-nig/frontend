@@ -3,6 +3,7 @@ import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   receivingReportSourceName,
   receivingReportSourceSubtitle,
+  receivingReportBranchLine,
   receivingReportMetaSlots,
 } from '@/src/libs/format/receiving-report'
 import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
@@ -100,6 +101,7 @@ export function buildReceivingReportHtml(
   // the same slots through this same formatter.
   const metaSlots = receivingReportMetaSlots(rr as Parameters<typeof receivingReportMetaSlots>[0])
   const supplierAddress = (rr.supplier as { address?: string | null } | null | undefined)?.address
+  const branch = receivingReportBranchLine(rr as Parameters<typeof receivingReportBranchLine>[0])
   // The supplier on a bought-in delivery, the sending branch on one that came
   // from another branch — a transfer receipt has no supplier to name.
   const sourceName = receivingReportSourceName(
@@ -167,10 +169,13 @@ export function buildReceivingReportHtml(
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    /* Against the divider, as on the on-screen sheet. */
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
+    .rr-branch { margin: 0 0 10px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     thead th { background: #f5f5f5; text-align: center; font-weight: 700; }
@@ -217,6 +222,12 @@ export function buildReceivingReportHtml(
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
       </div>
     </div>
+
+    ${
+      branch
+        ? `<p class="rr-branch"><strong>Branch:</strong> ${esc(branch.name)}${branch.address ? `, ${esc(branch.address)}` : ''}</p>`
+        : ''
+    }
 
     <table>
       <thead>
@@ -484,8 +495,26 @@ function partyName(wh: TransferParty | undefined): string {
 }
 
 function partyAddress(wh: TransferParty | undefined): string {
-  if (wh?.branch) return [wh.branch.addressLine1, wh.branch.city].filter(Boolean).join(', ')
-  return wh?.address ?? ''
+  // A branch with no street address on file falls back to the warehouse's
+  // own address rather than printing blank (Scenario 69 item 25).
+  const branchAddress = wh?.branch
+    ? [wh.branch.addressLine1, wh.branch.city].filter(Boolean).join(', ')
+    : ''
+  return branchAddress || wh?.address || ''
+}
+
+/** The receipts a transfer arrived on, oldest first. A reopened, partially
+ * received transfer issues a separate RR per receive, so there can be more
+ * than one — every one is listed (Scenario 69 item 24). */
+function transferReceipts(
+  transfer: Record<string, unknown>
+): { code: string; receivedAt: string }[] {
+  const receipts = Array.isArray(transfer.goodsReceipts)
+    ? (transfer.goodsReceipts as { code?: string; receivedAt?: string }[])
+    : []
+  return receipts
+    .filter((r): r is { code: string; receivedAt: string } => !!r.code && !!r.receivedAt)
+    .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime())
 }
 
 /**
@@ -509,6 +538,8 @@ export function buildStockTransferHtml(data: unknown): string {
   const hasSerialLine = lines.some(
     (l) => (l.serialNumber as Record<string, unknown> | null)?.serialNumber
   )
+  // Blank (—) until the transfer is received.
+  const receipts = transferReceipts(transfer)
 
   let totalQty = 0
   const rows = lines
@@ -541,8 +572,8 @@ export function buildStockTransferHtml(data: unknown): string {
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .info { display: flex; gap: 28px; margin-bottom: 20px; }
-    .info > div { flex: 1; }
+    .head-grid { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 28px; }
+    .info, .logistics { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; margin-bottom: 20px; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
@@ -550,7 +581,8 @@ export function buildStockTransferHtml(data: unknown): string {
     .party-dir { font-weight: 700; }
     .party .party-to { margin-top: 12px; }
     .meta-value { margin: 0 0 12px; }
-    .logistics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 28px; margin-bottom: 20px; }
+    .logistics > div:nth-child(odd) { grid-column: 1; }
+    .logistics > div:nth-child(even) { grid-column: 2 / span 2; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
@@ -573,6 +605,7 @@ export function buildStockTransferHtml(data: unknown): string {
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
+    <div class="head-grid">
     <div class="info">
       <div class="party">
         <p class="party-name"><span class="party-dir">From</span> ${esc(partyName(fromWarehouse))}</p>
@@ -581,10 +614,14 @@ export function buildStockTransferHtml(data: unknown): string {
         <p class="party-address">${esc(partyAddress(toWarehouse)) || '—'}</p>
       </div>
       <div class="meta">
-        <p class="meta-label">No.</p>
+        <p class="meta-label">Transfer No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Date</p>
+        <p class="meta-label">Transfer Date</p>
         <p class="meta-value">${fmtDate(transfer.transferDate)}</p>
+        <p class="meta-label">RR No.</p>
+        <p class="meta-value">${receipts.map((r) => esc(r.code)).join(', ') || '—'}</p>
+        <p class="meta-label">RR Date</p>
+        <p class="meta-value">${receipts.map((r) => fmtDate(r.receivedAt)).join(', ') || '—'}</p>
         ${transfer.reason ? `<p class="meta-label">Reason</p><p class="meta-value">${esc(transfer.reason)}</p>` : ''}
       </div>
       <div class="enterprise">
@@ -603,6 +640,7 @@ export function buildStockTransferHtml(data: unknown): string {
             .join('')}</div>`
         : ''
     }
+    </div>
 
     <table>
       <thead>
