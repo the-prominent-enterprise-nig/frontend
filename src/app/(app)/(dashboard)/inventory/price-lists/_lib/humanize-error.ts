@@ -25,5 +25,25 @@ export function humanizePriceListError(message?: string): string | undefined {
   if (!message) return message
   if (PRICE_LIST_ERROR_MESSAGES[message]) return PRICE_LIST_ERROR_MESSAGES[message]
   if (message.startsWith('invalid_branch_ids')) return 'One or more selected branches are invalid.'
+  return humanizeImportError(message)
+}
+
+const IMPORT_ERROR_MESSAGES: Record<string, string> = {
+  file_required: 'Choose a CSV file first.',
+  invalid_csv_format: 'This file could not be read as a CSV. Save it as CSV and try again.',
+  csv_has_no_rows: 'This file has a header row but no data rows.',
+}
+
+// csv_headers_not_recognized / too_many_rows / nothing_to_import carry a
+// detail after the colon that is worth showing as-is.
+function humanizeImportError(message: string): string {
+  if (IMPORT_ERROR_MESSAGES[message]) return IMPORT_ERROR_MESSAGES[message]
+  const [code, ...rest] = message.split(': ')
+  const detail = rest.join(': ')
+  if (code === 'csv_headers_not_recognized') {
+    return `The column headers weren't recognized (${detail}). Use the template's headers.`
+  }
+  if (code === 'too_many_rows') return `This file has too many rows — ${detail}.`
+  if (code === 'nothing_to_import') return `Nothing to upload — ${detail}.`
   return message
 }

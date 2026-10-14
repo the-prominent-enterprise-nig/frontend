@@ -2,11 +2,11 @@
 
 import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, Printer } from 'lucide-react'
+import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { getJournalEntryById, type JournalEntry } from '@/src/libs/data/AccountingData'
-import { JournalVouchers } from '@/src/libs/data/AccountingV2Data'
-import { printJournalVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 import { sourceDocumentLink } from '@/src/libs/format/sourceDocumentLink'
+import { entryJournalLabel, formatJournalType } from '@/src/libs/format/journalType'
+import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-amber-50 text-amber-700 border border-amber-200',
@@ -76,14 +76,41 @@ export default function JournalEntryDetail({ id }: { id: string }) {
   // it came from.
   const showItemColumn = transactions.some((t) => t.item != null)
   // A sale posts its revenue side and its stock side (Dr Cost of Sales / Cr
-  // Inventory) in one entry. Keep the two blocks together with a gap between
-  // them; order within each block is unchanged.
-  const isStockLine = (t: (typeof transactions)[number]) =>
+  // Inventory) in one entry, and an installment sale's down payment (Dr cash
+  // or bank / Cr Accounts Receivable) is added to that same entry once it is
+  // tendered. Keep the blocks together with a gap between them — sale, then
+  // any lines booked to another journal (the down payment, a Cash Receipt),
+  // then stock; order within each block is unchanged. A collection on an
+  // installment sale carries its interest recognition (Dr Unearned Interest
+  // Income / Cr Interest Income) the same way — its own block after the cash
+  // and receivable lines, with the same gap before it.
+  type Line = (typeof transactions)[number]
+  const isStockLine = (t: Line) =>
     t.account?.category === 'INVENTORY' || t.account?.category === 'COGS'
-  const lineGroups = [
-    transactions.filter((t) => !isStockLine(t)),
-    transactions.filter(isStockLine),
-  ].filter((g) => g.length > 0)
+  // The interest a collection recognised (or a cancelled one took back). Told
+  // by its description: the accounts also appear on the sale's own entry, where
+  // they belong with the rest of the sale.
+  const isInterestLine = (t: Line) =>
+    /^(Interest recognized on collection|Cancel interest recognized):/.test(t.description ?? '')
+  // The journal a line is booked to when it is not its entry's own.
+  const otherJournal = (t: Line) =>
+    !isStockLine(t) && t.journalType && t.journalType !== entry.journalType ? t.journalType : null
+  const otherJournals = [...new Set(transactions.map(otherJournal).filter((j): j is string => !!j))]
+  const lineGroups: { label: string | null; lines: Line[] }[] = [
+    {
+      label: null,
+      lines: transactions.filter((t) => !isStockLine(t) && !otherJournal(t) && !isInterestLine(t)),
+    },
+    {
+      label: null,
+      lines: transactions.filter((t) => !isStockLine(t) && !otherJournal(t) && isInterestLine(t)),
+    },
+    ...otherJournals.map((j) => ({
+      label: formatJournalType(j),
+      lines: transactions.filter((t) => otherJournal(t) === j),
+    })),
+    { label: null, lines: transactions.filter(isStockLine) },
+  ].filter((g) => g.lines.length > 0)
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
@@ -95,16 +122,6 @@ export default function JournalEntryDetail({ id }: { id: string }) {
       </Link>
 
       <header>
-        {/* Scenario 61 Part C — a printable Journal Voucher for any entry. */}
-        <button
-          onClick={async () => {
-            const res = await JournalVouchers.getDocument(entry.id)
-            if (res.success && res.data) printJournalVoucherDocument(res.data)
-          }}
-          className="float-right inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-        >
-          <Printer className="h-4 w-4" /> Print Voucher
-        </button>
         {/* The description, not the reference. One sale raises two entries —
             "Installment Plan …" and "Installment Down Payment …" — and both
             carry the SAME source document number, so a reference heading made
@@ -167,7 +184,7 @@ export default function JournalEntryDetail({ id }: { id: string }) {
             {entry.branchName ?? 'Tenant-wide'}
           </span>
           <span className="text-gray-500">Type</span>
-          <span className="text-left font-medium text-gray-800">{entry.journalType || '—'}</span>
+          <span className="text-left font-medium text-gray-800">{entryJournalLabel(entry)}</span>
           {entry.payee && (
             <>
               <span className="text-gray-500">Payee</span>
@@ -178,25 +195,18 @@ export default function JournalEntryDetail({ id }: { id: string }) {
             <>
               <span className="text-gray-500">Posted by</span>
               <span className="text-left font-medium tabular-nums text-gray-800">
-                {entry.postedBy} · {formatDate(entry.postedAt)}
+                {entry.postedByName ?? entry.postedBy} · {formatDate(entry.postedAt)}
               </span>
             </>
           )}
         </div>
       </header>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatBox label="Total Debit" value={formatMoney(entry.totalDebit)} />
-        <StatBox label="Total Credit" value={formatMoney(entry.totalCredit)} />
-        <StatBox label="Lines" value={String(transactions.length)} />
-        <StatBox
-          label="Balanced"
-          value={Math.abs((entry.totalDebit ?? 0) - (entry.totalCredit ?? 0)) < 0.01 ? 'Yes' : 'No'}
-          emphasize={Math.abs((entry.totalDebit ?? 0) - (entry.totalCredit ?? 0)) >= 0.01}
-        />
-      </div>
+      {/* Scenario 71 — a POS sale's price override / typed terms / waiver, with
+          its reason and note: why the price in these lines is what it is. */}
+      {entry.posException && <PosExceptionPanel exception={entry.posException} className="mt-6" />}
 
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction Lines</h2>
         {transactions.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-gray-400">No transaction lines.</p>
@@ -215,14 +225,19 @@ export default function JournalEntryDetail({ id }: { id: string }) {
               {lineGroups.map((group, gi) => (
                 <Fragment key={gi}>
                   {gi > 0 && (
-                    <tbody aria-hidden="true">
+                    <tbody>
                       <tr>
-                        <td colSpan={showItemColumn ? 5 : 4} className="h-10 bg-gray-100 p-0" />
+                        <td
+                          colSpan={showItemColumn ? 5 : 4}
+                          className="h-10 bg-gray-100 px-3 align-middle text-[11px] font-semibold uppercase tracking-wide text-gray-500"
+                        >
+                          {group.label}
+                        </td>
                       </tr>
                     </tbody>
                   )}
                   <tbody className="divide-y divide-gray-100">
-                    {group.map((t, i) => (
+                    {group.lines.map((t, i) => (
                       <tr key={t.id ?? i}>
                         <td className="py-2 pr-4 text-gray-900">
                           {t.account ? `${t.account.number} — ${t.account.name}` : t.accountId}
@@ -262,27 +277,6 @@ export default function JournalEntryDetail({ id }: { id: string }) {
           </div>
         )}
       </section>
-    </div>
-  )
-}
-
-function StatBox({
-  label,
-  value,
-  emphasize,
-}: {
-  label: string
-  value: string
-  emphasize?: boolean
-}) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
-      <p
-        className={`mt-1 text-lg font-semibold tabular-nums ${emphasize ? 'text-red-600' : 'text-gray-900'}`}
-      >
-        {value}
-      </p>
     </div>
   )
 }

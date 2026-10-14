@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { BankAccounts, type BankAccount, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import MoneyInput from '@/src/components/ui/MoneyInput'
 
 // Scenario 42 — starts a reconciliation worksheet. Only the statement
 // balance is typed in here; the system generates everything else (System
@@ -100,12 +101,11 @@ export default function NewReconciliationForm() {
             />
           </Field>
           <Field label="Statement Balance *">
-            <input
+            <MoneyInput
               required
-              type="number"
-              step="0.01"
+              allowNegative
               value={form.statementBalance}
-              onChange={(e) => setForm({ ...form, statementBalance: e.target.value })}
+              onChange={(statementBalance) => setForm({ ...form, statementBalance })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>

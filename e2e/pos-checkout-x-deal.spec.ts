@@ -14,6 +14,7 @@ import {
   deleteCustomers,
   openCustomSelect,
   loginAs,
+  pickCartPriceUse,
 } from './utils'
 
 // Scenario 67 — X-Deal (barter) at POS checkout. The backend rules (cart
@@ -205,7 +206,7 @@ async function addItem(page: Page): Promise<void> {
     .filter({ has: page.getByText(fx.itemName, { exact: true }) })
   await expect(card.first()).toBeVisible({ timeout: 15_000 })
   await card.first().click()
-  await page.getByLabel('Price Use').first().selectOption({ label: fx.priceUseTypeName })
+  await pickCartPriceUse(page, fx.priceUseTypeName)
 }
 
 async function selectCustomer(page: Page, name: string): Promise<void> {
@@ -261,7 +262,7 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await expect(xDealReference(page)).toHaveCount(0)
   })
 
-  test('XD-F02 / XD-F07: ticking X-Deal forces inhouse installment, starts the down payment at ₱0 (optional, Scenario 68), hides the credit application and locks Cash, Delivery Receipt and TPF', async ({
+  test('XD-F02 / XD-F07: ticking X-Deal forces inhouse installment, starts the down payment at ₱0 (optional, Scenario 68), hides the credit application and locks Cash and TPF', async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F02')
@@ -276,7 +277,6 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await expect(page.getByText('Approved Credit Application')).toHaveCount(0)
     await expect(page.getByTestId('dp-payment-mode-toggle')).toHaveCount(0)
 
-    await expect(page.getByRole('button', { name: 'Delivery Receipt', exact: true })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'TPF Installment', exact: true })).toBeDisabled()
     await expect(
@@ -338,7 +338,7 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await expect(page.getByText('Approved Credit Application', { exact: true })).toBeVisible()
     await expect(page.getByTestId('dp-payment-mode-toggle')).toBeVisible()
     await expect(page.getByTestId('x-deal-down-payment')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Delivery Receipt', exact: true })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeEnabled()
     await expect(page.getByRole('button', { name: 'TPF Installment', exact: true })).toBeEnabled()
 
     // A down-payment method picked before ticking X-Deal stops showing its
@@ -516,7 +516,12 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await expect(page.getByTestId('x-deal-badge')).toBeVisible()
   })
 
-  test('XD-F19: an X-Deal held for approval is marked as one in Release Approvals and its Review dialog', async ({
+  // Skipped, not deleted: Scenario 71 retired the release-form hold for in-house
+  // installment, and an X-Deal is one, so a cashier's X-Deal posts at once and
+  // there is nothing to review. What replaced it is covered by the backend
+  // specs XD-S13 and XP-A01 (pos-x-deal-checkout.e2e-spec.ts). The X-Deal note
+  // in the Review dialog only shows for a request that was already held.
+  test.skip('XD-F19: an X-Deal held for approval is marked as one in Release Approvals and its Review dialog', async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F19')
@@ -665,7 +670,10 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     expect(posted).toBe(false)
   })
 
-  test('XP-F03: a cashier X-Deal with a down payment is held; the pending screen and the approver both see the part paid and that the memo comes on approval', async ({
+  // Skipped, not deleted — see XD-F19: a cashier's in-house X-Deal is no longer
+  // held (Scenario 71), so there is no pending screen or approver. Its backend
+  // counterpart is XP-A01 in pos-x-deal-checkout.e2e-spec.ts.
+  test.skip('XP-F03: a cashier X-Deal with a down payment is held; the pending screen and the approver both see the part paid and that the memo comes on approval', async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'XPF03')

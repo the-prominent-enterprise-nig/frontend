@@ -18,6 +18,7 @@ import CollectionReceiptSheet, {
   CollectionReceiptDocumentSheet,
   type CollectionReceiptDocument,
 } from '../../_components/CollectionReceiptSheet'
+import RetentionPanel from './RetentionPanel'
 
 // Mirrors ARInvoicesList's own INVOICE_STATUS_BADGE — kept local rather
 // than imported from there so this page doesn't pull in that file's much
@@ -120,7 +121,17 @@ function MemoRow({ memo, direction }: { memo: ARInvoiceMemo; direction: 'credit'
   )
 }
 
-export default function ARInvoiceDetail({ id }: { id: string }) {
+export default function ARInvoiceDetail({
+  id,
+  canReleaseRetention = false,
+  canAdjustRetention = false,
+}: {
+  id: string
+  /** May take the retained amount in (a collection). */
+  canReleaseRetention?: boolean
+  /** May offset, write off or provide for it (needs approval). */
+  canAdjustRetention?: boolean
+}) {
   const [doc, setDoc] = useState<ARInvoiceDocument | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -310,6 +321,19 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           </div>
         </dl>
       </section>
+
+      {(invoice.retentionAmount ?? 0) > 0 && (
+        <RetentionPanel
+          invoiceId={id}
+          status={invoice.status}
+          retentionPercent={invoice.retentionPercent ?? null}
+          retentionAmount={invoice.retentionAmount ?? 0}
+          retentionReleaseDate={invoice.retentionReleaseDate ?? null}
+          retentionMilestone={invoice.retentionMilestone ?? null}
+          canRelease={canReleaseRetention}
+          canAdjust={canAdjustRetention}
+        />
+      )}
 
       {/* The invoice document. It used to render titled "Collection Receipt"
           — the same paper as the receipt that settles it — which meant this

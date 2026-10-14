@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable, fillStable, openCustomSelect } from './utils'
+import { gotoReady, clickStable, fillStable, openCustomSelect, pickCartPriceUse } from './utils'
 
 // Scenario 01 Gap 4 — installment sales now require a down payment of at
 // least 10% of the line's sale amount (backend enforcement + IF-01..IF-14
@@ -45,7 +45,7 @@ async function addInstallmentLine(page: Page): Promise<void> {
     .filter({ has: page.getByText('Universal Remote Control', { exact: true }) })
   await expect(remoteCard.first()).toBeVisible({ timeout: 10_000 })
   await remoteCard.first().click()
-  await page.getByLabel('Price Use').selectOption({ label: 'WIP' })
+  await pickCartPriceUse(page, 'WIP')
 
   await clickStable(
     page.getByRole('button', { name: 'Installment', exact: true }),

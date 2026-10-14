@@ -26,6 +26,7 @@ import { type SessionUser, can, canAccessModule } from '@/src/libs/guards/permis
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
 import { deliveryFeeReceiptTenderLabel } from '../checkout/_utils/delivery'
 import { outputVatLabel } from '@/src/libs/tax/output-vat'
 import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
@@ -122,10 +123,12 @@ export function TransactionDetail({
           >
             <X size={18} />
           </button>
-          {/* Lead with the Sales Invoice No. — that's the document anyone
-              looking this up actually has in hand. Falls back to the
-              internal transaction number for rows without one (refunds,
-              and sales predating the required-SI rule). */}
+          {/* Lead with the Sales Invoice No. (or the Delivery Receipt No. on a
+              DR sale, which is stored here too and labelled in the rows
+              below) — that's the document anyone looking this up actually
+              has in hand. Falls back to the internal transaction number for
+              rows without one (refunds, and sales predating the
+              required-SI rule). */}
           <h2 className="mb-1 text-lg font-bold text-gray-900">
             {tx.salesInvoiceNumber ?? tx.transactionNumber}
           </h2>
@@ -245,6 +248,10 @@ export function TransactionDetail({
                   <p className="text-xs text-gray-400">No items found.</p>
                 )}
               </div>
+
+              {/* Scenario 71 — a price override / typed terms / waived credit
+                  application, with its reason and note. */}
+              {tx.exception && <PosExceptionPanel exception={tx.exception} />}
 
               <div className="rounded-xl bg-gray-50 p-4 text-sm space-y-1">
                 <Row label="Subtotal" value={formatCurrency(tx.subtotal)} />

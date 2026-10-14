@@ -89,7 +89,8 @@ export function sourceDocumentLink(je: JournalSource): SourceLink | null {
 
     case 'BANK':
       // Scenario 61 — an Inter-Account Transfer's JE points at the transfer.
-      if (no.startsWith('IAT-') && id)
+      // Scenario 72 Part 4 — numbered INTRA0926-NNN since then; IAT-… before it.
+      if ((no.startsWith('INTRA') || no.startsWith('IAT-')) && id)
         return { href: `/accounting/fund-transfers/${id}`, kind: 'Inter-Account Transfer' }
       if (code.startsWith('XFER-'))
         return { href: '/accounting/fund-transfers', kind: 'Inter-Account Transfers' }

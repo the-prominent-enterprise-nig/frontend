@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
-import { gotoReady, loginAs, openCustomSelect } from './utils'
+import { gotoReady, loginAs, openCustomSelect, pickCartPriceUse } from './utils'
 
 // PR #199 review (Chloe, 2026-10-02), point 5 at the till: "Calculation are
 // currently wrong". The till showed "30% min" and ₱4,614 on her SHARP while
@@ -68,9 +68,9 @@ async function pickTerm(panel: Locator, page: Page, months: string) {
   await page.getByRole('option', { name: months, exact: true }).click()
 }
 
-/** The line's own Price Use — a native select in the cart row. */
+/** The line's own Price Use — a type-ahead dropdown in the cart row. */
 async function setPriceUse(page: Page, index: number, label: string) {
-  await page.getByLabel('Price Use').nth(index).selectOption({ label })
+  await pickCartPriceUse(page, label, index)
 }
 
 test.describe('PR #199 — down payment at the till', () => {
