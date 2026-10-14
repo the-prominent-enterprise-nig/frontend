@@ -206,8 +206,8 @@ export default function AttachmentsPanel({
           title="Remove this attachment?"
           message={
             <p>
-              <strong>{detaching.name}</strong> is unlinked from this record. Remove it only to
-              replace it with a better copy.
+              {/* break-all: a camera or download name has no spaces to wrap on. */}
+              <strong className="break-all">{detaching.name}</strong> is unlinked from this record.
             </p>
           }
           confirmLabel="Remove"

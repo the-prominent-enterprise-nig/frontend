@@ -72,7 +72,7 @@ function OpenTransferChip({ number }: { number: string }): React.JSX.Element {
   return (
     <Tooltip label="Open this transfer">
       <Link
-        href={`/inventory/transfers?transfer=${encodeURIComponent(number)}`}
+        href={`/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(number)}`}
         onClick={(e) => e.stopPropagation()}
         className={`${MONO} inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-[#f1ebfb] px-2 py-0.5 text-[11.5px] font-medium text-[#5b21b6] hover:bg-[#e6dcf8]`}
       >

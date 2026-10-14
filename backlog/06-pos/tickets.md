@@ -8,11 +8,13 @@ last_synced: '2026-06-10'
 
 ## Summary
 
-| ID    | Title                                                                                | Status | Priority |
-| ----- | ------------------------------------------------------------------------------------ | ------ | -------- |
-| POS-1 | AA Cashier, ISBAT complete a sale using only the keyboard and barcode scanner        | TO DO  | high     |
-| POS-2 | AA Manager, ISBAT paginate, sort, and filter the POS transactions table              | TO DO  | normal   |
-| POS-3 | AA Developer, ISBAT remove the unreachable legacy PosVoidRequest model and dead code | TO DO  | low      |
+| ID    | Title                                                                                                         | Status | Priority |
+| ----- | ------------------------------------------------------------------------------------------------------------- | ------ | -------- |
+| POS-1 | AA Cashier, ISBAT complete a sale using only the keyboard and barcode scanner                                 | TO DO  | high     |
+| POS-2 | AA Manager, ISBAT paginate, sort, and filter the POS transactions table                                       | TO DO  | normal   |
+| POS-3 | AA Developer, ISBAT remove the unreachable legacy PosVoidRequest model and dead code                          | TO DO  | low      |
+| POS-4 | AA Branch Manager, ISBAT read a Daily Collection Report that totals the day the way my own closing sheet does | TO DO  | high     |
+| POS-5 | AA Accountant, ISBAT tell the day apart by payment provider and by product category in the ledger             | TO DO  | normal   |
 
 ---
 
@@ -294,3 +296,189 @@ The system should:
 **Scope:**
 
 - [ ] N/A — the frontend already reads/writes exclusively through the unified `ReturnRefundRequest` endpoints; this ticket is backend/schema-only
+
+---
+
+### [POS-4] — AA Branch Manager, ISBAT read a Daily Collection Report that totals the day the way my own closing sheet does
+
+**Status:** TO DO
+**Priority:** high
+**ClickUp:** pending — not yet pushed
+
+---
+
+**Scenario:**
+The client's own closing sheet ("Cashier's sample 1Day Transactions") totals one branch's day at TOTAL BRANCH COLLECTION 87,365.00. Replaying that exact day through the system (see `docs/scenario-70-cashier-day-accounting-baseline-plan.md`) produces 107,365.00 on the Daily Collection Report: the 76,000.00 the financing partners owe is counted as money collected, and the 56,000.00 bond check taken on a New Receipt is invisible to the report entirely. Two smaller slips ride along — a collection rebate posts to Sales Returns and Allowances instead of Sales Discounts, a branch New Receipt banks itself at the counter, and a due settled with its rebate reads MI-PARTIAL. This ticket closes all five so the branch's screen and the branch's paper agree.
+
+**Given:**
+
+- A branch has filed its day: counter sales, a delivery charge, an advance instalment, down payments by card and e-wallet, and a performance-bond refund received by check on a New Receipt
+- Some of the day's sales are financed by a third party (Tonik / Skyro / Salmon), who has not paid yet
+- The session has been closed and its drawer counted
+
+**When:**
+
+- The branch manager opens Daily Collection for that branch and day
+
+**Then:**
+The system should:
+
+- Total the day at the sum of what was actually collected — cash, check, card and e-wallet — and nothing else
+- List the New Receipt's check among the day's collections, in the non-cash block, like any other check
+- Leave the financing partners' outstanding balance out of the collection total
+- Show a due settled by cash plus its rate-card rebate as MI, not MI-PARTIAL
+- Post a branch New Receipt to Cash on Hand — Branch Collections, not Cash in Bank
+- Post a collection rebate to `4-01-100 Sales Discounts`, not `4-01-090 Sales Returns and Allowances`
+
+### Figures this must produce
+
+- **Cash ledger:** 17,425.00 — COD 15,000.00, DC 500.00, MI 1,925.00
+- **Non-cash:** check 56,000.00, card 7,500.00, e-wallet 6,440.00
+- **Grand total collected:** 87,365.00 (today: 107,365.00)
+
+### Buttons
+
+- No new controls. The report's existing Print, Export and date stepper are unchanged.
+
+---
+
+#### Empty States
+
+- Unchanged: a branch with no trading still reads "No trading recorded".
+
+---
+
+#### Post-Action Behavior
+
+- The printed form and the Excel export take the same figures from the same builder, so neither can disagree with the screen.
+
+---
+
+#### Figma Reference
+
+- [PLACEHOLDER: add Figma node] — no new layout; the figures change, not the sheet.
+
+---
+
+### SUBTASK (Frontend) — FE-POS-4
+
+**Title:** FE: Daily Collection Report totals the day without the financiers' balance
+**Parent:** POS-4
+**Contract:** `contracts/pos/daily-collection.contract.md`
+
+**Scope:**
+
+- [ ] No layout work expected — confirm the recap maps a `check` tender from a New Receipt onto the CHECK line
+- [ ] Confirm the grand total and the printed form both follow the corrected backend figures
+- [ ] Update `frontend/e2e/cashier-day-baseline.spec.ts` from 107,365.00 to 87,365.00 in the same PR
+
+**Acceptance Criteria:**
+
+- The screen, the printed form and the Excel export MUST show the same grand total
+
+---
+
+### SUBTASK (Backend) — BE-POS-4-daily-collection
+
+**Title:** BE: GET /pos/reports/daily-collection — include New Receipts, exclude TPF balances
+**Parent:** POS-4
+**Contract:** `contracts/pos/daily-collection.contract.md`
+
+**Scope:**
+
+- [ ] Add `AcknowledgementReceipt` as a third source beside POS tenders and collection receipts, matched on `branchId` + business day, keyed by its own tender (a check keys as `check`)
+- [ ] Drop the `tpf` tender from `nonCashCollection` / `grandTotalCollection` — pending the client's answer on whether it moves to its own block
+- [ ] Count a collection's rebate toward the due before classifying MI vs MI-PARTIAL
+- [ ] `acknowledgement-receipts.service.ts`: resolve the debit through `POS_CASH`, not `DEFAULT_CASH`
+- [ ] Repoint the `SALES_DISCOUNT` mapping at `4-01-100`, with a backfill script in the shape of `scripts/backfill-misc-collections-account-mapping.ts`
+- [ ] Auth: unchanged (`pos:daily-collection:read`)
+
+**Acceptance Criteria:**
+
+- Gap tests G3, G4, G5, G6 and G7 in `backend/test/cashier-day-baseline.e2e-spec.ts` MUST pass with their `.failing` removed
+- `REPORT_TOTALS_AS_POSTED` MUST be updated to the sheet's figures in the same commit
+- No existing Daily Collection spec may regress
+
+---
+
+### [POS-5] — AA Accountant, ISBAT tell the day apart by payment provider and by product category in the ledger
+
+**Status:** TO DO
+**Priority:** normal
+**ClickUp:** pending — not yet pushed
+
+---
+
+**Scenario:**
+The client's closing sheet settles per provider — CARD-Maya 7,500.00, GCASH 2,000.00, MAYA 1,500.00, ECPAY 2,940.00 — and splits revenue per category — Sales-Appliance, Sales-Furniture, Sales-Airconditioning. The system can do neither on a third-party-financed sale: its down payment carries no payment-method option, so Card-Maya, GCash Soundpay and Maya QR all key as the bare method and cannot be checked against a provider's own report. And every sale credits one `SALES_REVENUE` account, although `Item.revenueAccountId` exists and the item master already carries it.
+
+**Given:**
+
+- A sale is financed by a third party, and the customer pays the down payment at the register by card or QR through a named provider
+- Items carry a revenue account of their own (Appliances, Furniture, Airconditioning Units)
+
+**When:**
+
+- The cashier rings the sale up and picks the provider, as they already do on an ordinary tender
+
+**Then:**
+The system should:
+
+- Record the provider on the down payment, so the closing session names CARD-Maya, GCASH and MAYA apart
+- Credit each line's own revenue account, falling back to the `SALES_REVENUE` mapping when an item has none
+- Keep the centavo remainder deterministic when apportioning the net across lines
+
+### Fields
+
+- **Provider (TPF down payment):** the same `PosPaymentMethodOption` picker an ordinary card/QR tender already shows; required when the down-payment method has options configured
+
+---
+
+#### Post-Action Behavior
+
+- The session's tender snapshot keys the down payment as `card::Maya`, `qr::Soundpay` or `qr::Maya`, and the closing screen lists them separately.
+
+---
+
+#### Figma Reference
+
+- [PLACEHOLDER: add Figma node] — reuse the existing tender provider picker.
+
+---
+
+### SUBTASK (Frontend) — FE-POS-5
+
+**Title:** FE: pick the provider for a TPF down payment at checkout
+**Parent:** POS-5
+**Contract:** `contracts/pos/checkout.contract.md`
+
+**Scope:**
+
+- [ ] Show the provider picker for a TPF down payment, reusing the component an ordinary card/QR tender uses
+- [ ] Send `tpfDownPaymentMethodOptionId` with the sale
+- [ ] Handle the validation error when a method with options is sent without one
+
+**Acceptance Criteria:**
+
+- The picker MUST offer exactly the options configured for that method, nothing hard-coded
+
+---
+
+### SUBTASK (Backend) — BE-POS-5-tpf-dp-provider
+
+**Title:** BE: POST /pos/transactions — carry the provider on a TPF down payment, and revenue per item account
+**Parent:** POS-5
+**Contract:** `contracts/pos/checkout.contract.md`
+
+**Scope:**
+
+- [ ] Add `tpfDownPaymentMethodOptionId` to `CreateTransactionDto`, validated against the chosen method's options
+- [ ] Set it on the auto-created down-payment `PosPayment` so `buildTenderKey` keys it by provider
+- [ ] `buildSaleJELines` and `createAndPostInstallmentPlan`: resolve revenue per line via `posting.resolveAccount(item.revenueAccountId, SALES_REVENUE)`, the way COGS already resolves
+- [ ] Expose `TpfProvider.glAccountId` through the settings API so per-partner receivables stop being a database-only setting
+- [ ] Auth: unchanged
+
+**Acceptance Criteria:**
+
+- Gap tests G1 and G2 MUST pass with their `.failing` removed
+- A cart whose items have no revenue account MUST post exactly as it does today

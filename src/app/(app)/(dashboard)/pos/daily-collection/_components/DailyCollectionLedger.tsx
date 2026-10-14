@@ -159,9 +159,9 @@ function WideLedger({
         </thead>
         <tbody>
           {lines.map((line, i) => (
-            <tr key={`line-${i}`} className={line.type === 'deposit' ? 'bg-gray-50' : undefined}>
+            <tr key={`line-${i}`}>
               {line.type === 'deposit' ? (
-                <td className={`${CELL} whitespace-nowrap font-semibold`}>Deposit:</td>
+                <td className={`${CELL} whitespace-nowrap`}>{line.creditLabel}</td>
               ) : (
                 i === 0 && (
                   <td
@@ -172,18 +172,23 @@ function WideLedger({
                   </td>
                 )
               )}
-              {line.span > 0 && (
+              {/* A credit line writes its bank and date across SI#, Customer
+                  and Desc, as the client's form does. */}
+              {line.type === 'deposit' && (
+                <td colSpan={3} className={`${CELL} whitespace-nowrap uppercase`}>
+                  {line.customer}
+                </td>
+              )}
+              {line.type !== 'deposit' && line.span > 0 && (
                 <>
-                  <td rowSpan={line.span} className={`${CELL} text-center font-mono text-gray-600`}>
-                    {line.si}
-                  </td>
                   <td
                     rowSpan={line.span}
-                    colSpan={line.type === 'deposit' ? 2 : 1}
-                    className={`${CELL} ${line.type === 'deposit' ? 'font-medium uppercase' : ''}`}
+                    className={`${CELL} max-w-28 break-all text-center font-mono leading-tight text-gray-600`}
                   >
+                    {line.si}
+                  </td>
+                  <td rowSpan={line.span} className={CELL}>
                     {line.customer}
-                    {line.caravan && <CaravanTag name={line.caravan} />}
                   </td>
                 </>
               )}
@@ -193,8 +198,8 @@ function WideLedger({
                 </td>
               )}
               <td className={`${CELL} text-center font-mono text-gray-600`}>{line.office}</td>
-              <td className={`${CELL} text-center font-mono text-gray-600`}>{line.field}</td>
-              <td className={`${CELL} text-center font-mono text-gray-600`}>{line.others}</td>
+              <td className={`${CELL} text-center text-gray-600`}>{line.field}</td>
+              <td className={`${CELL} text-center text-gray-600`}>{line.others}</td>
               <td className={`${CELL} text-center font-mono text-gray-600`}>{line.cashInvoice}</td>
               <td className={`${NUM} text-gray-500`}>{line.ppd ? peso(line.ppd) : ''}</td>
               <td className={`${NUM} text-gray-500`}>{line.penalty ? peso(line.penalty) : ''}</td>
@@ -217,28 +222,35 @@ function CardLedger({ lines }: { lines: FormLine[] }): React.JSX.Element {
   return (
     <div className="lg:hidden">
       {lines.map((line, i) => {
-        const receipt = line.office || line.field || line.others || line.cashInvoice
+        // Only the columns that actually hold a number. `field` is the
+        // collector and `others` the caravan now, so including them here
+        // would label an agent's name "CR".
+        const receipt = line.office || line.cashInvoice
         const isDeposit = line.type === 'deposit'
 
         return (
           <div
             key={`card-${i}`}
-            className={`flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 ${
-              isDeposit ? 'bg-gray-50' : ''
-            }`}
+            className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3"
           >
             <div className="min-w-0">
-              <p className={`text-sm ${isDeposit ? 'font-semibold uppercase' : 'font-medium'}`}>
-                {isDeposit ? `Deposit: ${line.customer}` : line.customer || '↳ same customer'}
+              <p className={`text-sm font-medium ${isDeposit ? 'uppercase' : ''}`}>
+                {isDeposit
+                  ? `${line.creditLabel}: ${line.customer}`
+                  : line.customer || '↳ same customer'}
+                {line.sourceCounter && <OffsiteCounterTag name={line.sourceCounter} />}
                 {line.caravan && <CaravanTag name={line.caravan} />}
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 {line.si && (
-                  <span className="font-mono text-[11px] text-gray-500">SI {line.si}</span>
+                  <span className="break-all font-mono text-[11px] text-gray-500">
+                    SI {line.si}
+                  </span>
                 )}
                 {receipt && (
                   <span className="font-mono text-[11px] text-gray-500">CR {receipt}</span>
                 )}
+                {line.field && <span className="text-[11px] text-gray-500">{line.field}</span>}
                 {line.desc && <DescChip desc={line.desc} />}
               </div>
             </div>
@@ -263,6 +275,18 @@ function DescChip({ desc }: { desc: string }): React.JSX.Element | null {
   return (
     <span className="inline-block rounded bg-prominent-purple-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-prominent-purple-900">
       {desc}
+    </span>
+  )
+}
+
+/** Marks a collection taken at a counter other than this branch's own — a
+ * satellite office filing under it, or a caravan register. That cash is in
+ * another drawer, outside this sheet's count, so the row has to say so:
+ * otherwise a variance cannot be traced back to a drawer. */
+function OffsiteCounterTag({ name }: { name: string }): React.JSX.Element {
+  return (
+    <span className="ml-2 inline-block rounded bg-amber-50 px-1.5 py-px align-middle text-[10.5px] font-medium text-amber-800 normal-case">
+      {name}
     </span>
   )
 }

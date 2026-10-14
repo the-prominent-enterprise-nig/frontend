@@ -862,6 +862,9 @@ export interface AcknowledgementReceipt {
   account?: { id: string; name: string; number: string | null } | null
   reason: string | null
   amount: number
+  /** What cleared deposits have banked of it — above 0 for one a short
+   * deposit left partly to bank. */
+  depositedAmount?: number | string
   paymentDate: string
   /** Which of the two this record is — drives which title/download shows on
    * the detail page. Null on records saved before this field existed. */
@@ -923,7 +926,9 @@ export interface UpdateAcknowledgementReceiptInput {
   collectorId?: string
 }
 export const AcknowledgementReceipts = {
-  list: (params?: { branchId?: string }) =>
+  /** `unbanked: 'true'` asks for only what the branch still has to bank —
+   * not cancelled, not already on a deposit (Scenario 70 G11). */
+  list: (params?: { branchId?: string; unbanked?: 'true' }) =>
     api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
   get: (id: string) =>
     api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),

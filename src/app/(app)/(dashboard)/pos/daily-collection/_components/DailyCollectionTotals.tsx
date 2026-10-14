@@ -4,6 +4,7 @@ import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
 import type { SheetDraftController } from '../_hooks/useSheetDraft'
 import {
   buildCollectionRecapLines,
+  withValuesOnly,
   buildDenominationLines,
   cashPosition,
   footerAmount,
@@ -26,11 +27,7 @@ import {
 const LINE_NOTES: Record<string, string> = {
   COD: 'Cash on delivery',
   DP: 'Down payment',
-  MI: 'Monthly instalment, incl. partial and full payments (FP)',
-  OTHERS: 'DC — delivery charge',
-  CHECK: 'Cheque',
-  CARD: 'Card swipe',
-  'OTHER NON-CASH': 'Gift card, store credit, TPF',
+  MI: 'Monthly instalment, incl. FMI and FP',
 }
 
 const PANE_HEAD =
@@ -72,16 +69,30 @@ export default function DailyCollectionTotals({ report, edit }: Props): React.JS
 }
 
 /**
- * The client form's recap (Alimodian sample): COD, DP, MI, OTHERS (DC), the
- * highlighted TOTAL COLLECTION, then GCASH and CHECK — built by the same
- * `buildCollectionRecapLines` the printed form uses, so screen and paper
- * cannot disagree.
+ * What the branch collected, in the client's own order: every collection of
+ * the day by kind, cash and non-cash, then TOTAL COLLECTION. One list,
+ * no sub-grouping — the client asked for the shape of their own form, not a
+ * breakdown of it (2026-10-09).
+ *
+ * The two cash lines that are NOT in this drawer — what no session has
+ * counted yet, and what another counter took — sit under the cash total as
+ * plain rows. They are the only reason a count of this drawer comes to less
+ * than that total, so dropping them would read as a shortage; they stay one
+ * line each, with the detail left to the ledger's own row tags.
+ *
+ * The figures come from the same `buildCollectionRecapLines` the printed form
+ * uses, so no amount here can disagree with the paper.
+ *
+ * Only the rows carrying a value are drawn (`withValuesOnly`).
  */
 function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.Element {
+  const lines = withValuesOnly(buildCollectionRecapLines(report))
+  const cash = lines.filter((l) => l.group === 'cash')
+
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
-      <p className={PANE_HEAD}>Collection by type</p>
-      {buildCollectionRecapLines(report).map((line, i) =>
+      <p className={PANE_HEAD}>Collection</p>
+      {cash.map((line, i) =>
         line.highlight ? (
           <div key={line.label} className={`${ROW} border-y border-yellow-200 bg-yellow-50 py-3`}>
             <span className="font-semibold text-gray-900">Total collection</span>
@@ -92,20 +103,32 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
             key={`${i}-${line.label}`}
             label={line.label}
             amount={line.amount}
-            note={line.note}
+            note={line.note ?? LINE_NOTES[line.label]}
             indent={line.indent}
           />
         )
       )}
 
+      {report.pendingCashOnHand > 0.005 && (
+        <PlainRow label="Not yet counted (open drawers)" amount={report.pendingCashOnHand} />
+      )}
+      {/* One row per counter, named — "At Pandan", "At Caravan · Lemery".
+          Naming them needs no heading, no note and no collective noun, and
+          reads the same whether there is one or four. (No collective noun on
+          purpose: a caravan is not a satellite branch, and "satellite" means
+          something specific in the client's own data.) */}
+      {report.offsiteCash.map((counter) => (
+        <PlainRow key={counter.id} label={`At ${counter.name}`} amount={counter.amount} />
+      ))}
+
       {/* Scenario 60 Part 4 — how much of the day came from the caravans this
-          branch hosts. Already inside the total above, so it sits below it. */}
+          branch hosts. Already inside the totals, so it sits below them. */}
       {report.caravanSales.length > 0 && (
         <>
           <p className={`${PANE_HEAD} border-t bg-gray-50`}>Caravan sales (included above)</p>
           {report.caravanSales.map((c) => (
             <div key={c.caravanId} className={`${ROW} border-b border-gray-100`}>
-              <span className="min-w-0 truncate pl-3 text-gray-600">
+              <span className="min-w-0 truncate pl-4 text-gray-600">
                 {c.caravanName}
                 <span className="ml-2 text-xs text-gray-400">
                   {c.units} {c.units === 1 ? 'unit' : 'units'}
@@ -114,12 +137,24 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
               <span className={FIGURE}>{peso(c.amount)}</span>
             </div>
           ))}
-          <div className={ROW}>
-            <span className="text-gray-600">Caravan total</span>
+          <div className={`${ROW} border-b border-gray-100`}>
+            <span className="pl-4 text-gray-600">Caravan total</span>
             <span className={`${FIGURE} font-medium`}>{peso(report.caravanSalesTotal)}</span>
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** A label and a figure, for cash the day collected but this drawer does not
+ * hold. No code, no note — it reads as plain English beside the coded recap
+ * rows above it. */
+function PlainRow({ label, amount }: { label: string; amount: number }): React.JSX.Element {
+  return (
+    <div className={`${ROW} border-b border-gray-100`}>
+      <span className="min-w-0 text-gray-700">{label}</span>
+      <span className={FIGURE}>{peso(amount)}</span>
     </div>
   )
 }
@@ -244,9 +279,15 @@ function DenominationPane({
 }
 
 /**
- * The result in words. A gap here is a real cash over/short — the float is
- * already backed out above and the day's non-cash take never passed through
- * the drawer, so neither can explain it away.
+ * The result in one line: the figure the count is measured against, and what
+ * to do if it does not match.
+ *
+ * It names no other figure. The lines directly above already read TOTAL /
+ * LESS: OPENING FLOAT / CASH COLLECTED, and the collection panel beside it
+ * already lists the cash this count is not supposed to contain — open
+ * drawers, other counters, non-cash — so repeating either here only buried
+ * the one number that matters (client asked to cut the sub-classification,
+ * 2026-10-09).
  *
  * When the typed count contradicts the day's session closings, the reason
  * lives here too: it is the field that blocks the save, so it belongs beside
@@ -263,28 +304,42 @@ function Verdict({
 }): React.JSX.Element {
   const { variance, balanced } = position
   const over = variance > 0
-  const tone = balanced
-    ? 'bg-emerald-50 text-emerald-900'
-    : over
-      ? 'bg-blue-50 text-blue-900'
-      : 'bg-red-50 text-red-900'
+  // Nothing has been counted at a register yet, so there is no drawer count
+  // for this one to disagree with — the gap is the whole day, not a variance.
+  // Worth saying outright: the block invites a count, and a cashier who types
+  // one here before closing their shift reads the result as a cash overage.
+  const nothingClosedYet = report.openSessionCount > 0 && report.settledCashCollection < 0.005
+  const tone =
+    balanced || nothingClosedYet
+      ? balanced
+        ? 'bg-emerald-50 text-emerald-900'
+        : 'bg-amber-50 text-amber-900'
+      : over
+        ? 'bg-blue-50 text-blue-900'
+        : 'bg-red-50 text-red-900'
+  // An over/short is a claim about a counted drawer. With nothing closed
+  // there is no counted drawer, so the heading names the cause instead of
+  // calling the day's whole take an overage.
   const title = balanced
     ? 'Cash balances'
-    : `${over ? 'Over' : 'Short'} by ${peso(Math.abs(variance))}`
-  const hasNonCash = report.nonCashCollection > 0.005
+    : nothingClosedYet
+      ? 'No drawer count to check this against yet'
+      : `${over ? 'Over' : 'Short'} by ${peso(Math.abs(variance))}`
 
   return (
     <div className={`mt-auto border-t border-gray-200 px-4 py-3 ${tone}`}>
       <p className="text-sm font-semibold">{title}</p>
       <p className="mt-0.5 text-xs leading-relaxed">
-        {peso(position.denominationTotal)} counted, less {peso(report.openingFloat)} opening float —{' '}
-        {peso(position.cashCollected)} against {peso(report.totalCollection)} collected in cash.
-        {!balanced && ' Recount and check the day’s sessions before this is signed.'}
-        {!balanced && hasNonCash && (
+        {nothingClosedYet ? (
           <>
-            {' '}
-            The {peso(report.nonCashCollection)} taken on non-cash tenders is not part of this gap —
-            it never passed through the drawer.
+            Close the day’s sessions in POS — each closing count lands here on its own. This block
+            only corrects it afterwards.
+          </>
+        ) : (
+          <>
+            Closed sessions collected {peso(report.settledCashCollection)} — that is what this count
+            must come to.
+            {!balanced && ' Recount, then check the day’s sessions before signing.'}
           </>
         )}
       </p>

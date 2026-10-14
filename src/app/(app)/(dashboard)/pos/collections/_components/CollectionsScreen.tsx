@@ -24,6 +24,7 @@ import {
   getEnabledBranchPaymentMethods,
 } from '../../_actions/pos-actions'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
+import { useMe } from '@/src/hooks/useMe'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { PillCombobox } from '../../checkout/_components/PillInputs'
 import {
@@ -72,6 +73,21 @@ function StatusBadge({ status }: { status: string }) {
 
 function isToday(dateIso: string): boolean {
   return dateIso.slice(0, 10) === todayIso()
+}
+
+// A collection is recognized on the day the cash physically came in, so the
+// recorded Payment date is never allowed past real today — not even when the
+// Scenario 54 date override is simulating a future "today". Which due the
+// money settles is tracked separately (ARPayment.installmentScheduleLineId),
+// so paying dues ahead never needs a future date; and a receipt dated forward
+// would drop straight out of the daily collection report, which windows
+// strictly on CollectionReceipt.paymentDate for one calendar day. Backdating
+// is still allowed (entering a prior day's collection) — only the forward
+// direction is clamped.
+function clampToToday(dateIso: string): string {
+  const today = todayIso()
+  const day = dateIso.slice(0, 10)
+  return day > today ? today : day
 }
 
 // Used to show an informational (non-blocking) note when the chosen payment
@@ -432,10 +448,12 @@ export default function CollectionsScreen() {
 
   const customers = customersQuery.data?.success ? (customersQuery.data.data ?? []) : []
   const schedules = schedulesQuery.data?.success ? (schedulesQuery.data.data ?? []) : []
-  // Scenario 54 — the date a payment collected right now would actually
-  // carry: the override while one's active (PaymentPanel's own paymentDate
-  // field unlocks its today-cap to accept this directly when it's in the
-  // future — developer-confirmed, dev-stage only), real today otherwise.
+  // Scenario 54 — the simulated "now" this screen reads dues against: the
+  // override while one's active, real today otherwise. This dates the due
+  // Status/Rebate PREVIEW only. It does NOT date the collection: PaymentPanel
+  // seeds its Payment date from this clamped to real today and caps the field
+  // there, because cash is recognized when it's received and a forward-dated
+  // receipt is invisible to the daily collection report.
   const effectivePaymentDateIso = overrideDateIso ?? todayIso()
   // Only `ppd` is carried here — NOT a precomputed suggestedRebate/
   // suggestedPenalty. PaymentPanel's own Payment date field is freely
@@ -812,9 +830,11 @@ function PaymentPanel({
   /** Falls back to the Collections list's own branch filter, if the cashier
    * had one set — used only until the session's own branch resolves below. */
   defaultBranchId?: string
-  /** Scenario 54 — the Payment date field's starting value: the Collections
-   * screen's active date override, or real today with none active. Still
-   * freely editable from there, same as this field always has been. */
+  /** Scenario 54 — the screen's simulated "now": its active date override, or
+   * real today with none active. Drives the Status/Rebate/Penalty PREVIEW for
+   * the selected dues only. The Payment date field seeds from this clamped to
+   * real today (clampToToday) and is capped there, so an override that
+   * simulates the future can never forward-date the recorded collection. */
   initialPaymentDateIso: string
   onClearSelection: () => void
   /** Async: resolves only once the parent's post-payment refetch has
@@ -830,7 +850,10 @@ function PaymentPanel({
     // checkbox-driven per due.
     amount: '',
     withholdingAmount: '0',
-    paymentDate: initialPaymentDateIso,
+    // Clamped: a future date override drives the rebate/penalty PREVIEW only,
+    // never the date the money is recorded on (see clampToToday).
+    paymentDate: clampToToday(initialPaymentDateIso),
+    paymentMethodConfigId: '',
     paymentTile: '' as DeliveryFeeTender | '',
     paymentMethodOptionId: '',
     reference: '',
@@ -933,12 +956,20 @@ function PaymentPanel({
   // own assigned branch — takes priority over the Collections list's own
   // branch filter (defaultBranchId), which only applies when the session
   // itself isn't tied to one branch (e.g. Business Owner).
+  //
+  // Scenario 60 — a caravan defaults to the branch hosting it, the one the
+  // combobox offers and the one the receipt is filed against, so the field
+  // never shows a caravan the backend would then fold away.
   useEffect(() => {
     let cancelled = false
     Promise.all([getSessionOrNull(), getBranches()]).then(([session, branchesRes]) => {
       if (cancelled) return
+      const branches = branchesRes.data ?? []
       const targetId = session?.branchId || defaultBranchId
-      const match = (branchesRes.data ?? []).find((b) => b.id === targetId)
+      const target = branches.find((b) => b.id === targetId)
+      const match = target?.isTemporary
+        ? branches.find((b) => b.id === target.hostBranchId)
+        : target
       if (!match) return
       setBranchDefault({ id: match.id, name: match.name })
       setForm((f) => (f.branchId ? f : { ...f, branchId: match.id }))
@@ -992,7 +1023,13 @@ function PaymentPanel({
   const totalApplied =
     (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0) + rebateTotal
   const wouldOverpay = totalApplied > outstandingTotal + 0.01
-  const isBackdatedOrPostdated = !isToday(form.paymentDate)
+  // Only backdating is reachable now — the field is capped at real today, so
+  // "not today" can only mean a prior day.
+  const isBackdated = !isToday(form.paymentDate)
+  // The override is simulating a future "today": the dues preview is computed
+  // against it, but the collection itself records on real today. Say so,
+  // rather than letting the two quietly disagree.
+  const previewDateIsFuture = initialPaymentDateIso.slice(0, 10) > todayIso()
   // Informational only, not blocking — the backend only rejects a repeat
   // same-date payment once the invoice is already fully paid (isFullyPaid,
   // handled separately above). A due that's still open can be topped up
@@ -1006,7 +1043,8 @@ function PaymentPanel({
   const bulkAllocated = allocateBulkPayment(resolvedLines, Number(form.amount) || 0)
 
   /**
-   * Scenario 53 Part 5b — the branch's currently-open session, if any.
+   * Scenario 53 Part 5b — the open session whose drawer this cash lands in,
+   * if any.
    *
    * Cash taken here physically lands in that cashier's drawer, so the session
    * has to be named on the collection or close() cannot count it: the drawer
@@ -1014,11 +1052,24 @@ function PaymentPanel({
    * count closed as an unexplainable overage. Null is a legitimate answer (a
    * field collection, or the counter open with no session), and the backend
    * treats it as "not counter cash".
+   *
+   * Resolved as the SIGNED-IN USER'S own open session first, not simply the
+   * branch's first one: a branch running two terminals has two open sessions,
+   * and naming the wrong one is worse than naming none — it shorts the real
+   * drawer and overs the other cashier's, so two people chase one variance.
+   * With no session of their own (an accounting clerk taking a counter
+   * payment) a single open session at the branch is still unambiguous, while
+   * several is a genuine "which drawer?" that only the cashier can answer, so
+   * this leaves it unattributed rather than guessing.
    */
+  const { data: me } = useMe()
   const { data: openSessions } = useSessions(
     form.branchId ? { branchId: form.branchId, status: 'open' } : { status: 'open' }
   )
-  const openSessionId = openSessions?.success ? openSessions.data?.[0]?.id : undefined
+  const openSessionList = openSessions?.success ? (openSessions.data ?? []) : []
+  const ownOpenSession = me ? openSessionList.find((s) => s.cashierId === me.id) : undefined
+  const openSessionId =
+    ownOpenSession?.id ?? (openSessionList.length === 1 ? openSessionList[0].id : undefined)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -1199,11 +1250,20 @@ function PaymentPanel({
               This will be recorded as an additional payment toward the remaining balance.
             </div>
           )}
-          {single && !isFullyPaid && !alreadyPaidOnChosenDate && isBackdatedOrPostdated && (
+          {single && !isFullyPaid && !alreadyPaidOnChosenDate && isBackdated && (
             <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               This payment will be recorded for {fmtDate(form.paymentDate)}, not today — make sure
               that&apos;s intentional (e.g. entering a collection from a prior day).
+            </div>
+          )}
+          {previewDateIsFuture && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              The date override is simulating {fmtDate(initialPaymentDateIso)}, so the Status and
+              Rebate figures above are previewed as of that date. The collection itself records on{' '}
+              {fmtDate(todayIso())} — rebate and penalty are recalculated against that date on
+              submit.
             </div>
           )}
 
@@ -1360,12 +1420,12 @@ function PaymentPanel({
               <input
                 required
                 type="date"
-                // Scenario 54 — a future date override unlocks this field
-                // past today (developer-confirmed: dev-stage only) so the
-                // Status/Rebate preview above and what actually submits
-                // never disagree. Everyday entry with no override active
-                // keeps the normal today-cap.
-                max={initialPaymentDateIso > todayIso() ? undefined : todayIso()}
+                // Hard-capped at real today, override or not. Cash is
+                // recognized on the day it was received; a forward-dated
+                // receipt would be invisible to the daily collection report
+                // (it windows on CollectionReceipt.paymentDate), which is
+                // exactly how advance payments went missing from it.
+                max={todayIso()}
                 value={form.paymentDate}
                 onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
                 className={fieldClass}
