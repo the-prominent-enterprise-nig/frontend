@@ -17,8 +17,8 @@ export type DrPurposeConfig = {
   counterparty: DrCounterparty
   requiresDepartment?: boolean
   requiresOccasion?: boolean
-  /** Shown but not yet submittable — its approval path lands in a later part
-   * of Scenario 72 (the backend refuses to submit it until then). */
+  /** Shown but not yet submittable — kept for a purpose whose approval path
+   * lands later (the backend refuses to submit it until then). None today. */
   comingLater?: boolean
 }
 
@@ -68,23 +68,22 @@ export const DR_PURPOSE_CONFIG: Record<DrPurpose, DrPurposeConfig> = {
     label: 'For repair to service center',
     withDebitMemo: false,
     effect:
-      'When approved, the unit goes to the repair provider and stays on the books. No debit memo and no journal entry.',
+      'Pick the repair ticket (UDS) — its unit and repair provider fill in. When approved, the unit goes to the provider on this DR and stays on the books. No debit memo and no journal entry.',
     counterparty: 'supplier',
-    comingLater: true,
   },
   repaired_to_customer: {
     label: 'Repaired unit to customer',
     withDebitMemo: false,
-    effect: 'When approved, the repaired unit is released back to its customer. No debit memo.',
+    effect:
+      'Pick the repair ticket (UDS) — its unit and customer fill in. When approved, the repaired unit is released back to its customer on this DR, which closes the ticket. No debit memo.',
     counterparty: 'customer',
-    comingLater: true,
   },
   unrepaired_to_customer: {
     label: 'Unrepaired unit to customer',
     withDebitMemo: false,
-    effect: 'When approved, the unrepaired unit is returned to its customer. No debit memo.',
+    effect:
+      'Pick the repair ticket (UDS) — its unit and customer fill in. When approved, the unrepaired unit is returned to its customer on this DR, which closes the ticket. No debit memo.',
     counterparty: 'customer',
-    comingLater: true,
   },
   sales_invoice_to_follow: {
     label: 'Sales invoice to follow',

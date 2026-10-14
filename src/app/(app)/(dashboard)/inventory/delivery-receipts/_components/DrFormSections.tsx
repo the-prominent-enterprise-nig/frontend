@@ -1,6 +1,6 @@
 'use client'
 
-import { Controller, useFormContext, useWatch } from 'react-hook-form'
+import { Controller, useFormContext, useWatch, type UseFormSetValue } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
@@ -12,12 +12,14 @@ import {
 } from '@/src/libs/inventory/delivery-receipt-purposes'
 import {
   RAFFLE_OCCASIONS,
+  isRepairPurpose,
   type DrCustomerLookup,
   type DrFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getDrDepartments } from '../_actions/dr-lookups'
 import { DrCustomerCombobox } from './DrCustomerCombobox'
+import { DrUdsField } from './DrUdsField'
 import { Field, INPUT, READONLY, Section, TEXTAREA } from './drFormUi'
 
 /** A field spanning two of the recipient grid's four wide-screen columns. */
@@ -40,8 +42,19 @@ const OCCASION_OPTIONS = [
   { value: 'Other', label: 'Other (specify)' },
 ]
 
+/** A repair ticket belongs to one leg, so changing purpose drops it — and,
+ * when the old purpose was a repair one, the lines it brought. */
+function clearUdsOnPurposeChange(
+  setValue: UseFormSetValue<DrFormValues>,
+  from: DrFormValues['purpose']
+): void {
+  setValue('udsId', '', { shouldDirty: true })
+  setValue('udsLabel', '')
+  if (isRepairPurpose(from)) setValue('lines', [], { shouldDirty: true })
+}
+
 export function DrPurposeSection(): React.JSX.Element {
-  const { control, formState } = useFormContext<DrFormValues>()
+  const { control, formState, setValue } = useFormContext<DrFormValues>()
   const purpose = useWatch({ control, name: 'purpose' })
   const config = DR_PURPOSE_CONFIG[purpose]
   return (
@@ -57,7 +70,9 @@ export function DrPurposeSection(): React.JSX.Element {
             <SearchableSelect
               value={field.value}
               onChange={(value) => {
-                if (value) field.onChange(value)
+                if (!value || value === field.value) return
+                clearUdsOnPurposeChange(setValue, field.value)
+                field.onChange(value)
               }}
               options={PURPOSE_OPTIONS}
               placeholder="Select purpose…"
@@ -75,6 +90,7 @@ export function DrPurposeSection(): React.JSX.Element {
           </span>
         )}
       </div>
+      {isRepairPurpose(purpose) && <DrUdsField error={formState.errors.udsId?.message} />}
       {config.requiresOccasion && <OccasionField error={formState.errors.occasion?.message} />}
     </Section>
   )
@@ -176,6 +192,9 @@ function WarehouseField({
   onChange: (warehouseId: string) => void
 }): React.JSX.Element {
   const { control } = useFormContext<DrFormValues>()
+  // A repair DR leaves from wherever its ticket's unit is.
+  const purpose = useWatch({ control, name: 'purpose' })
+  const locked = isRepairPurpose(purpose)
   // Branch-scoped server-side: a branch user only gets their own branch.
   const warehouses = useQuery({
     queryKey: ['dr-issuing-warehouses'],
@@ -199,7 +218,8 @@ function WarehouseField({
             }}
             options={options}
             loading={warehouses.isLoading}
-            placeholder="Select branch…"
+            placeholder={locked ? 'From the repair ticket' : 'Select branch…'}
+            disabled={locked}
             chrome={CONTROL_CHROME}
           />
         )}
@@ -254,6 +274,16 @@ function CounterpartyField(): React.JSX.Element | null {
   const kind = DR_PURPOSE_CONFIG[purpose].counterparty
   const required = purpose === 'sales_invoice_to_follow' || purpose === 'return_to_supplier'
   if (kind === 'none') return null
+  if (isRepairPurpose(purpose)) {
+    // Whoever the ticket names — the provider it goes to, or its customer.
+    return (
+      <Field className={WIDE} label={kind === 'supplier' ? 'Repair provider' : 'Customer'}>
+        <div className={READONLY}>
+          {(kind === 'supplier' ? supplierLabel : customerLabel) || 'From the repair ticket'}
+        </div>
+      </Field>
+    )
+  }
 
   function pickCustomer(c: DrCustomerLookup | null): void {
     const opts = { shouldDirty: true }

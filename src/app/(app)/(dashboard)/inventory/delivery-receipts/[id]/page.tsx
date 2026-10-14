@@ -12,6 +12,7 @@ import { DrVoidAction } from '../_components/DrVoidAction'
 import { DrProceedToPos } from '../_components/DrProceedToPos'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { isRepairPurpose } from '@/src/schema/inventory/delivery-receipts'
 
 export const metadata = { title: 'Delivery Receipt' }
 
@@ -39,6 +40,8 @@ export default async function Page({
     can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE)
   const canVoid =
     (dr.status === 'approved' || dr.status === 'posted') &&
+    // A repair DR has already moved its ticket; there is no undoing that.
+    !isRepairPurpose(dr.purpose) &&
     can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_VOID)
   // A return to supplier's memo is a supplier debit memo, which lives on the
   // Inventory → Debit Memos list rather than a page of its own.

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Plus,
   ClipboardCheck,
@@ -22,10 +23,9 @@ import UdsDetailModal from './UdsDetailModal'
 import AssessUdsModal from './AssessUdsModal'
 import SetRepairProviderModal from './SetRepairProviderModal'
 import WriteOffUdsModal from './WriteOffUdsModal'
-import DispatchToProviderModal from './DispatchToProviderModal'
 import ReceiveFromProviderModal from './ReceiveFromProviderModal'
-import ReleaseToCustomerModal from './ReleaseToCustomerModal'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { can, type SessionUser } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
@@ -36,9 +36,7 @@ import {
 import type {
   UpdateUdsStatusFormValues,
   AssessUdsFormValues,
-  DispatchToProviderFormValues,
   ReceiveFromProviderFormValues,
-  ReleaseToCustomerFormValues,
   SetRepairProviderFormValues,
   WriteOffUdsFormValues,
 } from '@/src/schema/inventory/uds'
@@ -75,14 +73,18 @@ function buildNextStep(handlers: {
   release: (uds: Uds) => void
   writeOff: (uds: Uds) => void
   advance: (uds: Uds) => void
+  /** The two DR legs are hidden from anyone who cannot raise a DR. */
+  canCreateDr: boolean
 }): (uds: Uds) => { next: StepAction | null; alt: StepAction | null } {
   const ASSESS: StepAction = {
     label: 'Assess',
     className: 'bg-green-50 text-green-700 hover:bg-green-100',
     run: handlers.assess,
   }
+  // Scenario 72 Part 7 — both of these legs now go out on a Delivery Receipt:
+  // the buttons open a new DR for this ticket instead of a modal.
   const DISPATCH: StepAction = {
-    label: 'Send to Service Centre',
+    label: 'Create DR to Service Centre',
     className: 'bg-amber-50 text-amber-700 hover:bg-amber-100',
     run: handlers.dispatch,
   }
@@ -92,10 +94,12 @@ function buildNextStep(handlers: {
     run: handlers.receive,
   }
   const RELEASE: StepAction = {
-    label: 'Release to Customer',
+    label: 'Create DR to Customer',
     className: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
     run: handlers.release,
   }
+  const dispatchStep = handlers.canCreateDr ? DISPATCH : null
+  const releaseStep = handlers.canCreateDr ? RELEASE : null
   const WRITE_OFF: StepAction = {
     label: 'Write Off',
     className: 'bg-red-50 text-red-700 hover:bg-red-100',
@@ -118,18 +122,18 @@ function buildNextStep(handlers: {
     // Custodial sheets close only through the release, which is what issues
     // the DR and returns the serial to `sold`. Our own units close on a plain
     // status change, having come back into stock.
-    const close = uds.customerId ? RELEASE : advanceTo('Complete')
+    const close = uds.customerId ? releaseStep : advanceTo('Complete')
 
     if (uds.status === 'repaired') return { next: close, alt: null }
 
     // received
     if (uds.reason === 'repair' && !uds.assessment) return { next: ASSESS, alt: null }
-    if (uds.assessment === 'repairable') return { next: DISPATCH, alt: null }
+    if (uds.assessment === 'repairable') return { next: dispatchStep, alt: null }
     if (uds.assessment === 'unrepairable') {
       // The only genuine fork: the customer can collect the dead unit, or we
       // scrap it. Both are valid endings, so neither can be the sole button.
       const canWriteOff = !uds.writeOffAdjustmentId
-      if (uds.customerId) return { next: RELEASE, alt: canWriteOff ? WRITE_OFF : null }
+      if (uds.customerId) return { next: releaseStep, alt: canWriteOff ? WRITE_OFF : null }
       return { next: canWriteOff ? WRITE_OFF : close, alt: null }
     }
     return { next: close, alt: null }
@@ -159,12 +163,8 @@ export default function UdsList({ session }: { session: SessionUser }) {
     isUpdatingStatus,
     assessUds,
     isAssessing,
-    dispatchToProvider,
-    isDispatching,
     receiveFromProvider,
     isReceivingFromProvider,
-    releaseToCustomer,
-    isReleasing,
     setRepairProvider,
     isSettingRepairProvider,
     writeOffUds,
@@ -177,22 +177,28 @@ export default function UdsList({ session }: { session: SessionUser }) {
   const [assessingUds, setAssessingUds] = useState<Uds | null>(null)
   const [settingProviderUds, setSettingProviderUds] = useState<Uds | null>(null)
   const [writingOffUds, setWritingOffUds] = useState<Uds | null>(null)
-  const [dispatchingUds, setDispatchingUds] = useState<Uds | null>(null)
   const [receivingUds, setReceivingUds] = useState<Uds | null>(null)
-  const [releasingUds, setReleasingUds] = useState<Uds | null>(null)
+  const router = useRouter()
+  const canCreateDr = can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE)
 
   // Built once from the setters above; the table itself is state-independent.
   const nextStep = useMemo(
     () =>
       buildNextStep({
         assess: setAssessingUds,
-        dispatch: setDispatchingUds,
+        dispatch: (uds) =>
+          router.push(`/inventory/delivery-receipts/new?purpose=to_service_center&udsId=${uds.id}`),
         receive: setReceivingUds,
-        release: setReleasingUds,
+        release: (uds) => {
+          const purpose =
+            uds.status === 'repaired' ? 'repaired_to_customer' : 'unrepaired_to_customer'
+          router.push(`/inventory/delivery-receipts/new?purpose=${purpose}&udsId=${uds.id}`)
+        },
         writeOff: setWritingOffUds,
         advance: setSelectedUds,
+        canCreateDr,
       }),
-    []
+    [router, canCreateDr]
   )
 
   const hasFilters = !!statusFilter || !!reasonFilter
@@ -217,19 +223,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
     return writeOffUds(writingOffUds.id, data)
   }
 
-  async function handleDispatch(data: DispatchToProviderFormValues) {
-    if (!dispatchingUds) return { success: false, error: 'No UDS selected', message: '' }
-    return dispatchToProvider(dispatchingUds.id, data)
-  }
-
   async function handleReceiveFromProvider(data: ReceiveFromProviderFormValues) {
     if (!receivingUds) return { success: false, error: 'No UDS selected', message: '' }
     return receiveFromProvider(receivingUds.id, data)
-  }
-
-  async function handleRelease(data: ReleaseToCustomerFormValues) {
-    if (!releasingUds) return { success: false, error: 'No UDS selected', message: '' }
-    return releaseToCustomer(releasingUds.id, data)
   }
 
   return (
@@ -599,28 +595,12 @@ export default function UdsList({ session }: { session: SessionUser }) {
         isSubmitting={isWritingOff}
       />
 
-      <DispatchToProviderModal
-        uds={dispatchingUds}
-        isOpen={!!dispatchingUds}
-        onClose={() => setDispatchingUds(null)}
-        onSubmit={handleDispatch}
-        isSubmitting={isDispatching}
-      />
-
       <ReceiveFromProviderModal
         uds={receivingUds}
         isOpen={!!receivingUds}
         onClose={() => setReceivingUds(null)}
         onSubmit={handleReceiveFromProvider}
         isSubmitting={isReceivingFromProvider}
-      />
-
-      <ReleaseToCustomerModal
-        uds={releasingUds}
-        isOpen={!!releasingUds}
-        onClose={() => setReleasingUds(null)}
-        onSubmit={handleRelease}
-        isSubmitting={isReleasing}
       />
     </div>
   )

@@ -26,10 +26,22 @@ export const DR_STATUSES = [
   'voided',
 ] as const
 
+/** Scenario 72 Part 7 — purposes that move a repair ticket (UDS), not shelf
+ * stock: the lines, warehouse and recipient come from the sheet. */
+export const DR_REPAIR_PURPOSES = [
+  'to_service_center',
+  'repaired_to_customer',
+  'unrepaired_to_customer',
+] as const
+
 export const DrPurposeSchema = z.enum(DR_PURPOSES)
 export const DrStatusSchema = z.enum(DR_STATUSES)
 export type DrPurpose = z.infer<typeof DrPurposeSchema>
 export type DrStatus = z.infer<typeof DrStatusSchema>
+
+export function isRepairPurpose(purpose: DrPurpose): boolean {
+  return (DR_REPAIR_PURPOSES as readonly DrPurpose[]).includes(purpose)
+}
 
 /** The raffle occasions the client named, plus a free-text escape. */
 export const RAFFLE_OCCASIONS = ['Christmas Party', 'Summer Outing'] as const
@@ -62,6 +74,9 @@ export const DrFormSchema = z.object({
   issueDate: z.string().min(1, 'Issue date is required'),
   warehouseId: z.string().min(1, 'Pick the issuing branch / warehouse'),
   departmentId: z.string(),
+  /** Repair purposes only — the UDS whose units this DR moves. */
+  udsId: z.string(),
+  udsLabel: z.string(),
   customerId: z.string(),
   customerLabel: z.string(),
   supplierId: z.string(),
@@ -84,7 +99,9 @@ export const DrSubmitSchema = DrFormSchema.superRefine((v, ctx) => {
   const issue = (path: string, message: string): void =>
     ctx.addIssue({ code: 'custom', path: [path], message })
   if (!v.reason.trim()) issue('reason', 'Say why this stock is leaving')
-  if (v.lines.length === 0) issue('lines', 'Add at least one item')
+  if (isRepairPurpose(v.purpose)) {
+    if (!v.udsId) issue('udsId', 'Pick the repair ticket (UDS)')
+  } else if (v.lines.length === 0) issue('lines', 'Add at least one item')
   v.lines.forEach((line, i) => {
     if (line.isSerialTracked && !line.serialNumberId) {
       ctx.addIssue({
@@ -179,6 +196,9 @@ export const DrDetailSchema = z.object({
   supplierDebitMemo: DebitMemoRefSchema,
   /** Scenario 72 Part 6 — the POS sale that invoiced a sales invoice to follow. */
   posTransaction: z.object({ id: z.string(), transactionNumber: z.string() }).nullable().optional(),
+  /** Scenario 72 Part 7 — the repair ticket a repair-purpose DR moved. */
+  udsId: z.string().nullable().optional(),
+  uds: z.object({ id: z.string(), code: z.string(), status: z.string() }).nullable().optional(),
   lines: z.array(DrLineSchema),
 })
 export type DrDetail = z.infer<typeof DrDetailSchema>
@@ -224,3 +244,28 @@ export const DrDepartmentLookupSchema = z.object({
   code: z.string().nullable(),
 })
 export type DrDepartmentLookup = z.infer<typeof DrDepartmentLookupSchema>
+
+/** A repair ticket the DR form can pick for a repair purpose (eligible now,
+ * not on another open DR for the same leg). */
+export const DrUdsLookupSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  status: z.string(),
+  warehouseId: z.string().nullable(),
+  customer: z.object({ id: z.string(), name: z.string() }).nullable(),
+  repairProvider: z.object({ id: z.string(), name: z.string() }).nullable(),
+  lines: z.array(
+    z.object({
+      itemId: z.string(),
+      serialNumberId: z.string(),
+      item: z.object({
+        name: z.string(),
+        modelNumber: z.string().nullable(),
+        isSerialTracked: z.boolean(),
+        brand: z.object({ name: z.string() }).nullable(),
+      }),
+      serialNumber: z.object({ serialNumber: z.string() }),
+    })
+  ),
+})
+export type DrUdsLookup = z.infer<typeof DrUdsLookupSchema>

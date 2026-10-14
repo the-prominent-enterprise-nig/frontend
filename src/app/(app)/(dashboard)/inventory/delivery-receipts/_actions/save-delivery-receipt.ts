@@ -7,6 +7,7 @@ import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import {
   DrFormSchema,
+  isRepairPurpose,
   occasionOf,
   type DrFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
@@ -17,12 +18,16 @@ const blank = (v: string): string | undefined => (v.trim() === '' ? undefined : 
 /** Form values → the backend DTO. Empty strings are not sent (the API
  * validates ids as UUIDs and dates as ISO strings). */
 function toBody(v: DrFormValues): Record<string, unknown> {
+  // A repair DR's lines come from its UDS, server-side; sending none keeps
+  // the browser from ever being the source of what leaves.
+  const repair = isRepairPurpose(v.purpose)
   return {
     purpose: v.purpose,
     purposeDetail: v.purpose === 'raffle_prize' ? blank(occasionOf(v)) : undefined,
     issueDate: v.issueDate,
     warehouseId: v.warehouseId,
     departmentId: blank(v.departmentId),
+    udsId: repair ? blank(v.udsId) : undefined,
     customerId: blank(v.customerId),
     supplierId: blank(v.supplierId),
     deliveredTo: blank(v.deliveredTo),
@@ -33,11 +38,13 @@ function toBody(v: DrFormValues): Record<string, unknown> {
     referenceDate: blank(v.referenceDate),
     reason: blank(v.reason),
     remarks: blank(v.remarks),
-    lines: v.lines.map((l) => ({
-      itemId: l.itemId,
-      serialNumberId: blank(l.serialNumberId),
-      quantity: l.isSerialTracked ? 1 : l.quantity,
-    })),
+    lines: repair
+      ? undefined
+      : v.lines.map((l) => ({
+          itemId: l.itemId,
+          serialNumberId: blank(l.serialNumberId),
+          quantity: l.isSerialTracked ? 1 : l.quantity,
+        })),
   }
 }
 

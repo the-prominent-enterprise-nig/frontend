@@ -10,7 +10,11 @@ import {
 } from '../../purchase-requests/_components/ItemSearchCombobox'
 import { SerialSearchCombobox } from '../../transfers/_components/SerialSearchCombobox'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
-import type { DrFormValues, DrLineFormValues } from '@/src/schema/inventory/delivery-receipts'
+import {
+  isRepairPurpose,
+  type DrFormValues,
+  type DrLineFormValues,
+} from '@/src/schema/inventory/delivery-receipts'
 import { fmtPeso } from '../_lib/dr-format'
 import { Field, FieldError, INPUT, Section, TEXTAREA } from './drFormUi'
 
@@ -33,7 +37,9 @@ export function DrItemsSection(): React.JSX.Element {
   const { control, formState } = useFormContext<DrFormValues>()
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
   const warehouseId = useWatch({ control, name: 'warehouseId' })
+  const purpose = useWatch({ control, name: 'purpose' })
   const linesError = formState.errors.lines?.root?.message ?? formState.errors.lines?.message
+  if (isRepairPurpose(purpose)) return <DrRepairItems />
   return (
     <Section
       title="Items"
@@ -82,6 +88,50 @@ export function DrItemsSection(): React.JSX.Element {
               {...field}
               className={TEXTAREA}
               placeholder="Anything the approver or warehouse should know…"
+            />
+          )}
+        />
+      </Field>
+    </Section>
+  )
+}
+
+/** A repair DR moves the ticket's units, as they are — nothing to pick. */
+function DrRepairItems(): React.JSX.Element {
+  const { control } = useFormContext<DrFormValues>()
+  const lines = useWatch({ control, name: 'lines' })
+  return (
+    <Section
+      title="Items"
+      description="The units on the repair ticket. They cannot be changed here."
+    >
+      {lines.length === 0 ? (
+        <p className="text-[12.5px] text-[#8b8b9b]">Pick the repair ticket to see its units.</p>
+      ) : (
+        <div className="divide-y divide-[#eeeef1] rounded-lg border border-[#eeeef1]">
+          {lines.map((l) => (
+            <div
+              key={l.serialNumberId || l.itemId}
+              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[13px]"
+            >
+              <span className="font-medium text-[#1f1f2b]">
+                {l.itemLabel}
+                {l.brandName && <span className="ml-2 text-[#8b8b9b]">{l.brandName}</span>}
+              </span>
+              <span className="font-mono text-[12px] text-[#5b5b6b]">{l.serialLabel || '—'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <Field label="Remarks">
+        <Controller
+          control={control}
+          name="remarks"
+          render={({ field }) => (
+            <textarea
+              {...field}
+              className={TEXTAREA}
+              placeholder="Anything the approver should know…"
             />
           )}
         />

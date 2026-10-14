@@ -45,16 +45,19 @@ const BACK_HREF = '/inventory/stock-transaction?tab=delivery-receipts'
 type Props = {
   /** Set when editing an existing draft. */
   draft?: { id: string; drNumber: string; values: DrFormValues }
+  /** A new DR started from elsewhere — the UDS list's "Create DR" passes the
+   * repair purpose and its ticket (Scenario 72 Part 7). */
+  preset?: Pick<DrFormValues, 'purpose' | 'udsId'>
 }
 
-export default function DrForm({ draft }: Props): React.JSX.Element {
+export default function DrForm({ draft, preset }: Props): React.JSX.Element {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [busy, setBusy] = useState<'save' | 'submit' | 'print' | null>(null)
   const [staged, setStaged] = useState<File[]>([])
   const form = useForm<DrFormValues>({
     resolver: zodResolver(DrFormSchema),
-    defaultValues: draft?.values ?? emptyDrForm(),
+    defaultValues: draft?.values ?? { ...emptyDrForm(), ...preset },
   })
 
   /** Saves (creating on first save), uploads staged files, returns the id. */

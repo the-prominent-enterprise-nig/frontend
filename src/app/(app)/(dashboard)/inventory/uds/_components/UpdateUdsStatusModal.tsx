@@ -30,7 +30,7 @@ type Props = {
   onSubmit: (data: UpdateUdsStatusFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
   currentStatus: UdsStatus
-  /** A customer-owned sheet closes only through Release to Customer, which is
+  /** A customer-owned sheet closes only through its Delivery Receipt, which is
    *  what issues the DR and returns the serial to `sold`. The server refuses a
    *  `completed` here for one, so offering it would be a button that fails. */
   isCustodial?: boolean
@@ -190,7 +190,7 @@ export default function UpdateUdsStatusModal({
         {allowedStatuses.length === 0 ? (
           <div className="flex-1 px-6 py-8 text-center text-sm text-zinc-500">
             {isCustodial
-              ? 'This unit belongs to the customer — close it with Release to Customer, which issues the DR they sign for.'
+              ? 'This unit belongs to the customer — close it with Create DR to Customer — the Delivery Receipt they sign for.'
               : 'This UDS is already closed and cannot be updated.'}
           </div>
         ) : (

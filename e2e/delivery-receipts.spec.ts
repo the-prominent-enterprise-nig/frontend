@@ -22,6 +22,11 @@ import { gotoReady, fillStable, pickComboboxOption, ensureItemStock, clickStable
 // Proceed to POS and arrives at checkout with its customer, its held unit on
 // the line, and the "Invoicing DR…" banner.
 //
+// Part 7: a repair ticket ready for the service center opens a "For repair
+// to service center" DR from the UDS list's Create DR button, with the
+// ticket's unit and provider filled in; approving it posts the DR and sends
+// the ticket to the provider on the DR number.
+//
 // Cleanup: drafts are deleted, and any still-pending DR whose reason carries
 // E2E_TAG is rejected. Approved and posted DRs are voided by the tests that
 // make them.
@@ -423,5 +428,79 @@ test.describe('Delivery Receipts — Scenario 72', () => {
         })
       }
     }
+  })
+
+  test('a UDS ready for the service center goes out on a DR from the UDS list', async ({
+    page,
+    request,
+  }) => {
+    type Row = Record<string, unknown> & { id: string }
+    const json = async (url: string, params: Record<string, string> = {}) =>
+      (await request.get(url, { params })).json()
+    // A repair UDS at the main branch has no auto-paired transfer, so its
+    // status alone walks it to received.
+    const branches = (await json('/api/branches', { limit: '200' })).data as Row[]
+    const main = branches.find((b) => b.isMainBranch)
+    test.skip(!main, 'no main branch in this database')
+    const warehouses = (await json('/api/inventory/warehouses', { limit: '200', status: 'active' }))
+      .data as Row[]
+    const warehouse = warehouses.find((w) => w.branchId === main!.id)!
+    const serials = (
+      await json('/api/inventory/serial-numbers', {
+        warehouseId: warehouse.id,
+        status: 'in_stock',
+        limit: '1',
+      })
+    ).data as Row[]
+    test.skip(!serials[0], 'no in-stock serial at the main branch')
+    const suppliers = (await json('/api/suppliers', { limit: '1' })).data as (Row & {
+      name: string
+    })[]
+
+    const created = await request.post('/api/inventory/uds', {
+      data: {
+        warehouseId: warehouse.id,
+        reason: 'repair',
+        repairProviderId: suppliers[0].id,
+        notes: `${E2E_TAG} repair DR`,
+        lines: [{ serialNumberId: serials[0].id }],
+      },
+    })
+    expect(created.ok()).toBe(true)
+    const uds = (await created.json()) as { id: string; code: string }
+    const patch = (path: string, data: Record<string, unknown>) =>
+      request.patch(`/api/inventory/uds/${uds.id}/${path}`, { data })
+    for (const status of ['in_transit', 'received']) {
+      const moved = await patch('status', { status })
+      expect(moved.ok(), await moved.text()).toBe(true)
+    }
+    expect((await patch('assess', { assessment: 'repairable', estimatedCost: 500 })).ok()).toBe(
+      true
+    )
+
+    await gotoReady(page, '/inventory/uds')
+    const row = page.locator('tbody tr').filter({ hasText: uds.code })
+    const createDr = row.getByRole('button', { name: 'Create DR to Service Centre' })
+    await expect(createDr).toBeVisible({ timeout: 20_000 })
+    await createDr.click()
+    await page.waitForURL(/\/inventory\/delivery-receipts\/new\?purpose=to_service_center/)
+    // The ticket's unit and provider fill in; there is nothing to pick.
+    await expect(page.getByText(String(serials[0].serialNumber))).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText(suppliers[0].name).first()).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Add item' })).toHaveCount(0)
+    await fillReason(page, 'unit to the service center')
+    await page.getByRole('button', { name: 'Submit for approval' }).click()
+    await page.waitForURL(/\/inventory\/delivery-receipts\/[0-9a-f-]{36}$/, { timeout: 20_000 })
+    await expect(page.getByText('Pending approval').first()).toBeVisible()
+    await expect(page.getByText(uds.code)).toBeVisible()
+
+    await page.getByRole('button', { name: 'Approve', exact: true }).first().click()
+    await page.getByRole('button', { name: 'Approve', exact: true }).last().click()
+    await expect(page.getByText('Posted').first()).toBeVisible({ timeout: 20_000 })
+    // A repair DR has already moved its ticket, so it offers no Void.
+    await expect(page.getByRole('button', { name: /Void/ })).toHaveCount(0)
+    const after = await json(`/api/inventory/uds/${uds.id}`)
+    expect(after.status).toBe('at_provider')
+    expect(String(after.dispatchDeliveryReceiptNumber)).toMatch(/^DR\d{6}$/)
   })
 })
