@@ -290,7 +290,7 @@ export default function ManualRrForm() {
         id ? `/accounting/receiving-reports/manual-rr/${id}` : '/accounting/receiving-reports'
       )
     } else {
-      showToast({ title: 'Failed', description: result.message, status: 'error' })
+      showToast({ title: "Couldn't save draft", description: result.message, status: 'error' })
     }
   }
 
