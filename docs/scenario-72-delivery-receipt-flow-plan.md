@@ -340,3 +340,44 @@ Built 2026-10-14 → 2026-10-15 on `feat/scenario-72-delivery-receipt` in both r
 - 7 UDS Playwright tests fail: six in `repair-transfer-uds.spec.ts` time out on the Create UDS modal's serial picker (likely the same empty test data), one in `uds-status-band-and-trail.spec.ts` can't find "Gate pass out". Neither touches the removed buttons; not yet confirmed against clean HEAD.
 - `POST /inventory/delivery-receipts` still requires `warehouseId` for a repair purpose even though the server overwrites it from the UDS. The form always sends it; only direct API callers notice.
 - Frontend commit `812d677c` also carries a 3-line `PriceTierModal.tsx` change from another session.
+
+### Part 9 — in-repair units on a Stock Transfer, 2026-10-15
+
+Added at the developer's request after Part 7, from the client: on the General Stockbook, a unit in repair must be selectable for a Stock Transfer. An earlier reading ("the branch → main repair hop should leave on a DR") was started and fully reverted — schema, migration and both databases — when the developer clarified.
+
+**Decisions (developer, 2026-10-15)**: the unit stays `in_repair` on arrival; the transfer drives the unit's repair ticket; any of our own in-repair units may be picked; tracked as Part 9 of this scenario. A customer's unit in for repair is refused — it is not our stock (narrowed from "any", flagged to the developer).
+
+**Backend**
+
+- Migration `20261015180000_stock_transfer_repair_unit`: `stock_transfer_lines.repairUnit` (boolean, default false).
+- New `transfer-repair-units.ts`. Create, edit and dispatch accept a named `in_repair` unit at the source; the line records `repairUnit`, re-read at dispatch. Receipt lands it `in_repair`, not `in_stock`. A pinned in-repair unit is not counted against the shelf's free stock.
+- A transfer to main carrying a unit on an issued, non-customer repair ticket becomes the ticket's transfer: the ticket's serial-less auto-paired draft is cancelled (a transfer already further along refuses the new one). Dispatch moves the ticket to `in_transit` with the transfer number as the outbound gate pass (replacing `STC-`); full receipt moves it to `received`, leaving the unit in repair.
+- Customer units in repair are refused on create, edit and dispatch.
+- Also this run: `POST /inventory/delivery-receipts` no longer needs `warehouseId` for a repair purpose with a UDS (closes the Part 7 open item).
+
+**Frontend**
+
+- General Stockbook: `in_repair` units get a tick box (`isTransferable`); Consign to Caravan stays in-stock only and is disabled, with a note, when a repair unit is ticked.
+- New Stock Transfer: a line pinned to one unit skips the in-stock availability cap.
+
+**Tests**
+
+- Backend: `stock-transfer-in-repair` 4/4 (ticket carried to main through dispatch and receipt; ticketless repair unit beside a shelf unit, each lands as it left; customer unit refused; sold unit still refused). `delivery-receipt-repair` 10/10 (new: repair DR saves without `warehouseId`). Transfer / DR / UDS regression run 185/186 — the one failure (`stock-transfer-hq-approval`, Branch Manager 403) fails identically on clean code.
+- Frontend: `e2e/stock-transfer-in-repair.spec.ts` passes. `stock-transfer-accept-reject:148` and `stock-transfer-serial-request:78` fail with "Available: 0" on the test DB, identically with these changes stashed.
+
+**Part 7's open UDS Playwright failures — resolved as pre-existing**
+
+- The six `repair-transfer-uds.spec.ts` failures: commit `90af195c` (2026-10-06) replaced the UDS serial picker with a type-to-search combobox; the spec still expects the old preloaded list.
+- `uds-status-band-and-trail.spec.ts:177` expects "Gate pass out"; the trail has said "Gate pass" since #177.
+- `scenario-60-caravan-transfer.spec.ts` does not load (two duplicated test titles).
+
+**Open**
+
+- The specs above are stale, not fixed here.
+- The ticket's auto-paired serial-less transfer, if dispatched instead, now also moves the ticket, but still moves only a quantity, not the unit's location.
+
+## Related ClickUp Tickets
+
+- [AA Warehouse Staff, ISBAT generate a Delivery Receipt (DR) tagged with a release scenario](https://app.clickup.com/t/86d3fwwmv) — Parts 1–8. _Sprint 3, in review_ (moved 2026-10-15). Its "units-to-follow" and "change-unit" scenarios are not among the client's 10 purposes on the DR mockup.
+- [AA Warehouse Manager, ISBAT receive a Repair Transfer at main, assess it … and route it via Delivery Receipt](https://app.clickup.com/t/86d3d19pu) — Part 7. _Sprint 3, for qa_ (already further along; left as is).
+- [AA Stock Controller, ISBAT raise a Repair Transfer that auto-creates the paired stock transfer to main](https://app.clickup.com/t/86d3d19k6) — Part 9 changes how that transfer behaves. _Sprint 3, for qa_ (left as is).
