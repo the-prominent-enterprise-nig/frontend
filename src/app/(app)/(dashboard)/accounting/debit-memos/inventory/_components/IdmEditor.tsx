@@ -47,8 +47,11 @@ import {
   postInventoryDebitMemo,
   saveInventoryDebitMemo,
   voidInventoryDebitMemo,
+  getInventoryDebitMemoDocument,
 } from '../_actions/inventory-debit-memos'
 import { IdmLinesSection } from './IdmLinesSection'
+import { PrintButton } from '../../../../inventory/delivery-receipts/_components/PrintButton'
+import { printDebitMemo } from '@/src/libs/print/printDeliveryReceipt'
 
 const BACK_HREF = '/accounting/debit-memos'
 
@@ -190,6 +193,12 @@ export default function IdmEditor({
             <Link href={BACK_HREF} className={BTN_GHOST}>
               {readOnly ? 'Back to list' : 'Cancel'}
             </Link>
+            {memo && (
+              <PrintButton
+                load={() => getInventoryDebitMemoDocument(memo.id)}
+                print={printDebitMemo}
+              />
+            )}
             {!readOnly && (
               <button
                 type="button"

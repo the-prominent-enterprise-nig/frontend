@@ -15,6 +15,9 @@ import { gotoReady, fillStable, pickComboboxOption, ensureItemStock } from './ut
 // Posted), listed in Inventory → Debit Memos beside the supplier returns, and voided; and a
 // standalone memo raised from Accounting → Debit Memos.
 //
+// Part 5: the printed Delivery Receipt (DRAFT-watermarked until approved,
+// the chosen purpose ticked) and the printed debit memo.
+//
 // Cleanup: drafts are deleted, and any still-pending DR whose reason carries
 // E2E_TAG is rejected. Approved and posted DRs are voided by the tests that
 // make them.
@@ -298,5 +301,40 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     await fillStable(page.getByLabel('Reason', { exact: true }), 'E2E cleanup')
     await page.getByRole('button', { name: 'Void memo' }).click()
     await expect(page.getByText('Voided:')).toBeVisible({ timeout: 15_000 })
+  })
+
+  test('prints the DR and its debit memo in the client layout', async ({ page, context }) => {
+    test.skip(!departmentId, 'could not create a department fixture')
+    const { id } = await submitFromForm(page, 'Office use', 'print check')
+    const [drWin] = await Promise.all([
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: 'Print', exact: true }).click(),
+    ])
+    await drWin.waitForLoadState('domcontentloaded')
+    await expect(drWin.getByRole('heading', { name: 'Delivery receipt' })).toBeVisible()
+    await expect(drWin.getByText('DRAFT', { exact: true })).toBeVisible()
+    await expect(drWin.getByText('☒ Office use')).toBeVisible()
+    await expect(
+      drWin.getByText('Received the above merchandise in good order and condition.')
+    ).toBeVisible()
+    await expect(drWin.getByText('Delivered by')).toBeVisible()
+    await drWin.close()
+
+    await gotoReady(page, `/inventory/delivery-receipts/${id}`)
+    await page.getByRole('button', { name: 'Approve', exact: true }).first().click()
+    await page.getByRole('button', { name: 'Approve', exact: true }).last().click()
+    const memoLink = page.getByRole('link', { name: /^DMINV0926-\d{3,}$/ })
+    await expect(memoLink).toBeVisible({ timeout: 15_000 })
+    await memoLink.click()
+    await expect(page.getByRole('heading', { name: 'Debit memo' })).toBeVisible()
+    const [memoWin] = await Promise.all([
+      context.waitForEvent('page'),
+      page.getByRole('button', { name: 'Print', exact: true }).click(),
+    ])
+    await memoWin.waitForLoadState('domcontentloaded')
+    await expect(memoWin.getByRole('heading', { name: 'Debit memo' })).toBeVisible()
+    await expect(memoWin.getByText('Total debit')).toBeVisible()
+    await expect(memoWin.getByText('Noted by')).toBeVisible()
+    await memoWin.close()
   })
 })

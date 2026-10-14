@@ -271,7 +271,7 @@ function DrRow({ dr }: { dr: DrSummary }): React.JSX.Element {
       <td>
         <Link href={href} className={cell}>
           <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium ${DR_STATUS_META[dr.status].badge}`}
+            className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium ${DR_STATUS_META[dr.status].badge}`}
           >
             {drStatusLabel(dr.status, dr.purpose)}
           </span>

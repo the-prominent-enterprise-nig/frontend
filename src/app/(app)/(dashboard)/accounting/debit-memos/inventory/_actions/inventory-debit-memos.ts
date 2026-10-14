@@ -15,6 +15,7 @@ import {
   type IdmStatus,
 } from '@/src/schema/accounting/inventory-debit-memos'
 import { idmFailure } from '../_lib/idm-errors'
+import type { PrintDocumentEnvelope } from '@/src/libs/print/printInventoryDocument'
 
 const BASE = '/inventory-debit-memos'
 
@@ -111,4 +112,14 @@ export async function voidInventoryDebitMemo(
   if (!result.success) return idmFailure(result, 'Failed to void the memo')
   revalidate(id)
   return { success: true, data: { id }, message: 'Voided' }
+}
+
+export async function getInventoryDebitMemoDocument(
+  id: string
+): Promise<ApiResponse<PrintDocumentEnvelope>> {
+  const result = await api.get<PrintDocumentEnvelope>(`${BASE}/${id}/document`)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error ?? 'Could not load the document', message: '' }
+  }
+  return { success: true, data: result.data, message: '' }
 }

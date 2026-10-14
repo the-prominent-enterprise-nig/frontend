@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation'
 import { FormProvider, useForm, useWatch, type FieldPath } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Printer } from 'lucide-react'
 import AttachmentsPanel, { uploadAndAttach } from '@/src/components/common/AttachmentsPanel'
 import { showToast } from '@/src/components/ui/toast'
 import {
@@ -23,6 +23,8 @@ import {
 } from '@/src/schema/inventory/delivery-receipts'
 import { saveDeliveryReceipt } from '../_actions/save-delivery-receipt'
 import { submitDeliveryReceipt } from '../_actions/submit-delivery-receipt'
+import { getDeliveryReceiptDocument } from '../_actions/get-delivery-receipt-document'
+import { printDeliveryReceipt } from '@/src/libs/print/printDeliveryReceipt'
 import { emptyDrForm } from '../_lib/dr-form-values'
 import { fmtPeso } from '../_lib/dr-format'
 import { DrIssueSection, DrPurposeSection, DrReferenceSection } from './DrFormSections'
@@ -48,7 +50,7 @@ type Props = {
 export default function DrForm({ draft }: Props): React.JSX.Element {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const [busy, setBusy] = useState<'save' | 'submit' | null>(null)
+  const [busy, setBusy] = useState<'save' | 'submit' | 'print' | null>(null)
   const [staged, setStaged] = useState<File[]>([])
   const form = useForm<DrFormValues>({
     resolver: zodResolver(DrFormSchema),
@@ -76,6 +78,21 @@ export default function DrForm({ draft }: Props): React.JSX.Element {
     setBusy(null)
     if (!id) return
     showToast({ title: 'Draft saved', status: 'success' })
+    await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    if (!draft) router.push(`/inventory/delivery-receipts/${id}`)
+    else router.refresh()
+  }
+
+  /** A DR only prints once it has a number, so the preview saves the draft
+   * first; the print carries a DRAFT watermark until it is approved. */
+  async function onPrintPreview(values: DrFormValues): Promise<void> {
+    setBusy('print')
+    const id = await persist(values)
+    const doc = id ? await getDeliveryReceiptDocument(id) : null
+    setBusy(null)
+    if (!id) return
+    if (doc?.success && doc.data) printDeliveryReceipt(doc.data)
+    else showToast({ title: 'Saved, but the preview could not load', status: 'error' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
     if (!draft) router.push(`/inventory/delivery-receipts/${id}`)
     else router.refresh()
@@ -137,6 +154,7 @@ export default function DrForm({ draft }: Props): React.JSX.Element {
             draft={draft}
             busy={busy}
             onSave={form.handleSubmit(onSaveDraft)}
+            onPrint={form.handleSubmit(onPrintPreview)}
             onSubmit={form.handleSubmit(onSubmitForApproval)}
           />
         }
@@ -174,11 +192,13 @@ function FormActions({
   draft,
   busy,
   onSave,
+  onPrint,
   onSubmit,
 }: {
   draft?: { id: string; drNumber: string }
-  busy: 'save' | 'submit' | null
+  busy: 'save' | 'submit' | 'print' | null
   onSave: () => void
+  onPrint: () => void
   onSubmit: () => void
 }): React.JSX.Element {
   const spinner = <Loader2 className="h-4 w-4 animate-spin" />
@@ -191,6 +211,10 @@ function FormActions({
       <button type="button" onClick={onSave} disabled={!!busy} className={BTN_SECONDARY}>
         {busy === 'save' && spinner}
         Save draft
+      </button>
+      <button type="button" onClick={onPrint} disabled={!!busy} className={BTN_SECONDARY}>
+        {busy === 'print' ? spinner : <Printer className="h-4 w-4" />}
+        Print preview
       </button>
       <button type="button" onClick={onSubmit} disabled={!!busy} className={BTN_PRIMARY}>
         {busy === 'submit' && spinner}

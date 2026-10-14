@@ -8,6 +8,9 @@ import { DR_PURPOSE_CONFIG } from '@/src/libs/inventory/delivery-receipt-purpose
 import type { DrDetail } from '@/src/schema/inventory/delivery-receipts'
 import { DR_STATUS_META, drStatusLabel, fmtDrDate, fmtPeso } from '../_lib/dr-format'
 import { BTN_GHOST, DrShell, HeaderFigure, NumberChip, Section } from './drFormUi'
+import { PrintButton } from './PrintButton'
+import { printDeliveryReceipt } from '@/src/libs/print/printDeliveryReceipt'
+import { getDeliveryReceiptDocument } from '../_actions/get-delivery-receipt-document'
 
 const BACK_HREF = '/inventory/stock-transaction?tab=delivery-receipts'
 
@@ -33,7 +36,7 @@ export default function DrDetailView({
         <>
           <NumberChip>{dr.drNumber}</NumberChip>
           <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium ${DR_STATUS_META[dr.status].badge}`}
+            className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium ${DR_STATUS_META[dr.status].badge}`}
           >
             {drStatusLabel(dr.status, dr.purpose)}
           </span>
@@ -44,10 +47,14 @@ export default function DrDetailView({
       status={statusLine(dr)}
       actions={
         <>
-          {actions}
           <Link href={BACK_HREF} className={BTN_GHOST}>
-            Back to list
+            Back
           </Link>
+          <PrintButton
+            load={() => getDeliveryReceiptDocument(dr.id)}
+            print={printDeliveryReceipt}
+          />
+          {actions}
         </>
       }
     >
