@@ -274,7 +274,7 @@ export default function BankRecon() {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
+                    <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
                       Loading...
                     </td>
                   </tr>
@@ -326,86 +326,6 @@ export default function BankRecon() {
                               : []),
                           ]}
                         />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {(loading || credits.length > 0) && (
-        <>
-          <div className="mt-6 flex items-center justify-between mb-3">
-            <div>
-              <h3 className="text-lg font-semibold">Unidentified Bank Credits</h3>
-              <p className="text-xs text-gray-500">
-                Bank credits with no matching sale or settlement yet — reclassify once identified.
-              </p>
-            </div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-                <tr>
-                  <th className="px-3 py-2 text-left">Bank Account</th>
-                  <th className="px-3 py-2 text-left">Credit Date</th>
-                  <th className="px-3 py-2 text-right">Amount</th>
-                  <th className="px-3 py-2 text-left">Bank Ref</th>
-                  <th className="px-3 py-2 text-left">Voucher Control No.</th>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2 w-10" aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
-                      Loading...
-                    </td>
-                  </tr>
-                ) : (
-                  credits.map((c) => (
-                    <tr key={c.id}>
-                      <td className="px-3 py-2">{c.bankAccount?.name}</td>
-                      <td className="px-3 py-2 text-xs">{fmtDate(c.creditDate)}</td>
-                      <td className="px-3 py-2 text-right">{fmtMoney(c.amount)}</td>
-                      <td className="px-3 py-2 text-xs">{c.bankRef || '—'}</td>
-                      <td className="px-3 py-2 text-xs">{c.voucherControlNo || '—'}</td>
-                      <td className="px-3 py-2 text-xs">
-                        {c.status === 'unmatched' ? (
-                          <span className="text-amber-700">Unmatched</span>
-                        ) : (
-                          <span className="text-emerald-700" title={c.reclassifiedNote ?? ''}>
-                            Reclassified
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {c.journalEntryId && (
-                            <button
-                              onClick={() =>
-                                printVoucher(c.journalEntryId!, 'Unidentified Bank Credit Voucher')
-                              }
-                              title="Print voucher"
-                              aria-label="Print voucher"
-                              className="p-1.5 text-gray-500 hover:text-purple-700 hover:bg-purple-50 rounded"
-                            >
-                              <Printer className="w-4 h-4" />
-                            </button>
-                          )}
-                          {c.status === 'unmatched' && (
-                            <Link
-                              href={`/accounting/bank-reconciliation/unidentified-credit/${c.id}/reclassify`}
-                              className="px-2 py-1 text-xs text-purple-700 hover:bg-purple-50 border border-purple-200 rounded"
-                            >
-                              Reclassify
-                            </Link>
-                          )}
-                        </div>
                       </td>
                     </tr>
                   ))
