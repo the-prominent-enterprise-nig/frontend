@@ -225,13 +225,13 @@ function LedgerBody({
   )
 }
 
-/** DEPOSIT, then the bank and date written across SI# to CASH RECEIPT, as the
- * client's form has it; the amount credits the balance down. An undeposited
- * line has no credit, so its DEPOSIT label stays blank. */
+/** DEPOSIT (or UNDEPOSITED), then the bank and date written across
+ * SI# to CASH RECEIPT, as the client's form has it; the amount credits the
+ * balance down. */
 function DepositRow({ line }: { line: FormLine }): React.JSX.Element {
   return (
     <tr>
-      <td className={CELL}>{line.credit === null ? '' : 'DEPOSIT'}</td>
+      <td className={CELL}>{line.creditLabel}</td>
       <td colSpan={6} className={`${CELL} uppercase`}>
         {line.customer}
       </td>

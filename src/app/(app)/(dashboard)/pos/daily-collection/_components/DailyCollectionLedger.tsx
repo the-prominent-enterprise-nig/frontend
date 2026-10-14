@@ -159,9 +159,9 @@ function WideLedger({
         </thead>
         <tbody>
           {lines.map((line, i) => (
-            <tr key={`line-${i}`} className={line.type === 'deposit' ? 'bg-gray-50' : undefined}>
+            <tr key={`line-${i}`}>
               {line.type === 'deposit' ? (
-                <td className={`${CELL} whitespace-nowrap font-semibold`}>Deposit:</td>
+                <td className={`${CELL} whitespace-nowrap`}>{line.creditLabel}</td>
               ) : (
                 i === 0 && (
                   <td
@@ -172,7 +172,14 @@ function WideLedger({
                   </td>
                 )
               )}
-              {line.span > 0 && (
+              {/* A credit line writes its bank and date across SI#, Customer
+                  and Desc, as the client's form does. */}
+              {line.type === 'deposit' && (
+                <td colSpan={3} className={`${CELL} whitespace-nowrap uppercase`}>
+                  {line.customer}
+                </td>
+              )}
+              {line.type !== 'deposit' && line.span > 0 && (
                 <>
                   <td
                     rowSpan={line.span}
@@ -180,11 +187,7 @@ function WideLedger({
                   >
                     {line.si}
                   </td>
-                  <td
-                    rowSpan={line.span}
-                    colSpan={line.type === 'deposit' ? 2 : 1}
-                    className={`${CELL} ${line.type === 'deposit' ? 'font-medium uppercase' : ''}`}
-                  >
+                  <td rowSpan={line.span} className={CELL}>
                     {line.customer}
                   </td>
                 </>
@@ -228,13 +231,13 @@ function CardLedger({ lines }: { lines: FormLine[] }): React.JSX.Element {
         return (
           <div
             key={`card-${i}`}
-            className={`flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 ${
-              isDeposit ? 'bg-gray-50' : ''
-            }`}
+            className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3"
           >
             <div className="min-w-0">
-              <p className={`text-sm ${isDeposit ? 'font-semibold uppercase' : 'font-medium'}`}>
-                {isDeposit ? `Deposit: ${line.customer}` : line.customer || '↳ same customer'}
+              <p className={`text-sm font-medium ${isDeposit ? 'uppercase' : ''}`}>
+                {isDeposit
+                  ? `${line.creditLabel}: ${line.customer}`
+                  : line.customer || '↳ same customer'}
                 {line.sourceCounter && <OffsiteCounterTag name={line.sourceCounter} />}
                 {line.caravan && <CaravanTag name={line.caravan} />}
               </p>

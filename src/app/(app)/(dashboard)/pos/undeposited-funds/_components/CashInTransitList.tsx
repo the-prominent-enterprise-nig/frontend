@@ -18,16 +18,26 @@ import {
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import AttachmentsPanel, { uploadAndAttach } from '@/src/components/common/AttachmentsPanel'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { showToast } from '@/src/components/ui/toast'
 import { createPosDeposit } from '../_actions/pos-deposits'
 import {
+  SlipEditor,
+  clearsAccountOf,
+  earliestDate,
+  emptySlip,
+  joinReferences,
+  round2,
+  slipAmount,
+  slipsProblem,
+  toLineInputs,
+  type Slip,
+} from './SlipEditor'
+import {
   DepositDetailLoader,
   POS_DEPOSIT_ENTITY,
-  daysSince,
   refreshDeposits,
   useDepositSummary,
 } from './PosDepositsView'
@@ -384,6 +394,7 @@ export function CashInTransitList({
       {openDepositId && (
         <DepositDetailLoader
           id={openDepositId}
+          accounts={ledger.accounts}
           canManage={canManage}
           canVerify={canVerify}
           onClose={() => setOpenDepositId(null)}
@@ -600,7 +611,7 @@ function LedgerTable({
   empty: string
 }): React.JSX.Element {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const columns = canManage ? 6 : 5
+  const columns = canManage ? 7 : 6
   const toggleCollapsed = (id: string): void =>
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -617,6 +628,7 @@ function LedgerTable({
             <th className="px-3 py-2 text-left">Terminal</th>
             <th className="px-3 py-2 text-left">Cashier</th>
             <th className="px-3 py-2 text-left">Closed</th>
+            <th className="px-3 py-2 text-left">Deposit date</th>
             <th className="px-3 py-2 text-left">Status</th>
             <th className="px-3 py-2 text-right">Amount</th>
           </tr>
@@ -728,6 +740,7 @@ function ReceiptRow({
       <td className="px-3 py-2">{receipt.number ?? 'New Receipt'}</td>
       <td className="px-3 py-2">{receipt.payerName}</td>
       <td className="px-3 py-2 text-xs">{fmtDate(receipt.paymentDate)}</td>
+      <td className="px-3 py-2 text-xs text-gray-400">—</td>
       <td className="px-3 py-2">
         <span className="text-xs text-gray-500">To deposit · New Receipt</span>
       </td>
@@ -772,6 +785,9 @@ function SessionRow({
       <td className="px-3 py-2">{row.terminalCode ?? '—'}</td>
       <td className="px-3 py-2">{row.cashierName ?? '—'}</td>
       <td className="px-3 py-2 text-xs">{fmtDate(row.closedAt)}</td>
+      <td className="whitespace-nowrap px-3 py-2 text-xs">
+        {row.depositDate ? fmtDate(row.depositDate) : <span className="text-gray-400">—</span>}
+      </td>
       <td className="px-3 py-2">
         <StatusCell row={row} />
       </td>
@@ -780,30 +796,23 @@ function SessionRow({
   )
 }
 
-/** To deposit; Awaiting · date · waiting days (amber, red after three days);
- * Deposited · date. No bank: a deposit goes to several, one per slip, and the
- * stored one is only the first slip's. */
+/** To deposit, Awaiting or Deposited — the status only; the date has its own
+ * column. No bank: a deposit goes to several, one per slip, and the stored
+ * one is only the first slip's. */
 function StatusCell({ row }: { row: LedgerRow }): React.JSX.Element {
   if (row.status === 'to_deposit') {
     return <span className="text-xs text-gray-500">To deposit</span>
   }
-  const where = row.depositDate ? fmtDate(row.depositDate) : ''
   if (row.status === 'deposited') {
     return (
       <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-800">
-        Deposited{where ? ` · ${where}` : ''}
+        Deposited
       </span>
     )
   }
-  const days = row.depositDate ? daysSince(row.depositDate) : 0
-  const tone =
-    days >= 3
-      ? 'border-red-200 bg-red-50 text-red-700'
-      : 'border-amber-200 bg-amber-50 text-amber-800'
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}>
-      Awaiting{where ? ` · ${where}` : ''}
-      {days > 0 ? ` · ${days} day${days === 1 ? '' : 's'}` : ''}
+    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+      Awaiting
     </span>
   )
 }
@@ -870,145 +879,6 @@ function SummaryCard({
   )
 }
 
-interface Slip {
-  bankAccountId: string
-  /** A string, and empty on open — the client asked for the amount field to
-   * start blank so accounting itemises the banks rather than accepting a
-   * figure the system worked out (Scenario 70 G12). */
-  amount: string
-  /** A processor's clearing account; empty means the branch's own cash. */
-  clearsAccountId: string
-  note: string
-  /** This bank's own deposit slip number — each bank issues its own. */
-  reference: string
-}
-
-/** The slips' own numbers, joined — the deposit's reference, capped at the
- * 100 characters it is stored in. */
-function joinReferences(refs: (string | undefined)[]): string | undefined {
-  const unique = [...new Set(refs.filter((r): r is string => !!r))]
-  return unique.length ? unique.join(', ').slice(0, 100) : undefined
-}
-
-type Option = { value: string; label: string }
-
-/** One slip: the account it empties, the amount on it, the bank it went to,
- * and that bank's own slip number. A cheque from a New Receipt is entered the
- * same way, clearing 1-01-010. */
-function SlipRow({
-  slip,
-  label,
-  bankOptions,
-  clearingOptions,
-  onChange,
-  onRemove,
-  removeDisabled = false,
-}: {
-  slip: Slip
-  /** Names the row for screen readers and the remove tooltip. */
-  label: string
-  bankOptions: Option[]
-  clearingOptions: Option[]
-  onChange: (patch: Partial<Slip>) => void
-  onRemove: () => void
-  removeDisabled?: boolean
-}): React.JSX.Element {
-  return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_8rem_1fr_12rem_auto]">
-      <SearchableSelect
-        value={slip.clearsAccountId}
-        // Cleared back to the branch's cash rather than to nothing.
-        onChange={(value) => onChange({ clearsAccountId: value || BRANCH_CASH })}
-        options={[{ value: BRANCH_CASH, label: BRANCH_CASH_LABEL }, ...clearingOptions]}
-        placeholder={BRANCH_CASH_LABEL}
-        portal
-      />
-      <input
-        inputMode="decimal"
-        value={slip.amount}
-        onChange={(e) => onChange({ amount: e.target.value })}
-        placeholder="Amount"
-        aria-label={`${label} amount`}
-        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right font-mono text-sm tabular-nums"
-      />
-      <SearchableSelect
-        value={slip.bankAccountId}
-        onChange={(value) => onChange({ bankAccountId: value })}
-        options={bankOptions}
-        placeholder="Bank account…"
-        clearable
-        portal
-      />
-      <input
-        value={slip.reference}
-        onChange={(e) => onChange({ reference: e.target.value })}
-        placeholder="Reference number"
-        aria-label={`${label} reference`}
-        maxLength={100}
-        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-      />
-      <Tooltip label={`Remove ${label}`}>
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={removeDisabled}
-          aria-label={`Remove ${label}`}
-          className="px-2 text-gray-400 hover:text-red-600 disabled:opacity-30"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </Tooltip>
-    </div>
-  )
-}
-
-/** The branch's own cash — 1-01-010, what POS_CASH maps to. A value of its
- * own so the dropdown shows it as chosen (an empty value reads as nothing
- * picked); sent as no clearsAccountId, which is what the deposit's cash
- * figure counts. */
-const BRANCH_CASH = 'branch-cash'
-const BRANCH_CASH_LABEL = '1-01-010 — Cash and Cash Equivalents'
-
-/** The processor's clearing account a slip empties, or undefined for the
- * branch's own cash. */
-function clearsAccountOf(slip: Slip): string | undefined {
-  return slip.clearsAccountId && slip.clearsAccountId !== BRANCH_CASH
-    ? slip.clearsAccountId
-    : undefined
-}
-
-/** The client's chart groups every processor's holding account under one
- * header (prisma/data/chart-of-accounts.csv): GCash, Maya, Card/POS, ECPay,
- * Palawan, other gateways, transfers in transit, online bank transfers. */
-const CLEARING_GROUP = '1-01-040'
-/** Narrows the account search to the group's own number range. */
-const CLEARING_GROUP_PREFIX = '1-01-04'
-
-/** CLEARING_GROUP and the accounts filed under it (the client's chart, rows
- * 5–13), as dropdown options — nothing another chart left behind. */
-function clearingAccountOptions(data: unknown): Option[] {
-  // `/accounts` answers with a bare array, not the paginated shape its type
-  // claims, and includes each account's parent.
-  const accounts = (
-    Array.isArray(data) ? data : ((data as { items?: unknown[] } | undefined)?.items ?? [])
-  ) as (Account & { parentAccount?: { number?: string } | null })[]
-  return accounts
-    .filter((a) => a.number === CLEARING_GROUP || a.parentAccount?.number === CLEARING_GROUP)
-    .sort((a, b) => (a.number ?? '').localeCompare(b.number ?? ''))
-    .map((a) => ({ value: a.id, label: a.number ? `${a.number} — ${a.name}` : a.name }))
-}
-
-/** Centavos, so a tally of typed amounts cannot drift into 0.004 differences. */
-const round2 = (n: number): number => Math.round(n * 100) / 100
-
-const EMPTY_SLIP: Slip = {
-  bankAccountId: '',
-  amount: '',
-  clearsAccountId: BRANCH_CASH,
-  note: '',
-  reference: '',
-}
-
 function DepositForm({
   accounts,
   sessions,
@@ -1022,13 +892,7 @@ function DepositForm({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [form, setForm] = useState({
-    // Local date, not UTC: toISOString() is a day behind for the first eight
-    // hours of every Manila morning, so the deposit opened with yesterday's
-    // date on it and posted there unless somebody noticed.
-    depositDate: new Date().toLocaleDateString('en-CA'),
-  })
-  const [slips, setSlips] = useState<Slip[]>([{ ...EMPTY_SLIP }])
+  const [slips, setSlips] = useState<Slip[]>(() => [emptySlip()])
   const [files, setFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1040,45 +904,22 @@ function DepositForm({
   const newReceipts = useUnbankedReceipts(branchId, !!branchId)
   const receipts = newReceipts.data?.data ?? []
 
-  // The chart, for the "clears" column: a slip either empties the branch's
-  // own cash or one of the accounts the client's chart files under 1-01-040
-  // Payment Gateway and Collection Clearing Funds.
-  const chart = useQuery({
-    queryKey: ['deposit-clearing-accounts'],
-    queryFn: () => getAccounts({ search: CLEARING_GROUP_PREFIX }),
-    staleTime: 5 * 60_000,
-  })
-  const clearingOptions = clearingAccountOptions(chart.data?.data)
-
   const receiptsTotal = receipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
   /** What the branch's own cash and cheques come to. */
   const outstanding = round2(sessions.reduce((sum, s) => sum + s.cash, 0) + receiptsTotal)
-  const slipAmount = (slip: Slip): number => Number(slip.amount) || 0
   const cashSlips = round2(
     slips.filter((s) => !clearsAccountOf(s)).reduce((sum, s) => sum + slipAmount(s), 0)
   )
   const difference = round2(outstanding - cashSlips)
-  const incomplete = slips.some((s) => !s.bankAccountId || slipAmount(s) <= 0)
   // Why Record deposit is disabled, so the button never just sits greyed out.
   const blockedReason =
-    sessions.length === 0
-      ? 'Select at least one session to deposit.'
-      : incomplete
-        ? 'Every slip needs a bank account and an amount — remove any empty slip.'
-        : null
+    sessions.length === 0 ? 'Select at least one session to deposit.' : slipsProblem(slips)
   // Not a block: the amounts are accounting's own itemisation. Said on hover
   // so an over or short is a choice, not a typo nobody saw.
   const cashNote =
     Math.abs(difference) >= 0.005
       ? `The 1-01-010 slips come to ${fmtMoney(cashSlips)} against ${fmtMoney(outstanding)} collected — ${fmtMoney(Math.abs(difference))} ${difference > 0 ? 'short' : 'over'}.`
       : null
-  const bankOptions = accounts.map((a) => ({
-    value: a.id,
-    label: a.accountNumber ? `${a.name} — ${a.accountNumber}` : a.name,
-  }))
-
-  const setSlip = (i: number, patch: Partial<Slip>) =>
-    setSlips((prev) => prev.map((s, n) => (n === i ? { ...s, ...patch } : s)))
 
   // Scenario 61 Part 5 — records a DRAFT; nothing posts until accounting has
   // checked the attachments and clears it from the Deposits view.
@@ -1086,19 +927,13 @@ function DepositForm({
     e.preventDefault()
     setSaving(true)
     setError(null)
-    const lines = slips.map((s) => ({
-      bankAccountId: s.bankAccountId,
-      amount: slipAmount(s),
-      clearsAccountId: clearsAccountOf(s),
-      note: s.note || undefined,
-      reference: s.reference.trim() || undefined,
-    }))
+    const lines = toLineInputs(slips)
     const res = await createPosDeposit({
       bankAccountId: lines[0].bankAccountId,
       sessionIds: sessions.map((s) => s.sessionId),
       newReceiptIds: receipts.map((r) => r.id),
       lines,
-      depositDate: form.depositDate,
+      depositDate: earliestDate(slips),
       // The deposit's own reference — what the list searches and the Daily
       // Collection Report prints — is the slips' numbers together.
       reference: joinReferences(lines.map((l) => l.reference)),
@@ -1143,48 +978,8 @@ function DepositForm({
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
             <DepositSessions sessions={sessions} />
 
-            {/* Scenario 70 G12 — one row per bank, each saying what it empties.
-                The client's own closing goes to five banks at once and clears
-                the branch's cash and every processor's account in one record;
-                the amount starts blank so accounting itemises it rather than
-                accepting a figure worked out for them. */}
-            <div className="rounded-lg border border-gray-200">
-              <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Slips</p>
-                <button
-                  type="button"
-                  onClick={() => setSlips((prev) => [...prev, { ...EMPTY_SLIP }])}
-                  className="text-xs font-medium text-prominent-purple-700 hover:underline"
-                >
-                  Add slip
-                </button>
-              </div>
-              <div className="space-y-3 p-3">
-                {slips.map((slip, i) => (
-                  <SlipRow
-                    key={i}
-                    slip={slip}
-                    label={`slip ${i + 1}`}
-                    bankOptions={bankOptions}
-                    clearingOptions={clearingOptions}
-                    onChange={(patch) => setSlip(i, patch)}
-                    onRemove={() => setSlips((prev) => prev.filter((_, n) => n !== i))}
-                    removeDisabled={slips.length === 1}
-                  />
-                ))}
-              </div>
-            </div>
+            <SlipEditor slips={slips} onChange={setSlips} accounts={accounts} />
 
-            <label className="block sm:w-1/2">
-              <span className="block text-xs font-medium text-gray-600 mb-1">Deposit Date *</span>
-              <input
-                required
-                type="date"
-                value={form.depositDate}
-                onChange={(e) => setForm({ ...form, depositDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </label>
             <AttachmentsPanel
               entityType={POS_DEPOSIT_ENTITY}
               title="Proof of deposit"
