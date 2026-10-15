@@ -307,7 +307,7 @@ export default function AccountingPage() {
       Reports.balanceSheet(), // 2
       Reports.aging('ar'), // 3
       Reports.aging('ap'), // 4
-      ARInvoices.list(), // 5
+      ARInvoices.list({ view: 'summary' }), // 5
       APBills.list(), // 6
       BankAccounts.list(), // 7
       FixedAssetsV2.list(), // 8

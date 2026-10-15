@@ -3,14 +3,14 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { UpdateUomFormSchema } from '@/src/schema/inventory/uom'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 export async function updateUom(id: string, input: unknown): Promise<ApiResponse<void>> {
   if (!id) return { success: false, error: 'ID required', message: 'UOM ID is required' }
 
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   if (!can(session, INVENTORY_PERMISSIONS.UOM_UPDATE)) {
     return {

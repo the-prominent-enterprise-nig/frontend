@@ -3,7 +3,7 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { revalidateTag } from 'next/cache'
 import { branchDisplayName } from '@/src/libs/format/locationLabel'
-import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions/get-session'
 import type {
   PosCustomer,
   PosEmployeeResult,
@@ -1747,7 +1747,7 @@ export async function getActivePosConfig(): Promise<ApiResponse<PosConfig | null
     }
 
     // /pos/config/active returned nothing — fall back to tenant lookup
-    const session = await getSessionOrNull()
+    const session = await getSessionIfAvailable()
     if (!session) return { success: true, data: null }
 
     const tenantId = session.enterpriseOwnerId ?? session.id
@@ -1876,7 +1876,7 @@ export async function getCurrentSessionUser(): Promise<
   ApiResponse<{ id: string; name: string; email: string }>
 > {
   try {
-    const session = await getSessionOrNull()
+    const session = await getSessionIfAvailable()
     if (!session) {
       return { success: false, error: 'Not authenticated' }
     }

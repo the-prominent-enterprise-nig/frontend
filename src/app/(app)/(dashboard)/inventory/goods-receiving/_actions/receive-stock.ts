@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import { ReceiveStockFormSchema } from '@/src/schema/inventory/goods-receiving'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
@@ -22,7 +22,7 @@ export type ReceivedStockResult = {
 }
 
 export async function receiveStock(input: unknown): Promise<ApiResponse<ReceivedStockResult>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }

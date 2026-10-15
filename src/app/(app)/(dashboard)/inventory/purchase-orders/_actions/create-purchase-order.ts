@@ -3,12 +3,12 @@
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import { CreatePoServerSchema } from '@/src/schema/inventory/purchase-orders'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
 export async function createPurchaseOrder(input: unknown): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }

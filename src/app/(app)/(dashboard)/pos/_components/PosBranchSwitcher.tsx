@@ -9,7 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
 import { Check, ChevronDown, Search, Store } from 'lucide-react'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { hasPrivilegedRole } from '@/src/libs/guards/permission'
 import { getBranches, type Branch } from '../_actions/pos-actions'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
@@ -29,7 +29,7 @@ export function PosBranchSwitcher() {
   const { branchId, setBranch } = usePosBranchContext()
 
   useEffect(() => {
-    getSessionOrNull().then((session) => {
+    getSessionIfAvailable().then((session) => {
       if (!session) return
       const privileged = hasPrivilegedRole(session)
       if (privileged) setVisible(true)

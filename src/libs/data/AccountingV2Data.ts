@@ -773,8 +773,18 @@ export const ARInvoices = {
       notes?: string
     }
   ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/doubtful`, body),
-  list: (params?: { search?: string; status?: string; customerId?: string; branchId?: string }) =>
-    api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  // Without `limit` this is every invoice, in full (~2 KB each — 25 MB at 12.7k). Dashboard
+  // widgets only count and sum, so they pass view: 'summary' (a handful of columns); callers that
+  // want a page pass limit/offset and read `total` for the full count.
+  list: (params?: {
+    search?: string
+    status?: string
+    customerId?: string
+    branchId?: string
+    limit?: number
+    offset?: number
+    view?: 'summary'
+  }) => api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
   // Scenario 44 — flat cross-customer Receipts register (one row per
   // ARPayment) backing the AR Invoices landing page, distinct from list()
   // above which returns ARInvoice rows for the customer-grouped rollup.
