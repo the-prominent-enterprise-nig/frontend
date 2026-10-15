@@ -9,9 +9,13 @@ import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
 type Props = {
   value: string
   onChange: (value: string) => void
-  /** Fired when the user picks a roster entry — the caller fills whichever
-   * sibling fields (driver name, plate) this vehicle carries. */
+  /** Fired when the user picks a roster entry. The caller takes only the
+   * field this input is for — picking a driver never fills the plate, nor
+   * the reverse (Scenario 71 item 22). */
   onPickVehicle: (vehicle: VehicleSummary) => void
+  /** What the dropdown lists: plate numbers (default), or the roster's
+   * distinct driver names. */
+  mode?: 'plate' | 'driver'
   search: (query: string) => Promise<VehicleSummary[]>
   queryKey: string
   placeholder?: string
@@ -36,6 +40,7 @@ export function VehicleAutocompleteInput({
   placeholder,
   error,
   disabled,
+  mode = 'plate',
 }: Props) {
   const [open, setOpen] = useState(false)
   const [debouncedQuery, setDebouncedQuery] = useState(value)
@@ -85,7 +90,7 @@ export function VehicleAutocompleteInput({
     staleTime: 30_000,
   })
 
-  const options = data ?? []
+  const options = mode === 'driver' ? distinctDrivers(data ?? [], value) : (data ?? [])
 
   function handlePick(vehicle: VehicleSummary) {
     onPickVehicle(vehicle)
@@ -131,8 +136,10 @@ export function VehicleAutocompleteInput({
             ) : options.length === 0 ? (
               <p className="px-3 py-3 text-sm text-zinc-400">
                 {value.trim()
-                  ? `No matching vehicles for "${value.trim()}"`
-                  : 'No vehicles on file'}
+                  ? `No matching ${mode === 'driver' ? 'drivers' : 'vehicles'} for "${value.trim()}"`
+                  : mode === 'driver'
+                    ? 'No drivers on file'
+                    : 'No vehicles on file'}
               </p>
             ) : (
               options.map((vehicle) => (
@@ -142,12 +149,18 @@ export function VehicleAutocompleteInput({
                   onClick={() => handlePick(vehicle)}
                   className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm text-zinc-800 transition-colors hover:bg-zinc-50"
                 >
-                  <span className="w-full truncate font-medium">
-                    {vehicle.driverName || vehicle.plateNo}
-                  </span>
-                  <span className="w-full truncate font-mono text-xs text-zinc-400">
-                    {[vehicle.plateNo, vehicle.tag].filter(Boolean).join(' · ')}
-                  </span>
+                  {mode === 'driver' ? (
+                    <span className="w-full truncate font-medium">{vehicle.driverName}</span>
+                  ) : (
+                    <>
+                      <span className="w-full truncate font-mono font-medium">
+                        {vehicle.plateNo}
+                      </span>
+                      {vehicle.tag && (
+                        <span className="w-full truncate text-xs text-zinc-400">{vehicle.tag}</span>
+                      )}
+                    </>
+                  )}
                 </button>
               ))
             )}
@@ -156,4 +169,20 @@ export function VehicleAutocompleteInput({
         )}
     </div>
   )
+}
+
+/** One entry per driver name. The search also matches plates, so a typed
+ * query is re-applied to the name itself — a driver list shouldn't offer
+ * someone whose plate happened to match. */
+function distinctDrivers(vehicles: VehicleSummary[], query: string): VehicleSummary[] {
+  const q = query.trim().toLowerCase()
+  const seen = new Set<string>()
+  return vehicles.filter((v) => {
+    const name = v.driverName?.trim()
+    if (!name || (q && !name.toLowerCase().includes(q))) return false
+    const key = name.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }

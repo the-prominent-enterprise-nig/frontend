@@ -1,4 +1,12 @@
-import { ShoppingBag, RotateCcw, XCircle, ArrowLeftRight, Receipt, Calculator } from 'lucide-react'
+import {
+  ShoppingBag,
+  RotateCcw,
+  XCircle,
+  ArrowLeftRight,
+  Receipt,
+  Calculator,
+  Truck,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { QueryClient } from '@tanstack/react-query'
 import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
@@ -8,6 +16,8 @@ import {
   getMissingCogsReport,
 } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
+import { getDeliveryReceipts } from '@/src/app/(app)/(dashboard)/inventory/delivery-receipts/_actions/get-delivery-receipts'
+import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import { arInvoicesKey } from './dashboardQueryKeys'
 
 export type AttentionItem = {
@@ -48,7 +58,7 @@ export async function getNeedsAttentionItems(
   queryClient?: QueryClient
 ): Promise<AttentionItem[]> {
   const fetchArInvoices = () => ARInvoices.list({ branchId, view: 'summary' })
-  const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, arRes] = await Promise.all([
+  const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, arRes, drRes] = await Promise.all([
     getPurchaseOrders({ status: 'draft', limit: 20, branchId }),
     getPendingReturnRefundRequests(branchId),
     getTransfers({ status: 'pending_manager_approval', limit: 20, branchId }),
@@ -57,6 +67,8 @@ export async function getNeedsAttentionItems(
     queryClient
       ? queryClient.fetchQuery({ queryKey: arInvoicesKey(branchId), queryFn: fetchArInvoices })
       : fetchArInvoices(),
+    // Scenario 72 — branch-scoped server-side, empty for roles without DR access.
+    getDeliveryReceipts({ status: 'pending_approval', limit: 20 }),
   ])
 
   const items: AttentionItem[] = []
@@ -160,7 +172,20 @@ export async function getNeedsAttentionItems(
     href: '/inventory/transfers',
   }))
 
-  items.push(...poItems, ...voidItems, ...refundItems, ...transferItems)
+  const drItems: AttentionItem[] = (drRes.data?.data ?? []).map((dr) => ({
+    id: `dr-${dr.id}`,
+    icon: Truck,
+    iconStyle: 'text-emerald-600 bg-emerald-50',
+    label: `Delivery Receipt ${dr.drNumber}`,
+    sub: `${dr.warehouse.name} · ${drPurposeLabel(dr.purpose)}`,
+    timestamp: dr.createdAt,
+    tier: 2,
+    badge: 'DR',
+    badgeStyle: 'bg-emerald-100 text-emerald-700',
+    href: `/inventory/delivery-receipts/${dr.id}`,
+  }))
+
+  items.push(...poItems, ...voidItems, ...refundItems, ...transferItems, ...drItems)
 
   return items.sort(
     (a, b) => a.tier - b.tier || new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()

@@ -99,6 +99,10 @@ export const ReceiveStockFormSchema = z
     // (see the refine below, and ReceiveStockModal's own auto-default
     // effect).
     warehouseId: z.string().optional(),
+    // Set once the receiver has seen and dismissed the cross-warehouse
+    // mismatch warning (New Receipt only) — re-sent on the confirmed retry so
+    // the backend posts instead of warning again.
+    confirmWarehouseMismatch: z.boolean().optional(),
     // Scenario 55 (Stock-side Manual RR parity, follow-up) — applicationType
     // (new_stock/revert) is gone from the form: 'revert' was never reachable
     // anywhere else in the app (receive-against-PO always hardcodes
@@ -139,6 +143,16 @@ export const ReceiveStockFormSchema = z
     // Repair/Return only — where the unit is serviced. Decides which
     // documents are required (UDS/RFS, see rrAttachments.ts).
     repairType: z.enum(['in_store', 'home_service']).optional(),
+    // Scenario 73 — Repair/Return only: where the unit comes back from. A
+    // customer (the invoice blocks, Repair Type) or a service center, which
+    // replaces Repair Type with the service center the units come back from
+    // (the tickets' repair provider, a Supplier).
+    origin: z.enum(['customer', 'service_center']).optional(),
+    serviceCenterId: z.string().optional(),
+    // Scenario 73 — From Service Center: the actual repair cost per unit.
+    repairCosts: z
+      .array(z.object({ serialNumberId: z.string().min(1), actualCost: z.number().min(0) }))
+      .optional(),
     // Already-uploaded UDS/RFS files, attached to the receipt server-side.
     attachments: z
       .array(z.object({ fileId: z.string().min(1), kind: z.enum(['UDS', 'RFS']) }))
@@ -156,10 +170,34 @@ export const ReceiveStockFormSchema = z
       path: ['supplierId'],
     }
   )
-  .refine((data) => data.reason !== 'repair_return' || !!data.repairType, {
-    message: 'Pick In-Store or Home Service',
-    path: ['repairType'],
-  })
+  .refine(
+    (data) =>
+      data.reason !== 'repair_return' || data.origin === 'service_center' || !!data.repairType,
+    {
+      message: 'Pick In-Store or Home Service',
+      path: ['repairType'],
+    }
+  )
+  .refine(
+    (data) =>
+      data.reason !== 'repair_return' || data.origin !== 'service_center' || !!data.serviceCenterId,
+    {
+      message: 'Pick the service center the units came back from',
+      path: ['serviceCenterId'],
+    }
+  )
+  // Scenario 73 Part 5 — Home Service: the service center is known at intake.
+  .refine(
+    (data) =>
+      data.reason !== 'repair_return' ||
+      data.origin === 'service_center' ||
+      data.repairType !== 'home_service' ||
+      !!data.serviceCenterId,
+    {
+      message: 'Pick the service center handling this Home Service',
+      path: ['serviceCenterId'],
+    }
+  )
   .refine(
     (data) =>
       !!data.warehouseId || data.reason === 'repossession' || data.reason === 'repair_return',

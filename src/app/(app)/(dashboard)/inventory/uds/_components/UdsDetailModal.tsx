@@ -23,23 +23,11 @@ type Props = {
   isOpen: boolean
   onClose: () => void
   onEditProvider?: (uds: Uds) => void
-  /** Advances the sheet to its next leg. Clicking a row is the natural way to
-   *  open a UDS, and this view used to dead-end: the whole journey could only
-   *  be driven from the list's own action column, which a reader who opened
-   *  the sheet to understand it had already navigated away from. */
-  onAdvance?: (uds: Uds) => void
-}
-
-/** What the next step actually is, named. Mirrors the list's action column so
- *  the same sheet does not offer two differently-worded versions of one
- *  button. Null once the sheet is closed, or while the unit is somewhere only
- *  its own dedicated form can move it from. */
-function advanceLabel(uds: Uds): string | null {
-  if (uds.status === 'completed' || uds.status === 'cancelled') return null
-  if (uds.status === 'issued') return 'Send to Main'
-  if (uds.status === 'in_transit') return 'Receive at Main'
-  if (uds.status === 'at_provider') return null
-  return 'Update status'
+  /** The sheet's next step — the same one the list's action column offers,
+   *  passed in rather than re-derived so the two can never disagree. Clicking
+   *  a row is the natural way to open a UDS, and this view used to dead-end.
+   *  Null once closed, or while nothing here can move it. */
+  nextStep?: { label: string; run: () => void } | null
 }
 
 function formatDate(iso?: string | null): string {
@@ -62,10 +50,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, onAdvance }: Props) {
+export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, nextStep }: Props) {
   if (!isOpen || !uds) return null
-
-  const nextStep = advanceLabel(uds)
 
   const canEditProvider =
     uds.reason === 'repair' &&
@@ -261,13 +247,13 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, o
           >
             Close
           </button>
-          {nextStep && onAdvance && (
+          {nextStep && (
             <button
               type="button"
-              onClick={() => onAdvance(uds)}
+              onClick={nextStep.run}
               className="rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b]"
             >
-              {nextStep}
+              {nextStep.label}
             </button>
           )}
         </div>

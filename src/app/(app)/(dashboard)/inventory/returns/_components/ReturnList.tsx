@@ -2,14 +2,13 @@
 
 import { Fragment, useState } from 'react'
 import Link from 'next/link'
-import { Plus, RefreshCw, RotateCcw, ChevronDown, FileWarning, Info, SearchX } from 'lucide-react'
+import { Plus, RotateCcw, ChevronDown, FileWarning, Info, SearchX } from 'lucide-react'
 import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import type { ReturnSummary } from '@/src/schema/inventory/returns'
 import { useReturnsManager } from '../_hooks/useReturnsManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
-import Tooltip from '@/src/components/ui/Tooltip'
 import CreateReturnScreen from './create-return/CreateReturnScreen'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import ReturnFilters from './list/ReturnFilters'
@@ -26,6 +25,7 @@ import {
   udsRefs,
   type ReturnStatusNote,
 } from './list/returnDisplay'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
 function formatDay(dateStr?: string) {
   if (!dateStr) return '—'
@@ -261,7 +261,7 @@ function ReturnDetailRow({ ret }: { ret: ReturnSummary }) {
   )
 }
 
-const TH = 'px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-500'
+const TH = `${STOCK_TABLE_HEAD} px-3 py-2.5 text-left`
 
 export default function ReturnList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.RETURNS_CREATE)
@@ -291,7 +291,6 @@ export default function ReturnList({ session }: { session: SessionUser }) {
     warehouseOptions,
     createReturn,
     isCreating,
-    refetch,
   } = useReturnsManager()
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -318,18 +317,6 @@ export default function ReturnList({ session }: { session: SessionUser }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-[9px]">
-            <Tooltip label="Reload the list">
-              <button
-                type="button"
-                onClick={() => refetch()}
-                disabled={isFetching}
-                aria-label="Refresh"
-                className="flex items-center gap-[7px] rounded-lg border border-[#d3d3db] bg-white px-[14px] py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2] hover:bg-[#faf9fb] disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh</span>
-              </button>
-            </Tooltip>
             {canCreate && (
               <button
                 type="button"
@@ -425,7 +412,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50">
+                  <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                     <th className="w-9 px-2 py-2.5">
                       <span className="sr-only">Details</span>
                     </th>

@@ -16,6 +16,11 @@ import { uploadRfsForm } from '../_actions/upload-rfs-form'
 import { showToast } from '@/src/components/ui/toast'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { UdsSerialSearchCombobox } from './UdsSerialSearchCombobox'
+import {
+  NoSupplierOnFileNote,
+  ProviderCoverageWarning,
+  useProviderOptions,
+} from './ProviderCoverageWarning'
 
 type WarehouseOption = {
   id: string
@@ -96,6 +101,12 @@ export default function CreateUdsModal({
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
   const reason = watch('reason')
+  const providerId = watch('repairProviderId')
+  const lineSerialIds = (watch('lines') ?? []).map((l) => l.serialNumberId)
+  const { options: providerOptions, noneOnFile } = useProviderOptions(
+    supplierOptions,
+    lineSerialIds
+  )
 
   const [isUploading, setIsUploading] = useState(false)
   const [rfsFormName, setRfsFormName] = useState<string | null>(null)
@@ -260,13 +271,12 @@ export default function CreateUdsModal({
                       clearable
                       portal
                       placeholder="Search repair provider…"
-                      options={supplierOptions.map((s) => ({
-                        value: s.id,
-                        label: `${s.code} — ${s.name}`,
-                      }))}
+                      options={providerOptions}
                     />
                   )}
                 />
+                <NoSupplierOnFileNote show={noneOnFile} />
+                <ProviderCoverageWarning supplierId={providerId} serialIds={lineSerialIds} />
               </div>
 
               <div>
@@ -315,7 +325,11 @@ export default function CreateUdsModal({
                         name={`lines.${idx}.serialNumberId`}
                         control={control}
                         render={({ field: f }) => (
-                          <UdsSerialSearchCombobox value={f.value} onChange={f.onChange} />
+                          <UdsSerialSearchCombobox
+                            value={f.value}
+                            onChange={f.onChange}
+                            supplierId={providerId || undefined}
+                          />
                         )}
                       />
                       {errors.lines?.[idx]?.serialNumberId && (

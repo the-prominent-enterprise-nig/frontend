@@ -27,7 +27,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
 import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
-import { deliveryFeeReceiptTenderLabel } from '../checkout/_utils/delivery'
+import { deliveryFeeReceiptTenderLabel, qrTenderLabel } from '../checkout/_utils/delivery'
 import { outputVatLabel } from '@/src/libs/tax/output-vat'
 import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 
@@ -347,7 +347,9 @@ export function TransactionDetail({
                   {tx.payments.map((p) => (
                     <div key={p.id} className="flex justify-between gap-2 py-1 text-sm">
                       <span className="capitalize text-gray-600">
-                        {p.paymentMethod.replace('_', ' ')}
+                        {p.paymentMethod === 'qr'
+                          ? qrTenderLabel(p.paymentMethodOption?.name)
+                          : p.paymentMethod.replace('_', ' ')}
                         {p.referenceNumber && (
                           <span className="block font-mono text-[10px] normal-case text-gray-400">
                             CR# {p.referenceNumber}

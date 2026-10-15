@@ -11,6 +11,7 @@ export const TransferStatusSchema = z.enum([
   'received',
   'partially_received',
   'cancelled',
+  'pending_substitution_confirmation',
 ])
 
 // The requester never names a specific unit — they can't see what's
@@ -206,11 +207,28 @@ export const ReceiveTransferLineSchema = z
     }
   )
 
-export const ReceiveTransferExtraLineSchema = z.object({
-  itemId: z.string().min(1, 'Item is required'),
-  quantity: z.number().positive('Quantity must be greater than 0'),
-  notes: z.string().max(500).optional(),
-})
+export const ReceiveTransferExtraLineSchema = z
+  .object({
+    itemId: z.string().min(1, 'Item is required'),
+    quantity: z.number().positive('Quantity must be greater than 0'),
+    notes: z.string().max(500).optional(),
+    // Form-only — whether the picked item is serial-tracked, so the UI knows
+    // to render the serial-capture drawer instead of a bare quantity input.
+    // Stripped before the value is sent to the API.
+    isSerialTracked: z.boolean().optional(),
+    // The actual arriving unit's serial(s) — one per unit — for a
+    // serial-tracked pick (e.g. the wrong model arrived). Required when
+    // isSerialTracked is set; mutually exclusive with a bare quantity.
+    serialNumbers: z.array(z.string().min(1)).optional(),
+  })
+  .refine((d) => !d.isSerialTracked || (d.serialNumbers && d.serialNumbers.length > 0), {
+    message: 'At least one serial number is required',
+    path: ['serialNumbers'],
+  })
+  .refine((d) => !d.isSerialTracked || d.serialNumbers?.length === Math.round(d.quantity), {
+    message: 'Serial count must match quantity',
+    path: ['serialNumbers'],
+  })
 
 export const ReceiveTransferFormSchema = z.object({
   receivedDate: z.string().min(1, 'Received date is required'),
@@ -231,6 +249,16 @@ export const RejectManagerTransferFormSchema = z.object({
   reason: z.string().min(1, 'A reason is required').max(500),
 })
 
+export const ProposeSubstitutionFormSchema = z.object({
+  proposedItemId: z.string().min(1, 'Item is required'),
+  proposedQuantity: z.number().positive('Quantity must be greater than 0'),
+  reason: z.string().min(1, 'A reason is required').max(500),
+})
+
+export const ConfirmSubstitutionFormSchema = z.object({
+  decision: z.enum(['accept', 'reject']),
+})
+
 export type CreateTransferFormValues = z.infer<typeof CreateTransferFormSchema>
 export type CreateTransferLineValues = z.infer<typeof CreateTransferLineSchema>
 export type DispatchTransferFormValues = z.infer<typeof DispatchTransferFormSchema>
@@ -241,6 +269,8 @@ export type ReceiveTransferExtraLineValues = z.infer<typeof ReceiveTransferExtra
 export type RejectHqTransferFormValues = z.infer<typeof RejectHqTransferFormSchema>
 export type RejectTransferFormValues = z.infer<typeof RejectTransferFormSchema>
 export type RejectManagerTransferFormValues = z.infer<typeof RejectManagerTransferFormSchema>
+export type ProposeSubstitutionFormValues = z.infer<typeof ProposeSubstitutionFormSchema>
+export type ConfirmSubstitutionFormValues = z.infer<typeof ConfirmSubstitutionFormSchema>
 export type TransferStatus = z.infer<typeof TransferStatusSchema>
 
 const TransferWarehouseSchema = z.object({
@@ -292,6 +322,18 @@ const TransferLineSchema = z.object({
     .nullable()
     .optional(),
   receiptCorrectionReason: z.string().nullable().optional(),
+  // The source warehouse's counter-offer when it can't fulfil this line as
+  // requested — present only while the transfer is
+  // pending_substitution_confirmation.
+  proposedItemId: z.string().nullable().optional(),
+  proposedItem: z
+    .object({ id: z.string(), name: z.string(), sku: z.string() })
+    .nullable()
+    .optional(),
+  proposedQuantity: z.coerce.number().nullable().optional(),
+  substitutionReason: z.string().nullable().optional(),
+  substitutionProposedById: z.string().nullable().optional(),
+  substitutionProposedAt: z.string().nullable().optional(),
 })
 
 export const TransferSummarySchema = z.object({

@@ -45,6 +45,11 @@ export const INVENTORY_PERMISSIONS = {
   TRANSFERS_UPDATE: 'inventory:transfers:update',
   TRANSFERS_ACCEPT: 'inventory:transfers:accept',
   TRANSFERS_REJECT: 'inventory:transfers:reject',
+  // The source branch's "we don't have that model" lever — a finer-grained
+  // alternative to rejecting the whole request outright.
+  TRANSFERS_PROPOSE_SUBSTITUTION: 'inventory:transfers:propose-substitution',
+  // The requesting branch accepting/rejecting a warehouse's substitution.
+  TRANSFERS_CONFIRM_SUBSTITUTION: 'inventory:transfers:confirm-substitution',
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
   TRANSFERS_SERIAL_OVERRIDE: 'inventory:transfers:serial-override',
   TRANSFERS_RECEIVE: 'inventory:transfers:receive',
@@ -123,6 +128,14 @@ export const INVENTORY_PERMISSIONS = {
   SUPPLIER_RETURNS_APPROVE: 'inventory:supplier-returns:approve',
   SUPPLIER_RETURNS_FINALIZE: 'inventory:supplier-returns:finalize',
   SUPPLIER_RETURNS_VOID: 'inventory:supplier-returns:void',
+
+  // Scenario 72 — outbound Delivery Receipts. The Stock Controller raises and
+  // submits; approve and void are the Branch Manager's (maker/checker).
+  DELIVERY_RECEIPTS_READ: 'inventory:delivery-receipts:read',
+  DELIVERY_RECEIPTS_CREATE: 'inventory:delivery-receipts:create',
+  DELIVERY_RECEIPTS_UPDATE: 'inventory:delivery-receipts:update',
+  DELIVERY_RECEIPTS_APPROVE: 'inventory:delivery-receipts:approve',
+  DELIVERY_RECEIPTS_VOID: 'inventory:delivery-receipts:void',
 
   // ── Costing ────────────────────────────────────────────────────────────────
   COSTING_READ: 'inventory:costing:read',
@@ -223,6 +236,10 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Accept an incoming transfer request on behalf of the source branch',
   'inventory:transfers:reject':
     'Reject an incoming transfer request on behalf of the source branch',
+  'inventory:transfers:propose-substitution':
+    "Propose a different item/quantity on an incoming request's line, on behalf of the source branch",
+  'inventory:transfers:confirm-substitution':
+    "Accept or reject a source branch's proposed substitution, on behalf of the requesting branch",
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
   'inventory:transfers:serial-override':
     'Dispatch a transfer using a serial that fails the normal in-stock/source-warehouse check',
@@ -269,6 +286,12 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:supplier-returns:finalize':
     'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
   'inventory:supplier-returns:void': 'Void a supplier debit memo',
+  'inventory:delivery-receipts:read': 'View outbound Delivery Receipts',
+  'inventory:delivery-receipts:create': 'Raise a draft Delivery Receipt and submit it for approval',
+  'inventory:delivery-receipts:update': 'Edit or delete a draft Delivery Receipt',
+  'inventory:delivery-receipts:approve':
+    'Approve or reject a submitted Delivery Receipt (Branch Manager tier)',
+  'inventory:delivery-receipts:void': 'Void a Delivery Receipt, reversing whatever it posted',
   'inventory:costing:read': 'View stock costing configuration',
   'inventory:costing:configure': 'Configure stock costing method (FIFO / LIFO / Weighted Average)',
   'inventory:price-lists:read': 'View price lists',

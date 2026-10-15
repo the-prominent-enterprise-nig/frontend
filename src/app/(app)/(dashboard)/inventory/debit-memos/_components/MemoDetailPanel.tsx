@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import { fmtMoney, type SupplierDebitMemo } from '@/src/libs/data/AccountingV2Data'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { appliedLabel } from '../_lib/debit-memo-format'
 import { MONO } from '@/src/libs/design/plex'
 
 // Inventory's own reading of a memo, under its row: where the goods left from,
@@ -50,9 +51,9 @@ export function MemoDetailPanel({
         <Fact label="Returned from" value={locationLabel(memo.warehouse)} />
         <Fact label="Delivery receipt" value={dr || 'Not recorded'} missing={!dr} />
         <Fact
-          label="Supplier invoice"
-          value={memo.apBill?.billNumber ?? 'Not yet numbered'}
-          missing={!memo.apBill?.billNumber}
+          label="Applied to invoice"
+          value={appliedLabel(memo).text}
+          missing={appliedLabel(memo).pending}
         />
         <Fact
           label="Journal entry"

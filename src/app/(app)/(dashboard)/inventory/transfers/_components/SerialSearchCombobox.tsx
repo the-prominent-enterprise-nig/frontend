@@ -14,6 +14,8 @@ type Props = {
   disabled?: boolean
   placeholder?: string
   error?: string
+  /** The picked serial's label when `value` arrives prefilled (an edit). */
+  initialLabel?: string
 }
 
 // Unlike Branch/Item/Supplier combobox siblings, this doesn't fetch its own
@@ -29,6 +31,7 @@ export function SerialSearchCombobox({
   disabled,
   placeholder,
   error,
+  initialLabel,
 }: Props) {
   return (
     <SearchCombobox
@@ -37,6 +40,7 @@ export function SerialSearchCombobox({
       onSelect={onSelect}
       error={error}
       disabled={disabled}
+      initialLabel={initialLabel}
       queryKey={queryKey}
       // SearchCombobox shows `placeholder` (not `typeToSearchMessage`) on the
       // input itself whenever nothing is confirmed yet — including while

@@ -16,6 +16,8 @@ type Params = {
   // getSerialNumbers. A branch-restricted caller only ever sees caravans
   // their own branch hosts, enforced server-side.
   caravanId?: string
+  /** Caravan tab — only caravans hosted at any of these branches. */
+  caravanHostBranchIds?: string[]
 }
 
 // Scenario 60 — the Caravan tab's "By Item" rollup. Counts come from the
@@ -33,6 +35,9 @@ export async function getCaravanItemGroups(
       status: params.status,
       search: params.search,
       caravanId: params.caravanId,
+      caravanHostBranchIds: params.caravanHostBranchIds?.length
+        ? params.caravanHostBranchIds.join(',')
+        : undefined,
     }
   )
 

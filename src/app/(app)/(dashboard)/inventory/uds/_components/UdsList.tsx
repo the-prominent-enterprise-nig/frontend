@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Plus,
   ClipboardCheck,
@@ -10,11 +11,10 @@ import {
   Paperclip,
   ArrowRight,
   AlertTriangle,
-  RefreshCw,
   X,
 } from 'lucide-react'
-import Tooltip from '@/src/components/ui/Tooltip'
 import UdsStatusBand from './UdsStatusBand'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { STATUS_CONFIG, ASSESSMENT_CONFIG, REASON_DOT, TRANSFER_STATUS_LABELS } from './udsDisplay'
 import { useUdsManager } from '../_hooks/useUdsManager'
 import CreateUdsModal from './CreateUdsModal'
@@ -24,10 +24,9 @@ import UdsDetailModal from './UdsDetailModal'
 import AssessUdsModal from './AssessUdsModal'
 import SetRepairProviderModal from './SetRepairProviderModal'
 import WriteOffUdsModal from './WriteOffUdsModal'
-import DispatchToProviderModal from './DispatchToProviderModal'
 import ReceiveFromProviderModal from './ReceiveFromProviderModal'
-import ReleaseToCustomerModal from './ReleaseToCustomerModal'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { can, type SessionUser } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
@@ -36,14 +35,14 @@ import {
   type Uds,
 } from '@/src/schema/inventory/uds'
 import type {
+  ManualUdsStatus,
   UpdateUdsStatusFormValues,
   AssessUdsFormValues,
-  DispatchToProviderFormValues,
   ReceiveFromProviderFormValues,
-  ReleaseToCustomerFormValues,
   SetRepairProviderFormValues,
   WriteOffUdsFormValues,
 } from '@/src/schema/inventory/uds'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
 // Same control chrome as the Stock Returns filter row, so the two screens'
 // narrowings look and focus alike.
@@ -75,15 +74,22 @@ function buildNextStep(handlers: {
   receive: (uds: Uds) => void
   release: (uds: Uds) => void
   writeOff: (uds: Uds) => void
-  advance: (uds: Uds) => void
+  /** Scenario 72 Part 10 — one fixed step, confirmed in a small modal. */
+  advance: (uds: Uds, target: ManualUdsStatus) => void
+  /** A hop a stock transfer carries is moved there, not here. */
+  viewTransfer: (transferNumber: string) => void
+  /** The two DR legs are hidden from anyone who cannot raise a DR. */
+  canCreateDr: boolean
 }): (uds: Uds) => { next: StepAction | null; alt: StepAction | null } {
   const ASSESS: StepAction = {
     label: 'Assess',
     className: 'bg-green-50 text-green-700 hover:bg-green-100',
     run: handlers.assess,
   }
+  // Scenario 72 Part 7 — both of these legs now go out on a Delivery Receipt:
+  // the buttons open a new DR for this ticket instead of a modal.
   const DISPATCH: StepAction = {
-    label: 'Send to Service Centre',
+    label: 'Create DR to Service Centre',
     className: 'bg-amber-50 text-amber-700 hover:bg-amber-100',
     run: handlers.dispatch,
   }
@@ -93,44 +99,75 @@ function buildNextStep(handlers: {
     run: handlers.receive,
   }
   const RELEASE: StepAction = {
-    label: 'Release to Customer',
+    label: 'Create DR to Customer',
     className: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
     run: handlers.release,
   }
+  const dispatchStep = handlers.canCreateDr ? DISPATCH : null
+  const releaseStep = handlers.canCreateDr ? RELEASE : null
   const WRITE_OFF: StepAction = {
     label: 'Write Off',
     className: 'bg-red-50 text-red-700 hover:bg-red-100',
     run: handlers.writeOff,
   }
-  const advanceTo = (label: string): StepAction => ({
+  const stepTo = (label: string, target: ManualUdsStatus): StepAction => ({
     label,
     className: 'bg-prominent-purple-50 text-prominent-purple-700 hover:bg-prominent-purple-100',
-    run: handlers.advance,
+    run: (uds) => handlers.advance(uds, target),
   })
+  // Scenario 72 Part 10 — the ticket's own transfer moves it: its dispatch and
+  // receipt are the trip to main (and, repaired, the trip home).
+  const onTransfer = (transfer: Uds['linkedStockTransfer']): StepAction | null =>
+    transfer && transfer.status !== 'cancelled' && transfer.status !== 'rejected'
+      ? {
+          label: `Open ${transfer.transferNumber}`,
+          className: 'bg-sky-50 text-sky-700 hover:bg-sky-100',
+          run: () => handlers.viewTransfer(transfer.transferNumber),
+        }
+      : null
 
   return (uds) => {
     const none = { next: null, alt: null }
     if (uds.status === 'completed' || uds.status === 'cancelled') return none
 
-    if (uds.status === 'issued') return { next: advanceTo('Send to Main'), alt: null }
-    if (uds.status === 'in_transit') return { next: advanceTo('Receive at Main'), alt: null }
+    // Scenario 73 — Home Service: the service center named at intake already
+    // serviced the unit, so it goes straight back to the customer on a DR —
+    // no trip to main, no assess, no dispatch.
+    if (uds.repairType === 'home_service' && uds.customerId && uds.status !== 'at_provider') {
+      return { next: releaseStep, alt: null }
+    }
+
+    // Maintenance, quality check, pull-out and loan never travel to main.
+    if (uds.reason !== 'repair' && uds.status === 'issued') {
+      return { next: stepTo('Complete', 'completed'), alt: null }
+    }
+
+    const outbound = onTransfer(uds.linkedStockTransfer)
+    if (uds.status === 'issued') {
+      return { next: outbound ?? stepTo('Send to Main', 'in_transit'), alt: null }
+    }
+    if (uds.status === 'in_transit') {
+      return { next: outbound ?? stepTo('Receive at Main', 'received'), alt: null }
+    }
     if (uds.status === 'at_provider') return { next: RECEIVE, alt: null }
 
     // Custodial sheets close only through the release, which is what issues
-    // the DR and returns the serial to `sold`. Our own units close on a plain
-    // status change, having come back into stock.
-    const close = uds.customerId ? RELEASE : advanceTo('Complete')
+    // the DR and returns the serial to `sold`. Our own repaired unit goes home
+    // on its return transfer; without one (already at its branch), Complete.
+    const close = uds.customerId
+      ? releaseStep
+      : (onTransfer(uds.returnStockTransfer ?? null) ?? stepTo('Complete', 'completed'))
 
     if (uds.status === 'repaired') return { next: close, alt: null }
 
     // received
     if (uds.reason === 'repair' && !uds.assessment) return { next: ASSESS, alt: null }
-    if (uds.assessment === 'repairable') return { next: DISPATCH, alt: null }
+    if (uds.assessment === 'repairable') return { next: dispatchStep, alt: null }
     if (uds.assessment === 'unrepairable') {
       // The only genuine fork: the customer can collect the dead unit, or we
       // scrap it. Both are valid endings, so neither can be the sole button.
       const canWriteOff = !uds.writeOffAdjustmentId
-      if (uds.customerId) return { next: RELEASE, alt: canWriteOff ? WRITE_OFF : null }
+      if (uds.customerId) return { next: releaseStep, alt: canWriteOff ? WRITE_OFF : null }
       return { next: canWriteOff ? WRITE_OFF : close, alt: null }
     }
     return { next: close, alt: null }
@@ -144,12 +181,13 @@ export default function UdsList({ session }: { session: SessionUser }) {
     isLoading,
     isFetching,
     error,
-    refetch,
     statusCounts,
     statusFilter,
     reasonFilter,
+    providerFilter,
     setStatusFilter,
     setReasonFilter,
+    setProviderFilter,
     resetFilters,
     page,
     setPage,
@@ -161,12 +199,8 @@ export default function UdsList({ session }: { session: SessionUser }) {
     isUpdatingStatus,
     assessUds,
     isAssessing,
-    dispatchToProvider,
-    isDispatching,
     receiveFromProvider,
     isReceivingFromProvider,
-    releaseToCustomer,
-    isReleasing,
     setRepairProvider,
     isSettingRepairProvider,
     writeOffUds,
@@ -174,34 +208,49 @@ export default function UdsList({ session }: { session: SessionUser }) {
   } = useUdsManager()
 
   const [isCreateOpen, setCreateOpen] = useState(false)
-  const [selectedUds, setSelectedUds] = useState<Uds | null>(null)
+  const [selectedStep, setSelectedStep] = useState<{
+    uds: Uds
+    target: ManualUdsStatus
+  } | null>(null)
   const [viewUds, setViewUds] = useState<Uds | null>(null)
   const [assessingUds, setAssessingUds] = useState<Uds | null>(null)
   const [settingProviderUds, setSettingProviderUds] = useState<Uds | null>(null)
   const [writingOffUds, setWritingOffUds] = useState<Uds | null>(null)
-  const [dispatchingUds, setDispatchingUds] = useState<Uds | null>(null)
   const [receivingUds, setReceivingUds] = useState<Uds | null>(null)
-  const [releasingUds, setReleasingUds] = useState<Uds | null>(null)
+  const router = useRouter()
+  const canCreateDr = can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE)
 
   // Built once from the setters above; the table itself is state-independent.
   const nextStep = useMemo(
     () =>
       buildNextStep({
         assess: setAssessingUds,
-        dispatch: setDispatchingUds,
+        dispatch: (uds) =>
+          router.push(`/inventory/delivery-receipts/new?purpose=to_service_center&udsId=${uds.id}`),
         receive: setReceivingUds,
-        release: setReleasingUds,
+        release: (uds) => {
+          const purpose =
+            uds.status === 'repaired' || uds.repairType === 'home_service'
+              ? 'repaired_to_customer'
+              : 'unrepaired_to_customer'
+          router.push(`/inventory/delivery-receipts/new?purpose=${purpose}&udsId=${uds.id}`)
+        },
         writeOff: setWritingOffUds,
-        advance: setSelectedUds,
+        advance: (uds, target) => setSelectedStep({ uds, target }),
+        viewTransfer: (number) =>
+          router.push(
+            `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(number)}`
+          ),
+        canCreateDr,
       }),
-    []
+    [router, canCreateDr]
   )
 
-  const hasFilters = !!statusFilter || !!reasonFilter
+  const hasFilters = !!statusFilter || !!reasonFilter || !!providerFilter
 
   async function handleUpdateStatus(data: UpdateUdsStatusFormValues) {
-    if (!selectedUds) return { success: false, error: 'No UDS selected', message: '' }
-    return updateStatus(selectedUds.id, data)
+    if (!selectedStep) return { success: false, error: 'No UDS selected', message: '' }
+    return updateStatus(selectedStep.uds.id, data)
   }
 
   async function handleAssess(data: AssessUdsFormValues) {
@@ -219,19 +268,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
     return writeOffUds(writingOffUds.id, data)
   }
 
-  async function handleDispatch(data: DispatchToProviderFormValues) {
-    if (!dispatchingUds) return { success: false, error: 'No UDS selected', message: '' }
-    return dispatchToProvider(dispatchingUds.id, data)
-  }
-
   async function handleReceiveFromProvider(data: ReceiveFromProviderFormValues) {
     if (!receivingUds) return { success: false, error: 'No UDS selected', message: '' }
     return receiveFromProvider(receivingUds.id, data)
-  }
-
-  async function handleRelease(data: ReleaseToCustomerFormValues) {
-    if (!releasingUds) return { success: false, error: 'No UDS selected', message: '' }
-    return releaseToCustomer(releasingUds.id, data)
   }
 
   return (
@@ -247,18 +286,6 @@ export default function UdsList({ session }: { session: SessionUser }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-[9px]">
-            <Tooltip label="Reload the list">
-              <button
-                type="button"
-                onClick={() => refetch()}
-                disabled={isFetching}
-                aria-label="Refresh"
-                className="flex items-center gap-[7px] rounded-lg border border-[#d3d3db] bg-white px-[14px] py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2] hover:bg-[#faf9fb] disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh</span>
-              </button>
-            </Tooltip>
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
@@ -287,6 +314,16 @@ export default function UdsList({ session }: { session: SessionUser }) {
               </option>
             ))}
           </select>
+
+          {/* Scenario 73 — the tickets one service center has, or had. */}
+          <SearchableSelect
+            value={providerFilter ?? ''}
+            onChange={(v) => setProviderFilter(v || undefined)}
+            options={supplierOptions.map((s) => ({ value: s.id, label: s.name }))}
+            placeholder="All service centers"
+            ariaLabel="Service center"
+            className="w-64"
+          />
 
           {hasFilters && (
             <button
@@ -336,28 +373,18 @@ export default function UdsList({ session }: { session: SessionUser }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Document
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Units / Provider
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Route
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
+                  <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Document</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Status</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Units / Provider</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Route</th>
+                    <th className={`hidden px-4 py-3 text-left md:table-cell ${STOCK_TABLE_HEAD}`}>
                       Latest document
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
+                    <th className={`hidden px-4 py-3 text-left sm:table-cell ${STOCK_TABLE_HEAD}`}>
                       Issued
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Actions
-                    </th>
+                    <th className={`px-4 py-3 text-right ${STOCK_TABLE_HEAD}`}>Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
@@ -419,6 +446,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
                           {(uds.repairProvider || uds.rfsFormFile) && (
                             <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-zinc-400">
                               {uds.repairProvider?.name}
+                              {uds.repairType === 'home_service' && (
+                                <span className="text-zinc-500"> · Home Service</span>
+                              )}
                               {uds.rfsFormFile && (
                                 <Paperclip
                                   className="h-3 w-3 shrink-0"
@@ -514,7 +544,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setSelectedUds(uds)
+                                  setSelectedStep({ uds, target: 'cancelled' })
                                 }}
                                 className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
                               >
@@ -572,14 +602,14 @@ export default function UdsList({ session }: { session: SessionUser }) {
         currentUserBranchId={session.branchId}
       />
 
-      {selectedUds && (
+      {selectedStep && (
         <UpdateUdsStatusModal
-          isOpen={!!selectedUds}
-          onClose={() => setSelectedUds(null)}
+          isOpen={!!selectedStep}
+          onClose={() => setSelectedStep(null)}
           onSubmit={handleUpdateStatus}
           isSubmitting={isUpdatingStatus}
-          currentStatus={selectedUds.status}
-          isCustodial={!!selectedUds.customerId}
+          target={selectedStep.target}
+          udsCode={selectedStep.uds.code}
         />
       )}
 
@@ -591,10 +621,18 @@ export default function UdsList({ session }: { session: SessionUser }) {
           setViewUds(null)
           setSettingProviderUds(u)
         }}
-        onAdvance={(u) => {
-          setViewUds(null)
-          setSelectedUds(u)
-        }}
+        nextStep={(() => {
+          const step = viewUds ? nextStep(viewUds).next : null
+          return step && viewUds
+            ? {
+                label: step.label,
+                run: () => {
+                  setViewUds(null)
+                  step.run(viewUds)
+                },
+              }
+            : null
+        })()}
       />
 
       <AssessUdsModal
@@ -623,28 +661,12 @@ export default function UdsList({ session }: { session: SessionUser }) {
         isSubmitting={isWritingOff}
       />
 
-      <DispatchToProviderModal
-        uds={dispatchingUds}
-        isOpen={!!dispatchingUds}
-        onClose={() => setDispatchingUds(null)}
-        onSubmit={handleDispatch}
-        isSubmitting={isDispatching}
-      />
-
       <ReceiveFromProviderModal
         uds={receivingUds}
         isOpen={!!receivingUds}
         onClose={() => setReceivingUds(null)}
         onSubmit={handleReceiveFromProvider}
         isSubmitting={isReceivingFromProvider}
-      />
-
-      <ReleaseToCustomerModal
-        uds={releasingUds}
-        isOpen={!!releasingUds}
-        onClose={() => setReleasingUds(null)}
-        onSubmit={handleRelease}
-        isSubmitting={isReleasing}
       />
     </div>
   )

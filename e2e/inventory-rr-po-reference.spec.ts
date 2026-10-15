@@ -54,7 +54,7 @@ async function ensureSupplier(page: import('@playwright/test').Page): Promise<st
 }
 
 test.describe('Inventory — receiving report PO reference', () => {
-  test('shows the P.O. No. on both the sheet and the printed document', async ({ page }) => {
+  test('shows the PO No. on both the sheet and the printed document', async ({ page }) => {
     await gotoReady(page, '/inventory/stock?tab=reports')
 
     const warehouses = await (
@@ -102,14 +102,14 @@ test.describe('Inventory — receiving report PO reference', () => {
     const printButton = page.getByRole('button', { name: 'Print' })
     await expect(printButton).toBeVisible({ timeout: 15_000 })
     // The sheet: label present, and the value is the PO this receipt named.
-    await expect(page.getByText('P.O. No.', { exact: true })).toBeVisible()
+    await expect(page.getByText('PO No.', { exact: true })).toBeVisible()
     await expect(page.getByText(PO_NUMBER, { exact: true })).toBeVisible()
 
     const [popup] = await Promise.all([page.waitForEvent('popup'), printButton.click()])
     await popup.waitForLoadState('domcontentloaded')
-    // The printed paper must agree with the sheet, on both the new label
-    // and the `Dated` slot that used to be a hardcoded em-dash.
-    await expect(popup.getByText('P.O. No.', { exact: true })).toBeVisible()
+    // The printed paper must agree with the sheet, on both the label and
+    // the PO Date slot that used to be a hardcoded em-dash.
+    await expect(popup.getByText('PO No.', { exact: true })).toBeVisible()
     await expect(popup.getByText(PO_NUMBER, { exact: true })).toBeVisible()
     await expect(popup.getByText('9/1/2026', { exact: true })).toBeVisible()
     await popup.close()
@@ -197,11 +197,11 @@ test.describe('Inventory — purchase order delivery destination', () => {
       page.getByText('Download PDF', { exact: true }).click(),
     ])
     await popup.waitForLoadState('domcontentloaded')
-    // Two lines: "Deliver to <location>", then the street address.
+    // Two lines: the location in bold, then the street address.
     // locationLabel() decides the location name, so it matches what staff
     // call the place everywhere else in the app — the branch, not the
     // warehouse's own "{branch} Warehouse".
-    await expect(popup.locator('.delivery-label')).toHaveText(`Deliver to ${branch.name}`)
+    await expect(popup.locator('.delivery-label')).toHaveText(branch.name)
     // The address comes off the BRANCH: every Warehouse.address in the data
     // is null, which is why this block printed one bare line before.
     const detail = popup.locator('.delivery-address')

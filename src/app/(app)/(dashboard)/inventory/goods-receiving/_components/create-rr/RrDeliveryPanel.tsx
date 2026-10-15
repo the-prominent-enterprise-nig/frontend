@@ -1,6 +1,6 @@
 'use client'
 
-import { Controller, type Control, type FieldErrors } from 'react-hook-form'
+import { Controller, useWatch, type Control, type FieldErrors } from 'react-hook-form'
 import { Info, Link2, Link2Off, Search } from 'lucide-react'
 import Tooltip from '@/src/components/ui/Tooltip'
 import SearchableSelect, { type SearchableSelectOption } from '@/src/components/ui/SearchableSelect'
@@ -47,6 +47,11 @@ const REPAIR_TYPE_OPTIONS: SearchableSelectOption[] = [
   { value: 'in_store', label: 'In-Store' },
   { value: 'home_service', label: 'Home Service' },
 ]
+// Scenario 73 — where a Repair/Return unit comes back from.
+const ORIGIN_OPTIONS: SearchableSelectOption[] = [
+  { value: 'customer', label: 'From Customer' },
+  { value: 'service_center', label: 'From Service Center' },
+]
 const REASON_OPTIONS: SearchableSelectOption[] = [
   { value: REGULAR_DELIVERY, label: 'Regular Supplier Delivery' },
   { value: 'repossession', label: 'Repossession' },
@@ -77,6 +82,11 @@ type Props = {
   onSupplierChange: (id: string, name?: string) => void
   onBrowsePo: () => void
   onUnlinkPo: () => void
+  /** Scenario 73 — Repair/Return's Origin; undefined reads as From Customer. */
+  origin?: string
+  /** Scenario 73 — the service centers (repair providers) holding units. */
+  serviceCenterOptions: SearchableSelectOption[]
+  serviceCentersLoading: boolean
 }
 
 /** The supplier's own paperwork, where the goods landed, and how the invoice
@@ -95,6 +105,9 @@ export function RrDeliveryPanel({
   onSupplierChange,
   onBrowsePo,
   onUnlinkPo,
+  origin,
+  serviceCenterOptions,
+  serviceCentersLoading,
 }: Props): React.ReactElement {
   // The warehouses lead and the branches follow, each branch marked as such:
   // SearchableSelect is a flat type-ahead with no group headings, and a plain
@@ -119,6 +132,18 @@ export function RrDeliveryPanel({
   // Reference # — the unit comes back from a customer's invoice, and the
   // destination is silently the receiver's own branch.
   const isUnitReturn = reason === 'repossession' || reason === 'repair_return'
+  // Scenario 73 — units back from a service center: Service Center replaces
+  // Repair Type, and the service center's own DR is worth a reference.
+  const fromServiceCenter = reason === 'repair_return' && origin === 'service_center'
+  // Read off the value, not the resolver: posting stops at the blockers list
+  // before the resolver runs, and the field should still say why.
+  const serviceCenterId = useWatch({ control, name: 'serviceCenterId' })
+  const serviceCenterMissing = showErrors && fromServiceCenter && !serviceCenterId
+  // Scenario 73 Part 5 — Home Service: the service center is already known at
+  // receipt, recorded for monitoring. Any supplier: it need not hold units yet.
+  const repairType = useWatch({ control, name: 'repairType' })
+  const homeService =
+    reason === 'repair_return' && !fromServiceCenter && repairType === 'home_service'
 
   return (
     <div className={`${PANEL} flex flex-col overflow-hidden`}>
@@ -158,6 +183,7 @@ export function RrDeliveryPanel({
                 control={control}
                 render={({ field }) => (
                   <SearchableSelect
+                    portal
                     value={field.value || REGULAR_DELIVERY}
                     onChange={(v) => field.onChange(v === REGULAR_DELIVERY ? '' : v)}
                     chrome={CONTROL_CHROME}
@@ -169,9 +195,74 @@ export function RrDeliveryPanel({
           </div>
         )}
 
+        {!linkedPo && reason === 'repair_return' && (
+          <div className="sm:col-span-2 xl:col-span-3">
+            <Field
+              label="Origin"
+              required
+              footer={
+                <Hint>
+                  From Customer: the unit is handed in at the counter. From Service Center: a
+                  repaired unit comes back from where it was sent.
+                </Hint>
+              }
+            >
+              <Controller
+                name="origin"
+                control={control}
+                render={({ field }) => (
+                  <SearchableSelect
+                    portal
+                    value={field.value ?? 'customer'}
+                    onChange={(v) => field.onChange(v || 'customer')}
+                    chrome={CONTROL_CHROME}
+                    options={ORIGIN_OPTIONS}
+                  />
+                )}
+              />
+            </Field>
+          </div>
+        )}
+
+        {!linkedPo && fromServiceCenter && (
+          <div className="sm:col-span-2 xl:col-span-3">
+            <Field
+              label="Service Center"
+              required
+              footer={
+                serviceCenterMissing ? (
+                  <FieldError text="Pick the service center the units came back from." />
+                ) : (
+                  <Hint>
+                    The repair provider on each unit&rsquo;s UDS. Ones with units out right now are
+                    listed first, with their count.
+                  </Hint>
+                )
+              }
+            >
+              <Controller
+                name="serviceCenterId"
+                control={control}
+                render={({ field }) => (
+                  <SearchableSelect
+                    portal
+                    value={field.value ?? ''}
+                    onChange={(v) => field.onChange(v || undefined)}
+                    chrome={serviceCenterMissing ? INVALID_CHROME : CONTROL_CHROME}
+                    options={serviceCenterOptions}
+                    loading={serviceCentersLoading}
+                    loadingLabel="Loading service centers…"
+                    placeholder="Select service center…"
+                  />
+                )}
+              />
+            </Field>
+          </div>
+        )}
+
         {/* Repair/Return only: where the unit is being serviced. Decides which
             documents the receipt has to carry (see rrAttachments.ts). */}
-        {!linkedPo && reason === 'repair_return' && (
+        {!linkedPo && reason === 'repair_return' && !fromServiceCenter && (
           <div className="sm:col-span-2 xl:col-span-3">
             <Field
               label="Repair Type"
@@ -189,11 +280,46 @@ export function RrDeliveryPanel({
                 control={control}
                 render={({ field }) => (
                   <SearchableSelect
+                    portal
                     value={field.value ?? ''}
                     onChange={(v) => field.onChange(v || undefined)}
                     chrome={showErrors && errors.repairType ? INVALID_CHROME : CONTROL_CHROME}
                     options={REPAIR_TYPE_OPTIONS}
                     placeholder="Select repair type…"
+                  />
+                )}
+              />
+            </Field>
+          </div>
+        )}
+
+        {!linkedPo && homeService && (
+          <div className="sm:col-span-2 xl:col-span-3">
+            <Field
+              label="Service Center"
+              required
+              footer={
+                showErrors && !serviceCenterId ? (
+                  <FieldError text="Pick the service center handling this Home Service." />
+                ) : (
+                  <Hint>
+                    Who services the unit at the customer&rsquo;s home — saved on its UDS for
+                    monitoring per service center.
+                  </Hint>
+                )
+              }
+            >
+              <Controller
+                name="serviceCenterId"
+                control={control}
+                render={({ field }) => (
+                  <SupplierSearchCombobox
+                    value={field.value ?? ''}
+                    onChange={(id) => field.onChange(id || undefined)}
+                    onSelect={(option) => field.onChange(option.id)}
+                    error={
+                      showErrors && !serviceCenterId ? 'Service center is required' : undefined
+                    }
                   />
                 )}
               />
@@ -276,7 +402,10 @@ export function RrDeliveryPanel({
           </Field>
         )}
 
-        {!isUnitReturn && (
+        {/* Scenario 73 — a unit back from a service center lands where the
+            custodian receives it (Main Office, usually), which is not always
+            the receiver's own branch; prefilled with it, but theirs to set. */}
+        {(!isUnitReturn || fromServiceCenter) && (
           <Field
             label="Location"
             required
@@ -291,6 +420,7 @@ export function RrDeliveryPanel({
               control={control}
               render={({ field }) => (
                 <SearchableSelect
+                  portal
                   value={field.value ?? ''}
                   onChange={field.onChange}
                   placeholder="Select location…"
@@ -323,9 +453,9 @@ export function RrDeliveryPanel({
           />
         </Field>
 
-        {!isUnitReturn && (
+        {(!isUnitReturn || fromServiceCenter) && (
           <Field
-            label="Reference #"
+            label={fromServiceCenter ? 'Service Center DR #' : 'Reference #'}
             hint="optional"
             footer={
               showErrors && errors.deliveryReceiptNumber ? (

@@ -102,7 +102,9 @@ export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDoc
           <p className="font-bold text-prominent-purple-900">{supplier?.name ?? '—'}</p>
           <p className="mt-1 text-gray-700">{supplier?.address || '—'}</p>
         </div>
-        <div>
+        {/* Right-aligned so the meta column sits against the divider, same
+            as the RR sheet. */}
+        <div className="text-right">
           <MetaPair label="Issue date" value={docDate(po.orderDate)} />
           <MetaPair label="Reference" value={po.code} />
           <MetaPair label="Payee's TIN" value={supplier?.taxId || '—'} />
@@ -116,13 +118,23 @@ export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDoc
       </div>
 
       {(destinationName || destinationAddress || po.deliveryInstructions) && (
+        // Laid out like the supplier block above: the destination in bold
+        // (the Location, or the instructions on a drop-ship), details under it.
         <div className="mt-6">
-          <p className="font-bold text-prominent-purple-900">
-            Deliver to{destinationName ? ` ${destinationName}` : ''}
-          </p>
+          {destinationName && (
+            <p className="font-bold text-prominent-purple-900">{destinationName}</p>
+          )}
           {destinationAddress && <p className="mt-0.5 text-gray-700">{destinationAddress}</p>}
           {po.deliveryInstructions && (
-            <p className="mt-0.5 text-gray-700">{po.deliveryInstructions}</p>
+            <p
+              className={
+                destinationName
+                  ? 'mt-0.5 text-gray-700'
+                  : 'whitespace-pre-line font-bold text-prominent-purple-900'
+              }
+            >
+              {po.deliveryInstructions}
+            </p>
           )}
         </div>
       )}

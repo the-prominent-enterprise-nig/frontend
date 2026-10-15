@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFieldArray, useWatch, Controller } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form'
 import { ChevronDown, ChevronUp, Copy, RotateCcw, Trash2 } from 'lucide-react'
 import type { CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
@@ -9,8 +10,10 @@ import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { getSupplierItems } from '../../suppliers/_actions/get-supplier-items'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from './procurementTokens'
+import { NoDestinationWarning } from './NoDestinationWarning'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +33,9 @@ type Props = {
   /** Rendered into the summary rail's footer by the parent, so the sticky
    * action bar and the rail agree on what submitting will do. */
   submitted?: boolean
+  /** Whether the "Where should this be delivered?" warning may show yet — held back
+   * on a brand-new, untouched form so it doesn't greet every buyer. */
+  warnNoDestination?: boolean
 }
 
 const EMPTY_LINE = {
@@ -83,6 +89,7 @@ export function PurchaseOrderFormFields({
   initialSupplierLabel,
   initialWarehouseLabel,
   submitted,
+  warnNoDestination,
 }: Props): React.ReactElement {
   const [openLines, setOpenLines] = useState<Record<string, boolean>>({})
   const searchRef = useRef<HTMLDivElement>(null)
@@ -99,6 +106,7 @@ export function PurchaseOrderFormFields({
           initialSupplierLabel={initialSupplierLabel}
           initialWarehouseLabel={initialWarehouseLabel}
           submitted={submitted}
+          warnNoDestination={warnNoDestination}
         />
         <OrderSummaryRail control={control} />
       </div>
@@ -127,6 +135,7 @@ function PurchaseDetailsCard({
   initialSupplierLabel,
   initialWarehouseLabel,
   submitted,
+  warnNoDestination,
 }: {
   control: Control<CreatePoFormValues>
   register: UseFormRegister<CreatePoFormValues>
@@ -134,8 +143,10 @@ function PurchaseDetailsCard({
   initialSupplierLabel?: string
   initialWarehouseLabel?: string
   submitted?: boolean
+  warnNoDestination?: boolean
 }): React.ReactElement {
   const instructions = useWatch({ control, name: 'deliveryInstructions' })
+  const warehouseId = useWatch({ control, name: 'warehouseId' })
 
   return (
     <div className={CARD}>
@@ -163,17 +174,36 @@ function PurchaseDetailsCard({
             locks the field once this is set). Every location is on offer,
             the standalone warehouses and each branch's own stock location
             alike, so ordering for another branch doesn't need a separate
-            transfer afterward. */}
-        <Field label="Location" required>
+            transfer afterward. Optional — a drop-ship PO goes from the
+            supplier straight to the customer and never lands at one. */}
+        <Field label="Location">
           <Controller
             name="warehouseId"
             control={control}
             render={({ field }) => (
               <WarehouseSearchCombobox
-                value={field.value}
+                value={field.value ?? ''}
                 onChange={field.onChange}
                 error={errors.warehouseId?.message}
                 initialLabel={initialWarehouseLabel}
+              />
+            )}
+          />
+        </Field>
+
+        {/* On a request this is the date the PO it converts into will carry
+            (a submitted request becomes its PO straight away). */}
+        <Field label="PO Date" error={errors.orderDate?.message}>
+          <Controller
+            name="orderDate"
+            control={control}
+            render={({ field }) => (
+              <input
+                type="date"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                className="h-10 w-full rounded-lg border border-[#d3d3db] px-3 text-[13px] text-[#3d3d4a] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
               />
             )}
           />
@@ -201,6 +231,12 @@ function PurchaseDetailsCard({
           />
           {errors.deliveryInstructions && (
             <ErrorLine message={errors.deliveryInstructions.message ?? ''} />
+          )}
+        </div>
+
+        <div className="min-[1240px]:col-span-2 empty:hidden">
+          {warnNoDestination && (
+            <NoDestinationWarning warehouseId={warehouseId} deliveryInstructions={instructions} />
           )}
         </div>
       </div>
@@ -365,6 +401,18 @@ function LineItemsCard({
   searchRef: React.RefObject<HTMLDivElement | null>
 }): React.ReactElement {
   const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
+  // Scenario 71 — the search lists the chosen supplier's approved items.
+  const supplierId = useWatch({ control, name: 'supplierId' })
+  const supplierItemsQuery = useQuery({
+    queryKey: ['supplier-items', supplierId],
+    queryFn: () => getSupplierItems(supplierId),
+    enabled: !!supplierId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const noSupplierItems =
+    !!supplierId &&
+    supplierItemsQuery.isSuccess &&
+    (supplierItemsQuery.data?.data ?? []).length === 0
 
   // Names/SKUs for lines the form only knows by itemId: seeded from the
   // record being edited, then extended as the catalog search adds lines.
@@ -409,8 +457,14 @@ function LineItemsCard({
             onChange={() => {}}
             onSelect={addFromCatalog}
             compact
+            supplierId={supplierId || undefined}
             placeholder="Search item by name or SKU to add a line…"
           />
+          {noSupplierItems && (
+            <p className="mt-1 text-[11px] text-[#8b8b9b]">
+              No approved items on file for this supplier — searching the full catalog.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button

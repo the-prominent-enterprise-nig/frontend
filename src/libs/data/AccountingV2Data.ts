@@ -1387,6 +1387,9 @@ export interface DisbursementDeduction {
   supplierId?: string
   description?: string
   amount: number
+  /** Scenario 72 Part 8 — applies this posted supplier debit memo. The server
+   * credits Due from Suppliers for the memo's amount, whatever is sent. */
+  supplierDebitMemoId?: string
 }
 /** One funding source of a disbursement. */
 export interface DisbursementSource {
@@ -1434,6 +1437,9 @@ export interface APDisbursementListItem {
     supplier: { id: string; name: string } | null
     description: string | null
     amount: number
+    /** Set when the deduction applies a supplier debit memo. */
+    supplierDebitMemoId?: string | null
+    supplierDebitMemo?: { id: string; memoNumber: string; amount: number } | null
   }[]
   clearedType: string | null
   clearedDate: string | null
@@ -1748,7 +1754,9 @@ export interface SupplierDebitMemo {
   id: string
   tenantId: string
   memoNumber: string
-  apBillId: string
+  /** Scenario 72 Part 8 — null until an AP voucher applies the memo. A memo
+   * raised before Part 8 carries the bill it named and settled directly. */
+  apBillId: string | null
   apBill?: {
     id: string
     billNumber: string | null
@@ -1776,6 +1784,15 @@ export interface SupplierDebitMemo {
   voidedBy?: string | null
   voidedAt?: string | null
   voidReason?: string | null
+  /** The "Return units to supplier" DR whose approval drafted this memo. Its
+   * goods follow the DR: prices may change here, the units may not. */
+  deliveryReceiptId?: string | null
+  deliveryReceipt?: { id: string; drNumber: string; status: string } | null
+  /** The voucher deduction that applied it. Applied memos are locked. */
+  appliedDeduction?: {
+    id: string
+    disbursement: { id: string; voucherNumber: string | null; status: string }
+  } | null
   lines: SupplierDebitMemoLine[]
 }
 
@@ -1793,7 +1810,7 @@ export interface SupplierDebitMemoLineInput {
 }
 
 export interface SupplierDebitMemoInput {
-  apBillId: string
+  supplierId: string
   warehouseId: string
   lines: SupplierDebitMemoLineInput[]
   deliveryReceiptNumber?: string
@@ -1809,6 +1826,8 @@ export const SupplierDebitMemos = {
     status?: SupplierDebitMemoStatus
     supplierId?: string
     apBillId?: string
+    /** 'true' — posted and not yet applied: what the AP voucher can pick. */
+    unapplied?: 'true' | 'false'
     fromDate?: string
     toDate?: string
   }) =>
@@ -2293,6 +2312,8 @@ export type BankReconciliationLineSourceType =
   | 'FUND_TRANSFER_IN'
   /** Scenario 61 Part 6 — a cleared POS deposit, on its deposit date. */
   | 'POS_DEPOSIT'
+  /** A recorded expense's (or payroll's) bank-paid row — a check until it clears. */
+  | 'EXPENSE_PAYMENT'
 export type BankReconciliationLineDirection = 'DEPOSIT' | 'WITHDRAWAL'
 
 /**

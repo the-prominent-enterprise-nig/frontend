@@ -18,6 +18,11 @@ export type LineIssue = {
   code?: 'serials-missing'
 }
 
+/** Shown when receiving a PO that names no location (a drop-ship) — kept
+ * here beside the other receive-blocking messages. */
+export const NO_LOCATION_RECEIVE_MESSAGE =
+  "This PO has no location (drop-ship) — receiving it isn't available yet, pending the accountant's decision on how it is booked."
+
 /** A blocker carries the line it belongs to so the checks card can jump
  * straight to the offending control rather than just naming it. */
 export type Blocker = LineIssue & {

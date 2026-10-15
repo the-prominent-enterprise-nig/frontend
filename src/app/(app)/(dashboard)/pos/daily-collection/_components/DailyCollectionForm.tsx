@@ -3,7 +3,6 @@
 import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
 import { checkedByOf, type SheetDraftController } from '../_hooks/useSheetDraft'
 import {
-  buildCaravanRecapLines,
   buildCollectionRecapLines,
   withValuesOnly,
   buildFormDenominationLines,
@@ -77,13 +76,8 @@ export default function DailyCollectionForm({
   const draft = edit?.draft ?? null
   const lines = buildFormLines(report)
   // Valued lines only, same as the screen panel and the server's own form
-  // sheet — an untaken tender prints as a row of dashes otherwise. The caravan
-  // block is appended unfiltered: its blank spacer and amount-less heading are
-  // deliberate.
-  const recap = [
-    ...withValuesOnly(buildCollectionRecapLines(report)),
-    ...buildCaravanRecapLines(report),
-  ]
+  // sheet — an untaken tender prints as a row of dashes otherwise.
+  const recap = withValuesOnly(buildCollectionRecapLines(report))
   // While editing, the blocks add up what is being typed, so TOTAL and CASH
   // COLLECTED move as the cashier counts rather than only after a save.
   const denominations = buildFormDenominationLines(
@@ -292,11 +286,7 @@ function FooterBlocks({
               </td>
             ) : (
               <>
-                <td
-                  className={`${CELL} whitespace-nowrap ${left?.emphasis ? 'font-bold' : ''} ${
-                    left?.indent ? 'pl-6' : ''
-                  }`}
-                >
+                <td className={`${CELL} whitespace-nowrap ${left?.emphasis ? 'font-bold' : ''}`}>
                   {left?.label ?? ''}
                 </td>
                 <td className={CELL}>{left?.sub ?? ''}</td>

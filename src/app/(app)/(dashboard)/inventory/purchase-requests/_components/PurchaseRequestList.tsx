@@ -9,6 +9,7 @@ import { usePurchaseOrders } from '../../purchase-orders/_hooks/usePurchaseOrder
 import { CreatePoModal } from '../../purchase-orders/_components/CreatePoModal'
 import { ConvertPrToPoModal } from './ConvertPrToPoModal'
 import { ViewPurchaseRequestModal } from './ViewPurchaseRequestModal'
+import { NoDestinationWarning } from '../../purchase-orders/_components/NoDestinationWarning'
 import { getPurchaseRequest } from '../_actions/get-purchase-request'
 import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModal'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -17,6 +18,7 @@ import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissio
 import type { SessionUser } from '@/src/libs/guards/permission'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Same #5b21b6 palette as procurementTokens/PurchaseOrderList —
@@ -359,9 +361,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr
-                    className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
-                  >
+                  <tr className={`${STOCK_TABLE_HEAD} border-b border-[#eeeef1] bg-[#fbfbfc]`}>
                     <th className="px-4 py-[9px] text-left">Code</th>
                     <th className="px-4 py-[9px] text-left">Supplier</th>
                     <th className="px-4 py-[9px] text-left">Status</th>
@@ -482,14 +482,16 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
               </table>
 
               {/* ── Pagination ─────────────────────────────────────────────── */}
-              {pagination.totalPages > 1 && (
+              {/* The count always shows; the buttons only once there is a
+                  second page to go to. */}
+              {pagination.total > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
                   <span className="text-[11.5px] text-[#8b8b9b]">
                     Showing {(page - 1) * pagination.limit + 1}–
                     {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}{' '}
-                    requests
+                    {pagination.total === 1 ? 'request' : 'requests'}
                   </span>
-                  <div className="flex gap-1">
+                  <div className={`flex gap-1 ${pagination.totalPages > 1 ? '' : 'hidden'}`}>
                     <button
                       type="button"
                       onClick={() => setPage(page - 1)}
@@ -546,6 +548,15 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         iconColorClass="text-[#5b21b6]"
         summary={<p className="text-sm font-medium text-zinc-900">{submittingPr?.code}</p>}
         message="This sends the stock request into the approval queue — you won't be able to edit it as a draft afterward."
+        notice={
+          submittingPr && (
+            <NoDestinationWarning
+              warehouseId={submittingPr.warehouseId}
+              deliveryInstructions={submittingPr.deliveryInstructions}
+              saved="submit"
+            />
+          )
+        }
         confirmLabel="Submit"
         confirmingLabel="Submitting…"
         confirmButtonClass="bg-[#5b21b6] hover:bg-[#4a189b]"

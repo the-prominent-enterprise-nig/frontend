@@ -275,6 +275,8 @@ export interface PosPayment {
   referenceNumber?: string | null
   checkNumber?: string | null
   giftCardId?: string | null
+  /** The bank / gateway / biller the cashier picked, where the method has any. */
+  paymentMethodOption?: { name: string } | null
   createdAt: string
 }
 
@@ -535,6 +537,9 @@ export interface CreateTransactionInput {
   /** Scenario 17 Part 6 — inhouse installment invoices only, required. The
    * customer's approved, not-yet-used CreditApplication this sale fulfills. */
   creditApplicationId?: string
+  /** Scenario 72 Part 6 — the approved "sales invoice to follow" DR this sale
+   * invoices; lets it claim the units the DR holds. */
+  deliveryReceiptId?: string
   /** inhouse installment invoices only — amount collected up front. Defaults to 0. */
   downPayment?: number
   /** TPF financing company backing this sale's TPF-mode line(s) — required
@@ -1303,6 +1308,9 @@ export interface InstallmentScheduleLineWithInvoice {
     totalAmount: number
     amountPaid: number
     status: string
+    /** Employee Appliance Loan — settled by payroll deduction, so Collections
+     * shows it but never offers to collect it. */
+    isEmployeeApplianceLoan?: boolean | null
     /** Non-cancelled payments only — used to warn "already collected today"
      * before the Collect modal is even opened. */
     payments: { paymentDate: string; amount: number }[]
