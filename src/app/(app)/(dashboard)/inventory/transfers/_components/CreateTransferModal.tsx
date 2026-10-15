@@ -244,8 +244,12 @@ function TransferLineRow({
   const available = isSerialTracked
     ? serialAvailabilityQuery.data?.data?.total
     : crossBranchStockQuery.isSuccess
-      ? (crossBranchStockQuery.data?.data?.find((b) => b.warehouse.id === fromWarehouseId)
-          ?.availableQty ?? 0)
+      ? // Decimal columns arrive as strings ("99.0000") — the line schema's
+        // availableQty is a number, and a string there silently fails it.
+        Number(
+          crossBranchStockQuery.data?.data?.find((b) => b.warehouse.id === fromWarehouseId)
+            ?.availableQty ?? 0
+        )
       : undefined
   const showAvailability = !!fromWarehouseId && !!selectedItemId && available !== undefined
   const exceedsAvailable = showAvailability && quantityValue > (available ?? 0)
@@ -963,7 +967,7 @@ export default function CreateTransferModal({
                       // "add another" state instead of showing the last pick.
                       setAddItemKey((k) => k + 1)
                     }}
-                    placeholder="Add item — search name, SKU, or serial…"
+                    placeholder="Add item — search name or SKU…"
                     stockWarehouseId={fromId || undefined}
                   />
                 </div>

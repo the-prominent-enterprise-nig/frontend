@@ -9,6 +9,7 @@ import { usePurchaseOrders } from '../../purchase-orders/_hooks/usePurchaseOrder
 import { CreatePoModal } from '../../purchase-orders/_components/CreatePoModal'
 import { ConvertPrToPoModal } from './ConvertPrToPoModal'
 import { ViewPurchaseRequestModal } from './ViewPurchaseRequestModal'
+import { NoDestinationWarning } from '../../purchase-orders/_components/NoDestinationWarning'
 import { getPurchaseRequest } from '../_actions/get-purchase-request'
 import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModal'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -546,6 +547,15 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         iconColorClass="text-[#5b21b6]"
         summary={<p className="text-sm font-medium text-zinc-900">{submittingPr?.code}</p>}
         message="This sends the stock request into the approval queue — you won't be able to edit it as a draft afterward."
+        notice={
+          submittingPr && (
+            <NoDestinationWarning
+              warehouseId={submittingPr.warehouseId}
+              deliveryInstructions={submittingPr.deliveryInstructions}
+              saved="submit"
+            />
+          )
+        }
         confirmLabel="Submit"
         confirmingLabel="Submitting…"
         confirmButtonClass="bg-[#5b21b6] hover:bg-[#4a189b]"
