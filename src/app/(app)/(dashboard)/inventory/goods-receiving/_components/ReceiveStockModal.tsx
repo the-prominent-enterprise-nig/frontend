@@ -148,6 +148,13 @@ function describeIssue(path: PropertyKey[], message: string): string {
   return `${lineAt != null ? `Line ${lineAt + 1} · ` : ''}${label}: ${message}`
 }
 
+/** Blank entries out, and an empty result collapsed to undefined — the wire
+ * format treats "not set" and "set to []" differently for mutual exclusion. */
+function filledOrUndefined(values: string[] | undefined): string[] | undefined {
+  const filled = values?.filter((v) => v.trim().length > 0)
+  return filled && filled.length > 0 ? filled : undefined
+}
+
 /**
  * Create Receiving Report — the standalone half of receiving, for a delivery
  * that arrives without being received against a purchase order from the
@@ -222,6 +229,11 @@ export default function ReceiveStockModal({
   const uploadedIds = useRef(new Map<File, string>())
   const [linkedPo, setLinkedPo] = useState<PurchaseOrderSummary | null>(null)
   const [poPickerOpen, setPoPickerOpen] = useState(false)
+  // Gap 5 fix — set once the backend reports this receipt's warehouse
+  // differs from the linked PO's own (the split-tranche case, which is
+  // legitimate but worth a second look). Cleared on any warehouse change so
+  // a stale confirmation can't silently wave through an unrelated mismatch.
+  const [warehouseMismatchWarning, setWarehouseMismatchWarning] = useState<string | null>(null)
   const [supplierName, setSupplierName] = useState<string | undefined>(undefined)
   // Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
   // own sourceMode: which of Source's two inputs is live. Decides what
@@ -466,6 +478,10 @@ export default function ReceiveStockModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pricingKey])
 
+  useEffect(() => {
+    setWarehouseMismatchWarning(null)
+  }, [watched.warehouseId])
+
   // Scenario 55 — PO Number/Supplier Invoice No. disappear once a reason is
   // picked (a reasoned receipt isn't fulfilling a PO or reconciling against a
   // supplier invoice), so a stale value entered before switching Reason on
@@ -581,10 +597,19 @@ export default function ReceiveStockModal({
     const line = lines[index]
     setValue(`lines.${index}.quantityReceived`, qty, { shouldValidate: showErrors })
     if (!line || !contextFor(index).isSerialTracked) return
+    // A number input reports NaN the instant it's blanked mid-edit (e.g.
+    // backspacing "2" before typing "5") — resizing serials down to 0 on
+    // that transient keystroke would wipe what was already typed before the
+    // new digit even lands. Only resize once there's a real target qty.
+    if (!Number.isFinite(raw)) return
     const serials = (line.serialNumbers ?? []).slice(0, qty)
     while (serials.length < qty) serials.push('')
     setValue(`lines.${index}.serialNumbers`, serials, { shouldValidate: showErrors })
-    // Scenario 55 Part 4 — same resize, for a repossession line's picked ids.
+    // Scenario 55 Part 4 — same resize, but only for a repossession/repair-return
+    // line's picked ids. An ordinary serial-tracked line (e.g. pulled via Browse
+    // PO) has no existingSerialNumberIds concept at all — padding it anyway left
+    // blank entries that failed the schema's min(1) refine at submit.
+    if (!isUnitReturn) return
     const existingSerials = (line.existingSerialNumberIds ?? []).slice(0, qty)
     while (existingSerials.length < qty) existingSerials.push('')
     setValue(`lines.${index}.existingSerialNumberIds`, existingSerials, {
@@ -888,6 +913,21 @@ export default function ReceiveStockModal({
     if (meta?.costPrice != null) {
       setValue(`lines.${index}.unitCost`, meta.costPrice, { shouldValidate: false })
     }
+    // Silently reconnect this line to the linked PO's own line for this item
+    // when there is an outstanding one — picking the item here instead of
+    // "Pull outstanding lines" otherwise left the line with no PO link at
+    // all, which also meant it never counted toward the PO's received
+    // quantity and never triggered the receiving-warehouse mismatch check.
+    if (linkedPo && !lines[index]?.purchaseOrderLineId) {
+      const poLine = linkedPo.lines.find(
+        (pl) =>
+          pl.itemId === option.id &&
+          Math.max(Number(pl.quantity) - Number(pl.receivedQuantity ?? 0), 0) > 0
+      )
+      if (poLine) {
+        setValue(`lines.${index}.purchaseOrderLineId`, poLine.id, { shouldValidate: false })
+      }
+    }
     if (isSerialTracked) {
       const qty = Number(lines[index]?.quantityReceived) || 1
       setValue(
@@ -1093,21 +1133,29 @@ export default function ReceiveStockModal({
         // Mutually exclusive on the wire (receiveStock() rejects a line that
         // sets both) — only one of these two is ever real per line, gated on
         // the same reason check.
-        serialNumbers:
-          !unitReturn && line.serialNumbers && line.serialNumbers.length > 0
-            ? line.serialNumbers
-            : undefined,
-        existingSerialNumberIds:
-          unitReturn && line.existingSerialNumberIds && line.existingSerialNumberIds.length > 0
-            ? line.existingSerialNumberIds
-            : undefined,
+        serialNumbers: !unitReturn ? filledOrUndefined(line.serialNumbers) : undefined,
+        existingSerialNumberIds: unitReturn
+          ? filledOrUndefined(line.existingSerialNumberIds)
+          : undefined,
         // The invoice a returned unit came back from — dropped on any other
         // reason so a stale pick from switching reasons mid-form can't ride
         // along.
         installmentAccountId: unitReturn ? line.installmentAccountId || undefined : undefined,
       })),
+      confirmWarehouseMismatch: warehouseMismatchWarning !== null,
     })
-    if (result.success) onClose()
+    if (result.success) {
+      onClose()
+      return
+    }
+    if (result.errorCode === 'receiving_warehouse_mismatch') {
+      // Not an error yet — splitting one PO's receipt across both real
+      // warehouses is normal. Show what it clashes with and let the
+      // receiver confirm before posting.
+      setWarehouseMismatchWarning(
+        result.message || 'This purchase order was raised for a different warehouse.'
+      )
+    }
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -1412,6 +1460,12 @@ export default function ReceiveStockModal({
         </div>
       </div>
 
+      {warehouseMismatchWarning && (
+        <div className="border-t border-[#f3d7a3] bg-[#fdf6e9] px-4 py-2.5 text-[12.5px] text-[#8a4b06] lg:px-5">
+          {warehouseMismatchWarning} Press <span className="font-semibold">Receive anyway</span> to
+          continue.
+        </div>
+      )}
       <ReceiveActionBar
         blockerCount={blockers.length}
         showBlockers={showErrors}
@@ -1420,7 +1474,7 @@ export default function ReceiveStockModal({
         isSubmitting={isSubmitting}
         onCancel={onClose}
         onPrimary={postNow}
-        primaryLabel={submitLabel}
+        primaryLabel={warehouseMismatchWarning ? 'Receive anyway' : submitLabel}
         submittingLabel={submittingLabel}
       />
 

@@ -10,6 +10,7 @@ import {
   Ban,
   UserCheck,
   AlertTriangle,
+  Repeat,
 } from 'lucide-react'
 import type { TransferStatus } from '@/src/schema/inventory/transfers'
 import { warehouseLabel } from '@/src/schema/inventory/warehouses'
@@ -80,6 +81,12 @@ export const STATUS_CONFIG: Record<
     badge: 'bg-[#f6f6f8] text-[#5b5b6b]',
     tone: 'text-[#8b8b9b]',
     icon: XCircle,
+  },
+  pending_substitution_confirmation: {
+    label: 'Substitution Proposed',
+    badge: 'bg-[#f1ebfb] text-[#3f1490]',
+    tone: 'text-[#7c4fd1]',
+    icon: Repeat,
   },
 }
 

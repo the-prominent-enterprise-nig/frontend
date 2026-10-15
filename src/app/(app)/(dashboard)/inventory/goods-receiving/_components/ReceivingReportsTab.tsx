@@ -409,7 +409,9 @@ export default function ReceivingReportsTab({
         queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports-summary'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
-      } else {
+      } else if (result.errorCode !== 'receiving_warehouse_mismatch') {
+        // That one code is a confirmable warning, not a failure — the modal
+        // shows its own banner and "Receive anyway" instead of this toast.
         showToast({
           title: 'Failed to receive stock',
           description: result.message,

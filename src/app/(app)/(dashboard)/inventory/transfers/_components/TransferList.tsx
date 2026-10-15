@@ -199,6 +199,14 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const canManagerReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_REJECT)
   const canSkipApproval = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DIRECT)
   const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_UPDATE)
+  const canProposeSubstitution = hasPermission(
+    session,
+    INVENTORY_PERMISSIONS.TRANSFERS_PROPOSE_SUBSTITUTION
+  )
+  const canConfirmSubstitution = hasPermission(
+    session,
+    INVENTORY_PERMISSIONS.TRANSFERS_CONFIRM_SUBSTITUTION
+  )
 
   const searchParams = useSearchParams()
   // A caravan heading's "View transfers" (`?warehouseId=`) — the list
@@ -255,6 +263,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
     isAccepting,
     rejectTransfer,
     isRejecting,
+    proposeSubstitution,
+    isProposingSubstitution,
+    confirmSubstitution,
+    isConfirmingSubstitution,
     dispatchTransfer,
     isDispatching,
     receiveTransfer,
@@ -904,6 +916,12 @@ export default function TransferList({ session }: { session: SessionUser }) {
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}
+        canProposeSubstitution={canProposeSubstitution}
+        canConfirmSubstitution={canConfirmSubstitution}
+        onProposeSubstitution={proposeSubstitution}
+        onConfirmSubstitution={confirmSubstitution}
+        isProposingSubstitution={isProposingSubstitution}
+        isConfirmingSubstitution={isConfirmingSubstitution}
         onDispatch={dispatchTransfer}
         onReceive={receiveTransfer}
         onCancel={cancelTransfer}
