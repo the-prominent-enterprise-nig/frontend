@@ -73,6 +73,11 @@ function getDefaultValues(
       supplierId: source.supplierId ?? '',
       branchId: (po ? po.branchId : pr?.branchId) ?? undefined,
       warehouseId: source.warehouseId ?? '',
+      // Local calendar day, not the UTC slice — a PO stamped before 8am in
+      // Manila is still "yesterday" in UTC.
+      orderDate: source.orderDate
+        ? new Date(source.orderDate).toLocaleDateString('en-CA')
+        : undefined,
       expectedDeliveryDate: source.expectedDeliveryDate
         ? source.expectedDeliveryDate.slice(0, 10)
         : undefined,
@@ -96,6 +101,8 @@ function getDefaultValues(
     supplierId: initialSupplier?.id ?? '',
     branchId: currentUserBranchId ?? undefined,
     warehouseId: '',
+    // en-CA formats as YYYY-MM-DD in the local timezone.
+    orderDate: new Date().toLocaleDateString('en-CA'),
     expectedDeliveryDate: undefined,
     deliveryInstructions: undefined,
     paymentTerms: undefined,
@@ -289,6 +296,10 @@ export function CreatePoModal({
           initialSupplierLabel={initialSupplierLabel}
           initialWarehouseLabel={initialWarehouseLabel}
           submitted={isSubmitted}
+          // Only when editing an existing record. Creating a new request
+          // shows no warning: the destination can be set later, before the
+          // PO is sent.
+          warnNoDestination={isEditMode}
         />
       </form>
 

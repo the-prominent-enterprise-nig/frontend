@@ -29,7 +29,10 @@ import { PoViewPanel } from './PoViewPanel'
 import { ReceiveAgainstPoModal } from './ReceiveAgainstPoModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
-import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import {
+  DESTINATION_REQUIRED_MESSAGE,
+  type PurchaseOrderSummary,
+} from '@/src/schema/inventory/purchase-orders'
 import { getSuppliers } from '../_actions/get-suppliers'
 import { getBranches } from '../../price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
@@ -496,7 +499,16 @@ export function PurchaseOrderList({
               tone: 'purple' as const,
               variant: 'primary' as const,
               disabled: isActing,
-              run: () => setSendTarget(po),
+              // Location is optional, but the supplier has to be told where
+              // to deliver — say so up front rather than after a failed send.
+              run: () =>
+                po.warehouseId || po.deliveryInstructions?.trim()
+                  ? setSendTarget(po)
+                  : showToast({
+                      title: 'Add a destination before sending',
+                      description: DESTINATION_REQUIRED_MESSAGE,
+                      status: 'error',
+                    }),
             },
           ]
         : []),
