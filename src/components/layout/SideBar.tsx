@@ -108,6 +108,7 @@ const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
   package: Package,
   'shopping-cart': ShoppingCart,
   'users-round': UsersRound,
+  'file-bar-chart': FileBarChart,
 }
 
 const navItemsBySegment: Record<string, NavConfig> = {
@@ -313,20 +314,27 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: HandCoins,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
       },
-      {
-        label: 'Reports',
-        href: '/accounting/reports',
-        icon: FileBarChart,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
       // Tax Codes, Tax Reports and Tax Closing are hidden from the nav (not on main yet).
       // Their routes still load: /accounting/tax-codes, /accounting/tax-reports,
       // /accounting/tax-closing.
+      // Reports and Data Query Center moved to their own Reports module (below).
+    ],
+    bottom: [],
+  },
+  reports: {
+    main: [
+      {
+        section: 'Reports',
+        label: 'Reports',
+        href: '/reports',
+        icon: FileBarChart,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
+      },
       // Scenario 62 — raw data from every module, read-only. Business Owner
       // only; exact permission so the Accountant's accounting:* can't reach.
       {
         label: 'Data Query Center',
-        href: '/accounting/query-center',
+        href: '/reports/query-center',
         icon: Database,
         exactPermission: ACCOUNTING_PERMISSIONS.QUERY_CENTER_READ,
       },
@@ -958,6 +966,7 @@ const MODULE_SECTION_LABELS: Record<string, string> = {
   accounting: 'Accounting',
   pos: 'Point of Sale',
   crm: 'CRM',
+  reports: 'Reports',
 }
 
 function resolvePrimarySidebarSegment(session: SessionUser | null): string {
@@ -1143,15 +1152,17 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
       : item
 
   // Module nav items — filtered by the user's moduleAccess
-  const moduleNavItems: NavItem[] = MODULES.filter((m) => hasModuleAccess(session, m.key)).map(
-    (m, idx) => ({
-      label: m.label,
-      href: m.href,
-      icon: MODULE_ICON_MAP[m.icon] ?? Package,
-      section: idx === 0 ? 'Modules' : undefined,
-      usePrefix: true,
-    })
-  )
+  const moduleNavItems: NavItem[] = MODULES.filter((m) =>
+    m.accessByPermission
+      ? [m.requiredPermission].flat().some((p) => hasPermission(session, p))
+      : hasModuleAccess(session, m.key)
+  ).map((m, idx) => ({
+    label: m.label,
+    href: m.href,
+    icon: MODULE_ICON_MAP[m.icon] ?? Package,
+    section: idx === 0 ? 'Modules' : undefined,
+    usePrefix: true,
+  }))
 
   // Always prepend Dashboard item so it's visible on every route
   // Deduplicate by href — moduleNavItems and config.main can both contain the same module root href

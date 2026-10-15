@@ -489,7 +489,7 @@ export default function AccountingPage() {
           </div>
           <div className="flex items-center gap-2">
             <Link
-              href="/accounting/reports"
+              href="/reports"
               className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
             >
               <BarChart2 className="h-3.5 w-3.5 text-gray-500" />
@@ -538,7 +538,7 @@ export default function AccountingPage() {
                     icon: BarChart2,
                   },
                   { label: 'Bank Recon', href: '/accounting/bank-reconciliation', icon: Wallet },
-                  { label: 'Reports', href: '/accounting/reports', icon: Clock },
+                  { label: 'Reports', href: '/reports', icon: Clock },
                 ] as const
               ).map(({ label, href, icon: Icon }, i) => (
                 <Link

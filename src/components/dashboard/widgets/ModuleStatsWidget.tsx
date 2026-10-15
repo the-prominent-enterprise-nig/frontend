@@ -78,7 +78,7 @@ export default function ModuleStatsWidget() {
       links: [
         { label: 'AR Invoices', href: '/accounting/ar-invoices' },
         { label: 'AP Bills', href: '/accounting/ap-bills' },
-        { label: 'Reports', href: '/accounting/reports' },
+        { label: 'Reports', href: '/reports' },
       ],
     },
     {

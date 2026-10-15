@@ -13,7 +13,7 @@ import { gotoReady, clickStable } from './utils'
  * Business-Owner storageState is fine here.
  */
 test('Reports has a Cost Center tab that renders a grouped table', async ({ page }) => {
-  await gotoReady(page, '/accounting/reports?tab=cost-center')
+  await gotoReady(page, '/reports?tab=cost-center')
 
   await expect(page.getByRole('button', { name: 'Cost Center' })).toBeVisible({ timeout: 10_000 })
   await expect(page.getByRole('button', { name: 'Cost Center' })).toHaveClass(/border-purple-600/)

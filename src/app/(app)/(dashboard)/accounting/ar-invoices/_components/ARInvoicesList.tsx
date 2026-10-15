@@ -492,7 +492,7 @@ export default function ARInvoicesList({
                   <td className="px-3 py-2" />
                   <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     <Link
-                      href={`/accounting/reports?tab=customer-statement&customerId=${g.customerId}`}
+                      href={`/reports?tab=customer-statement&customerId=${g.customerId}`}
                       className="text-xs font-medium text-purple-700 hover:underline"
                     >
                       Statement
