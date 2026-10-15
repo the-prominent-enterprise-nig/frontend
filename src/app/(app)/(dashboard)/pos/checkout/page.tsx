@@ -124,6 +124,7 @@ import {
   deliveryPayload,
   deliveryProblem,
   parseDeliveryFee,
+  qrTenderLabel,
   resolveDeliveryAddress,
   type CustomerAddress,
   type DeliveryState,
@@ -5066,6 +5067,11 @@ export default function CheckoutPage() {
         customerDisplayName={customerDisplayName}
         cart={cart}
         payments={payments}
+        qrOptionName={
+          configuredMethods
+            .find((m) => m.key === 'qr')
+            ?.options.find((o) => o.id === cashPaymentOptionId)?.name
+        }
         promoDiscount={promoDiscount}
         activeTaxRate={activeTaxRate}
         inclusivePricing={inclusivePricing}
@@ -8650,6 +8656,7 @@ function SuccessScreen({
   customerDisplayName,
   cart,
   payments,
+  qrOptionName,
   promoDiscount,
   activeTaxRate,
   inclusivePricing,
@@ -8691,6 +8698,9 @@ function SuccessScreen({
   customerDisplayName: (c: PosCustomer) => string
   cart: CartLine[]
   payments: PaymentRow[]
+  /** The GCash / Biller / gateway the cashier picked for a QR payment, so the
+   * receipt names it rather than printing a bare "QR". */
+  qrOptionName?: string
   promoDiscount: number
   activeTaxRate: { rate: number; name: string } | null
   inclusivePricing: boolean
@@ -9052,7 +9062,11 @@ function SuccessScreen({
               .map((p, i) => (
                 <div key={i} className="text-[11px] text-gray-500">
                   <div className="flex justify-between">
-                    <span>{PAYMENT_LABELS[p.method] ?? p.method}</span>
+                    <span>
+                      {p.method === 'qr'
+                        ? qrTenderLabel(qrOptionName)
+                        : (PAYMENT_LABELS[p.method] ?? p.method)}
+                    </span>
                     <span>{fmt(p.amount)}</span>
                   </div>
                   {p.referenceNumber && (

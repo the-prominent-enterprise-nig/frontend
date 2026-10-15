@@ -275,6 +275,8 @@ export interface PosPayment {
   referenceNumber?: string | null
   checkNumber?: string | null
   giftCardId?: string | null
+  /** The bank / gateway / biller the cashier picked, where the method has any. */
+  paymentMethodOption?: { name: string } | null
   createdAt: string
 }
 
