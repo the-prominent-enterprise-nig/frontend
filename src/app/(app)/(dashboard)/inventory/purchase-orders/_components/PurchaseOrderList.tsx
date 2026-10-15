@@ -29,7 +29,10 @@ import { PoViewPanel } from './PoViewPanel'
 import { ReceiveAgainstPoModal } from './ReceiveAgainstPoModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
-import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import {
+  DESTINATION_REQUIRED_MESSAGE,
+  type PurchaseOrderSummary,
+} from '@/src/schema/inventory/purchase-orders'
 import { getSuppliers } from '../_actions/get-suppliers'
 import { getBranches } from '../../price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
@@ -49,6 +52,7 @@ import {
   daysLate,
   type PoStatus,
 } from './procurementTokens'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // PLEX/MONO and the status-badge/formatting helpers live in procurementTokens
@@ -495,7 +499,16 @@ export function PurchaseOrderList({
               tone: 'purple' as const,
               variant: 'primary' as const,
               disabled: isActing,
-              run: () => setSendTarget(po),
+              // Location is optional, but the supplier has to be told where
+              // to deliver — say so up front rather than after a failed send.
+              run: () =>
+                po.warehouseId || po.deliveryInstructions?.trim()
+                  ? setSendTarget(po)
+                  : showToast({
+                      title: 'Add a destination before sending',
+                      description: DESTINATION_REQUIRED_MESSAGE,
+                      status: 'error',
+                    }),
             },
           ]
         : []),
@@ -735,7 +748,7 @@ export function PurchaseOrderList({
             <div role="table" aria-label="Purchase orders" className="hidden min-[1080px]:block">
               <div
                 role="row"
-                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                className={`${GRID} ${STOCK_TABLE_HEAD} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px]`}
               >
                 <span role="columnheader">PO code</span>
                 <span role="columnheader" className="pl-1.5">
@@ -983,7 +996,7 @@ export function PurchaseOrderList({
           {isLoading && (
             <div>
               <div
-                className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1080px]:grid`}
+                className={`${GRID} ${STOCK_TABLE_HEAD} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] min-[1080px]:grid`}
               >
                 <span>PO code</span>
                 <span>Supplier</span>

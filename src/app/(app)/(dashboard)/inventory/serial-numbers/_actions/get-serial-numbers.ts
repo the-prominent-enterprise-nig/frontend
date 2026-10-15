@@ -31,6 +31,8 @@ type Params = {
   // caravan. Lists units sitting in caravan warehouses; a branch-restricted
   // caller only ever sees caravans their own branch hosts (server-side).
   caravanId?: string
+  /** Caravan tab — only caravans hosted at any of these branches. */
+  caravanHostBranchIds?: string[]
   // "company": cross-branch availability, excludes the caller's own branch.
   // "override" (Scenario 29 SN-01): bypasses branch scoping entirely
   // (including the caller's own branch) — requires itemId and the
@@ -41,6 +43,9 @@ type Params = {
   freeForTransfer?: boolean
   // Scenario 56 — the Stock Balance Operations filter, carried into Item 360.
   region?: 'panay' | 'negros'
+  // Scenario 72 — only items this supplier supplies (Item Master); the UDS
+  // unit picker once a repair provider is chosen.
+  itemSupplierId?: string
 }
 
 export async function getSerialNumbers(
@@ -60,9 +65,13 @@ export async function getSerialNumbers(
     classification: params.classification?.length ? params.classification.join(',') : undefined,
     soldToCustomerId: params.soldToCustomerId,
     caravanId: params.caravanId,
+    caravanHostBranchIds: params.caravanHostBranchIds?.length
+      ? params.caravanHostBranchIds.join(',')
+      : undefined,
     scope: params.scope,
     freeForTransfer: params.freeForTransfer ? 'true' : undefined,
     region: params.region,
+    itemSupplierId: params.itemSupplierId,
   }
 
   const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)

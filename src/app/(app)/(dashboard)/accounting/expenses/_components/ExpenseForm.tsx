@@ -992,6 +992,18 @@ function ExpenseFormFields({
   // the payment rows below total the rest.
   const withholdingTotal = round2(lines.reduce((sum, l) => sum + withheldFor(l), 0))
   const netPayable = round2(total - withholdingTotal)
+  // A cash advance being liquidated: every deduction takes an advance back off
+  // a Special Account, and the positive lines are the receipts it was spent
+  // on. Mirrors ExpensesService.isAdvanceLiquidation — the one entry that may
+  // net to zero (spent exactly) or below (the change is handed back).
+  const isAdvanceLiquidation =
+    isOtherMode &&
+    !isPayrollCategory &&
+    lines.some((l) => Number(l.amount) < 0) &&
+    lines.every((l) => Number(l.amount) > 0 || specialAccountControlIds.has(l.categoryAccountId))
+  const advanceTakenBack = isAdvanceLiquidation
+    ? round2(lines.reduce((sum, l) => sum + Math.min(Number(l.amount) || 0, 0), 0))
+    : 0
 
   // Item mode computes Amount from Qty * Unit Price. Applied to every line
   // change, not just setLine's — the SI resolver writes a line's price
@@ -1188,7 +1200,14 @@ function ExpenseFormFields({
     // for the total, and deductions exceeding what they deduct from is a
     // mis-key. The server rejects it too. Unreachable off payroll, where
     // every line is already required to be positive.
-    if (total <= 0) return 'Deductions cannot meet or exceed the amounts they deduct from.'
+    if (isAdvanceLiquidation) {
+      // The server refuses this too; say who and by how much before it does.
+      const over = overDeductions[0]
+      if (over)
+        return `${over.name} only owes ${fmtMoney(over.balance)} — a liquidation can't take back more than that.`
+    } else if (total <= 0) {
+      return 'Deductions cannot meet or exceed the amounts they deduct from.'
+    }
     return null
   }
 
@@ -1221,7 +1240,9 @@ function ExpenseFormFields({
         paymentMethod: 'BANK_TRANSFER',
         bankAccountId: form.sourceOfFundId,
         reference: payments[0]?.reference || undefined,
-        amount: round2(netPayable),
+        // A liquidation's change comes back into this fund — still a positive
+        // row; the server books it as cash received. Zero when spent exactly.
+        amount: Math.abs(round2(netPayable)),
       },
     ]
     // No voucherNumber here: the server issues it from the Paid-from fund's series when
@@ -1471,7 +1492,13 @@ function ExpenseFormFields({
               {/* Where the money comes from — the fund the payment posts to, and the series
                   the voucher number is issued from. It replaces the payment method, the
                   amount and the split rows. */}
-              <Field label="Paid from (Bank/Cash) *">
+              <Field
+                label={
+                  isAdvanceLiquidation && netPayable < 0
+                    ? 'Change returned to (Bank/Cash) *'
+                    : 'Paid from (Bank/Cash) *'
+                }
+              >
                 <CategorySelect
                   compact
                   aria-label="Select source of fund"
@@ -2312,12 +2339,18 @@ function ExpenseFormFields({
               {overDeductions.length > 0 && (
                 <div
                   role="alert"
-                  className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800"
+                  className={`mt-2 rounded-lg border px-3 py-2 text-[12px] ${
+                    isAdvanceLiquidation
+                      ? 'border-red-200 bg-red-50 text-red-800'
+                      : 'border-amber-200 bg-amber-50 text-amber-800'
+                  }`}
                 >
                   <p className="font-medium">
-                    {overDeductions.length === 1
-                      ? 'A deduction is more than the balance owed.'
-                      : `${overDeductions.length} deductions are more than the balance owed.`}
+                    {isAdvanceLiquidation
+                      ? 'This liquidation takes back more than is owed.'
+                      : overDeductions.length === 1
+                        ? 'A deduction is more than the balance owed.'
+                        : `${overDeductions.length} deductions are more than the balance owed.`}
                   </p>
                   <ul className="mt-0.5 space-y-0.5">
                     {overDeductions.slice(0, 5).map((o) => (
@@ -2327,8 +2360,12 @@ function ExpenseFormFields({
                     ))}
                     {overDeductions.length > 5 && <li>and {overDeductions.length - 5} more</li>}
                   </ul>
-                  <p className="mt-0.5 text-amber-700">
-                    You can still record it; the balance stops at zero.
+                  <p
+                    className={`mt-0.5 ${isAdvanceLiquidation ? 'text-red-700' : 'text-amber-700'}`}
+                  >
+                    {isAdvanceLiquidation
+                      ? 'Lower the amount taken back to what they owe, or check the name matches their Special Account.'
+                      : 'You can still record it; the balance stops at zero.'}
                   </p>
                 </div>
               )}
@@ -2353,12 +2390,39 @@ function ExpenseFormFields({
               )}
               <div className="flex items-center justify-between gap-10">
                 <span className="text-[15px] font-semibold text-prominent-purple-800">
-                  Total Amount
+                  {isAdvanceLiquidation ? 'Net of the advance' : 'Total Amount'}
                 </span>
                 <span className="text-[26px] font-bold text-prominent-purple-900">
                   {fmtMoney(total)}
                 </span>
               </div>
+              {isAdvanceLiquidation && (
+                <div
+                  aria-label="Liquidation summary"
+                  className="mt-2 space-y-0.5 rounded-lg bg-prominent-purple-50 px-3 py-2 text-[12px] text-zinc-700"
+                >
+                  <div className="flex justify-between gap-6">
+                    <span>Receipts (spent)</span>
+                    <span className="font-medium tabular-nums">
+                      {fmtMoney(round2(total - advanceTakenBack))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-6">
+                    <span>Advance being liquidated</span>
+                    <span className="font-medium tabular-nums">−{fmtMoney(-advanceTakenBack)}</span>
+                  </div>
+                  <div className="flex justify-between gap-6 border-t border-prominent-purple-100 pt-1 font-semibold text-prominent-purple-900">
+                    <span>
+                      {netPayable < 0
+                        ? 'Change returned by the employee'
+                        : netPayable > 0
+                          ? 'Still to reimburse the employee'
+                          : 'Nothing to return or reimburse'}
+                    </span>
+                    <span className="tabular-nums">{fmtMoney(Math.abs(netPayable))}</span>
+                  </div>
+                </div>
+              )}
               {/* What was withheld is owed to the BIR, not paid to the payee. */}
               {withholdingTotal > 0 && (
                 <div className="space-y-0.5 pt-1 text-right text-[12px] text-zinc-600">

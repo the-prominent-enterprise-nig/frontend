@@ -10,6 +10,7 @@ import {
   PackageCheck,
   PackageX,
   ShieldCheck,
+  Truck,
   ShoppingCart,
   Undo2,
   type LucideIcon,
@@ -29,6 +30,7 @@ import { BackordersPageView } from '../../backorders/_components'
 import { AdjustmentList } from '../../adjustments/_components'
 import DebitMemoList from '../../debit-memos/_components/DebitMemoList'
 import UdsList from '../../uds/_components/UdsList'
+import DeliveryReceiptList from '../../delivery-receipts/_components/DeliveryReceiptList'
 
 type TransactionTab = NavTab & { icon: LucideIcon; permissions: string[]; hidden?: boolean }
 
@@ -60,6 +62,17 @@ const TABS: TransactionTab[] = [
     label: 'Stock Request',
     icon: ClipboardList,
     permissions: [PROCUREMENT_PERMISSIONS.PR_READ],
+  },
+  {
+    // Scenario 72 — stock leaving without a sale.
+    id: 'delivery-receipts',
+    label: 'Delivery Receipt',
+    icon: Truck,
+    permissions: [
+      INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_READ,
+      INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE,
+      INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE,
+    ],
   },
   {
     id: 'debit-memos',
@@ -154,6 +167,8 @@ function TabBody({
       return <DebitMemoList session={session} />
     case 'uds':
       return <UdsList session={session} />
+    case 'delivery-receipts':
+      return <DeliveryReceiptList session={session} />
     default:
       return null
   }

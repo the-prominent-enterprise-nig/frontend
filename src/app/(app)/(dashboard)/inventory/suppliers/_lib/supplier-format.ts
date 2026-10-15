@@ -1,6 +1,5 @@
-// How one supplier reads on the Suppliers screen: the two statuses it carries,
-// what its onboarding is still missing, and the shorthand the list and the
-// detail both print.
+// How one supplier reads on the Suppliers screen: its status, and the
+// shorthand the list and the detail both print.
 //
 // These live together because the list row, the detail header and the form all
 // describe the same supplier — a second hand-rolled copy of "is this one
@@ -9,7 +8,6 @@
 import type {
   SupplierDetail,
   SupplierListItem,
-  SUPPLIER_ONBOARDING_STATUSES,
   SUPPLIER_STATUSES,
   SUPPLIER_TYPES,
 } from '@/src/schema/inventory/suppliers'
@@ -22,13 +20,10 @@ import {
   supplierVatStatus,
 } from '@/src/libs/tax/input-vat'
 
-export type OnboardingStatus = (typeof SUPPLIER_ONBOARDING_STATUSES)[number]
 export type SupplierStatus = (typeof SUPPLIER_STATUSES)[number]
 export type SupplierType = (typeof SUPPLIER_TYPES)[number]
 
-/** Whether a supplier may be picked on new paperwork at all. Onboarding is a
- * separate question — an approved supplier that has been switched off is still
- * approved, it is just no longer offered. */
+/** Whether a supplier may be picked on new paperwork at all. */
 export const STATUS_META: Record<
   SupplierStatus,
   { label: string; chip: string; dot: string; hint: string }
@@ -50,38 +45,6 @@ export const STATUS_META: Record<
     chip: 'bg-[#fdeceb] text-[#b42318]',
     dot: 'bg-[#d9544c]',
     hint: 'Barred outright — nothing new may be raised against it',
-  },
-}
-
-/** How far through onboarding the supplier is. Only `approved` means the
- * buying team has signed it off; the rest all read as unfinished. */
-export const ONBOARDING_META: Record<
-  OnboardingStatus,
-  { label: string; chip: string; headline: string; hint: string }
-> = {
-  pending: {
-    label: 'Pending',
-    chip: 'bg-[#fdf3e7] text-[#8a4b06]',
-    headline: 'Pending onboarding',
-    hint: 'Nobody has looked at this supplier yet',
-  },
-  in_review: {
-    label: 'In review',
-    chip: 'bg-[#fdf3e7] text-[#8a4b06]',
-    headline: 'In review',
-    hint: 'Being checked before the buying team may use it',
-  },
-  approved: {
-    label: 'Approved',
-    chip: 'bg-[#e7f5ef] text-[#0b6644]',
-    headline: 'Approved',
-    hint: 'Signed off — purchase orders may be raised against it',
-  },
-  blocked: {
-    label: 'Blocked',
-    chip: 'bg-[#fdeceb] text-[#b42318]',
-    headline: 'Blocked — no new purchase orders',
-    hint: 'Somebody stopped this onboarding',
   },
 }
 
@@ -183,68 +146,6 @@ export function withholdingCodeLabel(
 export function fmtCreditLimit(creditLimit: number | null | undefined): string {
   if (creditLimit == null || creditLimit === 0) return 'None'
   return `₱${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(creditLimit)}`
-}
-
-/** One thing onboarding needs on file. Nothing here blocks approval — a gap
- * is named so whoever approves knows what they are waving through, because
- * each one costs somebody downstream: no TIN stalls the BIR filing, no bank
- * account stalls the payment. */
-export type ReadinessCheck = {
-  key: 'taxId' | 'bank' | 'contact' | 'terms'
-  label: string
-  ok: boolean
-  /** What is on file, or what its absence costs. */
-  note: string
-}
-
-export function readinessChecks(supplier: SupplierDetail): ReadinessCheck[] {
-  const banks = supplier.bankAccounts ?? []
-  const contact = supplier.contactPerson?.trim()
-  const taxId = supplier.taxId?.trim()
-  const terms = supplier.paymentTerms?.trim()
-
-  return [
-    {
-      key: 'taxId',
-      label: 'Tax ID on file',
-      ok: !!taxId,
-      note: taxId || 'Needed for the BIR filings',
-    },
-    {
-      key: 'bank',
-      label: 'Bank account',
-      ok: banks.length > 0,
-      note: banks.length ? `${banks.length} on file` : 'Payments cannot be released without one',
-    },
-    {
-      key: 'contact',
-      label: 'Contact person',
-      ok: !!contact,
-      note: contact || 'Nobody to chase on a late delivery',
-    },
-    {
-      key: 'terms',
-      label: 'Buying terms',
-      ok: !!terms,
-      note: terms ? termsLabel(terms) : 'Every PO would fall back to a default',
-    },
-  ]
-}
-
-/** The one verb offered on an unfinished onboarding, and what it writes. */
-export function nextOnboardingStep(
-  status: OnboardingStatus
-): { next: OnboardingStatus; label: string; tone: 'purple' | 'green' } | null {
-  switch (status) {
-    case 'pending':
-      return { next: 'in_review', label: 'Send for review', tone: 'purple' }
-    case 'in_review':
-      return { next: 'approved', label: 'Approve supplier', tone: 'green' }
-    case 'blocked':
-      return { next: 'in_review', label: 'Reopen onboarding', tone: 'purple' }
-    case 'approved':
-      return null
-  }
 }
 
 /** "SUP-0037 · VSTECS Phils., Inc. · TIN 004-521-778-000" — the detail

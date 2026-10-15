@@ -18,6 +18,7 @@ import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-order
 import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { NoDestinationWarning } from './NoDestinationWarning'
 import {
   PLEX,
   MONO,
@@ -346,6 +347,14 @@ export function PoDetailModal({
           </div>
         )}
 
+        {(po.status === 'draft' || po.status === 'approved') && (
+          <NoDestinationWarning
+            warehouseId={po.warehouseId}
+            deliveryInstructions={po.deliveryInstructions}
+            saved="order"
+          />
+        )}
+
         {/* Supplier + facts */}
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1fr_1.15fr]">
           <div className="rounded-xl border border-[#e4e4e9] bg-white p-4">
@@ -382,7 +391,16 @@ export function PoDetailModal({
           <div className="rounded-xl border border-[#e4e4e9] bg-white p-4">
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 min-[560px]:grid-cols-3">
               <InfoRow label="Requested By" value={po.branch?.name ?? 'Tenant-wide'} />
-              <InfoRow label="Destination" value={locationLabel(po.warehouse)} />
+              <InfoRow
+                label="Destination"
+                // A drop-ship order has no Location, only instructions.
+                value={
+                  po.warehouse || !po.deliveryInstructions?.trim()
+                    ? locationLabel(po.warehouse)
+                    : 'See delivery instructions'
+                }
+                muted={!po.warehouse}
+              />
               <InfoRow label="Order Date" value={fmtDate(po.orderDate)} />
               <InfoRow
                 label="Expected Delivery"

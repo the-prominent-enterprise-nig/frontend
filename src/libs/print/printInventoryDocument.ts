@@ -3,7 +3,8 @@ import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   receivingReportSourceName,
   receivingReportSourceSubtitle,
-  receivingReportSourceRef,
+  receivingReportBranchLine,
+  receivingReportMetaSlots,
 } from '@/src/libs/format/receiving-report'
 import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
@@ -86,7 +87,6 @@ export function buildReceivingReportHtml(
   const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
-  const warehouse = rr.warehouse as { name?: string; branch?: { name?: string } | null } | undefined
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
 
@@ -96,18 +96,12 @@ export function buildReceivingReportHtml(
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
-  // `Ref` is the supplier-document number (their DR, or the SI when no DR was
-  // given). The source document is a separate reference and gets its own
-  // slot, paired with its own date in `Dated` — both were reachable from the
-  // record all along but never printed, and `Dated` sat hardcoded as an
-  // em-dash with nothing to fill it.
-  //
-  // Which source that is depends on where the stock came from: "P.O. No."
-  // dated by `poDate` on a supplier receipt, "Transfer No." dated by the
-  // dispatch date on one that arrived from another branch. The on-screen
-  // sheet makes the same swap through this same formatter.
-  const sourceRef = receivingReportSourceRef(rr as Parameters<typeof receivingReportSourceRef>[0])
+  // Reference, then the source document and its date — or, on a customer
+  // return, the sales invoice it came back from. The on-screen sheet renders
+  // the same slots through this same formatter.
+  const metaSlots = receivingReportMetaSlots(rr as Parameters<typeof receivingReportMetaSlots>[0])
+  const supplierAddress = (rr.supplier as { address?: string | null } | null | undefined)?.address
+  const branch = receivingReportBranchLine(rr as Parameters<typeof receivingReportBranchLine>[0])
   // The supplier on a bought-in delivery, the sending branch on one that came
   // from another branch — a transfer receipt has no supplier to name.
   const sourceName = receivingReportSourceName(
@@ -175,10 +169,13 @@ export function buildReceivingReportHtml(
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    /* Against the divider, as on the on-screen sheet. */
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
+    .rr-branch { margin: 0 0 10px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     thead th { background: #f5f5f5; text-align: center; font-weight: 700; }
@@ -205,26 +202,32 @@ export function buildReceivingReportHtml(
       <div class="party">
         <p class="party-name">${esc(sourceName) || '—'}</p>
         ${sourceSubtitle ? `<p class="party-address">${esc(sourceSubtitle)}</p>` : ''}
+        ${supplierAddress ? `<p class="party-address">${esc(supplierAddress)}</p>` : ''}
         ${driverHelper ? `<p class="party-address">Driver/Helper: ${esc(driverHelper)}</p>` : ''}
       </div>
       <div class="meta">
-        <p class="meta-label">No.</p>
+        <p class="meta-label">RR No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Date</p>
+        <p class="meta-label">RR Date</p>
         <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
-        <p class="meta-label">Ref</p>
-        <p class="meta-value">${esc(ref) || '—'}</p>
-        <p class="meta-label">${esc(sourceRef.label)}</p>
-        <p class="meta-value">${esc(sourceRef.code) || '—'}</p>
-        <p class="meta-label">Dated</p>
-        <p class="meta-value">${sourceRef.dated ? fmtDate(sourceRef.dated) : '—'}</p>
+        ${metaSlots
+          .map(
+            (slot) => `<p class="meta-label">${esc(slot.label)}</p>
+        <p class="meta-value">${slot.isDate ? fmtDate(slot.value) : esc(slot.value) || '—'}</p>`
+          )
+          .join('')}
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
-        <p class="party-address">Branch: ${esc(warehouse?.branch?.name ?? warehouse?.name) || '—'}</p>
       </div>
     </div>
+
+    ${
+      branch
+        ? `<p class="rr-branch"><strong>Branch:</strong> ${esc(branch.name)}${branch.address ? `, ${esc(branch.address)}` : ''}</p>`
+        : ''
+    }
 
     <table>
       <thead>
@@ -492,8 +495,26 @@ function partyName(wh: TransferParty | undefined): string {
 }
 
 function partyAddress(wh: TransferParty | undefined): string {
-  if (wh?.branch) return [wh.branch.addressLine1, wh.branch.city].filter(Boolean).join(', ')
-  return wh?.address ?? ''
+  // A branch with no street address on file falls back to the warehouse's
+  // own address rather than printing blank (Scenario 69 item 25).
+  const branchAddress = wh?.branch
+    ? [wh.branch.addressLine1, wh.branch.city].filter(Boolean).join(', ')
+    : ''
+  return branchAddress || wh?.address || ''
+}
+
+/** The receipts a transfer arrived on, oldest first. A reopened, partially
+ * received transfer issues a separate RR per receive, so there can be more
+ * than one — every one is listed (Scenario 69 item 24). */
+function transferReceipts(
+  transfer: Record<string, unknown>
+): { code: string; receivedAt: string }[] {
+  const receipts = Array.isArray(transfer.goodsReceipts)
+    ? (transfer.goodsReceipts as { code?: string; receivedAt?: string }[])
+    : []
+  return receipts
+    .filter((r): r is { code: string; receivedAt: string } => !!r.code && !!r.receivedAt)
+    .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime())
 }
 
 /**
@@ -514,14 +535,27 @@ export function buildStockTransferHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Shown for any serial-tracked line (Scenario 71 item 19), not only once a
+  // serial is assigned — a pre-dispatch sheet reads "Assigned at dispatch".
   const hasSerialLine = lines.some(
-    (l) => (l.serialNumber as Record<string, unknown> | null)?.serialNumber
+    (l) =>
+      (l.serialNumber as Record<string, unknown> | null)?.serialNumber ||
+      (l.item as { isSerialTracked?: boolean } | undefined)?.isSerialTracked
   )
+  // Only a not-yet-dispatched transfer's empty serial is "to come".
+  const awaitingDispatch = [
+    'pending_manager_approval',
+    'requested',
+    'pending_hq_approval',
+    'draft',
+  ].includes(String(transfer.status))
+  // Blank (—) until the transfer is received.
+  const receipts = transferReceipts(transfer)
 
   let totalQty = 0
   const rows = lines
     .map((l, i) => {
-      const item = l.item as { name?: string } | undefined
+      const item = l.item as { name?: string; isSerialTracked?: boolean } | undefined
       const serial = (l.serialNumber as Record<string, unknown> | null)?.serialNumber as
         | string
         | undefined
@@ -530,7 +564,7 @@ export function buildStockTransferHtml(data: unknown): string {
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(item?.name) || '—'}</td>
-        ${hasSerialLine ? `<td class="mono">${esc(serial) || '—'}</td>` : ''}
+        ${hasSerialLine ? `<td class="mono">${esc(serial) || (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')}</td>` : ''}
         <td class="right">${qty}</td>
       </tr>`
     })
@@ -549,8 +583,8 @@ export function buildStockTransferHtml(data: unknown): string {
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .info { display: flex; gap: 28px; margin-bottom: 20px; }
-    .info > div { flex: 1; }
+    .head-grid { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 28px; }
+    .info, .logistics { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; margin-bottom: 20px; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
@@ -558,7 +592,8 @@ export function buildStockTransferHtml(data: unknown): string {
     .party-dir { font-weight: 700; }
     .party .party-to { margin-top: 12px; }
     .meta-value { margin: 0 0 12px; }
-    .logistics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 28px; margin-bottom: 20px; }
+    .logistics > div:nth-child(odd) { grid-column: 1; }
+    .logistics > div:nth-child(even) { grid-column: 2 / span 2; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
@@ -581,6 +616,7 @@ export function buildStockTransferHtml(data: unknown): string {
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
+    <div class="head-grid">
     <div class="info">
       <div class="party">
         <p class="party-name"><span class="party-dir">From</span> ${esc(partyName(fromWarehouse))}</p>
@@ -589,10 +625,14 @@ export function buildStockTransferHtml(data: unknown): string {
         <p class="party-address">${esc(partyAddress(toWarehouse)) || '—'}</p>
       </div>
       <div class="meta">
-        <p class="meta-label">No.</p>
+        <p class="meta-label">Transfer No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Date</p>
+        <p class="meta-label">Transfer Date</p>
         <p class="meta-value">${fmtDate(transfer.transferDate)}</p>
+        <p class="meta-label">RR No.</p>
+        <p class="meta-value">${receipts.map((r) => esc(r.code)).join(', ') || '—'}</p>
+        <p class="meta-label">RR Date</p>
+        <p class="meta-value">${receipts.map((r) => fmtDate(r.receivedAt)).join(', ') || '—'}</p>
         ${transfer.reason ? `<p class="meta-label">Reason</p><p class="meta-value">${esc(transfer.reason)}</p>` : ''}
       </div>
       <div class="enterprise">
@@ -611,6 +651,7 @@ export function buildStockTransferHtml(data: unknown): string {
             .join('')}</div>`
         : ''
     }
+    </div>
 
     <table>
       <thead>
@@ -675,7 +716,8 @@ function buildPurchaseOrderHtml(
   const lines = Array.isArray(po.lines) ? (po.lines as Record<string, unknown>[]) : []
   const enterprise = doc.enterprise
 
-  // Where the goods actually go: "Deliver to <location>" with the street
+  // Where the goods actually go, laid out like the supplier block: the
+  // location in bold (or, on a drop-ship, the instructions), the street
   // address beneath it.
   //
   // This used to print only the free-text `deliveryInstructions` note, so a
@@ -780,6 +822,7 @@ function buildPurchaseOrderHtml(
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
@@ -788,6 +831,7 @@ function buildPurchaseOrderHtml(
     .delivery-label { font-weight: 700; margin: 0 0 2px; }
     .delivery-address { margin: 0; color: #333; }
     .delivery-note { margin: 2px 0 0; color: #333; }
+    .delivery-label.delivery-note { margin: 0 0 2px; color: inherit; white-space: pre-line; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
@@ -838,9 +882,9 @@ function buildPurchaseOrderHtml(
     ${
       destinationName || destinationAddress || po.deliveryInstructions
         ? `<div class="delivery">
-      <p class="delivery-label">Deliver to${destinationName ? ` ${esc(destinationName)}` : ''}</p>
+      ${destinationName ? `<p class="delivery-label">${esc(destinationName)}</p>` : ''}
       ${destinationAddress ? `<p class="delivery-address">${esc(destinationAddress)}</p>` : ''}
-      ${po.deliveryInstructions ? `<p class="delivery-note">${esc(po.deliveryInstructions)}</p>` : ''}
+      ${po.deliveryInstructions ? `<p class="${destinationName ? 'delivery-note' : 'delivery-label delivery-note'}">${esc(po.deliveryInstructions)}</p>` : ''}
     </div>`
         : ''
     }
@@ -2426,6 +2470,11 @@ export function buildExpenseVoucherHtml(data: unknown): string {
   const e = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
 
+  // A cash advance liquidated against its receipts can net to zero or below:
+  // the paper then records change handed back, not a payment.
+  const total = Number(e.totalAmount ?? 0)
+  const isLiquidation =
+    total <= 0 && ((e.lines ?? []) as { amount?: number }[]).some((l) => Number(l.amount) < 0)
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
   // Zero-padded MM/DD/YYYY rather than the unpadded en-PH default the other
@@ -2552,7 +2601,7 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>Payment</h1>
+      <h1>${isLiquidation ? 'Cash Advance Liquidation' : 'Payment'}</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
@@ -2610,11 +2659,13 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     <table class="totals">
       <tbody>
         ${
-          withheld > 0
-            ? `<tr><td>Amount</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+          isLiquidation
+            ? `<tr class="grand"><td>${total < 0 ? 'Change returned' : 'Nothing to pay or return'}</td><td>${fmt(Math.abs(total))}</td></tr>`
+            : withheld > 0
+              ? `<tr><td>Amount</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
         <tr><td>Less: withholding tax${withholdingCodes ? ` (${esc(withholdingCodes)})` : ''}</td><td>(${fmt(withheld)})</td></tr>
         <tr class="grand"><td>Net amount paid</td><td>${fmt(Number(e.netPayable ?? Number(e.totalAmount ?? 0) - withheld))}</td></tr>`
-            : `<tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+              : `<tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
         <tr class="grand"><td>Total</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>`
         }
       </tbody>

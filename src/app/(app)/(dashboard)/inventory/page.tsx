@@ -358,11 +358,9 @@ export default function InventoryPage() {
     // which was being mislabeled as this before.
     const agingRaw = pick(12)?.summary ?? {}
     const agingBreakdown = [
-      { label: '0–30 days', value: agingRaw['0_30']?.count ?? 0, color: '#10b981' },
-      { label: '31–60 days', value: agingRaw['31_60']?.count ?? 0, color: '#f59e0b' },
-      { label: '61–90 days', value: agingRaw['61_90']?.count ?? 0, color: '#f97316' },
-      { label: '91–180 days', value: agingRaw['91_180']?.count ?? 0, color: '#f97316' },
-      { label: '180+ days', value: agingRaw['180_plus']?.count ?? 0, color: '#ef4444' },
+      { label: '0–6 months', value: agingRaw['0_6']?.count ?? 0, color: '#10b981' },
+      { label: '7–14 months', value: agingRaw['7_14']?.count ?? 0, color: '#f59e0b' },
+      { label: '15+ months', value: agingRaw['15_plus']?.count ?? 0, color: '#ef4444' },
     ]
     const abcSegments = [
       { label: 'Healthy', value: healthyCount, color: '#10b981' },

@@ -243,7 +243,11 @@ function availableTiles(paymentMethods: CollectionsPaymentOption[]): DeliveryFee
 // A due is eligible for selection (and payment, via "Pay Selected") once its
 // contract is past DRAFT (never posted) and not voided, and the due itself
 // hasn't been settled yet.
-const isEligibleForBulkPay = isDueOpen
+//
+// An Employee Appliance Loan is never eligible: it is settled by payroll
+// deduction, so Collections lists it but offers no way to pay it here.
+const isEligibleForBulkPay = (line: InstallmentScheduleLineWithInvoice) =>
+  isDueOpen(line) && !line.arInvoice.isEmployeeApplianceLoan
 
 // Shopee-style early-payment selection: checking a due auto-checks every
 // earlier unpaid due on its schedule; unchecking one un-checks everything
@@ -280,7 +284,7 @@ const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
   rebate_requires_installment_account:
     'A rebate can only be given on an installment plan. This invoice has no linked installment account.',
   penalty_exceeds_assessed:
-    "The penalty is more than what's actually assessed — 5% of a due's own amount, and only for a due at least 15 days past its due date.",
+    "The penalty is more than what's actually assessed — 5% of the part of a due being paid, and only for a due at least 15 days past its due date.",
 }
 
 function paymentErrorMessage(res: { message?: string; error?: string }): string {
@@ -301,7 +305,7 @@ function dueSuggestions(
   line: InstallmentScheduleLineWithInvoice,
   ppd: number | null,
   paymentDateIso: string
-): { isLate: boolean; suggestedRebate: number | null; suggestedPenalty: number } {
+): { isLate: boolean; suggestedRebate: number | null; penaltyEligible: boolean } {
   // Raw date comparison, not dueStatus() — a PARTIAL due counts as late too,
   // same as a SENT one. Used for the Late badge and to default the rebate
   // checkbox unchecked below — a late due can still have its rebate granted
@@ -310,9 +314,11 @@ function dueSuggestions(
   // ar-invoices.service.ts's applySingleInvoicePayment() cap logic exactly,
   // so this preview can never promise more than the backend will allow.
   const isLate = line.dueDate.slice(0, 10) < paymentDateIso
-  // Late-payment penalty — 5% of the due's own amount, once it's at least 15
-  // days past its own due date. Same day-count as applySingleInvoicePayment()'s
-  // own penalty cap.
+  // Late-payment penalty — applies once the due is at least 15 days past its
+  // own due date (same day-count as applySingleInvoicePayment()'s own penalty
+  // cap). HOW MUCH is not a property of the due: the penalty follows the
+  // money, so it is 5% of whatever part of the due the payment settles (see
+  // penaltyOn / allocateBulkPayment).
   const daysLate = Math.floor(
     (new Date(paymentDateIso).getTime() - new Date(line.dueDate.slice(0, 10)).getTime()) /
       (24 * 60 * 60 * 1000)
@@ -320,8 +326,19 @@ function dueSuggestions(
   return {
     isLate,
     suggestedRebate: ppd,
-    suggestedPenalty: daysLate >= 15 ? Math.round(Number(line.amount) * 0.05 * 100) / 100 : 0,
+    penaltyEligible: daysLate >= PENALTY_GRACE_DAYS,
   }
+}
+
+// Late-payment penalty rate and grace period — mirrors penalty-waiver.util.ts
+// in the backend, which enforces them.
+const PENALTY_RATE = 0.05
+const PENALTY_GRACE_DAYS = 15
+
+/** The penalty on `applied` pesos settled against a late due. A due paid in two
+ * halves carries 5% on each half — 5% of the whole once both are in. */
+function penaltyOn(applied: number): number {
+  return Math.round(Math.max(applied, 0) * PENALTY_RATE * 100) / 100
 }
 
 // Splits a bulk payment's typed Total across the selected dues (given in due
@@ -329,16 +346,21 @@ function dueSuggestions(
 // after its own (checkbox-resolved) rebate — before any leftover flows to
 // the next due. Whatever's left once every due is fully covered lands on the
 // last due as an overpayment (matching the backend's own per-line
-// overpayment check), rather than being silently dropped. Rebate/penalty are
-// no longer sliced from a combined pool here — each due's amount is already
-// known directly from its own checkbox state, resolved by the caller.
+// overpayment check), rather than being silently dropped. Rebate is no longer
+// sliced from a combined pool here — each due's amount is already known
+// directly from its own checkbox state, resolved by the caller. The penalty is
+// derived HERE, from what lands on each due: 5% of the part of a late due this
+// payment settles (amount + its rebate + any tax withheld, never more than
+// what the due still needs), so a due paid in two payments is charged on each.
 function allocateBulkPayment(
   lines: {
     line: InstallmentScheduleLineWithInvoice
     rebateAmount: number
-    penaltyAmount: number
+    /** The due is 15+ days late and its penalty checkbox is on. */
+    penaltyApplies: boolean
   }[],
-  totalAmount: number
+  totalAmount: number,
+  withholding = 0
 ): {
   line: InstallmentScheduleLineWithInvoice
   amount: number
@@ -346,14 +368,15 @@ function allocateBulkPayment(
   penaltyAmount: number
 }[] {
   let remainingAmount = Math.max(totalAmount, 0)
-  return lines.map(({ line, rebateAmount, penaltyAmount }, i) => {
+  return lines.map(({ line, rebateAmount, penaltyApplies }, i) => {
     const outstanding = dueOutstanding(line)
     const neededAmount = Math.max(Math.round((outstanding - rebateAmount) * 100) / 100, 0)
     const isLast = i === lines.length - 1
     const amount =
       Math.round((isLast ? remainingAmount : Math.min(remainingAmount, neededAmount)) * 100) / 100
     remainingAmount = Math.max(Math.round((remainingAmount - amount) * 100) / 100, 0)
-    return { line, rebateAmount, penaltyAmount, amount }
+    const settled = Math.min(outstanding, amount + rebateAmount + withholding)
+    return { line, rebateAmount, penaltyAmount: penaltyApplies ? penaltyOn(settled) : 0, amount }
   })
 }
 
@@ -456,7 +479,7 @@ export default function CollectionsScreen() {
   // receipt is invisible to the daily collection report.
   const effectivePaymentDateIso = overrideDateIso ?? todayIso()
   // Only `ppd` is carried here — NOT a precomputed suggestedRebate/
-  // suggestedPenalty. PaymentPanel's own Payment date field is freely
+  // penaltyEligible. PaymentPanel's own Payment date field is freely
   // editable independently of effectivePaymentDateIso, and the backend
   // recomputes rebate/penalty caps against whatever date actually submits —
   // so PaymentPanel derives its own live preview from dueSuggestions() +
@@ -676,6 +699,11 @@ export default function CollectionsScreen() {
                             s.id}
                         </span>
                         <span>
+                          {s.lines[0]?.arInvoice.isEmployeeApplianceLoan && (
+                            <span className="mr-2 rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
+                              Appliance loan · paid by payroll
+                            </span>
+                          )}
                           {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
                         </span>
                       </div>
@@ -768,6 +796,10 @@ export default function CollectionsScreen() {
                   // time (see the component's own doc comment).
                   key={Array.from(selectedLineIds).sort().join(',')}
                   lines={selectedPayableLines}
+                  payrollOnly={
+                    schedules.length > 0 &&
+                    schedules.every((sc) => sc.lines[0]?.arInvoice.isEmployeeApplianceLoan)
+                  }
                   customerName={customer?.name}
                   defaultBranchId={branchId || undefined}
                   initialPaymentDateIso={effectivePaymentDateIso}
@@ -815,12 +847,16 @@ export default function CollectionsScreen() {
  */
 function PaymentPanel({
   lines,
+  payrollOnly,
   customerName,
   defaultBranchId,
   initialPaymentDateIso,
   onClearSelection,
   onCollected,
 }: {
+  /** Every plan on screen is an Employee Appliance Loan — nothing here can
+   * be collected, so the empty state says why instead of asking for a check. */
+  payrollOnly?: boolean
   lines: {
     line: InstallmentScheduleLineWithInvoice
     /** The linked InstallmentAccount's PPD, or null with no linked account —
@@ -900,7 +936,15 @@ function PaymentPanel({
     (sum, { suggestedRebate }) => sum + (suggestedRebate ?? 0),
     0
   )
-  const penaltyCapSum = liveLines.reduce((sum, { suggestedPenalty }) => sum + suggestedPenalty, 0)
+  // What the penalty would come to if every selected due were paid in full —
+  // the at-a-glance figure. What a given payment is actually charged follows
+  // the amount typed (see bulkAllocated), since the penalty is 5% of the part
+  // of each late due being paid.
+  const penaltyCapSum = liveLines.reduce(
+    (sum, { line, penaltyEligible }) =>
+      sum + (penaltyEligible ? penaltyOn(dueOutstanding(line)) : 0),
+    0
+  )
   const outstandingTotal = single ? outstanding : outstandingSum
 
   // Rebate defaults checked whenever a due is on-time and has a suggested
@@ -916,7 +960,7 @@ function PaymentPanel({
   // the selection changes (see the component doc comment above), so this
   // never goes stale against a different set of dues. If the cashier later
   // edits the Payment date, a due's checkbox stays wherever they left it;
-  // rebateAmountFor/penaltyAmountFor below always clamp to the LIVE cap
+  // rebateAmountFor below (and bulkAllocated, for the penalty) always clamp to the LIVE cap
   // regardless, so a checked-but-no-longer-qualifying due safely
   // contributes ₱0 rather than ever submitting more than the backend will
   // actually allow.
@@ -930,21 +974,19 @@ function PaymentPanel({
   )
   // Penalty has no amount override at all — auto-calculated only, per the
   // developer's explicit instruction ("should not be inputted by a
-  // personel"). Checked = the full 5% applies; unchecked = none.
+  // personel"). Checked = the 5% applies to whatever part of the due this
+  // payment settles; unchecked = none.
   const [penaltyChecked, setPenaltyChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
       lines.map(({ line, ppd }) => [
         line.id,
-        dueSuggestions(line, ppd, initialPaymentDateIso).suggestedPenalty > 0,
+        dueSuggestions(line, ppd, initialPaymentDateIso).penaltyEligible,
       ])
     )
   )
 
   function rebateAmountFor(lineId: string, suggestedRebate: number | null): number {
     return rebateChecked[lineId] ? (suggestedRebate ?? 0) : 0
-  }
-  function penaltyAmountFor(lineId: string, suggestedPenalty: number): number {
-    return penaltyChecked[lineId] ? suggestedPenalty : 0
   }
   // Resolved together (id + name) before ever touching form.branchId, so the
   // combobox's one-shot initialLabel is never stale — see BranchSearchCombobox's
@@ -1004,24 +1046,28 @@ function PaymentPanel({
     ? form.paymentMethodOptionId
     : undefined
 
-  // Rebate/penalty resolved per due from the checkbox state above, against
-  // the LIVE suggestion for form.paymentDate (liveLines, not the raw `lines`
-  // prop) — this is the single source of truth for both the single-due and
-  // batch cases (a single due is just a one-element `lines`, so
-  // resolvedLines[0] IS that due's resolved amounts; rebateTotal/
-  // penaltyTotal sum to the same thing). Both are already capped by
-  // construction (rebateAmountFor clamps to the due's own live
-  // suggestedRebate; penaltyAmountFor is exactly the live suggestedPenalty
-  // or 0), so there's no longer a separate exceeds-cap check to run — and
-  // since the cap itself now tracks form.paymentDate, it can never promise
-  // more than the backend will allow for whatever date actually submits.
-  const resolvedLines = liveLines.map(({ line, suggestedRebate, suggestedPenalty }) => ({
+  // Rebate resolved per due from the checkbox state above, against the LIVE
+  // suggestion for form.paymentDate (liveLines, not the raw `lines` prop) —
+  // this is the single source of truth for both the single-due and batch cases
+  // (a single due is just a one-element `lines`). Already capped by
+  // construction (rebateAmountFor clamps to the due's own live suggestedRebate),
+  // and since the cap itself tracks form.paymentDate, it can never promise more
+  // than the backend will allow for whatever date actually submits. The penalty
+  // is NOT resolved here: it is 5% of the part of each late due the payment
+  // settles, so it can only be worked out once the typed amount has been
+  // allocated across the dues (bulkAllocated below).
+  const resolvedLines = liveLines.map(({ line, suggestedRebate, penaltyEligible }) => ({
     line,
     rebateAmount: rebateAmountFor(line.id, suggestedRebate),
-    penaltyAmount: penaltyAmountFor(line.id, suggestedPenalty),
+    penaltyApplies: penaltyEligible && (penaltyChecked[line.id] ?? false),
   }))
   const rebateTotal = resolvedLines.reduce((sum, r) => sum + r.rebateAmount, 0)
-  const penaltyTotal = resolvedLines.reduce((sum, r) => sum + r.penaltyAmount, 0)
+  // The penalty on paying every selected due in full — drives the "Total with
+  // penalty" at-a-glance figure only.
+  const fullPenaltyTotal = resolvedLines.reduce(
+    (sum, r) => sum + (r.penaltyApplies ? penaltyOn(dueOutstanding(r.line)) : 0),
+    0
+  )
 
   // Penalty deliberately excluded — it never touches AR, it's extra cash on
   // top of what's actually owed, so it plays no part in "does this settle
@@ -1046,7 +1092,18 @@ function PaymentPanel({
   // due's own resolved rebate/penalty — drives both the dues-list preview
   // below and the actual bulk submit payload, so what the cashier sees is
   // exactly what gets recorded.
-  const bulkAllocated = allocateBulkPayment(resolvedLines, Number(form.amount) || 0)
+  //
+  // Until an amount is typed the preview assumes paying every selected due off
+  // in full (the sensible starting point), so the penalty column reads what a
+  // full payment would be charged; the moment one is typed it follows that
+  // amount. The submit payload only ever sees a typed amount (the field is
+  // required), so what is shown is what is recorded.
+  const typedWithholding = single ? Number(form.withholdingAmount) || 0 : 0
+  const previewAmount =
+    form.amount.trim() === ''
+      ? Math.max(Math.round((outstandingSum - rebateTotal - typedWithholding) * 100) / 100, 0)
+      : Number(form.amount) || 0
+  const bulkAllocated = allocateBulkPayment(resolvedLines, previewAmount, typedWithholding)
 
   /**
    * Scenario 53 Part 5b — the open session whose drawer this cash lands in,
@@ -1088,7 +1145,7 @@ function PaymentPanel({
         paymentDate: form.paymentDate,
         withholdingAmount: Number(form.withholdingAmount || 0),
         rebateAmount: resolvedLines[0]?.rebateAmount ?? 0,
-        penaltyAmount: resolvedLines[0]?.penaltyAmount ?? 0,
+        penaltyAmount: bulkAllocated[0]?.penaltyAmount ?? 0,
         method: selectedPaymentMethod?.method ?? 'CASH',
         paymentMethodConfigId: selectedPaymentMethod?.configId,
         paymentMethodOptionId: selectedOptionId,
@@ -1160,9 +1217,13 @@ function PaymentPanel({
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center shadow-sm">
         <Banknote className="mb-3 h-10 w-10 text-zinc-300" />
-        <p className="text-sm font-medium text-zinc-500">No dues selected</p>
+        <p className="text-sm font-medium text-zinc-500">
+          {payrollOnly ? 'Paid through payroll' : 'No dues selected'}
+        </p>
         <p className="mt-1 max-w-55 text-xs text-zinc-400">
-          Check one or more dues on the left to start collecting a payment.
+          {payrollOnly
+            ? 'An employee appliance loan is deducted from payroll, so there is nothing to collect here.'
+            : 'Check one or more dues on the left to start collecting a payment.'}
         </p>
       </div>
     )
@@ -1285,17 +1346,17 @@ function PaymentPanel({
                 <tr className="bg-zinc-50 text-left text-[11px] font-medium uppercase tracking-wide text-zinc-500">
                   <th className="px-3 py-2 font-medium">Due</th>
                   <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 text-right font-medium">Without rebate</th>
+                  <th className="px-3 py-2 text-right font-medium">Due</th>
                   <th className="px-3 py-2 text-right font-medium">Rebate</th>
                   <th className="px-3 py-2 text-right font-medium">Penalty</th>
                   <th className="px-3 py-2 text-right font-medium">Net</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {liveLines.map(({ line, isLate, suggestedRebate, suggestedPenalty }) => {
+                {liveLines.map(({ line, isLate, suggestedRebate, penaltyEligible }, rowIndex) => {
                   const remaining = dueOutstanding(line)
                   const cap = suggestedRebate ?? 0
-                  // isLate/suggestedRebate/suggestedPenalty are all live
+                  // isLate/suggestedRebate/penaltyEligible are all live
                   // against form.paymentDate (see liveLines above), so
                   // this badge and the Rebate/Penalty columns beside it
                   // can never disagree with each other or with what the
@@ -1305,7 +1366,8 @@ function PaymentPanel({
                   // Net reflects exactly what's about to be applied, same
                   // as resolvedLines/bulkAllocated below.
                   const rowRebate = rebateAmountFor(line.id, suggestedRebate)
-                  const rowPenalty = penaltyAmountFor(line.id, suggestedPenalty)
+                  // 5% of the part of this due the typed amount settles.
+                  const rowPenalty = bulkAllocated[rowIndex]?.penaltyAmount ?? 0
                   const net = Math.max(Math.round((remaining - rowRebate) * 100) / 100, 0)
                   return (
                     <tr key={line.id}>
@@ -1345,7 +1407,7 @@ function PaymentPanel({
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {suggestedPenalty > 0 ? (
+                        {penaltyEligible ? (
                           <label className="flex items-center justify-end gap-1.5 text-red-700">
                             <input
                               type="checkbox"
@@ -1382,7 +1444,8 @@ function PaymentPanel({
           {penaltyCapSum > 0 && (
             <p className="flex items-center gap-1.5 text-[12px] text-red-700">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              {fmtMoney(penaltyCapSum)} in penalties assessed across dues 15+ days late.
+              Dues 15+ days late are charged 5% on the part being paid
+              {penaltyCapSum > 0 ? ` — ${fmtMoney(penaltyCapSum)} if paid in full` : ''}.
             </p>
           )}
           {/* Always visible, single or multiple dues — one at-a-glance
@@ -1392,16 +1455,18 @@ function PaymentPanel({
               adds one. */}
           <div
             className={`flex items-center justify-between rounded-lg px-4 py-2 ${
-              penaltyTotal > 0 ? 'bg-red-50' : 'bg-zinc-50'
+              fullPenaltyTotal > 0 ? 'bg-red-50' : 'bg-zinc-50'
             }`}
           >
-            <span className={`text-[12px] ${penaltyTotal > 0 ? 'text-red-700' : 'text-zinc-500'}`}>
-              {penaltyTotal > 0 ? 'Total with penalty' : 'Total'}
+            <span
+              className={`text-[12px] ${fullPenaltyTotal > 0 ? 'text-red-700' : 'text-zinc-500'}`}
+            >
+              {fullPenaltyTotal > 0 ? 'Total with penalty' : 'Total'}
             </span>
             <span
-              className={`text-[13px] font-semibold ${penaltyTotal > 0 ? 'text-red-800' : 'text-zinc-900'}`}
+              className={`text-[13px] font-semibold ${fullPenaltyTotal > 0 ? 'text-red-800' : 'text-zinc-900'}`}
             >
-              {fmtMoney(outstandingSum - rebateTotal + penaltyTotal)}
+              {fmtMoney(outstandingSum - rebateTotal + fullPenaltyTotal)}
             </span>
           </div>
 

@@ -98,6 +98,7 @@ import {
 import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
+import { getDeliveryReceipt } from '../../inventory/delivery-receipts/_actions/get-delivery-receipt'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
 import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
@@ -123,6 +124,7 @@ import {
   deliveryPayload,
   deliveryProblem,
   parseDeliveryFee,
+  qrTenderLabel,
   resolveDeliveryAddress,
   type CustomerAddress,
   type DeliveryState,
@@ -540,6 +542,17 @@ const DECIMAL_CODES = new Set([
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+/** Scenario 72 Part 6 — the backend's Delivery Receipt sale guards, in
+ * words a cashier can act on. */
+const DR_SALE_ERRORS: Record<string, string> = {
+  delivery_receipt_customer_mismatch:
+    'This sale invoices a delivery receipt — it has to be for the delivery receipt’s own customer.',
+  delivery_receipt_not_ready_for_sale:
+    'That delivery receipt is no longer waiting for a sale — it may already have been invoiced or voided. Unlink it to continue.',
+  delivery_receipt_sale_installment_not_supported:
+    'A delivery receipt’s sale is cash or charge only for now — switch the lines off installment, or unlink the delivery receipt.',
+}
+
 export default function CheckoutPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -939,6 +952,21 @@ export default function CheckoutPage() {
   /** The application whose lines have already been put in the cart. Survives
    *  re-renders, unlike the state above, which is what makes it the guard. */
   const arrivalBuiltRef = useRef<string | null>(null)
+  /** Scenario 72 Part 6 — the "sales invoice to follow" Delivery Receipt this
+   *  sale invoices. Its units are held for it, so they never appear in the
+   *  serial picker (in_stock only); they arrive already on the lines, and the
+   *  sale sends deliveryReceiptId so the backend lets it claim them. */
+  const [deliveryReceipt, setDeliveryReceipt] = useState<{
+    id: string
+    drNumber: string
+  } | null>(null)
+  const [arrivingDr, setArrivingDr] = useState<{
+    id: string
+    stage: 'fetching' | 'adding'
+    drNumber?: string
+    expectedLines?: number
+  } | null>(null)
+  const drBuiltRef = useRef<string | null>(null)
   /** The application an arrival wants selected in the picker, held until the
    *  picker's own list has actually loaded it.
    *
@@ -1448,6 +1476,11 @@ export default function CheckoutPage() {
         } else {
           setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
         }
+      }
+      // Scenario 72 Part 6 — same shape as a credit application arrival: no
+      // lines travel, the cart is built below from the DR itself.
+      if (handoff.deliveryReceiptId) {
+        setArrivingDr({ id: handoff.deliveryReceiptId, stage: 'fetching' })
       }
       // The booklet numbers, back as they were typed.
       if (handoff.deliveryReceiptNumber) {
@@ -2970,6 +3003,101 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrivingCreditApplication, cart.length])
 
+  // Scenario 72 Part 6 — builds the cart from an arriving Delivery Receipt:
+  // one line per held unit, plus one per non-serial item at the DR's
+  // quantity. Once-only per DR (the ref), released if the attempt is
+  // cancelled — the same deadlock the credit-application arrival guards
+  // against above.
+  useEffect(() => {
+    if (!arrivingDr || arrivingDr.stage !== 'fetching') return
+    if (!selectedCustomer || catalogItems.length === 0) return
+    if (drBuiltRef.current === arrivingDr.id) return
+    drBuiltRef.current = arrivingDr.id
+    let cancelled = false
+    let completed = false
+    void (async () => {
+      const res = await getDeliveryReceipt(arrivingDr.id)
+      if (cancelled) return
+      const dr = res.data
+      if (!dr || dr.status !== 'approved' || dr.purpose !== 'sales_invoice_to_follow') {
+        setError('That delivery receipt is not waiting for a sale — it may already be invoiced.')
+        drBuiltRef.current = null
+        setArrivingDr(null)
+        return
+      }
+      const toAdd: { item: LookupItem; qty: number; serial?: { id: string; label: string } }[] = []
+      for (const line of dr.lines) {
+        let item: LookupItem | undefined = catalogItems.find((c) => c.id === line.itemId)
+        if (!item) {
+          const lookup = await itemLookup(line.item.sku, stockBranchId ?? undefined)
+          if (cancelled) return
+          item = ((lookup.data ?? []) as LookupItem[]).find((c) => c.id === line.itemId)
+        }
+        if (!item) continue
+        toAdd.push({
+          item,
+          qty: line.serialNumber ? 1 : line.quantity,
+          serial: line.serialNumber
+            ? { id: line.serialNumber.id, label: line.serialNumber.serialNumber }
+            : undefined,
+        })
+      }
+      if (cancelled) return
+      if (toAdd.length < dr.lines.length) {
+        setError(
+          `${toAdd.length} of ${dr.lines.length} items on ${dr.drNumber} could be loaded for this branch.`
+        )
+      }
+      completed = true
+      toAdd.forEach(({ item, qty, serial }) => addToCart(item, qty, serial))
+      const serialLines = toAdd.filter(({ item }) => item.isSerialTracked).length
+      const plainItems = new Set(
+        toAdd.filter(({ item }) => !item.isSerialTracked).map(({ item }) => item.id)
+      )
+      setArrivingDr({
+        id: dr.id,
+        stage: 'adding',
+        drNumber: dr.drNumber,
+        expectedLines: serialLines + plainItems.size,
+      })
+    })().catch((e: unknown) => {
+      if (cancelled) return
+      drBuiltRef.current = null
+      setArrivingDr(null)
+      setError(
+        `Could not build the cart from this delivery receipt: ${e instanceof Error ? e.message : String(e)}`
+      )
+    })
+    return () => {
+      cancelled = true
+      if (!completed) drBuiltRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingDr, selectedCustomer, catalogItems.length])
+
+  // The DR's held units went onto its lines as they were created (addToCart's
+  // presetSerial); this puts the cart on cash — a DR sale is cash / charge
+  // only for now (developer decision, 2026-10-15) — and links the DR.
+  useEffect(() => {
+    if (arrivingDr?.stage !== 'adding') return
+    if (cart.length < (arrivingDr.expectedLines ?? 0)) return
+    setLineInvoiceType(
+      cart.map((l) => l.lineId),
+      'cash'
+    )
+    setPaymentMode('cash')
+    // This sale invoices the DR, so its number is a Sales Invoice No. — a DR
+    // number restored from a handoff belongs to the old booklet flow.
+    if (documentType === 'delivery_receipt') {
+      setDocumentType('sales_invoice')
+      setInvoiceNumberInput('')
+      setDocumentSwitchNote('')
+    }
+    setDeliveryReceipt({ id: arrivingDr.id, drNumber: arrivingDr.drNumber ?? '' })
+    setArrivingDr(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingDr, cart.length])
+
   // Reasserts the arrival's application once the picker's list has loaded it.
   // Runs at most once per arrival: the ref is cleared as soon as it takes, so
   // this can never fight a cashier who then picks a different application.
@@ -2981,7 +3109,10 @@ export default function CheckoutPage() {
     if (creditApplicationId !== wanted) setCreditApplicationId(wanted)
   }, [approvedCreditApplications, creditApplicationId])
 
-  function addToCart(item: LookupItem, qty = 1) {
+  /** `presetSerial` — Scenario 72 Part 6: a unit already chosen elsewhere
+   *  (a Delivery Receipt's held unit), put on the line as it is created
+   *  rather than patched on afterwards, and with no picker opened for it. */
+  function addToCart(item: LookupItem, qty = 1, presetSerial?: { id: string; label: string }) {
     // Reserve mode (Scenario 03, Part 3): a SkuReservation is one item +
     // quantity, no serial required — treat every item as plain SKU+qty and
     // cap the cart at a single line (a new pick replaces it, matching this
@@ -3023,6 +3154,8 @@ export default function CheckoutPage() {
             pricingMode: item.pricingMode ?? null,
             isSerialTracked: true,
             requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+            serialNumberId: presetSerial?.id,
+            serialNumberLabel: presetSerial?.label,
             priceResolved: false,
             priceListItemId: null,
             priceUseTypeId: defaultPriceUseTypeId,
@@ -3058,6 +3191,8 @@ export default function CheckoutPage() {
         pricingMode: item.pricingMode ?? null,
         isSerialTracked: isReserveMode ? false : (item.isSerialTracked ?? false),
         requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+        serialNumberId: presetSerial?.id,
+        serialNumberLabel: presetSerial?.label,
         // Reserve mode never submits as a real sale, so Price Use resolution
         // doesn't apply — treat it as already "resolved" so it never blocks.
         priceResolved: isReserveMode,
@@ -3066,7 +3201,7 @@ export default function CheckoutPage() {
       }
       return isReserveMode ? [newLine] : [...prev, newLine]
     })
-    if (item.isSerialTracked && !isReserveMode) {
+    if (item.isSerialTracked && !isReserveMode && !presetSerial) {
       setSerialPickerStage('primary')
       setSerialPickerTarget({
         lineId,
@@ -4265,6 +4400,8 @@ export default function CheckoutPage() {
             !creditApplicationWaivedActive
               ? creditApplicationId
               : undefined,
+          // Scenario 72 Part 6 — lets this sale claim the units the DR holds.
+          deliveryReceiptId: deliveryReceipt?.id,
           // Scenario 71 — no application, on the cashier's say-so (with a
           // reason and a note below).
           creditApplicationWaived: creditApplicationWaivedActive || undefined,
@@ -4376,7 +4513,11 @@ export default function CheckoutPage() {
         })
 
         if (!txRes.success || !txRes.data) {
-          const rawMsg = txRes.error ?? txRes.message ?? 'Failed to create transaction.'
+          const rawMsg =
+            DR_SALE_ERRORS[(txRes.error ?? txRes.message ?? '').trim()] ??
+            txRes.error ??
+            txRes.message ??
+            'Failed to create transaction.'
           const idToName = Object.fromEntries(cart.map((l) => [l.itemId, l.itemName]))
           const errMsg = rawMsg.replace(
             /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
@@ -4727,6 +4868,7 @@ export default function CheckoutPage() {
 
   function resetSale() {
     setCart([])
+    setDeliveryReceipt(null)
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
@@ -4925,6 +5067,11 @@ export default function CheckoutPage() {
         customerDisplayName={customerDisplayName}
         cart={cart}
         payments={payments}
+        qrOptionName={
+          configuredMethods
+            .find((m) => m.key === 'qr')
+            ?.options.find((o) => o.id === cashPaymentOptionId)?.name
+        }
         promoDiscount={promoDiscount}
         activeTaxRate={activeTaxRate}
         inclusivePricing={inclusivePricing}
@@ -5278,6 +5425,23 @@ export default function CheckoutPage() {
         <div
           className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-140 lg:w-165 xl:w-180 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
+          {/* Scenario 72 Part 6 — the Delivery Receipt this sale invoices,
+              first thing in the panel so the cashier sees it before ringing up. */}
+          {deliveryReceipt && (
+            <div className="flex items-start justify-between gap-3 border-b border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-900">
+              <p>
+                <span className="font-semibold">Invoicing {deliveryReceipt.drNumber}</span> — its
+                held units are on the lines. This sale marks the delivery receipt invoiced.
+              </p>
+              <button
+                type="button"
+                onClick={() => setDeliveryReceipt(null)}
+                className="shrink-0 text-xs font-medium text-emerald-700 underline hover:text-emerald-900"
+              >
+                Unlink
+              </button>
+            </div>
+          )}
           {/* Leads the panel, above Customer. Required on every sale — the
               number off the physical booklet: a Sales Invoice No., or a
               Delivery Receipt No. when the sale is covered by a DR instead.
@@ -5297,6 +5461,8 @@ export default function CheckoutPage() {
               >
                 {(['sales_invoice', 'delivery_receipt'] as const).map((type) => {
                   const selected = documentType === type
+                  // Scenario 72 — a sale invoicing a linked DR is a Sales Invoice.
+                  const locked = Boolean(deliveryReceipt) && type === 'delivery_receipt'
                   return (
                     <button
                       key={type}
@@ -5304,6 +5470,7 @@ export default function CheckoutPage() {
                       role="radio"
                       aria-checked={selected}
                       data-testid={`document-type-${type}`}
+                      disabled={locked}
                       onClick={() => {
                         if (selected) return
                         setDocumentType(type)
@@ -5315,7 +5482,9 @@ export default function CheckoutPage() {
                       className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                         selected
                           ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                          : 'bg-white text-gray-500 hover:bg-gray-100'
+                          : locked
+                            ? 'cursor-not-allowed bg-white text-gray-300'
+                            : 'bg-white text-gray-500 hover:bg-gray-100'
                       }`}
                     >
                       {type === 'sales_invoice' ? 'Sales Invoice' : 'Delivery Receipt'}
@@ -5335,7 +5504,8 @@ export default function CheckoutPage() {
                   // cashier's hand — it used to be saved as an invoice that happened
                   // to be numbered DR, and read "Sales Invoice No." everywhere.
                   const detected = detectDocumentType(next)
-                  if (detected && detected !== documentType) {
+                  // Never flips away from the Sales Invoice a linked DR needs.
+                  if (detected && detected !== documentType && !deliveryReceipt) {
                     setDocumentType(detected)
                     setDocumentSwitchNote(
                       detected === 'delivery_receipt'
@@ -5360,6 +5530,14 @@ export default function CheckoutPage() {
                   data-testid="document-switch-note"
                 >
                   {documentSwitchNote}
+                </p>
+              )}
+              {deliveryReceipt && (
+                <p
+                  className="mt-1.5 text-xs font-medium text-emerald-700"
+                  data-testid="document-type-locked-note"
+                >
+                  This sale invoices {deliveryReceipt.drNumber} — enter its Sales Invoice No.
                 </p>
               )}
             </div>
@@ -8478,6 +8656,7 @@ function SuccessScreen({
   customerDisplayName,
   cart,
   payments,
+  qrOptionName,
   promoDiscount,
   activeTaxRate,
   inclusivePricing,
@@ -8519,6 +8698,9 @@ function SuccessScreen({
   customerDisplayName: (c: PosCustomer) => string
   cart: CartLine[]
   payments: PaymentRow[]
+  /** The GCash / Biller / gateway the cashier picked for a QR payment, so the
+   * receipt names it rather than printing a bare "QR". */
+  qrOptionName?: string
   promoDiscount: number
   activeTaxRate: { rate: number; name: string } | null
   inclusivePricing: boolean
@@ -8880,7 +9062,11 @@ function SuccessScreen({
               .map((p, i) => (
                 <div key={i} className="text-[11px] text-gray-500">
                   <div className="flex justify-between">
-                    <span>{PAYMENT_LABELS[p.method] ?? p.method}</span>
+                    <span>
+                      {p.method === 'qr'
+                        ? qrTenderLabel(qrOptionName)
+                        : (PAYMENT_LABELS[p.method] ?? p.method)}
+                    </span>
                     <span>{fmt(p.amount)}</span>
                   </div>
                   {p.referenceNumber && (

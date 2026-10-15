@@ -30,6 +30,7 @@ import {
   receivingReportSourceSubtitle,
 } from '@/src/libs/format/receiving-report'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
 // Same #5b21b6 palette as the sibling Stock Ledger/Stock Balance
@@ -320,7 +321,6 @@ export default function ReceivingReportsTab({
     totalPages,
     isLoading,
     isFetching,
-    refetch,
     summary,
     isLoadingSummary,
     warehouseOptions,
@@ -409,7 +409,9 @@ export default function ReceivingReportsTab({
         queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports-summary'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
-      } else {
+      } else if (result.errorCode !== 'receiving_warehouse_mismatch') {
+        // That one code is a confirmable warning, not a failure — the modal
+        // shows its own banner and "Receive anyway" instead of this toast.
         showToast({
           title: 'Failed to receive stock',
           description: result.message,
@@ -501,15 +503,6 @@ export default function ReceivingReportsTab({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2] disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
           <button
             type="button"
             onClick={handleExport}
@@ -645,7 +638,7 @@ export default function ReceivingReportsTab({
         {isLoading ? (
           <div>
             <div
-              className={`${grid} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1080px]:grid`}
+              className={`${grid} ${STOCK_TABLE_HEAD} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] min-[1080px]:grid`}
             >
               <span>Receipt No.</span>
               <span>Source / Ref.</span>
@@ -706,7 +699,7 @@ export default function ReceivingReportsTab({
             >
               <div
                 role="row"
-                className={`${grid} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                className={`${grid} ${STOCK_TABLE_HEAD} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px]`}
               >
                 <span role="columnheader">Receipt No.</span>
                 <span role="columnheader" className="pl-6">

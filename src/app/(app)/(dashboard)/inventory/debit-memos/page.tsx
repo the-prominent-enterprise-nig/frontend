@@ -7,7 +7,7 @@ import DebitMemoList from './_components/DebitMemoList'
 export const metadata = {
   title: 'Debit Memos | NIG Central',
   description:
-    'Raise and approve returns of defective stock to suppliers, deducted from their open invoices',
+    'Raise and approve returns of defective stock to suppliers; accounting applies them to their invoices',
 }
 
 export default async function DebitMemosPage() {

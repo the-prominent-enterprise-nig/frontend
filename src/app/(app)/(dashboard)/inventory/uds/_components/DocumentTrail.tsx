@@ -94,8 +94,8 @@ function resolveHop(spec: HopSpec, status: UdsStatus): TrailHop {
  * Every number here is free text off a real document someone signed, not a
  * link to a record in this system — the unit may have been sold on paper or
  * repaired by a provider who keeps their own books. The one hard link is the
- * branch→main StockTransfer, and it appears only on our own units: that hop
- * moves stock between our warehouses, which a customer's unit never does.
+ * branch→main StockTransfer: always listed on our own units, and on a
+ * customer's once a transfer actually carried it (Scenario 73).
  *
  * The customer hops appear only on a custodial UDS. An internal pull-out or
  * loan has no customer, no SI to trace back to and nothing to hand back, so
@@ -105,23 +105,23 @@ function resolveHop(spec: HopSpec, status: UdsStatus): TrailHop {
 export function udsDocumentTrail(uds: Uds): TrailHop[] {
   const isCustodial = !!uds.customerId
 
-  // A custodial unit is the customer's property, so no StockTransfer is ever
-  // raised for it — autoPairRepairTransfer() runs on the manual Create UDS
-  // path only, never on an intake from a return. Listing it anyway would show
-  // a permanently empty document on exactly the sheets that can never fill it,
-  // and imply a movement record that must not exist.
-  const transferDoc: DocSpec[] = isCustodial
-    ? []
-    : [
-        {
-          key: 'transfer',
-          label: 'Stock transfer',
-          number: uds.linkedStockTransfer?.transferNumber ?? null,
-          at: null,
-          href: uds.linkedStockTransfer ? '/inventory/transfers' : undefined,
-          dueFrom: 'in_transit',
-        },
-      ]
+  // A custodial unit gets no auto-paired transfer (autoPairRepairTransfer()
+  // runs on the manual Create UDS path only), but since Scenario 73 one can
+  // carry it to main as a repair unit. Listed only once that happened, so a
+  // sheet that moved on its custody hops shows no empty document.
+  const transferDoc: DocSpec[] =
+    isCustodial && !uds.linkedStockTransfer
+      ? []
+      : [
+          {
+            key: 'transfer',
+            label: 'Stock transfer',
+            number: uds.linkedStockTransfer?.transferNumber ?? null,
+            at: null,
+            href: uds.linkedStockTransfer ? '/inventory/transfers' : undefined,
+            dueFrom: 'in_transit',
+          },
+        ]
 
   const intake: HopSpec[] = isCustodial
     ? [
@@ -227,13 +227,6 @@ export function udsDocumentTrail(uds: Uds): TrailHop[] {
           key: 'back-custody',
           label: 'Gate pass',
           number: uds.returnToBranchCustodyNumber ?? null,
-          at: uds.returnedToBranchAt ?? null,
-          dueFrom: 'completed',
-        },
-        {
-          key: 'back-si',
-          label: 'SI',
-          number: uds.returnToBranchSalesInvoiceNumber ?? null,
           at: uds.returnedToBranchAt ?? null,
           dueFrom: 'completed',
         },

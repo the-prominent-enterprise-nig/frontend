@@ -16,9 +16,7 @@ import { updateUdsStatus } from '../_actions/update-uds-status'
 import { assessUds } from '../_actions/assess-uds'
 import { setRepairProvider } from '../_actions/set-repair-provider'
 import { writeOffUds } from '../_actions/write-off-uds'
-import { dispatchToProvider } from '../_actions/dispatch-to-provider'
 import { receiveFromProvider } from '../_actions/receive-from-provider'
-import { releaseToCustomer } from '../_actions/release-to-customer'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type {
@@ -27,9 +25,7 @@ import type {
   AssessUdsFormValues,
   SetRepairProviderFormValues,
   WriteOffUdsFormValues,
-  DispatchToProviderFormValues,
   ReceiveFromProviderFormValues,
-  ReleaseToCustomerFormValues,
   UdsStatus,
 } from '@/src/schema/inventory/uds'
 import { UDS_STATUSES } from '@/src/schema/inventory/uds'
@@ -42,6 +38,8 @@ export function useUdsManager() {
   const [statusFilter, setStatusFilter] = useState<UdsStatus | undefined>(undefined)
   const [reasonFilter, setReasonFilter] = useState<string | undefined>(undefined)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
+  // Scenario 73 — monitoring per service center (the repair provider).
+  const [providerFilter, setProviderFilter] = useState<string | undefined>(undefined)
 
   const queryParams = useMemo(
     () => ({
@@ -50,8 +48,9 @@ export function useUdsManager() {
       status: statusFilter,
       reason: reasonFilter,
       warehouseId: warehouseFilter,
+      repairProviderId: providerFilter,
     }),
-    [page, limit, statusFilter, reasonFilter, warehouseFilter]
+    [page, limit, statusFilter, reasonFilter, warehouseFilter, providerFilter]
   )
 
   const udsQuery = useQuery({
@@ -66,8 +65,12 @@ export function useUdsManager() {
   // these a count query in all but name — the rows come back with the page
   // above, and only `meta.total` is read here.
   const countParams = useMemo(
-    () => ({ reason: reasonFilter, warehouseId: warehouseFilter }),
-    [reasonFilter, warehouseFilter]
+    () => ({
+      reason: reasonFilter,
+      warehouseId: warehouseFilter,
+      repairProviderId: providerFilter,
+    }),
+    [reasonFilter, warehouseFilter, providerFilter]
   )
 
   const countQueries = useQueries({
@@ -165,24 +168,6 @@ export function useUdsManager() {
     },
   })
 
-  const dispatchMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: DispatchToProviderFormValues }) =>
-      dispatchToProvider(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({
-          title: 'Sent to service centre',
-          description: result.message,
-          status: 'success',
-        })
-        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
-      } else {
-        showToast({ title: 'Failed to dispatch', description: result.message, status: 'error' })
-      }
-    },
-  })
-
   const receiveFromProviderMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: ReceiveFromProviderFormValues }) =>
       receiveFromProvider(id, data),
@@ -197,24 +182,6 @@ export function useUdsManager() {
           description: result.message,
           status: 'error',
         })
-      }
-    },
-  })
-
-  const releaseMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: ReleaseToCustomerFormValues }) =>
-      releaseToCustomer(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({
-          title: 'Released to customer',
-          description: result.message,
-          status: 'success',
-        })
-        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
-      } else {
-        showToast({ title: 'Failed to release', description: result.message, status: 'error' })
       }
     },
   })
@@ -257,6 +224,11 @@ export function useUdsManager() {
     statusFilter,
     reasonFilter,
     warehouseFilter,
+    providerFilter,
+    setProviderFilter: (v: string | undefined) => {
+      setProviderFilter(v)
+      setPage(1)
+    },
     setStatusFilter: (v: UdsStatus | undefined) => {
       setStatusFilter(v)
       setPage(1)
@@ -273,6 +245,7 @@ export function useUdsManager() {
       setStatusFilter(undefined)
       setReasonFilter(undefined)
       setWarehouseFilter(undefined)
+      setProviderFilter(undefined)
       setPage(1)
     },
 
@@ -299,14 +272,8 @@ export function useUdsManager() {
     writeOffUds: (id: string, data: WriteOffUdsFormValues) =>
       writeOffMutation.mutateAsync({ id, data }),
     isWritingOff: writeOffMutation.isPending,
-    dispatchToProvider: (id: string, data: DispatchToProviderFormValues) =>
-      dispatchMutation.mutateAsync({ id, data }),
-    isDispatching: dispatchMutation.isPending,
     receiveFromProvider: (id: string, data: ReceiveFromProviderFormValues) =>
       receiveFromProviderMutation.mutateAsync({ id, data }),
     isReceivingFromProvider: receiveFromProviderMutation.isPending,
-    releaseToCustomer: (id: string, data: ReleaseToCustomerFormValues) =>
-      releaseMutation.mutateAsync({ id, data }),
-    isReleasing: releaseMutation.isPending,
   }
 }

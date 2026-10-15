@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
@@ -22,9 +22,6 @@ import {
   KeyRound,
   X,
   Search,
-  User,
-  Loader2,
-  ChevronRight,
 } from 'lucide-react'
 import {
   ARInvoices,
@@ -32,8 +29,6 @@ import {
   DebitMemos,
   BankAccounts,
   type ARInvoice,
-  type ARInvoiceCustomerResult,
-  type ARInvoiceCustomerRollup,
   type ARPayment,
   type BankAccount,
   type PaymentMethod,
@@ -46,10 +41,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import Field from '../../_shared/Field'
 import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import DebitMemoDialog from '../../_shared/DebitMemoDialog'
-
-// Customers per page on the landing view. The server groups and pages them, so a page costs a
-// page — not the whole register, which at 12.7k invoices was 25 MB to open this screen.
-const CUSTOMERS_PER_PAGE = 25
+import { CustomerSearchBox } from './CustomerSearchBox'
 
 const INVOICE_STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -71,15 +63,8 @@ export default function ARInvoicesList({
   dedicatedCustomer?: boolean
 } = {}) {
   const router = useRouter()
-  // One customer's invoices (customerFilter set)…
   const [items, setItems] = useState<ARInvoice[]>([])
-  // …or, on the landing view, one page of customers with their totals.
-  const [groups, setGroups] = useState<ARInvoiceCustomerRollup[]>([])
-  const [groupTotal, setGroupTotal] = useState(0)
-  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
-  // A slow page must not overwrite a newer one the user has already moved on to.
-  const loadSeq = useRef(0)
   const [sweeping, setSweeping] = useState(false)
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
   const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
@@ -99,18 +84,7 @@ export default function ARInvoicesList({
   // ARInvoicesService.findAll()'s structured lookup, not a text match.
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
-  const appliedSearchRef = useRef('')
-  // Customer search — this screen previously had no way to filter by
-  // customer except arriving via a link from Customer360 (initialCustomerId).
-  // Scoped to accounting:ar-invoices:read (ARInvoices.searchCustomers), not
-  // the CRM customer list — Accountant (accounting:* only) doesn't hold
-  // crm:customers:read, which silently broke this before.
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
-  const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
-  const [searchingCustomers, setSearchingCustomers] = useState(false)
   const load = useCallback(async () => {
-    const seq = ++loadSeq.current
     setLoading(true)
     if (customerFilter) {
       // Invoices only. This list is the AR register — what is owed — and a
@@ -122,29 +96,15 @@ export default function ARInvoicesList({
         customerId: customerFilter,
         ...(appliedSearch ? { search: appliedSearch } : {}),
       })
-      if (seq !== loadSeq.current) return
       setItems(invRes.data?.items ?? [])
     } else {
-      // Customer-rollup landing view — one page of customers, grouped and
-      // totalled by the server (optionally narrowed by search).
-      const res = await ARInvoices.listCustomerRollup({
-        ...(appliedSearch ? { search: appliedSearch } : {}),
-        limit: CUSTOMERS_PER_PAGE,
-        offset: (page - 1) * CUSTOMERS_PER_PAGE,
-      })
-      if (seq !== loadSeq.current) return
-      const total = res.data?.total ?? 0
-      const lastPage = Math.max(1, Math.ceil(total / CUSTOMERS_PER_PAGE))
-      if (page > lastPage) {
-        // The register shrank under us (or a stale page number) — land on the last real page.
-        setPage(lastPage)
-        return
-      }
-      setGroups(res.data?.items ?? [])
-      setGroupTotal(total)
+      // The customer-less landing is its own server-rendered page now (one
+      // rollup row per customer, see ../_landing); this screen only ever
+      // shows a single customer's invoices.
+      setItems([])
     }
     setLoading(false)
-  }, [customerFilter, appliedSearch, page])
+  }, [customerFilter, appliedSearch])
   useEffect(() => {
     load()
   }, [load])
@@ -163,35 +123,9 @@ export default function ARInvoicesList({
   // drives the query, via `load`'s dependency array) 400ms after the user
   // stops typing, instead of requiring an explicit Apply click.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // Only a search that actually changed sends the list back to page 1 — this effect
-      // also fires once on mount, where resetting would undo a page change made in the
-      // first 400ms.
-      if (appliedSearchRef.current === search) return
-      appliedSearchRef.current = search
-      setAppliedSearch(search)
-      setPage(1)
-    }, 400)
+    const timer = setTimeout(() => setAppliedSearch(search), 400)
     return () => clearTimeout(timer)
   }, [search])
-  // Debounced customer search, same pattern as the POS checkout page's
-  // customer picker.
-  useEffect(() => {
-    if (!customerSearch.trim()) {
-      setCustomerResults([])
-      setCustomerSearchOpen(false)
-      return
-    }
-    const timer = setTimeout(async () => {
-      setSearchingCustomers(true)
-      const res = await ARInvoices.searchCustomers(customerSearch.trim())
-      setCustomerResults(res.data ?? [])
-      setCustomerSearchOpen(true)
-      setSearchingCustomers(false)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [customerSearch])
-
   // One customer's invoices, newest first. Payment receipts used to be
   // merged in as their own rows, from when a plan was one invoice PER DUE
   // and a single payment across several dues showed only as fragments split
@@ -289,75 +223,11 @@ export default function ARInvoicesList({
                 <Plus className="w-4 h-4" /> New Invoice
               </button>
             </>
-          ) : (
-            <>
-              <Link
-                href="/accounting/ar-invoices/retention"
-                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-purple-700 hover:bg-purple-50"
-              >
-                Customer retention
-              </Link>
-              <button
-                onClick={() => router.push('/accounting/ar-invoices/receipts/new')}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
-              >
-                <Plus className="w-4 h-4" /> New Receipt
-              </button>
-            </>
-          )}
+          ) : null}
         </div>
       </div>
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        {!dedicatedCustomer && (
-          <div className="relative min-w-56 flex-1">
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Customer</label>
-            <div className="relative">
-              <Search
-                size={15}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-              <input
-                className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-8 text-sm focus:border-purple-500 focus:outline-none"
-                placeholder="Search by name or phone…"
-                value={customerSearch}
-                onChange={(e) => setCustomerSearch(e.target.value)}
-                onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 150)}
-                onFocus={() => customerResults.length > 0 && setCustomerSearchOpen(true)}
-              />
-              {searchingCustomers && (
-                <Loader2
-                  size={14}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
-                />
-              )}
-            </div>
-            {customerSearchOpen && (
-              <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
-                {customerResults.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-gray-500">No customers found</p>
-                ) : (
-                  customerResults.map((c) => (
-                    <button
-                      key={c.id}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
-                      onMouseDown={() => {
-                        setCustomerSearch('')
-                        setCustomerSearchOpen(false)
-                        router.push(`/accounting/ar-invoices/customer/${c.id}`)
-                      }}
-                    >
-                      <User size={13} className="shrink-0 text-gray-400" />
-                      <div>
-                        <p className="font-medium text-gray-900">{c.name}</p>
-                        {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        {!dedicatedCustomer && <CustomerSearchBox />}
         <div className="min-w-64 flex-1">
           <label className="mb-1 block text-xs font-semibold text-gray-600">
             Invoice # or Transaction #
@@ -380,8 +250,6 @@ export default function ARInvoicesList({
             onClick={() => {
               setSearch('')
               setAppliedSearch('')
-              appliedSearchRef.current = ''
-              setPage(1)
             }}
             className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
           >
@@ -393,10 +261,7 @@ export default function ARInvoicesList({
         <div className="mb-4 flex items-center justify-between rounded-lg bg-purple-50 px-3 py-2 text-sm text-purple-800">
           <span>Filtered to {customerFilterName ?? 'this customer'}</span>
           <button
-            onClick={() => {
-              setCustomerFilter(undefined)
-              setCustomerFilterName(undefined)
-            }}
+            onClick={() => router.push('/accounting/ar-invoices')}
             className="font-medium text-purple-700 hover:underline"
           >
             Clear filter
@@ -450,78 +315,10 @@ export default function ARInvoicesList({
                   />
                 ))
               )
-            ) : groups.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
-                  No invoices.
-                </td>
-              </tr>
-            ) : (
-              groups.map((g) => (
-                <tr
-                  key={g.customerId}
-                  onClick={() => router.push(`/accounting/ar-invoices/customer/${g.customerId}`)}
-                  className="cursor-pointer bg-gray-50 font-medium hover:bg-gray-100"
-                >
-                  <td className="px-3 py-2" colSpan={2}>
-                    <div className="flex items-center gap-2">
-                      <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
-                      <span className="truncate">{g.customerName}</span>
-                      <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-normal text-gray-600">
-                        {g.invoiceCount} invoice{g.invoiceCount === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-xs" colSpan={3}>
-                    {g.overdueCount > 0 && (
-                      <span className="font-medium text-red-600">{g.overdueCount} overdue</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(g.total)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(g.paid)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(g.outstanding)}</td>
-                  <td className="px-3 py-2" />
-                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                    <Link
-                      href={`/accounting/reports?tab=customer-statement&customerId=${g.customerId}`}
-                      className="text-xs font-medium text-purple-700 hover:underline"
-                    >
-                      Statement
-                    </Link>
-                  </td>
-                </tr>
-              ))
-            )}
+            ) : null}
           </tbody>
         </table>
       </div>
-
-      {!customerFilter && groupTotal > CUSTOMERS_PER_PAGE && (
-        <div className="mt-3 flex items-center justify-between text-sm text-zinc-500">
-          <span>{groupTotal.toLocaleString()} customers</span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1 || loading}
-              className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <span className="px-3 py-1.5 font-medium text-zinc-700">
-              {page} / {Math.ceil(groupTotal / CUSTOMERS_PER_PAGE)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((p) => p + 1)}
-              disabled={page >= Math.ceil(groupTotal / CUSTOMERS_PER_PAGE) || loading}
-              className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
 
       {payingFor && (
         <PaymentDialog

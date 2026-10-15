@@ -170,6 +170,10 @@ export default function ExpenseDetail({ id }: { id: string }) {
   const withheld = e.withholdingAmount ?? 0
   const showWithholding = withheld > 0
   const netPayable = e.netPayable ?? e.totalAmount - withheld
+  // A liquidated cash advance can net to zero or below — its payment row is
+  // then the change the employee handed back, not money paid out.
+  const isLiquidation = e.totalAmount <= 0 && e.lines.some((l) => l.amount < 0)
+  const changeReturned = isLiquidation && e.totalAmount < 0
 
   return (
     <div className="px-4 py-4 sm:px-6 lg:px-8">
@@ -222,8 +226,16 @@ export default function ExpenseDetail({ id }: { id: string }) {
             {e.clearedType ? (CLEARED_LABELS[e.clearedType] ?? e.clearedType) : '—'}
             {e.clearedDate && <span className="text-gray-500"> · {fmtDoc(e.clearedDate)}</span>}
           </Field>
-          <Field label="Total">
-            <span className="font-semibold tabular-nums">{fmtMoney(e.totalAmount)}</span>
+          <Field label={changeReturned ? 'Change returned' : 'Total'}>
+            <span className="font-semibold tabular-nums">
+              {fmtMoney(changeReturned ? -e.totalAmount : e.totalAmount)}
+            </span>
+            {isLiquidation && (
+              <span className="block text-[12px] text-gray-500">
+                Cash advance liquidation —{' '}
+                {changeReturned ? 'the unspent cash came back' : 'the receipts used it exactly'}
+              </span>
+            )}
           </Field>
           {e.payeeAddress && <Field label="Address">{e.payeeAddress}</Field>}
           {e.payeeTin && <Field label="Payee's TIN">{e.payeeTin}</Field>}
@@ -242,15 +254,23 @@ export default function ExpenseDetail({ id }: { id: string }) {
       {/* One entry can be settled through several methods at once, each with
           its own reference and amount — the list only has room for the first. */}
       <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-prominent-purple-900">Payment</h2>
+        <h2 className="mb-3 text-[14px] font-semibold text-prominent-purple-900">
+          {changeReturned ? 'Change returned to' : 'Payment'}
+        </h2>
         {e.payments.length === 0 ? (
-          <p className="py-4 text-center text-[13px] text-gray-400">No payment methods recorded.</p>
+          <p className="py-4 text-center text-[13px] text-gray-400">
+            {isLiquidation
+              ? 'Nothing to pay or return — the receipts used the advance exactly.'
+              : 'No payment methods recorded.'}
+          </p>
         ) : (
           <ul className="divide-y divide-gray-100">
             {e.payments.map((p, i) => (
               <li key={i} className="flex items-center justify-between gap-3 py-2.5 text-[13px]">
                 <div>
-                  <span className="text-gray-800">{p.paymentMethod.replace(/_/g, ' ')}</span>
+                  <span className="text-gray-800">
+                    {changeReturned ? 'Cash received' : p.paymentMethod.replace(/_/g, ' ')}
+                  </span>
                   {p.bankAccount && <span className="text-gray-500"> · {p.bankAccount}</span>}
                   {p.reference && <span className="text-gray-500"> · {p.reference}</span>}
                 </div>
