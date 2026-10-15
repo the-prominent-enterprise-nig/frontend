@@ -2,20 +2,14 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Ban, Check, Loader2, Pencil, ShoppingCart } from 'lucide-react'
-import { showToast } from '@/src/components/ui/toast'
-import { ConfirmDialog } from '@/src/components/ui/Modal'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowLeft, Loader2, Pencil, ShoppingCart } from 'lucide-react'
 import { MONO } from '@/src/libs/design/plex'
 import { useEwtCodes } from '@/src/hooks/useEwtCodes'
 import type { SupplierDetail } from '@/src/schema/inventory/suppliers'
 import { getSupplier } from '../_actions/get-supplier'
-import { updateSupplier } from '../_actions/update-supplier'
 import {
   fmtCreditLimit,
-  nextOnboardingStep,
-  ONBOARDING_META,
-  readinessChecks,
   STATUS_META,
   supplierSubline,
   termsLabel,
@@ -24,7 +18,6 @@ import {
   vatStatusLabel,
   withholdingCodeLabel,
   withholdingLabel,
-  type OnboardingStatus,
 } from '../_lib/supplier-format'
 import SupplierItemsPanel from './SupplierItemsPanel'
 
@@ -41,8 +34,7 @@ const TABS: { id: Tab; label: string }[] = [
 const monoHeadClass = `${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`
 
 /** One fact, read-only. A blank reads grey — these are facts about a supplier,
- * not gaps somebody has to close; the onboarding card above says which of them
- * actually cost anything. */
+ * not gaps somebody has to close. */
 function Fact({ label, value }: { label: string; value: string | null | undefined }) {
   const shown = value?.trim()
   return (
@@ -104,9 +96,7 @@ export default function SupplierDetailPanel({
    * has to hand it back. */
   onBack: () => void
 }) {
-  const queryClient = useQueryClient()
   const [tab, setTab] = useState<Tab>('items')
-  const [confirmingBlock, setConfirmingBlock] = useState(false)
 
   const detailQuery = useQuery({
     queryKey: ['supplier', supplierId],
@@ -116,34 +106,6 @@ export default function SupplierDetailPanel({
 
   const supplier = detailQuery.data?.success ? detailQuery.data.data : undefined
   const ewt = useEwtCodes()
-
-  const onboardingMutation = useMutation({
-    mutationFn: (onboardingStatus: OnboardingStatus) =>
-      updateSupplier(supplierId, { onboardingStatus }),
-    onSuccess: (result, onboardingStatus) => {
-      setConfirmingBlock(false)
-      if (!result.success) {
-        showToast({
-          title: 'Could not change the onboarding',
-          description: result.message || result.error,
-          status: 'error',
-        })
-        return
-      }
-      showToast({
-        title: `Onboarding moved to ${ONBOARDING_META[onboardingStatus].label.toLowerCase()}`,
-        description:
-          onboardingStatus === 'approved'
-            ? 'The buying team can raise purchase orders against this supplier now.'
-            : onboardingStatus === 'blocked'
-              ? 'No new purchase orders may be raised against it.'
-              : undefined,
-        status: 'success',
-      })
-      queryClient.invalidateQueries({ queryKey: ['supplier', supplierId] })
-      queryClient.invalidateQueries({ queryKey: ['suppliers-directory'] })
-    },
-  })
 
   if (detailQuery.isLoading) {
     return (
@@ -172,16 +134,9 @@ export default function SupplierDetailPanel({
   }
 
   const status = STATUS_META[supplier.status]
-  const onboarding = ONBOARDING_META[supplier.onboardingStatus]
-  const unfinished = supplier.onboardingStatus !== 'approved'
-  const isBlocked = supplier.onboardingStatus === 'blocked'
-  const step = nextOnboardingStep(supplier.onboardingStatus)
-  // Nothing new may be raised against a blocked onboarding or a blacklisted
-  // supplier — the screen that says so is also the one that offers to buy.
-  const blockedFromBuying = isBlocked || supplier.status === 'blacklisted'
-  const checks = readinessChecks(supplier)
-  const gaps = checks.filter((c) => !c.ok)
-  const busy = onboardingMutation.isPending
+  // Every supplier is usable as soon as it is saved — there is no onboarding
+  // sign-off. Only a blacklisted one may not be bought from.
+  const blockedFromBuying = supplier.status === 'blacklisted'
 
   const accountLabel = (id: string | null | undefined): string | null => {
     if (!id) return null
@@ -216,14 +171,6 @@ export default function SupplierDetailPanel({
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status.dot}`} />
                 {status.label}
               </span>
-              {unfinished && (
-                <span
-                  title={onboarding.hint}
-                  className={`whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-medium ${onboarding.chip}`}
-                >
-                  {onboarding.label}
-                </span>
-              )}
             </div>
             <p className="mt-1 text-[12.5px] text-[#5b5b6b]">{supplierSubline(supplier)}</p>
           </div>
@@ -256,98 +203,6 @@ export default function SupplierDetailPanel({
             )}
           </div>
         </div>
-
-        {/* Onboarding — only while it is unfinished. Once approved the
-            supplier just works, and a card saying so is noise. */}
-        {unfinished && (
-          <div
-            className={`flex flex-col gap-3 rounded-xl px-4 py-3.5 ${
-              isBlocked
-                ? 'border border-[#f3c9c5] bg-[#fffbfb]'
-                : 'border border-[#f5e2c6] bg-[#fffdf8]'
-            }`}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3.5">
-              <div className="min-w-0">
-                <p
-                  className={`text-[13px] font-semibold ${isBlocked ? 'text-[#b42318]' : 'text-[#8a4b06]'}`}
-                >
-                  {onboarding.headline}
-                </p>
-                <p className="mt-0.5 text-[11.5px] leading-relaxed text-[#3d3d4a]">
-                  {isBlocked
-                    ? supplier.notes?.trim() ||
-                      'Somebody stopped this onboarding. Reopen it to carry on.'
-                    : gaps.length > 0
-                      ? `${gaps.length} of ${checks.length} requirements outstanding — you can still approve, but every gap carries into the documents raised against this supplier.`
-                      : 'Everything is on file. Approve to let the buying team raise purchase orders.'}
-                </p>
-              </div>
-              {canUpdate && (
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  {!isBlocked && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setConfirmingBlock(true)}
-                      className="flex items-center gap-1.5 rounded-lg border border-[#f3c9c5] bg-white px-3 py-2 text-[12.5px] font-medium text-[#b42318] hover:bg-[#fff5f4] disabled:opacity-50"
-                    >
-                      <Ban className="h-3.5 w-3.5" />
-                      Block
-                    </button>
-                  )}
-                  {step && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => onboardingMutation.mutate(step.next)}
-                      className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12.5px] font-semibold text-white disabled:opacity-50 ${
-                        step.tone === 'green'
-                          ? 'bg-[#0f7b52] hover:bg-[#0b6644]'
-                          : 'bg-[#5b21b6] hover:bg-[#4a189b]'
-                      }`}
-                    >
-                      {busy ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Check className="h-3.5 w-3.5" />
-                      )}
-                      {step.label}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {!isBlocked && (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-[#f2e6d2] pt-3 lg:grid-cols-4">
-                {checks.map((check) => (
-                  <div key={check.key} className="flex min-w-0 items-start gap-2">
-                    <span
-                      className={`mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] ${
-                        check.ok
-                          ? 'bg-[#0f7b52] text-white'
-                          : 'border border-[#d9bb84] bg-white text-transparent'
-                      }`}
-                    >
-                      {check.ok ? '✓' : ''}
-                    </span>
-                    <div className="min-w-0">
-                      <p
-                        className={`text-[12px] font-medium ${check.ok ? 'text-[#17171c]' : 'text-[#8a4b06]'}`}
-                      >
-                        {check.label}
-                      </p>
-                      <p className="truncate text-[10.5px] text-[#5b5b6b]" title={check.note}>
-                        {check.note}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* The four terms every document raised against this supplier inherits. */}
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#eeeef1] pt-3.5 lg:grid-cols-4">
@@ -473,22 +328,6 @@ export default function SupplierDetailPanel({
             </div>
           ))}
       </div>
-
-      <ConfirmDialog
-        open={confirmingBlock}
-        title={`Block ${supplier.name}?`}
-        message={
-          <p>
-            No new purchase order may be raised against a blocked supplier. Anything already raised
-            is untouched, and the onboarding can be reopened later.
-          </p>
-        }
-        confirmLabel="Block supplier"
-        destructive
-        loading={busy}
-        onConfirm={() => onboardingMutation.mutate('blocked')}
-        onCancel={() => setConfirmingBlock(false)}
-      />
     </div>
   )
 }

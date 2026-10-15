@@ -6,7 +6,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import {
   CreateSupplierFormSchema,
-  SUPPLIER_ONBOARDING_STATUSES,
   SUPPLIER_STATUSES,
   SUPPLIER_TYPES,
   type CreateSupplierFormValues,
@@ -27,13 +26,7 @@ import {
   supplierVatStatus,
 } from '@/src/libs/tax/input-vat'
 import { MONO, PLEX } from '@/src/libs/design/plex'
-import {
-  CURRENCY_OPTIONS,
-  ONBOARDING_META,
-  STATUS_META,
-  TYPE_LABELS,
-  termsOptions,
-} from '../_lib/supplier-format'
+import { CURRENCY_OPTIONS, STATUS_META, TYPE_LABELS, termsOptions } from '../_lib/supplier-format'
 
 type AccountOption = { id: string; name: string; number?: string }
 
@@ -75,7 +68,6 @@ const EMPTY_DEFAULTS: CreateSupplierFormValues = {
   currency: 'PHP',
   bankAccounts: [],
   creditLimit: undefined,
-  onboardingStatus: undefined,
   status: undefined,
   notes: undefined,
   type: 'SUPPLIER',
@@ -109,7 +101,6 @@ function toFormValues(supplier: SupplierDetail): CreateSupplierFormValues {
       isPrimary: account.isPrimary,
     })),
     creditLimit: supplier.creditLimit ?? undefined,
-    onboardingStatus: supplier.onboardingStatus,
     status: supplier.status,
     notes: supplier.notes ?? undefined,
     type: supplier.type,
@@ -868,31 +859,12 @@ export function SupplierFormModal({
                 <p className={sectionNoteClass}>
                   {isEdit
                     ? 'Both take effect the moment this is saved.'
-                    : 'A new supplier starts pending and active — its onboarding is worked from the supplier itself.'}
+                    : 'A new supplier starts active and can be used right away.'}
                 </p>
               </div>
               <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
                 {isEdit && (
                   <>
-                    <div className="flex flex-col gap-1.5">
-                      <label className={labelClass}>Onboarding status</label>
-                      <Controller
-                        name="onboardingStatus"
-                        control={control}
-                        render={({ field }) => (
-                          <Select
-                            value={field.value ?? 'pending'}
-                            onChange={(value) =>
-                              field.onChange(value as CreateSupplierFormValues['onboardingStatus'])
-                            }
-                            options={SUPPLIER_ONBOARDING_STATUSES.map((s) => ({
-                              value: s,
-                              label: ONBOARDING_META[s].label,
-                            }))}
-                          />
-                        )}
-                      />
-                    </div>
                     <div className="flex flex-col gap-1.5">
                       <label className={labelClass}>Status</label>
                       <Controller

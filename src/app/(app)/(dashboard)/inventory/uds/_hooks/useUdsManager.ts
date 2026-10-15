@@ -38,6 +38,8 @@ export function useUdsManager() {
   const [statusFilter, setStatusFilter] = useState<UdsStatus | undefined>(undefined)
   const [reasonFilter, setReasonFilter] = useState<string | undefined>(undefined)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
+  // Scenario 73 — monitoring per service center (the repair provider).
+  const [providerFilter, setProviderFilter] = useState<string | undefined>(undefined)
 
   const queryParams = useMemo(
     () => ({
@@ -46,8 +48,9 @@ export function useUdsManager() {
       status: statusFilter,
       reason: reasonFilter,
       warehouseId: warehouseFilter,
+      repairProviderId: providerFilter,
     }),
-    [page, limit, statusFilter, reasonFilter, warehouseFilter]
+    [page, limit, statusFilter, reasonFilter, warehouseFilter, providerFilter]
   )
 
   const udsQuery = useQuery({
@@ -62,8 +65,12 @@ export function useUdsManager() {
   // these a count query in all but name — the rows come back with the page
   // above, and only `meta.total` is read here.
   const countParams = useMemo(
-    () => ({ reason: reasonFilter, warehouseId: warehouseFilter }),
-    [reasonFilter, warehouseFilter]
+    () => ({
+      reason: reasonFilter,
+      warehouseId: warehouseFilter,
+      repairProviderId: providerFilter,
+    }),
+    [reasonFilter, warehouseFilter, providerFilter]
   )
 
   const countQueries = useQueries({
@@ -217,6 +224,11 @@ export function useUdsManager() {
     statusFilter,
     reasonFilter,
     warehouseFilter,
+    providerFilter,
+    setProviderFilter: (v: string | undefined) => {
+      setProviderFilter(v)
+      setPage(1)
+    },
     setStatusFilter: (v: UdsStatus | undefined) => {
       setStatusFilter(v)
       setPage(1)
@@ -233,6 +245,7 @@ export function useUdsManager() {
       setStatusFilter(undefined)
       setReasonFilter(undefined)
       setWarehouseFilter(undefined)
+      setProviderFilter(undefined)
       setPage(1)
     },
 

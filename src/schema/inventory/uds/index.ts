@@ -224,6 +224,8 @@ export const UdsSchema = z.object({
   rfsFormFile: UdsRfsFormFileSchema.optional().nullable(),
   repairProviderId: z.string().optional().nullable(),
   repairProvider: UdsRepairProviderSchema.optional().nullable(),
+  // Scenario 73 — In-Store / Home Service from the intake RR.
+  repairType: z.enum(['in_store', 'home_service']).optional().nullable(),
   linkedStockTransferId: z.string().optional().nullable(),
   linkedStockTransfer: UdsLinkedStockTransferSchema.optional().nullable(),
   // Scenario 72 Part 10 — the transfer carrying our own repaired unit home.

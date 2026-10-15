@@ -120,7 +120,7 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
       queryClient.invalidateQueries({ queryKey: ['supplier', wasEditing.id] })
     } else if (result.data?.id) {
       // Open what was just created — the whole reason for adding it is to work
-      // on it next (link its items, finish its onboarding).
+      // on it next (link its items, add its bank accounts).
       select(result.data.id)
     }
 
@@ -207,28 +207,6 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
             )
           })}
 
-          {/* Not a status — the queue of suppliers somebody still has to clear. */}
-          <button
-            type="button"
-            onClick={() => setFilters({ needsAttention: !filters.needsAttention })}
-            aria-pressed={filters.needsAttention}
-            title="Onboarding not yet approved"
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
-              filters.needsAttention
-                ? 'border-[#8a4b06] bg-[#8a4b06] text-white'
-                : 'border-[#f5e2c6] bg-[#fffdf8] text-[#8a4b06] hover:border-[#d9bb84]'
-            }`}
-          >
-            Needs attention
-            <span
-              className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${
-                filters.needsAttention ? 'bg-white/20' : 'bg-[#fdf3e7]'
-              }`}
-            >
-              {stats.needsAttention}
-            </span>
-          </button>
-
           {hasActiveFilters && (
             <button
               type="button"
@@ -288,7 +266,7 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
               <div className="rounded-xl border border-dashed border-[#d3d3db] bg-white px-6 py-20 text-center">
                 <p className="text-sm font-medium text-[#3d3d4a]">Pick a supplier</p>
                 <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[#5b5b6b]">
-                  Their terms, their onboarding and the items they carry all read from here.
+                  Their terms, their details and the items they carry all read from here.
                 </p>
               </div>
             )}
