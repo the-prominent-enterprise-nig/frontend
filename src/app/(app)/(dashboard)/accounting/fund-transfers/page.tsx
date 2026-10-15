@@ -11,6 +11,11 @@ export default async function Page() {
     ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
   ])
   return (
-    <FundTransfersList canCreate={can(session, ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER)} />
+    <FundTransfersList
+      canCreate={can(session, ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER)}
+      // A branch-assigned user only ever sees their own branch's transfers, so
+      // there is nothing for a branch filter to narrow.
+      branchScoped={!!session.branchId}
+    />
   )
 }

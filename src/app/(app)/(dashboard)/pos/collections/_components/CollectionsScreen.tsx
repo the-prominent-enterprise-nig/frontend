@@ -23,7 +23,7 @@ import {
   getPaymentMethods,
   getEnabledBranchPaymentMethods,
 } from '../../_actions/pos-actions'
-import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions/get-session'
 import { useMe } from '@/src/hooks/useMe'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { PillCombobox } from '../../checkout/_components/PillInputs'
@@ -666,8 +666,14 @@ export default function CollectionsScreen() {
                       className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2.5 text-[13px] text-zinc-500">
+                        {/* The Sales Invoice / Delivery Receipt No. the customer holds —
+                            the internal POS-<epoch> number means nothing outside the
+                            system. Only a sale booked before it was required falls
+                            back to it. */}
                         <span className="font-mono">
-                          {s.posTransaction?.transactionNumber ?? s.id}
+                          {s.posTransaction?.salesInvoiceNumber?.trim() ||
+                            s.posTransaction?.transactionNumber ||
+                            s.id}
                         </span>
                         <span>
                           {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
@@ -962,7 +968,7 @@ function PaymentPanel({
   // never shows a caravan the backend would then fold away.
   useEffect(() => {
     let cancelled = false
-    Promise.all([getSessionOrNull(), getBranches()]).then(([session, branchesRes]) => {
+    Promise.all([getSessionIfAvailable(), getBranches()]).then(([session, branchesRes]) => {
       if (cancelled) return
       const branches = branchesRes.data ?? []
       const targetId = session?.branchId || defaultBranchId
@@ -1279,7 +1285,7 @@ function PaymentPanel({
                 <tr className="bg-zinc-50 text-left text-[11px] font-medium uppercase tracking-wide text-zinc-500">
                   <th className="px-3 py-2 font-medium">Due</th>
                   <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 text-right font-medium">Without rebate</th>
+                  <th className="px-3 py-2 text-right font-medium">Due</th>
                   <th className="px-3 py-2 text-right font-medium">Rebate</th>
                   <th className="px-3 py-2 text-right font-medium">Penalty</th>
                   <th className="px-3 py-2 text-right font-medium">Net</th>

@@ -65,10 +65,8 @@ export interface FormLine {
    * above", which is how one customer's DP and DC lines share a single name
    * cell on the paper form. */
   span: number
-  /** Scenario 60 Part 4 — the caravan this sale's units came out of, if any. */
-  caravan?: string
   /** The other counter this collection was taken at — a satellite office
-   * filing under this branch, or a caravan register. Absent on the branch's
+   * filing under this branch. Absent on the branch's
    * own rows, so only a row whose cash is in another drawer carries a tag. */
   sourceCounter?: string
 }
@@ -104,14 +102,13 @@ function collectionLines(report: DailyCollectionReport): {
       customer: r.customerName,
       desc: formKind(r),
       // Three separate facts under CASH RECEIPT: the booklet number, who
-      // collected it in the field, and — under OTHERS — the caravan a sale's
-      // units came out of plus, when the cash is in another drawer, the
-      // counter that took it. These used to be one receipt number routed into
+      // collected it in the field, and — under OTHERS — when the cash is in
+      // another drawer, the counter that took it. These used to be one receipt number routed into
       // whichever of the three matched the row's channel, which left two
       // blank on every row.
       office: r.crNumber ?? '',
       field: r.collectorLabel ?? '',
-      others: [r.sourceCounter, r.caravan].filter(Boolean).join(' · '),
+      others: r.sourceCounter ?? '',
       cashInvoice: r.cashInvoiceNumber ?? '',
       ppd: r.ppd,
       penalty: r.penalty,
@@ -119,7 +116,6 @@ function collectionLines(report: DailyCollectionReport): {
       credit: null,
       balance: running,
       span: 1,
-      caravan: r.caravan ?? undefined,
       sourceCounter: r.sourceCounter ?? undefined,
     }
   })
@@ -152,11 +148,27 @@ export function buildFormLines(report: DailyCollectionReport): FormLine[] {
 
 /**
  * The CREDIT column, entered until the running balance is nil, as the
- * client's form closes a day: one line per deposit — the bank and the date it
- * was banked — then whatever is left as UNDEPOSITED. Each line carries the balance as
- * it stands after it.
+ * client's form closes a day — one group per tender (CASH, GCASH, CARD —
+ * MAYA), so the method never drops off the form. What a tender has banked is
+ * a DEPOSIT line with the bank and the date added after the method; what it
+ * has not is an UNDEPOSITED line under the same method. Each line carries the
+ * balance as it stands after it.
  */
 function creditLines(report: DailyCollectionReport, opening: number): FormLine[] {
+  if (!report.credits.length) return legacyCreditLines(report, opening)
+  let running = opening
+  return report.credits.map((c) => {
+    running -= c.amount
+    const balance = Math.abs(running) < 0.005 ? 0 : running
+    if (!c.bankName) return creditLine('UNDEPOSITED', c.label, c.amount, balance)
+    const bank = `${c.bankName} ${formatFormDate(c.depositedAt ?? '')}`
+    return creditLine('DEPOSIT', [c.label, bank].filter(Boolean).join(' · '), c.amount, balance)
+  })
+}
+
+/** A report without the per-tender breakdown: one line per deposit, then a
+ * single UNDEPOSITED FUNDS line for the rest. */
+function legacyCreditLines(report: DailyCollectionReport, opening: number): FormLine[] {
   let running = opening
   const lines = report.deposits.map((d) => {
     running -= d.amount
@@ -199,9 +211,6 @@ export interface FooterLine {
   /** A deduction, printed in accounting parentheses. */
   negate: boolean
   emphasis: boolean
-  /** Sits under a block heading — the caravan lines. A flag rather
-   * than padding in the label, since HTML collapses leading spaces. */
-  indent?: boolean
   /** The on-screen explanation of the label. The printed form ignores it. */
   note?: string
   /** Which part of the recap this line belongs to, for the screen panel,
@@ -297,12 +306,11 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
         ]
       : []),
     // Cash another counter took — a satellite office filing under this branch
-    // (Branch.reportsToBranchId), or a caravan register. Same reason as the
-    // line above: it is in TOTAL COLLECTION but not in this drawer, so
-    // without it the count reads as a shortage. One named row each, which
-    // needs no heading and no collective noun — a caravan is not a satellite
-    // branch, and the client's own data uses that word for something else
-    // (the `_Satellite` sub-locations in the Item Master).
+    // (Branch.reportsToBranchId). Same reason as the line above: it is in
+    // TOTAL COLLECTION but not in this drawer, so without it the count reads
+    // as a shortage. One named row each, which needs no heading and no
+    // collective noun — the client's own data uses "satellite" for something
+    // else (the `_Satellite` sub-locations in the Item Master).
     ...report.offsiteCash.map((c) => line(`At ${c.name}`, c.amount, { group: 'placement' })),
   ]
 }
@@ -322,28 +330,6 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
  */
 export function withValuesOnly(lines: FooterLine[]): FooterLine[] {
   return lines.filter((l) => l.emphasis || l.highlight || l.amount !== null)
-}
-
-/**
- * Scenario 60 Part 4 — the caravans this branch hosted that day, printed under
- * the recap. Informational only: caravan sales ring up on this branch's
- * terminal, so the money is already in the lines above. Kept out of
- * `buildCollectionRecapLines` because the screen draws its own caravan block.
- */
-export function buildCaravanRecapLines(report: DailyCollectionReport): FooterLine[] {
-  if (report.caravanSales.length === 0) return []
-  const blank = { negate: false, emphasis: false }
-  return [
-    { ...blank, label: '', amount: null },
-    { ...blank, label: 'CARAVAN SALES (INCLUDED ABOVE)', amount: null, emphasis: true },
-    ...report.caravanSales.map((c) => ({
-      ...blank,
-      label: `${c.caravanName} (${c.units} ${c.units === 1 ? 'unit' : 'units'})`,
-      amount: c.amount,
-      indent: true,
-    })),
-    { ...blank, label: 'CARAVAN TOTAL', amount: report.caravanSalesTotal, emphasis: true },
-  ]
 }
 
 /** The form prints the full peso ladder whether or not a denomination turned
@@ -479,15 +465,24 @@ export function buildDenominationLines(
       negate: false,
       emphasis: true,
     },
+    ...withVariance(report, counts),
   ]
+}
+
+function withVariance(
+  report: DailyCollectionReport,
+  counts: Record<string, number>
+): DenominationLine[] {
+  const variance = cashVarianceLine(report, counts)
+  return variance ? [variance] : []
 }
 
 /**
  * The denomination block as the printed form carries it — the client's own
  * count, 1000 down to 20, the loose coins as one unlabelled amount, then
- * TOTAL. No float bridge: their form has none (Scenario 61, Alimodian
- * sample). The screen's totals panel keeps the full bridge from
- * `buildDenominationLines`.
+ * TOTAL, then the drawer's over/short. No float bridge: their form has none
+ * (Scenario 61, Alimodian sample). The screen's totals panel keeps the full
+ * bridge from `buildDenominationLines`.
  */
 export function buildFormDenominationLines(
   report: DailyCollectionReport,
@@ -495,7 +490,33 @@ export function buildFormDenominationLines(
 ): DenominationLine[] {
   const lines = buildDenominationLines(report, counts)
   const total = lines.findIndex((line) => line.label === 'TOTAL')
-  return lines
-    .slice(0, total + 1)
-    .map((line) => (line.face === 'coins' ? { ...line, label: '' } : line))
+  return [
+    ...lines
+      .slice(0, total + 1)
+      .map((line) => (line.face === 'coins' ? { ...line, label: '' } : line)),
+    ...withVariance(report, counts ?? report.denominations ?? {}),
+  ]
+}
+
+/**
+ * CASH VARIANCE under the count — on screen and on paper — from the same
+ * `cashPosition` the screen's verdict reads — and the same wording and rule as
+ * the server's exported form sheet. Absent while nothing has closed: with no
+ * counted drawer the gap is the whole day's take, not a variance.
+ */
+function cashVarianceLine(
+  report: DailyCollectionReport,
+  counts?: Record<string, number>
+): DenominationLine | null {
+  if (report.openSessionCount > 0 && report.settledCashCollection < 0.005) return null
+  const { variance, balanced } = cashPosition(report, counts)
+  if (balanced) return null
+  // Signed, as the Excel export carries it: positive over, negative short.
+  return {
+    label: 'CASH VARIANCE',
+    count: null,
+    amount: Math.round(variance * 100) / 100,
+    negate: false,
+    emphasis: true,
+  }
 }

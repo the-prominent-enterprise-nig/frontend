@@ -15,8 +15,10 @@ import { SETTLEMENT_TYPE_LABEL } from '@/src/libs/tax/tax-reports'
 
 // Scenario 69 Part H — the tax closing routines. A VAT settlement clears Output
 // and Input VAT into VAT Payable; a remittance pays the withholding tax owed
-// out of a bank. Each is a journal entry posted from a screen, kept as a run
-// that can be reversed — not a manual entry.
+// out of a bank; an income tax closing settles a quarter's or year's income tax
+// by applying the Creditable Withholding Tax the 2307s support and paying the
+// rest. Each is a journal entry posted from a screen, kept as a run that can be
+// reversed — not a manual entry.
 export default function TaxClosingList({ canCreate }: { canCreate: boolean }) {
   const router = useRouter()
   const [items, setItems] = useState<TaxSettlement[]>([])
@@ -50,9 +52,10 @@ export default function TaxClosingList({ canCreate }: { canCreate: boolean }) {
         <div>
           <h1 className="text-2xl font-bold text-prominent-purple-900">Tax Closing</h1>
           <p className="mt-1 text-sm text-gray-500">
-            The VAT settlement and the withholding tax remittance. Each posts a journal entry from a
-            screen that shows it first, and can be reversed. Balances are cleared through a day, so
-            an entry dated in an earlier month but posted late is picked up by the next run.
+            The VAT settlement, the withholding tax remittance and the income tax closing. Each
+            posts a journal entry from a screen that shows it first, and can be reversed. VAT and
+            withholding balances are cleared through a day, so an entry dated in an earlier month
+            but posted late is picked up by the next run.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -64,6 +67,13 @@ export default function TaxClosingList({ canCreate }: { canCreate: boolean }) {
           </button>
           {canCreate && (
             <>
+              <Link
+                href="/accounting/tax-closing/income-tax/new"
+                data-testid="new-income-tax"
+                className="flex items-center gap-2 rounded-lg border border-purple-200 px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+              >
+                <Plus className="h-4 w-4" /> Close income tax
+              </Link>
               <Link
                 href="/accounting/tax-closing/wht/new"
                 data-testid="new-wht"
@@ -83,8 +93,10 @@ export default function TaxClosingList({ canCreate }: { canCreate: boolean }) {
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        {(['VAT_SETTLEMENT', 'WHT_REMITTANCE'] as const).map((t) => {
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        {(['VAT_SETTLEMENT', 'WHT_REMITTANCE', 'INCOME_TAX_CLOSING'] as const).map((t) => {
+          const period = (r: TaxSettlement) =>
+            r.taxYear ? `${r.taxQuarter ? `Q${r.taxQuarter} ` : ''}${r.taxYear}` : r.asOfDate
           const last = lastLive(t)
           return (
             <div
@@ -95,9 +107,15 @@ export default function TaxClosingList({ canCreate }: { canCreate: boolean }) {
               <div className="text-xs font-medium text-gray-500">{SETTLEMENT_TYPE_LABEL[t]}</div>
               <div className="mt-1 text-sm">
                 {last ? (
-                  <>
-                    Through <b>{last.asOfDate}</b> · {last.settlementNumber}
-                  </>
+                  t === 'INCOME_TAX_CLOSING' ? (
+                    <>
+                      <b>{period(last)}</b> · {last.settlementNumber}
+                    </>
+                  ) : (
+                    <>
+                      Through <b>{last.asOfDate}</b> · {last.settlementNumber}
+                    </>
+                  )
                 ) : (
                   <span className="text-gray-500">None in force yet</span>
                 )}
@@ -119,6 +137,7 @@ export default function TaxClosingList({ canCreate }: { canCreate: boolean }) {
             <option value="">All</option>
             <option value="VAT_SETTLEMENT">VAT settlement</option>
             <option value="WHT_REMITTANCE">Withholding tax remittance</option>
+            <option value="INCOME_TAX_CLOSING">Income tax closing</option>
           </select>
         </label>
         <label className="block">
@@ -178,7 +197,17 @@ export default function TaxClosingList({ canCreate }: { canCreate: boolean }) {
                     {r.settlementNumber}
                   </td>
                   <td className="px-3 py-2">{SETTLEMENT_TYPE_LABEL[r.type]}</td>
-                  <td className="whitespace-nowrap px-3 py-2">{r.asOfDate}</td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    {r.type === 'INCOME_TAX_CLOSING' && r.taxYear ? (
+                      <>
+                        {r.taxQuarter ? `Q${r.taxQuarter} ` : 'Annual '}
+                        {r.taxYear}
+                        <div className="text-[11px] text-gray-500">{r.asOfDate}</div>
+                      </>
+                    ) : (
+                      r.asOfDate
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2">{r.postingDate}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {r.type === 'VAT_SETTLEMENT' ? (
@@ -186,6 +215,13 @@ export default function TaxClosingList({ canCreate }: { canCreate: boolean }) {
                         {fmtMoney(Math.abs(r.netAmount))}
                         <div className="text-[11px] text-gray-500">
                           {r.netAmount >= 0 ? 'payable' : 'creditable'}
+                        </div>
+                      </>
+                    ) : r.type === 'INCOME_TAX_CLOSING' ? (
+                      <>
+                        {fmtMoney(r.taxDue ?? 0)}
+                        <div className="text-[11px] text-gray-500">
+                          {fmtMoney(r.cwtApplied ?? 0)} CWT · {fmtMoney(r.netAmount)} paid
                         </div>
                       </>
                     ) : (

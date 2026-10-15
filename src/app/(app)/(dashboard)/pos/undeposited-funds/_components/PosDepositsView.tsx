@@ -404,6 +404,10 @@ function ClearSummary({ deposit }: { deposit: PosDeposit }): React.JSX.Element {
   )
 }
 
+/** For now (client, 2026-10-14) a deposit clears without its slip attached.
+ * Mirrors REQUIRE_SLIP_ATTACHMENT in the backend's pos-deposits.service. */
+const REQUIRE_SLIP_ATTACHMENT = false
+
 /** Clear (accounting) and Cancel (the branch), each behind a confirm. */
 function DraftActions({
   deposit,
@@ -445,7 +449,11 @@ function DraftActions({
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-5 py-3">
       {canVerify && !hasAttachments && (
-        <p className="mr-auto text-xs text-amber-700">Attach the deposit slip before clearing.</p>
+        <p className="mr-auto text-xs text-amber-700">
+          {REQUIRE_SLIP_ATTACHMENT
+            ? 'Attach the deposit slip before clearing.'
+            : 'No deposit slip attached yet.'}
+        </p>
       )}
       {canManage && (
         <button onClick={() => setConfirm('cancel')} className="btn-secondary">
@@ -455,7 +463,7 @@ function DraftActions({
       {canVerify && (
         <button
           onClick={() => setConfirm('clear')}
-          disabled={!hasAttachments}
+          disabled={REQUIRE_SLIP_ATTACHMENT && !hasAttachments}
           className="btn-primary flex items-center gap-1.5"
         >
           <CheckCircle2 className="h-4 w-4" /> Clear &amp; post

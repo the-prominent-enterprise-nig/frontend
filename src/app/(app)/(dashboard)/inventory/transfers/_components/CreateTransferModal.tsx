@@ -58,7 +58,9 @@ type Props = {
   // the source's call at dispatch, so a selection made over there can't be
   // carried through as a binding choice.
   initialDraft?: {
-    fromWarehouseId: string
+    fromWarehouseId?: string
+    // A caravan heading's "Transfer in" opens with the caravan as destination.
+    toWarehouseId?: string
     itemId?: string
     itemLabel?: string
     quantity?: number
@@ -444,11 +446,14 @@ export default function CreateTransferModal({
             }
           : {
               fromWarehouseId: initialDraft?.fromWarehouseId ?? '',
-              toWarehouseId: lockedToWarehouseId ?? '',
+              // A caravan heading's "Transfer in" names an existing caravan —
+              // it wins over the own-branch lock, as sending to a caravan
+              // the user's branch hosts always has.
+              toWarehouseId: initialDraft?.toWarehouseId ?? lockedToWarehouseId ?? '',
               transferDate: today,
               expectedArrival: '',
               reason: '',
-              destinationType: 'branch',
+              destinationType: initialDraft?.toWarehouseId ? 'caravan' : 'branch',
               lines: initialDraft?.pinnedLines?.length
                 ? initialDraft.pinnedLines.map((pin) => ({
                     itemId: pin.itemId,
@@ -496,18 +501,22 @@ export default function CreateTransferModal({
   // and it cleared this very check when it was raised. Letting the lock
   // re-apply here would quietly redirect the request being corrected to the
   // editor's own branch the moment `warehouses` resolved.
+  //
+  // Skipped for a caravan destination too: the lock is the user's own
+  // branch, and the caravan is the destination instead.
+  const destinationIsCaravan = watch('destinationType') === 'caravan'
   useEffect(() => {
-    if (isOpen && !isEditing && lockedToWarehouseId) {
+    if (isOpen && !isEditing && !destinationIsCaravan && lockedToWarehouseId) {
       setValue('toWarehouseId', lockedToWarehouseId, { shouldValidate: true })
     }
-  }, [isOpen, isEditing, lockedToWarehouseId, setValue])
+  }, [isOpen, isEditing, destinationIsCaravan, lockedToWarehouseId, setValue])
 
   const totalUnits = watchedLines.reduce((sum, l) => sum + (Number(l?.quantity) || 0), 0)
 
   // Scenario 60 — "For a caravan": the stock goes to a new caravan (a
   // temporary branch set up at a host branch for an event), created from the
-  // details entered here. An existing caravan is never a destination; stock
-  // already at one moves on by picking the caravan as the source.
+  // details entered here. A caravan that is still running can also be picked
+  // straight from the destination list, like any branch.
   const isCaravanDestination = (watch('destinationType') ?? 'branch') === 'caravan'
   const isCreatingNewCaravan = isCaravanDestination && !!watch('newCaravan')
   const toId = watch('toWarehouseId')
@@ -517,10 +526,27 @@ export default function CreateTransferModal({
   // Editing a request that already goes to a caravan keeps that caravan.
   const editingCaravanDestination = isEditing && isCaravanDestination && !isCreatingNewCaravan
 
-  // Branch destinations never list a caravan.
-  const branchDestinations = (currentUserBranchId ? ownBranchWarehouses : warehouses).filter(
-    (wh) => wh.id !== fromId && !isCaravanBranch(wh.branch)
+  // A caravan still running is a destination like any branch; an ended one
+  // takes no new stock. A branch-scoped user gets the caravans their own
+  // branch hosts alongside their branch.
+  const runningCaravans = warehouses.filter(
+    (wh) =>
+      isCaravanBranch(wh.branch) &&
+      !isCaravanEnded(wh.branch) &&
+      (!currentUserBranchId || wh.branch?.hostBranch?.id === currentUserBranchId)
   )
+  const branchDestinations = [
+    ...(currentUserBranchId ? ownBranchWarehouses : warehouses).filter(
+      (wh) => !isCaravanBranch(wh.branch)
+    ),
+    ...runningCaravans,
+  ].filter((wh) => wh.id !== fromId)
+
+  // Picking a caravan applies the caravan rules (serial-tracked items only).
+  function pickDestination(id: string): void {
+    const picked = warehouses.find((wh) => wh.id === id)
+    setValue('destinationType', isCaravanBranch(picked?.branch) ? 'caravan' : 'branch')
+  }
   // Host branch for a new caravan: a real branch, never another caravan. A
   // branch-scoped user can only host at their own branch (the backend
   // enforces the same).
@@ -656,7 +682,7 @@ export default function CreateTransferModal({
                       <input
                         type="checkbox"
                         role="switch"
-                        checked={isCaravanDestination}
+                        checked={isCreatingNewCaravan}
                         onChange={(e) => setForCaravan(e.target.checked)}
                         className="peer sr-only"
                       />
@@ -750,7 +776,7 @@ export default function CreateTransferModal({
                                 name="toWarehouseId"
                                 control={control}
                                 render={({ field }) =>
-                                  lockedToWarehouseId ? (
+                                  lockedToWarehouseId && runningCaravans.length === 0 ? (
                                     <SearchableSelect
                                       value={field.value ?? ''}
                                       onChange={field.onChange}
@@ -766,8 +792,11 @@ export default function CreateTransferModal({
                                   ) : (
                                     <SearchableSelect
                                       value={field.value ?? ''}
-                                      onChange={field.onChange}
-                                      placeholder="Search destination branch…"
+                                      onChange={(v) => {
+                                        field.onChange(v)
+                                        pickDestination(v)
+                                      }}
+                                      placeholder="Search destination branch or caravan…"
                                       chrome={CONTROL_CHROME}
                                       options={branchDestinations.map((wh) => ({
                                         value: wh.id,

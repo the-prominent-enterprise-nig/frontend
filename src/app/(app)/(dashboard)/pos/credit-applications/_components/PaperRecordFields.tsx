@@ -33,9 +33,10 @@ function FieldError({ message }: { message?: string }) {
  * Scenario 64 item 27 — the mockup's PROPOSED PURCHASE AND INSTALLMENT and
  * PAPER RECORD blocks.
  *
- * The mockup marks the purchase block "read only from POS draft, then linked
- * sale". It is typed here instead, because there is no draft or quote entity
- * to read from — a POS draft reference is a free-text field until one exists.
+ * The mockup also lists a "POS draft / quote ID" here. It is left out on
+ * purpose: the application already has its own auto-generated number, and no
+ * POS draft or quote exists to key against, so a typed box would only be a
+ * second, hand-entered identifier for the same thing.
  * The financing figures that ARE derived (amount financed, monthly, total
  * payable) stay in the Price Use & Financing section and are not repeated.
  *
@@ -53,11 +54,6 @@ export function PaperRecordFields({ control, errors }: Props) {
         <label className="block text-sm font-medium text-zinc-700">
           Proposed Purchase &amp; Paper Record
         </label>
-        <p className="mt-0.5 text-xs text-zinc-500">
-          LCP, PPD rebate and the first due date are filled in from the price list and the term
-          above — correct them if the signed paper says otherwise, since the paper is the source of
-          truth. All fields are required.
-        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -133,19 +129,6 @@ export function PaperRecordFields({ control, errors }: Props) {
             )}
           />
           <FieldError message={errors.downPaymentCollection?.message} />
-        </div>
-        <div className="min-w-0">
-          <label className="mb-1 block text-xs font-medium text-zinc-600">
-            POS draft / quote ID {REQUIRED}
-          </label>
-          <Controller
-            name="posDraftReference"
-            control={control}
-            render={({ field }) => (
-              <input {...field} value={field.value ?? ''} maxLength={100} className={fieldClass} />
-            )}
-          />
-          <FieldError message={errors.posDraftReference?.message} />
         </div>
         <div className="min-w-0">
           <label className="mb-1 block text-xs font-medium text-zinc-600">

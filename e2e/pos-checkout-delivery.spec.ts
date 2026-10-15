@@ -13,6 +13,7 @@ import {
   sweepE2EPriceUseTypes,
   deleteCustomers,
   openCustomSelect,
+  pickCartPriceUse,
 } from './utils'
 
 // Scenario 66 — delivery at POS checkout: Deliver to, Delivery Address and a
@@ -228,7 +229,7 @@ async function addItem(page: Page): Promise<void> {
     .filter({ has: page.getByText(fx.itemName, { exact: true }) })
   await expect(card.first()).toBeVisible({ timeout: 15_000 })
   await card.first().click()
-  await page.getByLabel('Price Use').first().selectOption({ label: fx.priceUseTypeName })
+  await pickCartPriceUse(page, fx.priceUseTypeName)
 }
 
 async function selectCustomer(page: Page, name: string): Promise<void> {

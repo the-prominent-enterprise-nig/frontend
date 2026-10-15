@@ -301,12 +301,20 @@ export default function ARInvoicesList({
               </button>
             </>
           ) : (
-            <button
-              onClick={() => router.push('/accounting/ar-invoices/receipts/new')}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
-            >
-              <Plus className="w-4 h-4" /> New Receipt
-            </button>
+            <>
+              <Link
+                href="/accounting/ar-invoices/retention"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-purple-700 hover:bg-purple-50"
+              >
+                Customer retention
+              </Link>
+              <button
+                onClick={() => router.push('/accounting/ar-invoices/receipts/new')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+              >
+                <Plus className="w-4 h-4" /> New Receipt
+              </button>
+            </>
           )}
         </div>
       </div>

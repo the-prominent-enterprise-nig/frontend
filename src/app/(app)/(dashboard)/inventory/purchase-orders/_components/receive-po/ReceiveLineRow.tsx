@@ -94,7 +94,11 @@ export function ReceiveLineRow(props: ReceiveLineRowProps) {
       {drawer === 'serials' && (
         <div className="mx-3.5 mb-3.5 lg:ml-12 lg:mr-4.5">
           <SerialCaptureDrawer
-            quantity={line.quantityReceived}
+            // One box per unit still owed, not per unit typed: the quantity is
+            // what the filled boxes add up to, so every box has to be there to
+            // fill. Blank ones are simply not received.
+            quantity={remaining}
+            requireAll={false}
             serials={line.serialNumbers ?? []}
             showErrors={props.showErrors}
             isDuplicate={props.isDuplicateSerial}
@@ -164,8 +168,14 @@ function WideRow(props: InnerProps) {
       </span>
 
       <div className="flex flex-col gap-[3px] self-start">
-        <QtyStepper {...props} />
-        <FillMaxButton {...props} />
+        {line.isSerialTracked && !closed ? (
+          <SerialQty {...props} />
+        ) : (
+          <>
+            <QtyStepper {...props} />
+            <FillMaxButton {...props} />
+          </>
+        )}
       </div>
 
       <div className="min-w-0 self-start">
@@ -229,8 +239,14 @@ function NarrowCard(props: InnerProps) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5">
-        <QtyStepper {...props} large />
-        <FillMaxButton {...props} large />
+        {line.isSerialTracked && !closed ? (
+          <SerialQty {...props} large />
+        ) : (
+          <>
+            <QtyStepper {...props} large />
+            <FillMaxButton {...props} large />
+          </>
+        )}
         {canViewCost && (
           <div className="ml-auto flex flex-col items-end gap-px">
             <span className={`${MONO} text-[13px] font-semibold`}>{fmtPeso(lineTotal)}</span>
@@ -348,6 +364,36 @@ function QtyStepper({
   )
 }
 
+/**
+ * Quantity for a serial-tracked line: read-only, because it is whatever the
+ * serial boxes add up to. A receiver cannot count a pallet before scanning it,
+ * so asking for the number first only produced a guess that the boxes then had
+ * to be made to match. Shown against the remainder so a partial scan reads as
+ * what it is — "5 / 10" — rather than as a line that is complete.
+ */
+function SerialQty({ line, remaining, large }: InnerProps & { large?: boolean }) {
+  const qty = line.quantityReceived
+  return (
+    <div className="flex flex-col gap-[3px]">
+      <div
+        role="status"
+        aria-label={`Quantity to receive: ${qty} of ${remaining}, counted from the serial numbers entered`}
+        className={`${MONO} flex items-center justify-center gap-1 rounded-lg border font-semibold ${
+          large ? 'h-[46px] min-w-[120px] px-4 text-[15px]' : 'h-[34px] w-full text-[13px]'
+        } ${
+          qty > 0
+            ? 'border-[#7c4fd1] bg-white text-[#17171c] shadow-[0_0_0_3px_#f4efff]'
+            : 'border-[#d3d3db] bg-[#f7f7f8] text-[#8b8b9b]'
+        }`}
+      >
+        <span>{qty}</span>
+        <span className="text-[#a3a3b2]">/ {remaining}</span>
+      </div>
+      <span className="text-[10.5px] text-[#8b8b9b]">Counted from serials</span>
+    </div>
+  )
+}
+
 function FillMaxButton({
   line,
   closed,
@@ -388,37 +434,35 @@ function FillMaxButton({
 function TrackingButton({
   line,
   closed,
+  remaining,
   drawer,
   onOpenDrawer,
-  showErrors,
   isDuplicateSerial,
   large,
 }: InnerProps & { large?: boolean }) {
   const tracked = !!line.isSerialTracked && !closed
-  const slots = (line.serialNumbers ?? []).slice(0, line.quantityReceived)
+  const slots = line.serialNumbers ?? []
   const filled = slots.filter((s) => (s ?? '').trim()).length
   // Judged here rather than read off `issues`: that list arrives already
-  // filtered by showErrors, so before the receiver has tried to move on it is
-  // empty — and the pill would have read green on a line with no serials at
-  // all, which is the one moment it most needs not to.
-  const ok = filled === line.quantityReceived && !slots.some((_, unit) => isDuplicateSerial(unit))
+  // filtered by showErrors, so a repeated serial would read green until the
+  // receiver had tried to move on.
+  const hasDuplicate = slots.some((_, unit) => isDuplicateSerial(unit))
 
+  // Against the remainder, not the quantity: the quantity is just `filled`.
   const status = closed
     ? 'Fully received'
     : !tracked
       ? 'Untracked'
-      : line.quantityReceived > 0
-        ? `${filled} / ${line.quantityReceived} serials`
-        : 'Serial-tracked'
+      : `${filled} / ${remaining} serials`
 
   const tone = closed
     ? 'border-[#eeeef1] bg-[#f7f7f8] text-[#8b8b9b]'
     : !tracked
       ? 'border-[#dcefe5] bg-[#f4fbf7] text-[#0b6644]'
-      : ok && line.quantityReceived > 0
-        ? 'border-[#b6e0cd] bg-[#e7f5ef] text-[#0b6644]'
-        : showErrors
-          ? 'border-[#f3c9c5] bg-[#fdeceb] text-[#b42318]'
+      : hasDuplicate
+        ? 'border-[#f3c9c5] bg-[#fdeceb] text-[#b42318]'
+        : filled > 0
+          ? 'border-[#b6e0cd] bg-[#e7f5ef] text-[#0b6644]'
           : 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490]'
 
   return (

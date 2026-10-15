@@ -36,7 +36,7 @@ export default function OutstandingInvoicesWidget() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const res = await ARInvoices.list({ branchId: branchId ?? undefined })
+      const res = await ARInvoices.list({ branchId: branchId ?? undefined, view: 'summary' })
       if (cancelled) return
       const all = res.data?.items ?? []
       // Outstanding = not fully paid, sorted by due date ascending

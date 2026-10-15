@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus, CheckCircle, FileEdit, Trash2, Printer } from 'lucide-react'
@@ -15,8 +15,10 @@ import {
   adjustedStatementBalance,
   reconStatus,
   RECON_STATUS_STYLE,
+  type ReconStatus,
 } from '@/src/libs/data/AccountingV2Data'
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CLEARING_TYPE_LABELS, printVoucher } from './BankReconForms'
 
 // Scenario 42 Part 3 / Scenario 61 Part C — the real discrepancy from the
@@ -27,12 +29,42 @@ function reconDiscrepancy(r: BankReconciliation): number {
   return adjustedStatementBalance(r.statementBalance, r.lines ?? []) - r.systemBalance
 }
 
+function rowStatus(r: BankReconciliation): ReconStatus {
+  return reconStatus(r.reconciled, reconDiscrepancy(r), !!r.awaitingStatement)
+}
+
+const STATUS_OPTIONS = [
+  { value: 'Draft', label: 'Draft' },
+  { value: 'In Progress', label: 'In Progress' },
+  { value: 'For Review', label: 'For Review' },
+  { value: 'Reconciled', label: 'Reconciled' },
+]
+
+const EMPTY_FILTERS = { search: '', status: [] as ReconStatus[], startDate: '', endDate: '' }
+
 export default function BankRecon() {
   const router = useRouter()
   const [recs, setRecs] = useState<BankReconciliation[]>([])
   const [settlements, setSettlements] = useState<ClearingSettlement[]>([])
   const [credits, setCredits] = useState<UnidentifiedBankCredit[]>([])
   const [loading, setLoading] = useState(true)
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const filtering = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS)
+
+  // Drafts first: they are the ones waiting for the accountant.
+  const visible = useMemo(() => {
+    const term = filters.search.trim().toLowerCase()
+    return recs
+      .filter((r) => {
+        const day = String(r.statementDate).slice(0, 10)
+        if (term && !(r.bankAccount?.name ?? '').toLowerCase().includes(term)) return false
+        if (filters.status.length && !filters.status.includes(rowStatus(r))) return false
+        if (filters.startDate && day < filters.startDate) return false
+        if (filters.endDate && day > filters.endDate) return false
+        return true
+      })
+      .sort((a, b) => Number(!!b.awaitingStatement) - Number(!!a.awaitingStatement))
+  }, [recs, filters])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -78,32 +110,82 @@ export default function BankRecon() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-2xl font-bold">Bank Reconciliation</h2>
-          <p className="text-sm text-gray-500">Compare bank statements to system records.</p>
-        </div>
-        <div className="flex gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 className="text-2xl font-bold">Bank Reconciliation</h2>
+        <div className="flex flex-wrap gap-2">
           <Link
             href="/accounting/bank-reconciliation/adjusting-entry"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-lg"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm whitespace-nowrap text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-lg"
           >
-            <FileEdit className="w-4 h-4" /> Adjusting Entry
+            <FileEdit className="w-3.5 h-3.5" /> Adjusting Entry
           </Link>
           <Link
             href="/accounting/bank-reconciliation/unidentified-credit"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm whitespace-nowrap text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg"
           >
-            <Plus className="w-4 h-4" /> Unidentified Credit
+            <Plus className="w-3.5 h-3.5" /> Unidentified Credit
           </Link>
           <Link
             href="/accounting/bank-reconciliation/new"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold whitespace-nowrap bg-purple-700 text-white rounded-lg hover:bg-purple-800"
           >
-            <Plus className="w-4 h-4" /> New Reconciliation
+            <Plus className="w-3.5 h-3.5" /> New Reconciliation
           </Link>
         </div>
       </div>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="block w-64">
+          <span className="block text-xs font-medium text-gray-600 mb-1">Search</span>
+          <input
+            placeholder="Bank account"
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            className="w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg"
+          />
+        </label>
+        {/* A div, not a label: the picker holds its own input and buttons. */}
+        <div className="block w-52">
+          <span className="block text-xs font-medium text-gray-600 mb-1">Status</span>
+          <SearchableSelect
+            multiple
+            ariaLabel="Status"
+            value={filters.status}
+            onChange={(status) => setFilters({ ...filters, status: status as ReconStatus[] })}
+            placeholder="All statuses"
+            summaryNoun="statuses"
+            clearable
+            options={STATUS_OPTIONS}
+          />
+        </div>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-600 mb-1">Statement From</span>
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+            className="px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg"
+          />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-600 mb-1">Statement To</span>
+          <input
+            type="date"
+            value={filters.endDate}
+            onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+            className="px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg"
+          />
+        </label>
+        {filtering && (
+          <button
+            type="button"
+            onClick={() => setFilters(EMPTY_FILTERS)}
+            className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
@@ -124,16 +206,21 @@ export default function BankRecon() {
                   Loading...
                 </td>
               </tr>
-            ) : recs.length === 0 ? (
+            ) : visible.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
-                  No reconciliations.
+                  {recs.length === 0
+                    ? 'No reconciliations.'
+                    : 'No reconciliations match these filters.'}
                 </td>
               </tr>
             ) : (
-              recs.map((r) => {
+              visible.map((r) => {
                 const discrepancy = reconDiscrepancy(r)
                 const isZero = Math.abs(discrepancy) < 0.01
+                // An auto-created draft has no statement balance yet, so there is
+                // no difference to show either.
+                const awaiting = !!r.awaitingStatement
                 return (
                   <tr
                     key={r.id}
@@ -142,23 +229,42 @@ export default function BankRecon() {
                   >
                     <td className="px-3 py-2">{r.bankAccount?.name}</td>
                     <td className="px-3 py-2 text-xs">{fmtDate(r.statementDate)}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney(r.statementBalance)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {awaiting ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        fmtMoney(r.statementBalance)
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right">{fmtMoney(r.systemBalance)}</td>
                     <td className="px-3 py-2 text-right">
                       {/* Scenario 61 Part C — the Difference drills into
                           every transaction behind the ERP bank balance. */}
-                      <Link
-                        href={`/accounting/bank-reconciliation/${r.id}/transactions`}
-                        onClick={(e) => e.stopPropagation()}
-                        title="See every transaction behind this difference"
-                        className={`underline decoration-dotted underline-offset-2 hover:decoration-solid ${isZero ? 'text-emerald-700' : 'text-amber-700'}`}
-                      >
-                        {fmtMoney(discrepancy)}
-                      </Link>
+                      {awaiting ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <Link
+                          href={`/accounting/bank-reconciliation/${r.id}/transactions`}
+                          onClick={(e) => e.stopPropagation()}
+                          title="See every transaction behind this difference"
+                          className={`underline decoration-dotted underline-offset-2 hover:decoration-solid ${isZero ? 'text-emerald-700' : 'text-amber-700'}`}
+                        >
+                          {fmtMoney(discrepancy)}
+                        </Link>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-xs">
-                      <span className={RECON_STATUS_STYLE[reconStatus(r.reconciled, discrepancy)]}>
-                        {reconStatus(r.reconciled, discrepancy)}
+                      <span
+                        className={
+                          RECON_STATUS_STYLE[reconStatus(r.reconciled, discrepancy, awaiting)]
+                        }
+                        title={
+                          awaiting
+                            ? 'Created automatically — enter the statement balance to start'
+                            : undefined
+                        }
+                      >
+                        {reconStatus(r.reconciled, discrepancy, awaiting)}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
@@ -167,7 +273,7 @@ export default function BankRecon() {
                         items={[
                           // Only offered once the discrepancy is zero — until then the
                           // worksheet is where cleared items get checked off.
-                          ...(!r.reconciled && isZero
+                          ...(!r.reconciled && !awaiting && isZero
                             ? [
                                 {
                                   label: 'Mark reconciled',
@@ -274,7 +380,7 @@ export default function BankRecon() {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
+                    <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
                       Loading...
                     </td>
                   </tr>
@@ -326,86 +432,6 @@ export default function BankRecon() {
                               : []),
                           ]}
                         />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {(loading || credits.length > 0) && (
-        <>
-          <div className="mt-6 flex items-center justify-between mb-3">
-            <div>
-              <h3 className="text-lg font-semibold">Unidentified Bank Credits</h3>
-              <p className="text-xs text-gray-500">
-                Bank credits with no matching sale or settlement yet — reclassify once identified.
-              </p>
-            </div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-                <tr>
-                  <th className="px-3 py-2 text-left">Bank Account</th>
-                  <th className="px-3 py-2 text-left">Credit Date</th>
-                  <th className="px-3 py-2 text-right">Amount</th>
-                  <th className="px-3 py-2 text-left">Bank Ref</th>
-                  <th className="px-3 py-2 text-left">Voucher Control No.</th>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2 w-10" aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
-                      Loading...
-                    </td>
-                  </tr>
-                ) : (
-                  credits.map((c) => (
-                    <tr key={c.id}>
-                      <td className="px-3 py-2">{c.bankAccount?.name}</td>
-                      <td className="px-3 py-2 text-xs">{fmtDate(c.creditDate)}</td>
-                      <td className="px-3 py-2 text-right">{fmtMoney(c.amount)}</td>
-                      <td className="px-3 py-2 text-xs">{c.bankRef || '—'}</td>
-                      <td className="px-3 py-2 text-xs">{c.voucherControlNo || '—'}</td>
-                      <td className="px-3 py-2 text-xs">
-                        {c.status === 'unmatched' ? (
-                          <span className="text-amber-700">Unmatched</span>
-                        ) : (
-                          <span className="text-emerald-700" title={c.reclassifiedNote ?? ''}>
-                            Reclassified
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {c.journalEntryId && (
-                            <button
-                              onClick={() =>
-                                printVoucher(c.journalEntryId!, 'Unidentified Bank Credit Voucher')
-                              }
-                              title="Print voucher"
-                              aria-label="Print voucher"
-                              className="p-1.5 text-gray-500 hover:text-purple-700 hover:bg-purple-50 rounded"
-                            >
-                              <Printer className="w-4 h-4" />
-                            </button>
-                          )}
-                          {c.status === 'unmatched' && (
-                            <Link
-                              href={`/accounting/bank-reconciliation/unidentified-credit/${c.id}/reclassify`}
-                              className="px-2 py-1 text-xs text-purple-700 hover:bg-purple-50 border border-purple-200 rounded"
-                            >
-                              Reclassify
-                            </Link>
-                          )}
-                        </div>
                       </td>
                     </tr>
                   ))

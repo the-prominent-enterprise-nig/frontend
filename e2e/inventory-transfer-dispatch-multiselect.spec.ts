@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { clickStable, fillStable, gotoReady } from './utils'
+import { cancelStockTransfer, clickStable, fillStable, gotoReady } from './utils'
 
 /**
  * Scenario 50 Part 5 — three closing gaps on the Stock Transfer dispatch/
@@ -204,5 +204,113 @@ test.describe('Inventory — Stock Transfer dispatch multi-select & RR link', ()
     expect(rr.stockTransferId).toBe(transfer.id)
 
     await modal.getByRole('button', { name: 'Close dialog' }).click()
+  })
+
+  test('a scanned serial is assigned as it lands, with no click and no Enter', async ({ page }) => {
+    // The dispatcher scans the unit off the shelf. A scanner types the barcode
+    // and, as configured here, nothing after it — so the code used to sit in
+    // the box with a one-row list under it waiting for a click.
+    const uniqueReason = `E2E-TRF-SCAN-${Date.now()}`
+
+    const warehouses = ((
+      await (await page.request.get('/api/inventory/warehouses?limit=200&status=active')).json()
+    ).data ?? []) as { id: string; branchId: string | null }[]
+    const branchWarehouses = warehouses.filter((w) => w.branchId)
+
+    let fromWarehouse: { id: string } | undefined
+    let itemId: string | undefined
+    let serials: string[] = []
+    for (const w of branchWarehouses) {
+      const rows = ((
+        await (
+          await page.request.get('/api/inventory/serial-numbers', {
+            params: { warehouseId: w.id, status: 'in_stock', limit: '200' },
+          })
+        ).json()
+      ).data ?? []) as { itemId: string; serialNumber: string }[]
+      const byItem = new Map<string, string[]>()
+      for (const r of rows) byItem.set(r.itemId, [...(byItem.get(r.itemId) ?? []), r.serialNumber])
+      const best = [...byItem.entries()].find(([, list]) => list.length >= 2)
+      if (best) {
+        fromWarehouse = w
+        itemId = best[0]
+        serials = best[1].slice(0, 2)
+        break
+      }
+    }
+    expect(
+      fromWarehouse,
+      'a warehouse with ≥2 in-stock serials of one item must exist'
+    ).toBeTruthy()
+    const toWarehouse = branchWarehouses.find((w) => w.id !== fromWarehouse!.id)!
+
+    const createRes = await page.request.post('/api/inventory/transfers', {
+      data: {
+        fromWarehouseId: fromWarehouse!.id,
+        toWarehouseId: toWarehouse.id,
+        transferDate: new Date().toISOString().split('T')[0],
+        reason: uniqueReason,
+        lines: [
+          { itemId: itemId!, quantity: 1 },
+          { itemId: itemId!, quantity: 1 },
+        ],
+      },
+    })
+    expect(createRes.ok(), `create failed: ${await createRes.text()}`).toBeTruthy()
+    const transfer = await createRes.json()
+    const acceptRes = await page.request.patch(`/api/inventory/transfers/${transfer.id}/accept`, {
+      data: {},
+    })
+    expect(acceptRes.ok()).toBeTruthy()
+
+    try {
+      await gotoReady(page, '/inventory/transfers')
+      await expect(async () => {
+        await page.locator('tbody tr').first().click()
+        await expect(page.getByRole('heading', { name: 'Transfer Details' })).toBeVisible({
+          timeout: 3_000,
+        })
+        const isMine = await page
+          .getByText(uniqueReason, { exact: true })
+          .isVisible()
+          .catch(() => false)
+        if (!isMine) {
+          await page.getByRole('button', { name: 'Close dialog' }).click()
+          throw new Error('opened transfer is not the one just created — retrying')
+        }
+      }).toPass({ timeout: 20_000 })
+
+      const modal = page.locator('.fixed.inset-0.z-50')
+      await clickStable(
+        modal.getByRole('button', { name: 'Dispatch' }),
+        modal.getByRole('button', { name: 'Confirm Dispatch' }),
+        { timeout: 15_000 }
+      )
+
+      const picker = modal.getByPlaceholder('Search serial number…')
+      await expect(picker).toBeVisible({ timeout: 10_000 })
+      await picker.click()
+      await expect(modal.getByText('0 of 2 assigned')).toBeVisible()
+
+      // Fast keystrokes and then silence is a scan. A partial code names no
+      // serial, so nothing is picked for it.
+      await page.keyboard.type(serials[0].slice(0, -1), { delay: 10 })
+      await page.waitForTimeout(400)
+      await expect(modal.getByText('0 of 2 assigned')).toBeVisible()
+      await picker.fill('')
+
+      // The full code lands as a pill by itself, and the box is still focused
+      // for the next scan — no click between the two.
+      await page.keyboard.type(serials[0], { delay: 10 })
+      await expect(modal.getByText('1 of 2 assigned')).toBeVisible({ timeout: 5_000 })
+      await expect(modal.getByText(serials[0], { exact: true })).toBeVisible()
+
+      await page.keyboard.type(serials[1], { delay: 10 })
+      await expect(modal.getByText('2 of 2 assigned')).toBeVisible({ timeout: 5_000 })
+      await expect(modal.getByText(serials[1], { exact: true })).toBeVisible()
+    } finally {
+      // Never confirmed, so it is still 'draft' and cancellable.
+      await cancelStockTransfer(page.request, transfer.id)
+    }
   })
 })

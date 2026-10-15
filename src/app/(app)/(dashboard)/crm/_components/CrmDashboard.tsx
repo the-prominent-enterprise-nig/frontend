@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
+import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
 import Link from 'next/link'
 import {
   Contact,
@@ -384,25 +385,12 @@ export default function CrmDashboard() {
     setSpinning(false)
   }, [])
 
-  useEffect(() => {
-    load()
-    // Scenario 29 — this dashboard previously only ever fetched once on
-    // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
-    // POS's own overview page (refetchInterval: 30_000 +
-    // refetchOnWindowFocus: true), the working reference pattern already
-    // established in this codebase.
-    const interval = setInterval(load, 30_000)
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') load()
-    }
-    window.addEventListener('focus', load)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('focus', load)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [load])
+  // Scenario 29 — this dashboard previously only ever fetched once on
+  // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
+  // POS's own overview page (refetchInterval: 30_000 +
+  // refetchOnWindowFocus: true), the working reference pattern already
+  // established in this codebase. Pauses in hidden tabs, never overlaps.
+  useVisiblePolling(load, 30_000)
 
   const loading = !s.loaded
 

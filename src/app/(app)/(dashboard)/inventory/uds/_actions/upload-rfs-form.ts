@@ -2,7 +2,7 @@
 
 import { cookies } from 'next/headers'
 import type { ApiResponse } from '@/src/libs/api/client'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { FILES_PERMISSIONS } from '@/src/libs/guards/files-permissions'
 
@@ -20,7 +20,7 @@ export interface UploadedFile {
  * path getSession() already uses for the same reason (auth cookie, no proxy).
  */
 export async function uploadRfsForm(formData: FormData): Promise<ApiResponse<UploadedFile>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }

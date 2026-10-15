@@ -39,11 +39,26 @@ export type IssueLine = {
   quantityReceived: number
   isSerialTracked?: boolean
   serialNumbers?: string[]
+  /** The line's quantity IS the number of serials typed, rather than a number
+   * typed first with a serial then demanded for each unit. A blank box is then
+   * just a unit not received yet, not a missing serial. Set by the PO receive
+   * screen, where the receiver cannot count a pallet before scanning it. */
+  serialsCountQuantity?: boolean
   qualityHold: boolean
   notes?: string
 }
 
 export const norm = (serial: string): string => serial.trim().toUpperCase()
+
+/** True when a serial box holds something other than whitespace. */
+export const isFilled = (serial: string | undefined): boolean => !!serial && serial.trim() !== ''
+
+/** How many boxes are filled — on the PO receive screen, the line's quantity. */
+export const filledSerials = (serials: string[] | undefined): number =>
+  (serials ?? []).filter(isFilled).length
+
+/** A fresh set of empty boxes, one per unit the PO still owes. */
+export const blankSerials = (count: number): string[] => Array.from({ length: count }, () => '')
 
 export const remainingOf = (poLine: PurchaseOrderSummary['lines'][number]): number =>
   Math.max(Number(poLine.quantity) - Number(poLine.receivedQuantity ?? 0), 0)
@@ -86,13 +101,21 @@ export function isDuplicateSerial(
   return serialsElsewhere(lines, lineIndex, unitIndex).has(value)
 }
 
+/** The boxes that count for this line. Quantity-first lines only own as many
+ * boxes as the quantity says; serial-first lines own every box, because which
+ * ones are filled is what decides the quantity. */
+function serialSlots(line: IssueLine): string[] {
+  const all = line.serialNumbers ?? []
+  return line.serialsCountQuantity ? all : all.slice(0, line.quantityReceived)
+}
+
 function serialIssues(line: IssueLine, lines: IssueLine[], lineIndex: number): LineIssue[] {
   if (!line.isSerialTracked) return []
   const out: LineIssue[] = []
-  const slots = (line.serialNumbers ?? []).slice(0, line.quantityReceived)
+  const slots = serialSlots(line)
   const filled = slots.filter((s) => norm(s ?? '')).length
 
-  if (filled < line.quantityReceived) {
+  if (!line.serialsCountQuantity && filled < line.quantityReceived) {
     const missing = line.quantityReceived - filled
     out.push({
       kind: 'error',
@@ -157,6 +180,7 @@ export function capQuantity(raw: number, remaining: number): { qty: number; capp
  * the lines and the capture drawer already carry the detail. */
 export function pendingSerialCount(lines: IssueLine[]): number {
   return lines.reduce((total, line) => {
+    if (line.serialsCountQuantity) return total
     if (!line.selected || !line.isSerialTracked || line.quantityReceived <= 0) return total
     const slots = (line.serialNumbers ?? []).slice(0, line.quantityReceived)
     const filled = slots.filter((serial) => norm(serial ?? '')).length
@@ -168,6 +192,7 @@ export function pendingSerialCount(lines: IssueLine[]): number {
  * jump on the rolled-up blocker. */
 function firstLineMissingSerials(lines: IssueLine[]): number | undefined {
   const index = lines.findIndex((line) => {
+    if (line.serialsCountQuantity) return false
     if (!line.selected || !line.isSerialTracked || line.quantityReceived <= 0) return false
     const slots = (line.serialNumbers ?? []).slice(0, line.quantityReceived)
     return slots.filter((serial) => norm(serial ?? '')).length < line.quantityReceived
@@ -194,7 +219,9 @@ export function collectBlockers(
       key: 'qty',
       kind: 'error',
       fix: 'qty',
-      text: 'Enter a quantity on at least one line.',
+      text: lines.some((l) => l.serialsCountQuantity)
+        ? 'Enter a quantity, or scan a serial number, on at least one line.'
+        : 'Enter a quantity on at least one line.',
     })
   }
 

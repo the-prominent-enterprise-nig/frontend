@@ -2470,6 +2470,11 @@ export function buildExpenseVoucherHtml(data: unknown): string {
   const e = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
 
+  // A cash advance liquidated against its receipts can net to zero or below:
+  // the paper then records change handed back, not a payment.
+  const total = Number(e.totalAmount ?? 0)
+  const isLiquidation =
+    total <= 0 && ((e.lines ?? []) as { amount?: number }[]).some((l) => Number(l.amount) < 0)
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
   // Zero-padded MM/DD/YYYY rather than the unpadded en-PH default the other
@@ -2596,7 +2601,7 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>Payment</h1>
+      <h1>${isLiquidation ? 'Cash Advance Liquidation' : 'Payment'}</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
@@ -2654,11 +2659,13 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     <table class="totals">
       <tbody>
         ${
-          withheld > 0
-            ? `<tr><td>Amount</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+          isLiquidation
+            ? `<tr class="grand"><td>${total < 0 ? 'Change returned' : 'Nothing to pay or return'}</td><td>${fmt(Math.abs(total))}</td></tr>`
+            : withheld > 0
+              ? `<tr><td>Amount</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
         <tr><td>Less: withholding tax${withholdingCodes ? ` (${esc(withholdingCodes)})` : ''}</td><td>(${fmt(withheld)})</td></tr>
         <tr class="grand"><td>Net amount paid</td><td>${fmt(Number(e.netPayable ?? Number(e.totalAmount ?? 0) - withheld))}</td></tr>`
-            : `<tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+              : `<tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
         <tr class="grand"><td>Total</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>`
         }
       </tbody>
@@ -2911,6 +2918,11 @@ export function buildInterAccountTransferVoucherHtml(data: unknown): string {
   const source = (t.source ?? {}) as Bank
   const destination = (t.destination ?? {}) as Bank
   const amount = Number(t.amount ?? 0)
+  // Scenario 72 — a voided transfer still prints (the paper trail stays whole),
+  // stamped VOID with the reason so nobody books it by mistake.
+  // Scenario 72 Part 6 — shown only when the transfer is tagged with a branch.
+  const branch = (t.branch ?? null) as { name?: string } | null
+  const isVoid = t.status === 'VOID'
   const bankLine = (b: Bank) =>
     [b.bankName, b.accountNumber ? `Acct # ${b.accountNumber}` : null, b.accountType]
       .filter(Boolean)
@@ -2936,6 +2948,8 @@ export function buildInterAccountTransferVoucherHtml(data: unknown): string {
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
     .sub { color: #666; font-size: 11.5px; }
+    .void-banner { border: 2px solid #b91c1c; color: #b91c1c; padding: 8px 14px; margin: 0 0 16px; font-weight: 700; }
+    .void-banner span { display: block; font-weight: 400; margin-top: 2px; }
     tr.total-row td { font-weight: 700; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
@@ -2944,7 +2958,7 @@ export function buildInterAccountTransferVoucherHtml(data: unknown): string {
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>Inter-Account Transfer</h1>
+      <h1>Inter-Account Transfer${isVoid ? ' — VOID' : ''}</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
@@ -2956,6 +2970,12 @@ export function buildInterAccountTransferVoucherHtml(data: unknown): string {
         <p class="meta-value">${t.reference ? esc(t.reference) : '—'}</p>
         <p class="meta-label">VOUCHER #</p>
         <p class="meta-value">${esc(t.transferNumber)}</p>
+        ${
+          branch?.name
+            ? `<p class="meta-label">Branch / Location</p>
+        <p class="meta-value">${esc(branch.name)}</p>`
+            : ''
+        }
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
@@ -2963,6 +2983,11 @@ export function buildInterAccountTransferVoucherHtml(data: unknown): string {
       </div>
     </div>
 
+    ${
+      isVoid
+        ? `<div class="void-banner">VOID — journal entry reversed${t.voidedAt ? ` on ${fmtDate(t.voidedAt)}` : ''}${t.voidReason ? `<span>Reason: ${esc(t.voidReason)}</span>` : ''}</div>`
+        : ''
+    }
     ${t.description ? `<p class="description">${esc(t.description)}</p>` : ''}
 
     <table>

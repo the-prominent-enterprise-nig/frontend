@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionState } from '@/src/libs/auth/actions'
 import { isSuperAdmin } from '@/src/libs/guards/permission'
 import { SuperAdminSideBar } from '@/src/components/super-admin/SuperAdminSideBar'
+import SessionUnavailable from '@/src/components/shell/SessionUnavailable'
 import { Toaster } from '@/src/components/ui/sonner'
 
 export function generateMetadata() {
@@ -12,9 +13,13 @@ export function generateMetadata() {
 }
 
 export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
-  const session = await getSessionOrNull()
+  const state = await getSessionState()
 
-  if (!session) redirect('/login')
+  // Same rule as the app layout: only a rejected/missing session is a logout.
+  if (state.status === 'unauthenticated') redirect('/login')
+  if (state.status === 'unavailable') return <SessionUnavailable />
+
+  const session = state.session
   if (!isSuperAdmin(session)) redirect('/403')
 
   return (

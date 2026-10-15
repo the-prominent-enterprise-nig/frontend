@@ -1,6 +1,7 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
 import type { CustomerType, CustomerLifecycleStatus } from '@/src/schema/crm/types'
 import type { AccountClass, CashFlowClass } from '@/src/libs/accounting/account-classification'
+import type { PosExceptionSummary } from '@/src/schema/pos'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -105,6 +106,10 @@ export interface Transaction {
   debit: number
   credit: number
   description?: string | null
+  /** Set only when this line belongs to a different journal than its entry —
+   *  an installment sale's down payment sits on the sale's Sales Journal entry
+   *  but is a Cash Receipt ("CashReceiptJournal"). Null follows the entry. */
+  journalType?: string | null
   createdAt?: string
   updatedAt?: string
 }
@@ -125,6 +130,11 @@ export interface JournalEntry {
   branchId?: string | null
   branchName?: string | null
   postedBy?: string | null
+  /** The poster's name, resolved server-side (only on the single-entry GET). */
+  postedByName?: string | null
+  /** Scenario 71 — for a POS sale's entry, the sale's price override / typed terms /
+   * waiver with its reason and note (only on the single-entry GET). */
+  posException?: PosExceptionSummary | null
   createdBy?: string | null
   transactions: Transaction[]
   totalDebit?: number

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle, Loader2, Search, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Loader2, Search, Upload, XCircle } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -287,6 +287,16 @@ export function PriceListDetailPageView({
               ? `Searches the ${total.toLocaleString()} item${total === 1 ? '' : 's'} already priced here.`
               : 'Searches the whole catalog. Adding an item sends the list back for approval.'}
           </span>
+
+          {canEdit && (
+            <Link
+              href={`/inventory/price-lists/${priceListId}/upload`}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-2 text-sm font-medium text-[#3f1490] hover:bg-[#f0e9fc]"
+            >
+              <Upload className="h-4 w-4" />
+              Upload CSV for this list
+            </Link>
+          )}
         </div>
 
         {canEdit && mode === 'add' && (

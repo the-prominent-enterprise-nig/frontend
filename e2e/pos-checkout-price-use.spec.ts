@@ -1,16 +1,16 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable, sweepE2EPriceUseTypes } from './utils'
+import { gotoReady, clickStable, sweepE2EPriceUseTypes, pickCartPriceUse } from './utils'
 
 const NAME_PREFIX = 'E2E Checkout Active Type — '
 
 // TPE x NIG meeting notes (07/31/26): checkout must defer pricing to the
 // selected Price Use (WIP/CR-BR/SSC/PROMO/ZI) instead of a flat item price,
-// and fall back to a PIN-gated Price Override when no price-list entry
+// and fall back to a Price Override (no PIN since Scenario 71) when no price-list entry
 // covers the item under that category. This spec covers the live wiring —
 // picking a Price Use resolves a real seeded price, switching to a category
 // with no coverage flips the line to the override entry point, and that
 // entry point opens the right dialog. Full sale submission (customer,
-// payment, PIN-approved override) is covered by the backend e2e suite
+// payment, override with a reason and note) is covered by the backend e2e suite
 // (test/pos-price-use.e2e-spec.ts) — this spec sticks to the frontend
 // resolution + UI wiring that suite can't see.
 async function ensureManilaSession(page: import('@playwright/test').Page) {
@@ -89,23 +89,21 @@ test.describe('POS Checkout — Price Use', () => {
     // WIP is seeded with a real price-list entry covering this item (see
     // prisma/seed.ts "Price lists" — retail items land in the WIP list at
     // their own sellingPrice) — picking it must resolve a real amount.
-    const priceUseSelect = page.getByLabel('Price Use')
-    await priceUseSelect.selectOption({ label: 'WIP' })
+    await pickCartPriceUse(page, 'WIP')
     await expect(cartRow.getByText(/₱[\d,]+\.\d{2}/)).toBeVisible({ timeout: 10_000 })
     await expect(cartRow.getByText('— Select Price Use')).toHaveCount(0)
     await expect(cartRow.getByText('No price — Override')).toHaveCount(0)
 
     // SSC has no price list at all in the seed — switching to it must
     // re-resolve to a gap, not silently keep the WIP price.
-    await priceUseSelect.selectOption({ label: 'SSC' })
+    await pickCartPriceUse(page, 'SSC')
     const overrideBadge = cartRow.getByText('No price — Override')
     await expect(overrideBadge).toBeVisible({ timeout: 10_000 })
     await expect(cartRow.getByText(/₱[\d,]+\.\d{2}/)).toHaveCount(0)
 
-    // The override entry point opens the PIN-gated dialog with the right item.
-    // Identification is PIN-only — no Manager User ID to look up or paste,
-    // same McDonald's-style pattern the discount override already uses; the
-    // backend resolves the manager from the PIN alone.
+    // The override entry point opens the dialog with the right item. Since
+    // Scenario 71 there is no manager and no PIN here — the reason and note are
+    // asked for in the order summary (see pos-checkout-price-override.spec.ts).
     await overrideBadge.click()
     const overrideHeading = page.getByRole('heading', { name: 'Price Override' })
     await expect(overrideHeading).toBeVisible()
@@ -114,7 +112,7 @@ test.describe('POS Checkout — Price Use', () => {
     await expect(page.getByText('Universal Remote Control', { exact: true }).last()).toBeVisible()
     await expect(page.getByText('New Unit Price (₱)')).toBeVisible()
     await expect(page.getByText('Manager User ID')).toHaveCount(0)
-    await expect(page.getByText('Manager PIN')).toBeVisible()
+    await expect(page.getByText('Manager PIN')).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Cancel', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Price Override' })).toHaveCount(0)
@@ -123,7 +121,7 @@ test.describe('POS Checkout — Price Use', () => {
 
     // Cleanup — remove the line so repeated runs start clean.
     await cartRow.hover()
-    await cartRow.locator('button').last().click()
+    await cartRow.getByRole('button', { name: 'Remove item' }).click()
     await expect(page.getByText('Click an item above to add it to the cart')).toBeVisible({
       timeout: 10_000,
     })

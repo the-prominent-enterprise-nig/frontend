@@ -24,7 +24,11 @@ import type {
   SerialStatus,
   SerialNumberSummary,
 } from '@/src/schema/inventory/serial-numbers'
-import { isCaravanBranch, warehouseLabel } from '@/src/schema/inventory/warehouses'
+import {
+  isCaravanBranch,
+  warehouseLabel,
+  type WarehouseBranch,
+} from '@/src/schema/inventory/warehouses'
 import { caravanGroupKey } from '@/src/schema/inventory/serial-numbers'
 import { useLocationFilter } from '@/src/libs/inventory/useLocationFilter'
 
@@ -34,6 +38,20 @@ const UNIT_STATUS_ORDER: SerialStatus[] = ['in_stock', 'held', 'in_transit', 'so
 function unitStatusRank(status: SerialStatus): number {
   const i = UNIT_STATUS_ORDER.indexOf(status)
   return i === -1 ? UNIT_STATUS_ORDER.length : i
+}
+
+/** Distinct host branches of the given caravan warehouses, by name. */
+function hostOptions(
+  caravans: { branch?: WarehouseBranch | null }[]
+): { value: string; label: string }[] {
+  const hosts = new Map<string, string>()
+  caravans.forEach((wh) => {
+    const host = wh.branch?.hostBranch
+    if (host) hosts.set(host.id, host.name)
+  })
+  return [...hosts]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label))
 }
 
 export function useSerialNumbers(
@@ -60,6 +78,8 @@ export function useSerialNumbers(
   // own branch hosts, enforced server-side.
   const [caravanView, setCaravanView] = useState(!!opts.initialCaravanId)
   const [caravanId, setCaravanId] = useState<string | undefined>(opts.initialCaravanId)
+  // Narrows the Caravan tab (and its caravan picker) to these host branches.
+  const [caravanHostIds, setCaravanHostIds] = useState<string[]>([])
 
   // Scenario 60 — the Caravan tab is one list: a row per item per caravan
   // that opens onto its units. Rows start closed, except while searching,
@@ -78,6 +98,7 @@ export function useSerialNumbers(
             status: statusFilter,
             search,
             caravanId: caravanId ?? 'caravan',
+            caravanHostBranchIds: caravanHostIds,
           }
         : {
             page,
@@ -104,6 +125,7 @@ export function useSerialNumbers(
       search,
       caravanView,
       caravanId,
+      caravanHostIds,
     ]
   )
 
@@ -134,8 +156,9 @@ export function useSerialNumbers(
       status: statusFilter,
       search,
       caravanId: caravanId ?? 'caravan',
+      caravanHostBranchIds: caravanHostIds,
     }),
-    [page, limit, categoryFilter, statusFilter, search, caravanId]
+    [page, limit, categoryFilter, statusFilter, search, caravanId, caravanHostIds]
   )
 
   const caravanGroupsQuery = useQuery({
@@ -251,6 +274,9 @@ export function useSerialNumbers(
   })
 
   const serials = serialsQuery.data?.data?.data ?? []
+  const caravanWarehouses = (warehousesQuery.data?.data?.data ?? []).filter((wh) =>
+    isCaravanBranch(wh.branch)
+  )
   // Whichever list is on screen owns the pager — "By Item" pages over groups,
   // not over units, so its own total is the one the footer must count.
   const activeList = groupedCaravan ? caravanGroupsQuery : serialsQuery
@@ -327,10 +353,24 @@ export function useSerialNumbers(
       setPage(1)
       setToggledKeys(new Set())
     },
+    caravanHostIds,
+    setCaravanHostIds: (v: string[]) => {
+      setCaravanHostIds(v)
+      // A picked caravan hosted elsewhere would leave the list empty.
+      const picked = caravanWarehouses.find((wh) => wh.branch?.id === caravanId)
+      const pickedHost = picked?.branch?.hostBranch?.id ?? ''
+      if (v.length && !v.includes(pickedHost)) setCaravanId(undefined)
+      setPage(1)
+      setToggledKeys(new Set())
+    },
+    // Every branch hosting a caravan the viewer can see.
+    caravanHostOptions: hostOptions(caravanWarehouses),
     // Every caravan the viewer can see, ended ones included — stock left in
     // an ended caravan still has to be found and transferred out.
-    caravanOptions: (warehousesQuery.data?.data?.data ?? [])
-      .filter((wh) => isCaravanBranch(wh.branch))
+    caravanOptions: caravanWarehouses
+      .filter(
+        (wh) => !caravanHostIds.length || caravanHostIds.includes(wh.branch?.hostBranch?.id ?? '')
+      )
       .map((wh) => ({ value: wh.branch?.id as string, label: warehouseLabel(wh) })),
     caravanReady,
     caravanGroups,

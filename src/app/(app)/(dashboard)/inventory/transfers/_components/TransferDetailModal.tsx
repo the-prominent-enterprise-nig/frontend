@@ -387,6 +387,9 @@ function ItemSerialGroup({
                 loadingLabel="Loading serials…"
                 placeholder="Search serial number…"
                 summaryNoun="serials assigned"
+                // The dispatcher scans the unit off the shelf: a scan that
+                // names one serial is assigned as it lands, no click needed.
+                pickOnScan
               />
             )}
             {activeError && <p className="mt-1 text-xs text-red-600">{activeError}</p>}
@@ -977,8 +980,16 @@ export default function TransferDetailModal({
   // here for one of those, even for a serial-tracked line.
   const isUdsLinked = (transfer?.linkedUds?.length ?? 0) > 0
 
+  // The modal starts from the list row, whose lines carry no `item` — so no
+  // `isSerialTracked` — until the detail query lands. openDispatchForm builds
+  // its serial slots once, from whatever it is handed at the click, so a click
+  // in that window built none: no "Assign Serial Numbers" section, and a
+  // dispatch the server then refused for missing serials. Only open the form
+  // once the lines actually say what they are.
+  const lineDetailReady = !isLoading && (transfer?.lines ?? []).every((line) => line.item)
+
   function openDispatchForm() {
-    if (!transfer) return
+    if (!transfer || !lineDetailReady) return
     // One entry per serial-tracked StockTransferLine (the backend's own
     // per-line invariant), but ItemSerialGroup below groups these by itemId
     // and shows one search box per item — so no per-line "(i of N)" label
@@ -2344,7 +2355,8 @@ export default function TransferDetailModal({
                   <button
                     type="button"
                     onClick={openDispatchForm}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
+                    disabled={!lineDetailReady}
+                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Truck className="h-4 w-4" />
                     Dispatch

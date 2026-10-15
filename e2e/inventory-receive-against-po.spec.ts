@@ -153,25 +153,58 @@ test.describe('Inventory — Receive stock against a PO', () => {
   test('caps quantity at the PO remainder rather than letting an over-receipt through', async ({
     page,
   }) => {
-    // The serial-tracked line was ordered 3, none received.
+    // The first line is serial-tracked and has no quantity box — its quantity
+    // is counted from the serials (next test) — so the spinbutton here is the
+    // plain line's, ordered 5 with none received.
     const qty = page.getByRole('spinbutton', { name: 'Quantity to receive' }).first()
-    await expect(qty).toHaveValue('3')
+    await expect(qty).toHaveValue('5')
 
     // Typing well past the remainder snaps back to it — the backend increments
     // receivedQuantity unconditionally and only flags the variance, so the cap
     // has to hold here.
     await qty.fill('28')
-    await expect(qty).toHaveValue('3')
-    await expect(page.getByText('Capped at 3')).toBeVisible({ timeout: 10_000 })
+    await expect(qty).toHaveValue('5')
+    await expect(page.getByText('Capped at 5')).toBeVisible({ timeout: 10_000 })
 
     // The stepper obeys the same ceiling.
     await page.getByRole('button', { name: 'Increase quantity' }).first().click()
-    await expect(qty).toHaveValue('3')
+    await expect(qty).toHaveValue('5')
 
-    // Down is unrestricted — a short delivery is legitimate (and, by design,
-    // not flagged: the PO simply stays open for the next receipt).
+    // Down is unrestricted — a short delivery is legitimate and just stays
+    // open on the PO.
     await page.getByRole('button', { name: 'Decrease quantity' }).first().click()
-    await expect(qty).toHaveValue('2')
+    await expect(qty).toHaveValue('4')
+  })
+
+  test('a serial-tracked line receives only the serials entered', async ({ page }) => {
+    // The receiver cannot count a pallet before scanning it, so a serial line
+    // has no quantity to type: it is whatever the filled boxes add up to, and
+    // a blank box is a unit not received yet rather than a missing serial.
+    const lineQty = (n: number) =>
+      page.getByRole('status', { name: new RegExp(`^Quantity to receive: ${n} of 3`) })
+    const serials = page.locator('input[data-serial-scan]')
+    await expect(serials).toHaveCount(3)
+    await expect(lineQty(0)).toBeVisible()
+
+    await fillStable(
+      page.getByPlaceholder('As printed on the delivery receipt'),
+      'DR-E2E-RECEIVE-04'
+    )
+
+    // Two of three, with the middle one left blank.
+    await fillStable(serials.nth(0), 'E2E-PART-0001')
+    await fillStable(serials.nth(2), 'E2E-PART-0003')
+    await expect(lineQty(2)).toBeVisible()
+    await expect(page.getByText('2 / 3 serials')).toBeVisible()
+    await expect(page.getByText('2 / 3 entered')).toBeVisible()
+
+    // Nothing is nagging about the unit that was left out.
+    await expect(page.getByText(/units? still needs? a serial number/)).toHaveCount(0)
+    await expect(page.getByText('Serial required for this unit.')).toHaveCount(0)
+
+    // Emptying a box takes it back out of the quantity.
+    await fillStable(serials.nth(2), '')
+    await expect(lineQty(1)).toBeVisible()
   })
 
   test('blocks posting until every serial on the line is unique', async ({ page }) => {
@@ -199,16 +232,49 @@ test.describe('Inventory — Receive stock against a PO', () => {
     await expect(page.getByText(/Duplicate serial/i)).toHaveCount(0)
   })
 
-  test('refuses to post while serial numbers are still missing', async ({ page }) => {
-    await fillStable(
-      page.getByPlaceholder('As printed on the delivery receipt'),
-      'DR-E2E-RECEIVE-03'
-    )
-    // Three units ordered on the serial line, none captured.
-    await expect(page.getByText(/units? still needs? serial numbers?/).first()).toBeVisible()
+  test('a scanner finishing a barcode moves on to the next serial box', async ({ page }) => {
+    // A barcode scanner is a keyboard that types the code and then a
+    // terminator — Enter by default, Tab when configured for form entry. Both
+    // have to hand focus to the next box, or a receiver scanning three units
+    // types all three into the first one.
+    const serials = page.locator('input[data-serial-scan]')
+    await expect(serials).toHaveCount(3)
 
-    await page.getByRole('button', { name: 'Receive stock' }).click()
-    await expect(page.getByText(/must be resolved first/).first()).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByRole('heading', { name: 'Receive stock against PO' })).toBeVisible()
+    await serials.nth(0).click()
+    await page.keyboard.type('E2E-SCAN-0001')
+    await page.keyboard.press('Enter')
+    await expect(serials.nth(1)).toBeFocused()
+
+    await page.keyboard.type('E2E-SCAN-0002')
+    await page.keyboard.press('Tab')
+    await expect(serials.nth(2)).toBeFocused()
+
+    // The last box has nowhere to go — focus stays put and Enter must not
+    // submit anything.
+    await page.keyboard.type('E2E-SCAN-0003')
+    await page.keyboard.press('Enter')
+    await expect(serials.nth(2)).toBeFocused()
+
+    await expect(serials.nth(0)).toHaveValue('E2E-SCAN-0001')
+    await expect(serials.nth(1)).toHaveValue('E2E-SCAN-0002')
+    await expect(serials.nth(2)).toHaveValue('E2E-SCAN-0003')
+  })
+
+  test('a scanner set up with no terminator is recognised by its speed', async ({ page }) => {
+    // Many scanners send only the barcode — no Enter, no Tab — so there is no
+    // key to react to. A burst of fast keystrokes that then goes quiet is the
+    // scan; a person typing at their own pace is not, and must not be moved.
+    const serials = page.locator('input[data-serial-scan]')
+    await expect(serials).toHaveCount(3)
+
+    await serials.nth(0).click()
+    await page.keyboard.type('4800049720107', { delay: 10 })
+    await expect(serials.nth(1)).toBeFocused()
+    await expect(serials.nth(0)).toHaveValue('4800049720107')
+
+    await page.keyboard.type('E2E-SLOW-0002', { delay: 120 })
+    await page.waitForTimeout(400)
+    await expect(serials.nth(1)).toBeFocused()
+    await expect(serials.nth(1)).toHaveValue('E2E-SLOW-0002')
   })
 })
