@@ -437,8 +437,8 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     type Row = Record<string, unknown> & { id: string }
     const json = async (url: string, params: Record<string, string> = {}) =>
       (await request.get(url, { params })).json()
-    // A repair UDS at the main branch has no auto-paired transfer, so its
-    // status alone walks it to received.
+    // A repair UDS raised at the main branch has no trip to make, so it opens
+    // as received (Part 10) — ready to assess.
     const branches = (await json('/api/branches', { limit: '200' })).data as Row[]
     const main = branches.find((b) => b.isMainBranch)
     test.skip(!main, 'no main branch in this database')
@@ -467,13 +467,10 @@ test.describe('Delivery Receipts — Scenario 72', () => {
       },
     })
     expect(created.ok()).toBe(true)
-    const uds = (await created.json()) as { id: string; code: string }
+    const uds = (await created.json()) as { id: string; code: string; status: string }
     const patch = (path: string, data: Record<string, unknown>) =>
       request.patch(`/api/inventory/uds/${uds.id}/${path}`, { data })
-    for (const status of ['in_transit', 'received']) {
-      const moved = await patch('status', { status })
-      expect(moved.ok(), await moved.text()).toBe(true)
-    }
+    expect(uds.status).toBe('received')
     expect((await patch('assess', { assessment: 'repairable', estimatedCost: 500 })).ok()).toBe(
       true
     )

@@ -376,6 +376,33 @@ Added at the developer's request after Part 7, from the client: on the General S
 - The specs above are stale, not fixed here.
 - The ticket's auto-paired serial-less transfer, if dispatched instead, now also moves the ticket, but still moves only a quantity, not the unit's location.
 
+### Part 10 — repair-ticket hops on their own documents, 2026-10-15
+
+Developer request: get rid of (or simplify) the UDS status updates and use the existing workflows. **Decisions (developer)**: the ticket's own transfer names the unit and drives the ticket to main; a customer's unit (no stock transfer can carry it) keeps two one-click steps, Send to Main / Receive at Main; our own repaired unit returns on a transfer drafted at Receive Back; maintenance, quality check, pull-out and loan tickets get Complete only. Also (flagged, not asked): a repair ticket raised at main opens as received.
+
+**Backend**
+
+- Migration `20261015200000_uds_return_transfer`: `unit_document_sheets.returnStockTransferId`.
+- The auto-paired transfer to main names the ticket's units (`repairUnit` lines). Its dispatch puts the ticket in transit (transfer number as gate pass); its receipt marks it received, the unit landing in repair at main.
+- Receive Back records the RR where the unit is — main, when it travelled on its transfer (before, always the ticket's warehouse, which left the stock balance at main and the unit at the branch). For our own unit it drafts a transfer main → branch; that transfer's dispatch stamps the return gate pass, its receipt completes the ticket and lands the unit in stock.
+- Manual status changes are refused (`uds_moves_on_transfer:<TRF>`) for any hop a live transfer carries. Cancelling a ticket cancels the transfers it was waiting on, and is refused while one is on the road (`uds_unit_is_on_transfer:<TRF>`).
+- Non-repair tickets close issued → completed, with no return gate pass. Repair tickets raised at main (including customer intake at main) open as received.
+
+**Frontend**
+
+- UDS list: the next step for a hop on a transfer is **Open TRF-…** (to the transfer). The status-picker modal is gone; its replacement confirms one fixed step (Send to Main, Receive at Main, Complete, Cancel UDS). The detail view's button now uses the list's step, so the two can't disagree.
+- Error messages for the two new refusals.
+
+**Tests**
+
+- Backend: `stock-transfer-in-repair` 9/9 (full round trip branch → main → provider → main → branch; manual hops refused; second transfer for a carried unit refused; pre-Part-10 serial-less draft still gives way; ticket at main opens received; maintenance closes from issued; cancel drops the draft). `scenario-55-uds-repair-return` updated for tickets opened at main. DR / UDS / return specs 122/122.
+- Frontend: new `e2e/uds-transfer-driven.spec.ts` (2), `stock-transfer-in-repair.spec.ts` and `delivery-receipts.spec.ts` (Part 7 test updated for a ticket opened at main) all pass.
+
+**Open**
+
+- `repair-transfer.e2e-spec.ts` (backend, blocked on test data) and the stale `repair-transfer-uds` / `uds-status-band-and-trail` Playwright specs still drive the old manual hops and status picker; they need rewriting to this flow.
+- Tickets from before Part 10 keep their serial-less transfer; dispatching it moves the ticket but only a quantity, not the unit's location.
+
 ## Related ClickUp Tickets
 
 - [AA Warehouse Staff, ISBAT generate a Delivery Receipt (DR) tagged with a release scenario](https://app.clickup.com/t/86d3fwwmv) — Parts 1–8. _Sprint 3, in review_ (moved 2026-10-15). Its "units-to-follow" and "change-unit" scenarios are not among the client's 10 purposes on the DR mockup.

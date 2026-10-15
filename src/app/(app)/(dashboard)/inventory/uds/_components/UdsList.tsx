@@ -34,6 +34,7 @@ import {
   type Uds,
 } from '@/src/schema/inventory/uds'
 import type {
+  ManualUdsStatus,
   UpdateUdsStatusFormValues,
   AssessUdsFormValues,
   ReceiveFromProviderFormValues,
@@ -72,7 +73,10 @@ function buildNextStep(handlers: {
   receive: (uds: Uds) => void
   release: (uds: Uds) => void
   writeOff: (uds: Uds) => void
-  advance: (uds: Uds) => void
+  /** Scenario 72 Part 10 — one fixed step, confirmed in a small modal. */
+  advance: (uds: Uds, target: ManualUdsStatus) => void
+  /** A hop a stock transfer carries is moved there, not here. */
+  viewTransfer: (transferNumber: string) => void
   /** The two DR legs are hidden from anyone who cannot raise a DR. */
   canCreateDr: boolean
 }): (uds: Uds) => { next: StepAction | null; alt: StepAction | null } {
@@ -105,24 +109,46 @@ function buildNextStep(handlers: {
     className: 'bg-red-50 text-red-700 hover:bg-red-100',
     run: handlers.writeOff,
   }
-  const advanceTo = (label: string): StepAction => ({
+  const stepTo = (label: string, target: ManualUdsStatus): StepAction => ({
     label,
     className: 'bg-prominent-purple-50 text-prominent-purple-700 hover:bg-prominent-purple-100',
-    run: handlers.advance,
+    run: (uds) => handlers.advance(uds, target),
   })
+  // Scenario 72 Part 10 — the ticket's own transfer moves it: its dispatch and
+  // receipt are the trip to main (and, repaired, the trip home).
+  const onTransfer = (transfer: Uds['linkedStockTransfer']): StepAction | null =>
+    transfer && transfer.status !== 'cancelled' && transfer.status !== 'rejected'
+      ? {
+          label: `Open ${transfer.transferNumber}`,
+          className: 'bg-sky-50 text-sky-700 hover:bg-sky-100',
+          run: () => handlers.viewTransfer(transfer.transferNumber),
+        }
+      : null
 
   return (uds) => {
     const none = { next: null, alt: null }
     if (uds.status === 'completed' || uds.status === 'cancelled') return none
 
-    if (uds.status === 'issued') return { next: advanceTo('Send to Main'), alt: null }
-    if (uds.status === 'in_transit') return { next: advanceTo('Receive at Main'), alt: null }
+    // Maintenance, quality check, pull-out and loan never travel to main.
+    if (uds.reason !== 'repair' && uds.status === 'issued') {
+      return { next: stepTo('Complete', 'completed'), alt: null }
+    }
+
+    const outbound = onTransfer(uds.linkedStockTransfer)
+    if (uds.status === 'issued') {
+      return { next: outbound ?? stepTo('Send to Main', 'in_transit'), alt: null }
+    }
+    if (uds.status === 'in_transit') {
+      return { next: outbound ?? stepTo('Receive at Main', 'received'), alt: null }
+    }
     if (uds.status === 'at_provider') return { next: RECEIVE, alt: null }
 
     // Custodial sheets close only through the release, which is what issues
-    // the DR and returns the serial to `sold`. Our own units close on a plain
-    // status change, having come back into stock.
-    const close = uds.customerId ? releaseStep : advanceTo('Complete')
+    // the DR and returns the serial to `sold`. Our own repaired unit goes home
+    // on its return transfer; without one (already at its branch), Complete.
+    const close = uds.customerId
+      ? releaseStep
+      : (onTransfer(uds.returnStockTransfer ?? null) ?? stepTo('Complete', 'completed'))
 
     if (uds.status === 'repaired') return { next: close, alt: null }
 
@@ -172,7 +198,10 @@ export default function UdsList({ session }: { session: SessionUser }) {
   } = useUdsManager()
 
   const [isCreateOpen, setCreateOpen] = useState(false)
-  const [selectedUds, setSelectedUds] = useState<Uds | null>(null)
+  const [selectedStep, setSelectedStep] = useState<{
+    uds: Uds
+    target: ManualUdsStatus
+  } | null>(null)
   const [viewUds, setViewUds] = useState<Uds | null>(null)
   const [assessingUds, setAssessingUds] = useState<Uds | null>(null)
   const [settingProviderUds, setSettingProviderUds] = useState<Uds | null>(null)
@@ -195,7 +224,11 @@ export default function UdsList({ session }: { session: SessionUser }) {
           router.push(`/inventory/delivery-receipts/new?purpose=${purpose}&udsId=${uds.id}`)
         },
         writeOff: setWritingOffUds,
-        advance: setSelectedUds,
+        advance: (uds, target) => setSelectedStep({ uds, target }),
+        viewTransfer: (number) =>
+          router.push(
+            `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(number)}`
+          ),
         canCreateDr,
       }),
     [router, canCreateDr]
@@ -204,8 +237,8 @@ export default function UdsList({ session }: { session: SessionUser }) {
   const hasFilters = !!statusFilter || !!reasonFilter
 
   async function handleUpdateStatus(data: UpdateUdsStatusFormValues) {
-    if (!selectedUds) return { success: false, error: 'No UDS selected', message: '' }
-    return updateStatus(selectedUds.id, data)
+    if (!selectedStep) return { success: false, error: 'No UDS selected', message: '' }
+    return updateStatus(selectedStep.uds.id, data)
   }
 
   async function handleAssess(data: AssessUdsFormValues) {
@@ -486,7 +519,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setSelectedUds(uds)
+                                  setSelectedStep({ uds, target: 'cancelled' })
                                 }}
                                 className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
                               >
@@ -544,14 +577,14 @@ export default function UdsList({ session }: { session: SessionUser }) {
         currentUserBranchId={session.branchId}
       />
 
-      {selectedUds && (
+      {selectedStep && (
         <UpdateUdsStatusModal
-          isOpen={!!selectedUds}
-          onClose={() => setSelectedUds(null)}
+          isOpen={!!selectedStep}
+          onClose={() => setSelectedStep(null)}
           onSubmit={handleUpdateStatus}
           isSubmitting={isUpdatingStatus}
-          currentStatus={selectedUds.status}
-          isCustodial={!!selectedUds.customerId}
+          target={selectedStep.target}
+          udsCode={selectedStep.uds.code}
         />
       )}
 
@@ -563,10 +596,18 @@ export default function UdsList({ session }: { session: SessionUser }) {
           setViewUds(null)
           setSettingProviderUds(u)
         }}
-        onAdvance={(u) => {
-          setViewUds(null)
-          setSelectedUds(u)
-        }}
+        nextStep={(() => {
+          const step = viewUds ? nextStep(viewUds).next : null
+          return step && viewUds
+            ? {
+                label: step.label,
+                run: () => {
+                  setViewUds(null)
+                  step.run(viewUds)
+                },
+              }
+            : null
+        })()}
       />
 
       <AssessUdsModal

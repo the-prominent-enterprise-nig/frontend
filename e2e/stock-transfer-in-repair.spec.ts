@@ -3,7 +3,7 @@ import { gotoReady, fillStable, cancelStockTransfer } from './utils'
 
 // Scenario 72 Part 9: on the General Stockbook, a unit in repair can be ticked
 // for a Stock Transfer like a shelf unit. Sent to main, it takes its repair
-// ticket with it: the new transfer replaces the ticket's serial-less draft.
+// ticket with it: the new transfer becomes the ticket's transfer.
 //
 // Cleanup: the transfer is cancelled and the ticket cancelled, which puts the
 // unit back in stock where it started.
@@ -66,7 +66,11 @@ test.describe('General Stockbook — in-repair units on a Stock Transfer', () =>
     })
     expect(created.ok(), await created.text()).toBe(true)
     const uds = (await created.json()) as { id: string; linkedStockTransfer?: { id: string } }
+    // Part 10: the ticket's own transfer names the unit, so the stockbook
+    // can't tick it again. Cancelling that draft frees the unit, and the
+    // stockbook transfer below takes the ticket over.
     const autoDraftId = uds.linkedStockTransfer?.id
+    if (autoDraftId) await cancelStockTransfer(request, autoDraftId)
     let transferId: string | undefined
 
     try {

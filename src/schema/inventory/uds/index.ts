@@ -74,11 +74,8 @@ export type ManualUdsStatus = z.infer<typeof ManualUdsStatusSchema>
 export const UpdateUdsStatusFormSchema = z.object({
   status: ManualUdsStatusSchema,
   notes: z.string().max(1000).optional(),
-  /** The SI for the branch <-> main leg. Only meaningful on the two
-   *  transitions where the unit makes that trip — the server writes it to the
-   *  outbound column on in_transit and the return column on completed, and
-   *  ignores it anywhere else. */
-  salesInvoiceNumber: z.string().max(50).optional(),
+  // No SI (Scenario 72 Part 10): the trip home is recorded by its return
+  // transfer, and a sheet closing without one made no trip.
 })
 
 export type UpdateUdsStatusFormValues = z.infer<typeof UpdateUdsStatusFormSchema>
@@ -139,18 +136,6 @@ export const ReceiveFromProviderFormSchema = z.object({
 })
 
 export type ReceiveFromProviderFormValues = z.infer<typeof ReceiveFromProviderFormSchema>
-
-export const ReleaseToCustomerFormSchema = z.object({
-  // The DR that closes the journey is issued server-side
-  // (UdsService#generateCustomerDeliveryReceiptNumber) and comes back on the
-  // response — the form never sends one.
-  /** The SI for the unit's return leg to the branch. Captured here because a
-   *  customer-owned sheet can only be closed by releasing it. */
-  salesInvoiceNumber: z.string().max(50).optional(),
-  notes: z.string().max(1000).optional(),
-})
-
-export type ReleaseToCustomerFormValues = z.infer<typeof ReleaseToCustomerFormSchema>
 
 export const WriteOffUdsFormSchema = z.object({
   unitCost: z.coerce.number().positive('Unit cost is required'),
@@ -229,6 +214,8 @@ export const UdsSchema = z.object({
   repairProvider: UdsRepairProviderSchema.optional().nullable(),
   linkedStockTransferId: z.string().optional().nullable(),
   linkedStockTransfer: UdsLinkedStockTransferSchema.optional().nullable(),
+  // Scenario 72 Part 10 — the transfer carrying our own repaired unit home.
+  returnStockTransfer: UdsLinkedStockTransferSchema.optional().nullable(),
   assessment: UdsAssessmentSchema.optional().nullable(),
   assessmentNotes: z.string().optional().nullable(),
   assessedAt: z.string().optional().nullable(),
