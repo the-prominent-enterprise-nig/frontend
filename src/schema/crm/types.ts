@@ -732,6 +732,17 @@ export interface AgingReportResponse {
   grandTotal: AgingReportSubtotal
 }
 
+/**
+ * `?view=summary` / `?view=grouped`: the same tree with account rows left out
+ * (summary: all of them; grouped: the flat duplicate `collector.rows` only —
+ * the rows the page renders stay in `categories[].rows`). Subtotals and counts
+ * are intact. `hasInstallmentRows` says whether any row of the *whole* filtered
+ * report is an installment, since a single branch's rows cannot tell.
+ */
+export interface AgingReportLeanResponse extends AgingReportResponse {
+  hasInstallmentRows: boolean
+}
+
 export const CategoryGraduationStatusEnum = z.enum(['pending', 'approved', 'rejected'])
 export type CategoryGraduationStatus = z.infer<typeof CategoryGraduationStatusEnum>
 
