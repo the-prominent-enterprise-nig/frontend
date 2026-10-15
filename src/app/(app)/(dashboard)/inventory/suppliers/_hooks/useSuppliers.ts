@@ -12,12 +12,9 @@ export type StatusFilter = 'all' | SupplierStatus
 export type SupplierFilters = {
   query: string
   status: StatusFilter
-  /** Narrows to the ones whose onboarding has not been signed off — the
-   * queue somebody has to work through, rather than a status of its own. */
-  needsAttention: boolean
 }
 
-const EMPTY_FILTERS: SupplierFilters = { query: '', status: 'all', needsAttention: false }
+const EMPTY_FILTERS: SupplierFilters = { query: '', status: 'all' }
 
 /** One page big enough to hold the whole book — see the comment on the hook. */
 const PAGE_SIZE = 500
@@ -57,14 +54,12 @@ export function useSuppliers() {
     let active = 0
     let inactive = 0
     let blacklisted = 0
-    let needsAttention = 0
     for (const s of allSuppliers) {
       if (s.status === 'active') active++
       else if (s.status === 'inactive') inactive++
       else blacklisted++
-      if (s.onboardingStatus !== 'approved') needsAttention++
     }
-    return { total: allSuppliers.length, active, inactive, blacklisted, needsAttention }
+    return { total: allSuppliers.length, active, inactive, blacklisted }
   }, [allSuppliers])
 
   const suppliers = useMemo(() => {
@@ -72,7 +67,6 @@ export function useSuppliers() {
     return allSuppliers
       .filter((s) => {
         if (filters.status !== 'all' && s.status !== filters.status) return false
-        if (filters.needsAttention && s.onboardingStatus === 'approved') return false
         return matchesQuery(s, q)
       })
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -87,8 +81,7 @@ export function useSuppliers() {
     setFiltersState((prev) => ({ ...prev, ...patch }))
   }, [])
 
-  const hasActiveFilters =
-    filters.query !== '' || filters.status !== 'all' || filters.needsAttention
+  const hasActiveFilters = filters.query !== '' || filters.status !== 'all'
 
   return {
     suppliers,

@@ -3,7 +3,7 @@
 import { Search, X } from 'lucide-react'
 import type { SupplierListItem } from '@/src/schema/inventory/suppliers'
 import { MONO } from '@/src/libs/design/plex'
-import { ONBOARDING_META, rowMeta, STATUS_META } from '../_lib/supplier-format'
+import { rowMeta, STATUS_META } from '../_lib/supplier-format'
 
 /**
  * The left-hand column: one row per supplier, each saying enough to pick from
@@ -89,8 +89,6 @@ export default function SupplierList({
             {suppliers.map((supplier, index) => {
               const isOn = supplier.id === selectedId
               const status = STATUS_META[supplier.status]
-              const onboarding = ONBOARDING_META[supplier.onboardingStatus]
-              const unfinished = supplier.onboardingStatus !== 'approved'
               return (
                 <li key={supplier.id}>
                   <button
@@ -125,14 +123,6 @@ export default function SupplierList({
                         {rowMeta(supplier)}
                       </span>
                     </span>
-                    {unfinished && (
-                      <span
-                        title={onboarding.hint}
-                        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${onboarding.chip}`}
-                      >
-                        {supplier.onboardingStatus === 'blocked' ? 'blocked' : 'review'}
-                      </span>
-                    )}
                   </button>
                 </li>
               )
