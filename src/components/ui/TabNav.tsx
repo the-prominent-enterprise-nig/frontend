@@ -8,6 +8,12 @@ export type NavTab = {
   id: string
   label: string
   icon?: LucideIcon
+  /**
+   * For a hub whose tabs are separate routes rather than `?tab=` states (the
+   * Accounting Cash & Banking hub). Active while the path is this route or sits
+   * under it, so a tab stays lit on its own detail pages.
+   */
+  href?: string
 }
 
 /**
@@ -23,16 +29,24 @@ export function TabNav({ tabs }: { tabs: NavTab[] }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const activeTab = searchParams.get('tab') ?? tabs[0].id
+  // Route tabs can nest (Payments sits under AP Invoices' path), so the most
+  // specific match wins rather than every prefix match lighting up.
+  const activeHref = tabs
+    .map((tab) => tab.href)
+    .filter(
+      (href): href is string => !!href && (pathname === href || pathname.startsWith(`${href}/`))
+    )
+    .sort((a, b) => b.length - a.length)[0]
 
   return (
     <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white">
       <nav className="-mb-px flex overflow-x-auto px-4 md:px-6" aria-label="Module tabs">
         {tabs.map((tab) => {
-          const isActive = activeTab === tab.id
+          const isActive = tab.href ? tab.href === activeHref : activeTab === tab.id
           return (
             <Link
               key={tab.id}
-              href={`${pathname}?tab=${tab.id}`}
+              href={tab.href ?? `${pathname}?tab=${tab.id}`}
               scroll={false}
               replace
               className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-[13px] font-medium whitespace-nowrap transition-colors md:px-4 ${

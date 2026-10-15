@@ -613,6 +613,18 @@ export interface BulkRecordPaymentResult {
   invoiceCount: number
 }
 
+/** One row of the AR Invoices landing: everything a customer owes, rolled up on the server. */
+export interface ARInvoiceCustomerRollup {
+  customerId: string
+  customerName: string
+  invoiceCount: number
+  total: number
+  paid: number
+  outstanding: number
+  /** Invoices whose displayed status is OVERDUE. */
+  overdueCount: number
+}
+
 export interface ARInvoiceCustomerResult {
   id: string
   name: string
@@ -785,6 +797,14 @@ export const ARInvoices = {
     offset?: number
     view?: 'summary'
   }) => api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  // One row per customer (count / total / paid / outstanding / overdue), customers owing the most
+  // first — the landing page's table, grouped on the server so it receives a page of customers
+  // instead of every invoice. `total` is the number of customers.
+  byCustomer: (params?: { search?: string; limit?: number; offset?: number }) =>
+    api.get<{ items: ARInvoiceCustomerRollup[]; total: number }>(
+      '/ar-invoices/by-customer',
+      params as any
+    ),
   // Scenario 44 — flat cross-customer Receipts register (one row per
   // ARPayment) backing the AR Invoices landing page, distinct from list()
   // above which returns ARInvoice rows for the customer-grouped rollup.

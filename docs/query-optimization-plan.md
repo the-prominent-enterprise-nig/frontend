@@ -1,0 +1,384 @@
+# Query & SSR Optimization — Working Log
+
+> Living document. Update it **as you go** so no context is lost between sessions.
+> Created 2026-10-15. Not committed (no commit without an explicit go signal).
+
+## 0. Scope, rules, locations
+
+|           |                                                                                                                                          |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Goal      | Make pages feel snappy: SSR-first data handling, modular server/client components, and faster backend queries                            |
+| Branch    | `perf/query-optimization` (both repos), cut from `origin/main` (BE `7d166bc7`, FE `f8cfe28c`)                                            |
+| Worktrees | `/Users/chloe/Documents/tpe-nig/query-optimization/{backend,frontend}`                                                                   |
+| Originals | `/Users/chloe/Documents/tpe-nig/{backend,frontend}` stay on `fix/penalty-on-partial-payments` — do not edit                              |
+| Docs live | frontend only (this file). Never duplicate into backend                                                                                  |
+| Stack     | Next.js 16.1.6 (App Router) · React 19.2 · TanStack Query 5 · next-safe-action · Auth0 v4 · NestJS 11 · Prisma 7 (pg adapter) · Postgres |
+| Deploy    | FE Vercel `sin1`; BE Railway (region **unverified**)                                                                                     |
+
+Standing rules for this work: no commit/push without a go signal; do not run `next build` or a second `next dev` against the user's live dev server (use `tsc`/`eslint`/`curl`); never run unguarded bulk deletes on the dev DB; dev DB is production-sized (12.7k AR invoices, 235k customers) so it is good for query cost but has ~0 network latency.
+
+## 1. Order of work
+
+- [x] **Phase 0** — architecture baseline (§2) + Next.js docs review (§3)
+- [x] **Phase 1** — measure: Prisma query timing + per-endpoint timing, ranked slow list (§5.1–5.2) — done 2026-10-15
+- [~] **Phase 2** — backend (§5.3). **Done & verified:** P2-1 valuation N+1, P2-2 projection `view=summary`/paging, P2-3 installment aging `view=summary|grouped`. **Remaining, smaller:** `/inventory/reports/aging` (668 ms), `/inventory/stock/balances` (227 ms, 15 queries), `/customers` (single 85 ms query), `/cash-forecast`, `/inventory/projection/stockout-alerts` (204 ms for an empty result), `/pos/catalog` 1.9 MB, `/expenses` 2.5 MB, 500→400 on missing params. Revisit after the page-level view (Phase 3) shows which are actually on hot pages.
+- [~] **Phase 3/4 (combined) — pilot DONE 2026-10-16** on 3 pages (Inventory → Projection, CRM → Installment AR Aging, Accounting → Employees): shared SSR foundation (`components/ssr/*`, `libs/query/get-query-client.ts`, `libs/api/unwrap.ts`), reads moved off Server Actions, server-rendered data, measured old-vs-new in a real browser (§5.4, §7.1). **Next: roll out module by module** using the checklist in §7.2, plus the open items in §6.2.
+
+User preference (2026-10-15): **prefers SSR so pages look snappy; implement SSR components and data handling properly, and keep components modular.** Backend measurement/optimization still goes first because SSR only moves latency, it does not fix a slow query.
+
+## 2. Architecture baseline (verified 2026-10-15, greps are approximate)
+
+### Read path today
+
+Browser → Next page (SSR shell: session + permission gate only) → client component → `useQuery` → **Server Action** (`'use server'`) → `api.get` on the Next server → Nest controller → service → Prisma → Postgres.
+
+### Frontend
+
+- 235 `page.tsx`; 20 are `'use client'`. Server pages only gate on session/permission and render a client component (e.g. `accounting/employees`). Only super-admin pages and POS `parked-sales` / `checkout` fetch data on the server.
+- No `HydrationBoundary` / `prefetchQuery` / `dehydrate` anywhere. No `loading.tsx`. 19 files use `<Suspense>`. No `unstable_cache` / `'use cache'`.
+- `apiClient` (`src/libs/api/client.ts`) defaults `cache: 'no-store'`, 30 s timeout; server side injects the `authToken` cookie as Bearer + `x-forwarded-for`; browser side goes through the `/api/[...path]` catch-all proxy.
+- 105 files hold read queries; **94 import a Server Action, 1 calls `api` directly**. 429 `useQuery`/`useMutation` call sites; 308 `'use server'` files.
+- `revalidatePath` appears only in mutation actions and does not refresh react-query data (comment in `NewLoanForm.tsx` says so).
+- `(app)/layout.tsx` does one session lookup (`getSessionState`, wrapped in React `cache()`), shows `SessionUnavailable` for 5xx/timeouts instead of logging out.
+- QueryClient defaults: `staleTime` 60 s, `gcTime` 5 min, no refetch on focus. `libs/query/stale-times.ts` has tiers (REALTIME 30 s … STATIC) but hooks like `useEmployees` hardcode `30 * 1000`; adoption not checked.
+- Dashboard: ~9 client queries after hydrate (`components/dashboard/widgets/dashboardQueries.ts`).
+- `proxy.ts` at the repo root is **inert** (Next only loads it from `src/` when the app uses `src/`); layouts do all redirecting (see memory: slow-load project).
+
+### Backend
+
+- 229 Prisma models, 399 `@@index`, one trigram index (item name). Searches are `contains … mode: 'insensitive'` almost everywhere (cannot use a btree).
+- No global interceptors / filters, no response compression in app code (Railway edge: unverified), no Prisma query logging → no slow-query visibility.
+- `JwtAuthGuard` on every route; session cached **in-process** 30 s with stale-while-revalidate + in-flight dedupe (fine on 1 replica, not shared on 2).
+- Pagination is hand-rolled per module. ~625 `findMany` in services vs ~103 `take`. `ar-invoices` `findAll` returns the whole list unless `limit`/`offset` passed (opt-in; `view=summary` exists). `employees` `findAll` is paginated but uses the full `detailInclude` per row.
+- Pool: `max` 25, connect timeout 20 s, transaction `maxWait` 10 s.
+- Largest services: `pos/transactions.service.ts` 7.4k lines, `inventory/services/stock.service.ts` 7k, `accounting/ap-bills` 4.6k, `crm/installment-account` 3.6k, `accounting/ar-invoices` 3.5k, `accounting/expenses` 2.9k.
+
+## 3. Next.js documentation review
+
+Read 2026-10-15 from nextjs.org (pages `lastUpdated` Aug–Oct 2026) and tanstack.com.
+
+> **Version caveat.** The live docs describe the _latest_ Next (e.g. `Link` history shows `v16.2.0 transitionTypes`; `partialPrefetching`, `catchError`, "instant navigation" are mentioned). This app is on **Next 16.1.6 / React 19.2.3 / TanStack Query 5.90.21** and **`cacheComponents` is off**. Only rely on a doc'd feature after confirming it exists in 16.1.6. Confirmed available: `loading.js` (13.0), `<Suspense>` streaming, `React.cache`, `unstable_cache`, `experimental.staleTimes` (14.2, still marked _Experimental_), `cacheComponents` / `'use cache'` (16.0). **Unconfirmed in 16.1.6:** `partialPrefetching`, `use cache: private/remote`, `catchError`, instant-navigation validation. `queryClient.query()` shown in the TanStack guide is not confirmed in 5.90.21 — use `prefetchQuery`. `environmentManager` and `isServer` are exported by 5.90.21's query-core.
+
+### 3.1 Server vs Client Components (getting-started/server-and-client-components)
+
+- Pages/layouts are Server Components by default. Use Client Components only for state, handlers, effects, browser APIs, custom hooks. Use Server Components to fetch near the source, keep secrets/tokens off the client, cut JS, and improve FCP + stream.
+- Client Components are **still prerendered to HTML on the server**; `'use client'` marks a boundary, and everything it imports/directly renders joins the client bundle. Server Components passed as `children`/props are _not_ pulled into the client graph.
+- Push `'use client'` to the leaves (the interactive bit), not whole pages. Props crossing the boundary must be serializable.
+- Interleave: a client `Modal`/`Table` shell takes server-rendered `children`. Put providers as deep as possible (`QueryProvider` should wrap `{children}` only where needed).
+- `import 'server-only'` on modules that must never reach the client (data layer, `api` client server path).
+- **Here:** 605 of 788 `.tsx` files are `'use client'`, and the _whole list component_ (table + filters + data) is one client component. Target split: server shell (title, permission-gated actions, skeleton) + small client islands (filters, row menu, dialogs).
+
+### 3.2 Fetching data (getting-started/fetching-data)
+
+- Server Components can `await` any I/O; **`fetch` is not cached by default** and blocks the render until done.
+- Two ways to stream: `loading.js` (whole segment) or `<Suspense>` (granular). Bots/crawlers get the fully rendered page rather than a stream.
+- **Waterfalls:** sequential `await`s in one component serialize; start requests first, then `Promise.all`. Sibling layouts/pages render in parallel by default. Use `React.cache` to dedupe non-fetch data access within one request, and the **preload pattern** (`void getX(id)` before blocking work).
+- Client Components: either `use(promise)` with a promise started in a Server Component (wrap in `<Suspense>`), or SWR/React Query. Never `await` the promise you want to stream.
+- **Here:** `getSessionOrNull()` is `React.cache`-wrapped (good) but each page awaits it before doing anything else; pages then await nothing else. Prefetches would start _after_ the session await unless started first (preload) — the session call and the data call are independent and should run in parallel.
+
+### 3.3 Server Functions / Server Actions (getting-started/mutating-data + guides/server-actions)
+
+- Designed for **mutations**. Quote: _"The client currently dispatches and awaits them one at a time. This is an implementation detail and may change. If you need parallel data fetching, use data fetching in Server Components, or perform parallel work inside a single Server Function or Route Handler."_
+- Guide: _"do not rely on `Promise.all` to parallelize Server Actions from the client."_ Use a Server Component, a single action, or a **Route Handler for non-mutation requests**.
+- Every action is a public POST endpoint → authenticate + authorize inside each one (render-time gating is not a boundary). Return only what the UI needs. Default body limit 1 MB (we raised to 10 MB).
+- After an action calls `revalidatePath`/`refresh`/sets cookies, Next re-renders the **current route server-side in the same response** — so a mutation action on a heavy SSR page pays for a full re-render. Keep that in mind once pages do server data fetching.
+- **Here (F-002 confirmed by docs _and_ TanStack):** 94 of 105 read hooks call Server Actions as `queryFn`. TanStack guide: _"Don't use [Server Actions] as a queryFn. They run serially, which can leave queries stuck."_ Fix: client reads → the existing `/api/[...path]` Route Handler proxy (GET, parallel-capable); server prefetch → plain server-only fetch helpers. Keep `'use server'` for mutations only.
+- Also: ~308 `'use server'` files mostly are _not_ `next-safe-action` (only 2 files import it) despite `CLAUDE.md` saying all mutations use `authAction` — docs drift, not a perf issue.
+
+### 3.4 Caching in the model we actually use (guides/caching-without-cache-components)
+
+- `fetch` is **uncached by default**. A route using `cookies()`/`headers()` is dynamic (rendered per request); `export const dynamic = 'force-dynamic'` only matters for pages that would otherwise be static.
+- `unstable_cache` / `fetch(..., { next: { revalidate, tags } })` give a _server-side_ shared Data Cache; `revalidateTag(tag, 'max')` / `revalidatePath` invalidate. Our `apiClient` always passes `cache: 'no-store'`, so none of this is in play.
+- Per-user, permission-scoped data (our whole app) must **not** go in a shared cache keyed without the user/branch. The right "cache" for us is the browser-side React Query cache hydrated from the server + short backend caches for truly shared reference data (COA, branches, price lists) — decide per endpoint.
+- `revalidatePath` after a mutation refreshes Next's caches/RSC, **not** React Query data; after mutations we must `invalidateQueries` (already done in places).
+
+### 3.5 Streaming, `loading.js`, and the layout trap (guides/streaming, file-conventions/loading)
+
+- `loading.js` wraps `page.js` (and children) in `<Suspense>`; **it does NOT wrap the same-segment `layout.js`**. Quote: _"If the layout accesses uncached or runtime data (e.g. `cookies()`, `headers()`, or uncached fetches), `loading.js` will not show a fallback for it. Without Cache Components: Navigation blocks until the layout finishes rendering."_
+- **Here:** `(app)/layout.tsx` awaits `getSessionState()` (cookies + backend call) → every _full page load_ blocks on that backend call before any HTML streams, and the same applies to any layout we add one under. Mitigation: render the shell without awaiting (pass the promise, `Suspense` the session-dependent parts) or move the awaited call into pages where `loading.js` can cover it. Layouts do not re-run on client-side navigation (partial rendering) — pages do, so each navigation re-runs `getSessionOrNull()` → backend `/users/me` (now 30 s cached in `JwtStrategy`).
+- Suspense boundaries stream independently; sibling boundaries resolve in any order. Place them _close to the dynamic access_. Keep LCP elements outside Suspense; make skeletons match final dimensions (CLS). Each boundary is also a hydration unit (selective hydration → better INP).
+- HTTP contract: once streaming starts, status/headers are fixed (200). `redirect()` mid-stream becomes a client-side redirect; `notFound()` mid-stream adds `noindex` meta only. To keep real 401/403/404 put the check **before** any `await`/`Suspense`. Our `redirect('/login')`/`redirect('/403')` in pages run before streaming begins, so they stay real redirects only if nothing above them suspends — worth verifying when we add `loading.tsx`.
+- Infra can buffer streams: nginx (`X-Accel-Buffering: no`), CDNs, **compression**, Safari <1024 B. Vercel supports streaming natively. Verify with a raw-chunk script (`Accept-Encoding: identity`) — recipe in §9.
+
+### 3.6 Link prefetch & client Router Cache (components/link, config/staleTimes)
+
+- Prefetch is **production-only**. Default (`auto`): static routes prefetch fully; **dynamic routes prefetch only down to the nearest `loading.js`**. We have **zero `loading.tsx`** → on a dynamic route there is nothing to prefetch, so every navigation is "click, wait for server render, then paint".
+- `experimental.staleTimes.dynamic` default is **0 s** (since 15.0): dynamic page segments are not reused by the client Router Cache. Setting e.g. `{ dynamic: 30 }` would make revisits/back-nav instant. It does not affect back/forward scroll restoration or partial rendering. Marked _Experimental_ — decide deliberately.
+- `loading.js` boundaries are reusable for the `static` window (default 5 min).
+- Note `proxy.ts` (renamed from middleware in 16) can rewrite auth routes; ours is inert at repo root (see §2).
+
+### 3.7 Data security guide (guides/data-security)
+
+- Recommended: pick **one** approach — external HTTP API (our case: Nest) from Server Components with `fetch` + cookie/Bearer token is explicitly OK; or a server-only DAL returning minimal DTOs. Do not mix.
+- Server Components may call our API with the `authToken` cookie as Bearer (what `apiClient` already does). Mark that path `server-only`.
+- Page-level auth does not extend to Server Actions → each action re-checks (ours do via `getSessionIfAvailable()`).
+- Don't pass raw records to Client Components: pass DTO-shaped props. Prisma `Decimal` arrives as JSON **strings** from our API — normalize at the mapping boundary (see memory on Decimal→string) so server-prefetched data and client types agree.
+
+### 3.8 TanStack Query + App Router (tanstack.com advanced-ssr)
+
+- `getQueryClient()`: new client per request on the server, singleton in the browser; `staleTime > 0` (ours 60 s) so the client doesn't refetch immediately after hydration; `dehydrate.shouldDehydrateQuery` must also include `status === 'pending'` to stream.
+- Provider: use the module `getQueryClient()` — **not `useState`** — unless a Suspense boundary sits between provider and anything that can suspend. Ours uses `useState`; once we add suspending children this must change. Also our `QueryProvider` is mounted only in `(app)/layout.tsx`; server prefetch/HydrationBoundary needs it above the boundary.
+- Two valid patterns: (A) **await** `prefetchQuery` in an async server component inside `<Suspense>` → data is in the HTML and plain `useQuery` has it on first render (blocks that boundary until data arrives). (B) **don't await**, dehydrate the pending query, read with `useSuspenseQuery` (plain `useQuery` will _not_ suspend, so no server-rendered content).
+- Never render `queryClient` data in a Server Component and also pass it to client — RQ can't revalidate server output. Server Components are for **prefetching only**.
+- Prefetch waterfalls: awaited prefetches in nested server components run in sequence; prefetch in `layout`/parallel routes, or start un-awaited early.
+- Serialization: dehydrated JSON only; Dates/Decimals/class instances need `serializeData`/`deserializeData` or must be pre-normalized (our API returns JSON already).
+
+### 3.9 Not read yet (queue)
+
+`use cache`/`cacheComponents` migration cost (decide: probably _not_ adopting now — per-user data, big flag-day), `guides/client-side-data-fetching` (initial data from server), `guides/backend-for-frontend` (Route Handlers), React `use`/`cache`/Suspense refs, `guides/instant-navigation`, `optimizing-prefetching`, `taint`. Read before Phase 4 if needed.
+
+### 3.10 What the docs imply for this app (summary)
+
+1. Server Actions as `queryFn` is an anti-pattern per both Next and TanStack → highest-leverage frontend fix and a prerequisite for server prefetch.
+2. Adding **`loading.tsx` per module/segment** gives (a) an instantly-shown, prefetchable skeleton on navigation, (b) a Suspense boundary for streaming — cheapest big "snappy" win.
+3. The `(app)` layout's awaited session lookup blocks full loads; restructure so the shell streams.
+4. Server prefetch + `HydrationBoundary` per list page, with the client list as a small island, wrapped in `<Suspense>`; start the prefetch _before/in parallel with_ the session await.
+5. `cacheComponents` is a separate, larger decision; per-user data won't benefit from `use cache` anyway. Don't start there.
+
+## 4. Findings log
+
+| ID     | Area  | Finding                                                                                                                                                                             | Evidence                                                               | Impact                                                                                                           | Fix                                                                                            | Status                                                                                            |
+| ------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| F-001  | FE    | All reads are client-fetched after hydrate; SSR never carries data                                                                                                                  | §2 counts                                                              | Blank/skeleton first paint on every list page                                                                    | Server prefetch + `HydrationBoundary` (Phase 4)                                                | **pilot done** (3 of 235 pages; roll out via §7.2)                                                |
+| F-002  | FE    | 94/105 read hooks use Server Actions                                                                                                                                                | §2 counts                                                              | Extra hop; Next dispatches Server Actions one at a time, so parallel reads queue                                 | Reads → server components / route-handler-style fetch; keep actions for mutations              | open (verify by timing)                                                                           |
+| F-003  | BE    | Unbounded `findMany` on list endpoints                                                                                                                                              | `ar-invoices` `findAll`                                                | Large payloads, pool pressure                                                                                    | Default cap + paging contract                                                                  | open                                                                                              |
+| F-004  | BE    | No query/endpoint timing                                                                                                                                                            | no `log:` in `PrismaService`                                           | Cannot rank slow endpoints                                                                                       | Opt-in timing (Phase 1)                                                                        | open                                                                                              |
+| F-005  | BE    | `contains … insensitive` search without trigram indexes                                                                                                                             | schema + migrations                                                    | Seq scans on big tables                                                                                          | `pg_trgm` GIN on hot search columns                                                            | open                                                                                              |
+| F-006  | FE/BE | Dashboard fan-out (~9–11 requests per load)                                                                                                                                         | `dashboardQueries.ts`, `prisma.service.ts` comment                     | Pool contention                                                                                                  | Fewer/aggregated calls, server-side parallel fetch                                             | open                                                                                              |
+| F-002b | FE    | F-002 now confirmed by docs: Next ("client dispatches … one at a time"; "use a Route Handler for non-mutation requests") **and** TanStack ("Don't use Server Actions as a queryFn") | §3.3, §3.8                                                             | Reads queue behind each other; blocks server prefetch design                                                     | Client reads → `/api/[...path]` handler; server reads → server-only fetchers                   | **pilot done** (Employees, Projection, Aging; ~91 hooks left — mechanical, see §7.2 step 2)       |
+| F-007  | FE    | Zero `loading.tsx`; dynamic routes prefetch only to the nearest `loading.js`                                                                                                        | 0 files; Link docs                                                     | Navigation = click → full server render → paint; no instant skeleton                                             | `loading.tsx` per module/segment with dimension-matched skeletons                              | **revised** — only for genuinely slow pages (F-016); Aging has one; fast pages deliberately don't |
+| F-008  | FE    | `(app)/layout.tsx` awaits session (cookies + backend call); `loading.js` can't cover a same-segment layout                                                                          | layout code + loading.js docs                                          | Full page loads blocked on a backend round trip before streaming                                                 | Don't await in layout (pass promise / Suspense session-dependent parts) or move into pages     | open                                                                                              |
+| F-009  | FE    | Router Cache `staleTimes.dynamic` is 0 (Next 15+ default)                                                                                                                           | staleTimes docs                                                        | Every revisit/back-nav re-renders the page on the server                                                         | Consider `experimental.staleTimes.dynamic` (e.g. 30 s) once pages are SSR'd; experimental flag | open (decide)                                                                                     |
+| F-010  | FE    | `QueryProvider` uses `useState(new QueryClient)` and mounts only in `(app)/layout.tsx`                                                                                              | `provider/query-provider.tsx`                                          | Fine today; breaks once children suspend; blocks server prefetch outside `(app)`                                 | `getQueryClient()` (server=new, browser=singleton) + dehydrate pending                         | **done** (`libs/query/get-query-client.ts`, provider updated)                                     |
+| F-011  | FE    | Docs drift: `CLAUDE.md` says mutations use `next-safe-action` `authAction`; only 2 files import it                                                                                  | grep                                                                   | None for perf; misleading for new code                                                                           | Update `CLAUDE.md` after the read-path decision                                                | note                                                                                              |
+| F-013  | BE    | AR Aging (installment) row order inside a collector is nondeterministic (`orderBy` only `[branchId, collectorId]`)                                                                  | two consecutive calls differ                                           | Rows may shuffle between loads; makes any paging/diffing unreliable                                              | Stable tiebreak once client confirms desired order                                             | open (needs client input)                                                                         |
+| F-014  | BE    | Railway edge already gzips responses (755 KB → 111 KB measured on prod `/api-json`); backend is in asia-southeast1, Vercel `sin1` (same region)                                     | `curl` 2026-10-15                                                      | App-level compression not needed; hop latency is low. Bytes are still costly in JSON build/parse on both servers | none                                                                                           | closed                                                                                            |
+| F-016  | FE    | A visible Suspense fallback delays the reveal of fast content by ~300 ms (React reveal throttle); a skeleton can make a fast page slower than the old client fetch                  | measured: Employees 345 ms with Suspense vs 46 ms inline vs 134 ms old | Skeleton-everywhere would regress fast pages                                                                     | Suspense only for waits > ~300 ms; inline otherwise (§7.1)                                     | **resolved in pilot**                                                                             |
+| F-017  | FE    | Server-rendering thousands of rows ships the data twice (HTML + RSC payload)                                                                                                        | Aging page 1: 21 MB HTML                                               | Completion slower than client render                                                                             | Row-bounded pages (and optionally lazy-expand collectors)                                      | **resolved in pilot** (page size is a product call, §6.2)                                         |
+| F-018  | FE    | Accounting Reports Hub embeds the legacy aging client view                                                                                                                          | `tsc` caught it                                                        | Legacy 30 MB path stays on that tab                                                                              | Convert Hub tabs to routes / lean fetch                                                        | open                                                                                              |
+| F-015  | FE    | AR Invoices landing page and the memo invoice picker fetch the full 24 MB `/ar-invoices` list                                                                                       | §6.1                                                                   | Biggest remaining payload on a hot page                                                                          | Server-side customer rollup + paged picker                                                     | **done** (§5.3 P2-4, §6.1)                                                                        |
+| F-012  | FE    | 605/788 `.tsx` are `'use client'`; list pages are one big client component fetching its own data                                                                                    | counts, `EmployeesList.tsx`                                            | Large client JS, no server-rendered content                                                                      | Server shell + client islands (§7)                                                             | open                                                                                              |
+
+## 5. Measurements
+
+### 5.1 Environment (Phase 1)
+
+- Backend worktree on `perf/query-optimization` (= `origin/main` 7d166bc7 + the opt-in timing change in §8), started with `nest start` on **port 3101**, `PERF_TIMING=1`.
+- Database: **`tpe_perf`** — a pre-existing clone of the dev DB. Verified identical to the worktree: 474 migrations, last `20261014130000_scenario_71_credit_application_override`, 234,931 customers, 12,708 AR invoices. The real dev DB `the-prominent-enterprise` (476 migrations, port 3001) is not touched.
+- Auth: `scripts/perf/sweep.mjs` mints a `dev-bypass` JWT (`DEV_JWT_SECRET`) for `technova.owner@test.com` (enterprise owner → sees everything).
+- Method: `sweep.mjs` reads `/api-json`, calls every parameterless `GET` (skipping export/download/seed/import/print/pdf/csv/xlsx/reset/stream), sequentially, **two passes** (cold = first touch after server start incl. session load; warm = second). Server writes one JSON line per request (`perf-results/requests.jsonl`): wall ms, summed query ms, query count, bytes, slowest query. `summarize.mjs` joins the two and ranks.
+- Caveats: loopback network and local Postgres → absolute times are optimistic vs prod (DB→app link and Vercel→Railway hop are ~0 here); use for **ranking and query/byte counts**, not for absolute SLAs. Parameterless calls show the _unbounded_ worst case — that is what dashboards/older callers get. Endpoints needing params/path ids are not covered by the sweep (add targeted checks for the biggest list pages).
+- Smoke check: `/accounting/employees` cold 52 ms / 19 queries (incl. session load) → warm 7 ms / 5 queries; `/ar-invoices` **24.97 MB** both passes (the 2026-10-15 `limit`/`view=summary` fix is opt-in, so a bare call is still the full list).
+
+### 5.2 Results — baseline sweep 2026-10-15 (241 endpoints; 206 × 2xx, 22 × 400, 7 × 403 [super-admin/query-center], 6 × 500)
+
+Raw files: backend worktree `perf-results/` (gitignored): `sweep-2026-10-15T12-07-19-282Z.json`, `requests.jsonl`, `summary.md`. "DB ms (sum)" adds every query's own duration; for concurrent queries it can far exceed wall time and includes waiting for a pool connection.
+
+**Headline: most endpoints are fast on the local clone (the large majority < 100 ms warm). A handful dominate — and they are about payload size and query count, not slow single queries.**
+
+| Endpoint                                      | Warm ms | MB        | Queries    | Problem                                                                                        |
+| --------------------------------------------- | ------- | --------- | ---------- | ---------------------------------------------------------------------------------------------- |
+| `GET /inventory/costing/valuation`            | 857     | 8.05      | **16,335** | N+1 — one burst of ~16k queries (saturates the 25-conn pool; would starve every other request) |
+| `GET /inventory/reports/valuation`            | 755     | 0.05      | **16,335** | same N+1, tiny result                                                                          |
+| `GET /inventory/projection`                   | 547     | **38.98** | 7          | 39 MB response, cheap DB — pure over-fetch/serialization                                       |
+| `GET /crm/installment-accounts/reports/aging` | 593     | **30.60** | 18         | 30 MB response                                                                                 |
+| `GET /ar-invoices` (bare)                     | 484     | **23.81** | 7          | whole list; `view=summary`/`limit` exist but are opt-in                                        |
+| `GET /inventory/reports/aging`                | 668     | 0.03      | 11         | 84 ms slowest query + heavy JS aggregation                                                     |
+| `GET /inventory/stock/balances`               | 227     | 0.02      | 15         | 15 queries, ~143 ms DB                                                                         |
+| `GET /inventory/projection/stockout-alerts`   | 204     | 0.00      | 7          | slow for an empty result                                                                       |
+| `GET /cash-forecast`                          | 137     | 0.00      | 5          | 73 ms DB                                                                                       |
+| `GET /customers`                              | 88      | 0.20      | 1          | single 85 ms query on 235k customers                                                           |
+| `GET /pos/catalog`                            | 87      | 1.90      | 8          | 1.9 MB                                                                                         |
+| `GET /expenses`                               | 42      | 2.52      | 17         | 2.5 MB, 17 queries                                                                             |
+
+Other observations
+
+- Everything else swept is < 60 ms warm; list endpoints like `/journal-entries`, `/pos/transactions`, `/accounting/employees` are bounded by default and cheap.
+- Session cost is visible: a **cold** request carries ~14 extra queries (the user→roles→permissions→branches load); warm requests hit the 30 s in-process session cache.
+- Query-count outliers worth a look later: `/account-mapping` 60 queries, `/inventory/stock/customer-returns` 23, `/inventory/stock/receiving-reports` 19, `/credit/applications` 17, `/expenses/special-accounts` 17 (all fast in absolute terms).
+- **500 instead of 400 on missing required query params:** `/accounts/sub-accounts-date`, `/bank-accounts/clearing-accounts`, `/budgets/variance-report`, `/pos/cash-drawer-events`, `/reports/cash-flow`, `/reports/profit-and-loss` (unvalidated input reaching Prisma). Low priority; also pollutes 5xx metrics.
+- 22 endpoints 400 without params (expected); 7 × 403 are super-admin/query-center routes (expected for this user).
+
+**What this means for the plan.** On this clone the backend is not uniformly slow. The perceived slowness in prod is therefore mostly (a) the few multi-MB / 16k-query endpoints that occupy the DB→app link and the connection pool, and (b) the _shape_ of the frontend read path — browser → Next → backend hops, Server-Action reads that queue one-at-a-time, and a client-side fetch that only starts after hydration. That makes the SSR + parallel-fetch work (Phases 3–4) high value even though the DB is mostly fine, and it makes the 5–6 outliers above the right Phase 2 scope.
+
+**Not covered by this sweep (add targeted checks):** endpoints requiring query/path params (dashboard calls with `branchId`/dates, detail pages), POST-based searches, websocket/notification polling, and network latency (loopback here).
+
+### 5.4 Pilot pages — old vs new, real browser (headless Chromium, production builds, 2026-10-16)
+
+Setup: two production builds of the same app against the same backend + `tpe_perf` clone — **old** = `origin/main` in `query-optimization/frontend-baseline` (:3200), **new** = this worktree (:3100). Median of 5 runs, fresh browser context each (no HTTP cache), localhost (no network latency — so JS-bound paths look _better_ here than they would on a real connection; the new pages gain more, not less, off localhost). "Painted" = rows visible and two animation frames later. Script: scratchpad `measure.mjs` / `vis.mjs` (not in the repo).
+
+| Page       | What                       | Old      | New          |                                                                                                     |
+| ---------- | -------------------------- | -------- | ------------ | --------------------------------------------------------------------------------------------------- |
+| Employees  | rows painted               | 134 ms   | **46 ms**    | 2.9× — rows are in the first HTML flush                                                             |
+| Projection | rows painted               | 2,377 ms | **211 ms**   | **11×**; DOM 196,289 → 1,005 nodes; document 168 KB (was 39 MB JSON + client render of 16,326 rows) |
+| Aging      | summary matrix visible     | 1,248 ms | **519 ms**   | 2.4×                                                                                                |
+| Aging      | first account rows visible | 1,197 ms | **967 ms**   |                                                                                                     |
+| Aging      | page fully painted         | 1,768 ms | **1,100 ms** | DOM 116,796 → 41,010 nodes (page 1 = ~2k rows instead of ~6k)                                       |
+
+| AR Invoices landing (2nd batch) | rows painted | 2,359 ms | **196 ms** | **12×**; DOM 168,046 → 1,302 nodes; first HTML flush 285 ms incl. the rollup; 24.9 MB download → 8 KB |
+
+Server-rendered proof (JavaScript disabled): Employees 20 rows, Projection 50 rows + chips, Aging matrix + 1,968 account rows are all in the HTML.
+Server Action reads on these pages: 3–4 → 0 (the remaining "actions" counted by the script are the layout's own session/notification calls).
+
+**Functional suite (22 checks, all pass)** — scratchpad `func.mjs`: SSR with JS disabled; Employees search goes through `/api` (GET) with **0** Server Action POSTs; client-side row navigation keeps the same document; Projection `7d` / Next / `30d` / Refresh update URL + content without reload and page resets on filter change; Aging branch filter → exactly Roxas' 1,336 rows, last page = Unassigned 2,537 rows, as-of date re-renders, out-of-range page clamps; no console errors / hydration warnings on any page.
+**Repo e2e** (`e2e/aging-per-branch.spec.ts`, `e2e/inventory-projected-stockouts.spec.ts`) against the test stack: 9/11 pass on new; the same 2 fail on the **old** build too (aging "detail rows" needs standalone-invoice rows that this clone has none of; the `/inventory` dashboard test trips on `ERR_CONNECTION_REFUSED` from the notifications socket the test stack doesn't run). The aging pagination spec was updated for the new rule and passes on both builds.
+
+### 5.3 Phase 2 fixes — results
+
+**P2-1 — Inventory valuation N+1 (`CostingService.getValuation`) — DONE, verified**
+
+- Cause: `Promise.all(positiveBalances.map(b => computeAvgCost(...)))` = one ledger-replay query per (item, warehouse) pair → **16,326 concurrent queries** per call (pool = 25). Both `GET /inventory/costing/valuation` and `GET /inventory/reports/valuation` (and the export) go through it.
+- Fix: `computeAvgCostsByPair()` reads the AVCO ledger once (same `tenantId` / `warehouseId` / branch filters as the balances), groups by `itemId:warehouseId`, stable-sorts by `occurredAt`, and replays in memory with the existing arithmetic extracted unchanged into `replayAvgCost()`. `computeAvgCost()` (single pair, used by COGS/returns) now calls the same function.
+- Result (clone DB, warm): queries **16,335 → 10**; reports valuation 755 ms → ~190 ms; costing valuation 857 ms → ~280 ms (now dominated by serialising the 8 MB body); pool no longer monopolised.
+- Equivalence: five response variants (all warehouses, two single-warehouse filters, reports default, reports page 3 + search) compared **exactly (eps = 0)** against baselines captured from the unmodified code on the 16k-pair dataset: **IDENTICAL**. Note: 310 (item, warehouse, timestamp) tie groups exist in the ledger; tie order was unspecified before and still follows the database's natural order, and the comparison shows no difference.
+- Tests: `tsc --noEmit` clean. `test/inventory-phase5-valuation.e2e-spec.ts` could not be used as a regression gate — its fixture `POST /inventory/stock/receive` returns 400 in setup (stale payload; fails before any valuation call, in code this change does not touch). Throwaway DB `tpe-perf-e2e-test` (migrated + seeded + one fixture supplier) was created for the attempt and can be dropped.
+- Prisma blocked `migrate reset` for agents (needs explicit user consent via `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION`); I did **not** set it and used `create database` + `migrate deploy` + `db seed` on the empty throwaway DB instead.
+
+**P2-2 — `GET /inventory/projection` 39 MB — backend DONE & verified; frontend switch pending (Phase 3)**
+
+- Cause: each of the 16,326 item/warehouse groups carries a 31-entry `dailyProjections` timeline (date, incoming, outgoing, endBalance). In this dataset **all 16,326 timelines are flat** (no PO/backorder in the horizon) → 40 MB of padding. The page only uses the _sum of incoming_ from it (`ProjectionPageView.tsx:174`) and renders every group as a table row (no paging).
+- Fix (opt-in, default response untouched): `view=summary` drops `dailyProjections` and returns `incomingQty` / `outgoingQty`; `limit` (≤ 500) / `offset` page in a deterministic order (sku, warehouse name, warehouse id) and add `total` only on paged calls; `stockoutCount` / `reorderCount` always describe the whole set. Summary skips building a timeline for groups with no movement. Day keys are built once instead of a `Date` per day per group (also speeds the default path).
+- Result (clone): default 39.0 MB / 566 → 373 ms (byte-identical output); `view=summary` **5.8 MB / ~106 ms**; `view=summary&limit=50` **17 KB / ~88 ms**.
+- Verification: default view vs baseline captured from unmodified code — three variants IDENTICAL (eps = 0). Summary vs baseline reduced (every item's fields equal, `incomingQty`/`outgoingQty` = sums of the timeline, no `dailyProjections`) — 16,326 items and 519 items, **0 mismatches**, counts equal. New `projection.service.spec.ts` (4 tests, passing) covers what the clone cannot (PO arrivals, backorder shortfall + stockout date, flat negative balance, stable paging).
+- To do in the frontend: `getProjection` → pass `view: 'summary'` (+ paging), update the zod schema (`dailyProjections` optional, add `incomingQty`/`outgoingQty`/`total`), render `incomingQty`; make the table paginated (it renders 16k rows today).
+
+**P2-3 — `GET /crm/installment-accounts/reports/aging` 30.6 MB — backend DONE & verified; frontend switch pending (Phase 3/4)**
+
+- Cause: 12,710 active accounts × ~2.4 KB (45 columns) — and **every row is serialised twice** per collector: flat `collector.rows` (kept only for the xlsx export, per a code comment) and again in `categories[].rows` (what the page renders). The page client-fetches the whole tree, then pages branches in the browser (`BRANCHES_PER_PAGE`).
+- Fix (opt-in; applied in the controller via `aging-report.view.ts`, so the service/export keep the complete structure): `view=summary` → subtotals/counts only; `view=grouped` → rows only inside `categories[]`. With the existing `branchId` filter the page can load rows per branch.
+- Result (clone): default 30.6 MB / ~913 ms (unchanged); **`view=summary` 0.12 MB / ~477 ms**; `view=grouped` 15.4 MB; **`view=grouped&branchId=<largest real branch, 1,336 accounts>` 1.7 MB / ~162 ms**. Export still 200 (8.2 MB xlsx, ~5 s — it builds the full report; separate item).
+- Verification: default response vs baseline and `grouped`/`summary` vs baseline reduced — **equal order-insensitively** (subtotals, grand total, per-category rows). 4 new unit tests (`aging-report.view.spec.ts`) cover what each view keeps/drops and non-mutation. `view=bogus` → 400.
+- **Pre-existing quirk found (not changed):** row order _inside a collector_ differs between two consecutive calls on identical code — the query orders only by `[branchId, collectorId]`. The legacy sheet's intended order is unknown; propose a stable tiebreak (e.g. `accountNumber`) once the client confirms the order they expect (F-013).
+- To do in the frontend: summary for the matrix + collector headers, then `view=grouped&branchId=` per displayed branch (stream each branch behind its own `<Suspense>` in the SSR version); `AgingReportView` line 118 (`c.rows.some(...)`) must read `categories[].rows` instead of the flat `rows`.
+
+**P2-4 — `GET /ar-invoices/by-customer` (new, opt-in) for the AR Invoices landing — DONE & verified (2026-10-16)**
+
+- Why: the landing downloaded **every invoice** (`/ar-invoices`, 24.9 MB for 12,708 invoices) and grouped them by customer in the browser → **11,925 customer rows** (168,046 DOM nodes) for a page nobody reads past the first screen.
+- What: `customerRollup()` reads the _same slim columns and the same filter_ as the summary list (the `where` was extracted unchanged into a private `listWhere()` shared by `findAll` and the rollup, so they can't disagree), groups with the new pure `rollUpByCustomer()` (adds in list order → bit-identical float sums; overdue = `displayInvoiceStatus` like every list; sorted outstanding desc, ties by name then id), then pages (`limit`/`offset`, `limit` ≤ 500, `total` = number of customers). No `limit` = every customer.
+- Result (clone): **8.4 KB / ~127 ms per 50-customer page** vs 24.9 MB / ~570 ms.
+- Verification: the three existing list responses (`?view=summary`, full, `?search=`) are **IDENTICAL (eps 0)** to baselines captured before the refactor; the rollup for all **11,925 customers equals the old client-side grouping exactly** (count, total, paid, outstanding, overdue — float sums included); page slices and `search` verified. New `ar-invoice-rollup.util.spec.ts` (6 tests). Whole backend unit suite (accounting/crm/inventory/common/auth/prisma): **79 suites, 1,154 tests pass**; eslint clean.
+
+## 6. Decisions & open questions
+
+- ~~Open: backend Railway region vs Vercel `sin1`~~ — resolved: backend `asia-southeast1` (Singapore), edge `sin1`, Vercel `sin1`. Same region; hop latency is small. Railway's edge gzips (F-014).
+- Open: acceptable default page size / cap contract across modules (new opt-in paging uses `limit` ≤ 500 + `offset`, `total` only on paged calls — same as `/ar-invoices`).
+- Open: stable row order for the installment AR Aging report (F-013) — needs the client's expected order.
+- Open: enable experimental `staleTimes.dynamic` (F-009)? Decide after pages are SSR'd.
+- Decided 2026-10-15: SSR is wanted ("pages look snappy"), components modular; measure + backend first.
+- Decided 2026-10-15: **no commit / push yet.** All work is uncommitted in the two worktrees until a go signal.
+- Housekeeping: backend instrumented server runs on :3101 against `tpe_perf` (stop with `kill $(lsof -ti :3101 -sTCP:LISTEN)`); throwaway DB `tpe-perf-e2e-test` exists and can be dropped.
+
+### 6.1 Frontend callers pulling the bare 24 MB `/ar-invoices` (F-015) — **RESOLVED 2026-10-16**
+
+Both fixed: the landing now uses the server rollup (below, P2-4 + `ar-invoices/_landing/*`), and the memo invoice picker (`ARInvoiceCombobox`) now asks for `limit: 100` (newest first; typing narrows server-side; the full invoice shape the dialogs need is unchanged). Original analysis kept:
+
+- `accounting/ar-invoices/_components/ARInvoicesList.tsx:115` — the **AR Invoices landing page** loads _every_ invoice tenant-wide, then groups by customer in the browser. Needs a server-side customer rollup (count / total / paid / outstanding per customer, paged + searchable) instead of shipping 12.7k invoices.
+- `accounting/_shared/ARInvoiceCombobox.tsx:34` — the Credit/Debit memo invoice picker calls `ARInvoices.list({})` with an empty query on open → full list. Needs `limit` (≈ 20) and search-as-you-type.
+- Everything else already passes `view: 'summary'` (dashboards) or a `customerId` (bounded).
+
+### 6.2 Open items after the pilot
+
+- **Aging page size — DECIDED 2026-10-16 (user: "ok"):** keep the row-bounded pages (6 pages of ~2k rows, ≤ 10 branches) in place of the fixed 10-branch pages (2 pages of ~6k rows). Not doing (for now): collapsed collectors that load rows on expand — still the faster option if ever wanted. Revert = change `ROWS_PER_PAGE_BUDGET` / the `weightedPages` call in `AgingReportBody`.
+- **Global navigation progress indicator** (e.g. a thin top bar driven by `useLinkStatus` / pending transitions in the layout): required before removing/avoiding `loading.tsx` app-wide, so a slow server render is not a frozen screen. Not built.
+- **`(app)/layout.tsx` still awaits the session before streaming** (F-008) — on full loads only; backend session is cached 30 s so it is cheap, but the shell can't paint before it. Not changed.
+- **Accounting Reports Hub "AR Aging" tab** still embeds the legacy client `AgingReportView` (full ~30 MB fetch). The Hub is a client component with tab state; convert the tabs to routes (or give the legacy view the lean `grouped` fetch) in the rollout. The legacy view file was restored untouched for this reason.
+- **Stale client code left in place on purpose:** `getStockoutAlerts` Server Action is still used by `/inventory` (dashboard); remove after that page is converted.
+- **Remaining backend candidates** (§1 Phase 2): `/inventory/projection/stockout-alerts` (~200 ms for an empty result — now on the critical path of the Projection page), `/inventory/reports/aging`, `/inventory/stock/balances`, `/customers`, `/cash-forecast`, `/pos/catalog`, `/expenses`, 500→400 on missing params.
+- ~~AR Invoices landing page + memo invoice picker~~ — done (F-015). Side effects to know: customer rows are links with `prefetch={false}` (50 rows × 2 links would each fire a prefetch per visit — it took the request count from 79 to 34), "Clear filter" on `?customerId=` now navigates to the server landing, the old client-side grouping code was removed from `ARInvoicesList`, and the customer search box was extracted to `_components/CustomerSearchBox.tsx` (shared).
+- **Stale repo e2e specs found (not touched):** `ar-collection-receipts-list.spec.ts` (expects a Receipts-register landing that was removed; `ARInvoices.listReceipts` has no caller), `ar-invoices-transaction-search.spec.ts` and others assume a "Filtered to X" banner after picking a customer (the picker now opens the customer's own page). Same failures on the old and new builds; worth a cleanup pass by whoever owns those scenarios.
+- **Dead code to delete once nothing imports it:** none left from the pilot (`list-employees`, `get-projection`, `useProjection`, `ProjectionPageView`, `useEmployees`' old action import were removed).
+
+## 7. SSR design notes
+
+Proposal (2026-10-15). **Partly superseded by §7.1 (what was actually built and what it taught us) — read §7.1 and §7.2 first.** Kept below as the original reasoning.
+
+**Key enabler already in the code:** `apiClient` is isomorphic — on the server it calls the backend directly with the `authToken` cookie injected; in the browser it goes through the `/api/[...path]` Route Handler. So **one `queryOptions` factory can serve both the server prefetch and the client refetch**, with no Server Action involved. Server Actions stay for mutations only (F-002b).
+
+**Layers (per module)**
+
+1. `libs/<module>/queries.ts` — `xQueries.list(params)` / `.detail(id)` returning `queryOptions({ queryKey, queryFn: () => api.get(...) , staleTime })`. No `'use client'` / `'use server'`. Single source of truth for keys + stale tiers (`STALE.*` from `libs/query/stale-times.ts`). Normalises backend quirks at the boundary (Decimal strings → numbers).
+2. `libs/query/get-query-client.ts` — `getQueryClient()`: new client per request on the server, singleton in the browser; `staleTime` 60 s; `dehydrate.shouldDehydrateQuery` includes `pending`. `QueryProvider` switches from `useState` to this.
+3. `page.tsx` (**server**): permission gate → start prefetch(es) _immediately_ (don't wait for the session) → `<HydrationBoundary state={dehydrate(qc)}>` around the client island inside `<Suspense fallback={<XSkeleton/>}>`. Secondary panels stream behind their own `<Suspense>`.
+4. `_components/XView.tsx` — client island: `useQuery(xQueries.list(params))` (cache already hydrated → renders data in the SSR HTML when the prefetch was awaited; or `useSuspenseQuery` for the streamed/un-awaited pattern). Holds only interactivity: filters, row menus, dialogs. Static chrome (title, breadcrumbs, permission-gated action buttons) is rendered by the server shell.
+5. `loading.tsx` per module/segment with a dimension-matched skeleton → instantly-shown, prefetchable fallback on navigation (F-007).
+6. `(app)/layout.tsx`: stop blocking the shell on the session round trip (F-008): render chrome immediately, pass the session promise to the pieces that need it.
+
+**Pilot pages** (each has a backend lever already shipped in Phase 2):
+
+- Inventory → Projection (`view=summary`, paged, table currently renders 16k rows).
+- CRM → Installment AR Aging (`view=summary` for the matrix + `view=grouped&branchId=` streamed per branch).
+- Accounting → Employees list (simple baseline for the template).
+- Then AR Invoices landing (needs the server-side customer rollup, §6.1) and the module dashboards (fan-out → parallel server prefetch).
+
+**Rules of thumb for conversions**
+
+- Prefetch only what is above the fold; stream the rest.
+- Client islands take serialisable props only (DTO-shaped; never raw records).
+- Mutations: `invalidateQueries` the same keys from the factory; keep `revalidatePath` only if a Server Component also reads that data.
+- Verify per page: `tsc`, `eslint`, then a Playwright pass against the dev stack (headless, throwaway data) for "SSR HTML contains data", "no client waterfall", navigation timing; never `next build` / second `next dev` while the user's dev server is live.
+
+### 7.1 As built (pilot, 2026-10-16) and what it taught us
+
+**Two templates, chosen by the page's nature:**
+
+- **A — read-only report / list (Projection, Aging):** Server Component page, filters + paging in the **URL** (`searchParams`), data fetched on the server with `api` (`settle()` → inline `SectionError`, never throws), table/rows are **Server Components that ship no JS**; only the controls are client islands (`DaysHorizon`, `AgingFilters`, `UrlPagination`, `PrintButton`). Filter changes = `router.replace` in a transition, dimmed via `PendingDim`. Backend calls are started **before** `await getSessionOrNull()` so they overlap with the session check.
+- **B — interactive CRUD list (Employees):** server **prefetch + `HydrationBoundary`** (`PrefetchBoundary`), client island keeps `useQuery(employeeQueries.list(...))` for search/refetch/mutations. One `queryOptions` factory (`_queries.ts`) is used by the server prefetch _and_ the client hook, over the isomorphic `api` client (server → backend directly; browser → `/api` proxy). No Server Action is involved in reading; `unwrap()` makes failures real errors.
+
+**Foundation (reusable):** `libs/query/get-query-client.ts` (server: new client per request, `retry: false` on the server so a failed prefetch falls through instantly; browser: singleton; dehydrate includes pending), `QueryProvider` now uses it (no `useState`), `libs/api/unwrap.ts` (`unwrap`, `settle`), `components/ssr/` (`PrefetchBoundary`, `UrlFilters` provider + `PendingDim`, `UrlPagination`, `paginate.ts` with fixed and **weight-bounded** pages, `SectionError`, `RefreshButton`, `skeletons`).
+
+**Lesson 1 — a Suspense fallback makes a fast page _slower_ (measured).** With `<Suspense>` + `loading.tsx` on Employees/Projection the rows were in the HTML at ~25–40 ms but became _visible_ only at ~330 ms, every time. React holds back the reveal of Suspense content for ~300 ms after a fallback has been shown (and 19.2 batches server-streamed reveals). Employees was _slower than the old client-fetch version_ (345 ms vs 132 ms) until the Suspense/`loading.tsx` was removed (→ 46 ms). **Rule: use Suspense only where the wait is genuinely > ~300 ms** (Aging's per-branch row tables, the 2.5k-row sections); for single fast queries render inline so the first flush carries the data. `loading.tsx` follows the same rule (it is an implicit Suspense around the page) — so none was added to the fast pilot pages. Consequence to handle in the rollout: a global navigation progress indicator (see §6.2) so slow navigations are not a frozen screen.
+
+**Lesson 2 — server-rendering thousands of rows is not free.** Rendering ~6,000 aging rows server-side produced ~21 MB of HTML _plus_ the same data again in the RSC payload (both ship), which made the page's _completion_ slower than the old client render (2.8 s vs 1.8 s) even though the matrix appeared sooner. Fix: pages are packed **by account rows** (`ROWS_PER_PAGE_BUDGET` = 2,500, whole branches, still ≤ 10 branches/page) → 6 pages instead of 2 for this data; document 21 MB → 6.9 MB; fully painted 1,100 ms. **This is a visible behavior change** (more, shorter pages; the old rule was "10 branches per page"); it is one constant in `aging-report/_params.ts`, and the repo e2e spec was updated to match. Bigger win if the client agrees: collapse collectors by default and load a collector's rows on expand (initial HTML would be ~100–200 KB) — not done, needs a product decision.
+
+**Other deliberate changes while rebuilding these pages** (per standing UI rules): headings use `text-prominent-purple-900`, no narrow centered `max-w-*` containers, dropdowns are `SearchableSelect` (Aging's native `<select>`s), Employees row click uses `router.push` instead of `window.location.href` (was a full reload), Projection rows are SKU-ordered and paged 50/page (it rendered all 16,326 rows), Aging "As of" defaults to today **in Manila** (was the UTC date), count chips use thousands separators.
+
+**Backend support added for these pages** (§5.3): `view=summary|grouped`, `branchId=unassigned`, stable row order, `hasInstallmentRows` on the lean views.
+
+### 7.2 Conversion checklist for the rollout (per page)
+
+1. **Classify the page:** read-only report/list → template A; interactive list with search/mutations → template B; single record detail → B-style prefetch of the detail query.
+2. **Find the read path:** which `useQuery`/hook calls a `'use server'` action? Replace with a `queryOptions` factory (`_queries.ts`) over `api` + `unwrap`. Keep `'use server'` for mutations only. Check nothing else imports the action (`grep`) before deleting it.
+3. **Check the payload first** (`scripts/perf/sweep.mjs` / `fetch.mjs` on the clone): bounded? `limit`/`offset`/`view`? If an endpoint returns thousands of rows or MBs, fix the backend (opt-in params, default unchanged) _before_ server-rendering it (Lesson 2).
+4. **Decide Suspense by expected wait:** < ~300 ms → inline; > ~300 ms or heavy → `<Suspense>` around that section only, with a dimension-matched skeleton and fallback height reserved (CLS). No `loading.tsx` on fast pages.
+5. **Start data early:** kick off `settle(...)`/prefetch before `await getSessionOrNull()`; await once, pass promises to children.
+6. **Split components:** static shell + data tables = Server Components; only controls/dialogs/row menus = `'use client'`. Client props must be serialisable DTOs. Don't import data-fetching modules into client files (split `_params.ts` (pure) from `_data.ts`).
+7. **Never trust the page gate alone:** the backend enforces permissions; keep the page redirects for UX.
+8. **Verify:** `pnpm type-check`, eslint + prettier on changed files, **production** build (`next build` — dev mode distorts timings) in the worktree, then: curl/JS-disabled HTML contains the data, old-vs-new browser measure (`measure.mjs`/`vis.mjs`: use _visible/painted_, not just "in DOM"), functional script, repo e2e specs that touch the page (they encode product rules — update them deliberately, not silently).
+9. **Don't forget embedded copies:** type-check caught that the Accounting Reports Hub embeds the old `AgingReportView` as a tab — grep for every importer before deleting a client view.
+
+## 8. Change log (files touched in the worktrees)
+
+All uncommitted, on `perf/query-optimization`.
+
+**Backend** (`query-optimization/backend`) — `tsc` clean, eslint clean on all changed files, 23 unit suites / 287 tests pass (incl. 8 new)
+
+- `src/inventory/services/costing.service.ts` — P2-1: `replayAvgCost()` (extracted, unchanged arithmetic) + `computeAvgCostsByPair()` (one ledger read) replacing the per-pair `Promise.all` in `getValuation()`.
+- `src/inventory/services/projection.service.ts`, `src/inventory/dto/projection.dto.ts` — P2-2: `view=summary`, `limit`/`offset`/`total`; day keys built once. New `projection.service.spec.ts` (4 tests).
+- `src/crm/installment-account/aging-report.view.ts` (new) + `.spec.ts` (4 tests), `installment-account.controller.ts`, `installment-account.dto.ts` — P2-3: `view=summary|grouped` on `GET reports/aging` (controller-level; service/export untouched).
+- `scripts/perf/fetch.mjs`, `compare.mjs` (new) — save one authenticated response / deep-compare two (exact, `--eps`, `--ignore`) for before/after equivalence.
+- `src/common/perf/request-timing.ts` (new) — opt-in (`PERF_TIMING=1`) Express middleware + `AsyncLocalStorage` that attributes Prisma query events to the request and prints/appends one JSON line per request. No effect when the flag is unset.
+- `src/prisma/prisma.service.ts` — when `PERF_TIMING=1`, enables Prisma `log: [{emit:'event', level:'query'}]` and forwards events to `recordQuery`.
+- `src/main.ts` — registers the middleware when the flag is on.
+- `scripts/perf/sweep.mjs`, `scripts/perf/summarize.mjs` (new) — endpoint sweep + ranking.
+- `.gitignore` — ignore `/perf-results`.
+- `.env` (untracked, gitignored) — copy of the dev env with `DATABASE_URL` → `tpe_perf`, `PORT=3101`, `PERF_TIMING=1`, `PERF_TIMING_FILE=perf-results/requests.jsonl`.
+- `pnpm install` + `prisma generate` run in both worktrees (node_modules untracked).
+
+**Frontend** (`query-optimization/frontend`) — `tsc` clean, eslint + prettier clean on every changed file, production build OK
+
+- Foundation (new): `src/libs/query/get-query-client.ts`, `src/libs/api/unwrap.ts`, `src/components/ssr/{PrefetchBoundary,UrlFilters,UrlPagination,RefreshButton,SectionError,skeletons}.tsx`, `src/components/ssr/paginate.ts`. Changed: `src/provider/query-provider.tsx` (uses the shared factory).
+- Employees (template B): new `_queries.ts`; changed `page.tsx`, `_hooks/useEmployees.ts`, `_components/EmployeesList.tsx` (key from the factory, full width, `router.push`); deleted `_actions/list-employees.ts`.
+- Projection (template A): new `_params.ts`, `_data.ts`, `_components/{DaysHorizon,ProjectionStats,StockoutAlerts,ProjectionTable}.tsx`; rewrote `page.tsx`; added `ProjectionSummary*` to `src/schema/inventory/projection/index.ts`; deleted `_actions/get-projection.ts`, `_hooks/useProjection.ts`, `_components/ProjectionPageView.tsx` + `index.ts`. (`get-stockout-alerts.ts` kept — `/inventory` uses it.)
+- CRM Installment Aging (template A): new `_params.ts`, `_data.ts`, `_format.ts`, `_components/{AgingFilters,AgingFilterBar,AgingActions,PrintButton,AgingMatrix,BranchSection,AgingReportBody,AgingSkeleton}.tsx`, `loading.tsx`; rewrote `page.tsx`; `src/libs/api/crm.ts` (`agingReportLean`), `src/schema/crm/types.ts` (`AgingReportLeanResponse`). Legacy `AgingReportView.tsx` **kept** (Reports Hub tab).
+- AR Invoices landing (template A): new `ar-invoices/_landing/{params,data,LandingFilters,CustomerRollupTable,NewReceiptButton}`, `_components/CustomerSearchBox.tsx` (extracted), `src/components/ssr/ClickableRow.tsx`; rewrote `ar-invoices/page.tsx` (customer filter keeps the old screen; otherwise the server landing); trimmed `_components/ARInvoicesList.tsx` (landing grouping removed; Clear filter → `/accounting/ar-invoices`); `_shared/ARInvoiceCombobox.tsx` (`limit: 100`); `libs/data/AccountingV2Data.ts` (`ARInvoices.byCustomer`, `ARInvoiceCustomerRollup`).
+- Backend for it: `accounting/ar-invoices/ar-invoice-rollup.util.ts` (+ spec), `ar-invoices.service.ts` (`listWhere()` extracted, `customerRollup()`, shared `AR_INVOICE_LIST_ORDER`), `ar-invoices.controller.ts` (`GET by-customer`).
+- `e2e/aging-per-branch.spec.ts` — pagination expectations updated for row-bounded pages.
+- `.gitignore` — ignore `/perf-results`. `.env` (untracked, gitignored) — copy of the dev env with `API_URL=http://localhost:3101`, `NEXT_PUBLIC_API_URL=/api`.
+- `docs/query-optimization-plan.md` (this file).
+- Worktrees/servers used for verification: `query-optimization/frontend-baseline` (old code, detached `origin/main`, :3200), new build :3100, backend :3101 — all my own; delete the baseline worktree with `git worktree remove` when no longer needed.
+
+## 9. Verification recipes
+
+- Type-check: `pnpm type-check` (FE), `pnpm exec tsc --noEmit -p tsconfig.json` (BE).
+- Lint: `pnpm lint` / BE eslint on changed files.
+- Local DB `the-prominent-enterprise` is production-sized; clone with `CREATE DATABASE x TEMPLATE …` (needs 0 connections) for load tests. Latency-injecting TCP proxy recipe: see memory `project_slow_load_and_logout_2026_10_12`.

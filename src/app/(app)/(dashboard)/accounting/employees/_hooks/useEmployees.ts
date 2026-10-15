@@ -2,25 +2,25 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import { listEmployees } from '../_actions/list-employees'
+import { employeeQueries } from '../_queries'
 
 export function useEmployees() {
   const [search, setSearch] = useState('')
 
   const queryParams = useMemo(() => ({ search: search || undefined }), [search])
 
+  // Same options the page prefetched on the server, so the first render already
+  // has rows; typing in the search box changes the key and refetches.
   const listQuery = useQuery({
-    queryKey: ['accounting-employees', queryParams],
-    queryFn: () => listEmployees(queryParams),
+    ...employeeQueries.list(queryParams),
     placeholderData: keepPreviousData,
-    staleTime: 30 * 1000,
   })
 
-  const employees = listQuery.data?.data?.items ?? []
+  const employees = listQuery.data?.items ?? []
 
   return {
     employees,
-    total: listQuery.data?.data?.total ?? 0,
+    total: listQuery.data?.total ?? 0,
     isLoading: listQuery.isLoading,
     isFetching: listQuery.isFetching,
     error: listQuery.error,

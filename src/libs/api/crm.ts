@@ -31,6 +31,7 @@ import type {
   CustomerLedger,
   CustomerLedgerScope,
   AgingReportResponse,
+  AgingReportLeanResponse,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type {
@@ -382,6 +383,17 @@ export const installmentAccountsApi = {
     collectorId?: string
     supervisorName?: string
   }) => api.get<AgingReportResponse>('/crm/installment-accounts/reports/aging', filters),
+  /**
+   * The lean shapes (see AgingReportLeanResponse). `branchId: 'unassigned'`
+   * selects the report's "no branch" group, which has no id of its own.
+   */
+  agingReportLean: (filters: {
+    view: 'summary' | 'grouped'
+    asOf?: string
+    branchId?: string
+    collectorId?: string
+    supervisorName?: string
+  }) => api.get<AgingReportLeanResponse>('/crm/installment-accounts/reports/aging', filters),
 }
 
 // ─── Accounting Customers (used to link installment accounts) ──

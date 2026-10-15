@@ -9,6 +9,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { useEmployees } from '../_hooks/useEmployees'
 import { removeEmployee } from '../_actions/remove-employee'
+import { employeeQueries } from '../_queries'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 
 function fullName(e: { firstName: string; lastName: string; middleName?: string | null }) {
@@ -27,7 +28,7 @@ export default function EmployeesList({ session }: { session: SessionUser }) {
     if (!confirm(`Remove ${fullName(emp)} from the Employees list? This can't be undone.`)) return
     const res = await removeEmployee(emp.id)
     if (res.success) {
-      queryClient.invalidateQueries({ queryKey: ['accounting-employees'] })
+      queryClient.invalidateQueries({ queryKey: employeeQueries.all })
     } else {
       alert(res.message || res.error || 'Failed to remove the employee')
     }
@@ -58,7 +59,7 @@ export default function EmployeesList({ session }: { session: SessionUser }) {
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-prominent-purple-900 md:text-3xl">Employees</h1>
@@ -142,7 +143,7 @@ export default function EmployeesList({ session }: { session: SessionUser }) {
                     <tr
                       key={emp.id}
                       className="cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50"
-                      onClick={() => (window.location.href = `/accounting/employees/${emp.id}`)}
+                      onClick={() => router.push(`/accounting/employees/${emp.id}`)}
                     >
                       <td className="px-4 py-3">
                         <Link

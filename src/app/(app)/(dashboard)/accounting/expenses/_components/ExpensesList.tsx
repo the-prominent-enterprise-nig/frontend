@@ -10,7 +10,6 @@ import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/da
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import ExpensesTabs from './ExpensesTabs'
 
 const STATUS_OPTIONS = [
   { value: 'DRAFT', label: 'Draft' },
@@ -195,7 +194,6 @@ export default function ExpensesList() {
 
   return (
     <div className="p-6">
-      <ExpensesTabs />
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-prominent-purple-900">Expenses</h2>
