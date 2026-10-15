@@ -178,6 +178,9 @@ export const SerialNumberSummarySchema = z.object({
   caravanEventStartDate: z.string().optional().nullable(),
   caravanEventEndDate: z.string().optional().nullable(),
   goodsReceiptLine: SerialReceiptSchema,
+  // The unit's cost — its receipt cost, else its item's catalog cost. Null
+  // for anyone without inventory:receive:cost-view (masked server-side).
+  unitCost: z.number().nullable().optional(),
   // Set while an open transfer (requested through partially received)
   // already claims this unit.
   openTransfer: z.object({ transferNumber: z.string() }).nullable().optional(),

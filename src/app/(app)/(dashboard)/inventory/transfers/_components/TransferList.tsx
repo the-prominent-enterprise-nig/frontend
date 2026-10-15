@@ -14,6 +14,7 @@ import CreateTransferModal from './CreateTransferModal'
 import TransferDetailModal from './TransferDetailModal'
 import { consumeStockTransferDraft } from './stockTransferDraft'
 import { LocationName, STATUS_CONFIG, StatusChip, branchLabel } from './transferStatus'
+import Tooltip from '@/src/components/ui/Tooltip'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 
 // The five stages the design tracks: the three live ones plus both terminal
@@ -148,6 +149,18 @@ function DirectionTag({
   )
 }
 
+/** URL params read once on mount (prefills, filters, `new`), then stripped
+ * so a refresh or Back doesn't re-apply them. */
+const CONSUMED_PARAMS = [
+  'warehouseId',
+  'prefillFromWarehouseId',
+  'prefillToWarehouseId',
+  'prefillItemId',
+  'prefillQty',
+  'prefillItemLabel',
+  'new',
+]
+
 export default function TransferList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
   // Scenario 60 — starting a new caravan stays gated on caravan:manage, so
@@ -165,15 +178,25 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const canSkipApproval = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DIRECT)
   const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_UPDATE)
 
+  const searchParams = useSearchParams()
+  // A caravan heading's "View transfers" (`?warehouseId=`) — the list
+  // starts narrowed to transfers into or out of that caravan. Applied as the
+  // initial filter rather than set from an effect, so the first fetch is
+  // already the filtered one.
+  const linkedWarehouseId = searchParams.get('warehouseId')
+
   const {
     transfers,
     pagination,
     isLoading,
+    isLoadingCounts,
     isFetching,
     error,
     statusFilter,
     fromWarehouseFilter,
     toWarehouseFilter,
+    anyWarehouseFilter,
+    setAnyWarehouseFilter,
     search,
     setSearch,
     setStatusFilter,
@@ -217,7 +240,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
     cancelTransfer,
     isCancelling,
     refetch,
-  } = useTransferManager()
+  } = useTransferManager({
+    initialAnyWarehouseIds: linkedWarehouseId ? [linkedWarehouseId] : undefined,
+  })
 
   // accept/reject/dispatch are source-branch-only and receive is
   // destination-branch-only on the backend — a Branch Manager can hold the
@@ -263,7 +288,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const [editingTransfer, setEditingTransfer] = useState<TransferSummary | null>(null)
   const [searchFocused, setSearchFocused] = useState(false)
   const [createDraft, setCreateDraft] = useState<{
-    fromWarehouseId: string
+    fromWarehouseId?: string
+    toWarehouseId?: string
     itemId?: string
     itemLabel?: string
     quantity?: number
@@ -277,8 +303,6 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // source at dispatch, so only a count travels, never serial ids.
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
-
   // Consumed params are stripped relative to the current path, because this
   // list is mounted at two routes — its own, and the Stock Transaction hub's
   // transfers tab. A hardcoded replace would move the user off whichever one
@@ -303,6 +327,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
       setIsCreateOpen(true)
       return
     }
+    // The params below are stripped later, once the list has loaded — see
+    // CONSUMED_PARAMS.
     const fromWarehouseId = searchParams.get('prefillFromWarehouseId')
     const itemId = searchParams.get('prefillItemId')
     const quantity = Number(searchParams.get('prefillQty') ?? '1')
@@ -314,7 +340,18 @@ export default function TransferList({ session }: { session: SessionUser }) {
         quantity,
       })
       setIsCreateOpen(true)
-      stripParams('prefillFromWarehouseId', 'prefillItemId', 'prefillQty', 'prefillItemLabel')
+      return
+    }
+
+    // A caravan heading's Transfer menu — a new transfer out of the caravan
+    // (source only) or into it (destination only).
+    const toWarehouseId = searchParams.get('prefillToWarehouseId')
+    if ((fromWarehouseId || toWarehouseId) && canCreate) {
+      setCreateDraft({
+        fromWarehouseId: fromWarehouseId ?? undefined,
+        toWarehouseId: toWarehouseId ?? undefined,
+      })
+      setIsCreateOpen(true)
       return
     }
 
@@ -324,7 +361,6 @@ export default function TransferList({ session }: { session: SessionUser }) {
     // find "New transfer" makes a button that says Transfer not transfer.
     if (searchParams.get('new') === '1' && canCreate) {
       setIsCreateOpen(true)
-      stripParams('new')
     }
     // Deliberately mount-only — the params are consumed once, then stripped;
     // re-running on every searchParams/router identity change would refight
@@ -345,6 +381,16 @@ export default function TransferList({ session }: { session: SessionUser }) {
     // is consumed once and then stripped.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Consumed params are stripped only once the list and its counts have
+  // loaded: navigating while their server actions are still in flight left
+  // them unresolved, and the list stuck loading.
+  const listSettled = !isLoading && !isLoadingCounts
+  useEffect(() => {
+    if (!listSettled) return
+    const present = CONSUMED_PARAMS.filter((key) => searchParams.has(key))
+    if (present.length) stripParams(...present)
+  }, [listSettled, searchParams, stripParams])
+
   useEffect(() => {
     if (!deepLinkNumber || deepLinkOpened) return
     const match = transfers.find((t) => t.transferNumber === deepLinkNumber)
@@ -368,6 +414,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
     statusFilter ||
     fromWarehouseFilter.length ||
     toWarehouseFilter.length ||
+    anyWarehouseFilter.length ||
     search
   )
   const pillStatuses = [
@@ -512,6 +559,32 @@ export default function TransferList({ session }: { session: SessionUser }) {
             clearable
             options={locationOptions}
           />
+
+          {/* "View transfers" from a caravan — in and out of it, which the
+              From/To pickers can't express on their own. */}
+          {anyWarehouseFilter.map((id) => {
+            const wh = warehouseOptions.find((w) => w.id === id)
+            return (
+              <span
+                key={id}
+                className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-[#f1ebfb] py-[7px] pr-1.5 pl-3 text-[12.5px] text-[#3f1490]"
+              >
+                In or out of {wh ? branchLabel(wh) : 'this location'}
+                <Tooltip label="Remove filter">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAnyWarehouseFilter(anyWarehouseFilter.filter((w) => w !== id))
+                    }
+                    aria-label="Remove filter"
+                    className="rounded p-0.5 hover:bg-white"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
+              </span>
+            )
+          })}
 
           {hasFilters && (
             <button
