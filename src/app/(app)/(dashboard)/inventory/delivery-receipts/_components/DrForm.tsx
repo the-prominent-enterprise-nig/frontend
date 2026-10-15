@@ -8,7 +8,6 @@
  * the printables (Part 5). */
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FormProvider, useForm, useWatch, type FieldPath } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -23,13 +22,13 @@ import {
 } from '@/src/schema/inventory/delivery-receipts'
 import { saveDeliveryReceipt } from '../_actions/save-delivery-receipt'
 import { submitDeliveryReceipt } from '../_actions/submit-delivery-receipt'
+import { deleteDeliveryReceipt } from '../_actions/delete-delivery-receipt'
 import { getDeliveryReceiptPrint } from '../_actions/get-delivery-receipt-document'
 import { printDeliveryReceipt } from '@/src/libs/print/printDeliveryReceipt'
 import { emptyDrForm } from '../_lib/dr-form-values'
 import { fmtPeso } from '../_lib/dr-format'
 import { DrIssueSection, DrPurposeSection, DrReferenceSection } from './DrFormSections'
 import { DrItemsSection } from './DrItemsSection'
-import { DeleteDraftButton } from './DeleteDraftButton'
 import {
   BTN_GHOST,
   BTN_PRIMARY,
@@ -86,8 +85,8 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     else router.refresh()
   }
 
-  /** A DR only prints once it has a number, so the preview saves the draft
-   * first; the print carries a DRAFT watermark until it is approved. */
+  /** Shown on a saved draft only. Saves the edits first so the print matches
+   * the form; it carries a DRAFT watermark until it is approved. */
   async function onPrintPreview(values: DrFormValues): Promise<void> {
     setBusy('print')
     const id = await persist(values)
@@ -101,8 +100,7 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     if (doc?.success && doc.data) printDeliveryReceipt(doc.data.dr, doc.data.memo)
     else showToast({ title: 'Saved, but the preview could not load', status: 'error' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
-    if (!draft) router.push(`/inventory/delivery-receipts/${id}`)
-    else router.refresh()
+    router.refresh()
   }
 
   /** Same rules the backend enforces on submit, shown on the fields first. */
@@ -125,13 +123,21 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     if (!id || !res) return
     if (!res.success) {
       showToast({ title: res.message ?? 'Failed to submit', status: 'error' })
-      if (!draft) router.push(`/inventory/delivery-receipts/${id}`)
+      // A new DR only exists because of this submit, so a refusal takes it
+      // back off rather than leaving a draft nobody saved.
+      if (!draft) await deleteDeliveryReceipt(id)
       return
     }
     showToast({ title: 'Submitted for approval', status: 'success' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
     router.push(`/inventory/delivery-receipts/${id}`)
     router.refresh()
+  }
+
+  /** Back to wherever the form was opened from — nothing is saved. */
+  function onCancel(): void {
+    if (window.history.length > 1) router.back()
+    else router.push(BACK_HREF)
   }
 
   /** Lines name units on one warehouse's shelf; a new warehouse clears them. */
@@ -163,6 +169,7 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
             onSave={form.handleSubmit(onSaveDraft)}
             onPrint={form.handleSubmit(onPrintPreview)}
             onSubmit={form.handleSubmit(onSubmitForApproval)}
+            onCancel={onCancel}
           />
         }
       >
@@ -188,10 +195,7 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
 /** The lines' cost at today's estimate — the real cost is stamped on posting. */
 function EstimatedCost(): React.JSX.Element {
   const lines = useWatch<DrFormValues, 'lines'>({ name: 'lines' })
-  const total = lines.reduce(
-    (sum, l) => sum + (l.unitCost ?? 0) * (l.isSerialTracked ? 1 : l.quantity),
-    0
-  )
+  const total = lines.reduce((sum, l) => sum + (l.unitCost ?? 0) * l.quantity, 0)
   return <HeaderFigure label="Estimated cost" value={fmtPeso(total)} />
 }
 
@@ -201,28 +205,33 @@ function FormActions({
   onSave,
   onPrint,
   onSubmit,
+  onCancel,
 }: {
   draft?: { id: string; drNumber: string }
   busy: 'save' | 'submit' | 'print' | null
   onSave: () => void
   onPrint: () => void
   onSubmit: () => void
+  onCancel: () => void
 }): React.JSX.Element {
   const spinner = <Loader2 className="h-4 w-4 animate-spin" />
   return (
     <>
-      {draft && <DeleteDraftButton id={draft.id} drNumber={draft.drNumber} />}
-      <Link href={BACK_HREF} className={BTN_GHOST}>
+      <button type="button" onClick={onCancel} className={BTN_GHOST}>
         Cancel
-      </Link>
+      </button>
       <button type="button" onClick={onSave} disabled={!!busy} className={BTN_SECONDARY}>
         {busy === 'save' && spinner}
         Save draft
       </button>
-      <button type="button" onClick={onPrint} disabled={!!busy} className={BTN_SECONDARY}>
-        {busy === 'print' ? spinner : <Printer className="h-4 w-4" />}
-        Print preview
-      </button>
+      {/* Only once saved: a DR prints with its number, and taking one here
+          would create a draft the user never asked for. */}
+      {draft && (
+        <button type="button" onClick={onPrint} disabled={!!busy} className={BTN_SECONDARY}>
+          {busy === 'print' ? spinner : <Printer className="h-4 w-4" />}
+          Print preview
+        </button>
+      )}
       <button type="button" onClick={onSubmit} disabled={!!busy} className={BTN_PRIMARY}>
         {busy === 'submit' && spinner}
         Submit for approval

@@ -137,6 +137,18 @@ export const ReceiveFromProviderFormSchema = z.object({
 
 export type ReceiveFromProviderFormValues = z.infer<typeof ReceiveFromProviderFormSchema>
 
+export const ReleaseToCustomerFormSchema = z.object({
+  // The DR that closes the journey is issued server-side
+  // (UdsService#generateCustomerDeliveryReceiptNumber) and comes back on the
+  // response — the form never sends one.
+  /** The SI for the unit's return leg to the branch. Captured here because a
+   *  customer-owned sheet can only be closed by releasing it. */
+  salesInvoiceNumber: z.string().max(50).optional(),
+  notes: z.string().max(1000).optional(),
+})
+
+export type ReleaseToCustomerFormValues = z.infer<typeof ReleaseToCustomerFormSchema>
+
 export const WriteOffUdsFormSchema = z.object({
   unitCost: z.coerce.number().positive('Unit cost is required'),
   notes: z.string().max(1000).optional(),

@@ -118,6 +118,8 @@ export const ACCOUNTING_PERMISSIONS = {
   AR_INVOICES_DELETE: 'accounting:ar-invoices:delete',
   AR_INVOICES_SEND: 'accounting:ar-invoices:send',
   AR_INVOICES_PAY: 'accounting:ar-invoices:pay',
+  /** Offset a customer retention against a claim, write it off, or provide for it. */
+  RETENTION_ADJUST: 'accounting:retention:adjust',
   // Scenario 69 Part F — classify an invoice as zero-rated or VAT-exempt.
   AR_INVOICES_RESTRICTED_VAT: 'accounting:ar-invoices:restricted-vat',
 
@@ -289,6 +291,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:ar-invoices:delete': 'Delete an AR invoice',
   'accounting:ar-invoices:send': 'Send an AR invoice to the customer',
   'accounting:ar-invoices:pay': 'Record or cancel a payment against an AR invoice',
+  'accounting:retention:adjust':
+    'Offset a customer retention against a claim, write it off, or provide for it as doubtful',
   'accounting:ar-invoices:restricted-vat':
     'Approve an AR invoice classified as zero-rated or VAT-exempt (no output VAT)',
   'accounting:bank-accounts:read': 'View bank accounts and reconciliation history',

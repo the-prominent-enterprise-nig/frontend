@@ -1,7 +1,7 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { redirect } from 'next/navigation'
 import { isAdmin } from '@/src/libs/guards/permission'
-import { getPaymentMethods } from '../../pos/_actions/pos-actions'
+import { getGLAccounts, getPaymentMethods } from '../../pos/_actions/pos-actions'
 import PaymentMethodOptionsSection from './_components/PaymentMethodOptionsSection'
 
 export const metadata = {
@@ -19,7 +19,7 @@ export default async function PaymentMethodsSettingsPage() {
   if (!session) redirect('/login')
   if (!isAdmin(session)) redirect('/403')
 
-  const result = await getPaymentMethods()
+  const [result, accounts] = await Promise.all([getPaymentMethods(), getGLAccounts()])
 
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">
@@ -28,11 +28,14 @@ export default async function PaymentMethodsSettingsPage() {
           <h1 className="text-3xl font-semibold text-zinc-900">Payment Methods</h1>
           <p className="mt-2 text-sm leading-6 text-zinc-600">
             Manage the named choices offered at checkout under Card, Bank Transfer, and QR — add,
-            rename, or retire your own, without a deploy.
+            rename, or retire your own, without a deploy. A QR gateway can also be given its own
+            clearing account (Maya, GCash), so each provider's money sits in its own account until
+            it is settled.
           </p>
         </div>
         <PaymentMethodOptionsSection
           initialMethods={result.success ? (result.data?.data ?? []) : []}
+          glAccounts={accounts.success ? (accounts.data ?? []) : []}
         />
       </div>
     </div>

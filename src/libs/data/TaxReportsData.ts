@@ -364,7 +364,7 @@ export const TaxReports = {
 
 // ── Closing routines ───────────────────────────────────────────────────────
 
-export type SettlementType = 'VAT_SETTLEMENT' | 'WHT_REMITTANCE'
+export type SettlementType = 'VAT_SETTLEMENT' | 'WHT_REMITTANCE' | 'INCOME_TAX_CLOSING'
 export type SettlementStatus = 'POSTED' | 'REVERSED'
 
 export interface ClosingLine {
@@ -409,6 +409,55 @@ export interface WhtPreview {
   blockers: string[]
 }
 
+/** One customer-withheld amount on the 2307 schedule behind Creditable Withholding Tax. */
+export interface CwtCertificateRow {
+  paymentDate: string
+  customerName: string | null
+  invoiceNumber: string | null
+  certificateNo: string | null
+  atc: string | null
+  amount: number
+  status: 'received' | 'pending'
+}
+
+export interface IncomeTaxPreview {
+  asOf: string
+  taxYear: number
+  taxQuarter: number | null
+  taxDue: number
+  cwtApplied: number
+  /** Still to pay from a bank: the tax due less the CWT applied. */
+  cashDue: number
+  accounts: {
+    cwt: Omit<AccountBalance, 'key'> | null
+    payable: Omit<AccountBalance, 'key'> | null
+    expense: Omit<AccountBalance, 'key'> | null
+  }
+  /** The Income Tax Payable already provided, settled before the expense is charged. */
+  provided: number
+  /** The part of the tax due not provided yet, charged to Income Tax Expense. */
+  provision: number
+  certificates: {
+    received: number
+    pending: number
+    alreadyApplied: number
+    /** Received less already applied: the most that can be claimed now. */
+    claimable: number
+    rows: CwtCertificateRow[]
+    truncated: boolean
+  }
+  lines: ClosingLine[]
+  blockers: string[]
+}
+
+export interface IncomeTaxQuery {
+  asOf: string
+  taxYear: number
+  taxQuarter?: number
+  taxDue: number
+  cwtApplied: number
+}
+
 export interface TaxSettlement {
   id: string
   settlementNumber: string
@@ -419,6 +468,12 @@ export interface TaxSettlement {
   outputVat: number | null
   inputVat: number | null
   netAmount: number
+  /** Income tax closing only. */
+  taxYear: number | null
+  taxQuarter: number | null
+  taxDue: number | null
+  cwtApplied: number | null
+  approvedBy: string | null
   breakdown: ClosingLine[]
   bankAccountId: string | null
   bankName: string | null
@@ -470,6 +525,17 @@ export const TaxClosing = {
     reference?: string
     notes?: string
   }) => api.post<TaxSettlementDetail>('/tax-closing/wht', body),
+  previewIncomeTax: (q: IncomeTaxQuery) =>
+    api.get<IncomeTaxPreview>('/tax-closing/preview/income-tax', params(q)),
+  settleIncomeTax: (
+    body: IncomeTaxQuery & {
+      paymentDate?: string
+      bankAccountId?: string
+      reference: string
+      approvedBy: string
+      notes?: string
+    }
+  ) => api.post<TaxSettlementDetail>('/tax-closing/income-tax', body),
   reverse: (id: string, reason: string) =>
     api.post<TaxSettlementDetail>(`/tax-closing/${id}/reverse`, { reason }),
 }

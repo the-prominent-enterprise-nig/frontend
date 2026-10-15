@@ -48,20 +48,37 @@ export const RAFFLE_OCCASIONS = ['Christmas Party', 'Summer Outing'] as const
 
 // ─── Form ─────────────────────────────────────────────────────────────────────
 
-const DrLineFormSchema = z.object({
-  itemId: z.string().min(1, 'Pick an item'),
-  /** Display-only, carried so a re-render doesn't have to refetch the item. */
-  itemLabel: z.string(),
-  isSerialTracked: z.boolean(),
-  serialNumberId: z.string(),
-  serialLabel: z.string(),
-  quantity: z.number().positive('Quantity must be more than 0'),
-  modelNumber: z.string(),
-  brandName: z.string(),
-  /** Read-only: the catalog cost until saved, then the server's estimate.
-   * Never sent — the backend stamps the real cost when stock leaves. */
-  unitCost: z.number().nullable(),
-})
+const DrLineFormSchema = z
+  .object({
+    itemId: z.string().min(1, 'Pick an item'),
+    /** Display-only, carried so a re-render doesn't have to refetch the item. */
+    itemLabel: z.string(),
+    isSerialTracked: z.boolean(),
+    /** The units on a serialized line — exactly `quantity` of them. Saved as
+     * one backend line per serial. */
+    serials: z.array(z.object({ id: z.string(), label: z.string() })),
+    quantity: z.number().positive('Quantity must be more than 0'),
+    modelNumber: z.string(),
+    brandName: z.string(),
+    /** The system estimate until someone types over it. A typed cost is the
+     * cost the line leaves at — stock ledger, debit memo and journal entry. */
+    unitCost: z.number().min(0, 'Cost cannot be negative').nullable(),
+    /** Only a typed cost is sent; untouched lines keep the system cost. */
+    costTyped: z.boolean(),
+  })
+  .superRefine((line, ctx) => {
+    // A serialized line saves one row per serial, so a quantity the serials do
+    // not match would be lost on save — the backend has no serial-less row.
+    if (!line.isSerialTracked || line.serials.length === line.quantity) return
+    ctx.addIssue({
+      code: 'custom',
+      path: ['serials'],
+      message:
+        line.serials.length < line.quantity
+          ? `Pick ${line.quantity} serial${line.quantity === 1 ? '' : 's'} (${line.serials.length} picked)`
+          : `${line.serials.length} serials picked for a quantity of ${line.quantity}`,
+    })
+  })
 
 /**
  * What a draft needs to save: a purpose, a warehouse and a date. Everything
@@ -103,11 +120,11 @@ export const DrSubmitSchema = DrFormSchema.superRefine((v, ctx) => {
     if (!v.udsId) issue('udsId', 'Pick the repair ticket (UDS)')
   } else if (v.lines.length === 0) issue('lines', 'Add at least one item')
   v.lines.forEach((line, i) => {
-    if (line.isSerialTracked && !line.serialNumberId) {
+    if (line.isSerialTracked && line.serials.length === 0) {
       ctx.addIssue({
         code: 'custom',
-        path: ['lines', i, 'serialNumberId'],
-        message: 'Pick the serial',
+        path: ['lines', i, 'serials'],
+        message: 'Pick the serials',
       })
     }
   })

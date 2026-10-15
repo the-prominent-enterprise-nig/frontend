@@ -148,6 +148,25 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     await expect(page.getByRole('link', { name: /New delivery receipt|New/ }).first()).toBeVisible()
   })
 
+  test('a new form has no print preview, and Cancel goes back without saving', async ({
+    page,
+    request,
+  }) => {
+    const count = async (): Promise<number> => {
+      const res = await request.get('/api/inventory/delivery-receipts', { params: { limit: '1' } })
+      const body = await res.json()
+      return body.meta?.total ?? body.total ?? (body.data ?? []).length
+    }
+    const before = await count()
+    await gotoReady(page, '/inventory/stock-transaction?tab=delivery-receipts')
+    await openNewForm(page)
+    await fillReason(page, 'cancel check')
+    await expect(page.getByRole('button', { name: 'Print preview' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(page).toHaveURL(/tab=delivery-receipts/)
+    expect(await count()).toBe(before)
+  })
+
   test('saves a draft, takes a DR number, and reopens it for editing', async ({ page }) => {
     const sku = await firstPlainItemSku(page)
     await openNewForm(page)
@@ -160,7 +179,78 @@ test.describe('Delivery Receipts — Scenario 72', () => {
     await expect(page.getByRole('heading', { name: 'Edit delivery receipt' })).toBeVisible()
     await expect(page.getByText(/^DR\d{6}$/).first()).toBeVisible()
     await expect(page.getByPlaceholder('Why is this stock leaving?')).toHaveValue(/monitor for HR/)
-    await expect(page.getByRole('button', { name: 'Delete draft' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Print preview' })).toBeVisible()
+  })
+
+  test('a serialized line takes several serials, and its quantity follows the count', async ({
+    page,
+    request,
+  }) => {
+    type Wh = { id: string; name: string; branch?: { name: string } | null }
+    type Sn = { id: string; serialNumber: string; itemId?: string; item?: { id: string } | null }
+    const branchLabel = await openNewForm(page)
+    const warehouses = (
+      await (await request.get('/api/inventory/warehouses', { params: { limit: '200' } })).json()
+    ).data as Wh[]
+    // The picker shows the branch's name (locationLabel), not the warehouse's.
+    const wh = warehouses.find(
+      (w) => (w.branch?.name ?? w.name.replace(/\s+Warehouse$/i, '')) === branchLabel
+    )
+    test.skip(!wh, 'could not match the picked branch to a warehouse')
+    const serials = (
+      await (
+        await request.get('/api/inventory/serial-numbers', {
+          params: { warehouseId: wh!.id, status: 'in_stock', limit: '200' },
+        })
+      ).json()
+    ).data as Sn[]
+    const byItem = new Map<string, Sn[]>()
+    for (const s of serials) {
+      const id = s.item?.id ?? s.itemId ?? ''
+      byItem.set(id, [...(byItem.get(id) ?? []), s])
+    }
+    const pair = [...byItem.entries()].find(([, list]) => list.length >= 2)
+    test.skip(!pair, 'no item with two in-stock serials at this branch')
+    const [itemId, [first, second]] = pair!
+    const item = await (await request.get(`/api/inventory/items/${itemId}`)).json()
+
+    await fillReason(page, 'two units')
+    await addItem(page, item.sku)
+    const qty = page.getByLabel('Quantity')
+    const picker = page.getByLabel('Serial numbers')
+    const pick = async (serial: string): Promise<void> => {
+      await picker.click()
+      await picker.fill(serial)
+      await page.getByTestId('searchable-select-option').filter({ hasText: serial }).first().click()
+    }
+    const setQty = async (value: string): Promise<void> => {
+      await qty.click()
+      await qty.fill(value)
+      await qty.blur()
+    }
+    // Picking past the quantity raises it.
+    await pick(first.serialNumber)
+    await pick(second.serialNumber)
+    await expect(qty).toHaveValue('2')
+    // Raising the quantity keeps the serials picked.
+    await setQty('3')
+    await expect(picker).toHaveValue('2 of 3 serials')
+    // Lowering it below them keeps the first ones picked.
+    await setQty('1')
+    await expect(picker).toHaveValue(first.serialNumber)
+    await setQty('2')
+    await pick(second.serialNumber)
+    await qty.click() // closes the list, which shows the summary
+    await expect(picker).toHaveValue('2 of 2 serials')
+
+    const id = await saveDraftAndGetId(page)
+    const saved = await (await request.get(`/api/inventory/delivery-receipts/${id}`)).json()
+    expect(saved.lines.map((l: { serialNumberId: string }) => l.serialNumberId).sort()).toEqual(
+      [first.id, second.id].sort()
+    )
+    // Reopened, the two backend lines are one form line again.
+    await expect(page.getByLabel('Quantity')).toHaveCount(1)
+    await expect(page.getByLabel('Quantity')).toHaveValue('2')
   })
 
   test('a raffle prize asks for the occasion, with a free-text Other', async ({ page }) => {

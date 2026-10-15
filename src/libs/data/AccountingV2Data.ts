@@ -535,6 +535,16 @@ export interface ARInvoice {
   /** Scenario 69 Part I — the class when it was changed from the one the invoice
    * started on, with why, who and when. Null when it was not. */
   taxOverride?: TaxOverrideEntry[] | null
+  /** Contractual retention: the share the customer holds back until acceptance,
+   * completion or the end of the warranty. totalAmount still bills the whole;
+   * the retained part sits in Retention Receivable until it is released,
+   * offset or written off. */
+  retentionPercent?: number | null
+  retentionAmount?: number
+  /** Released + offset + written off. */
+  retentionSettledAmount?: number
+  retentionReleaseDate?: string | null
+  retentionMilestone?: string | null
   payments?: ARPayment[]
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
@@ -670,9 +680,111 @@ export interface ARInvoiceDocument {
   } | null
   document: ARInvoice
 }
+// ── Customer retention (rows 11K-11O) ──────────────────────────────────────
+
+export type RetentionActionType = 'RELEASE' | 'OFFSET' | 'WRITE_OFF' | 'PROVISION'
+export type RetentionOffsetReason = 'SALES_RETURN' | 'WARRANTY' | 'PENALTY' | 'OTHER'
+
+export interface RetentionActionRow {
+  id: string
+  type: RetentionActionType
+  amount: number
+  actionDate: string
+  reference: string | null
+  reasonCode: string | null
+  offsetAccount: string | null
+  method: string | null
+  approvedBy: string | null
+  notes: string | null
+  journalEntryId: string | null
+}
+
+export interface RetentionHistory {
+  invoiceNumber: string
+  retentionPercent: number | null
+  retentionAmount: number
+  /** Still held by the customer. */
+  held: number
+  actions: RetentionActionRow[]
+}
+
+export interface RetentionScheduleItem {
+  arInvoiceId: string
+  invoiceNumber: string
+  invoiceDate: string
+  customerId: string
+  customerName: string
+  invoiceTotal: number
+  retentionPercent: number | null
+  retained: number
+  released: number
+  offset: number
+  writtenOff: number
+  /** Set aside as doubtful but still held. */
+  provided: number
+  held: number
+  releaseDate: string | null
+  milestone: string | null
+  daysPastDue: number
+}
+
+export interface RetentionSchedule {
+  items: RetentionScheduleItem[]
+  totals: { held: number; pastDue: number }
+  /** What the Retention Receivable account holds; difference is that less the schedule. */
+  glBalance: number | null
+  difference: number | null
+}
+
 export const ARInvoices = {
-  list: (params?: { search?: string; status?: string; customerId?: string; branchId?: string }) =>
-    api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  retentionSchedule: () => api.get<RetentionSchedule>('/ar-invoices/retention/schedule'),
+  retentionHistory: (id: string) => api.get<RetentionHistory>(`/ar-invoices/${id}/retention`),
+  releaseRetention: (
+    id: string,
+    body: {
+      amount: number
+      releaseDate: string
+      method: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR'
+      bankAccountId?: string
+      reference: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/release`, body),
+  offsetRetention: (
+    id: string,
+    body: {
+      amount: number
+      offsetDate: string
+      offsetAccountId: string
+      reasonCode: RetentionOffsetReason
+      reference: string
+      approvedBy: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/offset`, body),
+  doubtfulRetention: (
+    id: string,
+    body: {
+      mode: 'WRITE_OFF' | 'PROVISION'
+      amount: number
+      actionDate: string
+      reference: string
+      approvedBy: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/doubtful`, body),
+  // Without `limit` this is every invoice, in full (~2 KB each — 25 MB at 12.7k). Dashboard
+  // widgets only count and sum, so they pass view: 'summary' (a handful of columns); callers that
+  // want a page pass limit/offset and read `total` for the full count.
+  list: (params?: {
+    search?: string
+    status?: string
+    customerId?: string
+    branchId?: string
+    limit?: number
+    offset?: number
+    view?: 'summary'
+  }) => api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
   // Scenario 44 — flat cross-customer Receipts register (one row per
   // ARPayment) backing the AR Invoices landing page, distinct from list()
   // above which returns ARInvoice rows for the customer-grouped rollup.
@@ -760,6 +872,9 @@ export interface AcknowledgementReceipt {
   account?: { id: string; name: string; number: string | null } | null
   reason: string | null
   amount: number
+  /** What cleared deposits have banked of it — above 0 for one a short
+   * deposit left partly to bank. */
+  depositedAmount?: number | string
   paymentDate: string
   /** Which of the two this record is — drives which title/download shows on
    * the detail page. Null on records saved before this field existed. */
@@ -2223,15 +2338,22 @@ export function adjustedStatementBalance(
  * Until then a worksheet is In Progress (still a difference) or For Review
  * (zero — ready for someone to sign it off).
  */
-export type ReconStatus = 'Reconciled' | 'For Review' | 'In Progress'
-export function reconStatus(reconciled: boolean, discrepancy: number): ReconStatus {
+export type ReconStatus = 'Reconciled' | 'For Review' | 'In Progress' | 'Draft'
+export function reconStatus(
+  reconciled: boolean,
+  discrepancy: number,
+  // An auto-created draft that does not have its statement balance yet.
+  awaitingStatement = false
+): ReconStatus {
   if (reconciled) return 'Reconciled'
+  if (awaitingStatement) return 'Draft'
   return Math.abs(discrepancy) < 0.01 ? 'For Review' : 'In Progress'
 }
 export const RECON_STATUS_STYLE: Record<ReconStatus, string> = {
   Reconciled: 'text-emerald-700 font-medium',
   'For Review': 'text-blue-700 font-medium',
   'In Progress': 'text-amber-700 font-medium',
+  Draft: 'text-purple-700 font-medium',
 }
 export interface BankReconciliationLine {
   id: string
@@ -2254,6 +2376,11 @@ export interface BankReconciliation {
   /** Persisted at Complete time only — null until then. */
   discrepancy?: number | null
   reconciled: boolean
+  /** Made by the month-end job (or "Create drafts"), not typed in by a person. */
+  autoCreated?: boolean
+  /** True until the bank statement's closing balance is entered; the statement
+   * balance is then a placeholder and Mark Reconciled is locked. */
+  awaitingStatement?: boolean
   notes?: string | null
   reconciledAt?: string | null
   lines: BankReconciliationLine[]
@@ -2606,11 +2733,24 @@ export type FundTransferBank = Pick<
   'id' | 'name' | 'bankName' | 'accountNumber' | 'accountType'
 >
 
+export type FundTransferStatus = 'POSTED' | 'VOID'
+// Scenario 72 Part 3 — derived by the backend from the clearing date.
+export type FundTransferClearingStatus = 'pending' | 'cleared' | 'void'
+
 export interface FundTransfer {
   id: string
   transferNumber: string
   date: string
   clearingDate: string | null
+  // Scenario 72 — a void transfer keeps its row; its journal entry is reversed.
+  status: FundTransferStatus
+  clearingStatus: FundTransferClearingStatus
+  // Scenario 72 Part 6 — the branch / location responsible; null = head office.
+  branchId: string | null
+  branch?: { id: string; name: string; code?: string | null } | null
+  voidedAt: string | null
+  voidedById: string | null
+  voidReason: string | null
   sourceBankAccountId: string
   destinationBankAccountId: string
   sourceBankAccount: FundTransferBank
@@ -2638,18 +2778,24 @@ export const BankTransfers = {
     clearingDate?: string
     reference?: string
     description?: string
+    branchId?: string
   }) => api.post<FundTransfer>('/bank-accounts/transfer', body),
   list: (params?: {
     bankAccountId?: string
     startDate?: string
     endDate?: string
     search?: string
+    status?: FundTransferClearingStatus
+    branchId?: string
   }) => api.get<FundTransfer[]>('/bank-accounts/transfers', params),
   get: (id: string) => api.get<FundTransfer>(`/bank-accounts/transfers/${id}`),
   // Only these two fields are editable once posted; null clears a field.
   update: (id: string, body: { clearingDate?: string | null; reference?: string | null }) =>
     api.patch<FundTransfer>(`/bank-accounts/transfers/${id}`, body),
   getDocument: (id: string) => api.get<unknown>(`/bank-accounts/transfers/${id}/document`),
+  // Scenario 72 — reverses the transfer's journal entry; the reason is required.
+  void: (id: string, reason: string) =>
+    api.post<FundTransfer>(`/bank-accounts/transfers/${id}/void`, { reason }),
 }
 
 // ============ Clearing Settlements & Unidentified Bank Credits (Scenario 38 Gap 1) ============

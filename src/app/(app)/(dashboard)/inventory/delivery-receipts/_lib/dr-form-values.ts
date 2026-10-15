@@ -2,6 +2,7 @@ import {
   RAFFLE_OCCASIONS,
   type DrDetail,
   type DrFormValues,
+  type DrLineFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
 
 /** Today in the user's own timezone, as the date input wants it. */
@@ -68,16 +69,45 @@ export function drToFormValues(dr: DrDetail): DrFormValues {
     referenceDate: day(dr.referenceDate),
     reason: dr.reason ?? '',
     remarks: dr.remarks ?? '',
-    lines: dr.lines.map((l) => ({
-      itemId: l.itemId,
-      itemLabel: l.item.name,
-      isSerialTracked: l.item.isSerialTracked,
-      serialNumberId: l.serialNumberId ?? '',
-      serialLabel: l.serialNumber?.serialNumber ?? '',
-      quantity: l.quantity,
-      modelNumber: l.item.modelNumber ?? '',
-      brandName: l.item.brand?.name ?? '',
-      unitCost: l.unitCost ?? l.estimatedUnitCost ?? null,
-    })),
+    lines: groupSerialLines(dr.lines.map(toFormLine)),
   }
+}
+
+type DetailLine = DrDetail['lines'][number]
+
+function toFormLine(l: DetailLine): DrLineFormValues {
+  return {
+    itemId: l.itemId,
+    itemLabel: l.item.name,
+    isSerialTracked: l.item.isSerialTracked,
+    serials:
+      l.serialNumberId && l.serialNumber
+        ? [{ id: l.serialNumberId, label: l.serialNumber.serialNumber }]
+        : [],
+    quantity: l.quantity,
+    modelNumber: l.item.modelNumber ?? '',
+    brandName: l.item.brand?.name ?? '',
+    unitCost: l.unitCost ?? l.estimatedUnitCost ?? null,
+    // A draft's line has a stored cost only when one was typed.
+    costTyped: l.unitCost != null,
+  }
+}
+
+/** The backend keeps one line per serial; the form shows one line per item
+ * (and typed cost), with its serials picked together. */
+function groupSerialLines(lines: DrLineFormValues[]): DrLineFormValues[] {
+  const out: DrLineFormValues[] = []
+  const byKey = new Map<string, DrLineFormValues>()
+  for (const line of lines) {
+    const key = `${line.itemId}|${line.costTyped ? line.unitCost : ''}`
+    const group = line.isSerialTracked ? byKey.get(key) : undefined
+    if (group) {
+      group.serials.push(...line.serials)
+      group.quantity = group.serials.length
+      continue
+    }
+    out.push(line)
+    if (line.isSerialTracked) byKey.set(key, line)
+  }
+  return out
 }

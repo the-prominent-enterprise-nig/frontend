@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle, Eye, Loader2, Pencil, Trash2 } from 'lucide-react'
+import MoneyInput from '@/src/components/ui/MoneyInput'
 import {
   BankAccounts,
   fmtMoney,
@@ -37,6 +38,11 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null)
   const [completing, setCompleting] = useState(false)
   const [editing, setEditing] = useState(false)
+  // An auto-created draft: the statement's date and closing balance, typed in to
+  // start it. The date starts as the draft's own suggested one.
+  const [draftDate, setDraftDate] = useState('')
+  const [draftBalance, setDraftBalance] = useState('')
+  const [savingDraftBalance, setSavingDraftBalance] = useState(false)
   const [editForm, setEditForm] = useState({
     statementDate: '',
     statementBalance: '',
@@ -81,7 +87,8 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
     if (!rec) return
     setEditForm({
       statementDate: String(rec.statementDate).slice(0, 10),
-      statementBalance: String(rec.statementBalance),
+      // A draft's 0 is a placeholder, not something anyone typed.
+      statementBalance: rec.awaitingStatement ? '' : String(rec.statementBalance),
       notes: rec.notes ?? '',
     })
     setEditing(true)
@@ -104,6 +111,27 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
     setEditing(false)
     // A new statement date rebuilds the worksheet server-side, so re-read the
     // whole thing rather than patching the header in place.
+    load()
+  }
+
+  const saveDraftBalance = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!rec || draftBalance === '' || draftBalance === '-') return
+    setSavingDraftBalance(true)
+    setError(null)
+    // A different date rebuilds the worksheet as of that date (ticks are kept);
+    // the same date just records the balance.
+    const res = await BankAccounts.updateReconciliation(id, {
+      statementDate: draftDate || String(rec.statementDate).slice(0, 10),
+      statementBalance: Number(draftBalance),
+    })
+    setSavingDraftBalance(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Could not save the statement balance')
+      return
+    }
+    setDraftBalance('')
+    setDraftDate('')
     load()
   }
 
@@ -168,7 +196,9 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   ])
   const discrepancy = adjustedBalance - rec.systemBalance
   const isZero = Math.abs(discrepancy) < 0.01
-  const status = reconStatus(rec.reconciled, discrepancy)
+  // An auto-created draft has no statement balance until someone types it in.
+  const awaiting = !!rec.awaitingStatement && !rec.reconciled
+  const status = reconStatus(rec.reconciled, discrepancy, awaiting)
 
   return (
     <div className="px-6 py-8 lg:px-10 max-w-5xl mx-auto">
@@ -192,6 +222,13 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold border border-emerald-200">
               <CheckCircle className="w-4 h-4" />
               Reconciled
+            </span>
+          ) : status === 'Draft' ? (
+            <span
+              className="px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 text-sm font-semibold border border-purple-200"
+              title="Created automatically from your books — enter the statement balance to start"
+            >
+              Draft
             </span>
           ) : status === 'For Review' ? (
             <span
@@ -262,12 +299,11 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
               <span className="block text-xs font-medium text-gray-600 mb-1">
                 Statement Balance
               </span>
-              <input
+              <MoneyInput
                 required
-                type="number"
-                step="0.01"
+                allowNegative
                 value={editForm.statementBalance}
-                onChange={(e) => setEditForm({ ...editForm, statementBalance: e.target.value })}
+                onChange={(statementBalance) => setEditForm({ ...editForm, statementBalance })}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </label>
@@ -301,11 +337,16 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
       )}
 
       <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryTile label="Statement Balance" value={rec.statementBalance} />
+        <SummaryTile
+          label="Statement Balance"
+          value={rec.statementBalance}
+          display={awaiting ? 'Not entered yet' : undefined}
+        />
         <SummaryTile label="System Balance" value={rec.systemBalance} hint="Computed from the GL" />
         <SummaryTile
           label="Adjusted Balance"
           value={adjustedBalance}
+          display={awaiting ? '—' : undefined}
           hint="Statement + outstanding deposits − outstanding withdrawals"
         />
         {/* The tile states the gap; clicking it shows the transactions the
@@ -313,11 +354,55 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
         <SummaryTile
           label="Discrepancy"
           value={discrepancy}
-          tone={isZero ? 'good' : 'bad'}
+          display={awaiting ? '—' : undefined}
+          tone={awaiting ? undefined : isZero ? 'good' : 'bad'}
           hint="Click to see this bank's transactions"
           onClick={() => router.push(`/accounting/bank-reconciliation/${id}/transactions`)}
         />
       </div>
+
+      {awaiting && (
+        <form
+          onSubmit={saveDraftBalance}
+          aria-label="Enter the bank statement balance"
+          className="mt-6 border-t pt-5"
+        >
+          <h2 className="text-xs font-semibold uppercase text-gray-500 mb-1">
+            Enter the bank statement balance
+          </h2>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="block w-48">
+              <span className="block text-xs font-medium text-gray-600 mb-1">Statement Date *</span>
+              <input
+                required
+                type="date"
+                value={draftDate || String(rec.statementDate).slice(0, 10)}
+                onChange={(e) => setDraftDate(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </label>
+            <label className="block w-64">
+              <span className="block text-xs font-medium text-gray-600 mb-1">
+                Statement Balance *
+              </span>
+              <MoneyInput
+                required
+                allowNegative
+                value={draftBalance}
+                onChange={setDraftBalance}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={savingDraftBalance || draftBalance === '' || draftBalance === '-'}
+              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            >
+              {savingDraftBalance ? 'Saving' : 'Save statement balance'}
+            </button>
+          </div>
+        </form>
+      )}
 
       {error && (
         <div className="mt-4 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
@@ -342,16 +427,29 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 
       {!rec.reconciled && (
         <div className="mt-6 flex items-center justify-end gap-3">
-          {!isZero && (
+          {awaiting ? (
             <p className="text-xs text-amber-700">
-              Tick every item that cleared on the statement. Mark Reconciled unlocks only at a ₱0.00
-              discrepancy.
+              Enter the statement balance first. Mark Reconciled unlocks once it is entered and the
+              discrepancy is ₱0.00.
             </p>
+          ) : (
+            !isZero && (
+              <p className="text-xs text-amber-700">
+                Tick every item that cleared on the statement. Mark Reconciled unlocks only at a
+                ₱0.00 discrepancy.
+              </p>
+            )
           )}
           <button
             onClick={complete}
-            disabled={completing || !isZero}
-            title={isZero ? undefined : 'Discrepancy must be zero before completing'}
+            disabled={completing || awaiting || !isZero}
+            title={
+              awaiting
+                ? 'Enter the statement balance first'
+                : isZero
+                  ? undefined
+                  : 'Discrepancy must be zero before completing'
+            }
             className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {completing ? 'Completing...' : 'Mark Reconciled'}
@@ -365,12 +463,15 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 function SummaryTile({
   label,
   value,
+  display,
   hint,
   tone,
   onClick,
 }: {
   label: string
   value: number
+  /** Shown instead of the amount when there is no real amount yet. */
+  display?: string
   hint?: string
   tone?: 'good' | 'bad'
   onClick?: () => void
@@ -380,7 +481,7 @@ function SummaryTile({
   const body = (
     <>
       <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className={`mt-1 text-lg font-semibold ${toneClass}`}>{fmtMoney(value)}</p>
+      <p className={`mt-1 text-lg font-semibold ${toneClass}`}>{display ?? fmtMoney(value)}</p>
       {hint && <p className="mt-0.5 text-[11px] text-gray-400">{hint}</p>}
     </>
   )

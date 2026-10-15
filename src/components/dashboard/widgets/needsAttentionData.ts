@@ -57,7 +57,7 @@ export async function getNeedsAttentionItems(
   branchId?: string,
   queryClient?: QueryClient
 ): Promise<AttentionItem[]> {
-  const fetchArInvoices = () => ARInvoices.list({ branchId })
+  const fetchArInvoices = () => ARInvoices.list({ branchId, view: 'summary' })
   const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, arRes, drRes] = await Promise.all([
     getPurchaseOrders({ status: 'draft', limit: 20, branchId }),
     getPendingReturnRefundRequests(branchId),

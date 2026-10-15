@@ -26,6 +26,10 @@ import {
   type CreateManualReceivingReportFormValues,
   type ManualReceivingReportLineFormValues,
 } from '@/src/schema/inventory/manual-receiving-reports'
+import {
+  advanceOnScan,
+  serialScanProps,
+} from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_components/receive-po/serialScan'
 import { useEwtCodes } from '@/src/hooks/useEwtCodes'
 import { withholdingClassOptions } from '@/src/libs/tax/ewt'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
@@ -456,9 +460,11 @@ export default function ManualRrLineRow({
             return (
               <input
                 key={unitIndex}
+                {...serialScanProps}
                 type="text"
                 value={line?.serialNumbers?.[unitIndex] ?? ''}
                 onChange={(e) => onSerialChange(unitIndex, e.target.value)}
+                onKeyDown={advanceOnScan}
                 placeholder={`Serial ${unitIndex + 1}`}
                 className={serialError ? INPUT_BAD : `${INPUT} ${MONO} text-[12px]`}
               />

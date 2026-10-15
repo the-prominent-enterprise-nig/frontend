@@ -134,7 +134,7 @@ export default function ModulesWidget() {
         //   approvedRequests?: number
         // }>('/leave-management/summary'),
         api.get<{ meta?: { total?: number } }>('/inventory/items', { limit: 1 }),
-        ARInvoices.list(),
+        ARInvoices.list({ view: 'summary' }),
         loadInventoryStats(branchId),
         getTransactions({ dateFrom: monthStart.toISOString(), branchId: branchId ?? undefined }),
         customersApi.list({ limit: 200 }),

@@ -1,8 +1,8 @@
 'use client'
 
-import { useRef, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { MONO } from '../procurementTokens'
+import { advanceOnScan, serialScanProps } from './serialScan'
 import Tooltip from '@/src/components/ui/Tooltip'
 
 type Props = {
@@ -10,6 +10,10 @@ type Props = {
   serials: string[]
   /** Whether a blank box should already read as an error. */
   showErrors: boolean
+  /** True (the default) when every box has to be filled before posting. False
+   * where the quantity is counted from the serials entered, so a blank box is
+   * just a unit not being received yet — never an error. */
+  requireAll?: boolean
   /** True when this unit's serial repeats one typed elsewhere on the receipt. */
   isDuplicate: (unitIndex: number) => boolean
   onChange: (unitIndex: number, value: string) => void
@@ -30,23 +34,15 @@ export function SerialCaptureDrawer({
   quantity,
   serials,
   showErrors,
+  requireAll = true,
   isDuplicate,
   onChange,
   onClearAll,
   onClose,
 }: Props) {
-  const inputs = useRef<(HTMLInputElement | null)[]>([])
   const slots = Array.from({ length: quantity }, (_, i) => serials[i] ?? '')
   const filled = slots.filter((s) => s.trim()).length
   const complete = quantity > 0 && filled === quantity
-
-  // Scanners emit Enter after each barcode, so Enter has to land on the next
-  // box or a receiver scanning ten units types into the first one ten times.
-  const advance = (event: KeyboardEvent<HTMLInputElement>, unitIndex: number) => {
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    inputs.current[unitIndex + 1]?.focus()
-  }
 
   return (
     <div className="rounded-[10px] border border-[#ddd0f7] bg-[#fcfaff] px-4 py-3.5">
@@ -83,7 +79,7 @@ export function SerialCaptureDrawer({
         <div className="grid grid-cols-1 gap-2.5">
           {slots.map((value, unitIndex) => {
             const duplicate = isDuplicate(unitIndex)
-            const missing = showErrors && !value.trim()
+            const missing = requireAll && showErrors && !value.trim()
             const bad = duplicate || missing
             return (
               <div key={unitIndex} className="flex min-w-0 flex-col gap-1">
@@ -112,12 +108,10 @@ export function SerialCaptureDrawer({
                   }`}
                 >
                   <input
-                    ref={(el) => {
-                      inputs.current[unitIndex] = el
-                    }}
+                    {...serialScanProps}
                     value={value}
                     onChange={(e) => onChange(unitIndex, e.target.value)}
-                    onKeyDown={(e) => advance(e, unitIndex)}
+                    onKeyDown={advanceOnScan}
                     type="text"
                     // Every PO renders these boxes under the same field name, so
                     // the browser offers the last delivery's serial as a
@@ -131,6 +125,9 @@ export function SerialCaptureDrawer({
                     <Tooltip label="Clear this serial" side="top" align="end">
                       <button
                         type="button"
+                        // Out of the Tab order: a scanner that ends on Tab would
+                        // otherwise park focus here instead of on the next box.
+                        tabIndex={-1}
                         onClick={() => onChange(unitIndex, '')}
                         aria-label={`Clear serial for unit ${unitIndex + 1}`}
                         className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
@@ -161,6 +158,8 @@ export function SerialCaptureDrawer({
           </button>
           <span className="text-[11px] text-[#8b8b9b]">
             Duplicates are rejected across the whole receipt.
+            {!requireAll &&
+              ' Only the serials entered are received — blank units stay open on the PO.'}
           </span>
         </div>
       </div>

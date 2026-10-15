@@ -3,7 +3,7 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { revalidateTag } from 'next/cache'
 import { branchDisplayName } from '@/src/libs/format/locationLabel'
-import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions/get-session'
 import type {
   PosCustomer,
   PosEmployeeResult,
@@ -89,6 +89,7 @@ import type {
   CustomerAdvance,
   CreateCustomerAdvanceInput,
   CustomerAdvanceFilters,
+  OverrideReviewDay,
 } from '@/src/schema/pos'
 import { isPendingApproval } from '@/src/schema/pos'
 import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
@@ -1701,6 +1702,9 @@ export async function upsertPosConfig(
     // No existing config — create one. Backend reads tenantId from the JWT.
     const createResult = await api.post<PosConfig>('/pos/config', {
       discountOverrideThreshold: fields.discountOverrideThreshold ?? 20,
+      ...(fields.priceOverrideFlagPct !== undefined
+        ? { priceOverrideFlagPct: fields.priceOverrideFlagPct }
+        : {}),
       receiptlessReturnDays: fields.receiptlessReturnDays ?? 7,
       allowNegativeStock: fields.allowNegativeStock ?? false,
     })
@@ -1743,7 +1747,7 @@ export async function getActivePosConfig(): Promise<ApiResponse<PosConfig | null
     }
 
     // /pos/config/active returned nothing — fall back to tenant lookup
-    const session = await getSessionOrNull()
+    const session = await getSessionIfAvailable()
     if (!session) return { success: true, data: null }
 
     const tenantId = session.enterpriseOwnerId ?? session.id
@@ -1872,7 +1876,7 @@ export async function getCurrentSessionUser(): Promise<
   ApiResponse<{ id: string; name: string; email: string }>
 > {
   try {
-    const session = await getSessionOrNull()
+    const session = await getSessionIfAvailable()
     if (!session) {
       return { success: false, error: 'Not authenticated' }
     }
@@ -1943,20 +1947,136 @@ export async function validateManagerByPin(
   }
 }
 
-export async function validatePriceOverrideByPin(
-  pin: string
-): Promise<ApiResponse<{ valid: boolean; managerId: string; managerName: string }>> {
+// ─── Override reasons (Scenario 71) ────────────────────────────────────────────
+
+export interface PosOverrideReason {
+  id: string
+  name: string
+  isActive: boolean
+  displayOrder: number
+}
+
+/** activeOnly feeds the checkout dropdown; POS Settings asks for every reason,
+ * switched-off ones included. Never cached — a reason added or switched off in
+ * Settings must reach the next sale at once. */
+export async function getPosOverrideReasons(
+  opts: { activeOnly?: boolean } = {}
+): Promise<ApiResponse<PosOverrideReason[]>> {
   try {
-    const result = await api.post<{ valid: boolean; managerId: string; managerName: string }>(
-      '/pos/cashier/price-override/validate-pin-only',
-      { pin }
+    const result = await api.get<PosOverrideReason[]>(
+      '/pos/override-reasons',
+      opts.activeOnly ? { activeOnly: 'true' } : undefined
     )
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Invalid PIN' }
+      return { success: false, error: result.error || 'Failed to load override reasons' }
     }
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to validate PIN' }
+    return { success: false, error: 'Failed to load override reasons' }
+  }
+}
+
+export async function createPosOverrideReason(
+  name: string
+): Promise<ApiResponse<PosOverrideReason>> {
+  try {
+    const result = await api.post<PosOverrideReason>('/pos/override-reasons', { name })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to add the reason' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to add the reason' }
+  }
+}
+
+export async function updatePosOverrideReason(
+  id: string,
+  input: { name?: string; isActive?: boolean; displayOrder?: number }
+): Promise<ApiResponse<PosOverrideReason>> {
+  try {
+    const result = await api.patch<PosOverrideReason>(`/pos/override-reasons/${id}`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update the reason' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to update the reason' }
+  }
+}
+
+// ─── Override Review (Scenario 71 Part 4) ──────────────────────────────────────
+
+export async function getOverrideReview(
+  date: string,
+  branchId?: string
+): Promise<ApiResponse<OverrideReviewDay>> {
+  try {
+    const result = await api.get<OverrideReviewDay>('/pos/override-review', {
+      date,
+      ...(branchId ? { branchId } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to load the override review' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to load the override review' }
+  }
+}
+
+export async function decideOverrideEntry(
+  id: string,
+  status: 'approved' | 'rejected',
+  note?: string
+): Promise<ApiResponse<{ id: string; status: string }>> {
+  try {
+    const result = await api.post<{ id: string; status: string }>(
+      `/pos/override-review/${id}/decide`,
+      { status, ...(note ? { note } : {}) }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to save the decision' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to save the decision' }
+  }
+}
+
+export async function approveAllOverrideEntries(
+  date: string,
+  branchId?: string
+): Promise<ApiResponse<{ approved: number }>> {
+  try {
+    const result = await api.post<{ approved: number }>('/pos/override-review/approve-all', {
+      date,
+      ...(branchId ? { branchId } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to approve the pending entries' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to approve the pending entries' }
+  }
+}
+
+export async function signOffOverrideDay(
+  date: string,
+  branchId?: string
+): Promise<ApiResponse<{ id: string }>> {
+  try {
+    const result = await api.post<{ id: string }>('/pos/override-review/sign-off', {
+      date,
+      ...(branchId ? { branchId } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to sign off the day' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to sign off the day' }
   }
 }
 
@@ -2168,7 +2288,12 @@ export async function createPaymentMethodOption(
 export async function updatePaymentMethodOption(
   configId: string,
   optionId: string,
-  input: Partial<{ name: string; isEnabled: boolean; displayOrder: number }>
+  input: Partial<{
+    name: string
+    isEnabled: boolean
+    displayOrder: number
+    glAccountId: string | null
+  }>
 ): Promise<ApiResponse<PaymentMethodOption>> {
   try {
     const result = await api.patch<{ data: PaymentMethodOption; meta: unknown }>(
@@ -3038,10 +3163,18 @@ export interface CashInTransitSessionRow {
   /** The New Receipts this session's deposit took in — set on one session
    * per deposit, so they are counted once. */
   newReceiptsAmount?: number
+  /** What earlier deposits already banked of it — above 0 for a session a
+   * short deposit left partly to deposit; `amount` and `clearingAmount` are
+   * what is left. Absent on an older API. */
+  depositedAmount?: number
   journalEntryId: string | null
   /** Scenario 61 Part 5 — the draft deposit reserving this session, if any:
    * still owed to the bank, but not selectable for another deposit. */
   pendingDeposit?: { id: string; depositDate: string; bankName: string } | null
+  /** Every draft holding part of it, with how much it holds — each waits on
+   * accounting as its own row. `amount` is then only what is still free to
+   * deposit. Absent on an older API. */
+  pendingDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
 }
 
 /** A session already banked — Scenario 61's Undeposited Funds table lists

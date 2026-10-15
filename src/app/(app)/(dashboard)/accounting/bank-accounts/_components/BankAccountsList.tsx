@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react'
 import { BankAccounts, type BankAccount, fmtMoney } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 
 export default function BankAccountsList() {
   const router = useRouter()
@@ -179,32 +178,16 @@ function BankForm({
     accountType: initial?.accountType ?? 'Operating',
     currencyCode: initial?.currencyCode ?? 'PHP',
     currentBalance: String(initial?.currentBalance ?? 0),
-    glAccountId: initial?.glAccountId ?? '',
   })
-  const [accounts, setAccounts] = useState<Account[]>([])
-  useEffect(() => {
-    ;(async () => {
-      const r = await getAccounts({ limit: 500 })
-      const data = r.data as any
-      setAccounts((data?.items ?? data ?? []) as Account[])
-    })()
-  }, [])
-  // Every bank / cash fund posts to the one "Cash and Cash Equivalents"
-  // account (1-01-010) — the chart has no per-bank accounts, and the bank is
-  // told apart by the tag on its ledger lines. An already-saved link to some
-  // other account stays selectable so it isn't silently dropped.
-  const cashControl = accounts.find((a) => a.number === '1-01-010')
-  const glAccounts = accounts.filter(
-    (a) => a.id === cashControl?.id || a.id === initial?.glAccountId
-  )
   const [saving, setSaving] = useState(false)
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
+    // glAccountId is never sent: the server links every bank / cash fund to
+    // the one "Cash and Cash Equivalents" account (1-01-010).
     const payload = {
       ...form,
       currentBalance: Number(form.currentBalance),
-      glAccountId: form.glAccountId || null,
     }
     if (initial) await BankAccounts.update(initial.id, payload)
     else await BankAccounts.create(payload)
@@ -277,18 +260,14 @@ function BankForm({
             </F>
           </div>
           <F label="GL Account">
-            <select
-              value={form.glAccountId}
-              onChange={(e) => setForm({ ...form, glAccountId: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Cash and Cash Equivalents (default) —</option>
-              {glAccounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.number ?? a.code} — {a.name}
-                </option>
-              ))}
-            </select>
+            <input
+              readOnly
+              value="1-01-010 — Cash and Cash Equivalents"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Every bank and cash account posts to this one account.
+            </p>
           </F>
           <div className="flex justify-end gap-2 pt-3 border-t">
             <button

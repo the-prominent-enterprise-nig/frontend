@@ -1,12 +1,14 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs, fillStable } from './utils'
+import { gotoReady, loginAs, fillStable, pickCartPriceUse } from './utils'
 
-// SI/CR/DR reference numbers on a POS sale — SI (Sales Invoice #) and DR
-// (Delivery Receipt #) are new, optional, free-text, once per whole
-// transaction on PosTransaction (not per payment/tender like the existing
-// CR/referenceNumber, which is unchanged and covered elsewhere). Both are
-// editable at checkout and shown read-only on the printed receipt and the
-// transaction detail page.
+// SI/CR/DR reference numbers on a POS sale — a sale carries ONE document
+// number, free-text, once per whole transaction on PosTransaction (not per
+// payment/tender like the existing CR/referenceNumber, which is unchanged and
+// covered elsewhere): either an SI (Sales Invoice #) or a DR (Delivery
+// Receipt #), picked with the Sales Invoice | Delivery Receipt toggle at
+// checkout. A DR is just the other kind of sales document, so its number is
+// also stored as the invoice number and no screen shows a blank. It is shown
+// read-only on the printed receipt and the transaction detail page.
 //
 // The suite's usual "Universal Remote Control"/"Refrigerator" cart fixtures
 // were removed by a seed change that strips all fictional catalog items, and
@@ -122,7 +124,7 @@ async function createStockedItem(
   return { id: item.id as string, name }
 }
 
-test('a transaction created with SI/DR numbers shows them on the transaction detail page', async ({
+test('a transaction created with a Delivery Receipt No. shows it on the transaction detail page', async ({
   page,
 }) => {
   const branchesRes = await page.request.get('/api/branches?limit=200')
@@ -141,7 +143,6 @@ test('a transaction created with SI/DR numbers shows them on the transaction det
 
   const sessionId = await ensureOpenSession(page, branchId)
 
-  const siNumber = `SI-E2E-${Date.now()}`
   const drNumber = `DR-E2E-${Date.now()}`
 
   const txRes = await page.request.post('/api/pos/transactions', {
@@ -151,27 +152,28 @@ test('a transaction created with SI/DR numbers shows them on the transaction det
       subtotal: 500,
       totalAmount: 500,
       currency: 'PHP',
-      salesInvoiceNumber: siNumber,
       deliveryReceiptNumber: drNumber,
       lines: [{ itemId: item.id, itemName: item.name, quantity: 1, unitPrice: 500 }],
     },
   })
   expect(txRes.ok()).toBeTruthy()
   const created = await txRes.json()
-  expect(created.salesInvoiceNumber).toBe(siNumber)
   expect(created.deliveryReceiptNumber).toBe(drNumber)
+  // The DR number is the sale's document number too — lists, search, ledgers
+  // and returns all read it from there, so none of them is blank.
+  expect(created.salesInvoiceNumber).toBe(drNumber)
 
   await gotoReady(page, '/pos/transactions')
   const searchInput = page.getByPlaceholder('Search…')
-  // The list column shows the Sales Invoice No. now; search matches it too.
-  await fillStable(searchInput, siNumber)
+  // The list column shows the document number; search matches it too.
+  await fillStable(searchInput, drNumber)
   // Auto-searches ~400ms after typing stops — no Apply click needed.
-  await page.getByText(siNumber, { exact: true }).click()
+  await page.getByText(drNumber, { exact: true }).click()
 
-  // The SI number is the detail modal's heading now, not a labelled row.
-  await expect(page.getByText(siNumber, { exact: true })).toBeVisible({ timeout: 10_000 })
+  // The number is the detail modal's heading, and the labelled row says it
+  // is a Delivery Receipt.
+  await expect(page.getByRole('heading', { name: drNumber })).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Delivery Receipt No.', { exact: true })).toBeVisible()
-  await expect(page.getByText(drNumber, { exact: true })).toBeVisible()
 })
 
 // NOT currently run/verified — see the developer conversation this was
@@ -187,7 +189,7 @@ test('a transaction created with SI/DR numbers shows them on the transaction det
 test.describe('POS Checkout — SI/DR numbers end to end', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test.skip('cashier fills SI/DR at checkout, sees them on the receipt and on the transaction detail page', async ({
+  test.skip('cashier rings a Delivery Receipt sale at checkout, sees it on the receipt and on the transaction detail page', async ({
     page,
   }) => {
     await loginAs(page, OWNER_EMAIL, DEV_PASSWORD)
@@ -214,13 +216,12 @@ test.describe('POS Checkout — SI/DR numbers end to end', () => {
     await itemCard.first().click()
     const cartRow = page.locator('tr', { hasText: item.name })
     await expect(cartRow).toBeVisible({ timeout: 10_000 })
-    await page.getByLabel('Price Use').selectOption({ label: 'WIP' })
+    await pickCartPriceUse(page, 'WIP')
     await expect(cartRow.getByText(/₱[\d,]+\.\d{2}/)).toBeVisible({ timeout: 10_000 })
 
-    const siNumber = `SI-E2E-${Date.now()}`
     const drNumber = `DR-E2E-${Date.now()}`
-    await fillStable(page.getByLabel('Sales Invoice number'), siNumber)
-    await fillStable(page.getByLabel('Delivery Receipt number'), drNumber)
+    await page.getByRole('radio', { name: 'Delivery Receipt' }).click()
+    await fillStable(page.getByLabel('Delivery Receipt No.'), drNumber)
 
     // The auto-added cash payment row starts at 0 — overpay generously so
     // the item's exact price (which can vary/change) never blocks
@@ -232,20 +233,20 @@ test.describe('POS Checkout — SI/DR numbers end to end', () => {
     // client-side render.
     await page.getByRole('button', { name: /Confirm Sale/ }).click()
     await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText('Sales Invoice No.', { exact: true })).toBeVisible()
-    await expect(page.getByText(siNumber, { exact: true })).toBeVisible()
+    // One row on the receipt, labelled as a DR — not a Sales Invoice.
     await expect(page.getByText('Delivery Receipt No.', { exact: true })).toBeVisible()
     await expect(page.getByText(drNumber, { exact: true })).toBeVisible()
+    await expect(page.getByText('Sales Invoice No.', { exact: true })).toHaveCount(0)
 
     await gotoReady(page, '/pos/transactions')
     const txSearchInput = page.getByPlaceholder('Search…')
-    // The list column shows the Sales Invoice No. now; search matches it too.
-    await fillStable(txSearchInput, siNumber)
-    await page.getByText(siNumber, { exact: true }).click()
+    // The list column shows the document number; search matches it too.
+    await fillStable(txSearchInput, drNumber)
+    await page.getByText(drNumber, { exact: true }).click()
 
-    // The SI number is the detail modal's heading now, not a labelled row.
-    await expect(page.getByText(siNumber, { exact: true })).toBeVisible({ timeout: 10_000 })
+    // The number is the detail modal's heading, and the labelled row says it
+    // is a Delivery Receipt.
+    await expect(page.getByRole('heading', { name: drNumber })).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('Delivery Receipt No.', { exact: true })).toBeVisible()
-    await expect(page.getByText(drNumber, { exact: true })).toBeVisible()
   })
 })

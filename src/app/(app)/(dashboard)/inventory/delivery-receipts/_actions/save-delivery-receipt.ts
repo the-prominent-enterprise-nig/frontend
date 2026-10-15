@@ -15,6 +15,13 @@ import { drFailure } from '../_lib/dr-errors'
 
 const blank = (v: string): string | undefined => (v.trim() === '' ? undefined : v.trim())
 
+/** A serialized form line is one backend line per picked serial. */
+function toLineBodies(l: DrFormValues['lines'][number]): Record<string, unknown>[] {
+  const unitCost = l.costTyped && l.unitCost != null ? l.unitCost : undefined
+  if (!l.isSerialTracked) return [{ itemId: l.itemId, quantity: l.quantity, unitCost }]
+  return l.serials.map((s) => ({ itemId: l.itemId, serialNumberId: s.id, quantity: 1, unitCost }))
+}
+
 /** Form values → the backend DTO. Empty strings are not sent (the API
  * validates ids as UUIDs and dates as ISO strings). */
 function toBody(v: DrFormValues): Record<string, unknown> {
@@ -38,13 +45,7 @@ function toBody(v: DrFormValues): Record<string, unknown> {
     referenceDate: blank(v.referenceDate),
     reason: blank(v.reason),
     remarks: blank(v.remarks),
-    lines: repair
-      ? undefined
-      : v.lines.map((l) => ({
-          itemId: l.itemId,
-          serialNumberId: blank(l.serialNumberId),
-          quantity: l.isSerialTracked ? 1 : l.quantity,
-        })),
+    lines: repair ? undefined : v.lines.flatMap(toLineBodies),
   }
 }
 

@@ -8,26 +8,25 @@ import {
   ItemSearchCombobox,
   type ItemSearchMeta,
 } from '../../purchase-requests/_components/ItemSearchCombobox'
-import { SerialSearchCombobox } from '../../transfers/_components/SerialSearchCombobox'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import {
   isRepairPurpose,
   type DrFormValues,
   type DrLineFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
-import { fmtPeso } from '../_lib/dr-format'
 import { Field, FieldError, INPUT, Section, TEXTAREA } from './drFormUi'
 
 export const EMPTY_LINE: DrLineFormValues = {
   itemId: '',
   itemLabel: '',
   isSerialTracked: false,
-  serialNumberId: '',
-  serialLabel: '',
+  serials: [],
   quantity: 1,
   modelNumber: '',
   brandName: '',
   unitCost: null,
+  costTyped: false,
 }
 
 const GRID =
@@ -111,14 +110,16 @@ function DrRepairItems(): React.JSX.Element {
         <div className="divide-y divide-[#eeeef1] rounded-lg border border-[#eeeef1]">
           {lines.map((l) => (
             <div
-              key={l.serialNumberId || l.itemId}
+              key={l.serials[0]?.id || l.itemId}
               className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[13px]"
             >
               <span className="font-medium text-[#1f1f2b]">
                 {l.itemLabel}
                 {l.brandName && <span className="ml-2 text-[#8b8b9b]">{l.brandName}</span>}
               </span>
-              <span className="font-mono text-[12px] text-[#5b5b6b]">{l.serialLabel || '—'}</span>
+              <span className="font-mono text-[12px] text-[#5b5b6b]">
+                {l.serials.map((s) => s.label).join(', ') || '—'}
+              </span>
             </div>
           ))}
         </div>
@@ -160,12 +161,12 @@ function DrLineRow({
         itemId: id,
         itemLabel: label,
         isSerialTracked: meta?.isSerialTracked ?? false,
-        serialNumberId: '',
-        serialLabel: '',
+        serials: [],
         quantity: 1,
         modelNumber: meta?.modelNumber ?? '',
         brandName: meta?.brandName ?? '',
         unitCost: meta?.costPrice ?? null,
+        costTyped: false,
       },
       { shouldDirty: true, shouldValidate: formState.isSubmitted }
     )
@@ -175,22 +176,21 @@ function DrLineRow({
     <div className={`${GRID} rounded-lg border border-[#eeeef1] p-2 md:border-0 md:p-0`}>
       <div className="flex flex-col gap-1">
         <ItemSearchCombobox
-          compact
           value={line.itemId}
           initialLabel={line.itemLabel}
           stockWarehouseId={warehouseId}
           error={errors?.itemId?.message}
           placeholder="Search item…"
-          onChange={() => undefined}
+          // The id lands at once; brand, serials and cost follow in onSelect,
+          // which can wait on a fetch of the item (ItemSearchCombobox).
+          onChange={(id) => setValue(`lines.${index}.itemId`, id, { shouldDirty: true })}
           onSelect={(o) => pickItem(o.id, o.primary, o.meta as ItemSearchMeta | undefined)}
         />
         {line.modelNumber && <span className="text-[11px] text-[#8b8b9b]">{line.modelNumber}</span>}
       </div>
       <div className={`${INPUT} flex items-center text-[#5b5b6b]`}>{line.brandName || '—'}</div>
       <SerialCell index={index} warehouseId={warehouseId} />
-      {line.isSerialTracked ? (
-        <div className={`${INPUT} flex items-center text-[#8b8b9b]`}>1</div>
-      ) : (
+      <div className="flex flex-col gap-1">
         <Controller
           control={control}
           name={`lines.${index}.quantity`}
@@ -198,20 +198,30 @@ function DrLineRow({
             <input
               type="number"
               min={1}
-              step="any"
-              value={field.value}
-              onChange={(e) => field.onChange(Number(e.target.value))}
+              // Whole units for a serialized item.
+              step={line.isSerialTracked ? 1 : 'any'}
+              // Empty while retyping, so the box never shows a 0 that can't be
+              // deleted; save's "more than 0" check catches one left empty.
+              value={field.value || ''}
+              onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+              // Lowered below the serials picked: keep the first ones, drop
+              // the rest. On blur, not per keystroke — typing "10" passes "1".
+              onBlur={() => {
+                field.onBlur()
+                if (line.isSerialTracked && field.value > 0 && line.serials.length > field.value) {
+                  setValue(`lines.${index}.serials`, line.serials.slice(0, field.value), {
+                    shouldDirty: true,
+                  })
+                }
+              }}
               className={INPUT}
               aria-label="Quantity"
             />
           )}
         />
-      )}
-      <Tooltip label="System cost — stamped when the stock actually leaves">
-        <div className={`${INPUT} flex items-center justify-end tabular-nums text-[#5b5b6b]`}>
-          {line.unitCost != null ? fmtPeso(line.unitCost) : '—'}
-        </div>
-      </Tooltip>
+        {errors?.quantity?.message && <FieldError text={errors.quantity.message} />}
+      </div>
+      <UnitCostCell index={index} />
       <Tooltip label="Remove item">
         <button
           type="button"
@@ -226,8 +236,39 @@ function DrLineRow({
   )
 }
 
-/** The unit itself, from what is on the issuing warehouse's shelf, minus the
- * units already picked on this DR's other lines. */
+/** Starts at the system estimate; whatever is typed here is the cost the
+ * line leaves at, in the stock ledger, the debit memo and the journal entry. */
+function UnitCostCell({ index }: { index: number }): React.JSX.Element {
+  const { control, setValue, formState } = useFormContext<DrFormValues>()
+  const error = formState.errors.lines?.[index]?.unitCost?.message
+  return (
+    <div className="flex flex-col gap-1">
+      <Controller
+        control={control}
+        name={`lines.${index}.unitCost`}
+        render={({ field }) => (
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={field.value ?? ''}
+            onChange={(e) => {
+              field.onChange(e.target.value === '' ? null : Number(e.target.value))
+              setValue(`lines.${index}.costTyped`, e.target.value !== '', { shouldDirty: true })
+            }}
+            className={`${INPUT} text-right tabular-nums`}
+            aria-label="Unit cost"
+          />
+        )}
+      />
+      {error && <FieldError text={error} />}
+    </div>
+  )
+}
+
+/** The units themselves, from what is on the issuing warehouse's shelf,
+ * minus the units already picked on this DR's other lines. Several at once,
+ * as many as the line's quantity. */
 function SerialCell({
   index,
   warehouseId,
@@ -248,18 +289,46 @@ function SerialCell({
   if (!line.isSerialTracked) {
     return <div className={`${INPUT} flex items-center text-[#a3a3b2]`}>Not serialized</div>
   }
-  const pickedElsewhere = lines.filter((_, i) => i !== index).map((l) => l.serialNumberId)
-  const options = (serials.data?.data?.data ?? []).filter((s) => !pickedElsewhere.includes(s.id))
+  const pickedElsewhere = new Set(
+    lines.flatMap((l, i) => (i === index ? [] : l.serials.map((s) => s.id)))
+  )
+  const onShelf = (serials.data?.data?.data ?? [])
+    .filter((s) => !pickedElsewhere.has(s.id))
+    .map((s) => ({ value: s.id, label: s.serialNumber }))
+  // A picked unit stays listed even if the shelf query no longer returns it.
+  const shelfIds = new Set(onShelf.map((o) => o.value))
+  const options = [
+    ...line.serials
+      .filter((s) => !shelfIds.has(s.id))
+      .map((s) => ({ value: s.id, label: s.label })),
+    ...onShelf,
+  ]
+  const labelOf = new Map(options.map((o) => [o.value, o.label]))
+  const error = formState.errors.lines?.[index]?.serials?.message
   return (
-    <SerialSearchCombobox
-      value={line.serialNumberId}
-      initialLabel={line.serialLabel}
-      options={options}
-      queryKey={`dr-serial-${index}-${line.itemId}-${options.length}`}
-      error={formState.errors.lines?.[index]?.serialNumberId?.message}
-      placeholder={serials.isLoading ? 'Loading units…' : 'Pick serial…'}
-      onChange={(id) => setValue(`lines.${index}.serialNumberId`, id, { shouldDirty: true })}
-      onSelect={(o) => setValue(`lines.${index}.serialLabel`, o.primary)}
-    />
+    <div className="flex flex-col gap-1">
+      <SearchableSelect
+        multiple
+        value={line.serials.map((s) => s.id)}
+        onChange={(ids) => {
+          const picked = ids.map((id) => ({ id, label: labelOf.get(id) ?? id }))
+          setValue(`lines.${index}.serials`, picked, {
+            shouldDirty: true,
+            shouldValidate: formState.isSubmitted,
+          })
+          // Picking past the quantity raises it; never lowers it.
+          if (picked.length > line.quantity) setValue(`lines.${index}.quantity`, picked.length)
+        }}
+        options={options}
+        loading={serials.isLoading}
+        loadingLabel="Loading units…"
+        placeholder="Pick serials…"
+        summaryNoun={`of ${line.quantity} serials`}
+        ariaLabel="Serial numbers"
+        portal
+        pickOnScan
+      />
+      {error && <FieldError text={error} />}
+    </div>
   )
 }

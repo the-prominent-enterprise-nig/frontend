@@ -79,6 +79,25 @@ export async function openCustomSelect(trigger: Locator): Promise<void> {
 }
 
 /**
+ * Picks a Price Use on a checkout cart line. The picker is a type-ahead
+ * dropdown (not a native <select>): focus it, type the name to filter, click
+ * the matching option. Retried as a unit because a click that lands before
+ * hydration opens nothing, and `index` is the line (0 = the first).
+ */
+export async function pickCartPriceUse(page: Page, label: string, index = 0): Promise<void> {
+  const input = page.getByLabel('Price Use').nth(index)
+  const exact = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+  await expect(async () => {
+    await input.click()
+    await input.fill(label)
+    await page
+      .getByTestId('searchable-select-option')
+      .filter({ hasText: exact })
+      .click({ timeout: 3_000 })
+  }).toPass({ timeout: 20_000 })
+}
+
+/**
  * Opens a custom Select by its current accessible name (its placeholder, or
  * whatever it's currently showing) and picks the named option.
  */

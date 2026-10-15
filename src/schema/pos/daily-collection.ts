@@ -97,8 +97,25 @@ export const DailyCollectionDepositSchema = z.object({
   reference: z.string().nullable(),
   depositedAt: z.string(),
   amount: z.number(),
+  /** The holding account the slip emptied; null for the branch's own cash. */
+  clearsAccountId: z.string().nullable().default(null),
 })
 export type DailyCollectionDeposit = z.infer<typeof DailyCollectionDepositSchema>
+
+/** One CREDIT line, always named for its tender. Banked, it carries the bank
+ * and the date; undeposited, neither. */
+export const TenderCreditLineSchema = z.object({
+  /** 'cash', 'check', or a tender key such as 'card::Maya'. Null on a slip's
+   * excess no tender of the day took. */
+  tender: z.string().nullable(),
+  /** Print-ready: 'CASH', 'CARD — MAYA'. */
+  label: z.string(),
+  amount: z.number(),
+  bankName: z.string().nullable(),
+  reference: z.string().nullable(),
+  depositedAt: z.string().nullable(),
+})
+export type TenderCreditLine = z.infer<typeof TenderCreditLineSchema>
 
 /** The stored, hand-entered half of the form. */
 export const DailyCollectionSheetSchema = z.object({
@@ -124,6 +141,9 @@ export const DailyCollectionReportSchema = z.object({
    * mode but never moving its BALANCE. */
   nonCashRows: z.array(DailyCollectionRowSchema).default([]),
   deposits: z.array(DailyCollectionDepositSchema),
+  /** The CREDIT column per tender. Banking a tender adds the bank and date
+   * to its line; what is still unbanked stays UNDEPOSITED under it. */
+  credits: z.array(TenderCreditLineSchema).default([]),
   byKind: z.record(CollectionKindSchema, z.number()),
   /** Cash only — the ledger, the BALANCE column and the denomination count
    * all are, so they reconcile against the drawer. */

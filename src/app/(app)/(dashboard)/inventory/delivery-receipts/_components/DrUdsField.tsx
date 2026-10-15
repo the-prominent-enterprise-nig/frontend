@@ -23,12 +23,12 @@ function udsLines(uds: DrUdsLookup): DrLineFormValues[] {
     itemId: l.itemId,
     itemLabel: l.item.name,
     isSerialTracked: l.item.isSerialTracked,
-    serialNumberId: l.serialNumberId,
-    serialLabel: l.serialNumber.serialNumber,
+    serials: [{ id: l.serialNumberId, label: l.serialNumber.serialNumber }],
     quantity: 1,
     modelNumber: l.item.modelNumber ?? '',
     brandName: l.item.brand?.name ?? '',
     unitCost: null,
+    costTyped: false,
   }))
 }
 

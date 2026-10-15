@@ -227,7 +227,6 @@ const CreateCreditApplicationBaseSchema = z.object({
   downPaymentCollection: z.enum(['online', 'branch', 'delivery']).optional().or(z.literal('')),
   firstDueDate: z.string().optional().or(z.literal('')),
   ppdRebate: z.string().optional().or(z.literal('')),
-  posDraftReference: z.string().max(100).optional().or(z.literal('')),
 
   // Scenario 64 item 27 — PAPER RECORD AND CREDIT DECISION. The decision
   // itself stays with decideItems(); these are the transcription facts.
@@ -351,7 +350,6 @@ export function refinePurchaseAndPaperRecord(
     downPaymentCollection?: string
     firstDueDate?: string
     ppdRebate?: string
-    posDraftReference?: string
     paperFormConfirmed?: boolean
     applicantIsUnitUser?: string
   },
@@ -367,7 +365,6 @@ export function refinePurchaseAndPaperRecord(
     // what says "the form shows no rebate", and that reads differently from
     // nobody having looked.
     ['ppdRebate', 'PPD rebate is required — enter 0 if the form shows none'],
-    ['posDraftReference', 'POS draft / quote ID is required'],
   ]
   for (const [field, message] of required) {
     if (!String(data[field] ?? '').trim()) {
@@ -761,7 +758,6 @@ export interface CreditApplication {
   downPaymentCollection?: 'online' | 'branch' | 'delivery' | null
   firstDueDate?: string | null
   ppdRebate?: number | null
-  posDraftReference?: string | null
   /** Scenario 64 item 27 — PAPER RECORD. The credit decision itself is not
    * here; it stays with decideItems(). `applicantIsUnitUser` is tri-state —
    * null means the question was never asked, which is not the same as "no". */

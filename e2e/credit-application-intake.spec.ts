@@ -127,9 +127,6 @@ test.describe('Credit Applications — Cashier intake', () => {
       .locator('input')
       .fill('0')
     await pick(page, fieldBox(page, /^Down payment collection/).getByRole('combobox'), 'Branch')
-    await fieldBox(page, /^POS draft/)
-      .locator('input')
-      .fill(`QT-E2E-${Date.now()}`)
     await pick(page, fieldBox(page, /^Applicant is unit user/).getByRole('combobox'), 'Yes')
     await page.getByRole('checkbox', { name: /Paper form fully complete and signed/ }).check()
 
