@@ -12,7 +12,7 @@ The write-up adds one more line that lands on the same form: **Home Service** �
 
 ## Related ClickUp Tickets
 
-Not checked yet — run a `clickup_search` for "service center" / "repair" before building.
+None. Searched "service center" and "repair provider" on 2026-10-15; no TPE ticket covers this scenario.
 
 ## Related docs
 
@@ -137,3 +137,28 @@ End state for this scenario:
 
 - Gap 4 is a live data-integrity issue today, independent of the new UI: any repaired unit received back through Create RR by invoice leaves its UDS stuck at `at_provider`. Part 3 fixes it; worth calling out to QA now.
 - Restricting the Assess picker to SERVICE_CENTER (Part 1) will hide existing providers until they are re-typed. Include a one-off data step: re-type every supplier already used as a `repairProviderId`.
+
+---
+
+## Implementation Log — 2026-10-15
+
+Built on `feat/scenario-73-service-center` in both repos, branched off `feat/scenario-72-delivery-receipt` (Scenario 72's "For repair to service center" DR turned out to be the client's step 2b, which answered Q6). Backend commits `acc78e2` (Parts 2–3) and `c7f0abc` (Part 5 and the journey fixes); frontend `f63e74f1` (supplier onboarding gate) and `f4689472` (Scenario 73). The final fixes (Home Service center required by the API, two stale tests) and these docs are uncommitted. Not pushed.
+
+**For this scenario, I have done:**
+
+- **Part 1 — service center master data (Q1, reversed).** First built as a `SERVICE_CENTER` `VendorType` with a brand and its own Master Data tab, then reverted at the developer's call: a service center _is_ the supplier picked as the UDS Repair Provider, so the Suppliers list is the master data. The migration was undone in both local DBs. Kept, at the developer's request: the supplier onboarding gate is gone from Suppliers (no Pending card, review chip, Needs attention filter or Onboarding status field); the backend never enforced it.
+- **Part 2 — units out at a service center (gap 3).** `GET /inventory/uds/at-provider/providers`, `GET /inventory/uds/at-provider?repairProviderId=`, and `GET /inventory/uds/at-provider/serial-search` (Q3: the fallback for units that went out on a paper DR or before the system).
+- **Part 3 — receive from a service center through `receiveStock()` (gaps 1, 4; Q2, Q7).** `origin: service_center` + `serviceCenterId` + per-unit `repairCosts`; each ticket closes through the shared `UdsService.closeProviderLegTx()` (status repaired, return RR, actual cost, variance JE). The UDS screen's Receive from Provider now takes the same path. The service center is the RR's supplier; line cost is zeroed. Gap 4 fixed: a From Customer RR refuses a unit still at a provider.
+- **Part 4 — Create RR form (gaps 1, 3).** Origin (From Customer / From Service Center); Service Center replaces Repair Type and lists every supplier, those with units out first with their count; a units panel with actual cost (prefilled with the estimate), the empty state and search by serial; Location shown and editable for From Service Center; backend refusals shown as sentences.
+- **Part 5 — Home Service (gap 5; Q4, Q5).** Home Service requires a Service Center (form and API), stored on the RR (supplier) and the UDS (`repairProviderId`, new `UnitDocumentSheet.repairType`, migration `20261016090000_uds_repair_type`). A Home Service ticket goes straight to a DR to the customer, repaired or unrepaired. The UDS list shows "· Home Service" and filters by service center.
+- **The client's whole repair flow, end to end** (`backend/test/scenario-73-repair-journey.e2e-spec.ts`). Running it found gaps against steps 2a–2e, fixed by developer decision: a customer's unit in for repair may ride a stock transfer (as a repair unit, carrying its ticket to main and home again), reversing Scenario 72's "not our stock" refusal; Main Office (the main branch) sees and acts on every branch's repair tickets; a customer's unit back from repair stays `in_repair`, never sellable; a repair DR is issued from where the unit is.
+
+**Worth flagging:**
+
+- **Decisions made:** Q1 reversed to plain suppliers; Q2 editable actual cost prefilled with the estimate; Q3 a serial-search fallback; Q4 service center on UDS and RR (the RR's supplier, no new column); Q5 Home Service releases straight from intake; Q6 answered by Scenario 72's DR; Q7 Repair Type hidden for From Service Center. UDS Repair Provider pickers left unrestricted.
+- **Scenario 72 behaviour changed:** customer units on stock transfers, Main Office scoping on UDS / repair DRs, repair DR warehouse from the unit's location, Receive from Provider no longer overwrites UDS notes with receipt notes.
+- **Owner account:** with no branch, an owner's Repair/Return intake lands in the first standalone warehouse (Negros in dev); Location is hidden for customer intakes by Scenario 55's design.
+- **Tests:** backend `scenario-73-service-center-units` 10/10, `scenario-73-service-center-receipt` 17/17, `scenario-73-repair-journey` 1/1, `stock-transfer-in-repair` 10/10, `delivery-receipt-repair` 10/10, `delivery-receipts` 47/47, `inventory-branch-scoping` 23/23, `inventory-receiving-branch-serial-gl` 33/33, `scenario-55-uds-repair-return` 1/1; frontend `scenario-73-rr-from-service-center` and `supplier-no-onboarding-gate` green. Three older tests updated to the new rules; one stale installment-account test corrected.
+- **Not green, pre-existing (they fail on base `3f6b122` too):** 4 `inventory-receiving-enhancements` tests (VAT/withholding JE shapes, receipt detail scope); `repair-transfer` needs a test-DB reseed (its fixture serials are used up).
+- **Dev DB test data:** item "E2E-BASE aircon" made serial-tracked (model `TEST-S73`) and serial `TEST-S73-AC-0001` sold to Dela Cruz, Alice May M on account `5A2969F1`, for manual testing.
+- **Deploy:** one migration (`20261016090000_uds_repair_type`), backend and frontend together.
