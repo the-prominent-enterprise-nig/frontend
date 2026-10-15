@@ -139,6 +139,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
           INVENTORY_PERMISSIONS.RETURNS_READ,
           INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ,
           INVENTORY_PERMISSIONS.UDS_READ,
+          INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_READ,
+          INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE,
+          INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE,
           PROCUREMENT_PERMISSIONS.PO_READ,
           PROCUREMENT_PERMISSIONS.PR_READ,
         ],
@@ -271,9 +274,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Debit Memos',
         href: '/accounting/debit-memos',
         icon: FilePlus,
+        usePrefix: true,
         requiredPermission: [
           ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
           ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
+          ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ,
         ],
       },
       {

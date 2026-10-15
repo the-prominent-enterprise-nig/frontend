@@ -43,6 +43,9 @@ type Params = {
   freeForTransfer?: boolean
   // Scenario 56 — the Stock Balance Operations filter, carried into Item 360.
   region?: 'panay' | 'negros'
+  // Scenario 72 — only items this supplier supplies (Item Master); the UDS
+  // unit picker once a repair provider is chosen.
+  itemSupplierId?: string
 }
 
 export async function getSerialNumbers(
@@ -68,6 +71,7 @@ export async function getSerialNumbers(
     scope: params.scope,
     freeForTransfer: params.freeForTransfer ? 'true' : undefined,
     region: params.region,
+    itemSupplierId: params.itemSupplierId,
   }
 
   const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)

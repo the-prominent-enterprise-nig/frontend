@@ -230,13 +230,6 @@ export function udsDocumentTrail(uds: Uds): TrailHop[] {
           at: uds.returnedToBranchAt ?? null,
           dueFrom: 'completed',
         },
-        {
-          key: 'back-si',
-          label: 'SI',
-          number: uds.returnToBranchSalesInvoiceNumber ?? null,
-          at: uds.returnedToBranchAt ?? null,
-          dueFrom: 'completed',
-        },
       ],
     },
     ...release,

@@ -74,11 +74,8 @@ export type ManualUdsStatus = z.infer<typeof ManualUdsStatusSchema>
 export const UpdateUdsStatusFormSchema = z.object({
   status: ManualUdsStatusSchema,
   notes: z.string().max(1000).optional(),
-  /** The SI for the branch <-> main leg. Only meaningful on the two
-   *  transitions where the unit makes that trip — the server writes it to the
-   *  outbound column on in_transit and the return column on completed, and
-   *  ignores it anywhere else. */
-  salesInvoiceNumber: z.string().max(50).optional(),
+  // No SI (Scenario 72 Part 10): the trip home is recorded by its return
+  // transfer, and a sheet closing without one made no trip.
 })
 
 export type UpdateUdsStatusFormValues = z.infer<typeof UpdateUdsStatusFormSchema>
@@ -229,6 +226,8 @@ export const UdsSchema = z.object({
   repairProvider: UdsRepairProviderSchema.optional().nullable(),
   linkedStockTransferId: z.string().optional().nullable(),
   linkedStockTransfer: UdsLinkedStockTransferSchema.optional().nullable(),
+  // Scenario 72 Part 10 — the transfer carrying our own repaired unit home.
+  returnStockTransfer: UdsLinkedStockTransferSchema.optional().nullable(),
   assessment: UdsAssessmentSchema.optional().nullable(),
   assessmentNotes: z.string().optional().nullable(),
   assessedAt: z.string().optional().nullable(),

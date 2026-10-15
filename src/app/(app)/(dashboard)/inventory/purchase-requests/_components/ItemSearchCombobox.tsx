@@ -2,6 +2,8 @@
 
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
+import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
+import type { ItemSummary } from '@/src/schema/inventory/items'
 import { getStockBalances } from '@/src/app/(app)/(dashboard)/inventory/stock/_actions/get-stock-balances'
 import { getSupplierItems } from '@/src/app/(app)/(dashboard)/inventory/suppliers/_actions/get-supplier-items'
 
@@ -9,6 +11,9 @@ export type ItemSearchMeta = {
   costPrice: number | null
   isSerialTracked: boolean
   isBatchTracked: boolean
+  /** Scenario 72 — the Delivery Receipt's Model / Brand columns. */
+  modelNumber?: string | null
+  brandName?: string | null
 }
 
 type Props = {
@@ -70,6 +75,25 @@ async function searchSupplierFirst(
   return catalog.map((o) => ({ ...o, badge: OFF_LIST_BADGE }))
 }
 
+function toMeta(item: ItemSummary): ItemSearchMeta {
+  return {
+    // getItem is not schema-parsed, so a decimal can still be a string here.
+    costPrice: item.costPrice != null ? Number(item.costPrice) : null,
+    isSerialTracked: Boolean(item.isSerialTracked),
+    isBatchTracked: item.isBatchTracked ?? false,
+    modelNumber: item.modelNumber ?? null,
+    brandName: item.brand?.name ?? null,
+  }
+}
+
+/** A stocked row outside the catalog's top 20 arrives with no meta; read the
+ * item itself so a serialized unit is never treated as a plain one. */
+async function withMeta(option: SearchComboboxOption): Promise<SearchComboboxOption> {
+  if (option.meta) return option
+  const res = await getItem(option.id)
+  return res.success && res.data ? { ...option, meta: toMeta(res.data) } : option
+}
+
 async function searchCatalog(
   query: string,
   excludeSerialTracked?: boolean
@@ -81,11 +105,7 @@ async function searchCatalog(
       id: item.id,
       primary: item.name,
       secondary: item.sku,
-      meta: {
-        costPrice: item.costPrice ?? null,
-        isSerialTracked: item.isSerialTracked ?? false,
-        isBatchTracked: item.isBatchTracked ?? false,
-      } satisfies ItemSearchMeta,
+      meta: toMeta(item),
     }))
 }
 
@@ -147,7 +167,7 @@ export function ItemSearchCombobox({
     <SearchCombobox
       value={value}
       onChange={onChange}
-      onSelect={onSelect}
+      onSelect={onSelect && ((o) => void withMeta(o).then(onSelect))}
       error={error}
       initialLabel={initialLabel}
       compact={compact}

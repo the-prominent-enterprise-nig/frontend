@@ -14,6 +14,11 @@ import {
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { SupplierOption } from './SetRepairProviderModal'
+import {
+  NoSupplierOnFileNote,
+  ProviderCoverageWarning,
+  useProviderOptions,
+} from './ProviderCoverageWarning'
 
 type AssessUdsFormInput = z.input<typeof AssessUdsFormSchema>
 
@@ -70,6 +75,11 @@ export default function AssessUdsModal({
     defaultValues,
   })
   const assessment = watch('assessment')
+  const providerId = watch('repairProviderId')
+  const { options: providerOptions, noneOnFile } = useProviderOptions(
+    supplierOptions,
+    uds?.lines.map((l) => l.serialNumberId) ?? []
+  )
 
   useEffect(() => {
     if (!isOpen) reset(defaultValues)
@@ -203,10 +213,7 @@ export default function AssessUdsModal({
                       onChange={(v) => field.onChange(v)}
                       placeholder="Search repair provider…"
                       portal
-                      options={supplierOptions.map((sup) => ({
-                        value: sup.id,
-                        label: `${sup.code} — ${sup.name}`,
-                      }))}
+                      options={providerOptions}
                     />
                   )}
                 />
@@ -217,6 +224,11 @@ export default function AssessUdsModal({
                     The estimate above is posted against this provider.
                   </p>
                 )}
+                <NoSupplierOnFileNote show={noneOnFile} />
+                <ProviderCoverageWarning
+                  supplierId={providerId}
+                  serialIds={uds.lines.map((l) => l.serialNumberId)}
+                />
               </div>
             )}
 

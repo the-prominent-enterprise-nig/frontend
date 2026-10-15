@@ -124,6 +124,14 @@ export const INVENTORY_PERMISSIONS = {
   SUPPLIER_RETURNS_FINALIZE: 'inventory:supplier-returns:finalize',
   SUPPLIER_RETURNS_VOID: 'inventory:supplier-returns:void',
 
+  // Scenario 72 — outbound Delivery Receipts. The Stock Controller raises and
+  // submits; approve and void are the Branch Manager's (maker/checker).
+  DELIVERY_RECEIPTS_READ: 'inventory:delivery-receipts:read',
+  DELIVERY_RECEIPTS_CREATE: 'inventory:delivery-receipts:create',
+  DELIVERY_RECEIPTS_UPDATE: 'inventory:delivery-receipts:update',
+  DELIVERY_RECEIPTS_APPROVE: 'inventory:delivery-receipts:approve',
+  DELIVERY_RECEIPTS_VOID: 'inventory:delivery-receipts:void',
+
   // ── Costing ────────────────────────────────────────────────────────────────
   COSTING_READ: 'inventory:costing:read',
   COSTING_CONFIGURE: 'inventory:costing:configure',
@@ -269,6 +277,12 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:supplier-returns:finalize':
     'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
   'inventory:supplier-returns:void': 'Void a supplier debit memo',
+  'inventory:delivery-receipts:read': 'View outbound Delivery Receipts',
+  'inventory:delivery-receipts:create': 'Raise a draft Delivery Receipt and submit it for approval',
+  'inventory:delivery-receipts:update': 'Edit or delete a draft Delivery Receipt',
+  'inventory:delivery-receipts:approve':
+    'Approve or reject a submitted Delivery Receipt (Branch Manager tier)',
+  'inventory:delivery-receipts:void': 'Void a Delivery Receipt, reversing whatever it posted',
   'inventory:costing:read': 'View stock costing configuration',
   'inventory:costing:configure': 'Configure stock costing method (FIFO / LIFO / Weighted Average)',
   'inventory:price-lists:read': 'View price lists',

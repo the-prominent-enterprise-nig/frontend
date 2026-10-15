@@ -19,7 +19,7 @@ import {
 import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import ConsignToCaravanModal from './ConsignToCaravanModal'
-import { useSerialSelection, isConsignable } from '../_hooks/useSerialSelection'
+import { useSerialSelection, isTransferable } from '../_hooks/useSerialSelection'
 import { useConsignToCaravan } from '../_hooks/useConsignToCaravan'
 import CaravanItemTable from './CaravanItemTable'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
@@ -498,7 +498,7 @@ export default function SerialNumberList({
               <button
                 type="button"
                 onClick={() => setIsConsignOpen(true)}
-                disabled={selection.mixedSources}
+                disabled={selection.mixedSources || selection.hasRepairUnits}
                 className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4c1a9b] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Truck className="h-3.5 w-3.5" />
@@ -524,6 +524,11 @@ export default function SerialNumberList({
             {selection.mixedSources && (
               <span className="text-[12px] text-[#8a4b06]">
                 Tick units from one branch only — a transfer leaves from a single source.
+              </span>
+            )}
+            {showSelection && !selection.mixedSources && selection.hasRepairUnits && (
+              <span className="text-[12px] text-[#8a4b06]">
+                Units in repair can go on a Stock Transfer.
               </span>
             )}
           </div>
@@ -592,7 +597,7 @@ export default function SerialNumberList({
                           <th className="w-10 px-4 py-[9px]">
                             <input
                               type="checkbox"
-                              aria-label="Select all in-stock units"
+                              aria-label="Select all units you can transfer"
                               checked={selection.allSelected}
                               onChange={selection.toggleAll}
                               className="h-4 w-4 rounded border-zinc-300 text-[#5b21b6] focus:ring-[#5b21b6]"
@@ -642,7 +647,7 @@ export default function SerialNumberList({
                           >
                             {showTransfer && (
                               <td className="px-4 py-[11px]" onClick={(e) => e.stopPropagation()}>
-                                {isConsignable(serial) && (
+                                {isTransferable(serial) && (
                                   <input
                                     type="checkbox"
                                     aria-label={`Select ${serial.serialNumber}`}
