@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import InstallmentAccountDetail from './_components/InstallmentAccountDetail'
 
 export const metadata = { title: 'Installment Account | CRM' }
@@ -21,7 +22,12 @@ export default async function InstallmentAccountDetailPage({
       id={id}
       canEdit={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_UPDATE)}
       canEarlyPayoff={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_EARLY_PAYOFF)}
-      canRecordPayment={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_RECORD_PAYMENT)}
+      // Record payment now opens the Collections screen, which has its own
+      // guard — so the button needs both, or it leads to a 403.
+      canRecordPayment={
+        can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_RECORD_PAYMENT) &&
+        can(session, POS_PERMISSIONS.COLLECTIONS_MANAGE)
+      }
       canApproveGraduation={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_APPROVE_GRADUATION)}
       canApproveDamEscalation={can(
         session,

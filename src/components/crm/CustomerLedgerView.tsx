@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import { InstallmentLedgerBody } from '@/src/components/crm/InstallmentLedgerView'
 import {
   buildCustomerLedgerHtml,
   buildUnifiedCustomerLedgerHtml,
@@ -15,6 +16,7 @@ import type {
   CustomerLedger,
   CustomerLedgerScope,
   CustomerLedgerTransaction,
+  InstallmentLedger,
 } from '@/src/schema/crm/types'
 
 // Per-customer ledger of every purchase — in-house installment plans, TPF
@@ -27,6 +29,11 @@ import type {
 // more than one purchase is in view. Printing (see handlePrint below) still
 // reproduces the client's original paper ledger card when the ledger
 // narrows to one in-house plan, which is the common case.
+//
+// Narrowed to one in-house plan (?transactionId=acct:<id>) the on-screen view
+// IS that plan's paper-form ledger — Sale/Item/Assignment/Financing/Totals and
+// its own Date/Ref/… table, InstallmentLedgerBody — not the multi-purchase
+// summary, so there's one place to read a plan rather than two pages.
 /** Tax Info card (TIN / tax-exempt) is hidden on the ledger by request; flip to bring it back. */
 const SHOW_TAX_INFO = false
 
@@ -35,11 +42,15 @@ export default function CustomerLedgerView({
   backHref,
   backLabel,
   canEdit = false,
+  showAccountLink = true,
 }: {
   customerId: string
   backHref: string
   backLabel: string
   canEdit?: boolean
+  /** False under POS — the CRM installment-account page the plan view links to
+   * is one a cashier can't open. */
+  showAccountLink?: boolean
 }) {
   // Every purchase, not only the financed ones. This was briefly narrowed to
   // installments on the reasoning that a cash sale is settled at the counter
@@ -59,6 +70,19 @@ export default function CustomerLedgerView({
   const [ledger, setLedger] = useState<CustomerLedger | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // The plan's own paper-form ledger, when the picker is on an in-house plan.
+  // Keyed by account id so a stale result for a previously picked plan is
+  // never drawn, and a plan whose ledger can't be read (a role without
+  // access to the per-account endpoint) falls back to the generic view below.
+  const accountId = transactionId.startsWith('acct:') ? transactionId.slice('acct:'.length) : null
+  const [accountResult, setAccountResult] = useState<{
+    id: string
+    ledger: InstallmentLedger | null
+  } | null>(null)
+  const accountPending = accountId !== null && accountResult?.id !== accountId
+  const accountLedger =
+    accountId !== null && accountResult?.id === accountId ? accountResult.ledger : null
 
   function setTransaction(next: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -94,6 +118,18 @@ export default function CustomerLedgerView({
       cancelled = true
     }
   }, [customerId, scope, transactionId])
+
+  useEffect(() => {
+    if (!accountId) return
+    let cancelled = false
+    installmentAccountsApi.getLedger(accountId).then((res) => {
+      if (cancelled) return
+      setAccountResult({ id: accountId, ledger: res.success && res.data ? res.data : null })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [accountId])
 
   // Customer/tax info doesn't vary with the transaction filter — kept in its
   // own effect so narrowing the ledger doesn't refetch it (and blow away an
@@ -221,12 +257,18 @@ export default function CustomerLedgerView({
           )}
         </div>
 
-        {loading ? (
+        {loading || accountPending ? (
           <div className="mt-6 text-center text-gray-500">Loading…</div>
         ) : error || !ledger ? (
           <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {error ?? 'Ledger not found'}
           </div>
+        ) : accountLedger && accountId ? (
+          <InstallmentLedgerBody
+            ledger={accountLedger}
+            accountId={accountId}
+            showAccountLink={showAccountLink}
+          />
         ) : (
           <>
             <div className="mb-4 flex items-start justify-between">

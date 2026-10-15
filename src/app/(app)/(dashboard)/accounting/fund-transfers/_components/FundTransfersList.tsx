@@ -4,30 +4,43 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus, Printer, RefreshCw } from 'lucide-react'
+import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
 import {
   BankAccounts,
   BankTransfers,
   type BankAccount,
   type FundTransfer,
+  type FundTransferClearingStatus,
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
 import { printInterAccountTransferVoucherDocument } from '@/src/libs/print/printInventoryDocument'
+import TransferStatusBadge from './TransferStatusBadge'
 
 const d = (v: string | null) => (v ? v.slice(0, 10) : '—')
 
 // Scenario 61 — Inter-Account Transfer history. Before this, a transfer
 // existed only as its journal entry, and saving one bounced back to Bank
 // Accounts with no record of it anywhere on screen.
-export default function FundTransfersList({ canCreate }: { canCreate: boolean }) {
+export default function FundTransfersList({
+  canCreate,
+  branchScoped,
+}: {
+  canCreate: boolean
+  /** A branch-assigned user: the list is already their branch's own. */
+  branchScoped: boolean
+}) {
   const router = useRouter()
   const [items, setItems] = useState<FundTransfer[]>([])
   const [accounts, setAccounts] = useState<BankAccount[]>([])
+  const [branches, setBranches] = useState<BranchLite[]>([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
     bankAccountId: '',
     startDate: '',
     endDate: '',
     search: '',
+    status: '' as FundTransferClearingStatus | '',
+    branchId: '',
   })
 
   const load = useCallback(async () => {
@@ -37,6 +50,8 @@ export default function FundTransfersList({ canCreate }: { canCreate: boolean })
       startDate: filters.startDate || undefined,
       endDate: filters.endDate || undefined,
       search: filters.search.trim() || undefined,
+      status: filters.status || undefined,
+      branchId: filters.branchId || undefined,
     })
     setItems(res.data ?? [])
     setLoading(false)
@@ -49,13 +64,18 @@ export default function FundTransfersList({ canCreate }: { canCreate: boolean })
   useEffect(() => {
     BankAccounts.list().then((res) => setAccounts(res.data ?? []))
   }, [])
+  useEffect(() => {
+    if (branchScoped) return
+    BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
+  }, [branchScoped])
 
   const printVoucher = async (id: string) => {
     const res = await BankTransfers.getDocument(id)
     if (res.success && res.data) printInterAccountTransferVoucherDocument(res.data)
   }
 
-  const total = items.reduce((s, t) => s + t.amount, 0)
+  // A voided transfer's entry is reversed, so it moves no money and stays out of the total.
+  const total = items.reduce((s, t) => (t.status === 'VOID' ? s : s + t.amount), 0)
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -119,10 +139,42 @@ export default function FundTransfersList({ canCreate }: { canCreate: boolean })
             className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
           />
         </label>
+        {!branchScoped && (
+          <label className="block">
+            <span className="block text-xs font-medium text-gray-600 mb-1">Branch</span>
+            <select
+              value={filters.branchId}
+              onChange={(e) => setFilters({ ...filters, branchId: e.target.value })}
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+            >
+              <option value="">All branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-600 mb-1">Status</span>
+          <select
+            value={filters.status}
+            onChange={(e) =>
+              setFilters({ ...filters, status: e.target.value as FundTransferClearingStatus | '' })
+            }
+            className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+          >
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="cleared">Cleared</option>
+            <option value="void">Void</option>
+          </select>
+        </label>
         <label className="block flex-1 min-w-[200px]">
           <span className="block text-xs font-medium text-gray-600 mb-1">Search</span>
           <input
-            placeholder="Voucher #, reference, account…"
+            placeholder="Voucher #, reference, account"
             value={filters.search}
             onChange={(e) => setFilters({ ...filters, search: e.target.value })}
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
@@ -137,6 +189,8 @@ export default function FundTransfersList({ canCreate }: { canCreate: boolean })
               <th className="px-3 py-2 text-left">Voucher #</th>
               <th className="px-3 py-2 text-left">Date</th>
               <th className="px-3 py-2 text-left">Clearing Date</th>
+              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">Branch</th>
               <th className="px-3 py-2 text-left">From</th>
               <th className="px-3 py-2 text-left">To</th>
               <th className="px-3 py-2 text-left">Reference</th>
@@ -147,13 +201,13 @@ export default function FundTransfersList({ canCreate }: { canCreate: boolean })
           <tbody>
             {loading && items.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
-                  Loading...
+                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
+                  Loading
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                   No transfers found.
                 </td>
               </tr>
@@ -162,17 +216,23 @@ export default function FundTransfersList({ canCreate }: { canCreate: boolean })
                 <tr
                   key={t.id}
                   onClick={() => router.push(`/accounting/fund-transfers/${t.id}`)}
-                  className="border-t border-gray-100 hover:bg-purple-50/40 cursor-pointer"
+                  className={`border-t border-gray-100 hover:bg-purple-50/40 cursor-pointer ${t.status === 'VOID' ? 'text-gray-400' : ''}`}
                 >
                   <td className="px-3 py-2 font-medium text-purple-700">{t.transferNumber}</td>
                   <td className="px-3 py-2">{d(t.date)}</td>
                   <td className="px-3 py-2">
                     {t.clearingDate ? (
                       d(t.clearingDate)
+                    ) : t.status === 'VOID' ? (
+                      '—'
                     ) : (
                       <span className="text-amber-600">Not yet cleared</span>
                     )}
                   </td>
+                  <td className="px-3 py-2">
+                    <TransferStatusBadge status={t.clearingStatus} />
+                  </td>
+                  <td className="px-3 py-2">{t.branch?.name ?? '—'}</td>
                   <td className="px-3 py-2">{t.sourceBankAccount.name}</td>
                   <td className="px-3 py-2">{t.destinationBankAccount.name}</td>
                   <td className="px-3 py-2 text-gray-600">{t.reference ?? '—'}</td>
@@ -197,7 +257,7 @@ export default function FundTransfersList({ canCreate }: { canCreate: boolean })
           {items.length > 0 && (
             <tfoot>
               <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
-                <td colSpan={6} className="px-3 py-2">
+                <td colSpan={8} className="px-3 py-2">
                   {items.length} transfer{items.length === 1 ? '' : 's'}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(total)}</td>

@@ -129,7 +129,7 @@ test.describe('POS Checkout — Multi-Serial Cart Line', () => {
 
     // Cleanup — remove the whole line so repeated runs start clean.
     await cartRow.hover()
-    await cartRow.locator('button').last().click()
+    await cartRow.getByRole('button', { name: 'Remove item' }).click()
     await expect(page.getByText('Click an item above to add it to the cart')).toBeVisible({
       timeout: 10_000,
     })
@@ -182,7 +182,7 @@ test.describe('POS Checkout — Multi-Serial Cart Line', () => {
 
     // Cleanup.
     await cartRow.hover()
-    await cartRow.locator('button').last().click()
+    await cartRow.getByRole('button', { name: 'Remove item' }).click()
     await expect(page.getByText('Click an item above to add it to the cart')).toBeVisible({
       timeout: 10_000,
     })

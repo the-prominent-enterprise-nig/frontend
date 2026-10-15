@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable, fillStable, openCustomSelect } from './utils'
+import { gotoReady, clickStable, fillStable, openCustomSelect, pickCartPriceUse } from './utils'
 
 // Scenario 17, Part 6 — POS installment checkout now requires the customer's
 // approved, unused CreditApplication. This spec sticks to UI-surface checks
@@ -48,7 +48,7 @@ async function addInstallmentLine(page: Page): Promise<void> {
       .click()
     await expect(heading).toHaveCount(0, { timeout: 10_000 })
   }
-  await page.getByLabel('Price Use').first().selectOption({ label: 'WIP' })
+  await pickCartPriceUse(page, 'WIP')
 
   await clickStable(
     page.getByRole('button', { name: 'Installment', exact: true }),

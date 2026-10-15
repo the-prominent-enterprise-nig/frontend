@@ -13,6 +13,14 @@ import type {
   SUPPLIER_STATUSES,
   SUPPLIER_TYPES,
 } from '@/src/schema/inventory/suppliers'
+import type { TaxCodeOption } from '@/src/libs/data/AccountingV2Data'
+import { ewtOptionLabel, NO_WITHHOLDING_CODE, supplierEwtCode } from '@/src/libs/tax/ewt'
+import {
+  SUPPLIER_VAT_STATUS_LABEL,
+  defaultInputVatCode,
+  inputVatShortName,
+  supplierVatStatus,
+} from '@/src/libs/tax/input-vat'
 
 export type OnboardingStatus = (typeof SUPPLIER_ONBOARDING_STATUSES)[number]
 export type SupplierStatus = (typeof SUPPLIER_STATUSES)[number]
@@ -132,19 +140,44 @@ export const CURRENCY_OPTIONS = ['PHP', 'USD', 'EUR', 'JPY', 'CNY'].map((c) => (
   label: c,
 }))
 
-/** 12% or nothing: whether receiving from this supplier backs out claimable
- * Input VAT, or carries the goods at the full quoted price. */
-export function vatLabel(vat: SupplierDetail['defaultInputVat']): string {
-  return vat === 'none' ? 'None' : '12%'
+/** The supplier's VAT status ("VAT-registered", "PEZA"…). The older 12% / none
+ * flag only says whether receiving backs out input VAT; the status says why. */
+export function vatStatusLabel(
+  supplier: Pick<SupplierDetail, 'vatStatus' | 'defaultInputVat'>
+): string {
+  return SUPPLIER_VAT_STATUS_LABEL[supplierVatStatus(supplier)]
 }
 
-/** What is held back from the payment and remitted to the BIR. */
-export function withholdingLabel(
-  withholding: SupplierDetail['defaultWithholding'],
-  atc?: string | null
+/** What a purchase from this supplier starts as: "VATable", "Non-VAT"… */
+export function vatStartsAsLabel(
+  supplier: Pick<SupplierDetail, 'vatStatus' | 'defaultInputVat'>
 ): string {
-  if (withholding === 'none') return 'None'
-  return atc?.trim() ? `1% · ${atc.trim()}` : '1% · no ATC'
+  return inputVatShortName(defaultInputVatCode(supplierVatStatus(supplier)))
+}
+
+/** What is held back from the payment and remitted to the BIR: the supplier's
+ * EWT code and the ATC on file for it ("EWT-RENT-5 · WC100"). */
+export function withholdingLabel(
+  supplier: Pick<
+    SupplierDetail,
+    'defaultWithholding' | 'defaultWithholdingTaxCode' | 'alphanumericTaxCode'
+  >
+): string {
+  const code = supplierEwtCode(supplier)
+  if (code === NO_WITHHOLDING_CODE) return 'None'
+  const atc = supplier.alphanumericTaxCode?.trim()
+  return atc ? `${code} · ${atc}` : `${code} · no ATC`
+}
+
+/** The supplier's EWT code with what the master calls it and its rate today —
+ * "EWT-RENT-5 — Real Property Rent (5%)". The bare code until the master loads. */
+export function withholdingCodeLabel(
+  supplier: Pick<SupplierDetail, 'defaultWithholding' | 'defaultWithholdingTaxCode'>,
+  options: readonly TaxCodeOption[]
+): string {
+  const code = supplierEwtCode(supplier)
+  const option = options.find((o) => o.code === code)
+  return option ? ewtOptionLabel(option) : code
 }
 
 export function fmtCreditLimit(creditLimit: number | null | undefined): string {

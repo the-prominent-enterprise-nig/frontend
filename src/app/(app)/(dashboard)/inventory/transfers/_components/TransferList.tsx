@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Plus, RefreshCw, X, ArrowRight, Search } from 'lucide-react'
 import { useTransferManager } from '../_hooks/useTransferManager'
@@ -278,6 +278,21 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+
+  // Consumed params are stripped relative to the current path, because this
+  // list is mounted at two routes — its own, and the Stock Transaction hub's
+  // transfers tab. A hardcoded replace would move the user off whichever one
+  // they came in on.
+  const stripParams = useCallback(
+    (...keys: string[]): void => {
+      const next = new URLSearchParams(searchParams.toString())
+      keys.forEach((key) => next.delete(key))
+      const qs = next.toString()
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    },
+    [pathname, router, searchParams]
+  )
+
   useEffect(() => {
     const stockDraft = consumeStockTransferDraft()
     if (stockDraft) {
@@ -299,7 +314,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         quantity,
       })
       setIsCreateOpen(true)
-      router.replace('/inventory/transfers')
+      stripParams('prefillFromWarehouseId', 'prefillItemId', 'prefillQty', 'prefillItemLabel')
       return
     }
 
@@ -307,18 +322,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
     // prefill, for links whose label is the verb: Item 360's "Transfer"
     // button. Landing someone on a list of past transfers and asking them to
     // find "New transfer" makes a button that says Transfer not transfer.
-    //
-    // Stripped relative to the current path rather than to
-    // /inventory/transfers like the prefill branch above, because this list is
-    // mounted at two routes — its own, and /inventory/operations?tab=transfers
-    // — and a hardcoded replace would move the user off whichever one they
-    // came in on.
     if (searchParams.get('new') === '1' && canCreate) {
       setIsCreateOpen(true)
-      const next = new URLSearchParams(searchParams.toString())
-      next.delete('new')
-      const qs = next.toString()
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+      stripParams('new')
     }
     // Deliberately mount-only — the params are consumed once, then stripped;
     // re-running on every searchParams/router identity change would refight
@@ -347,8 +353,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     setDeepLinkOpened(true)
     // Stripped so a refresh or Back doesn't silently reopen the modal, same
     // as the create-prefill params.
-    router.replace('/inventory/transfers')
-  }, [deepLinkNumber, deepLinkOpened, transfers, setSelectedTransfer, router])
+    stripParams('transfer')
+  }, [deepLinkNumber, deepLinkOpened, transfers, setSelectedTransfer, stripParams])
 
   function openDetail(transfer: TransferSummary) {
     setSelectedTransfer(transfer)

@@ -128,7 +128,7 @@ export function TransferOutLink({
   return (
     <Tooltip label="Transfer items">
       <Link
-        href={`/inventory/transfers?${params.toString()}`}
+        href={`/inventory/stock-transaction?tab=transfers&${params.toString()}`}
         onClick={(e) => e.stopPropagation()}
         className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1 text-[12px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb]"
       >

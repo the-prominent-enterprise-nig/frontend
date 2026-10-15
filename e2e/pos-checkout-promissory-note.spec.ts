@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs, clickStable, fillStable, openCustomSelect } from './utils'
+import {
+  gotoReady,
+  loginAs,
+  clickStable,
+  fillStable,
+  openCustomSelect,
+  pickCartPriceUse,
+} from './utils'
 
 // Scenario 17, Part 7 — Promissory Note generation + signature gate.
 // Backend generation/gate enforcement is covered by
@@ -123,7 +130,7 @@ async function submitInstallmentSale(
     .filter({ has: page.getByText('Universal Remote Control', { exact: true }) })
   await expect(remoteCard.first()).toBeVisible({ timeout: 10_000 })
   await remoteCard.first().click()
-  await page.getByLabel('Price Use').selectOption({ label: 'WIP' })
+  await pickCartPriceUse(page, 'WIP')
 
   await clickStable(
     page.getByRole('button', { name: 'Installment', exact: true }),

@@ -90,7 +90,6 @@ export async function createCreditApplication(
     // Same for the selects — @IsOptional() skips undefined/null, not ''.
     firstDueDate: parsed.data.firstDueDate || undefined,
     downPaymentCollection: parsed.data.downPaymentCollection || undefined,
-    posDraftReference: parsed.data.posDraftReference || undefined,
     // Tri-state on purpose: unasked is not the same answer as "no", so an
     // untouched dropdown stays null on the record instead of reading as a
     // recorded denial.

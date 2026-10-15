@@ -26,7 +26,10 @@ import { type SessionUser, can, canAccessModule } from '@/src/libs/guards/permis
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
 import { deliveryFeeReceiptTenderLabel } from '../checkout/_utils/delivery'
+import { outputVatLabel } from '@/src/libs/tax/output-vat'
+import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -120,10 +123,12 @@ export function TransactionDetail({
           >
             <X size={18} />
           </button>
-          {/* Lead with the Sales Invoice No. — that's the document anyone
-              looking this up actually has in hand. Falls back to the
-              internal transaction number for rows without one (refunds,
-              and sales predating the required-SI rule). */}
+          {/* Lead with the Sales Invoice No. (or the Delivery Receipt No. on a
+              DR sale, which is stored here too and labelled in the rows
+              below) — that's the document anyone looking this up actually
+              has in hand. Falls back to the internal transaction number for
+              rows without one (refunds, and sales predating the
+              required-SI rule). */}
           <h2 className="mb-1 text-lg font-bold text-gray-900">
             {tx.salesInvoiceNumber ?? tx.transactionNumber}
           </h2>
@@ -244,6 +249,10 @@ export function TransactionDetail({
                 )}
               </div>
 
+              {/* Scenario 71 — a price override / typed terms / waived credit
+                  application, with its reason and note. */}
+              {tx.exception && <PosExceptionPanel exception={tx.exception} />}
+
               <div className="rounded-xl bg-gray-50 p-4 text-sm space-y-1">
                 <Row label="Subtotal" value={formatCurrency(tx.subtotal)} />
                 {(() => {
@@ -288,6 +297,30 @@ export function TransactionDetail({
                 ) : tx.taxTotal > 0 ? (
                   <Row label="Tax" value={formatCurrency(tx.taxTotal)} />
                 ) : null}
+                {/* Scenario 69 Part F — how the sale was classified for output VAT,
+                    and for a zero-rated or exempt one the document it rests on and
+                    who approved it. */}
+                {tx.outputVatCode && (
+                  <Row label="VAT treatment" value={outputVatLabel(tx.outputVatCode)} muted />
+                )}
+                {tx.taxExemptionRef && (
+                  <Row label="Certificate / reference" value={tx.taxExemptionRef} muted />
+                )}
+                {tx.outputVatApprovedBy && (
+                  <Row
+                    label="VAT approved by"
+                    value={tx.outputVatApprovedByName ?? 'Manager'}
+                    muted
+                  />
+                )}
+                {/* Scenario 69 Part I — the class changed from its default, and why.
+                    Held back until the full transaction is in: the list row this
+                    opens with has no names, and "Someone" would flash first. */}
+                {!detailLoading && tx.taxOverride && tx.taxOverride.length > 0 && (
+                  <div className="py-1">
+                    <TaxOverrideSummary entries={tx.taxOverride} testId="sale-override-summary" />
+                  </div>
+                )}
                 {tx.session?.terminal?.branch?.name && (
                   <Row label="Branch" value={tx.session.terminal.branch.name} />
                 )}

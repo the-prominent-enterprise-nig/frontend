@@ -4,7 +4,6 @@ import { useState } from 'react'
 import Link from 'next/link'
 import {
   Plus,
-  RefreshCw,
   Search,
   Tag,
   Tags,
@@ -14,6 +13,7 @@ import {
   RotateCcw,
   ListChecks,
   Trash2,
+  Upload,
 } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -201,7 +201,6 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
     isResubmitting,
     deletePriceList,
     isDeleting,
-    refetch,
   } = usePriceLists()
 
   function openCreateModal() {
@@ -315,15 +314,15 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
               <Tags className="h-4 w-4" />
               <span className="hidden sm:inline">Price use types</span>
             </button>
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg border border-[#e4e4e9] bg-white px-3 py-2 text-sm font-medium text-[#3d3d4a] hover:border-[#d3d3db] hover:bg-[#fbfbfc] disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
+            {canUpdate && (
+              <Link
+                href="/inventory/price-lists/upload"
+                className="flex items-center gap-2 rounded-lg border border-[#5b21b6] bg-white px-3 py-2 text-sm font-medium text-[#5b21b6] hover:bg-[#f0e9fc] sm:px-4"
+              >
+                <Upload className="h-4 w-4" />
+                Bulk upload
+              </Link>
+            )}
             {canCreate && (
               <button
                 type="button"

@@ -110,6 +110,8 @@ const PoSupplierSchema = z.object({
   // these, not typed in. Optional so an older cached PO payload still parses.
   defaultInputVat: z.enum(['pct_12', 'none']).optional().nullable(),
   defaultWithholding: z.enum(['pct_1', 'none']).optional().nullable(),
+  // Scenario 69 Part D — the EWT code the receipt is withheld at.
+  defaultWithholdingTaxCode: z.string().optional().nullable(),
 })
 
 const PoWarehouseSchema = z.object({

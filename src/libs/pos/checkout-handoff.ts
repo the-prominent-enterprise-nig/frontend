@@ -50,12 +50,24 @@ export type CheckoutHandoff<TLine = unknown> = {
    * same two booklets and copy the same numbers a second time. Carried here
    * because they are typed, not derived — nothing else can reproduce them. */
   salesInvoiceNumber?: string
+  /** The Delivery Receipt No. instead, when the sale is covered by a DR —
+   * carried for the same reason, in place of the Sales Invoice No. */
+  deliveryReceiptNumber?: string
   /** One per payment row, in row order. */
   paymentReferences?: string[]
   /** Scenario 67 — a parked X-Deal comes back as one, reference included,
    * instead of as a plain installment sale needing a credit application. */
   isXDeal?: boolean
   xDealReference?: string
+  /** Scenario 71 — the reason and note the cashier gave for a price override,
+   * so a parked or detoured sale comes back with them instead of asking twice. */
+  exceptionReasonId?: string
+  exceptionNote?: string
+  /** Scenario 71 — the credit application was waived on this sale. */
+  creditApplicationWaived?: boolean
+  /** Scenario 71 — the credit application was overridden on this sale (the
+   * application itself comes back as creditApplicationId). */
+  creditApplicationOverridden?: boolean
 }
 
 /** Never throws: localStorage can be unavailable (private windows, blocked

@@ -17,6 +17,9 @@ export interface PosDepositSession {
   undepositedAmount: string | number | null
   terminal: { name: string } | null
   cashier: { name: string | null; firstName: string | null; lastName: string | null } | null
+  /** What this deposit banked of it once cleared — less than the session
+   * held when the deposit came up short. Null on a draft. */
+  bankedAmount?: number | null
 }
 
 export interface PosDeposit {
@@ -33,12 +36,58 @@ export interface PosDeposit {
   clearedAt: string | null
   journalEntryId: string | null
   sessions: PosDepositSession[]
+  /** Scenario 70 G8 — the slips accounting itemised; empty on a deposit
+   * recorded before slips existed. */
+  lines?: PosDepositLine[]
+  /** G11 — the New Receipts banked with the sessions. */
+  newReceipts?: {
+    id: string
+    number: string | null
+    payerName: string
+    amount: number
+    bankedAmount?: number | null
+  }[]
   attachmentCount?: number
 }
 
+/** One recorded slip, as the deposit detail shows it. */
+export interface PosDepositLine {
+  id: string
+  amount: string | number
+  reference: string | null
+  note: string | null
+  /** The day this slip was banked; null on a slip recorded before slips had
+   * dates, which reads as the deposit's own date. */
+  depositDate: string | null
+  bankAccount: { id: string; name: string; accountNumber: string | null }
+  /** Null for the branch's own cash (1-01-010). */
+  clearsAccount: { id: string; number: string | null; name: string } | null
+}
+
+/** Scenario 70 G8 — one slip: a bank, an amount, and what it empties. */
+export interface PosDepositLineInput {
+  bankAccountId: string
+  amount: number
+  /** A processor's clearing account; omitted for the branch's own cash. */
+  clearsAccountId?: string
+  note?: string
+  /** This bank's own deposit slip / reference number. */
+  reference?: string
+  /** The day this slip was banked — slips on different days post separate
+   * journal entries. */
+  depositDate?: string
+}
+
 export interface CreatePosDepositInput {
+  /** The header's own bank. With slips it is the first slip's. */
   bankAccountId: string
   sessionIds: string[]
+  /** Scenario 70 G11 — New Receipts banked with the sessions. */
+  newReceiptIds?: string[]
+  /** Scenario 70 G8 — one per bank the money actually went to. Without them
+   * the deposit is the old single-bank shape, amount worked out server-side. */
+  lines?: PosDepositLineInput[]
+  /** With slips, the earliest slip's date. */
   depositDate: string
   reference?: string
 }
@@ -103,6 +152,17 @@ export async function getPosDepositSummary(
   branchId?: string
 ): Promise<ApiResponse<PosDepositSummary>> {
   return api.get<PosDepositSummary>('/pos-deposits/summary', branchId ? { branchId } : undefined)
+}
+
+/** Replaces a draft's slips before it is cleared — a mistyped amount, the
+ * wrong bank. */
+export async function updatePosDeposit(
+  id: string,
+  lines: PosDepositLineInput[]
+): Promise<ApiResponse<PosDeposit>> {
+  const result = await api.patch<PosDeposit>(`/pos-deposits/${id}`, { lines })
+  if (result.success) revalidate()
+  return result
 }
 
 export async function clearPosDeposit(id: string): Promise<ApiResponse<PosDeposit>> {

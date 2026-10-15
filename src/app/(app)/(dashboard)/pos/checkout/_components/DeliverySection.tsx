@@ -39,9 +39,9 @@ const LINK_CLASS =
 /**
  * Scenario 66 — Deliver to, Delivery Address and the delivery fee, captured
  * with the sale. The fee is posted on its own collection receipt and JE.
- * Scenario 68 — at checkout it is totaled in: when the sale itself collects
- * anything the fee is paid with that same payment (feeFollowsSale), so the
- * Paid with choice only shows when the fee is the only thing collected.
+ * Scenario 70 — the last section before Confirm, and the fee always has its
+ * own Paid with (the sale's tender is never reused) and its own CR. It is a
+ * collection on its own receipt, not part of the sale.
  */
 export default function DeliverySection({
   state,
@@ -51,7 +51,6 @@ export default function DeliverySection({
   customerAddressLoading,
   unavailableReason,
   configuredMethods,
-  feeFollowsSale,
   fmt,
 }: {
   state: DeliveryState
@@ -64,9 +63,6 @@ export default function DeliverySection({
   /** The branch's payment methods — the fee's bank / gateway / acquirer
    * lists are the sale's own. */
   configuredMethods: PaymentMethodConfig[]
-  /** Scenario 68 — the sale collects something, so the fee goes in its
-   * payment, with its tender. */
-  feeFollowsSale: boolean
   fmt: (n: number) => string
 }) {
   const fee = parseDeliveryFee(state.fee)
@@ -84,13 +80,35 @@ export default function DeliverySection({
     setState((s) => ({ ...s, addressSource: 'customer', addressSaved: false, pickerSeed: null }))
 
   return (
-    <div className="border-b border-purple-200 p-5" data-testid="delivery-section">
-      <label className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-700">
-          <Truck size={13} />
-          Delivery
+    <div className="border-t border-purple-200 p-5" data-testid="delivery-section">
+      {/* Scenario 70 — last in the panel, so the way in has to be impossible to
+          scroll past: the whole card is the tick box, with a real heading and
+          a line saying what it does. */}
+      <label
+        className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3.5 transition-colors ${
+          state.enabled
+            ? 'cursor-pointer border-purple-500 bg-purple-100'
+            : unavailableReason
+              ? 'cursor-not-allowed border-purple-200 bg-white opacity-60'
+              : 'cursor-pointer border-purple-300 bg-white hover:border-purple-500 hover:bg-purple-50'
+        }`}
+      >
+        <span
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+            state.enabled ? 'bg-purple-600 text-white' : 'bg-purple-100 text-purple-700'
+          }`}
+        >
+          <Truck size={20} />
         </span>
-        <span className="flex items-center gap-2 text-xs text-gray-700">
+        <span className="min-w-0 flex-1">
+          <span className="block text-base font-bold text-prominent-purple-900">Delivery</span>
+          <span className="block text-xs text-gray-700">
+            {state.enabled
+              ? 'This sale will be delivered — fill in the details below.'
+              : 'Tick if this sale is being delivered: add the address and a delivery fee.'}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-prominent-purple-900">
           <input
             type="checkbox"
             data-testid="delivery-toggle"
@@ -99,7 +117,7 @@ export default function DeliverySection({
             onChange={(e) =>
               setState(e.target.checked ? { ...EMPTY_DELIVERY, enabled: true } : EMPTY_DELIVERY)
             }
-            className="h-4 w-4 accent-purple-600"
+            className="h-6 w-6 accent-purple-600"
           />
           For delivery
         </span>
@@ -249,16 +267,25 @@ export default function DeliverySection({
             <label className="mb-1 block text-[13px] text-gray-700" htmlFor="delivery-fee">
               Delivery fee
             </label>
-            <input
-              id="delivery-fee"
-              type="text"
-              inputMode="decimal"
-              aria-label="Delivery fee"
-              value={state.fee}
-              onChange={(e) => setState((s) => ({ ...s, fee: e.target.value }))}
-              placeholder="0.00 — leave blank for free delivery"
-              className={`${INPUT_CLASS} text-right`}
-            />
+            {/* The one amount this section asks for, so it is larger than the
+                other fields, written from the left like a form field (not
+                right-aligned like a register total), with the peso sign in
+                front so it reads as money. */}
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-base font-semibold text-gray-500">
+                ₱
+              </span>
+              <input
+                id="delivery-fee"
+                type="text"
+                inputMode="decimal"
+                aria-label="Delivery fee"
+                value={state.fee}
+                onChange={(e) => setState((s) => ({ ...s, fee: e.target.value }))}
+                placeholder="0.00 — leave blank for free delivery"
+                className="w-full rounded-lg border-2 border-purple-200 bg-white py-3 pl-9 pr-3 text-base font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:text-sm placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+              />
+            </div>
             {fee === null && (
               <p className="mt-1 text-xs text-red-600">Enter an amount like 150 or 150.50.</p>
             )}
@@ -266,127 +293,115 @@ export default function DeliverySection({
 
           {hasFee && (
             <div className="space-y-2">
-              {feeFollowsSale ? (
-                <p
-                  className="rounded-lg border border-purple-100 px-2.5 py-1.5 text-xs text-gray-700"
-                  data-testid="delivery-fee-with-sale"
-                >
-                  Paid with the sale&apos;s payment — the same tender, in one Amount received.
-                </p>
-              ) : (
-                <div
-                  className="rounded-lg border border-purple-100 p-2.5"
-                  data-testid="delivery-fee-method"
-                >
-                  <p className="mb-1.5 text-xs font-medium text-gray-800">Paid with *</p>
-                  <div className="flex gap-1.5">
-                    {DELIVERY_FEE_TENDERS.map((tender) => (
-                      <button
-                        key={tender}
-                        type="button"
-                        aria-pressed={state.tender === tender}
-                        onClick={() =>
-                          // A new tender starts its details over, as the sale's does.
-                          setState((s) => ({
-                            ...s,
-                            tender,
-                            checkNumber: '',
-                            optionId: undefined,
-                            bankVerified: false,
-                            cardTxnMode: 'straight',
-                            cardTerm: undefined,
-                          }))
-                        }
-                        className={tenderButtonClass(state.tender === tender)}
-                      >
-                        {DELIVERY_FEE_TENDER_LABELS[tender]}
-                      </button>
-                    ))}
-                  </div>
+              <div
+                className="rounded-lg border border-purple-100 p-2.5"
+                data-testid="delivery-fee-method"
+              >
+                <p className="mb-1.5 text-xs font-medium text-gray-800">Paid with *</p>
+                <div className="flex gap-1.5">
+                  {DELIVERY_FEE_TENDERS.map((tender) => (
+                    <button
+                      key={tender}
+                      type="button"
+                      aria-pressed={state.tender === tender}
+                      onClick={() =>
+                        // A new tender starts its details over, as the sale's does.
+                        setState((s) => ({
+                          ...s,
+                          tender,
+                          checkNumber: '',
+                          optionId: undefined,
+                          bankVerified: false,
+                          cardTxnMode: 'straight',
+                          cardTerm: undefined,
+                        }))
+                      }
+                      className={tenderButtonClass(state.tender === tender)}
+                    >
+                      {DELIVERY_FEE_TENDER_LABELS[tender]}
+                    </button>
+                  ))}
+                </div>
 
-                  {tenderOptions.length > 0 && optionLabel && (
-                    <PillCombobox
-                      ariaLabel={`Delivery fee ${optionLabel}`}
-                      wrapperClassName="mt-1.5"
-                      placeholder={`Select ${optionLabel.toLowerCase()}…`}
-                      options={tenderOptions.map((o) => ({ value: o.id, label: o.name }))}
-                      value={state.optionId}
-                      onChange={(optionId) => setState((s) => ({ ...s, optionId }))}
-                    />
-                  )}
+                {tenderOptions.length > 0 && optionLabel && (
+                  <PillCombobox
+                    ariaLabel={`Delivery fee ${optionLabel}`}
+                    wrapperClassName="mt-1.5"
+                    placeholder={`Select ${optionLabel.toLowerCase()}…`}
+                    options={tenderOptions.map((o) => ({ value: o.id, label: o.name }))}
+                    value={state.optionId}
+                    onChange={(optionId) => setState((s) => ({ ...s, optionId }))}
+                  />
+                )}
 
-                  {state.tender === 'check' && (
+                {state.tender === 'check' && (
+                  <input
+                    aria-label="Delivery fee check number"
+                    className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                    placeholder="Check Number (required)"
+                    maxLength={DELIVERY_FEE_CHECK_NUMBER_MAX}
+                    value={state.checkNumber}
+                    onChange={(e) => setState((s) => ({ ...s, checkNumber: e.target.value }))}
+                  />
+                )}
+
+                {state.tender === 'bank_transfer' && (
+                  <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
                     <input
-                      aria-label="Delivery fee check number"
-                      className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                      placeholder="Check Number (required)"
-                      maxLength={DELIVERY_FEE_CHECK_NUMBER_MAX}
-                      value={state.checkNumber}
-                      onChange={(e) => setState((s) => ({ ...s, checkNumber: e.target.value }))}
+                      type="checkbox"
+                      checked={state.bankVerified}
+                      onChange={(e) => setState((s) => ({ ...s, bankVerified: e.target.checked }))}
+                      className="h-3.5 w-3.5 rounded border-gray-300"
                     />
-                  )}
+                    Verified at register — the credit already landed, post straight to Cash in Bank
+                  </label>
+                )}
 
-                  {state.tender === 'bank_transfer' && (
-                    <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={state.bankVerified}
-                        onChange={(e) =>
-                          setState((s) => ({ ...s, bankVerified: e.target.checked }))
-                        }
-                        className="h-3.5 w-3.5 rounded border-gray-300"
-                      />
-                      Verified at register — the credit already landed, post straight to Cash in
-                      Bank
-                    </label>
-                  )}
-
-                  {state.tender === 'card' && (
-                    <>
-                      <div className="mt-1.5 flex gap-1.5">
-                        {(['straight', 'installment'] as const).map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            aria-pressed={state.cardTxnMode === mode}
-                            onClick={() =>
-                              setState((s) => ({
-                                ...s,
-                                cardTxnMode: mode,
-                                cardTerm: mode === 'straight' ? undefined : s.cardTerm,
-                              }))
-                            }
-                            className={tenderButtonClass(state.cardTxnMode === mode)}
-                          >
-                            {mode === 'straight' ? 'Straight' : 'Installment'}
-                          </button>
-                        ))}
-                      </div>
-                      {state.cardTxnMode === 'installment' && (
-                        <PillSelect
-                          aria-label="Delivery fee card term"
-                          filled={!!state.cardTerm}
-                          wrapperClassName="mt-1.5"
-                          value={state.cardTerm ?? ''}
-                          onChange={(e) =>
+                {state.tender === 'card' && (
+                  <>
+                    <div className="mt-1.5 flex gap-1.5">
+                      {(['straight', 'installment'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          aria-pressed={state.cardTxnMode === mode}
+                          onClick={() =>
                             setState((s) => ({
                               ...s,
-                              cardTerm: e.target.value ? Number(e.target.value) : undefined,
+                              cardTxnMode: mode,
+                              cardTerm: mode === 'straight' ? undefined : s.cardTerm,
                             }))
                           }
+                          className={tenderButtonClass(state.cardTxnMode === mode)}
                         >
-                          <option value="">Select Term (required)</option>
-                          {CARD_INSTALLMENT_TERMS.map((m) => (
-                            <option key={m} value={m}>
-                              {m} months
-                            </option>
-                          ))}
-                        </PillSelect>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
+                          {mode === 'straight' ? 'Straight' : 'Installment'}
+                        </button>
+                      ))}
+                    </div>
+                    {state.cardTxnMode === 'installment' && (
+                      <PillSelect
+                        aria-label="Delivery fee card term"
+                        filled={!!state.cardTerm}
+                        wrapperClassName="mt-1.5"
+                        value={state.cardTerm ?? ''}
+                        onChange={(e) =>
+                          setState((s) => ({
+                            ...s,
+                            cardTerm: e.target.value ? Number(e.target.value) : undefined,
+                          }))
+                        }
+                      >
+                        <option value="">Select Term (required)</option>
+                        {CARD_INSTALLMENT_TERMS.map((m) => (
+                          <option key={m} value={m}>
+                            {m} months
+                          </option>
+                        ))}
+                      </PillSelect>
+                    )}
+                  </>
+                )}
+              </div>
               <div>
                 <label className="mb-1 block text-[13px] text-gray-700" htmlFor="delivery-fee-cr">
                   Delivery fee CR No. *
@@ -407,9 +422,7 @@ export default function DeliverySection({
 
           <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500">
             {hasFee
-              ? feeFollowsSale
-                ? `${fmt(fee!)} is added to the checkout total and collected with the sale's payment, on its own Delivery CR Number.`
-                : `${fmt(fee!)} is collected now, on its own Delivery CR Number.`
+              ? `${fmt(fee!)} is collected separately from the sale, with its own Paid with, on its own Delivery CR Number.`
               : 'Free delivery — no fee to collect.'}
           </p>
         </div>

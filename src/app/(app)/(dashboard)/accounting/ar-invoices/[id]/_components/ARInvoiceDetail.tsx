@@ -12,10 +12,13 @@ import {
   type ARInvoiceMemo,
 } from '@/src/libs/data/AccountingV2Data'
 import { printARInvoiceDocument } from '@/src/libs/print/printInventoryDocument'
+import { outputVatLabel } from '@/src/libs/tax/output-vat'
+import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 import CollectionReceiptSheet, {
   CollectionReceiptDocumentSheet,
   type CollectionReceiptDocument,
 } from '../../_components/CollectionReceiptSheet'
+import RetentionPanel from './RetentionPanel'
 
 // Mirrors ARInvoicesList's own INVOICE_STATUS_BADGE — kept local rather
 // than imported from there so this page doesn't pull in that file's much
@@ -118,7 +121,17 @@ function MemoRow({ memo, direction }: { memo: ARInvoiceMemo; direction: 'credit'
   )
 }
 
-export default function ARInvoiceDetail({ id }: { id: string }) {
+export default function ARInvoiceDetail({
+  id,
+  canReleaseRetention = false,
+  canAdjustRetention = false,
+}: {
+  id: string
+  /** May take the retained amount in (a collection). */
+  canReleaseRetention?: boolean
+  /** May offset, write off or provide for it (needs approval). */
+  canAdjustRetention?: boolean
+}) {
   const [doc, setDoc] = useState<ARInvoiceDocument | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -250,7 +263,26 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
         {invoice.status === 'OVERDUE' && daysOverdue > 0 && (
           <span className="font-medium text-red-500">{daysOverdue} days overdue</span>
         )}
+        {/* Scenario 69 Part F — how the invoice was classified for output VAT,
+            and for a zero-rated or exempt one the document it rests on and who
+            signed it off. */}
+        {invoice.outputVatCode && (
+          <span data-testid="invoice-vat-class">
+            {outputVatLabel(invoice.outputVatCode)}
+            {invoice.taxExemptionRef ? ` · ${invoice.taxExemptionRef}` : ''}
+            {invoice.outputVatApprovedBy
+              ? ` · approved by ${invoice.outputVatApprovedByName ?? 'an approver'}`
+              : ''}
+          </span>
+        )}
       </div>
+
+      {/* Scenario 69 Part I — the class changed from its default, and why. */}
+      {invoice.taxOverride && invoice.taxOverride.length > 0 && (
+        <div className="mt-3">
+          <TaxOverrideSummary entries={invoice.taxOverride} testId="invoice-override-summary" />
+        </div>
+      )}
 
       {/* The receivable at a glance. One installment sale is ONE invoice, so
           these three numbers describe the whole contract: what was billed,
@@ -289,6 +321,19 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           </div>
         </dl>
       </section>
+
+      {(invoice.retentionAmount ?? 0) > 0 && (
+        <RetentionPanel
+          invoiceId={id}
+          status={invoice.status}
+          retentionPercent={invoice.retentionPercent ?? null}
+          retentionAmount={invoice.retentionAmount ?? 0}
+          retentionReleaseDate={invoice.retentionReleaseDate ?? null}
+          retentionMilestone={invoice.retentionMilestone ?? null}
+          canRelease={canReleaseRetention}
+          canAdjust={canAdjustRetention}
+        />
+      )}
 
       {/* The invoice document. It used to render titled "Collection Receipt"
           — the same paper as the receipt that settles it — which meant this

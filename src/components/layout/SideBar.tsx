@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { createPortal } from 'react-dom'
 import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
 import { hasExactPermission, hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
@@ -16,6 +18,7 @@ import {
   ChevronLeft,
   ChevronUp,
   ClipboardList,
+  ClipboardCheck,
   ClipboardX,
   Coins,
   Contact,
@@ -234,6 +237,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/expenses',
         icon: Coins,
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+        // Recurring Expenses is a tab under Expenses, not a sidebar item of its own,
+        // so Expenses stays lit on its sub-pages.
+        usePrefix: true,
       },
       {
         section: 'Accounting',
@@ -313,6 +319,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: FileBarChart,
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
+      // Tax Codes, Tax Reports and Tax Closing are hidden from the nav (not on main yet).
+      // Their routes still load: /accounting/tax-codes, /accounting/tax-reports,
+      // /accounting/tax-closing.
       // Scenario 62 — raw data from every module, read-only. Business Owner
       // only; exact permission so the Accountant's accounting:* can't reach.
       {
@@ -441,6 +450,15 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/cancellation-requests',
         icon: ClipboardX,
         requiredPermission: 'pos:transaction:override',
+      },
+      {
+        // Scenario 71 Part 4 — the end-of-day look at every price override,
+        // typed term and waiver. Same gate as the other manager approvals; the
+        // pending-entry badge is attached in SideBar below.
+        label: 'Override Review',
+        href: '/pos/override-review',
+        icon: ClipboardCheck,
+        requiredPermission: POS_PERMISSIONS.TRANSACTIONS_OVERRIDE,
       },
       {
         label: 'Release Approvals',
@@ -1027,6 +1045,29 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     })
   }, [isOwner, pathname])
 
+  // The Override Review badge. It follows the branch switcher — the review page
+  // is filtered by it, so a count across every branch beside a page showing one
+  // branch's entries disagreed — and shares its query key with the page, so
+  // approving or rejecting there updates it at once. Only fetched for someone who
+  // can open the review, and only inside POS where the item shows.
+  const canReviewOverrides = hasPermission(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
+  const posBranchId = usePosBranchContext((s) => s.branchId)
+  const { data: overridePending } = useQuery({
+    queryKey: ['pos-override-pending-count', posBranchId],
+    // A plain request through the API proxy, not a server action: server actions
+    // run one at a time and a newer one cancels an older, so a count refreshing in
+    // the background could knock out a save the user had just made on the page.
+    queryFn: async () => {
+      const qs = posBranchId ? `?branchId=${encodeURIComponent(posBranchId)}` : ''
+      const res = await fetch(`/api/pos/override-review/pending-count${qs}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error('Could not load the pending override count')
+      return (await res.json()) as { count: number }
+    },
+    enabled: canReviewOverrides && segment === 'pos',
+    staleTime: 15_000,
+  })
+  const overridePendingCount = overridePending?.count ?? 0
+
   const ownerWorkspaceItems: NavItem[] = isOwner
     ? OWNER_WORKSPACE_ITEMS.map((item) =>
         item.href === '/settings/pending-invites' && pendingInviteCount > 0
@@ -1085,6 +1126,14 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     )
   }
 
+  const withBadge = (item: NavItem): NavItem =>
+    item.href === '/pos/override-review' && overridePendingCount > 0
+      ? {
+          ...item,
+          badge: { text: String(overridePendingCount), variant: 'count', color: 'bg-orange-500' },
+        }
+      : item
+
   const withVisibleSubItems = (item: NavItem): NavItem =>
     item.subItems
       ? {
@@ -1109,7 +1158,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const rawMain = [
     DASHBOARD_ITEM,
     ...moduleNavItems,
-    ...mainItems.filter(filterItem).map(withVisibleSubItems),
+    ...mainItems.filter(filterItem).map(withVisibleSubItems).map(withBadge),
   ]
   const seen = new Set<string>()
   const main = rawMain.filter((item) => {

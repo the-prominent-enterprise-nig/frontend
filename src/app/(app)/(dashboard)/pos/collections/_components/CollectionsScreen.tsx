@@ -24,7 +24,16 @@ import {
   getEnabledBranchPaymentMethods,
 } from '../../_actions/pos-actions'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
+import { useMe } from '@/src/hooks/useMe'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
+import { PillCombobox } from '../../checkout/_components/PillInputs'
+import {
+  DELIVERY_FEE_TENDERS,
+  DELIVERY_FEE_TENDER_LABELS,
+  TENDERS_WITH_OPTIONS,
+  type DeliveryFeeTender,
+} from '../../checkout/_utils/delivery'
+import { qrOptionGroup } from '../../checkout/_utils/qr-option-groups'
 import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/data/AccountingV2Data'
 import type {
   PosCustomer,
@@ -64,6 +73,21 @@ function StatusBadge({ status }: { status: string }) {
 
 function isToday(dateIso: string): boolean {
   return dateIso.slice(0, 10) === todayIso()
+}
+
+// A collection is recognized on the day the cash physically came in, so the
+// recorded Payment date is never allowed past real today — not even when the
+// Scenario 54 date override is simulating a future "today". Which due the
+// money settles is tracked separately (ARPayment.installmentScheduleLineId),
+// so paying dues ahead never needs a future date; and a receipt dated forward
+// would drop straight out of the daily collection report, which windows
+// strictly on CollectionReceipt.paymentDate for one calendar day. Backdating
+// is still allowed (entering a prior day's collection) — only the forward
+// direction is clamped.
+function clampToToday(dateIso: string): string {
+  const today = todayIso()
+  const day = dateIso.slice(0, 10)
+  return day > today ? today : day
 }
 
 // Used to show an informational (non-blocking) note when the chosen payment
@@ -167,6 +191,53 @@ function useCollectionsPaymentMethods(branchId: string): CollectionsPaymentOptio
     )
 
   return [...configuredOptions, CHECK_PAYMENT_OPTION]
+}
+
+// The method buttons are POS checkout's own seven (Cash on Hand … Debit/Credit
+// Card, same labels, same order), so a collection is picked the way a sale's
+// payment is. Each one resolves to the same payment method the old dropdown
+// sent; GCash and Billers are QR with their own part of its option list.
+const COLLECTIONS_TILE_METHOD: Record<DeliveryFeeTender, PaymentMethod> = {
+  cash_on_hand: 'CASH',
+  check: 'CHECK',
+  bank_transfer: 'BANK_TRANSFER',
+  gcash: 'QR',
+  billers: 'QR',
+  qr: 'QR',
+  card: 'CARD',
+}
+
+const TILE_OPTION_LABEL: Partial<Record<DeliveryFeeTender, string>> = {
+  bank_transfer: 'Bank',
+  gcash: 'Gateway',
+  billers: 'Biller',
+  qr: 'Gateway',
+  card: 'Card Acquirer',
+}
+
+/** The bank / gateway / biller / acquirer choices a button offers. */
+function tileOptions(
+  tile: DeliveryFeeTender,
+  option: CollectionsPaymentOption | undefined
+): { id: string; name: string }[] {
+  if (!option || !TENDERS_WITH_OPTIONS.includes(tile)) return []
+  return option.method === 'QR'
+    ? option.options.filter((o) => qrOptionGroup(o.name) === tile)
+    : option.options
+}
+
+/** Only the buttons this branch can actually take: Check is always there, the
+ * rest follow the branch's enabled methods, and GCash / Billers need at least
+ * one option of their own to be worth showing. */
+function availableTiles(paymentMethods: CollectionsPaymentOption[]): DeliveryFeeTender[] {
+  return DELIVERY_FEE_TENDERS.filter((tile) => {
+    const option = paymentMethods.find((m) => m.method === COLLECTIONS_TILE_METHOD[tile])
+    if (!option) return false
+    if (option.method !== 'QR') return true
+    // A QR method with no named choices at all still takes plain QR.
+    if (tile === 'qr' && option.options.length === 0) return true
+    return tileOptions(tile, option).length > 0
+  })
 }
 
 // A due is eligible for selection (and payment, via "Pay Selected") once its
@@ -377,10 +448,12 @@ export default function CollectionsScreen() {
 
   const customers = customersQuery.data?.success ? (customersQuery.data.data ?? []) : []
   const schedules = schedulesQuery.data?.success ? (schedulesQuery.data.data ?? []) : []
-  // Scenario 54 — the date a payment collected right now would actually
-  // carry: the override while one's active (PaymentPanel's own paymentDate
-  // field unlocks its today-cap to accept this directly when it's in the
-  // future — developer-confirmed, dev-stage only), real today otherwise.
+  // Scenario 54 — the simulated "now" this screen reads dues against: the
+  // override while one's active, real today otherwise. This dates the due
+  // Status/Rebate PREVIEW only. It does NOT date the collection: PaymentPanel
+  // seeds its Payment date from this clamped to real today and caps the field
+  // there, because cash is recognized when it's received and a forward-dated
+  // receipt is invisible to the daily collection report.
   const effectivePaymentDateIso = overrideDateIso ?? todayIso()
   // Only `ppd` is carried here — NOT a precomputed suggestedRebate/
   // suggestedPenalty. PaymentPanel's own Payment date field is freely
@@ -593,8 +666,14 @@ export default function CollectionsScreen() {
                       className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2.5 text-[13px] text-zinc-500">
+                        {/* The Sales Invoice / Delivery Receipt No. the customer holds —
+                            the internal POS-<epoch> number means nothing outside the
+                            system. Only a sale booked before it was required falls
+                            back to it. */}
                         <span className="font-mono">
-                          {s.posTransaction?.transactionNumber ?? s.id}
+                          {s.posTransaction?.salesInvoiceNumber?.trim() ||
+                            s.posTransaction?.transactionNumber ||
+                            s.id}
                         </span>
                         <span>
                           {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
@@ -757,9 +836,11 @@ function PaymentPanel({
   /** Falls back to the Collections list's own branch filter, if the cashier
    * had one set — used only until the session's own branch resolves below. */
   defaultBranchId?: string
-  /** Scenario 54 — the Payment date field's starting value: the Collections
-   * screen's active date override, or real today with none active. Still
-   * freely editable from there, same as this field always has been. */
+  /** Scenario 54 — the screen's simulated "now": its active date override, or
+   * real today with none active. Drives the Status/Rebate/Penalty PREVIEW for
+   * the selected dues only. The Payment date field seeds from this clamped to
+   * real today (clampToToday) and is capped there, so an override that
+   * simulates the future can never forward-date the recorded collection. */
   initialPaymentDateIso: string
   onClearSelection: () => void
   /** Async: resolves only once the parent's post-payment refetch has
@@ -775,8 +856,11 @@ function PaymentPanel({
     // checkbox-driven per due.
     amount: '',
     withholdingAmount: '0',
-    paymentDate: initialPaymentDateIso,
+    // Clamped: a future date override drives the rebate/penalty PREVIEW only,
+    // never the date the money is recorded on (see clampToToday).
+    paymentDate: clampToToday(initialPaymentDateIso),
     paymentMethodConfigId: '',
+    paymentTile: '' as DeliveryFeeTender | '',
     paymentMethodOptionId: '',
     reference: '',
     bankReferenceNumber: '',
@@ -878,12 +962,20 @@ function PaymentPanel({
   // own assigned branch — takes priority over the Collections list's own
   // branch filter (defaultBranchId), which only applies when the session
   // itself isn't tied to one branch (e.g. Business Owner).
+  //
+  // Scenario 60 — a caravan defaults to the branch hosting it, the one the
+  // combobox offers and the one the receipt is filed against, so the field
+  // never shows a caravan the backend would then fold away.
   useEffect(() => {
     let cancelled = false
     Promise.all([getSessionOrNull(), getBranches()]).then(([session, branchesRes]) => {
       if (cancelled) return
+      const branches = branchesRes.data ?? []
       const targetId = session?.branchId || defaultBranchId
-      const match = (branchesRes.data ?? []).find((b) => b.id === targetId)
+      const target = branches.find((b) => b.id === targetId)
+      const match = target?.isTemporary
+        ? branches.find((b) => b.id === target.hostBranchId)
+        : target
       if (!match) return
       setBranchDefault({ id: match.id, name: match.name })
       setForm((f) => (f.branchId ? f : { ...f, branchId: match.id }))
@@ -898,10 +990,19 @@ function PaymentPanel({
   // cashier explicitly picks something else, or the branch's methods don't
   // include what they'd previously picked — derived at render rather than
   // synced into form state via an effect.
-  const selectedPaymentMethod =
-    paymentMethods.find((m) => m.id === form.paymentMethodConfigId) ??
-    paymentMethods.find((m) => m.method === 'CASH') ??
-    paymentMethods[0]
+  const tiles = availableTiles(paymentMethods)
+  const selectedTile: DeliveryFeeTender =
+    tiles.find((t) => t === form.paymentTile) ??
+    (tiles.includes('cash_on_hand') ? 'cash_on_hand' : tiles[0])
+  const selectedPaymentMethod = paymentMethods.find(
+    (m) => m.method === COLLECTIONS_TILE_METHOD[selectedTile]
+  )
+  const selectedTileOptions = tileOptions(selectedTile, selectedPaymentMethod)
+  const selectedTileOptionLabel = TILE_OPTION_LABEL[selectedTile]
+  // A choice left over from a button (or branch) no longer selected is not sent.
+  const selectedOptionId = selectedTileOptions.some((o) => o.id === form.paymentMethodOptionId)
+    ? form.paymentMethodOptionId
+    : undefined
 
   // Rebate/penalty resolved per due from the checkbox state above, against
   // the LIVE suggestion for form.paymentDate (liveLines, not the raw `lines`
@@ -928,7 +1029,13 @@ function PaymentPanel({
   const totalApplied =
     (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0) + rebateTotal
   const wouldOverpay = totalApplied > outstandingTotal + 0.01
-  const isBackdatedOrPostdated = !isToday(form.paymentDate)
+  // Only backdating is reachable now — the field is capped at real today, so
+  // "not today" can only mean a prior day.
+  const isBackdated = !isToday(form.paymentDate)
+  // The override is simulating a future "today": the dues preview is computed
+  // against it, but the collection itself records on real today. Say so,
+  // rather than letting the two quietly disagree.
+  const previewDateIsFuture = initialPaymentDateIso.slice(0, 10) > todayIso()
   // Informational only, not blocking — the backend only rejects a repeat
   // same-date payment once the invoice is already fully paid (isFullyPaid,
   // handled separately above). A due that's still open can be topped up
@@ -942,7 +1049,8 @@ function PaymentPanel({
   const bulkAllocated = allocateBulkPayment(resolvedLines, Number(form.amount) || 0)
 
   /**
-   * Scenario 53 Part 5b — the branch's currently-open session, if any.
+   * Scenario 53 Part 5b — the open session whose drawer this cash lands in,
+   * if any.
    *
    * Cash taken here physically lands in that cashier's drawer, so the session
    * has to be named on the collection or close() cannot count it: the drawer
@@ -950,11 +1058,24 @@ function PaymentPanel({
    * count closed as an unexplainable overage. Null is a legitimate answer (a
    * field collection, or the counter open with no session), and the backend
    * treats it as "not counter cash".
+   *
+   * Resolved as the SIGNED-IN USER'S own open session first, not simply the
+   * branch's first one: a branch running two terminals has two open sessions,
+   * and naming the wrong one is worse than naming none — it shorts the real
+   * drawer and overs the other cashier's, so two people chase one variance.
+   * With no session of their own (an accounting clerk taking a counter
+   * payment) a single open session at the branch is still unambiguous, while
+   * several is a genuine "which drawer?" that only the cashier can answer, so
+   * this leaves it unattributed rather than guessing.
    */
+  const { data: me } = useMe()
   const { data: openSessions } = useSessions(
     form.branchId ? { branchId: form.branchId, status: 'open' } : { status: 'open' }
   )
-  const openSessionId = openSessions?.success ? openSessions.data?.[0]?.id : undefined
+  const openSessionList = openSessions?.success ? (openSessions.data ?? []) : []
+  const ownOpenSession = me ? openSessionList.find((s) => s.cashierId === me.id) : undefined
+  const openSessionId =
+    ownOpenSession?.id ?? (openSessionList.length === 1 ? openSessionList[0].id : undefined)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -970,7 +1091,7 @@ function PaymentPanel({
         penaltyAmount: resolvedLines[0]?.penaltyAmount ?? 0,
         method: selectedPaymentMethod?.method ?? 'CASH',
         paymentMethodConfigId: selectedPaymentMethod?.configId,
-        paymentMethodOptionId: form.paymentMethodOptionId || undefined,
+        paymentMethodOptionId: selectedOptionId,
         reference: form.reference || undefined,
         bankReferenceNumber: form.bankReferenceNumber || undefined,
         notes: form.notes || undefined,
@@ -1002,7 +1123,7 @@ function PaymentPanel({
         paymentDate: form.paymentDate,
         method: selectedPaymentMethod?.method ?? 'CASH',
         paymentMethodConfigId: selectedPaymentMethod?.configId,
-        paymentMethodOptionId: form.paymentMethodOptionId || undefined,
+        paymentMethodOptionId: selectedOptionId,
         reference: form.reference || undefined,
         bankReferenceNumber: form.bankReferenceNumber || undefined,
         notes: form.notes || undefined,
@@ -1135,11 +1256,20 @@ function PaymentPanel({
               This will be recorded as an additional payment toward the remaining balance.
             </div>
           )}
-          {single && !isFullyPaid && !alreadyPaidOnChosenDate && isBackdatedOrPostdated && (
+          {single && !isFullyPaid && !alreadyPaidOnChosenDate && isBackdated && (
             <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               This payment will be recorded for {fmtDate(form.paymentDate)}, not today — make sure
               that&apos;s intentional (e.g. entering a collection from a prior day).
+            </div>
+          )}
+          {previewDateIsFuture && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              The date override is simulating {fmtDate(initialPaymentDateIso)}, so the Status and
+              Rebate figures above are previewed as of that date. The collection itself records on{' '}
+              {fmtDate(todayIso())} — rebate and penalty are recalculated against that date on
+              submit.
             </div>
           )}
 
@@ -1296,12 +1426,12 @@ function PaymentPanel({
               <input
                 required
                 type="date"
-                // Scenario 54 — a future date override unlocks this field
-                // past today (developer-confirmed: dev-stage only) so the
-                // Status/Rebate preview above and what actually submits
-                // never disagree. Everyday entry with no override active
-                // keeps the normal today-cap.
-                max={initialPaymentDateIso > todayIso() ? undefined : todayIso()}
+                // Hard-capped at real today, override or not. Cash is
+                // recognized on the day it was received; a forward-dated
+                // receipt would be invisible to the daily collection report
+                // (it windows on CollectionReceipt.paymentDate), which is
+                // exactly how advance payments went missing from it.
+                max={todayIso()}
                 value={form.paymentDate}
                 onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
                 className={fieldClass}
@@ -1332,45 +1462,46 @@ function PaymentPanel({
 
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
-            <select
-              value={selectedPaymentMethod?.id ?? ''}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  paymentMethodConfigId: e.target.value,
-                  paymentMethodOptionId: '',
-                  bankReferenceNumber: '',
-                })
-              }
-              className={fieldClass}
+            <div
+              className="rounded-lg border border-purple-100 p-2.5"
+              data-testid="collection-method"
             >
-              {paymentMethods.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedPaymentMethod && selectedPaymentMethod.options.length > 0 && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                {selectedPaymentMethod.label}
-              </label>
-              <select
-                value={form.paymentMethodOptionId}
-                onChange={(e) => setForm({ ...form, paymentMethodOptionId: e.target.value })}
-                className={fieldClass}
-              >
-                <option value="">Select {selectedPaymentMethod.label.toLowerCase()}…</option>
-                {selectedPaymentMethod.options.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.name}
-                  </option>
+              <div className="flex flex-wrap gap-1.5">
+                {tiles.map((tile) => (
+                  <button
+                    key={tile}
+                    type="button"
+                    aria-pressed={selectedTile === tile}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        paymentTile: tile,
+                        paymentMethodOptionId: '',
+                        bankReferenceNumber: '',
+                      })
+                    }
+                    className={`min-w-22 flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                      selectedTile === tile
+                        ? 'bg-purple-200 text-purple-700'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    }`}
+                  >
+                    {DELIVERY_FEE_TENDER_LABELS[tile]}
+                  </button>
                 ))}
-              </select>
+              </div>
+              {selectedTileOptions.length > 0 && selectedTileOptionLabel && (
+                <PillCombobox
+                  ariaLabel={selectedTileOptionLabel}
+                  wrapperClassName="mt-1.5"
+                  placeholder={`Select ${selectedTileOptionLabel.toLowerCase()}…`}
+                  options={selectedTileOptions.map((o) => ({ value: o.id, label: o.name }))}
+                  value={selectedOptionId}
+                  onChange={(id) => setForm({ ...form, paymentMethodOptionId: id ?? '' })}
+                />
+              )}
             </div>
-          )}
+          </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">

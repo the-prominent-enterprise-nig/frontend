@@ -242,7 +242,7 @@ export function DriverList({ session }: { session: SessionUser }) {
                     <th className={TH}>Plate No.</th>
                     <th className={TH}>Branch</th>
                     <th className={TH}>Category</th>
-                    <th className={TH}>Tag / Area</th>
+                    <th className={TH}>Vehicle Type</th>
                     {showActions && <th className={`${TH} w-12`} aria-label="Row actions" />}
                   </tr>
                 </thead>
