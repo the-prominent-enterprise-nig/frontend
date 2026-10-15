@@ -24,6 +24,8 @@ import { acceptTransfer } from '../_actions/accept-transfer'
 import { rejectTransfer } from '../_actions/reject-transfer'
 import { approveManagerTransfer } from '../_actions/approve-manager-transfer'
 import { rejectManagerTransfer } from '../_actions/reject-manager-transfer'
+import { proposeSubstitution } from '../_actions/propose-substitution'
+import { confirmSubstitution } from '../_actions/confirm-substitution'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getBranches } from '../_actions/get-branches'
 import type {
@@ -34,6 +36,8 @@ import type {
   RejectHqTransferFormValues,
   RejectTransferFormValues,
   RejectManagerTransferFormValues,
+  ProposeSubstitutionFormValues,
+  ConfirmSubstitutionFormValues,
   TransferStatus,
   TransferSummary,
 } from '@/src/schema/inventory/transfers'
@@ -375,6 +379,75 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
     },
   })
 
+  const proposeSubstitutionMutation = useMutation({
+    mutationFn: ({
+      id,
+      lineId,
+      data,
+    }: {
+      id: string
+      lineId: string
+      data: ProposeSubstitutionFormValues
+    }) => proposeSubstitution(id, lineId, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Substitution proposed',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer) {
+          setSelectedTransfer((prev) =>
+            prev ? { ...prev, status: 'pending_substitution_confirmation' } : null
+          )
+        }
+      } else {
+        showToast({
+          title: 'Failed to propose substitution',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const confirmSubstitutionMutation = useMutation({
+    mutationFn: ({
+      id,
+      lineId,
+      data,
+    }: {
+      id: string
+      lineId: string
+      data: ConfirmSubstitutionFormValues
+    }) => confirmSubstitution(id, lineId, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Substitution resolved',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer && result.data?.status) {
+          const status = result.data.status as TransferStatus
+          setSelectedTransfer((prev) => (prev ? { ...prev, status } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to resolve substitution',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const dispatchMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data?: DispatchTransferFormValues }) =>
       dispatchTransfer(id, data),
@@ -542,6 +615,14 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
     rejectTransfer: (id: string, data: RejectTransferFormValues) =>
       rejectMutation.mutateAsync({ id, data }),
     isRejecting: rejectMutation.isPending,
+
+    proposeSubstitution: (id: string, lineId: string, data: ProposeSubstitutionFormValues) =>
+      proposeSubstitutionMutation.mutateAsync({ id, lineId, data }),
+    isProposingSubstitution: proposeSubstitutionMutation.isPending,
+
+    confirmSubstitution: (id: string, lineId: string, data: ConfirmSubstitutionFormValues) =>
+      confirmSubstitutionMutation.mutateAsync({ id, lineId, data }),
+    isConfirmingSubstitution: confirmSubstitutionMutation.isPending,
 
     dispatchTransfer: (id: string, data?: DispatchTransferFormValues) =>
       dispatchMutation.mutateAsync({ id, data }),

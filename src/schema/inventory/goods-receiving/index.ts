@@ -99,6 +99,10 @@ export const ReceiveStockFormSchema = z
     // (see the refine below, and ReceiveStockModal's own auto-default
     // effect).
     warehouseId: z.string().optional(),
+    // Set once the receiver has seen and dismissed the cross-warehouse
+    // mismatch warning (New Receipt only) — re-sent on the confirmed retry so
+    // the backend posts instead of warning again.
+    confirmWarehouseMismatch: z.boolean().optional(),
     // Scenario 55 (Stock-side Manual RR parity, follow-up) — applicationType
     // (new_stock/revert) is gone from the form: 'revert' was never reachable
     // anywhere else in the app (receive-against-PO always hardcodes

@@ -45,6 +45,11 @@ export const INVENTORY_PERMISSIONS = {
   TRANSFERS_UPDATE: 'inventory:transfers:update',
   TRANSFERS_ACCEPT: 'inventory:transfers:accept',
   TRANSFERS_REJECT: 'inventory:transfers:reject',
+  // The source branch's "we don't have that model" lever — a finer-grained
+  // alternative to rejecting the whole request outright.
+  TRANSFERS_PROPOSE_SUBSTITUTION: 'inventory:transfers:propose-substitution',
+  // The requesting branch accepting/rejecting a warehouse's substitution.
+  TRANSFERS_CONFIRM_SUBSTITUTION: 'inventory:transfers:confirm-substitution',
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
   TRANSFERS_SERIAL_OVERRIDE: 'inventory:transfers:serial-override',
   TRANSFERS_RECEIVE: 'inventory:transfers:receive',
@@ -231,6 +236,10 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Accept an incoming transfer request on behalf of the source branch',
   'inventory:transfers:reject':
     'Reject an incoming transfer request on behalf of the source branch',
+  'inventory:transfers:propose-substitution':
+    "Propose a different item/quantity on an incoming request's line, on behalf of the source branch",
+  'inventory:transfers:confirm-substitution':
+    "Accept or reject a source branch's proposed substitution, on behalf of the requesting branch",
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
   'inventory:transfers:serial-override':
     'Dispatch a transfer using a serial that fails the normal in-stock/source-warehouse check',

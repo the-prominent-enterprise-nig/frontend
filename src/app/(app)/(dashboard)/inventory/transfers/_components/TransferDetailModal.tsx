@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   ExternalLink,
   Lock,
+  Repeat,
 } from 'lucide-react'
 import {
   DispatchTransferFormSchema,
@@ -42,6 +43,9 @@ import {
   RejectTransferFormValues,
   RejectManagerTransferFormSchema,
   RejectManagerTransferFormValues,
+  ProposeSubstitutionFormSchema,
+  ProposeSubstitutionFormValues,
+  ConfirmSubstitutionFormValues,
   TransferSummary,
 } from '@/src/schema/inventory/transfers'
 import type { ApiResponse } from '@/src/libs/api/client'
@@ -49,7 +53,14 @@ import { getTransferDocument } from '../_actions/get-transfer-document'
 import { printStockTransferDocument } from '@/src/libs/print/printInventoryDocument'
 import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
-import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
+import {
+  advanceOnScan,
+  serialScanProps,
+} from '../../purchase-orders/_components/receive-po/serialScan'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
@@ -134,6 +145,11 @@ const STATUS_CONFIG = {
     icon: AlertTriangle,
   },
   cancelled: { label: 'Cancelled', color: 'bg-[#fdeceb] text-[#b42318]', icon: XCircle },
+  pending_substitution_confirmation: {
+    label: 'Substitution Proposed',
+    color: 'bg-[#f1ebfb] text-[#3f1490]',
+    icon: Repeat,
+  },
 }
 
 // A request can be withdrawn any time before physical movement starts
@@ -456,6 +472,85 @@ function ItemSerialGroup({
   )
 }
 
+/**
+ * Gap 2 fix — an unlisted item that turns out to be serial-tracked (e.g. the
+ * wrong model arrived) now captures its actual serial(s) instead of being
+ * excluded from the picker outright. One box per unit, scan-friendly;
+ * duplicates are checked across every unlisted line on this receipt, since
+ * that is the scope the backend itself rejects a repeat within.
+ */
+function UnlistedSerialInputs({
+  control,
+  setValue,
+  index,
+  isDuplicate,
+}: {
+  control: Control<ReceiveTransferFormValues>
+  setValue: UseFormSetValue<ReceiveTransferFormValues>
+  index: number
+  isDuplicate: (index: number, unitIndex: number, value: string) => boolean
+}) {
+  const serials = useWatch({ control, name: `extraLines.${index}.serialNumbers` }) ?? []
+  const slots = serials.length > 0 ? serials : ['']
+
+  function commit(next: string[]): void {
+    setValue(`extraLines.${index}.serialNumbers`, next, { shouldValidate: false })
+    setValue(`extraLines.${index}.quantity`, next.filter((s) => s.trim()).length || 0, {
+      shouldValidate: false,
+    })
+  }
+
+  return (
+    <div className="mt-1.5 space-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50 p-2">
+      {slots.map((value, unitIndex) => {
+        const duplicate = !!value.trim() && isDuplicate(index, unitIndex, value)
+        return (
+          <div key={unitIndex} className="flex items-center gap-1.5">
+            <input
+              {...serialScanProps}
+              value={value}
+              onChange={(e) => {
+                const next = slots.slice()
+                next[unitIndex] = e.target.value
+                commit(next)
+              }}
+              onKeyDown={advanceOnScan}
+              type="text"
+              autoComplete="off"
+              placeholder={`Serial ${unitIndex + 1}`}
+              className={`flex-1 rounded-md border px-2 py-1 text-xs outline-none ${
+                duplicate
+                  ? 'border-red-400 bg-red-50'
+                  : 'border-zinc-200 bg-white focus:border-prominent-purple-500'
+              }`}
+            />
+            {slots.length > 1 && (
+              <button
+                type="button"
+                onClick={() => commit(slots.filter((_, i) => i !== unitIndex))}
+                className="shrink-0 text-zinc-400 hover:text-red-600"
+                aria-label={`Remove serial ${unitIndex + 1}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {duplicate && (
+              <span className="shrink-0 text-[11px] text-red-600">Already used above</span>
+            )}
+          </div>
+        )
+      })}
+      <button
+        type="button"
+        onClick={() => commit([...slots, ''])}
+        className="text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+      >
+        + Add another unit
+      </button>
+    </div>
+  )
+}
+
 // "The wrong serial was sent" — surfaced only for someone holding the same
 // serial-override permission that gates a dispatch-time override, since
 // rewriting or repointing a serial record at receipt is the same class of
@@ -490,13 +585,7 @@ function SerialReceiveCorrection({
   })
   const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
 
-  // Hidden for now (2026-09-22) — "Wrong serial received?" correction entry
-  // point disabled at the developer's request, unconditionally, regardless
-  // of canOverrideSerial. Backend correction logic (typo-fix / unit-swap in
-  // transfers.service.ts's receive()) is untouched, just unreachable from
-  // this screen.
   if (!canOverrideSerial) return null
-  return null
 
   const activeMode: 'typo' | 'swap' | null = correctedSerialNumber
     ? 'typo'
@@ -682,6 +771,8 @@ type Props = {
   // warehouse may belong to a different branch than theirs.
   canAccept: boolean
   canReject: boolean
+  canProposeSubstitution: boolean
+  canConfirmSubstitution: boolean
   canDispatch: boolean
   /** Scenario 29 SN-01 — dispatch a mismatched serial past the normal
    * in-stock/source-warehouse check, with a required reason. */
@@ -699,6 +790,18 @@ type Props = {
   currentUserRegion?: string | null
   onAccept: (id: string) => Promise<ApiResponse<unknown>>
   onReject: (id: string, data: RejectTransferFormValues) => Promise<ApiResponse<unknown>>
+  onProposeSubstitution: (
+    id: string,
+    lineId: string,
+    data: ProposeSubstitutionFormValues
+  ) => Promise<ApiResponse<unknown>>
+  onConfirmSubstitution: (
+    id: string,
+    lineId: string,
+    data: ConfirmSubstitutionFormValues
+  ) => Promise<ApiResponse<unknown>>
+  isProposingSubstitution: boolean
+  isConfirmingSubstitution: boolean
   onDispatch: (id: string, data?: DispatchTransferFormValues) => Promise<ApiResponse<unknown>>
   onReceive: (id: string, data: ReceiveTransferFormValues) => Promise<ApiResponse<unknown>>
   onCancel: (id: string) => Promise<ApiResponse<unknown>>
@@ -733,6 +836,8 @@ export default function TransferDetailModal({
   onClose,
   canAccept,
   canReject,
+  canProposeSubstitution,
+  canConfirmSubstitution,
   canDispatch,
   canOverrideSerial,
   canReceive,
@@ -744,6 +849,10 @@ export default function TransferDetailModal({
   currentUserRegion,
   onAccept,
   onReject,
+  onProposeSubstitution,
+  onConfirmSubstitution,
+  isProposingSubstitution,
+  isConfirmingSubstitution,
   onDispatch,
   onReceive,
   onCancel,
@@ -848,6 +957,23 @@ export default function TransferDetailModal({
     control: receiveForm.control,
     name: 'extraLines',
   })
+  const watchedExtraLines = useWatch({ control: receiveForm.control, name: 'extraLines' }) ?? []
+  function isDuplicateExtraSerial(lineIndex: number, unitIndex: number, value: string): boolean {
+    const needle = value.trim()
+    let seenSelf = false
+    for (let li = 0; li < watchedExtraLines.length; li++) {
+      const serials = watchedExtraLines[li]?.serialNumbers ?? []
+      for (let ui = 0; ui < serials.length; ui++) {
+        if (serials[ui]?.trim() !== needle) continue
+        if (li === lineIndex && ui === unitIndex && !seenSelf) {
+          seenSelf = true
+          continue
+        }
+        return true
+      }
+    }
+    return false
+  }
 
   const rejectHqForm = useForm<RejectHqTransferFormValues>({
     resolver: zodResolver(RejectHqTransferFormSchema),
@@ -862,6 +988,14 @@ export default function TransferDetailModal({
   const rejectManagerForm = useForm<RejectManagerTransferFormValues>({
     resolver: zodResolver(RejectManagerTransferFormSchema),
     defaultValues: { reason: '' },
+  })
+
+  // Gap: the warehouse's only lever used to be rejecting the whole request —
+  // this opens a per-line proposal form instead. null = closed.
+  const [proposingLineId, setProposingLineId] = useState<string | null>(null)
+  const proposeForm = useForm<ProposeSubstitutionFormValues>({
+    resolver: zodResolver(ProposeSubstitutionFormSchema),
+    defaultValues: { proposedItemId: '', proposedQuantity: 1, reason: '' },
   })
 
   if (!isOpen) return null
@@ -886,6 +1020,12 @@ export default function TransferDetailModal({
     canAccept && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
   const canRejectThis =
     canReject && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canProposeSubstitutionThis =
+    canProposeSubstitution &&
+    inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canConfirmSubstitutionThis =
+    canConfirmSubstitution &&
+    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
   const canDispatchThis =
     canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
   const canReceiveThis =
@@ -1157,6 +1297,20 @@ export default function TransferDetailModal({
       setShowRejectManagerForm(false)
       rejectManagerForm.reset()
     }
+  }
+
+  async function handleProposeSubmit(data: ProposeSubstitutionFormValues) {
+    if (!transfer || !proposingLineId) return
+    const result = await onProposeSubstitution(transfer.id, proposingLineId, data)
+    if (result.success) {
+      setProposingLineId(null)
+      proposeForm.reset()
+    }
+  }
+
+  async function handleConfirmDecision(lineId: string, decision: 'accept' | 'reject') {
+    if (!transfer) return
+    await onConfirmSubstitution(transfer.id, lineId, { decision })
   }
 
   const fieldClass =
@@ -1552,6 +1706,168 @@ export default function TransferDetailModal({
                 </div>
               </div>
             )}
+
+            {/* Substitution — the warehouse's "we don't have that" lever */}
+            {status === 'requested' &&
+              canProposeSubstitutionThis &&
+              (transfer.lines ?? [])
+                .filter((line) => line.id)
+                .map((line) => (
+                  <div key={`propose-${line.id}`}>
+                    {proposingLineId === line.id ? (
+                      <form
+                        onSubmit={proposeForm.handleSubmit(handleProposeSubmit)}
+                        className="space-y-2 rounded-xl border border-[#ddd0f7] bg-[#fcfaff] p-3"
+                      >
+                        <p className="text-[12.5px] font-semibold text-[#3f1490]">
+                          Propose a substitute for {line.item?.name ?? 'this item'}
+                        </p>
+                        <Controller
+                          name="proposedItemId"
+                          control={proposeForm.control}
+                          render={({ field }) => (
+                            <ItemSearchCombobox
+                              value={field.value}
+                              onChange={(id) => field.onChange(id)}
+                              error={proposeForm.formState.errors.proposedItemId?.message}
+                              placeholder="Search item by name or SKU…"
+                            />
+                          )}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Controller
+                            name="proposedQuantity"
+                            control={proposeForm.control}
+                            render={({ field }) => (
+                              <input
+                                type="number"
+                                min={0.01}
+                                step="any"
+                                value={Number.isNaN(field.value) ? '' : field.value}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value === '' ? NaN : Number(e.target.value)
+                                  )
+                                }
+                                placeholder="Qty"
+                                className="w-24 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              />
+                            )}
+                          />
+                          {proposeForm.formState.errors.proposedQuantity && (
+                            <span className="text-[11px] text-red-600">
+                              {proposeForm.formState.errors.proposedQuantity.message}
+                            </span>
+                          )}
+                        </div>
+                        <Controller
+                          name="reason"
+                          control={proposeForm.control}
+                          render={({ field }) => (
+                            <textarea
+                              {...field}
+                              rows={2}
+                              placeholder="Why the requested item can't be fulfilled…"
+                              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12.5px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          )}
+                        />
+                        {proposeForm.formState.errors.reason && (
+                          <span className="text-[11px] text-red-600">
+                            {proposeForm.formState.errors.reason.message}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="submit"
+                            disabled={isProposingSubstitution}
+                            className="rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
+                          >
+                            {isProposingSubstitution ? 'Proposing…' : 'Propose substitution'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProposingLineId(null)
+                              proposeForm.reset()
+                            }}
+                            className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProposingLineId(line.id ?? null)
+                          proposeForm.reset({
+                            proposedItemId: '',
+                            proposedQuantity: Number(line.quantity) || 1,
+                            reason: '',
+                          })
+                        }}
+                        className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+                      >
+                        <Repeat className="h-3 w-3" /> Propose different item for{' '}
+                        {line.item?.name ?? 'this line'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+            {status === 'pending_substitution_confirmation' &&
+              (transfer.lines ?? [])
+                .filter((line) => line.id && line.proposedItemId)
+                .map((line) => (
+                  <div
+                    key={`confirm-${line.id}`}
+                    className="space-y-2 rounded-xl border border-[#ddd0f7] bg-[#fcfaff] p-3"
+                  >
+                    <p className="text-[12.5px] font-semibold text-[#3f1490]">
+                      Substitution proposed for {line.item?.name ?? 'this line'}
+                    </p>
+                    <p className="text-[12.5px] text-[#17171c]">
+                      <span className="text-zinc-400 line-through">{line.item?.name}</span>{' '}
+                      <ArrowRight className="inline h-3 w-3" />{' '}
+                      <span className="font-medium">
+                        {line.proposedItem?.name ?? line.proposedItemId}
+                      </span>
+                      {' · Qty '}
+                      {line.proposedQuantity}
+                    </p>
+                    {line.substitutionReason && (
+                      <p className="text-[11.5px] text-zinc-500">
+                        Reason: {line.substitutionReason}
+                      </p>
+                    )}
+                    {canConfirmSubstitutionThis ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmDecision(line.id as string, 'accept')}
+                          disabled={isConfirmingSubstitution}
+                          className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          Accept substitution
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmDecision(line.id as string, 'reject')}
+                          disabled={isConfirmingSubstitution}
+                          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-[11.5px] italic text-zinc-400">
+                        Waiting on the requesting branch to confirm.
+                      </p>
+                    )}
+                  </div>
+                ))}
 
             {/* Ledger timeline */}
             <div>
@@ -1986,7 +2302,15 @@ export default function TransferDetailModal({
                     </label>
                     <button
                       type="button"
-                      onClick={() => appendExtraLine({ itemId: '', quantity: 1, notes: '' })}
+                      onClick={() =>
+                        appendExtraLine({
+                          itemId: '',
+                          quantity: 1,
+                          notes: '',
+                          isSerialTracked: false,
+                          serialNumbers: undefined,
+                        })
+                      }
                       className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
                     >
                       + Add unlisted item
@@ -1994,64 +2318,98 @@ export default function TransferDetailModal({
                   </div>
                   {extraLineFields.length > 0 && (
                     <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
-                      {extraLineFields.map((extraField, idx) => (
-                        <div
-                          key={extraField.id}
-                          className="flex items-center gap-2 border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <Controller
-                              name={`extraLines.${idx}.itemId`}
-                              control={receiveForm.control}
-                              render={({ field }) => (
-                                <ItemSearchCombobox
-                                  value={field.value ?? ''}
-                                  onChange={(id) => field.onChange(id)}
-                                  error={
-                                    receiveForm.formState.errors.extraLines?.[idx]?.itemId?.message
-                                  }
-                                  excludeSerialTracked
-                                  placeholder="Search item by name or SKU… (non-serialized only)"
+                      {extraLineFields.map((extraField, idx) => {
+                        const isSerialTracked = !!watchedExtraLines[idx]?.isSerialTracked
+                        return (
+                          <div
+                            key={extraField.id}
+                            className="border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="min-w-0 flex-1">
+                                <Controller
+                                  name={`extraLines.${idx}.itemId`}
+                                  control={receiveForm.control}
+                                  render={({ field }) => (
+                                    <ItemSearchCombobox
+                                      value={field.value ?? ''}
+                                      onChange={(id) => field.onChange(id)}
+                                      onSelect={(option) => {
+                                        const meta = option.meta as ItemSearchMeta | undefined
+                                        const tracked = !!meta?.isSerialTracked
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.isSerialTracked`,
+                                          tracked,
+                                          { shouldValidate: false }
+                                        )
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.serialNumbers`,
+                                          tracked ? [''] : undefined,
+                                          { shouldValidate: false }
+                                        )
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.quantity`,
+                                          tracked ? 0 : 1,
+                                          { shouldValidate: false }
+                                        )
+                                      }}
+                                      error={
+                                        receiveForm.formState.errors.extraLines?.[idx]?.itemId
+                                          ?.message
+                                      }
+                                      placeholder="Search item by name or SKU…"
+                                    />
+                                  )}
+                                />
+                              </div>
+                              {!isSerialTracked && (
+                                <Controller
+                                  name={`extraLines.${idx}.quantity`}
+                                  control={receiveForm.control}
+                                  render={({ field }) => (
+                                    <input
+                                      type="number"
+                                      min={0.01}
+                                      step="any"
+                                      value={Number.isNaN(field.value) ? '' : field.value}
+                                      onChange={(e) =>
+                                        field.onChange(
+                                          e.target.value === '' ? NaN : Number(e.target.value)
+                                        )
+                                      }
+                                      onBlur={() => {
+                                        if (Number.isNaN(field.value)) field.onChange(0)
+                                      }}
+                                      className="w-20 shrink-0 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                                    />
+                                  )}
                                 />
                               )}
-                            />
-                          </div>
-                          <Controller
-                            name={`extraLines.${idx}.quantity`}
-                            control={receiveForm.control}
-                            render={({ field }) => (
-                              <input
-                                type="number"
-                                min={0.01}
-                                step="any"
-                                value={Number.isNaN(field.value) ? '' : field.value}
-                                onChange={(e) =>
-                                  field.onChange(
-                                    e.target.value === '' ? NaN : Number(e.target.value)
-                                  )
-                                }
-                                onBlur={() => {
-                                  if (Number.isNaN(field.value)) field.onChange(0)
-                                }}
-                                className="w-20 shrink-0 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              <button
+                                type="button"
+                                onClick={() => removeExtraLine(idx)}
+                                className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                                aria-label="Remove unlisted item"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            {isSerialTracked && (
+                              <UnlistedSerialInputs
+                                control={receiveForm.control}
+                                setValue={receiveForm.setValue}
+                                index={idx}
+                                isDuplicate={isDuplicateExtraSerial}
                               />
                             )}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeExtraLine(idx)}
-                            className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
-                            aria-label="Remove unlisted item"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                   <p className="mt-1 text-xs text-zinc-400">
-                    Serial-tracked items aren&apos;t shown here — register those through the serial
-                    numbers module instead.
+                    A serial-tracked pick switches to serial entry — one box per unit, scanner
+                    ready.
                   </p>
                 </div>
 

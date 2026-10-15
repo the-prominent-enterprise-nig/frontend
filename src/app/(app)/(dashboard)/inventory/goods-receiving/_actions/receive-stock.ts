@@ -79,6 +79,9 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<Received
       success: false,
       error: errStr || 'Failed to receive stock',
       message: readable ?? (msg || errStr || 'Failed to receive stock'),
+      // Forwarded verbatim — the warehouse-mismatch confirm flow matches on
+      // this, not on message text.
+      errorCode: result.errorCode,
     }
   }
 
