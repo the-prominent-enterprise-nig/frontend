@@ -377,8 +377,11 @@ export default function PosOverviewPage() {
                       className="cursor-pointer transition-colors hover:bg-gray-50"
                       onClick={() => setSelectedTransaction(tx)}
                     >
+                      {/* The SI / DR number is what staff have in hand; older
+                          sales and refunds carry neither, so those fall back
+                          to the internal transaction number. */}
                       <td className="px-5 py-3 font-mono text-sm font-medium text-gray-800">
-                        {tx.transactionNumber}
+                        {tx.salesInvoiceNumber ?? tx.deliveryReceiptNumber ?? tx.transactionNumber}
                       </td>
                       <td className="px-5 py-3">
                         <span className="capitalize text-gray-600">{tx.transactionType}</span>

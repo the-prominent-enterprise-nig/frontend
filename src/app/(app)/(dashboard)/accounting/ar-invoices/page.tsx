@@ -1,9 +1,11 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { requirePermission } from '@/src/libs/guards/require-permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { PendingDim, UrlFiltersProvider } from '@/src/components/ssr/UrlFilters'
 import { RefreshButton } from '@/src/components/ssr/RefreshButton'
+import { HubTabs } from '../_shared/HubTabs'
 import ARInvoicesList from './_components/ARInvoicesList'
 import { fetchRollup } from './_landing/data'
 import { parseLandingParams } from './_landing/params'
@@ -22,10 +24,15 @@ export default async function Page({
 
   // A customer filter keeps the invoice-level screen (payments, memos, voids…).
   if (raw.customerId) {
-    const session = await getSessionOrNull()
-    requirePermission(session, ACCOUNTING_PERMISSIONS.AR_INVOICES_READ)
+    const user = requirePermission(
+      await getSessionOrNull(),
+      ACCOUNTING_PERMISSIONS.AR_INVOICES_READ
+    )
     return (
       <div className="min-h-screen bg-gray-50">
+        <Suspense fallback={null}>
+          <HubTabs hub="receivables" session={user} />
+        </Suspense>
         <ARInvoicesList initialCustomerId={raw.customerId} />
       </div>
     )
@@ -36,8 +43,10 @@ export default async function Page({
   // permissions itself; the redirect below only decides which page is shown).
   const params = parseLandingParams(raw)
   const rollup = fetchRollup(params)
-  const session = await getSessionOrNull()
-  requirePermission(session, ACCOUNTING_PERMISSIONS.AR_INVOICES_READ)
+  const session = requirePermission(
+    await getSessionOrNull(),
+    ACCOUNTING_PERMISSIONS.AR_INVOICES_READ
+  )
 
   // No Suspense / loading.tsx on purpose: a ~150 ms query, so the first HTML
   // flush carries the page (see docs/query-optimization-plan.md §7.1).
@@ -45,6 +54,10 @@ export default async function Page({
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Receivables hub tabs; the Suspense is because TabNav reads searchParams. */}
+      <Suspense fallback={null}>
+        <HubTabs hub="receivables" session={session} />
+      </Suspense>
       <div className="p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>

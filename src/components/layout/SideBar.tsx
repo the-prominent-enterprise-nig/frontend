@@ -32,7 +32,6 @@ import {
   Key,
   Landmark,
   Layers,
-  Library,
   Monitor,
   MoreHorizontal,
   Package,
@@ -58,6 +57,14 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import {
+  BOOKS_HUB,
+  CASH_BANKING_HUB,
+  EXPENSES_HUB,
+  PAYABLES_HUB,
+  RECEIVABLES_HUB,
+  type Hub,
+} from '@/src/app/(app)/(dashboard)/accounting/_shared/hubs'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
@@ -79,6 +86,8 @@ type NavItem = {
   section?: string
   activeWhen?: string[]
   usePrefix?: boolean
+  /** Lit on any path equal to, or under, one of these — a hub whose tabs are separate routes. */
+  activePrefixes?: string[]
 }
 
 type NavGroup = {
@@ -108,6 +117,25 @@ const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
   package: Package,
   'shopping-cart': ShoppingCart,
   'users-round': UsersRound,
+}
+
+/**
+ * One sidebar item for an Accounting hub. Visible when the user can open any of
+ * its tabs, lit on every tab's route and everything under it, and linked to the
+ * hub's entry route, which redirects to the first tab they can open.
+ */
+function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
+  return {
+    label,
+    href: hub.entryHref,
+    icon,
+    // A tab with no permission requirement (Special Accounts) keeps the item
+    // visible to everyone, as that tab's own sidebar item was.
+    requiredPermission: hub.tabs.some((tab) => tab.permissions.length === 0)
+      ? undefined
+      : hub.tabs.flatMap((tab) => tab.permissions),
+    activePrefixes: hub.tabs.map((tab) => tab.href),
+  }
 }
 
 const navItemsBySegment: Record<string, NavConfig> = {
@@ -173,94 +201,21 @@ const navItemsBySegment: Record<string, NavConfig> = {
     bottom: [],
   },
   accounting: {
-    // Grouped by workflow: books (journal, ledger, chart, mapping) → receivables
-    // → payables → expenses/special accounts → memos → banking → reporting.
-    // Same items, same permissions — order only.
+    // Grouped by workflow: books → receivables → payables → expenses/special
+    // accounts → memos → banking → reporting. Books, receivables, payables,
+    // expenses and banking are hubs (accounting/_shared/hubs.ts).
     main: [
-      {
-        label: 'Journal Entries',
-        href: '/accounting/journal-entries',
-        icon: ReceiptText,
-        requiredPermission: ACCOUNTING_PERMISSIONS.JOURNAL_ENTRY_READ,
-      },
-      {
-        label: 'General Ledger',
-        href: '/accounting/general-ledger',
-        icon: Library,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      {
-        label: 'Chart of Accounts',
-        href: '/accounting/chart-of-accounts',
-        icon: BookOpen,
-        requiredPermission: ACCOUNTING_PERMISSIONS.ACCOUNT_READ,
-      },
-      {
-        label: 'Account Mapping',
-        href: '/accounting/account-mapping',
-        icon: Key,
-        requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
-      },
-      {
-        label: 'AR Invoices',
-        href: '/accounting/ar-invoices',
-        icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
-      },
-      {
-        label: 'Customers',
-        href: '/accounting/customers',
-        icon: Users,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
-      },
-      {
-        label: 'AP Invoices',
-        href: '/accounting/ap-bills',
-        icon: ReceiptText,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
-      },
-      {
-        // Scenario 46 Part F — the disbursement register existed since
-        // Scenario 43 but had no nav entry, reachable only via a secondary
-        // button on AP Invoices. It is the record of everything that left the
-        // bank, so it sits at the same level rather than nested under AP.
-        label: 'Payments',
-        href: '/accounting/ap-bills/payments',
-        icon: PhilippinePeso,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
-      },
-      {
-        label: 'Receiving Reports',
-        href: '/accounting/receiving-reports',
-        icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      {
-        label: 'Expenses',
-        href: '/accounting/expenses',
-        icon: Coins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
-        // Recurring Expenses is a tab under Expenses, not a sidebar item of its own,
-        // so Expenses stays lit on its sub-pages.
-        usePrefix: true,
-      },
-      {
-        section: 'Accounting',
-        label: 'Special Accounts',
-        href: '/accounting/special-accounts',
-        icon: Wallet,
-      },
-      {
-        // Scenario 52 — moved from POS. Issues against the same Employee
-        // Cash Loan Special Account ledger this screen's neighbor posts to.
-        label: 'Employee Cash Loans',
-        href: '/accounting/employee-cash-loans',
-        icon: HandCoins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_CASH_LOAN_READ,
-        // Has real [id]/new detail routes (Scenario 52 revision), same
-        // reason Credit Applications/AP Invoices set this.
-        usePrefix: true,
-      },
+      // Journal Entries, General Ledger, Chart of Accounts and Account Mapping are
+      // the books themselves; AR Invoices and Customers are the receivables side.
+      hubNavItem(BOOKS_HUB, 'Books', BookOpen),
+      hubNavItem(RECEIVABLES_HUB, 'Receivables', Receipt),
+      // AP Invoices, the Payments register (Scenario 46 Part F — everything that
+      // left the bank) and Receiving Reports are one payables workflow, so they
+      // are tabs of one hub rather than three items.
+      hubNavItem(PAYABLES_HUB, 'Payables', PhilippinePeso),
+      // Expenses (with its Recurring list), Special Accounts and Employee Cash Loans.
+      // Employee Cash Loans issue against a Special Account ledger (Scenario 52).
+      hubNavItem(EXPENSES_HUB, 'Expenses', Coins),
       // Two entries, not four. Credit and debit stay separate — that is the
       // split accounting actually thinks in — while customer and supplier
       // debit memos share one table, told apart by a Party column.
@@ -281,43 +236,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
           ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ,
         ],
       },
-      {
-        label: 'Bank and Cash Accounts',
-        href: '/accounting/bank-accounts',
-        icon: Wallet,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
-      },
-      {
-        // Scenario 53 — the same screen POS shows read-only, but this is the
-        // one where the cash actually gets banked. Scenario 61: labelled
-        // Undeposited Funds here too (the URL and permissions keep the old
-        // cash-in-transit name), with its own icon rather than Bank Accounts'
-        // Wallet just above it.
-        label: 'Undeposited Funds',
-        href: '/accounting/cash-in-transit',
-        icon: Banknote,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ,
-      },
-      // Its own entry, not a button on Bank Reconciliation: moving money
-      // between two fund accounts is a disbursement, not part of agreeing a
-      // statement to the books.
-      // Scenario 61 — renamed from "Fund Transfer"; now lands on the
-      // transfer history, readable by anyone who can see bank accounts.
-      {
-        label: 'Inter-Account Transfer',
-        href: '/accounting/fund-transfers',
-        icon: Landmark,
-        requiredPermission: [
-          ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
-          ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
-        ],
-      },
-      {
-        label: 'Bank Reconciliation',
-        href: '/accounting/bank-reconciliation',
-        icon: HandCoins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
-      },
+      // Scenario 62 — Bank and Cash Accounts, Undeposited Funds, Inter-Account
+      // Transfer and Bank Reconciliation are one workflow, so they are tabs of one
+      // hub rather than four items. See hubNavItem and accounting/_shared/hubs.ts.
+      hubNavItem(CASH_BANKING_HUB, 'Cash & Banking', Landmark),
       {
         label: 'Reports',
         href: '/accounting/reports',
@@ -615,9 +537,11 @@ function NavLink({
 }) {
   const isActive = item.activeWhen
     ? item.activeWhen.includes(pathname)
-    : item.usePrefix
-      ? pathname === item.href || pathname.startsWith(item.href + '/')
-      : pathname === item.href
+    : item.activePrefixes
+      ? item.activePrefixes.some((p) => pathname === p || pathname.startsWith(p + '/'))
+      : item.usePrefix
+        ? pathname === item.href || pathname.startsWith(item.href + '/')
+        : pathname === item.href
   return (
     <div className="relative group">
       <Link

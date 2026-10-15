@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { HubTabs } from '../_shared/HubTabs'
 import { CashInTransitList } from '../../pos/undeposited-funds/_components/CashInTransitList'
 
 export const metadata = { title: 'Undeposited Funds | NIG Central' }
@@ -42,12 +44,17 @@ export default async function AccountingCashInTransitPage() {
   const restrictedBranchId = session.branchId ?? null
 
   return (
-    <CashInTransitList
-      title="Undeposited Funds"
-      canManage={canManage}
-      canVerify={canVerify}
-      restrictedBranchId={restrictedBranchId}
-      isUnrestricted={restrictedBranchId === null}
-    />
+    <>
+      <Suspense fallback={null}>
+        <HubTabs hub="cash-banking" session={session} />
+      </Suspense>
+      <CashInTransitList
+        title="Undeposited Funds"
+        canManage={canManage}
+        canVerify={canVerify}
+        restrictedBranchId={restrictedBranchId}
+        isUnrestricted={restrictedBranchId === null}
+      />
+    </>
   )
 }

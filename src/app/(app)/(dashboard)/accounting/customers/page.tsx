@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { HubTabs } from '../_shared/HubTabs'
 import CustomersList from './_components/CustomersList'
 
 export const metadata = {
@@ -16,6 +18,9 @@ export default async function CustomersPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
+      <Suspense fallback={null}>
+        <HubTabs hub="receivables" session={session} />
+      </Suspense>
       <CustomersList session={session} />
     </div>
   )
