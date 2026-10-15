@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
@@ -33,6 +33,7 @@ import {
   BankAccounts,
   type ARInvoice,
   type ARInvoiceCustomerResult,
+  type ARInvoiceCustomerRollup,
   type ARPayment,
   type BankAccount,
   type PaymentMethod,
@@ -45,6 +46,10 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import Field from '../../_shared/Field'
 import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import DebitMemoDialog from '../../_shared/DebitMemoDialog'
+
+// Customers per page on the landing view. The server groups and pages them, so a page costs a
+// page — not the whole register, which at 12.7k invoices was 25 MB to open this screen.
+const CUSTOMERS_PER_PAGE = 25
 
 const INVOICE_STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -66,8 +71,15 @@ export default function ARInvoicesList({
   dedicatedCustomer?: boolean
 } = {}) {
   const router = useRouter()
+  // One customer's invoices (customerFilter set)…
   const [items, setItems] = useState<ARInvoice[]>([])
+  // …or, on the landing view, one page of customers with their totals.
+  const [groups, setGroups] = useState<ARInvoiceCustomerRollup[]>([])
+  const [groupTotal, setGroupTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  // A slow page must not overwrite a newer one the user has already moved on to.
+  const loadSeq = useRef(0)
   const [sweeping, setSweeping] = useState(false)
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
   const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
@@ -87,6 +99,7 @@ export default function ARInvoicesList({
   // ARInvoicesService.findAll()'s structured lookup, not a text match.
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
+  const appliedSearchRef = useRef('')
   // Customer search — this screen previously had no way to filter by
   // customer except arriving via a link from Customer360 (initialCustomerId).
   // Scoped to accounting:ar-invoices:read (ARInvoices.searchCustomers), not
@@ -97,6 +110,7 @@ export default function ARInvoicesList({
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
   const [searchingCustomers, setSearchingCustomers] = useState(false)
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current
     setLoading(true)
     if (customerFilter) {
       // Invoices only. This list is the AR register — what is owed — and a
@@ -108,17 +122,29 @@ export default function ARInvoicesList({
         customerId: customerFilter,
         ...(appliedSearch ? { search: appliedSearch } : {}),
       })
+      if (seq !== loadSeq.current) return
       setItems(invRes.data?.items ?? [])
     } else {
-      // Customer-rollup landing view — every invoice tenant-wide (optionally
-      // narrowed by search), grouped client-side by customer below.
-      const res = await ARInvoices.list({
+      // Customer-rollup landing view — one page of customers, grouped and
+      // totalled by the server (optionally narrowed by search).
+      const res = await ARInvoices.listCustomerRollup({
         ...(appliedSearch ? { search: appliedSearch } : {}),
+        limit: CUSTOMERS_PER_PAGE,
+        offset: (page - 1) * CUSTOMERS_PER_PAGE,
       })
-      setItems(res.data?.items ?? [])
+      if (seq !== loadSeq.current) return
+      const total = res.data?.total ?? 0
+      const lastPage = Math.max(1, Math.ceil(total / CUSTOMERS_PER_PAGE))
+      if (page > lastPage) {
+        // The register shrank under us (or a stale page number) — land on the last real page.
+        setPage(lastPage)
+        return
+      }
+      setGroups(res.data?.items ?? [])
+      setGroupTotal(total)
     }
     setLoading(false)
-  }, [customerFilter, appliedSearch])
+  }, [customerFilter, appliedSearch, page])
   useEffect(() => {
     load()
   }, [load])
@@ -137,7 +163,15 @@ export default function ARInvoicesList({
   // drives the query, via `load`'s dependency array) 400ms after the user
   // stops typing, instead of requiring an explicit Apply click.
   useEffect(() => {
-    const timer = setTimeout(() => setAppliedSearch(search), 400)
+    const timer = setTimeout(() => {
+      // Only a search that actually changed sends the list back to page 1 — this effect
+      // also fires once on mount, where resetting would undo a page change made in the
+      // first 400ms.
+      if (appliedSearchRef.current === search) return
+      appliedSearchRef.current = search
+      setAppliedSearch(search)
+      setPage(1)
+    }, 400)
     return () => clearTimeout(timer)
   }, [search])
   // Debounced customer search, same pattern as the POS checkout page's
@@ -157,51 +191,6 @@ export default function ARInvoicesList({
     }, 300)
     return () => clearTimeout(timer)
   }, [customerSearch])
-
-  // One entry per distinct customer in the currently loaded `items` — e.g.
-  // an installment plan's ~12 due-date invoices collapse into one row here,
-  // which is the whole point of this view: a customer with several open
-  // dues shouldn't need 12 scans of the flat table to see what they owe in
-  // total. Only meaningful for the customer-rollup landing view — `items`
-  // holds a single customer's own invoices whenever customerFilter is set,
-  // making this a no-op group of one in that case.
-  const customerGroups = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        customerId: string
-        customerName: string
-        invoices: ARInvoice[]
-        total: number
-        paid: number
-        outstanding: number
-        overdueCount: number
-      }
-    >()
-    for (const inv of items) {
-      let g = map.get(inv.customerId)
-      if (!g) {
-        g = {
-          customerId: inv.customerId,
-          customerName: inv.customer?.name ?? 'Unknown customer',
-          invoices: [],
-          total: 0,
-          paid: 0,
-          outstanding: 0,
-          overdueCount: 0,
-        }
-        map.set(inv.customerId, g)
-      }
-      g.invoices.push(inv)
-      g.total += inv.totalAmount
-      g.paid += inv.amountPaid
-      g.outstanding += inv.totalAmount - inv.amountPaid
-      if (inv.status === 'OVERDUE') g.overdueCount += 1
-    }
-    // Customers owing the most float to the top — that's who collections
-    // triage actually cares about first.
-    return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding)
-  }, [items])
 
   // One customer's invoices, newest first. Payment receipts used to be
   // merged in as their own rows, from when a plan was one invoice PER DUE
@@ -391,6 +380,8 @@ export default function ARInvoicesList({
             onClick={() => {
               setSearch('')
               setAppliedSearch('')
+              appliedSearchRef.current = ''
+              setPage(1)
             }}
             className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
           >
@@ -459,14 +450,14 @@ export default function ARInvoicesList({
                   />
                 ))
               )
-            ) : customerGroups.length === 0 ? (
+            ) : groups.length === 0 ? (
               <tr>
                 <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                   No invoices.
                 </td>
               </tr>
             ) : (
-              customerGroups.map((g) => (
+              groups.map((g) => (
                 <tr
                   key={g.customerId}
                   onClick={() => router.push(`/accounting/ar-invoices/customer/${g.customerId}`)}
@@ -477,7 +468,7 @@ export default function ARInvoicesList({
                       <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
                       <span className="truncate">{g.customerName}</span>
                       <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-normal text-gray-600">
-                        {g.invoices.length} invoice{g.invoices.length === 1 ? '' : 's'}
+                        {g.invoiceCount} invoice{g.invoiceCount === 1 ? '' : 's'}
                       </span>
                     </div>
                   </td>
@@ -504,6 +495,33 @@ export default function ARInvoicesList({
           </tbody>
         </table>
       </div>
+
+      {!customerFilter && groupTotal > CUSTOMERS_PER_PAGE && (
+        <div className="mt-3 flex items-center justify-between text-sm text-zinc-500">
+          <span>{groupTotal.toLocaleString()} customers</span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+              className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="px-3 py-1.5 font-medium text-zinc-700">
+              {page} / {Math.ceil(groupTotal / CUSTOMERS_PER_PAGE)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page >= Math.ceil(groupTotal / CUSTOMERS_PER_PAGE) || loading}
+              className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {payingFor && (
         <PaymentDialog
