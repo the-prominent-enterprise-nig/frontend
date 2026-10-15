@@ -16,7 +16,7 @@ import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import { TransactionDetail } from './_components/TransactionDetail'
 import type { PosTransaction } from '@/src/schema/pos'
@@ -61,7 +61,7 @@ export default function PosOverviewPage() {
   // 'use client' page.tsx with no server-side session prop available.
   const [session, setSession] = useState<SessionUser | null>(null)
   useEffect(() => {
-    getSessionOrNull().then((s) => setSession(s))
+    getSessionIfAvailable().then((s) => setSession(s))
   }, [])
   const [selectedTransaction, setSelectedTransaction] = useState<PosTransaction | null>(null)
 

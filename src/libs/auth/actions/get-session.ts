@@ -4,6 +4,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import { parseSessionUser } from '@/src/libs/auth/parse-session-user'
+import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
 
 /**
  * What the backend said about the session cookie:
@@ -138,12 +139,39 @@ export async function getSessionState(): Promise<SessionState> {
 }
 
 /**
- * Returns the session or null if the auth cookie is missing, rejected, or the
- * backend is unreachable. Fine for pages that sit under a layout which already
- * ran getSessionState(); anything deciding whether to log the user out should
- * use getSessionState() instead.
+ * The session, or `null` when the user is signed out (no cookie, or the backend
+ * rejected the token). Throws SessionUnavailableError when the backend could not
+ * be asked at all (timeout, 5xx, unreachable) — that says nothing about whether
+ * the user is signed in, so `null` would be a lie.
+ *
+ * This is the one for server components and layouts: `if (!session) redirect('/login')`
+ * is therefore only ever reached by a real sign-out, and an unavailable backend
+ * lands on the route's error boundary (which has a retry button) instead.
+ * A layout only runs on a full page load, not on a client-side navigation, so
+ * every page has to be safe on its own — which is why this throws rather than
+ * relying on the layout's check.
+ *
+ * Callers that cannot sensibly throw (server actions that answer with an error
+ * object, client components that just want the session if there is one) use
+ * getSessionIfAvailable() instead.
  */
 export async function getSessionOrNull(): Promise<SessionUser | null> {
+  const state = await loadSessionState()
+  if (state.status === 'authenticated') return state.session
+  if (state.status === 'unavailable') throw new SessionUnavailableError(state.reason)
+  return null
+}
+
+/**
+ * The session if there is one, `null` otherwise — for any reason, including the
+ * backend being too slow to ask. Never throws.
+ *
+ * Only for callers where `null` means "nothing to do / answer with an error"
+ * and never "log the user out": server actions returning `{ success: false }`,
+ * and client components reading the session for display. Anything that redirects
+ * to /login on `null` must use getSessionOrNull() (or getSessionState()).
+ */
+export async function getSessionIfAvailable(): Promise<SessionUser | null> {
   const state = await loadSessionState()
   return state.status === 'authenticated' ? state.session : null
 }

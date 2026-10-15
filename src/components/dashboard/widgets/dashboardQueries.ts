@@ -49,7 +49,7 @@ export function useDashboardArInvoices(branchId?: string) {
   return useQuery({
     queryKey: arInvoicesKey(branchId),
     queryFn: async () => {
-      const invoices = (await ARInvoices.list({ branchId })).data?.items ?? []
+      const invoices = (await ARInvoices.list({ branchId, view: 'summary' })).data?.items ?? []
       const now = Date.now()
       return invoices.map((inv) => {
         const paid = (inv.amountPaid ?? 0) >= (inv.totalAmount ?? 0) && (inv.totalAmount ?? 0) > 0
@@ -92,7 +92,7 @@ export function useDashboardCustomersCount(branchId?: string) {
       }
       const [txRes, arRes] = await Promise.all([
         getTransactions({ branchId }),
-        ARInvoices.list({ branchId }),
+        ARInvoices.list({ branchId, view: 'summary' }),
       ])
       return branchCustomerIds(txRes.data ?? [], arRes.data?.items ?? []).size
     },
@@ -185,7 +185,7 @@ export function useModuleStats(branchId: string | null) {
           // dashboard. AP bills and customers have no branch concept at
           // all (purchasing is enterprise-wide; a customer isn't "owned" by
           // one branch) — those two stay unfiltered on purpose.
-          ARInvoices.list({ branchId: branchId ?? undefined }),
+          ARInvoices.list({ branchId: branchId ?? undefined, view: 'summary' }),
           APBills.list(),
           customersApi.list({ limit: 200 }),
           leadsApi.list({ limit: 200, branchId: branchId ?? undefined }),

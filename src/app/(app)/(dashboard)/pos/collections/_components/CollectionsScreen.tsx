@@ -23,7 +23,7 @@ import {
   getPaymentMethods,
   getEnabledBranchPaymentMethods,
 } from '../../_actions/pos-actions'
-import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions/get-session'
 import { useMe } from '@/src/hooks/useMe'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { PillCombobox } from '../../checkout/_components/PillInputs'
@@ -968,7 +968,7 @@ function PaymentPanel({
   // never shows a caravan the backend would then fold away.
   useEffect(() => {
     let cancelled = false
-    Promise.all([getSessionOrNull(), getBranches()]).then(([session, branchesRes]) => {
+    Promise.all([getSessionIfAvailable(), getBranches()]).then(([session, branchesRes]) => {
       if (cancelled) return
       const branches = branchesRes.data ?? []
       const targetId = session?.branchId || defaultBranchId

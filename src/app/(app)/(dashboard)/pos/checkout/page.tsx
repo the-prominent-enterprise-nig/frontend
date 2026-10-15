@@ -40,7 +40,8 @@ import {
 } from './_utils/calculations'
 import { BILLER_OPTION_NAMES, GCASH_OPTION_NAMES } from './_utils/qr-option-groups'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
+import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useSessions } from '../_hooks/usePos'
@@ -599,12 +600,24 @@ export default function CheckoutPage() {
   // Scenario 17 Part 7 — whether this login can mark a Promissory Note as
   // signed (Cashier-level, cascades to Branch Manager/Business Owner).
   const [canSignPromissoryNote, setCanSignPromissoryNote] = useState(false)
+  // The session check can fail because the backend is busy, not because the
+  // cashier is signed out. Only a session the backend rejected goes to /login;
+  // one that could not be checked (after retries) goes to the route's error
+  // boundary, whose "Try again" remounts this page and asks again.
+  const [sessionUnavailable, setSessionUnavailable] = useState<SessionUnavailableError | null>(null)
   useEffect(() => {
-    getSessionOrNull().then((s) => {
-      if (!s) {
+    let cancelled = false
+    getSessionStateWithRetry(() => cancelled).then((state) => {
+      if (cancelled) return
+      if (state.status === 'unavailable') {
+        setSessionUnavailable(new SessionUnavailableError(state.reason))
+        return
+      }
+      if (state.status === 'unauthenticated') {
         router.replace('/login')
         return
       }
+      const s = state.session
       // Scenario 22 Part 5 — checkout had no route-level permission check at
       // all (only ModuleGuard's broad "holds SOME pos permission" check at
       // the layout level). A role without pos:transactions:create could
@@ -620,7 +633,11 @@ export default function CheckoutPage() {
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
       setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
     })
+    return () => {
+      cancelled = true
+    }
   }, [router])
+  if (sessionUnavailable) throw sessionUnavailable
 
   const activeBranchId = useMemo(() => {
     // Branch Managers: use their assigned branch (matches "My Branch" settings)
