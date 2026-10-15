@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import UdsStatusBand from './UdsStatusBand'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { STATUS_CONFIG, ASSESSMENT_CONFIG, REASON_DOT, TRANSFER_STATUS_LABELS } from './udsDisplay'
 import { useUdsManager } from '../_hooks/useUdsManager'
 import CreateUdsModal from './CreateUdsModal'
@@ -129,6 +130,13 @@ function buildNextStep(handlers: {
     const none = { next: null, alt: null }
     if (uds.status === 'completed' || uds.status === 'cancelled') return none
 
+    // Scenario 73 — Home Service: the service center named at intake already
+    // serviced the unit, so it goes straight back to the customer on a DR —
+    // no trip to main, no assess, no dispatch.
+    if (uds.repairType === 'home_service' && uds.customerId && uds.status !== 'at_provider') {
+      return { next: releaseStep, alt: null }
+    }
+
     // Maintenance, quality check, pull-out and loan never travel to main.
     if (uds.reason !== 'repair' && uds.status === 'issued') {
       return { next: stepTo('Complete', 'completed'), alt: null }
@@ -176,8 +184,10 @@ export default function UdsList({ session }: { session: SessionUser }) {
     statusCounts,
     statusFilter,
     reasonFilter,
+    providerFilter,
     setStatusFilter,
     setReasonFilter,
+    setProviderFilter,
     resetFilters,
     page,
     setPage,
@@ -220,7 +230,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
         receive: setReceivingUds,
         release: (uds) => {
           const purpose =
-            uds.status === 'repaired' ? 'repaired_to_customer' : 'unrepaired_to_customer'
+            uds.status === 'repaired' || uds.repairType === 'home_service'
+              ? 'repaired_to_customer'
+              : 'unrepaired_to_customer'
           router.push(`/inventory/delivery-receipts/new?purpose=${purpose}&udsId=${uds.id}`)
         },
         writeOff: setWritingOffUds,
@@ -234,7 +246,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
     [router, canCreateDr]
   )
 
-  const hasFilters = !!statusFilter || !!reasonFilter
+  const hasFilters = !!statusFilter || !!reasonFilter || !!providerFilter
 
   async function handleUpdateStatus(data: UpdateUdsStatusFormValues) {
     if (!selectedStep) return { success: false, error: 'No UDS selected', message: '' }
@@ -302,6 +314,16 @@ export default function UdsList({ session }: { session: SessionUser }) {
               </option>
             ))}
           </select>
+
+          {/* Scenario 73 — the tickets one service center has, or had. */}
+          <SearchableSelect
+            value={providerFilter ?? ''}
+            onChange={(v) => setProviderFilter(v || undefined)}
+            options={supplierOptions.map((s) => ({ value: s.id, label: s.name }))}
+            placeholder="All service centers"
+            ariaLabel="Service center"
+            className="w-64"
+          />
 
           {hasFilters && (
             <button
@@ -424,6 +446,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
                           {(uds.repairProvider || uds.rfsFormFile) && (
                             <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-zinc-400">
                               {uds.repairProvider?.name}
+                              {uds.repairType === 'home_service' && (
+                                <span className="text-zinc-500"> · Home Service</span>
+                              )}
                               {uds.rfsFormFile && (
                                 <Paperclip
                                   className="h-3 w-3 shrink-0"
