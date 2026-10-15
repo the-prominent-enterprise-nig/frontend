@@ -1285,7 +1285,7 @@ function PaymentPanel({
                 <tr className="bg-zinc-50 text-left text-[11px] font-medium uppercase tracking-wide text-zinc-500">
                   <th className="px-3 py-2 font-medium">Due</th>
                   <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 text-right font-medium">Without rebate</th>
+                  <th className="px-3 py-2 text-right font-medium">Due</th>
                   <th className="px-3 py-2 text-right font-medium">Rebate</th>
                   <th className="px-3 py-2 text-right font-medium">Penalty</th>
                   <th className="px-3 py-2 text-right font-medium">Net</th>

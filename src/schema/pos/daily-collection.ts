@@ -45,12 +45,9 @@ export const DailyCollectionRowSchema = z.object({
    * COLLECTION, but with no drawer count behind it so it stays out of
    * cashOnHand and the denomination reconciliation. */
   pendingCount: z.boolean().optional(),
-  /** Scenario 60 Part 4 — the caravan(s) this sale's units came out of. */
-  caravan: z.string().nullable().optional(),
   /** The other counter this collection was taken at — a satellite office
-   * filing under this branch, or a caravan register that rings up here but
-   * stands at the event. Null for the branch's own counter, so only a row
-   * whose cash is in another drawer carries a tag. */
+   * filing under this branch. Null for the branch's own counter, so only a
+   * row whose cash is in another drawer carries a tag. */
   sourceCounter: z.string().nullable().optional(),
 })
 export type DailyCollectionRow = z.infer<typeof DailyCollectionRowSchema>
@@ -68,26 +65,22 @@ export const NonCashTenderSchema = z.object({
 })
 export type NonCashTender = z.infer<typeof NonCashTenderSchema>
 
-/** Scenario 60 Part 4 — one hosted caravan's sales for the day. Already in the
- * collections (a caravan rings up on the host's terminal); this only says how
- * much of the day came from it. */
-export const CaravanSalesLineSchema = z.object({
-  caravanId: z.string(),
-  caravanName: z.string(),
-  transactionCount: z.number(),
-  units: z.number(),
-  amount: z.number(),
+/** Another sheet in the same host's family — the host branch, or a caravan it
+ * runs. A caravan files its own sheet, so these are the way between them. */
+export const SheetLinkSchema = z.object({
+  id: z.string(),
+  name: z.string(),
 })
-export type CaravanSalesLine = z.infer<typeof CaravanSalesLineSchema>
+export type SheetLink = z.infer<typeof SheetLinkSchema>
 
 /** One counter whose cash is on this sheet but not in its drawer — a
- * satellite office filing under this branch, or a caravan register. In the
+ * satellite office filing under this branch. In the
  * ledger and in TOTAL COLLECTED, and outside the denomination reconciliation:
  * that cash is in another drawer, counted by its own cashier. */
 export const OffsiteCashLineSchema = z.object({
   id: z.string(),
   name: z.string(),
-  kind: z.enum(['satellite', 'caravan']),
+  kind: z.literal('satellite'),
   amount: z.number(),
 })
 export type OffsiteCashLine = z.infer<typeof OffsiteCashLineSchema>
@@ -154,8 +147,13 @@ export const DailyCollectionReportSchema = z.object({
   nonCashCollection: z.number(),
   /** Cash plus non-cash: everything the branch took that day. */
   grandTotalCollection: z.number().default(0),
-  caravanSales: z.array(CaravanSalesLineSchema).default([]),
-  caravanSalesTotal: z.number().default(0),
+  /** A caravan's own sheet: its registers alone, filed apart from its host's. */
+  isCaravan: z.boolean().default(false),
+  /** On a caravan's sheet, the branch hosting it. Null otherwise. */
+  hostBranch: SheetLinkSchema.nullable().default(null),
+  /** The host's caravans trading on this date — this one included, on a
+   * caravan's sheet. Empty on the roll-up. */
+  hostedCaravans: z.array(SheetLinkSchema).default([]),
   /** Cash taken at a counter other than this branch's own. Counted by that
    * counter's own cashier, so it is deliberately not in `cashOnHand` and
    * whoever counts this drawer must not be asked to find it. */

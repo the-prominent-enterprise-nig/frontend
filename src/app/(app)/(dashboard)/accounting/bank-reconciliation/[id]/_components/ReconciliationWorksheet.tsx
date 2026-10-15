@@ -24,6 +24,7 @@ const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
   FUND_TRANSFER_OUT: 'Inter-Account Transfer (out)',
   FUND_TRANSFER_IN: 'Inter-Account Transfer (in)',
   POS_DEPOSIT: 'POS Deposit',
+  EXPENSE_PAYMENT: 'Expense Payment',
 }
 
 // Scenario 42 — the reconciliation worksheet. Statement Balance and System

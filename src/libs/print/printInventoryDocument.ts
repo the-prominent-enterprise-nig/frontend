@@ -2426,6 +2426,11 @@ export function buildExpenseVoucherHtml(data: unknown): string {
   const e = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
 
+  // A cash advance liquidated against its receipts can net to zero or below:
+  // the paper then records change handed back, not a payment.
+  const total = Number(e.totalAmount ?? 0)
+  const isLiquidation =
+    total <= 0 && ((e.lines ?? []) as { amount?: number }[]).some((l) => Number(l.amount) < 0)
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
   // Zero-padded MM/DD/YYYY rather than the unpadded en-PH default the other
@@ -2552,7 +2557,7 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>Payment</h1>
+      <h1>${isLiquidation ? 'Cash Advance Liquidation' : 'Payment'}</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
@@ -2610,11 +2615,13 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     <table class="totals">
       <tbody>
         ${
-          withheld > 0
-            ? `<tr><td>Amount</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+          isLiquidation
+            ? `<tr class="grand"><td>${total < 0 ? 'Change returned' : 'Nothing to pay or return'}</td><td>${fmt(Math.abs(total))}</td></tr>`
+            : withheld > 0
+              ? `<tr><td>Amount</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
         <tr><td>Less: withholding tax${withholdingCodes ? ` (${esc(withholdingCodes)})` : ''}</td><td>(${fmt(withheld)})</td></tr>
         <tr class="grand"><td>Net amount paid</td><td>${fmt(Number(e.netPayable ?? Number(e.totalAmount ?? 0) - withheld))}</td></tr>`
-            : `<tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+              : `<tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
         <tr class="grand"><td>Total</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>`
         }
       </tbody>

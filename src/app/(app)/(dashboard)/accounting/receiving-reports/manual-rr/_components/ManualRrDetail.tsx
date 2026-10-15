@@ -78,7 +78,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
       showToast({ title: 'Posted', description: result.message, status: 'success' })
       load()
     } else {
-      showToast({ title: 'Failed', description: result.message, status: 'error' })
+      showToast({ title: "Couldn't post report", description: result.message, status: 'error' })
     }
   }
 
@@ -91,7 +91,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
       showToast({ title: 'Draft deleted', description: result.message, status: 'success' })
       window.location.href = '/accounting/receiving-reports'
     } else {
-      showToast({ title: 'Failed', description: result.message, status: 'error' })
+      showToast({ title: "Couldn't delete draft", description: result.message, status: 'error' })
     }
   }
 

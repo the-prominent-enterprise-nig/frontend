@@ -304,7 +304,14 @@ export default function ExpensesList() {
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-5 py-2.5 text-right font-semibold tabular-nums text-zinc-900">
-                        {fmtMoney(x.totalAmount)}
+                        {/* A liquidated cash advance can net to zero or below: what came
+                            back in, not what went out. */}
+                        {x.totalAmount < 0 ? fmtMoney(-x.totalAmount) : fmtMoney(x.totalAmount)}
+                        {x.totalAmount <= 0 && x.lines.some((l) => l.amount < 0) && (
+                          <span className="block text-[11px] font-normal text-zinc-500">
+                            {x.totalAmount < 0 ? 'change returned' : 'advance liquidated'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-2.5">
                         <span

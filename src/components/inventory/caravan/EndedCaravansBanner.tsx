@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
 import { caravanCountdown, type CaravanAlert } from '@/src/schema/inventory/warehouses'
-import { caravanLabel } from '@/src/libs/format/locationLabel'
+import { caravanLabelWithPlace } from '@/src/libs/format/locationLabel'
 import { useCaravanAlerts } from './useCaravanAlerts'
 
 type Props = {
@@ -50,7 +50,7 @@ export default function EndedCaravansBanner({
         <div className="text-sm text-amber-800">
           {ended.map((a) => (
             <p key={a.id}>
-              <span className="font-medium">{caravanLabel(a)}</span> has ended —{' '}
+              <span className="font-medium">{caravanLabelWithPlace(a)}</span> has ended —{' '}
               {unitsText(a.unitsHeld)} still there can&apos;t be sold. Ask your stock controller to
               transfer them out.
             </p>
@@ -78,9 +78,9 @@ export default function EndedCaravansBanner({
             className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[12.5px] text-[#5b3a0a]"
           >
             <span>
-              <span className="font-medium">{caravanLabel(a)}</span>
-              {hostText(a)} · {caravanCountdown(a.endDate)} · {unitsText(a.unitsHeld)} to transfer
-              out
+              <span className="font-medium">{caravanLabelWithPlace(a)}</span>
+              {hostText(a)} · {caravanCountdown(a.endDate, a.closedAt)} · {unitsText(a.unitsHeld)}{' '}
+              to transfer out
             </span>
             {onView ? (
               <button type="button" onClick={() => onView(a.id)} className={VIEW_CLASS}>

@@ -75,9 +75,11 @@ export function useLocationFilter(
         label: withoutWarehouseSuffix(b.name),
         region: b.region ?? null,
       }))
+    // The 2 standalone warehouses keep their full name ("Panay Warehouse"),
+    // so they don't read as a branch called "Panay".
     const warehouses = (standaloneWarehousesQuery.data?.data?.data ?? []).map((wh) => ({
       value: warehouseToken(wh.id),
-      label: withoutWarehouseSuffix(wh.name),
+      label: wh.name,
       region: wh.region ?? null,
     }))
     return [...warehouses, ...branches].sort((a, b) => a.label.localeCompare(b.label))
