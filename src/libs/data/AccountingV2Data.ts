@@ -2293,6 +2293,8 @@ export type BankReconciliationLineSourceType =
   | 'FUND_TRANSFER_IN'
   /** Scenario 61 Part 6 — a cleared POS deposit, on its deposit date. */
   | 'POS_DEPOSIT'
+  /** A recorded expense's (or payroll's) bank-paid row — a check until it clears. */
+  | 'EXPENSE_PAYMENT'
 export type BankReconciliationLineDirection = 'DEPOSIT' | 'WITHDRAWAL'
 
 /**
