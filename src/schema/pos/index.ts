@@ -1306,6 +1306,9 @@ export interface InstallmentScheduleLineWithInvoice {
     totalAmount: number
     amountPaid: number
     status: string
+    /** Employee Appliance Loan — settled by payroll deduction, so Collections
+     * shows it but never offers to collect it. */
+    isEmployeeApplianceLoan?: boolean | null
     /** Non-cancelled payments only — used to warn "already collected today"
      * before the Collect modal is even opened. */
     payments: { paymentDate: string; amount: number }[]

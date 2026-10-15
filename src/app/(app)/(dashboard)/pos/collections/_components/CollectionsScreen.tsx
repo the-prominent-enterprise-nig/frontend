@@ -243,7 +243,11 @@ function availableTiles(paymentMethods: CollectionsPaymentOption[]): DeliveryFee
 // A due is eligible for selection (and payment, via "Pay Selected") once its
 // contract is past DRAFT (never posted) and not voided, and the due itself
 // hasn't been settled yet.
-const isEligibleForBulkPay = isDueOpen
+//
+// An Employee Appliance Loan is never eligible: it is settled by payroll
+// deduction, so Collections lists it but offers no way to pay it here.
+const isEligibleForBulkPay = (line: InstallmentScheduleLineWithInvoice) =>
+  isDueOpen(line) && !line.arInvoice.isEmployeeApplianceLoan
 
 // Shopee-style early-payment selection: checking a due auto-checks every
 // earlier unpaid due on its schedule; unchecking one un-checks everything
@@ -695,6 +699,11 @@ export default function CollectionsScreen() {
                             s.id}
                         </span>
                         <span>
+                          {s.lines[0]?.arInvoice.isEmployeeApplianceLoan && (
+                            <span className="mr-2 rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
+                              Appliance loan · paid by payroll
+                            </span>
+                          )}
                           {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
                         </span>
                       </div>
@@ -787,6 +796,10 @@ export default function CollectionsScreen() {
                   // time (see the component's own doc comment).
                   key={Array.from(selectedLineIds).sort().join(',')}
                   lines={selectedPayableLines}
+                  payrollOnly={
+                    schedules.length > 0 &&
+                    schedules.every((sc) => sc.lines[0]?.arInvoice.isEmployeeApplianceLoan)
+                  }
                   customerName={customer?.name}
                   defaultBranchId={branchId || undefined}
                   initialPaymentDateIso={effectivePaymentDateIso}
@@ -834,12 +847,16 @@ export default function CollectionsScreen() {
  */
 function PaymentPanel({
   lines,
+  payrollOnly,
   customerName,
   defaultBranchId,
   initialPaymentDateIso,
   onClearSelection,
   onCollected,
 }: {
+  /** Every plan on screen is an Employee Appliance Loan — nothing here can
+   * be collected, so the empty state says why instead of asking for a check. */
+  payrollOnly?: boolean
   lines: {
     line: InstallmentScheduleLineWithInvoice
     /** The linked InstallmentAccount's PPD, or null with no linked account —
@@ -1200,9 +1217,13 @@ function PaymentPanel({
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center shadow-sm">
         <Banknote className="mb-3 h-10 w-10 text-zinc-300" />
-        <p className="text-sm font-medium text-zinc-500">No dues selected</p>
+        <p className="text-sm font-medium text-zinc-500">
+          {payrollOnly ? 'Paid through payroll' : 'No dues selected'}
+        </p>
         <p className="mt-1 max-w-55 text-xs text-zinc-400">
-          Check one or more dues on the left to start collecting a payment.
+          {payrollOnly
+            ? 'An employee appliance loan is deducted from payroll, so there is nothing to collect here.'
+            : 'Check one or more dues on the left to start collecting a payment.'}
         </p>
       </div>
     )
