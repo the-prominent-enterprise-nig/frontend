@@ -491,11 +491,32 @@ Log in as the Business Owner with the switcher on **Bago**. The fixture items ar
 
 ### M4 — Part 4: Inventory
 
-1. Open a transfer with assigned serials. → "1 of 1 assigned" is black and readable.
-2. Dispatch a transfer. → Carrier is pre-filled "NIG"; you can change it; clearing it shows the required error.
-3. Inventory → General Stock Book, expand a serial's history. → Dates only, no times.
-4. Stock Balance, filter by the parent category. → The subcategory item shows.
-5. Transfer the bulk item from Bago to a branch that never had it, dispatch, don't receive. → Stock Balance shows it in transit at the destination. Receive. → In transit 0, on hand +qty, one row.
+Log in as the Business Owner.
+
+**A: transfer dispatch**
+
+1. Inventory → Stock Transaction → Transfers → **New transfer**: Bago → another branch, ASTRON LED3277 × 1. **Accept** it if asked.
+2. Open it → **Dispatch**. → "(0 of 1 assigned)" is **black**; **Carrier / Logistics Company** reads **NIG**. The carrier box is on the Dispatch form only, under Logistics / Driver, not on New transfer.
+3. Type over the carrier. → Editable.
+4. Clear it and **Confirm Dispatch**. → **"Carrier name is required"**; nothing is dispatched.
+5. **Back**; cancel the transfer if not wanted.
+
+**B: serial history, date only**
+
+6. Inventory → Stock Ledger → **Serial Number Locator**, unit **24459004089651** (ASTRON). → Every entry shows a date like "Oct 13, 2026" and no time.
+
+**C: Stock Balance category filter** (dev data: **Electric Fan** has no items of its own; they're filed under Desk Fan, Exhaust Fan, Box Fan, Stand Fan)
+
+7. Stock Balance → All Categories → **Electric Fan**. → Fans of every sub-type are listed. Before the fix the list was empty.
+8. **Stand Fan**. → Stand fans only.
+9. (Optional) **Refrigeration** / **Airconditioner**. → Their sub-types.
+
+**D: in transit to a new branch** (optional; dispatches a real unit)
+
+10. Dispatch a real transfer to a branch that never held the item.
+11. Stock Balance, that branch, **In transit**. → The item with 0 on hand and the quantity under Transferred. Receive it afterwards.
+
+**M4 — verified by Kian 2026-10-19** (steps 1–9; D is optional and was not run).
 
 ### M5 — Part 5: Cash in Transit + AP
 
