@@ -101,6 +101,7 @@ import { getCreditApplications } from '../credit-applications/_actions/get-appli
 import { getDeliveryReceipt } from '../../inventory/delivery-receipts/_actions/get-delivery-receipt'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
 import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
+import { isoDateOf, todayIso } from '../daily-collection/_utils/business-date'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
@@ -5130,6 +5131,10 @@ export default function CheckoutPage() {
   }
 
   const activeSession = openSessions.find((s) => s.id === sessionId)
+  // Scenario 74 — a till left open overnight keeps taking sales, but its
+  // Daily Collection and session reports file them under the day it opened.
+  // Said out loud here rather than blocked: closing is the cashier's call.
+  const sessionOpenedEarlier = !!activeSession && isoDateOf(activeSession.openedAt) < todayIso()
 
   // ─── Main layout ───────────────────────────────────────────────────────────
 
@@ -5226,6 +5231,27 @@ export default function CheckoutPage() {
           stock still in it. Those units no longer sell here; say so rather
           than let them just vanish from the serial picker. */}
       <EndedCaravansBanner variant="pos" hostBranchId={activeBranchId} enabled={!!activeBranchId} />
+
+      {sessionOpenedEarlier && activeSession && (
+        <div
+          data-testid="session-opened-earlier"
+          className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2.5 text-sm text-amber-800"
+        >
+          <AlertTriangle size={14} className="shrink-0" />
+          <span>
+            This session opened on{' '}
+            <strong className="font-semibold">
+              {new Date(activeSession.openedAt).toLocaleDateString('en-PH', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </strong>
+            . Its reports file today&apos;s sales under that day — close it and open a new session
+            if the business day has changed.
+          </span>
+        </div>
+      )}
 
       {/* Cancellation pending banner */}
       {cancellationReqId && (

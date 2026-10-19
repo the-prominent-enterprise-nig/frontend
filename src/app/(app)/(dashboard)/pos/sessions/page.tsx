@@ -69,8 +69,18 @@ export default function SessionsPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const router = useRouter()
   const { branchId } = usePosBranchContext()
-  const branchFilter = branchId ? { branchId } : undefined
-  const { data, isLoading, isFetching, refetch } = useSessions(branchFilter)
+  // Scenario 74 — business days (Manila), inclusive; empty means no bound.
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const listFilter =
+    branchId || dateFrom || dateTo
+      ? {
+          ...(branchId ? { branchId } : {}),
+          ...(dateFrom ? { dateFrom } : {}),
+          ...(dateTo ? { dateTo } : {}),
+        }
+      : undefined
+  const { data, isLoading, isFetching, refetch } = useSessions(listFilter)
   const openMutation = useOpenSession()
   const closeMutation = useCloseSession()
   const handoverMutation = useHandoverSession()
@@ -219,6 +229,43 @@ export default function SessionsPage() {
             rendered inside it. This one has no dialog to live in — a report
             that failed to load leaves the list exactly as it was, so without
             it the button would simply do nothing. */}
+        <div className="mt-4 flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-[11px] text-[#5b5b6b]">
+            From
+            <input
+              type="date"
+              aria-label="Sessions from date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-9 rounded-lg border border-[#d3d3db] bg-white px-2.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6]"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] text-[#5b5b6b]">
+            To
+            <input
+              type="date"
+              aria-label="Sessions to date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-9 rounded-lg border border-[#d3d3db] bg-white px-2.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6]"
+            />
+          </label>
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom('')
+                setDateTo('')
+              }}
+              className="h-9 rounded-lg px-3 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb]"
+            >
+              Clear dates
+            </button>
+          )}
+        </div>
+
         {error && modal.type === 'none' && (
           <p className="mt-4 rounded-lg border border-[#f3c9c5] bg-[#fdeceb] px-3.5 py-2.5 text-[12.5px] text-[#b42318]">
             {error}
@@ -650,6 +697,16 @@ function shiftTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
 }
 
+/** Scenario 74 — "Mon, Oct 19": the business day a shift belongs to. The list
+ *  used to show times only, so two days' 8 AM shifts read identically. */
+function shiftDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-PH', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 /** "2h 14m" between two moments — how long the till has been, or was, open.
  *  Safe against a clock-skewed closedAt: a negative span renders as nothing
  *  rather than as "-1h". */
@@ -696,9 +753,16 @@ function SessionRow({
   const terminal = session.terminal?.name ?? session.terminalId
   const cashier = session.cashier?.name || session.cashierId
   const branch = terminalPlaceName(session.terminal)
+  const opened = `${shiftDate(session.openedAt)} · ${terminal} · opened ${shiftTime(session.openedAt)}`
+  // A shift that ran past midnight names the day it closed on as well, so
+  // "closed 1:05 AM" can't be misread as that morning.
+  const closedOtherDay =
+    !!session.closedAt && isoDateOf(session.closedAt) !== isoDateOf(session.openedAt)
 
   const subline = [
-    session.closedAt ? `closed ${shiftTime(session.closedAt)}` : 'still open',
+    session.closedAt
+      ? `closed ${closedOtherDay ? `${shiftDate(session.closedAt)} ` : ''}${shiftTime(session.closedAt)}`
+      : 'still open',
     length,
     showBranch ? branch : null,
   ]
@@ -775,9 +839,7 @@ function SessionRow({
       <div className={`hidden items-center gap-3 px-4 py-3 lg:grid ${ROW_GRID}`}>
         {caret}
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-[12.5px] font-medium">
-            {terminal} · opened {shiftTime(session.openedAt)}
-          </span>
+          <span className="truncate text-[12.5px] font-medium">{opened}</span>
           <span className="truncate text-[10.5px] text-[#5b5b6b]">{subline}</span>
         </div>
         <span className="min-w-0 truncate text-[12.5px] text-[#3d3d4a]">{cashier}</span>
@@ -805,9 +867,7 @@ function SessionRow({
               tabIndex={-1}
               className="flex min-w-0 flex-col text-left"
             >
-              <span className="truncate text-[12.5px] font-medium">
-                {terminal} · opened {shiftTime(session.openedAt)}
-              </span>
+              <span className="truncate text-[12.5px] font-medium">{opened}</span>
               <span className="truncate text-[11px] text-[#5b5b6b]">
                 {cashier} · {session._count?.transactions ?? 0} txns ·{' '}
                 {formatCurrency(session.openingCash)} float
@@ -1151,6 +1211,11 @@ function CloseSessionModal({
   // denomination — matches the client form's own COINS line, and no cashier
   // wants to tally 25-sentimo pieces individually.
   const [coins, setCoins] = useState('')
+  // Scenario 74 — an empty drawer is a real count, not a missing one. Every
+  // denomination box shows 0 as blank, so without an explicit "it's empty" the
+  // cashier had no way to declare ₱0.00 and the session could never close.
+  // Any figure typed afterwards clears it again.
+  const [drawerEmpty, setDrawerEmpty] = useState(false)
   const [notes, setNotes] = useState('')
   // Why the drawer is off. Required before a variance can be submitted: an
   // unexplained variance is a number the branch checker can only escalate,
@@ -1220,7 +1285,8 @@ function CloseSessionModal({
   const noteTotal = DENOMINATIONS.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0)
   const total = noteTotal + coinsAmount
   const pieceCount = DENOMINATIONS.reduce((sum, d) => sum + (counts[d] ?? 0), 0)
-  const hasCount = pieceCount > 0 || coinsAmount > 0
+  // A Coins box holding "0" counts as counted too — the cashier typed it.
+  const hasCount = pieceCount > 0 || coinsAmount > 0 || coins.trim() !== '' || drawerEmpty
 
   // Display only — the backend recomputes both sides on close and is the
   // authority on the posted variance. Expected comes from its own helper, so
@@ -1440,7 +1506,10 @@ function CloseSessionModal({
   return (
     // absolute, not fixed: the working surface fills the content column so the
     // nav sidebar and top bar stay usable while a drawer is being counted.
-    <div className="absolute inset-0 z-50 flex flex-col bg-[#f2f2f3] text-[#17171c]">
+    <div
+      data-testid="close-session-screen"
+      className="absolute inset-0 z-50 flex flex-col bg-[#f2f2f3] text-[#17171c]"
+    >
       {/* Head */}
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] bg-white px-5 py-4">
         <div className="flex min-w-0 flex-col gap-1">
@@ -1593,6 +1662,7 @@ function CloseSessionModal({
                     onClick={() => {
                       setCounts(Object.fromEntries(DENOMINATIONS.map((d) => [d, 0])))
                       setCoins('')
+                      setDrawerEmpty(false)
                       setReason('')
                       setReasonNote('')
                       setReasonTouched(false)
@@ -1600,6 +1670,15 @@ function CloseSessionModal({
                     className="rounded-md px-2.5 py-1.5 text-[11.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
                   >
                     Clear count
+                  </button>
+                )}
+                {!hasCount && (
+                  <button
+                    type="button"
+                    onClick={() => setDrawerEmpty(true)}
+                    className="rounded-md border border-[#ddd0f7] bg-[#f1ebfb] px-2.5 py-1.5 text-[11.5px] font-medium text-[#3f1490] hover:bg-[#e8dffa]"
+                  >
+                    Drawer is empty — ₱0.00
                   </button>
                 )}
               </div>
@@ -1624,9 +1703,10 @@ function CloseSessionModal({
                       aria-label={`${d} peso count`}
                       value={counts[d] === 0 ? '' : counts[d]}
                       placeholder="0"
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setDrawerEmpty(false)
                         setCounts((p) => ({ ...p, [d]: parseInt(e.target.value) || 0 }))
-                      }
+                      }}
                       className={`${inputChrome} text-right tabular-nums`}
                     />
                     <span
@@ -1651,7 +1731,10 @@ function CloseSessionModal({
                     placeholder="0.00"
                     aria-label="Loose coin total"
                     value={coins}
-                    onChange={(e) => setCoins(e.target.value)}
+                    onChange={(e) => {
+                      setDrawerEmpty(false)
+                      setCoins(e.target.value)
+                    }}
                     className={`${inputChrome} text-right tabular-nums`}
                   />
                   <span
@@ -1668,8 +1751,11 @@ function CloseSessionModal({
                 <div className="flex min-w-0 flex-col">
                   <span className="text-[12.5px] font-semibold">Counted</span>
                   <span className="text-[10.5px] text-[#5b5b6b]">
-                    {pieceCount} {pieceCount === 1 ? 'note' : 'notes'}
-                    {coinsAmount ? ` + ₱${peso(coinsAmount)} in coins` : ''}
+                    {drawerEmpty
+                      ? 'Drawer declared empty'
+                      : `${pieceCount} ${pieceCount === 1 ? 'note' : 'notes'}${
+                          coinsAmount ? ` + ₱${peso(coinsAmount)} in coins` : ''
+                        }`}
                   </span>
                 </div>
                 <span className="text-[17px] font-semibold tabular-nums tracking-[-.01em]">
