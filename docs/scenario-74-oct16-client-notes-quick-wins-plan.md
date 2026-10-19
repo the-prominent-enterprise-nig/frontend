@@ -418,9 +418,28 @@ Run on the **dev** DB with the scenario-74 worktree servers, after the 28 pendin
 
 ### M2 — Part 2: Daily Collection
 
-1. POS → Daily Collection, Bago, a day with undeposited cash. → No UNDEPOSITED row in the ledger (table or cards).
-2. Print that day. → The printed form still has the UNDEPOSITED line.
-3. Switch to All branches. → A Print button is there; the print preview shows every branch and the totals, on the chosen paper size.
+Log in as the Business Owner and open **POS → Daily Collection**. The fixture day is **Bago, Mon Oct 13 2026**, which has undeposited CASH ₱95,193.60 and CHECK ₱21,000.00. It is not filed, and the owner can see it.
+
+**A: undeposited is hidden on screen**
+
+1. Set the branch switcher to **Bago**, the date control (‹ › arrows and a date box) to **Oct 13**, and the tab to **Collection report**. → The ledger table shows: Date, SI#, Customer, Desc … Amount / debit, Credit, Balance.
+2. Scroll to the bottom of the ledger. → No row starts with **UNDEPOSITED**. Every collection row and every DEPOSIT row is still there, and so is the Balance column.
+3. Narrow the window to phone width (cards). → No "UNDEPOSITED:" card.
+
+**B: the print still has it**
+
+4. **Print** on the same page. → Two pages (sales monitoring, then the collection form). Page 2's credit lines **do** show UNDEPOSITED CASH 95,193.60 and CHECK 21,000.00.
+5. (Optional) **Export**. → The workbook has the UNDEPOSITED lines.
+
+**C: Print on All branches**
+
+6. Click "← All branches", or set the switcher to **All Branches**. → Three summary boxes and the **Branches** table.
+7. → A **Print** button next to the date control (new).
+8. **Print**. → One sheet: the company name, "Daily Collection Report — All branches" and the date. One row per branch in screen order (Branch, Entries, Total collection, Cash counted, Status in words, Note). An **ALL BRANCHES** totals row with "X of Y trading branches filed". Unfiled branches show "—", with the note under the table.
+9. Switch the paper size between Letter, A4 and Legal. → The sheet fits each one.
+10. On All branches, set the date to Oct 13 and print. → Oct 13's figures, with Bago's row.
+
+**M2 — verified by Kian 2026-10-19** (all steps).
 
 ### M3 — Part 3: Checkout + credit application
 
