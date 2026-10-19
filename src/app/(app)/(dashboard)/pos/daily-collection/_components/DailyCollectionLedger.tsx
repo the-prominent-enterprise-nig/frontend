@@ -26,7 +26,13 @@ interface Props {
 }
 
 export default function DailyCollectionLedger({ report, companyName }: Props): React.JSX.Element {
-  const lines = buildFormLines(report)
+  // Scenario 74 — the client asked for the undeposited amount not to be shown
+  // on this screen. Only the screen: the printed form and the Excel export
+  // still carry the UNDEPOSITED line, because the paper is what gets signed
+  // and has to account for every peso (Kian, 2026-10-19).
+  const lines = buildFormLines(report).filter(
+    (line) => !(line.type === 'deposit' && line.creditLabel === 'UNDEPOSITED')
+  )
 
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white">

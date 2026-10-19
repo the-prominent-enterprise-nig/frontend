@@ -259,13 +259,15 @@ Each part is committed in each repo it touches (no co-author, not pushed) and st
 
 **Playwright, new `e2e/daily-collection-scenario-74.spec.ts`:**
 
-| ID        | Case                                                                                   |
-| --------- | -------------------------------------------------------------------------------------- |
-| S74-2-F01 | Branch day with cash still undeposited: no UNDEPOSITED row on screen (table and cards) |
-| S74-2-F02 | **(edge)** The same day's print pages still contain the UNDEPOSITED line               |
-| S74-2-F03 | **(edge)** A day with everything deposited: nothing missing or blank where the row was |
-| S74-2-F04 | All-branches view has a Print button; clicking it calls `window.print` (stubbed)       |
-| S74-2-F05 | **(edge)** All-branches print pages list every branch row and the totals               |
+| ID        | Case                                                                                      |
+| --------- | ----------------------------------------------------------------------------------------- |
+| S74-2-F01 | Branch day with cash still undeposited: no UNDEPOSITED row on screen (table and cards)    |
+| S74-2-F02 | **(edge)** The same day's print pages still contain the UNDEPOSITED line                  |
+| S74-2-F03 | **(edge)** Only UNDEPOSITED goes: every DEPOSIT line on the print copy is still on screen |
+| S74-2-F04 | All-branches view has a Print button; clicking it calls `window.print` (stubbed)          |
+| S74-2-F05 | **(edge)** All-branches print pages list every branch row and the totals                  |
+
+nFixture: the ledger cases (F01–F03) look for a day with undeposited cash that the Business Owner can see (any branch, last 21 days) instead of ringing test sales onto a real branch's form. With none, they annotate and return, which is the suite's convention. On 2026-10-19 they found one and ran in full.
 
 **Regressions:**
 
@@ -374,12 +376,15 @@ Every regression suite above runs once more, one at a time, and is compared with
 
 ### Baseline (filled before each part)
 
-| Part | Suite                               | Repo | Before-part result | Notes                                                                                                                                                              |
-| ---- | ----------------------------------- | ---- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1    | `closing-session-record`            | BE   | 19/19              | Run from the main `backend/backend` checkout (same base commit)                                                                                                    |
-| 1    | `accounting-audit-log-pos-sessions` | BE   | 3/3                | Same                                                                                                                                                               |
-| 1    | `closing-session-denominations`     | FE   | 1/1                | Run on the branch (see note)                                                                                                                                       |
-| 1    | `pos-session-list-ux-batch`         | FE   | 3/4                | **Pre-existing:** "Release Approvals is a tab alongside Checkout". Karms' `b6a771f9` (Oct 5) removed that tab from `PosNav`, and this branch doesn't touch the nav |
+| Part | Suite                               | Repo | Before-part result  | Notes                                                                                                                                                              |
+| ---- | ----------------------------------- | ---- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | `closing-session-record`            | BE   | 19/19               | Run from the main `backend/backend` checkout (same base commit)                                                                                                    |
+| 1    | `accounting-audit-log-pos-sessions` | BE   | 3/3                 | Same                                                                                                                                                               |
+| 1    | `closing-session-denominations`     | FE   | 1/1                 | Run on the branch (see note)                                                                                                                                       |
+| 1    | `pos-session-list-ux-batch`         | FE   | 3/4                 | **Pre-existing:** "Release Approvals is a tab alongside Checkout". Karms' `b6a771f9` (Oct 5) removed that tab from `PosNav`, and this branch doesn't touch the nav |
+| 2    | `daily-collection-offsite-counters` | BE   | 15/15               | Part 2 is frontend-only; the backend is unchanged                                                                                                                  |
+| 2    | `daily-sales-monitoring`            | FE   | 3/3                 | Run on the branch                                                                                                                                                  |
+| 2    | `cashier-day-baseline`              | FE   | 1 passed, 3 skipped | Skips are by design: no seeded baseline day on the dev DB                                                                                                          |
 
 FE baseline note: the Playwright regressions ran on the branch rather than on `development`, so the machine didn't have to restart both servers for a baseline. The one failure was checked against `development`'s source instead.
 
@@ -455,15 +460,20 @@ Run on the **dev** DB with the scenario-74 worktree servers, after the 28 pendin
 
 **Migrations:** the 28 `development` migrations from 2026-10-13..16 were applied to the dev and test DBs on 2026-10-19 (Kian's go-ahead) before any run.
 
-| Part | Suite                                                         | Repo | Result | Baseline | Verdict                                                                                                         |
-| ---- | ------------------------------------------------------------- | ---- | ------ | -------- | --------------------------------------------------------------------------------------------------------------- |
-| 1    | `scenario-74-pos-sessions` (new)                              | BE   | 6/6    | —        | pass                                                                                                            |
-| 1    | `pos-sessions-scenario-74` (new)                              | FE   | 7/7    | —        | pass (F08 needed two locator fixes in the spec itself: the picker's hidden `<option>` and the code-based label) |
-| 1    | `closing-session-record`                                      | BE   | 19/19  | 19/19    | pass                                                                                                            |
-| 1    | `accounting-audit-log-pos-sessions`                           | BE   | 3/3    | 3/3      | pass                                                                                                            |
-| 1    | `closing-session-denominations`                               | FE   | 1/1    | —        | pass                                                                                                            |
-| 1    | `pos-session-list-ux-batch`                                   | FE   | 3/4    | —        | 1 pre-existing failure (see Baseline)                                                                           |
-| 1    | `tsc --noEmit`, eslint (13 → 13 warnings, none new), prettier | both | clean  | —        | pass                                                                                                            |
+| Part | Suite                                                           | Repo | Result        | Baseline | Verdict                                                                                                         |
+| ---- | --------------------------------------------------------------- | ---- | ------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| 1    | `scenario-74-pos-sessions` (new)                                | BE   | 6/6           | —        | pass                                                                                                            |
+| 1    | `pos-sessions-scenario-74` (new)                                | FE   | 7/7           | —        | pass (F08 needed two locator fixes in the spec itself: the picker's hidden `<option>` and the code-based label) |
+| 1    | `closing-session-record`                                        | BE   | 19/19         | 19/19    | pass                                                                                                            |
+| 1    | `accounting-audit-log-pos-sessions`                             | BE   | 3/3           | 3/3      | pass                                                                                                            |
+| 1    | `closing-session-denominations`                                 | FE   | 1/1           | —        | pass                                                                                                            |
+| 1    | `pos-session-list-ux-batch`                                     | FE   | 3/4           | —        | 1 pre-existing failure (see Baseline)                                                                           |
+| 1    | `tsc --noEmit`, eslint (13 → 13 warnings, none new), prettier   | both | clean         | —        | pass                                                                                                            |
+| 2    | `daily-collection-scenario-74` (new)                            | FE   | 5/5           | —        | pass (the ledger cases ran on a real undeposited day, not skipped)                                              |
+| 2    | `daily-collection-offsite-counters`                             | BE   | 15/15         | 15/15    | pass                                                                                                            |
+| 2    | `daily-sales-monitoring`                                        | FE   | 3/3           | —        | pass                                                                                                            |
+| 2    | `cashier-day-baseline`                                          | FE   | 1 + 3 skipped | —        | pass (skips by design)                                                                                          |
+| 2    | `tsc --noEmit`, eslint (no warnings in changed files), prettier | FE   | clean         | —        | pass                                                                                                            |
 
 ---
 
