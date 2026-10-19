@@ -358,6 +358,23 @@ Dropped by Kian on 2026-10-19 ("focus on POS and Inventory for this, no accounti
 
 Every regression suite above runs once more, one at a time, and is compared with the baseline.
 
+**Run 2026-10-19, after the Payment Mode fix (`bcb21104`), one suite at a time:**
+
+| Suite                           | Repo | Result                                      |
+| ------------------------------- | ---- | ------------------------------------------- |
+| `scenario-74-pos-sessions`      | BE   | 6/6                                         |
+| `scenario-74-financing-preview` | BE   | 6/6                                         |
+| `scenario-74-stock-balance`     | BE   | 8/8                                         |
+| `pos-sessions-scenario-74`      | FE   | 7/7                                         |
+| `daily-collection-scenario-74`  | FE   | 5/5                                         |
+| `pos-checkout-scenario-74`      | FE   | 10/10 (incl. new S74-3-F10, the detour fix) |
+| `inventory-scenario-74`         | FE   | 5/5                                         |
+
+**Also done after Part 4:**
+
+- **Payment Mode restore fix** (`bcb21104`, findings log #3, pre-existing, fixed on Kian's go-ahead). A restored cart with installment lines now brings the toggle back on Installment, the same as Continue to sale already does.
+- **Dev DB tidy-up.** The 10 timestamped "E2E S74 …" test items left by earlier spec runs were zeroed with `ADJ-20261019-0011` / `-0012` (reason: miscounted) and archived. The checkout spec now reuses two fixed items (`E2E-S74C-1/-2`), and F05 reuses one fixed item and category pair.
+
 ### Baseline (filled before each part)
 
 | Part | Suite                               | Repo | Before-part result  | Notes                                                                                                                                                              |
@@ -555,9 +572,9 @@ Part 5 was dropped (Kian, 2026-10-19: POS and Inventory only, no accounting). Se
 - **`pos-typed-installment-plan.e2e-spec.ts` TP-14 fails on `development`.** It still expects the 10% down-payment floor that Chloe removed on 2026-10-15.
 - **4 `pos-checkout-*` Playwright specs can't run on a seeded DB.** They need the demo item "Universal Remote Control", which the seed's cleanup deletes.
 - **The checkout down-payment box still says "10% default"** although the 10% floor is gone (Chloe, 2026-10-15). Copy only, and hers.
-- **Payment Mode isn't restored after the "New credit application" detour** (findings log #3). Kian's #179 restore plus Chloe's mode-per-cart. Chloe's `e49b2a0e` fixed only the Continue-to-sale path. A small fix is possible (the toggle follows the restored lines); waiting on Kian.
+- ~~Payment Mode isn't restored after the "New credit application" detour~~: **fixed in `bcb21104`** on Kian's go-ahead.
 - **Three inventory Playwright specs are out of date on `development`:** `inventory-stock-balance-rollup` (5 of 9), `inventory-serial-numbers-history`, `inventory-item-360-serial-movements`. See the Part 4 results.
-- **Test items left on the dev DB by checkout specs:** 8 "E2E S74 Checkout Item …" (Part 3's spec, 4 runs) and 2 "E2E S74 Inv Item …" (Part 4's first F05 runs, before it reused one fixture), each with stock. Items with stock or sales can't be deleted through the API. The existing checkout specs leave "E2E TypedPlan" items the same way.
+- ~~Test items left on the dev DB by checkout specs~~: **cleaned up** (zeroed and archived, see Final sweep), and the specs now reuse fixed items.
 - **Stock Balance's "Transferred" header shows in-transit qty** (`StockBalanceList.tsx` ~357-359).
 - **Cash in Transit history:** Deposited rows show the amount collected, not the amount banked; partial deposits only show once settled; `citClearingJournalEntryId` is overwritten per clearing; `depositedTo` reads a field itemised deposits never set. This is note line "Balance for Cleaning", which is not in this scenario.
 
