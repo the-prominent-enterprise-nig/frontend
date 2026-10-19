@@ -1,6 +1,6 @@
-# Scenario 74 — Oct 16 client notes: the quick wins (POS sessions, daily collection, checkout, inventory, cash in transit, AP)
+# Scenario 74 — Oct 16 client notes: the quick wins (POS sessions, daily collection, checkout, inventory)
 
-**Source**: _NIG Marketing Notes & Comments, October 16, 2026_ (27 lines), audited line by line against `development` on **2026-10-19** (frontend `da853b4c`, backend `7d0d4e9`). This scenario takes the **15 lines marked "doable today"**: small, clear asks that need no migration and reverse no one's design. The other 12 lines are listed at the end with the reason each one waits.
+**Source**: _NIG Marketing Notes & Comments, October 16, 2026_ (27 lines), audited line by line against `development` on **2026-10-19** (frontend `da853b4c`, backend `7d0d4e9`). This scenario took the **15 lines marked "doable today"**: small, clear asks that need no migration and reverse no one's design. **11 were built (Parts 1–4). Kian dropped the 4 accounting ones (Part 5) on 2026-10-19 to keep this scenario to POS and Inventory.** Those 4 and the other 12 lines are listed at the end with the reason each one waits.
 
 **Base**: `origin/development`. Branch `feat/scenario-74-oct16-client-quick-wins` in both repos. Worktrees `frontend/frontend-scenario-74` and `backend/backend-scenario-74`. Not stacked on 71/72.
 
@@ -138,25 +138,25 @@ Two bugs in `inventory/services/stock.service.ts`:
 
 Author: Karms. Both fixed (D7).
 
-### 12 — Cash in Transit: reference number required · **XS–S** · FE + BE
+### 12 — Cash in Transit: reference number required · **XS–S** · FE + BE · **DROPPED (Kian, 2026-10-19)**
 
 - **FE:** `slipsProblem` (`SlipEditor.tsx:181-186`) checks bank, amount and date. Add the reference. Record Deposit's disabled state and tooltip already read it, and so does the draft edit.
 - **BE:** `PosDepositLineDto.reference` becomes `@IsNotEmpty` (trimmed). For the legacy no-slip path (`CreatePosDepositDto` with no `lines`), the deposit-level `reference` is required instead (D8).
 - Old rows are untouched.
 
-### 13 — Cash in Transit: note per slip · **XS** · FE
+### 13 — Cash in Transit: note per slip · **XS** · FE · **DROPPED (Kian, 2026-10-19)**
 
 `Slip.note` exists (`SlipEditor.tsx:25`) and is sent (~194), stored in `PosDepositLine.note VarChar(200)`, but has no input.
 
 **Change:** add a Note input to `SlipRow` (max 200) and a Note column to the deposit detail (`PosDepositsView.tsx:283-297`).
 
-### 14 — Floating Record Deposit · **XS–S** · FE
+### 14 — Floating Record Deposit · **XS–S** · FE · **DROPPED (Kian, 2026-10-19)**
 
 There's no "End of Day" button anywhere in the code. The action users scroll back up for is **Record Deposit** in the Undeposited Funds header (`CashInTransitList.tsx:432-442`), while sessions are ticked further down (D9).
 
 **Change:** a sticky bottom bar while `selection.rows.length > 0`: branch, sessions ticked, total, and Record Deposit. The header button stays.
 
-### 15 — AP Bills: delivery destination column · **S** · BE + FE
+### 15 — AP Bills: delivery destination column · **S** · BE + FE · **DROPPED (Kian, 2026-10-19)**
 
 APBill has no destination. `findAll` (`ap-bills.service.ts:973-985`) includes `purchaseOrder` and `goodsReceipts` without names.
 
@@ -183,9 +183,9 @@ The list is Chloe's; adding a column doesn't undo anything of hers.
 | D5  | **Confirmed by Kian 2026-10-19.** Item 7: Price Use and term come from the first installment line; mixed Price Uses show a notice; the item price display is untouched. Kept as is after M3 (Kian, 2026-10-19). There is no note or PR on mixed Price Uses: an application has had one Price Use since Scenario 17 (FE #113), is priced from that list since Scenario 64 items 21/26 (#199/#185), and Continue to sale puts it on every cart line on purpose (44d6eae2, "an application approved under any other Price Use would have been priced at the till off a different list than the owner approved"). Per-item Price Use would be a scenario of its own. |
 | D6  | Item 9: auto-fill "NIG"; the field stays editable and required.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | D7  | Item 11: fix both causes (category descendants; in-transit to a new destination).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| D8  | Item 12: required for new deposits, FE and BE, on both the slip path and the legacy no-slip path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| D9  | Item 14: "End of Day" = Record Deposit, as a sticky bar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| D10 | Item 15: PO warehouse, else RR warehouses, else "—".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| D8  | **Moot, Part 5 dropped.** Item 12: required for new deposits, FE and BE, on both the slip path and the legacy no-slip path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| D9  | **Confirmed by Kian for later (Part 5 dropped).** Item 14: "End of Day" = Record Deposit, as a sticky bar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| D10 | **Confirmed by Kian for later (Part 5 dropped).** Item 15: PO warehouse, else RR warehouses, else "—".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | D11 | Anything of Chloe's is touched additively only (items 5, 6, 8, 15). Nothing she decided is reversed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
@@ -194,13 +194,13 @@ The list is Chloe's; adding a column doesn't undo anything of hers.
 
 Each part is committed in each repo it touches (no co-author, not pushed) and stops for Kian's manual test.
 
-| Part | Items          | What                                                                  | Repos   |
-| ---- | -------------- | --------------------------------------------------------------------- | ------- |
-| 1    | 1, 2           | POS Sessions: close at ₱0.00, session dates + date filter             | FE + BE |
-| 2    | 3, 4           | Daily Collection: hide undeposited, print the roll-up                 | FE      |
-| 3    | 5, 6, 7        | Checkout: CR (optional), terms/months/rebate, Price Use to credit app | FE + BE |
-| 4    | 8, 9, 10, 11   | Inventory: colour, carrier, date only, Stock Balance filter           | FE + BE |
-| 5    | 12, 13, 14, 15 | Cash in Transit reference + note + floating bar; AP destination       | FE + BE |
+| Part  | Items              | What                                                                  | Repos   |
+| ----- | ------------------ | --------------------------------------------------------------------- | ------- |
+| 1     | 1, 2               | POS Sessions: close at ₱0.00, session dates + date filter             | FE + BE |
+| 2     | 3, 4               | Daily Collection: hide undeposited, print the roll-up                 | FE      |
+| 3     | 5, 6, 7            | Checkout: CR (optional), terms/months/rebate, Price Use to credit app | FE + BE |
+| 4     | 8, 9, 10, 11       | Inventory: colour, carrier, date only, Stock Balance filter           | FE + BE |
+| ~~5~~ | ~~12, 13, 14, 15~~ | **Dropped** (Kian, 2026-10-19: POS and Inventory only, no accounting) | —       |
 
 **Per part:**
 
@@ -350,39 +350,11 @@ The transfer in F01–F03 is created and accepted through the API, never dispatc
 - **Playwright:** `inventory-stock-balance-rollup`, `inventory-stock-in-transit`, `inventory-serial-numbers-history`, `inventory-item-360-serial-movements`.
 - **Not run:** `inventory-transfer-dispatch-multiselect`. It really dispatches **and receives** three serial units on the dev DB (its own header: "not self-cleaning"), which would move real stock between branches.
 
-### Part 5 — Cash in Transit + AP Bills (items 12, 13, 14, 15)
+### Part 5 — Cash in Transit + AP Bills (items 12, 13, 14, 15) · DROPPED
 
-**Backend e2e, new `test/scenario-74-deposits-ap.e2e-spec.ts`:**
+Dropped by Kian on 2026-10-19 ("focus on POS and Inventory for this, no accounting"). No tests were written. The items and the two choices already made for them are in _Not in this scenario_.
 
-| ID        | Case                                                                                       |
-| --------- | ------------------------------------------------------------------------------------------ |
-| S74-5-B01 | Deposit slip with no reference → 400                                                       |
-| S74-5-B02 | **(edge)** Reference of only spaces → 400                                                  |
-| S74-5-B03 | Slip with reference and note → 201; note stored on the line                                |
-| S74-5-B04 | **(edge)** Legacy deposit with no `lines` and no `reference` → 400; with `reference` → 201 |
-| S74-5-B05 | **(edge)** Note of 201 chars → 400                                                         |
-| S74-5-B06 | AP bills list returns the PO's warehouse name                                              |
-| S74-5-B07 | **(edge)** Bill with no PO and no RR → destination fields null                             |
-| S74-5-B08 | **(edge)** Bill with RRs at two warehouses → both names returned                           |
-
-**Playwright, new `e2e/cash-in-transit-ap-scenario-74.spec.ts`:**
-
-| ID        | Case                                                                                    |
-| --------- | --------------------------------------------------------------------------------------- |
-| S74-5-F01 | Slip without a reference → Record Deposit disabled, tooltip names the missing reference |
-| S74-5-F02 | Slip note typed → shows in the deposit detail                                           |
-| S74-5-F03 | Tick a session → sticky bar appears with count and total; Record Deposit opens from it  |
-| S74-5-F04 | **(edge)** Untick everything → bar hides                                                |
-| S74-5-F05 | AP Bills list shows "Delivery destination"; a bill with no PO shows "—"                 |
-
-**Spec churn expected:** existing deposit specs that post slips without a reference (`undeposited-funds-deposit`, BE `pos-deposits`, `cit-monitor`) need one added. Logged in Part 5.
-
-**Regressions:**
-
-- **Playwright:** `undeposited-funds-deposit`, `cit-monitor`, `purchasing-ap-bills-supplier`.
-- **BE e2e:** `pos-deposits`, `cit-monitor`, `accounting-audit-log-ap-bills`.
-
-### Final sweep, after Part 5
+### Final sweep, after Part 4 (Part 5 dropped)
 
 Every regression suite above runs once more, one at a time, and is compared with the baseline.
 
@@ -518,13 +490,9 @@ Log in as the Business Owner.
 
 **M4 — verified by Kian 2026-10-19** (steps 1–9; D is optional and was not run).
 
-### M5 — Part 5: Cash in Transit + AP
+### M5 — Part 5: dropped
 
-1. Accounting → Cash in Transit, tick a session. → A bar sticks to the bottom with the count, total and Record Deposit.
-2. Record Deposit, add a slip with no reference. → Can't submit; the reason names the reference.
-3. Add a reference and a note, submit. → The deposit detail shows the note.
-4. Untick everything. → The bar hides.
-5. Accounting → AP Bills. → "Delivery destination" column: the PO's warehouse; "—" for the bill with no PO.
+Part 5 was dropped (Kian, 2026-10-19: POS and Inventory only, no accounting). See _Not in this scenario_.
 
 ### Findings log
 
@@ -595,17 +563,21 @@ Log in as the Business Owner.
 
 ## Not in this scenario
 
-| Note line                                        | Why it waits                                                                             |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Split payment (cash + GCash)                     | Reverses Chloe's one-method-per-sale design (`e264f1ead`); L                             |
-| Record under A/R until delivery                  | Which amount? Likely a migration; L                                                      |
-| Cash on hand "interchangeable"                   | Ambiguous: three readings                                                                |
-| Allow ₱0.00 down payment                         | Conflicts with "in-house never 0" and Chloe's Oct 15 rule; TPF-only = Scenario 71 Part 2 |
-| No rebate on partial payments                    | Reverses Chloe's "late rebate allowed"; two BE paths + FE                                |
-| Amount due in the Due tab                        | Chloe's deliberate design; three possible readings                                       |
-| Session close: payment methods + MI box          | M; best done with the counter-collections label bug above                                |
-| Bank full names (MBTC → Metrobank)               | Needs the full name for each code (BDO-Q, BDO-GF, LB-PSB, Sbank…)                        |
-| Branch accounts pick the caravan                 | Needs scope: any running caravan, or own branch/region                                   |
-| RR move above (Books)                            | Which screen: JE lines or the hub tabs                                                   |
-| Stock transfer: enter available quantities       | Read-only column (S) or editable "qty we can send" (M, migration)                        |
-| "Balance for Cleaning" → Collected Funds History | M, mostly Chloe's BE; root cause is in _Found, not fixed_                                |
+| Note line                                            | Why it waits                                                                                                                                                       |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Split payment (cash + GCash)                         | Reverses Chloe's one-method-per-sale design (`e264f1ead`); L                                                                                                       |
+| Record under A/R until delivery                      | Which amount? Likely a migration; L                                                                                                                                |
+| Cash on hand "interchangeable"                       | Ambiguous: three readings                                                                                                                                          |
+| Allow ₱0.00 down payment                             | Conflicts with "in-house never 0" and Chloe's Oct 15 rule; TPF-only = Scenario 71 Part 2                                                                           |
+| No rebate on partial payments                        | Reverses Chloe's "late rebate allowed"; two BE paths + FE                                                                                                          |
+| Amount due in the Due tab                            | Chloe's deliberate design; three possible readings                                                                                                                 |
+| Session close: payment methods + MI box              | M; best done with the counter-collections label bug above                                                                                                          |
+| Bank full names (MBTC → Metrobank)                   | Needs the full name for each code (BDO-Q, BDO-GF, LB-PSB, Sbank…)                                                                                                  |
+| Branch accounts pick the caravan                     | Needs scope: any running caravan, or own branch/region                                                                                                             |
+| RR move above (Books)                                | Which screen: JE lines or the hub tabs                                                                                                                             |
+| Stock transfer: enter available quantities           | Read-only column (S) or editable "qty we can send" (M, migration)                                                                                                  |
+| "Balance for Cleaning" → Collected Funds History     | M, mostly Chloe's BE; root cause is in _Found, not fixed_                                                                                                          |
+| Cash in Transit: reference number required (item 12) | **Dropped from Scenario 74 by Kian (2026-10-19): "focus on POS and Inventory, no accounting".** Still open: which reference (bank slip per slip vs. whole deposit) |
+| Cash in Transit: note per slip (item 13)             | Dropped with item 12. The note is already stored and sent; only the input and the detail column are missing (XS)                                                   |
+| Floating "End of Day" button (item 14)               | Dropped with item 12. **Decided for later:** "End of Day" = **Record Deposit**, as a bar stuck to the bottom once sessions are ticked                              |
+| AP Bills: delivery destination column (item 15)      | Dropped with item 12. **Decided for later:** show the **PO's warehouse**, else the RR warehouse(s), else "—"                                                       |
