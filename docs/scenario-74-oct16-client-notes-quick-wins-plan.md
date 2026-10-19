@@ -174,19 +174,19 @@ The list is Chloe's; adding a column doesn't undo anything of hers.
 
 ## Decisions (defaults taken, Kian can override before each part)
 
-| #   | Decision                                                                                                                                                                |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Item 2: a sale keeps its own timestamp. The session row shows its business date; checkout warns, never blocks, on a session opened on an earlier day.                   |
-| D2  | **Confirmed by Kian 2026-10-19.** Item 3: hidden on screen only. Print and Excel keep the UNDEPOSITED lines (they are the signed form). The Balance column stays.       |
-| D3  | **Confirmed by Kian 2026-10-19.** Item 5: Chloe's rule stands. A CR is still required for a DP, card, bank transfer, e-wallet and QR; only the label changes.           |
-| D4  | **Confirmed by Kian 2026-10-19.** Item 6: the rebate shows for in-house lines only, and the BE preview's fallback uses the account's own rule.                          |
-| D5  | **Confirmed by Kian 2026-10-19.** Item 7: Price Use and term come from the first installment line; mixed Price Uses show a notice; the item price display is untouched. |
-| D6  | Item 9: auto-fill "NIG"; the field stays editable and required.                                                                                                         |
-| D7  | Item 11: fix both causes (category descendants; in-transit to a new destination).                                                                                       |
-| D8  | Item 12: required for new deposits, FE and BE, on both the slip path and the legacy no-slip path.                                                                       |
-| D9  | Item 14: "End of Day" = Record Deposit, as a sticky bar.                                                                                                                |
-| D10 | Item 15: PO warehouse, else RR warehouses, else "—".                                                                                                                    |
-| D11 | Anything of Chloe's is touched additively only (items 5, 6, 8, 15). Nothing she decided is reversed.                                                                    |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Item 2: a sale keeps its own timestamp. The session row shows its business date; checkout warns, never blocks, on a session opened on an earlier day.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| D2  | **Confirmed by Kian 2026-10-19.** Item 3: hidden on screen only. Print and Excel keep the UNDEPOSITED lines (they are the signed form). The Balance column stays.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| D3  | **Confirmed by Kian 2026-10-19.** Item 5: Chloe's rule stands. A CR is still required for a DP, card, bank transfer, e-wallet and QR; only the label changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| D4  | **Confirmed by Kian 2026-10-19.** Item 6: the rebate shows for in-house lines only, and the BE preview's fallback uses the account's own rule.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| D5  | **Confirmed by Kian 2026-10-19.** Item 7: Price Use and term come from the first installment line; mixed Price Uses show a notice; the item price display is untouched. Kept as is after M3 (Kian, 2026-10-19). There is no note or PR on mixed Price Uses: an application has had one Price Use since Scenario 17 (FE #113), is priced from that list since Scenario 64 items 21/26 (#199/#185), and Continue to sale puts it on every cart line on purpose (44d6eae2, "an application approved under any other Price Use would have been priced at the till off a different list than the owner approved"). Per-item Price Use would be a scenario of its own. |
+| D6  | Item 9: auto-fill "NIG"; the field stays editable and required.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| D7  | Item 11: fix both causes (category descendants; in-transit to a new destination).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| D8  | Item 12: required for new deposits, FE and BE, on both the slip path and the legacy no-slip path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| D9  | Item 14: "End of Day" = Record Deposit, as a sticky bar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| D10 | Item 15: PO warehouse, else RR warehouses, else "—".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| D11 | Anything of Chloe's is touched additively only (items 5, 6, 8, 15). Nothing she decided is reversed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
 
@@ -448,13 +448,32 @@ Log in as the Business Owner and open **POS → Daily Collection**. The fixture 
 
 ### M3 — Part 3: Checkout + credit application
 
-1. Cash sale, Cash on Hand, no DP. → The CR field reads "(optional)"; the sale completes with it blank.
-2. In-house installment with a DP. → CR required, no "(optional)".
-3. In-house line, 6 months. → "6 months · ₱…/mo · Rebate ₱…/mo · Total ₱…". Change to 12 → updates.
-4. Complete it. → The success screen shows the months, monthly and rebate. Open the installment account → its PPD equals the rebate shown.
-5. TPF line. → Months shown, no rebate.
-6. Put ASTRON on CR-BR, 6 months, then **Raise credit application**. → The form opens on CR-BR and 6 months.
-7. Two installment lines on different Price Uses → the first line's, with a notice.
+Log in as the Business Owner with the switcher on **Bago**. The fixture items are **ASTRON LED3277**: serial-tracked, CR-BR ₱9,460, rate card 6 months ₱1,565/mo with ₱120 rebate, 12 months ₱900/mo with ₱70 rebate. The second item is **ASTRON LED4277** (42", WIP ₱14,760 / CR-BR ₱13,220).
+
+**A: CR number**
+
+1. Checkout, add LED3277 and pick a unit, Cash on Hand. → **CR Number (optional)**.
+2. Click GCash. → Red **\***, no "(optional)". Back to Cash on Hand.
+
+**B: months and rebate**
+
+4. Pick a customer, **Installment** → **Inhouse Installment**.
+5. Set CR-BR and **6 months**. → **6 months · ₱1,565.00/mo**, **₱9,390.00 total**, **Rebate ₱120.00/mo when paid in full by the due date**.
+6. Change to **12 months**. → **₱900.00/mo**, **₱10,800.00 total**, **Rebate ₱70.00/mo**.
+7. Under "Down Payment", click **Cash**. → The CR Number gets a red **\***.
+8. Click **TPF Installment**. → The terms box and the rebate line disappear.
+
+**C: Price Use to the credit application** (always a **fresh cart**; see finding 2)
+
+9. LED3277, a customer with no approved application, Installment → Inhouse, CR-BR, 6 months, **New credit application**. → The form opens with LED3277, **Price Use CR-BR**, **term 6 months**, and no yellow note.
+10. A fresh cart with **LED3277 on CR-BR** and **LED4277 on WIP**, both in-house with a term, then **New credit application**. → Two items, **Price Use CR-BR**, and the **yellow note** naming CR-BR. Two units of the _same_ item share one Price Use selector in checkout, so they can't produce the note.
+11. Credit Applications → New directly. → No note; Price Use WIP.
+
+**D: success screen** (optional; needs an approved application)
+
+12. Complete an in-house sale on CR-BR, 6 months. → **Terms: 6 months**, **Rebate (paid on time): ₱120.00/mo**.
+
+**M3 — verified by Kian 2026-10-19** (steps 1–11; step 12 is optional and was not run).
 
 ### M4 — Part 4: Inventory
 
@@ -474,9 +493,11 @@ Log in as the Business Owner and open **POS → Daily Collection**. The fixture 
 
 ### Findings log
 
-| #   | Step | What happened                                                                                                    | Expected                            | Fixed in                                  |
-| --- | ---- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------- |
-| 1   | M1-2 | The From/To boxes opened their calendar only from the small icon; clicking the text just selected month/day/year | A click anywhere opens the calendar | Part 1 follow-up: `showPicker()` on click |
+| #   | Step  | What happened                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Expected                              | Fixed in                                  |
+| --- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------- |
+| 1   | M1-2  | The From/To boxes opened their calendar only from the small icon; clicking the text just selected month/day/year                                                                                                                                                                                                                                                                                                                                                      | A click anywhere opens the calendar   | Part 1 follow-up: `showPicker()` on click |
+| 2   | M3-10 | The first script asked for two units of the **same** item on different Price Uses. Checkout gives same-item units one shared Price Use selector, so that can't happen                                                                                                                                                                                                                                                                                                 | Use two different items               | Script corrected (LED3277 + LED4277)      |
+| 3   | M3-10 | After going to "New credit application" and coming back, a newly added unit reached the form as nothing (1 item, not 2). The restored cart keeps its Installment lines but the **Payment Mode** toggle resets to Cash, so the new unit is a cash line. **Pre-existing**: the restore is Kian's #179 (2026-09-21); lines follow the toggle per Chloe (2026-08-21 / 09-02). Chloe's `e49b2a0e` (Oct 7) only covers the Continue-to-sale path. Not fixed; Kian to decide | The toggle follows the restored lines | — (workaround: click Installment again)   |
 
 **M1 — verified by Kian 2026-10-19** (steps 1–8). Steps 7–8 used a session back-dated on the dev DB, on the E2E S74 Terminal only. Kian looked at a range calendar and a simpler one-tap calendar for the filter, then chose to keep the plain From/To boxes.
 
@@ -522,6 +543,7 @@ Log in as the Business Owner and open **POS → Daily Collection**. The fixture 
 - **`pos-typed-installment-plan.e2e-spec.ts` TP-14 fails on `development`.** It still expects the 10% down-payment floor that Chloe removed on 2026-10-15.
 - **4 `pos-checkout-*` Playwright specs can't run on a seeded DB.** They need the demo item "Universal Remote Control", which the seed's cleanup deletes.
 - **The checkout down-payment box still says "10% default"** although the 10% floor is gone (Chloe, 2026-10-15). Copy only, and hers.
+- **Payment Mode isn't restored after the "New credit application" detour** (findings log #3). Kian's #179 restore plus Chloe's mode-per-cart. Chloe's `e49b2a0e` fixed only the Continue-to-sale path. A small fix is possible (the toggle follows the restored lines); waiting on Kian.
 - **Stock Balance's "Transferred" header shows in-transit qty** (`StockBalanceList.tsx` ~357-359).
 - **Cash in Transit history:** Deposited rows show the amount collected, not the amount banked; partial deposits only show once settled; `citClearingJournalEntryId` is overwritten per clearing; `depositedTo` reads a field itemised deposits never set. This is note line "Balance for Cleaning", which is not in this scenario.
 
