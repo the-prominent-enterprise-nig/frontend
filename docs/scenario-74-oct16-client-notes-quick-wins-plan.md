@@ -2,7 +2,7 @@
 
 **Source**: _NIG Marketing Notes & Comments, October 16, 2026_ (27 lines), audited line by line against `development` on **2026-10-19** (frontend `da853b4c`, backend `7d0d4e9`). This scenario took the **15 lines marked "doable today"**: small, clear asks that need no migration and reverse no one's design. **11 were built (Parts 1–4). Kian dropped the 4 accounting ones (Part 5) on 2026-10-19 to keep this scenario to POS and Inventory.** Those 4 and the other 12 lines are listed at the end with the reason each one waits.
 
-**Base**: `origin/development`. Branch `feat/scenario-74-oct16-client-quick-wins` in both repos. Worktrees `frontend/frontend-scenario-74` and `backend/backend-scenario-74`. Not stacked on 71/72.
+**Base**: `origin/development`. Branch `feat/scenario-74-pos-inventory-client-feedback` in both repos. Worktrees `frontend/frontend-scenario-74` and `backend/backend-scenario-74`. Not stacked on 71/72.
 
 **Claimed** 2026-10-19 after checking `docs/scenario-*` and commit subjects on `origin/development` (73 = Karms' service-center repair; 71 and 72 are each used three times), remote branches (highest 71) and open PRs (FE #223, unnumbered; BE none).
 
