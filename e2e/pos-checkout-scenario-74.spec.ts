@@ -72,40 +72,58 @@ async function createFixtures(request: APIRequestContext): Promise<Fixtures> {
     .data ?? []) as { id: string; branchId: string | null }[]
   const warehouse = warehouses.find((w) => w.branchId === branchId)!
 
+  // Two fixed items, found or created, so reruns don't leave a new pair of
+  // stocked items in the dev catalog each time (an item with stock or sales
+  // can't be deleted). Stock is only topped up when it runs low.
   const items: { id: string; name: string }[] = []
+  const topUps: { itemId: string; expectedQty: number; actualQty: number }[] = []
   for (const n of [1, 2]) {
-    const name = `${PREFIX} Item ${n} ${stamp}`
-    const res = await request.post('/api/inventory/items', {
-      data: {
-        sku: `E2E-S74C-${n}-${stamp}`,
-        name,
-        baseUnitId,
-        isSerialTracked: false,
-        sellingPrice: ITEM_PRICE,
-      },
-    })
-    expect(res.ok(), await res.text()).toBeTruthy()
-    const item = await res.json()
-    await request.post(`/api/inventory/items/${item.id}/submit`)
-    await request.post(`/api/inventory/items/${item.id}/confirm-accounting`, { data: {} })
-    await request.post(`/api/inventory/items/${item.id}/approve`, { data: {} })
-    items.push({ id: item.id, name })
+    const sku = `E2E-S74C-${n}`
+    const name = `${PREFIX} Item ${n}`
+    const found = ((
+      await (
+        await request.get(`/api/inventory/items?search=${encodeURIComponent(sku)}&limit=5`)
+      ).json()
+    ).data ?? []) as { id: string; sku: string }[]
+    let id = found.find((i) => i.sku === sku)?.id
+    if (!id) {
+      const res = await request.post('/api/inventory/items', {
+        data: { sku, name, baseUnitId, isSerialTracked: false, sellingPrice: ITEM_PRICE },
+      })
+      expect(res.ok(), await res.text()).toBeTruthy()
+      id = (await res.json()).id as string
+      await request.post(`/api/inventory/items/${id}/submit`)
+      await request.post(`/api/inventory/items/${id}/confirm-accounting`, { data: {} })
+      await request.post(`/api/inventory/items/${id}/approve`, { data: {} })
+    }
+    items.push({ id, name })
+
+    const balances = ((
+      await (await request.get(`/api/inventory/stock/balances?itemId=${id}&limit=50`)).json()
+    ).data ?? []) as { warehouseId: string; availableQty: number | string }[]
+    const onShelf = balances
+      .filter((b) => b.warehouseId === warehouse.id)
+      .reduce((s, b) => s + Number(b.availableQty), 0)
+    // expectedQty 0 → the adjustment adds actualQty on top of what's there.
+    if (onShelf < 10) topUps.push({ itemId: id, expectedQty: 0, actualQty: 20 })
   }
 
-  const adjustRes = await request.post('/api/inventory/adjustments', {
-    data: {
-      warehouseId: warehouse.id,
-      adjustmentDate: new Date().toISOString().slice(0, 10),
-      reasonCode: 'found',
-      notes: 'E2E Scenario 74 checkout fixture stock',
-      lines: items.map((i) => ({ itemId: i.id, expectedQty: 0, actualQty: 50 })),
-    },
-  })
-  expect(adjustRes.ok(), await adjustRes.text()).toBeTruthy()
-  const adjustment = await adjustRes.json()
-  for (const step of ['confirm', 'investigate', 'approve']) {
-    const stepRes = await request.patch(`/api/inventory/adjustments/${adjustment.id}/${step}`)
-    expect(stepRes.ok(), await stepRes.text()).toBeTruthy()
+  if (topUps.length) {
+    const adjustRes = await request.post('/api/inventory/adjustments', {
+      data: {
+        warehouseId: warehouse.id,
+        adjustmentDate: new Date().toISOString().slice(0, 10),
+        reasonCode: 'found',
+        notes: 'E2E Scenario 74 checkout fixture stock',
+        lines: topUps,
+      },
+    })
+    expect(adjustRes.ok(), await adjustRes.text()).toBeTruthy()
+    const adjustment = await adjustRes.json()
+    for (const step of ['confirm', 'investigate', 'approve']) {
+      const stepRes = await request.patch(`/api/inventory/adjustments/${adjustment.id}/${step}`)
+      expect(stepRes.ok(), await stepRes.text()).toBeTruthy()
+    }
   }
 
   const priceUseTypeName = `${PREFIX} PU ${stamp}`
@@ -322,7 +340,7 @@ test.describe('Scenario 74 Part 3 — checkout terms, rebate, CR and credit appl
     if (fx) {
       await request.delete(`/api/inventory/price-lists/${fx.priceListId}`).catch(() => {})
       await request.delete(`/api/inventory/price-use-types/${fx.priceUseTypeId}`).catch(() => {})
-      for (const i of fx.items) await request.delete(`/api/inventory/items/${i.id}`).catch(() => {})
+      // The two items are kept and reused by the next run (see createFixtures).
     }
     await request.dispose()
   })
@@ -455,5 +473,35 @@ test.describe('Scenario 74 Part 3 — checkout terms, rebate, CR and credit appl
     await gotoReady(page, '/pos/credit-applications/new')
     await expect(page.getByText(/Price Use/).first()).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId('price-use-notice')).toHaveCount(0)
+  })
+
+  test('S74-3-F10 (edge) — after the "New credit application" detour, an item added back at checkout still reaches the next application', async ({
+    page,
+  }) => {
+    // Found in M3 (2026-10-19): the restored cart kept its installment lines
+    // but the Payment Mode toggle came back as Cash, so the next item joined
+    // as a cash line and the next application carried 1 item instead of 2.
+    const customer = await createCustomer(page.request)
+    await openCheckout(page)
+    await addItem(page, 0)
+    await selectCustomer(page, customer.name)
+    await page.getByRole('button', { name: 'Installment', exact: true }).click()
+    await page
+      .getByRole('button', { name: /New credit application|New application for this cart/ })
+      .first()
+      .click()
+    await expect(page).toHaveURL(/\/pos\/credit-applications\/new/, { timeout: 20_000 })
+
+    // Back to checkout through the menu: the saved cart is restored.
+    await openCheckout(page)
+    await expect(page.getByText(fx.items[0].name).first()).toBeVisible({ timeout: 20_000 })
+    await addItem(page, 1)
+    await page
+      .getByRole('button', { name: /New credit application|New application for this cart/ })
+      .first()
+      .click()
+    await expect(page).toHaveURL(/\/pos\/credit-applications\/new/, { timeout: 20_000 })
+    const items = page.getByText('Items / Models').locator('..')
+    await expect(items.getByText('Item / Model')).toHaveCount(2, { timeout: 20_000 })
   })
 })

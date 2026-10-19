@@ -1450,6 +1450,16 @@ export default function CheckoutPage() {
     if (handoff && belongsToAnOpenSession) {
       if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
         setCart(handoff.lines)
+        // Scenario 74 — the Payment Mode toggle comes back with the lines. The
+        // lines keep their invoiceType through the handoff but the toggle
+        // used to reset to Cash, so after the "New credit application" detour
+        // the cart read Cash while holding installment lines, and the next
+        // unit added joined as a cash line — missing from the application
+        // raised for the cart. (Continue to sale already restores it; see
+        // the creditApplicationId branch below.)
+        if (handoff.lines.some((l) => l.invoiceType === 'installment')) {
+          setPaymentMode('installment')
+        }
         // Scenario 67 — restored once the customer below is re-selected.
         if (handoff.isXDeal) {
           pendingResumedXDealRef.current = { reference: handoff.xDealReference ?? '' }
