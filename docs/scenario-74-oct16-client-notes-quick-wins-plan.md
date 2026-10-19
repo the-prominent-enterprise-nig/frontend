@@ -98,7 +98,7 @@ Also check the dev tenant's Cash `PosPaymentMethodConfig.referenceIsRequired`. I
 
 **Change:**
 
-- **BE preview:** always returns `ppd`. Without a rate card, it uses the same rule the installment account uses when it is created (`installment-account.service.ts` ~572), verified before building so the preview and the account can't disagree.
+- **BE preview:** returns `ppd` when asked (`includeRebate`, sent by checkout only): the rate card's, else 7.5% of the monthly, the rule the installment account uses when it is created (`installment-account.service.ts` ~572). B03/B04 prove the quote equals the account's figure. Opt-in so the credit application form's PR #199 prefill is unchanged.
 - **FE line panel and success screen:** one line, "6 months · ₱1,760.00/mo · Rebate ₱132.00/mo · Total ₱10,560.00".
 - In-house only (D4). TPF lines show their term and months, no rebate.
 
@@ -174,19 +174,19 @@ The list is Chloe's; adding a column doesn't undo anything of hers.
 
 ## Decisions (defaults taken, Kian can override before each part)
 
-| #   | Decision                                                                                                                                              |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Item 2: a sale keeps its own timestamp. The session row shows its business date; checkout warns, never blocks, on a session opened on an earlier day. |
-| D2  | Item 3: hidden on screen only. Print and Excel keep the UNDEPOSITED lines (they are the signed form). The Balance column stays.                       |
-| D3  | Item 5: Chloe's rule stands. A CR is still required for a DP, card, bank transfer, e-wallet and QR; only the label changes.                           |
-| D4  | Item 6: the rebate shows for in-house lines only, and the BE preview's fallback uses the account's own rule.                                          |
-| D5  | Item 7: Price Use and term come from the first installment line; mixed Price Uses show a notice; the item price display is untouched.                 |
-| D6  | Item 9: auto-fill "NIG"; the field stays editable and required.                                                                                       |
-| D7  | Item 11: fix both causes (category descendants; in-transit to a new destination).                                                                     |
-| D8  | Item 12: required for new deposits, FE and BE, on both the slip path and the legacy no-slip path.                                                     |
-| D9  | Item 14: "End of Day" = Record Deposit, as a sticky bar.                                                                                              |
-| D10 | Item 15: PO warehouse, else RR warehouses, else "—".                                                                                                  |
-| D11 | Anything of Chloe's is touched additively only (items 5, 6, 8, 15). Nothing she decided is reversed.                                                  |
+| #   | Decision                                                                                                                                                                |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Item 2: a sale keeps its own timestamp. The session row shows its business date; checkout warns, never blocks, on a session opened on an earlier day.                   |
+| D2  | **Confirmed by Kian 2026-10-19.** Item 3: hidden on screen only. Print and Excel keep the UNDEPOSITED lines (they are the signed form). The Balance column stays.       |
+| D3  | **Confirmed by Kian 2026-10-19.** Item 5: Chloe's rule stands. A CR is still required for a DP, card, bank transfer, e-wallet and QR; only the label changes.           |
+| D4  | **Confirmed by Kian 2026-10-19.** Item 6: the rebate shows for in-house lines only, and the BE preview's fallback uses the account's own rule.                          |
+| D5  | **Confirmed by Kian 2026-10-19.** Item 7: Price Use and term come from the first installment line; mixed Price Uses show a notice; the item price display is untouched. |
+| D6  | Item 9: auto-fill "NIG"; the field stays editable and required.                                                                                                         |
+| D7  | Item 11: fix both causes (category descendants; in-transit to a new destination).                                                                                       |
+| D8  | Item 12: required for new deposits, FE and BE, on both the slip path and the legacy no-slip path.                                                                       |
+| D9  | Item 14: "End of Day" = Record Deposit, as a sticky bar.                                                                                                                |
+| D10 | Item 15: PO warehouse, else RR warehouses, else "—".                                                                                                                    |
+| D11 | Anything of Chloe's is touched additively only (items 5, 6, 8, 15). Nothing she decided is reversed.                                                                    |
 
 ---
 
@@ -276,36 +276,38 @@ nFixture: the ledger cases (F01–F03) look for a day with undeposited cash that
 
 ### Part 3 — Checkout + credit application (items 5, 6, 7)
 
+**How the rebate reaches checkout (as built).** `POST /pos/financing-terms/preview` takes a new optional `includeRebate`. With it, `ppd` is always present: the rate card's figure, else 7.5% of the monthly, which is the account's own fallback. Without it, `ppd` still means "a rate card was found". The opt-in exists because the first build changed the answer for every caller, and `pr199-credit-application` caught the credit application form prefilling its "PPD rebate" with 7.5% where PR #199 deliberately leaves it blank. Checkout sends it; nothing else does.
+
 **Backend e2e, new `test/scenario-74-financing-preview.e2e-spec.ts`:**
 
-| ID        | Case                                                                                      |
-| --------- | ----------------------------------------------------------------------------------------- |
-| S74-3-B01 | Preview on a factor-rate term (no rate card) returns `ppd` > 0                            |
-| S74-3-B02 | Preview on a rate-card term returns the card's PPD (unchanged)                            |
-| S74-3-B03 | **(edge)** Sell the previewed line → the installment account's PPD equals the preview's   |
-| S74-3-B04 | **(edge)** Qty 2 non-serial line → preview `ppd` follows the same qty rule as the account |
+| ID        | Case                                                                                                                 |
+| --------- | -------------------------------------------------------------------------------------------------------------------- |
+| S74-3-B01 | Factor-rate term, no rate card, `includeRebate` → `ppd` = 7.5% of the monthly, > 0; one line per month               |
+| S74-3-B02 | Rate-card term → the card's monthly and PPD (unchanged)                                                              |
+| S74-3-B03 | **(edge)** Sell the previewed line → the installment account's PPD equals the quoted one                             |
+| S74-3-B04 | **(edge)** Qty 2 → the quote on the line total equals the account's PPD                                              |
+| S74-3-B05 | **(edge)** Typed plan → 7.5% of the typed monthly                                                                    |
+| S74-3-B06 | **(edge)** Without `includeRebate`: no rate card → no `ppd`; a rate card → its PPD (the credit application contract) |
 
 **Playwright, new `e2e/pos-checkout-scenario-74.spec.ts`:**
 
-| ID        | Case                                                                                      |
-| --------- | ----------------------------------------------------------------------------------------- |
-| S74-3-F01 | Cash on Hand, no DP → CR label reads "(optional)", sale completes with it blank           |
-| S74-3-F02 | **(edge)** In-house with a DP → CR required, no "(optional)"                              |
-| S74-3-F03 | **(edge)** GCash → Reference No. still required                                           |
-| S74-3-F04 | In-house line: "N months · ₱X/mo · Rebate ₱Y/mo · Total ₱Z"; changing months updates it   |
-| S74-3-F05 | Success screen shows months, monthly and rebate                                           |
-| S74-3-F06 | **(edge)** TPF line: months shown, no rebate                                              |
-| S74-3-F07 | Cart line on CR-BR, 6 months → Raise credit application → form opens on CR-BR, 6 months   |
-| S74-3-F08 | **(edge)** Two installment lines on different Price Uses → first line's, with the notice  |
-| S74-3-F09 | **(edge)** Opening a new credit application from the list (no draft) → defaults as before |
+| ID        | Case                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| S74-3-F01 | Plain Cash on Hand sale → the CR label carries "(optional)"                                                              |
+| S74-3-F02 | **(edge)** In-house installment, DP paid in Cash → CR required, no "(optional)"                                          |
+| S74-3-F03 | **(edge)** GCash → its reference stays required                                                                          |
+| S74-3-F04 | In-house line: "N months · ₱X/mo … total" plus "Rebate ₱Y/mo when paid in full by the due date"; another term updates it |
+| S74-3-F05 | Complete the plan → the success screen shows "N months" and the same rebate                                              |
+| S74-3-F06 | **(edge)** Switch the line to TPF → no rebate, no in-house terms line                                                    |
+| S74-3-F07 | "New credit application" from checkout → the form opens on the line's Price Use and term, no notice                      |
+| S74-3-F08 | **(edge)** Two lines on different Price Uses → the notice names the first line's                                         |
+| S74-3-F09 | **(edge)** New application from the list (no draft) → no notice                                                          |
 
 **Regressions:**
 
-- **Playwright:**
-  - `pos-checkout-price-use`, `pos-checkout-installment-credit-application`, `pos-checkout-installment-down-payment-floor`
-  - `pos-checkout-payment-method-options`, `pos-checkout-typed-plan`
-  - `credit-application-intake`, `pr199-credit-application`
-- **BE e2e:** `pos-installment-financing`, `credit-application-financing`.
+- **Playwright (run):** `pos-checkout-typed-plan`, `credit-application-intake`, `pr199-credit-application`.
+- **Playwright (not run):** `pos-checkout-price-use`, `pos-checkout-installment-credit-application`, `pos-checkout-installment-down-payment-floor`, `pos-checkout-payment-method-options` all search for the demo item "Universal Remote Control", which the seed deletes. They cannot pass on this DB whatever the code does.
+- **BE e2e:** `pos-installment-financing`, `credit-application-financing`, `pos-typed-installment-plan`.
 
 ### Part 4 — Inventory (items 8, 9, 10, 11)
 
@@ -385,6 +387,9 @@ Every regression suite above runs once more, one at a time, and is compared with
 | 2    | `daily-collection-offsite-counters` | BE   | 15/15               | Part 2 is frontend-only; the backend is unchanged                                                                                                                  |
 | 2    | `daily-sales-monitoring`            | FE   | 3/3                 | Run on the branch                                                                                                                                                  |
 | 2    | `cashier-day-baseline`              | FE   | 1 passed, 3 skipped | Skips are by design: no seeded baseline day on the dev DB                                                                                                          |
+| 3    | `pos-installment-financing`         | BE   | 10/32               | **Pre-existing:** 22 tests still expect the in-house release-form hold (`pending_approval`), which Scenario 71 retired; they get `completed`                       |
+| 3    | `credit-application-financing`      | BE   | 34/34               |                                                                                                                                                                    |
+| 3    | `pos-typed-installment-plan`        | BE   | 13/14               | **Pre-existing:** TP-14 still expects the 10% DP floor that Chloe removed on 2026-10-15 (`17356bf`)                                                                |
 
 FE baseline note: the Playwright regressions ran on the branch rather than on `development`, so the machine didn't have to restart both servers for a baseline. The one failure was checked against `development`'s source instead.
 
@@ -479,20 +484,30 @@ Log in as the Business Owner and open **POS → Daily Collection**. The fixture 
 
 **Migrations:** the 28 `development` migrations from 2026-10-13..16 were applied to the dev and test DBs on 2026-10-19 (Kian's go-ahead) before any run.
 
-| Part | Suite                                                           | Repo | Result        | Baseline | Verdict                                                                                                         |
-| ---- | --------------------------------------------------------------- | ---- | ------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| 1    | `scenario-74-pos-sessions` (new)                                | BE   | 6/6           | —        | pass                                                                                                            |
-| 1    | `pos-sessions-scenario-74` (new)                                | FE   | 7/7           | —        | pass (F08 needed two locator fixes in the spec itself: the picker's hidden `<option>` and the code-based label) |
-| 1    | `closing-session-record`                                        | BE   | 19/19         | 19/19    | pass                                                                                                            |
-| 1    | `accounting-audit-log-pos-sessions`                             | BE   | 3/3           | 3/3      | pass                                                                                                            |
-| 1    | `closing-session-denominations`                                 | FE   | 1/1           | —        | pass                                                                                                            |
-| 1    | `pos-session-list-ux-batch`                                     | FE   | 3/4           | —        | 1 pre-existing failure (see Baseline)                                                                           |
-| 1    | `tsc --noEmit`, eslint (13 → 13 warnings, none new), prettier   | both | clean         | —        | pass                                                                                                            |
-| 2    | `daily-collection-scenario-74` (new)                            | FE   | 5/5           | —        | pass (the ledger cases ran on a real undeposited day, not skipped)                                              |
-| 2    | `daily-collection-offsite-counters`                             | BE   | 15/15         | 15/15    | pass                                                                                                            |
-| 2    | `daily-sales-monitoring`                                        | FE   | 3/3           | —        | pass                                                                                                            |
-| 2    | `cashier-day-baseline`                                          | FE   | 1 + 3 skipped | —        | pass (skips by design)                                                                                          |
-| 2    | `tsc --noEmit`, eslint (no warnings in changed files), prettier | FE   | clean         | —        | pass                                                                                                            |
+| Part | Suite                                                              | Repo | Result        | Baseline | Verdict                                                                                                                                     |
+| ---- | ------------------------------------------------------------------ | ---- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `scenario-74-pos-sessions` (new)                                   | BE   | 6/6           | —        | pass                                                                                                                                        |
+| 1    | `pos-sessions-scenario-74` (new)                                   | FE   | 7/7           | —        | pass (F08 needed two locator fixes in the spec itself: the picker's hidden `<option>` and the code-based label)                             |
+| 1    | `closing-session-record`                                           | BE   | 19/19         | 19/19    | pass                                                                                                                                        |
+| 1    | `accounting-audit-log-pos-sessions`                                | BE   | 3/3           | 3/3      | pass                                                                                                                                        |
+| 1    | `closing-session-denominations`                                    | FE   | 1/1           | —        | pass                                                                                                                                        |
+| 1    | `pos-session-list-ux-batch`                                        | FE   | 3/4           | —        | 1 pre-existing failure (see Baseline)                                                                                                       |
+| 1    | `tsc --noEmit`, eslint (13 → 13 warnings, none new), prettier      | both | clean         | —        | pass                                                                                                                                        |
+| 2    | `daily-collection-scenario-74` (new)                               | FE   | 5/5           | —        | pass (the ledger cases ran on a real undeposited day, not skipped)                                                                          |
+| 2    | `daily-collection-offsite-counters`                                | BE   | 15/15         | 15/15    | pass                                                                                                                                        |
+| 2    | `daily-sales-monitoring`                                           | FE   | 3/3           | —        | pass                                                                                                                                        |
+| 2    | `cashier-day-baseline`                                             | FE   | 1 + 3 skipped | —        | pass (skips by design)                                                                                                                      |
+| 2    | `tsc --noEmit`, eslint (no warnings in changed files), prettier    | FE   | clean         | —        | pass                                                                                                                                        |
+| 3    | `scenario-74-financing-preview` (new)                              | BE   | 6/6           | —        | pass                                                                                                                                        |
+| 3    | `pos-checkout-scenario-74` (new)                                   | FE   | 9/9           | —        | pass (F03/F04 ran, not skipped)                                                                                                             |
+| 3    | `pos-installment-financing`                                        | BE   | 10/32         | 10/32    | same 22 pre-existing failures                                                                                                               |
+| 3    | `credit-application-financing`                                     | BE   | 34/34         | 34/34    | pass                                                                                                                                        |
+| 3    | `pos-typed-installment-plan`                                       | BE   | 13/14         | 13/14    | same TP-14 pre-existing failure                                                                                                             |
+| 3    | `pos-checkout-typed-plan`                                          | FE   | 7/7           | —        | pass                                                                                                                                        |
+| 3    | `credit-application-intake`                                        | FE   | 1/1           | —        | pass                                                                                                                                        |
+| 3    | `pr199-credit-application`                                         | FE   | 6/6           | —        | pass after the `includeRebate` opt-in. It caught the first build ("LCP/PPD follow the item and term": PPD prefilled 179.4 instead of blank) |
+| 3    | 4 `pos-checkout-*` regressions                                     | FE   | not run       | —        | need the seed-deleted "Universal Remote Control"                                                                                            |
+| 3    | `tsc --noEmit` both, eslint (11 → 11 warnings, none new), prettier | both | clean         | —        | pass                                                                                                                                        |
 
 ---
 
@@ -503,6 +518,10 @@ Log in as the Business Owner and open **POS → Daily Collection**. The fixture 
 - **Switching the Cash sub-mode clears a typed CR** (`checkout/page.tsx` ~2091-2114, Chloe).
 - **`PosTransaction.rebateEligible`** exists, but nothing sets it.
 - **`e2e/pos-session-list-ux-batch.spec.ts` "Release Approvals is a tab"** fails on `development`. Karms' `b6a771f9` (Oct 5) dropped that tab from `PosNav`, but the spec wasn't updated.
+- **`pos-installment-financing.e2e-spec.ts`: 22 of 32 tests fail on `development`.** They still expect an in-house installment sale to wait in `pending_approval` for a release form, but Scenario 71 posts it at once.
+- **`pos-typed-installment-plan.e2e-spec.ts` TP-14 fails on `development`.** It still expects the 10% down-payment floor that Chloe removed on 2026-10-15.
+- **4 `pos-checkout-*` Playwright specs can't run on a seeded DB.** They need the demo item "Universal Remote Control", which the seed's cleanup deletes.
+- **The checkout down-payment box still says "10% default"** although the 10% floor is gone (Chloe, 2026-10-15). Copy only, and hers.
 - **Stock Balance's "Transferred" header shows in-transit qty** (`StockBalanceList.tsx` ~357-359).
 - **Cash in Transit history:** Deposited rows show the amount collected, not the amount banked; partial deposits only show once settled; `citClearingJournalEntryId` is overwritten per clearing; `depositedTo` reads a field itemised deposits never set. This is note line "Balance for Cleaning", which is not in this scenario.
 
