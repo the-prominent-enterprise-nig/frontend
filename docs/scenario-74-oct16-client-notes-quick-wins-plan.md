@@ -445,9 +445,11 @@ Run on the **dev** DB with the scenario-74 worktree servers, after the 28 pendin
 
 ### Findings log
 
-| #   | Step | What happened | Expected | Fixed in |
-| --- | ---- | ------------- | -------- | -------- |
-|     |      |               |          |          |
+| #   | Step | What happened                                                                                                    | Expected                            | Fixed in                                  |
+| --- | ---- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| 1   | M1-2 | The From/To boxes opened their calendar only from the small icon; clicking the text just selected month/day/year | A click anywhere opens the calendar | Part 1 follow-up: `showPicker()` on click |
+
+**M1 — verified by Kian 2026-10-19** (steps 1–8). Steps 7–8 used a session back-dated on the dev DB, on the E2E S74 Terminal only. Kian looked at a range calendar and a simpler one-tap calendar for the filter, then chose to keep the plain From/To boxes.
 
 ## Test results
 

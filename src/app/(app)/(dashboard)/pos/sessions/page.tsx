@@ -225,10 +225,6 @@ export default function SessionsPage() {
           </div>
         </div>
 
-        {/* Every other error on this page belongs to an open dialog and is
-            rendered inside it. This one has no dialog to live in — a report
-            that failed to load leaves the list exactly as it was, so without
-            it the button would simply do nothing. */}
         <div className="mt-4 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-[11px] text-[#5b5b6b]">
             From
@@ -237,8 +233,9 @@ export default function SessionsPage() {
               aria-label="Sessions from date"
               value={dateFrom}
               max={dateTo || undefined}
+              onClick={openDatePicker}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="h-9 rounded-lg border border-[#d3d3db] bg-white px-2.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6]"
+              className="h-9 cursor-pointer rounded-lg border border-[#d3d3db] bg-white px-2.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6]"
             />
           </label>
           <label className="flex flex-col gap-1 text-[11px] text-[#5b5b6b]">
@@ -248,8 +245,9 @@ export default function SessionsPage() {
               aria-label="Sessions to date"
               value={dateTo}
               min={dateFrom || undefined}
+              onClick={openDatePicker}
               onChange={(e) => setDateTo(e.target.value)}
-              className="h-9 rounded-lg border border-[#d3d3db] bg-white px-2.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6]"
+              className="h-9 cursor-pointer rounded-lg border border-[#d3d3db] bg-white px-2.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6]"
             />
           </label>
           {(dateFrom || dateTo) && (
@@ -266,6 +264,10 @@ export default function SessionsPage() {
           )}
         </div>
 
+        {/* Every other error on this page belongs to an open dialog and is
+            rendered inside it. This one has no dialog to live in — a report
+            that failed to load leaves the list exactly as it was, so without
+            it the button would simply do nothing. */}
         {error && modal.type === 'none' && (
           <p className="mt-4 rounded-lg border border-[#f3c9c5] bg-[#fdeceb] px-3.5 py-2.5 text-[12.5px] text-[#b42318]">
             {error}
@@ -695,6 +697,18 @@ const STATUS_CHIP: Record<string, { label: string; chip: string; dot: string }> 
 
 function shiftTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+}
+
+/** Scenario 74 — a click anywhere on a date box opens its calendar. Without
+ *  this the browser only opens it from the small icon; clicking the text just
+ *  selects the month/day/year part. showPicker() can throw (e.g. no user
+ *  gesture), and the box still works by typing, so a failure is ignored. */
+function openDatePicker(e: React.MouseEvent<HTMLInputElement>) {
+  try {
+    e.currentTarget.showPicker?.()
+  } catch {
+    // Typing the date still works.
+  }
 }
 
 /** Scenario 74 — "Mon, Oct 19": the business day a shift belongs to. The list
