@@ -311,34 +311,44 @@ nFixture: the ledger cases (F01–F03) look for a day with undeposited cash that
 
 ### Part 4 — Inventory (items 8, 9, 10, 11)
 
-**Backend e2e, new `test/scenario-74-stock-balance.e2e-spec.ts`:**
+**As built.**
 
-| ID        | Case                                                                                             |
-| --------- | ------------------------------------------------------------------------------------------------ |
-| S74-4-B01 | Item filed under subcategory S of P: filter `categoryId=P` includes it                           |
-| S74-4-B02 | Filter `categoryId=S` still includes it; a sibling category excludes it                          |
-| S74-4-B03 | **(edge)** Three levels deep (P → S → S2): filter P includes the S2 item                         |
-| S74-4-B04 | Bulk item dispatched to a branch that never held it → that branch's row shows the in-transit qty |
-| S74-4-B05 | **(edge)** Serial item dispatched to a new branch → in transit there, counted once overall       |
-| S74-4-B06 | **(edge)** After receipt: in-transit 0, on-hand +qty, no duplicate row                           |
-| S74-4-B07 | Dispatch with carrier "NIG" accepted; blank carrier still rejected (unchanged)                   |
+- **Stock Balance** reuses `expandCategoryFilterIds`, which the Items and Serial Numbers lists already use, on both the bulk and the serial path.
+- **In transit:** stock is looked up by the balances' own item filter. A destination with stock on the way but no balance row gets a row of its own (`id: transit:<item>:<warehouse>`): nothing on hand, the travelling quantity in transit. These rows still respect search, category, branch and warehouse.
+- **Carrier:** the dispatch form now shows "Carrier name is required" when the field is emptied. Before, the rule existed but Confirm Dispatch silently did nothing.
+
+**Backend e2e, new `test/scenario-74-stock-balance.e2e-spec.ts`** (fixtures: two branches, a P → S → S2 tree plus Q, bulk and serial items, in-transit transfers):
+
+| ID        | Case                                                                                                                                         |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| S74-4-B01 | Parent P lists items filed under S (bulk and serial); Q's item is excluded                                                                   |
+| S74-4-B02 | Leaf S2 → only its item; sibling Q → only its item                                                                                           |
+| S74-4-B03 | **(edge)** Three levels: P reaches the S2 item                                                                                               |
+| S74-4-B04 | Bulk item travelling to B (never held there) → a row at B, 0 on hand, 4 in transit                                                           |
+| S74-4-B05 | **(edge)** Serial unit travelling to B → a row at B with 1 in transit; A keeps its 2 in stock; rolled up per item: 2 available, 1 in transit |
+| S74-4-B06 | The "In transit" filter finds all three destination rows; summary in transit = 7                                                             |
+| S74-4-B07 | **(edge)** Partly received (1 of 3 landed) → one row at B, 1 on hand + 2 in transit, never two rows                                          |
+| S74-4-B08 | **(edge)** The category filter applies to transit-only rows too                                                                              |
+
+Run once against unchanged `development` code: **6 of 8 fail** (B02 and B07 pass, as they should). So the suite does catch both bugs.
 
 **Playwright, new `e2e/inventory-scenario-74.spec.ts`:**
 
-| ID        | Case                                                                                |
-| --------- | ----------------------------------------------------------------------------------- |
-| S74-4-F01 | Transfer detail: "1 of 1 assigned" computed colour is the body colour, not zinc-400 |
-| S74-4-F02 | Dispatch form opens with carrier "NIG", editable                                    |
-| S74-4-F03 | **(edge)** Clearing the carrier still shows "Carrier name is required"              |
-| S74-4-F04 | Movement history rows show a date with no time (no AM/PM)                           |
-| S74-4-F05 | Stock Balance: pick the parent category → the subcategory item is listed            |
+| ID        | Case                                                                                                                        |
+| --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| S74-4-F01 | Dispatch form: "0 of 1 assigned" is the body colour rgb(23, 23, 28), not zinc-400                                           |
+| S74-4-F02 | Carrier opens as "NIG" and can be changed                                                                                   |
+| S74-4-F03 | **(edge)** Carrier cleared → "Carrier name is required", not dispatched                                                     |
+| S74-4-F04 | Serial Number Locator → a unit's history: every entry date reads like "Oct 19, 2026", no time                               |
+| S74-4-F05 | Stock Balance → pick the parent category → the item filed under its child is listed (one fixed fixture, reused across runs) |
+
+The transfer in F01–F03 is created and accepted through the API, never dispatched, and cancelled afterwards, so no stock moves.
 
 **Regressions:**
 
-- **Playwright:**
-  - `inventory-stock-balance-rollup`, `inventory-stock-in-transit`, `inventory-transfer-dispatch-multiselect`
-  - `inventory-serial-numbers-history`, `inventory-item-360-serial-movements`
 - **BE e2e:** `stock-balance-rollup`, `stock-balance-serial-tracked`, `stock-transfer-serial-in-transit`, `stock-transfer-partial-receipt`.
+- **Playwright:** `inventory-stock-balance-rollup`, `inventory-stock-in-transit`, `inventory-serial-numbers-history`, `inventory-item-360-serial-movements`.
+- **Not run:** `inventory-transfer-dispatch-multiselect`. It really dispatches **and receives** three serial units on the dev DB (its own header: "not self-cleaning"), which would move real stock between branches.
 
 ### Part 5 — Cash in Transit + AP Bills (items 12, 13, 14, 15)
 
@@ -390,6 +400,10 @@ Every regression suite above runs once more, one at a time, and is compared with
 | 3    | `pos-installment-financing`         | BE   | 10/32               | **Pre-existing:** 22 tests still expect the in-house release-form hold (`pending_approval`), which Scenario 71 retired; they get `completed`                       |
 | 3    | `credit-application-financing`      | BE   | 34/34               |                                                                                                                                                                    |
 | 3    | `pos-typed-installment-plan`        | BE   | 13/14               | **Pre-existing:** TP-14 still expects the 10% DP floor that Chloe removed on 2026-10-15 (`17356bf`)                                                                |
+| 4    | `stock-balance-rollup`              | BE   | 24/24               |                                                                                                                                                                    |
+| 4    | `stock-balance-serial-tracked`      | BE   | 2/2                 |                                                                                                                                                                    |
+| 4    | `stock-transfer-serial-in-transit`  | BE   | 11/11               |                                                                                                                                                                    |
+| 4    | `stock-transfer-partial-receipt`    | BE   | 12/12               |                                                                                                                                                                    |
 
 FE baseline note: the Playwright regressions ran on the branch rather than on `development`, so the machine didn't have to restart both servers for a baseline. The one failure was checked against `development`'s source instead.
 
@@ -505,30 +519,39 @@ Log in as the Business Owner with the switcher on **Bago**. The fixture items ar
 
 **Migrations:** the 28 `development` migrations from 2026-10-13..16 were applied to the dev and test DBs on 2026-10-19 (Kian's go-ahead) before any run.
 
-| Part | Suite                                                              | Repo | Result        | Baseline | Verdict                                                                                                                                     |
-| ---- | ------------------------------------------------------------------ | ---- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `scenario-74-pos-sessions` (new)                                   | BE   | 6/6           | —        | pass                                                                                                                                        |
-| 1    | `pos-sessions-scenario-74` (new)                                   | FE   | 7/7           | —        | pass (F08 needed two locator fixes in the spec itself: the picker's hidden `<option>` and the code-based label)                             |
-| 1    | `closing-session-record`                                           | BE   | 19/19         | 19/19    | pass                                                                                                                                        |
-| 1    | `accounting-audit-log-pos-sessions`                                | BE   | 3/3           | 3/3      | pass                                                                                                                                        |
-| 1    | `closing-session-denominations`                                    | FE   | 1/1           | —        | pass                                                                                                                                        |
-| 1    | `pos-session-list-ux-batch`                                        | FE   | 3/4           | —        | 1 pre-existing failure (see Baseline)                                                                                                       |
-| 1    | `tsc --noEmit`, eslint (13 → 13 warnings, none new), prettier      | both | clean         | —        | pass                                                                                                                                        |
-| 2    | `daily-collection-scenario-74` (new)                               | FE   | 5/5           | —        | pass (the ledger cases ran on a real undeposited day, not skipped)                                                                          |
-| 2    | `daily-collection-offsite-counters`                                | BE   | 15/15         | 15/15    | pass                                                                                                                                        |
-| 2    | `daily-sales-monitoring`                                           | FE   | 3/3           | —        | pass                                                                                                                                        |
-| 2    | `cashier-day-baseline`                                             | FE   | 1 + 3 skipped | —        | pass (skips by design)                                                                                                                      |
-| 2    | `tsc --noEmit`, eslint (no warnings in changed files), prettier    | FE   | clean         | —        | pass                                                                                                                                        |
-| 3    | `scenario-74-financing-preview` (new)                              | BE   | 6/6           | —        | pass                                                                                                                                        |
-| 3    | `pos-checkout-scenario-74` (new)                                   | FE   | 9/9           | —        | pass (F03/F04 ran, not skipped)                                                                                                             |
-| 3    | `pos-installment-financing`                                        | BE   | 10/32         | 10/32    | same 22 pre-existing failures                                                                                                               |
-| 3    | `credit-application-financing`                                     | BE   | 34/34         | 34/34    | pass                                                                                                                                        |
-| 3    | `pos-typed-installment-plan`                                       | BE   | 13/14         | 13/14    | same TP-14 pre-existing failure                                                                                                             |
-| 3    | `pos-checkout-typed-plan`                                          | FE   | 7/7           | —        | pass                                                                                                                                        |
-| 3    | `credit-application-intake`                                        | FE   | 1/1           | —        | pass                                                                                                                                        |
-| 3    | `pr199-credit-application`                                         | FE   | 6/6           | —        | pass after the `includeRebate` opt-in. It caught the first build ("LCP/PPD follow the item and term": PPD prefilled 179.4 instead of blank) |
-| 3    | 4 `pos-checkout-*` regressions                                     | FE   | not run       | —        | need the seed-deleted "Universal Remote Control"                                                                                            |
-| 3    | `tsc --noEmit` both, eslint (11 → 11 warnings, none new), prettier | both | clean         | —        | pass                                                                                                                                        |
+| Part | Suite                                                                                                                           | Repo | Result           | Baseline | Verdict                                                                                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------- | ---- | ---------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `scenario-74-pos-sessions` (new)                                                                                                | BE   | 6/6              | —        | pass                                                                                                                                                                         |
+| 1    | `pos-sessions-scenario-74` (new)                                                                                                | FE   | 7/7              | —        | pass (F08 needed two locator fixes in the spec itself: the picker's hidden `<option>` and the code-based label)                                                              |
+| 1    | `closing-session-record`                                                                                                        | BE   | 19/19            | 19/19    | pass                                                                                                                                                                         |
+| 1    | `accounting-audit-log-pos-sessions`                                                                                             | BE   | 3/3              | 3/3      | pass                                                                                                                                                                         |
+| 1    | `closing-session-denominations`                                                                                                 | FE   | 1/1              | —        | pass                                                                                                                                                                         |
+| 1    | `pos-session-list-ux-batch`                                                                                                     | FE   | 3/4              | —        | 1 pre-existing failure (see Baseline)                                                                                                                                        |
+| 1    | `tsc --noEmit`, eslint (13 → 13 warnings, none new), prettier                                                                   | both | clean            | —        | pass                                                                                                                                                                         |
+| 2    | `daily-collection-scenario-74` (new)                                                                                            | FE   | 5/5              | —        | pass (the ledger cases ran on a real undeposited day, not skipped)                                                                                                           |
+| 2    | `daily-collection-offsite-counters`                                                                                             | BE   | 15/15            | 15/15    | pass                                                                                                                                                                         |
+| 2    | `daily-sales-monitoring`                                                                                                        | FE   | 3/3              | —        | pass                                                                                                                                                                         |
+| 2    | `cashier-day-baseline`                                                                                                          | FE   | 1 + 3 skipped    | —        | pass (skips by design)                                                                                                                                                       |
+| 2    | `tsc --noEmit`, eslint (no warnings in changed files), prettier                                                                 | FE   | clean            | —        | pass                                                                                                                                                                         |
+| 3    | `scenario-74-financing-preview` (new)                                                                                           | BE   | 6/6              | —        | pass                                                                                                                                                                         |
+| 3    | `pos-checkout-scenario-74` (new)                                                                                                | FE   | 9/9              | —        | pass (F03/F04 ran, not skipped)                                                                                                                                              |
+| 3    | `pos-installment-financing`                                                                                                     | BE   | 10/32            | 10/32    | same 22 pre-existing failures                                                                                                                                                |
+| 3    | `credit-application-financing`                                                                                                  | BE   | 34/34            | 34/34    | pass                                                                                                                                                                         |
+| 3    | `pos-typed-installment-plan`                                                                                                    | BE   | 13/14            | 13/14    | same TP-14 pre-existing failure                                                                                                                                              |
+| 3    | `pos-checkout-typed-plan`                                                                                                       | FE   | 7/7              | —        | pass                                                                                                                                                                         |
+| 3    | `credit-application-intake`                                                                                                     | FE   | 1/1              | —        | pass                                                                                                                                                                         |
+| 3    | `pr199-credit-application`                                                                                                      | FE   | 6/6              | —        | pass after the `includeRebate` opt-in. It caught the first build ("LCP/PPD follow the item and term": PPD prefilled 179.4 instead of blank)                                  |
+| 3    | 4 `pos-checkout-*` regressions                                                                                                  | FE   | not run          | —        | need the seed-deleted "Universal Remote Control"                                                                                                                             |
+| 3    | `tsc --noEmit` both, eslint (11 → 11 warnings, none new), prettier                                                              | both | clean            | —        | pass                                                                                                                                                                         |
+| 4    | `scenario-74-stock-balance` (new)                                                                                               | BE   | 8/8              | —        | pass (6/8 fail on `development` code: the bugs are caught)                                                                                                                   |
+| 4    | `inventory-scenario-74` (new)                                                                                                   | FE   | 5/5              | —        | pass                                                                                                                                                                         |
+| 4    | `stock-balance-rollup` · `stock-balance-serial-tracked` · `stock-transfer-serial-in-transit` · `stock-transfer-partial-receipt` | BE   | 24 · 2 · 11 · 12 | same     | pass                                                                                                                                                                         |
+| 4    | `inventory-stock-in-transit`                                                                                                    | FE   | 13/13            | —        | pass                                                                                                                                                                         |
+| 4    | `inventory-stock-balance-rollup`                                                                                                | FE   | 4/9              | —        | **pre-existing**: it looks for a `<table>` header and region buttons the current grid no longer has (spec from 2026-09-14). The API answered 200 with rows on the same calls |
+| 4    | `inventory-serial-numbers-history`                                                                                              | FE   | 0/1              | —        | **pre-existing**: Karms' `0f77c880` (Oct 6) removed serial links from the stock book tab; the history lives on the Locator tab                                               |
+| 4    | `inventory-item-360-serial-movements`                                                                                           | FE   | 0/1              | —        | **pre-existing**: expects the drawer link's text, now with ages ("RR 9 Mo(s) · Branch 9 Mo(s)"), verbatim in the history title                                               |
+| 4    | `inventory-transfer-dispatch-multiselect`                                                                                       | FE   | not run          | —        | would dispatch and receive real stock on the dev DB                                                                                                                          |
+| 4    | tsc, eslint (no new warnings), prettier                                                                                         | both | clean            | —        | pass                                                                                                                                                                         |
 
 ---
 
@@ -544,6 +567,8 @@ Log in as the Business Owner with the switcher on **Bago**. The fixture items ar
 - **4 `pos-checkout-*` Playwright specs can't run on a seeded DB.** They need the demo item "Universal Remote Control", which the seed's cleanup deletes.
 - **The checkout down-payment box still says "10% default"** although the 10% floor is gone (Chloe, 2026-10-15). Copy only, and hers.
 - **Payment Mode isn't restored after the "New credit application" detour** (findings log #3). Kian's #179 restore plus Chloe's mode-per-cart. Chloe's `e49b2a0e` fixed only the Continue-to-sale path. A small fix is possible (the toggle follows the restored lines); waiting on Kian.
+- **Three inventory Playwright specs are out of date on `development`:** `inventory-stock-balance-rollup` (5 of 9), `inventory-serial-numbers-history`, `inventory-item-360-serial-movements`. See the Part 4 results.
+- **Test items left on the dev DB by checkout specs:** 8 "E2E S74 Checkout Item …" (Part 3's spec, 4 runs) and 2 "E2E S74 Inv Item …" (Part 4's first F05 runs, before it reused one fixture), each with stock. Items with stock or sales can't be deleted through the API. The existing checkout specs leave "E2E TypedPlan" items the same way.
 - **Stock Balance's "Transferred" header shows in-transit qty** (`StockBalanceList.tsx` ~357-359).
 - **Cash in Transit history:** Deposited rows show the amount collected, not the amount banked; partial deposits only show once settled; `citClearingJournalEntryId` is overwritten per clearing; `depositedTo` reads a field itemised deposits never set. This is note line "Balance for Cleaning", which is not in this scenario.
 
