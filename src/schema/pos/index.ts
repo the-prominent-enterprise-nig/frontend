@@ -140,6 +140,15 @@ export interface SessionReconciliation {
    * exceed the shift's own sales.
    */
   totalCollectionsCash: number
+  /** Scenario 77 — totalCollectionsCash split: installment dues vs delivery
+   *  fees (Scenario 66). Both cash, both in the drawer. Optional so a backend
+   *  without them still renders the single line. */
+  totalInstallmentCollectionsCash?: number
+  totalDeliveryFeesCash?: number
+  /** Scenario 77 — the client's "separate box for MI": every installment
+   *  payment taken on this session, keyed like a tender ('cash',
+   *  'qr::GCash Send Money', 'card::BDO'). Display only. */
+  installmentCollections?: { byTender: Record<string, number>; total: number }
 }
 
 export interface SalesSummary {

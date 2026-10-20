@@ -914,6 +914,60 @@ function DetailPane({ title, children }: { title: string; children: React.ReactN
 }
 
 /**
+ * Scenario 77 — the client's "separate box for MI" on close: every
+ * installment payment taken on the session, one line per method/provider,
+ * then the total. Cash ones are also in the drawer figure; a GCash or card
+ * one showed nowhere on close before this. Shared by the close screen and
+ * a closed session's detail, which wrap it in their own box.
+ */
+function InstallmentCollectionsList({
+  collections,
+  loading,
+}: {
+  collections: { byTender: Record<string, number>; total: number } | null | undefined
+  loading: boolean
+}) {
+  if (loading) return <Skeleton className="h-4 w-40" />
+  const rows = Object.entries(collections?.byTender ?? {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+  if (rows.length === 0) {
+    return (
+      <p data-testid="installment-collections-empty" className="text-[11.5px] text-[#5b5b6b]">
+        No installment payments taken this shift.
+      </p>
+    )
+  }
+  return (
+    <div data-testid="installment-collections" className="flex flex-col">
+      {rows.map(([key, amount], i) => (
+        <div
+          key={key}
+          data-testid="installment-collections-row"
+          className={`grid grid-cols-[minmax(0,1fr)_96px] items-baseline gap-2.5 py-1 ${
+            i ? 'border-t border-[#f4f4f6]' : ''
+          }`}
+        >
+          <span className="min-w-0 text-[12px] leading-snug text-[#3d3d4a]">
+            {tenderLabel(key)}
+          </span>
+          <span className="text-right text-[12px] tabular-nums">{peso(Number(amount))}</span>
+        </div>
+      ))}
+      <div className="mt-0.5 grid grid-cols-[minmax(0,1fr)_96px] items-baseline gap-2.5 border-t border-[#e4e4e9] pt-1.5">
+        <span className="text-[12px] font-semibold">Total</span>
+        <span
+          data-testid="installment-collections-total"
+          className="text-right text-[12px] font-semibold tabular-nums"
+        >
+          {peso(Number(collections?.total ?? 0))}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Scenario 53 — the expanded detail for one session row.
  *
  * Three panes, matching the close screen's own reading order: what the cash
@@ -1127,6 +1181,15 @@ function SessionDetail({ session }: { session: PosSession }) {
           )}
         </DetailPane>
       </div>
+
+      {/* Scenario 77 — installment payments on this session, every method.
+          "Cash taken in" above already counts the cash ones. */}
+      <DetailPane title="Installment collections (MI)">
+        <InstallmentCollectionsList
+          collections={recon?.installmentCollections}
+          loading={isLoading}
+        />
+      </DetailPane>
 
       {(isOff || session.closingNotes) && (
         <div
@@ -1418,11 +1481,23 @@ function CloseSessionModal({
       note: 'cash tendered at this terminal',
       amount: Number(tenderSummary?.totalCash ?? 0),
     },
+    // Scenario 77 — what used to be one "Counter collections" line, split:
+    // it also carried cash delivery fees (Scenario 66), which are in the
+    // drawer but are not installment dues. A backend without the split still
+    // shows the old single figure under the installment label.
     {
       key: 'collections',
-      label: 'Counter collections',
+      label: 'Installment collections',
       note: 'installment dues paid in cash at the counter',
-      amount: Number(reconciliation?.totalCollectionsCash ?? 0),
+      amount: Number(
+        reconciliation?.totalInstallmentCollectionsCash ?? reconciliation?.totalCollectionsCash ?? 0
+      ),
+    },
+    {
+      key: 'deliveryFees',
+      label: 'Delivery fees',
+      note: 'delivery fees paid in cash',
+      amount: Number(reconciliation?.totalDeliveryFeesCash ?? 0),
     },
     {
       key: 'pettyIn',
@@ -1457,7 +1532,7 @@ function CloseSessionModal({
   // Scenario 61 — the client's close lists sales, invoices and cash
   // collected; drops, petty cash and counter collections only earn a line on
   // a shift that had one.
-  const OPTIONAL_CASH_ROWS = ['collections', 'pettyIn', 'drops', 'pettyOut']
+  const OPTIONAL_CASH_ROWS = ['collections', 'deliveryFees', 'pettyIn', 'drops', 'pettyOut']
   const cashRows = expectedRows.filter(
     (row) => row.amount !== 0 || !OPTIONAL_CASH_ROWS.includes(row.key)
   )
@@ -1643,6 +1718,22 @@ function CloseSessionModal({
                   No non-cash payments taken this shift.
                 </p>
               )}
+            </div>
+
+            {/* Scenario 77 — the client's "separate box for MI". Installment
+                payments by every method; the cash ones are already in the
+                build-up above as "Installment collections". */}
+            <div
+              data-testid="close-installment-collections"
+              className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] bg-white px-4 py-3"
+            >
+              <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#5b5b6b]">
+                Installment collections (MI)
+              </span>
+              <InstallmentCollectionsList
+                collections={reconciliation?.installmentCollections}
+                loading={figuresLoading}
+              />
             </div>
 
             <div className="flex flex-col gap-1.5">
