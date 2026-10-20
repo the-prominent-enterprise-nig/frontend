@@ -267,6 +267,9 @@ and the unit spec does too.
 
 ### M2 — Part 2: full bank names
 
+**Verified by Kian, 2026-10-20: all 8 steps.** Scenario 77 is complete: both parts are built, tested and manually
+verified.
+
 **Setup.** The same dev servers and login as M1. M2 sells nothing: the item goes in the cart only so the payment
 pickers appear, and it's removed again at the end. The item is **Air Filter** (`TN-NIG-PART-AIR-FILTER`), which
 is in stock at Bago and shows "No price". That's fine for M2.
