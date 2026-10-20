@@ -10,6 +10,7 @@ import {
   type GLAccount,
 } from '../../../pos/_actions/pos-actions'
 import type { PaymentMethodConfig } from '@/src/schema/pos'
+import { bankDisplayName } from '@/src/libs/pos/bank-names'
 
 type Props = {
   initialMethods: PaymentMethodConfig[]
@@ -162,9 +163,20 @@ export default function PaymentMethodOptionsSection({ initialMethods, glAccounts
                 data-testid={`payment-method-option-row-${o.id}`}
                 className="flex items-center justify-between px-6 py-3"
               >
-                <span className={`text-sm ${o.isEnabled ? 'text-zinc-900' : 'text-zinc-400'}`}>
-                  {o.name}
-                </span>
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <span className={`text-sm ${o.isEnabled ? 'text-zinc-900' : 'text-zinc-400'}`}>
+                    {o.name}
+                  </span>
+                  {/* Scenario 77 — what the POS shows for this short name. */}
+                  {bankDisplayName(o.name) !== o.name && (
+                    <span
+                      data-testid="payment-method-option-full-name"
+                      className="text-xs text-zinc-500"
+                    >
+                      shown as {bankDisplayName(o.name)}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-3">
                   {OPTION_ACCOUNT_METHOD_KEYS.includes(m.key ?? '') && (
                     <label className="flex items-center gap-2 text-xs text-zinc-500">

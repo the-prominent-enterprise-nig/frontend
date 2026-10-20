@@ -45,6 +45,7 @@ import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import SessionSummaryCard, { type CashRow } from './_components/SessionSummaryCard'
 import { terminalPlaceId, terminalPlaceName } from '@/src/libs/format/locationLabel'
+import { bankDisplayName } from '@/src/libs/pos/bank-names'
 
 function formatCurrency(n: number) {
   // Coerced explicitly: Prisma Decimal fields arrive as strings over JSON, and
@@ -673,7 +674,9 @@ function methodLabel(method: string): string {
 function tenderLabel(key: string): string {
   const [method, ...rest] = key.split('::')
   const provider = rest.join('::').trim()
-  return provider ? `${methodLabel(method)} — ${provider}` : methodLabel(method)
+  // Scenario 77 — a bank provider by its full name ('card::MBTC' → 'Card —
+  // Metropolitan Bank and Trust Company'); the stored key is unchanged.
+  return provider ? `${methodLabel(method)} — ${bankDisplayName(provider)}` : methodLabel(method)
 }
 
 /** The desktop row template, shared by the list header and every row so the
@@ -1556,7 +1559,7 @@ function CloseSessionModal({
         }
         if (!existing) groups.push(group)
         group.total += Number(amount)
-        group.providers.push([provider || methodLabel(method), Number(amount)])
+        group.providers.push([bankDisplayName(provider) || methodLabel(method), Number(amount)])
         return groups
       },
       []

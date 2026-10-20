@@ -154,7 +154,52 @@ over the dev DB's 3,600 items is slow. That's checkout, which Part 1 doesn't tou
 
 ### Part 2
 
-To be filled in at the Part 2 step 0, once the display spots are listed.
+**Step 0: every place a payment option's short name is shown (2026-10-20).** One list, `bankDisplayName`, lives in
+`src/libs/pos/bank-names.ts` (FE) and `src/pos/bank-names.ts` (BE), mirrored. It's applied at each spot below. Logic
+that keys on the name (QR grouping, "Check" detection, GL account seeding, tender keys) keeps the stored short name.
+
+| #   | Where                                                         | File                                                       |
+| --- | ------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1   | Checkout: Bank / Gateway / Biller picker (Cash sub-modes)     | `checkout/page.tsx` (`bankPickerOption`)                   |
+| 2   | Checkout: Card Acquirer picker                                | `checkout/page.tsx` (`bankPickerOption`)                   |
+| 3   | Checkout: delivery fee "Paid with" option picker              | `DeliverySection.tsx` (`bankPickerOption`)                 |
+| 4   | Delivery fee / QR tender labels (success screen, transaction) | `delivery.ts` `deliveryFeeTenderLabel`                     |
+| 5   | Collections bank picker                                       | `CollectionsScreen.tsx` (`bankPickerOption`)               |
+| 6   | Session close (non-cash providers), session detail, MI box    | `sessions/page.tsx` `tenderLabel` + non-cash provider rows |
+| 7   | POS settings → Payment Methods                                | `PaymentMethodOptionsSection.tsx`: "shown as …" beside it  |
+| 8   | BE: Daily Collection report and printed form labels           | `tender-key.ts` `formatTenderLabel`                        |
+| 9   | BE: JE description `card (MBTC)`                              | `pos-posting.service.ts` `paymentTenderLabels`             |
+
+The pickers are searchable (`PillCombobox`). It gained an optional `keywords` field that is searched but never shown,
+so a cashier typing **MBTC** or **BDO-Q** still finds the bank. The customer ledger itself never printed a bank, only
+"Payment (Card)". The client's "POS – Customer Ledger" most likely means the Collections screen (#5), where the
+cashier picks the bank for a customer's payment. On the printed Daily Collection form, a deposit line's bank text spans
+six columns and wraps, so the longer names fit.
+
+- **New BE unit** `src/pos/bank-names.spec.ts`: every short name maps to its legal name; brands and unknown names stay
+  as stored; case and spaces are ignored; a tender label shows the full name while the key keeps the short one.
+- **BE unit** `pos-posting.service.spec.ts`: + S77-2-B06, the JE description `card (Metropolitan Bank and Trust
+Company)`.
+- **New FE** `e2e/pos-bank-names-scenario-77.spec.ts`: settings "shown as …" (and none beside Maya), the Card
+  Acquirer picker (full names, and typing "MBTC" finds Metrobank), Cash → Bank Transfer (all 8 deposit banks, and
+  "lb-psb" finds Passi), Cash → QR (Security Bank by name, Maya unchanged). It picks any in-stock, non-serial Bago item,
+  so it doesn't depend on a fixed catalog name. Nothing is sold.
+- **FE spec updated** `pos-checkout-payment-method-options`: its three expected option lists now use the full names.
+
+**Part 2 results, 2026-10-20.**
+
+| Suite                                        | Result                                                                                               |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| BE `bank-names.spec` + `tender-key.spec`     | 8/8                                                                                                  |
+| BE `src/pos/reports` (unit)                  | 81/81                                                                                                |
+| BE `pos-posting.service.spec`                | 71/71 (70 + S77-2-B06); with `transactions.service.spec` before it: 255/255                          |
+| BE `daily-collection-offsite-counters` (e2e) | 15/15                                                                                                |
+| BE `daily-sales-monitoring` (e2e)            | 4/5. S61P2-01 (`withheld`) fails the same way on the untouched S74 backend: already failing          |
+| FE `pos-bank-names-scenario-77`              | 4/4                                                                                                  |
+| FE `settings-payment-methods`                | 2/2                                                                                                  |
+| FE `pos-sessions-scenario-77`                | 4/4                                                                                                  |
+| FE `pos-checkout-payment-method-options`     | 0/7. Already failing: every case first adds "Universal Remote Control", no longer in the dev catalog |
+| FE `pos-checkout-delivery`                   | Doesn't run: its setup needs GL account `4-02-030`, which the dev DB doesn't have. Already the case  |
 
 ## Manual test script
 
@@ -219,6 +264,51 @@ are now paid, so a rerun ticks the next unpaid due instead.
 **Not in M1:** a cash delivery fee on the session showing up as its own **Delivery fees** line. That needs a sale with
 a delivery fee, and the seeded stock makes that hard to ring up on the dev DB. The BE spec covers it (S77-1-B02/B03/B04)
 and the unit spec does too.
+
+### M2 — Part 2: full bank names
+
+**Setup.** The same dev servers and login as M1. M2 sells nothing: the item goes in the cart only so the payment
+pickers appear, and it's removed again at the end. The item is **Air Filter** (`TN-NIG-PART-AIR-FILTER`), which
+is in stock at Bago and shows "No price". That's fine for M2.
+
+1. **Settings → Payment Methods** (`/settings/payment-methods`).
+   ✅ Under **Card**: **MBTC** with "shown as Metropolitan Bank and Trust Company" beside it, **BDO** with "shown as
+   BDO Unibank", **BPI** with "shown as Bank of the Philippine Islands". **Maya** has nothing beside it.
+   ✅ Under **Bank Transfer**: **BDO-Q** "shown as BDO Unibank — Iloilo Quezon", **LB-PSB** "shown as Land Bank of
+   the Philippines — Passi", **Metrobank** "shown as Metropolitan Bank and Trust Company".
+   ✅ Under **QR**: **Sbank** "shown as Security Bank Corporation". **GCash Send Money**, **Ecpay** and the like have
+   nothing beside them.
+2. **Point of Sale → Management** (`/pos/sessions`): open a session on **E2E S77 Terminal** as in M1 step 1 (any
+   opening cash). Then **Point of Sale → Checkout**. If there's a session dropdown at the top, pick the one with
+   **E2E-S77-PW-01**.
+3. In **Search by name or serial** type `TN-NIG-PART-AIR-FILTER` and click the **Air Filter** tile.
+   ✅ The cart shows Air Filter, and a **Cash** box appears with **Cash on Hand · Check · Bank Transfer · GCash ·
+   Billers · QR · Debit/Credit Card**.
+4. Click **Debit/Credit Card**, then click the **Select card acquirer…** box.
+   ✅ The list reads **BDO Unibank**, **Bank of the Philippine Islands**, **Metropolitan Bank and Trust Company**,
+   **Maya**. There's no "MBTC".
+   Type **MBTC** in the box.
+   ✅ Only **Metropolitan Bank and Trust Company** is left. Click it; the box shows that name.
+5. Click **Bank Transfer**, then the **Select bank…** box.
+   ✅ **BDO Unibank — Iloilo Quezon**, **BDO Unibank — Goldenfield**, **Bank of the Philippine Islands — Araneta**,
+   **Bank of the Philippine Islands — Iloilo Central Market**, **Metropolitan Bank and Trust Company**, **Land Bank of
+   the Philippines — Passi / — Sipalay / — Sagay**.
+   Type **lb-sa**.
+   ✅ Only **Land Bank of the Philippines — Sagay**.
+6. Click **QR**, then the **Select gateway…** box.
+   ✅ **Maya** and **Security Bank Corporation**. There's no "Sbank".
+7. Tick **For delivery**, type **50** in **Delivery fee**, and under **Paid with \*** click **Debit/Credit Card**.
+   Open the **Select card acquirer…** box under it.
+   ✅ The same full names as step 4.
+8. Untick **For delivery**, then click **Remove** on the Air Filter cart line.
+   ✅ The cart is empty ("Click an item above to add it to the cart").
+   Close the E2E S77 Terminal session from **Management** (count the drawer to its expected figure, as in M1 step 6).
+   ✅ Nothing was sold.
+
+**Not in M2:** a closed session or Daily Collection line showing "Card — Metropolitan Bank and Trust Company". No
+session on the dev DB has a bank in its saved totals, and making one means a real card sale through the price-override
+review (the only stocked item has no price). The label is built by the same helper as the pickers (FE `tenderLabel`)
+and by `formatTenderLabel` (BE), and the BE unit spec pins it, old sessions' keys included (S77-2-B05).
 
 ---
 

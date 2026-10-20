@@ -118,6 +118,7 @@ import { toCents, dateInputFromToday, coveringMonthly, typedPlanProblem } from '
 import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
 import { PillCombobox, PillSelect } from './_components/PillInputs'
+import { bankPickerOption } from '@/src/libs/pos/bank-names'
 import {
   EMPTY_DELIVERY,
   deliveryFeeOptions,
@@ -7460,7 +7461,7 @@ export default function CheckoutPage() {
                             ariaLabel={label}
                             wrapperClassName="mt-1.5"
                             placeholder={`Select ${label.toLowerCase()}…`}
-                            options={options.map((o) => ({ value: o.id, label: o.name }))}
+                            options={options.map(bankPickerOption)}
                             value={cashPaymentOptionId}
                             onChange={setCashPaymentOptionId}
                           />
@@ -7515,7 +7516,7 @@ export default function CheckoutPage() {
                               ariaLabel="Card Acquirer"
                               wrapperClassName="mb-1.5"
                               placeholder="Select card acquirer…"
-                              options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
+                              options={terminalOptions.map(bankPickerOption)}
                               value={cardTerminalOptionId}
                               onChange={setCardTerminalOptionId}
                             />

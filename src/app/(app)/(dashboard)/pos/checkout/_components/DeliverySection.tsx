@@ -18,6 +18,7 @@ import {
   type DeliveryState,
 } from '../_utils/delivery'
 import { PillCombobox, PillSelect } from './PillInputs'
+import { bankPickerOption } from '@/src/libs/pos/bank-names'
 
 const INPUT_CLASS =
   'w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100'
@@ -328,7 +329,7 @@ export default function DeliverySection({
                     ariaLabel={`Delivery fee ${optionLabel}`}
                     wrapperClassName="mt-1.5"
                     placeholder={`Select ${optionLabel.toLowerCase()}…`}
-                    options={tenderOptions.map((o) => ({ value: o.id, label: o.name }))}
+                    options={tenderOptions.map(bankPickerOption)}
                     value={state.optionId}
                     onChange={(optionId) => setState((s) => ({ ...s, optionId }))}
                   />
