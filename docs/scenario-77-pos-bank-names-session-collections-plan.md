@@ -160,6 +160,8 @@ To be filled in at the Part 2 step 0, once the display spots are listed.
 
 ### M1 — Part 1: installment collections on session close
 
+**Verified by Kian, 2026-10-20: all 7 steps.**
+
 **Setup.** Dev servers are running from the `*-scenario-77` worktrees (backend :3001, frontend :3000). Log in as the
 business owner. Fixtures on the dev DB are two Bago customers, each with 3 unpaid dues of ₱3,888.00 (first due Nov 18,
 2026):
@@ -168,6 +170,18 @@ business owner. Fixtures on the dev DB are two Bago customers, each with 3 unpai
 - **Customer B**: `E2E S74 Checkout Customer 1792383025810`
 
 M1 records two real collections against them. They're test customers, so nothing real is affected.
+
+**Both are soft-deleted** (test cleanup on Oct 18), and Collections lists only live customers. The dev DB had no live
+customer with an open installment due at all. For this run they were un-deleted, with Kian's OK, and afterwards set
+back to their exact original `deletedAt`:
+
+| Customer id                            | Name                | Original `deletedAt`     |
+| -------------------------------------- | ------------------- | ------------------------ |
+| `1fc8b122-ae5f-4efd-81cb-107e63438130` | … 1792382346165 (A) | 2026-10-18T19:59:48.804Z |
+| `012caea6-eaed-4700-ba43-75beac7aaa22` | … 1792383025810 (B) | 2026-10-18T20:10:56.791Z |
+
+A rerun needs the same: clear `deletedAt` on those two ids, run M1, then put the values above back. Their first dues
+are now paid, so a rerun ticks the next unpaid due instead.
 
 1. **Point of Sale → Management** (`/pos/sessions`). Click **Open session**. Verify the cashier with their PIN
    (**Verify PIN**), set **Terminal** to **E2E S77 Terminal** (Bago) and **Opening Cash (₱)** to **1000**, then click
