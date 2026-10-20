@@ -236,11 +236,11 @@ function Figure({
 /** A branch that has not submitted has no figures to show — the day is still
  * theirs to declare. An em dash rather than a zero, which would read as "this
  * branch took nothing". */
-function money(amount: number | null): string {
+export function money(amount: number | null): string {
   return amount === null ? '—' : peso(amount)
 }
 
-const STATUS_LABEL: Record<DailyCollectionBranchStatus, string> = {
+export const STATUS_LABEL: Record<DailyCollectionBranchStatus, string> = {
   NO_TRADE: 'No trade',
   OPEN: 'Open',
   BALANCED: 'Balanced',
@@ -269,7 +269,7 @@ function StatusChip({ status }: { status: DailyCollectionBranchStatus }): React.
 }
 
 /** When it came in, or what is still holding the branch open. */
-function openNote(branch: DailyCollectionBranchSummary): string {
+export function openNote(branch: DailyCollectionBranchSummary): string {
   if (branch.filed) {
     const at = formatFiledTime(branch.filedAt)
     return at ? `Filed ${at}` : 'Filed'

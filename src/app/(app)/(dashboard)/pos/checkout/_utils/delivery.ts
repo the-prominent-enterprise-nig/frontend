@@ -10,6 +10,7 @@
 
 import type { PaymentMethodConfig, PosCardTxnMode } from '@/src/schema/pos'
 import { qrOptionGroup } from './qr-option-groups'
+import { bankDisplayName } from '@/src/libs/pos/bank-names'
 
 /** The API's tenders for a delivery fee — the same four a down payment takes. */
 export type DeliveryFeeMethod = 'cash' | 'card' | 'bank_transfer' | 'qr'
@@ -205,7 +206,9 @@ export function deliveryFeeTenderLabel(state: DeliveryState, optionName?: string
   if (state.tender === 'check' && state.checkNumber.trim()) {
     parts[0] += ` #${state.checkNumber.trim()}`
   }
-  if (optionName) parts[0] += ` — ${optionName}`
+  // Scenario 77 — the bank's full name ("Bank Transfer — BDO Unibank —
+  // Iloilo Quezon"), never its short code.
+  if (optionName) parts[0] += ` — ${bankDisplayName(optionName)}`
   if (state.tender === 'bank_transfer' && state.bankVerified) {
     parts[0] += ' (verified at register)'
   }

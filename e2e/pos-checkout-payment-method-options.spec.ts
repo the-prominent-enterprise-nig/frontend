@@ -121,7 +121,12 @@ test.describe('POS Checkout — Payment Method Options', () => {
     await expect(bankSelect).toBeVisible({ timeout: 10_000 })
     const optionTexts = await bankSelect.locator('option').allTextContents()
     expect(optionTexts).toEqual(
-      expect.arrayContaining(['BDO-Q', 'BPI-Araneta', 'Metrobank', 'LB-Sagay'])
+      expect.arrayContaining([
+        'BDO Unibank — Iloilo Quezon',
+        'Bank of the Philippine Islands — Araneta',
+        'Metropolitan Bank and Trust Company',
+        'Land Bank of the Philippines — Sagay',
+      ])
     )
 
     await cleanup(page, cartRow)
@@ -140,7 +145,7 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const gatewaySelect = page.getByLabel('Gateway')
     await expect(gatewaySelect).toBeVisible({ timeout: 10_000 })
     const optionTexts = await gatewaySelect.locator('option').allTextContents()
-    expect(optionTexts).toEqual(expect.arrayContaining(['Maya', 'Sbank']))
+    expect(optionTexts).toEqual(expect.arrayContaining(['Maya', 'Security Bank Corporation']))
 
     // Tender section: switch its row to QR via the row's own (always-visible)
     // method dropdown, confirm no duplicate gateway picker there — reference
@@ -177,7 +182,15 @@ test.describe('POS Checkout — Payment Method Options', () => {
     await expect(cardAcquirerSelect).toBeVisible({ timeout: 10_000 })
     await cardAcquirerSelect.click()
     const optionTexts = await page.getByRole('option').allTextContents()
-    expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'MBTC', 'Maya']))
+    // Scenario 77 — the acquirers read by their full names; Maya is a brand.
+    expect(optionTexts).toEqual(
+      expect.arrayContaining([
+        'BDO Unibank',
+        'Bank of the Philippine Islands',
+        'Metropolitan Bank and Trust Company',
+        'Maya',
+      ])
+    )
     await page.keyboard.press('Escape')
 
     await page.getByLabel('Payment method', { exact: true }).first().selectOption({ label: 'Card' })

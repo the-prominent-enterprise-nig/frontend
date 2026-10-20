@@ -50,7 +50,9 @@ export function PillCombobox({
   ariaLabel,
   wrapperClassName = '',
 }: {
-  options: { value: string; label: string }[]
+  /** `keywords` is searched along with the label but never shown — Scenario
+   *  77's full bank names stay findable by their short codes. */
+  options: { value: string; label: string; keywords?: string }[]
   value: string | undefined
   onChange: (value: string | undefined) => void
   placeholder: string
@@ -63,7 +65,9 @@ export function PillCombobox({
   const rootRef = useRef<HTMLDivElement>(null)
   const selected = options.find((o) => o.value === value)
   const q = query.trim().toLowerCase()
-  const filtered = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options
+  const filtered = q
+    ? options.filter((o) => `${o.label} ${o.keywords ?? ''}`.toLowerCase().includes(q))
+    : options
 
   useEffect(() => {
     if (!open) return

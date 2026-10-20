@@ -21,6 +21,7 @@ import DailyCollectionForm from './DailyCollectionForm'
 import DailyCollectionLedger from './DailyCollectionLedger'
 import DailyCollectionPrintPages from './DailyCollectionPrintPages'
 import DailyCollectionRollup from './DailyCollectionRollup'
+import DailyCollectionRollupPrintSheet from './DailyCollectionRollupPrintSheet'
 import DailyCollectionSignoffs from './DailyCollectionSignoffs'
 import DailyCollectionTotals from './DailyCollectionTotals'
 import DailySalesMonitoringSheet from './DailySalesMonitoringSheet'
@@ -151,6 +152,9 @@ export default function DailyCollectionView({
   // alongside the collection report rather than only on its own tab.
   const canPrint =
     !showRollup && (salesReport !== undefined || (report !== undefined && !report.withheld))
+  // Scenario 74 — the all-branches roll-up prints too: it is what an owner
+  // opens by default, and it used to have no Print at all.
+  const canPrintRollup = showRollup && rollup !== undefined
 
   const save = useMutation({
     mutationFn: () => saveDailyCollectionSheet(sheet.toPayload()),
@@ -227,9 +231,9 @@ export default function DailyCollectionView({
           </div>
           <div className="flex shrink-0 items-start gap-3">
             <DateStepper value={date} onChange={setDate} disabled={editing} />
-            {/* Prints the day's two forms together, from either tab. Nothing to
-              print while the roll-up is what is on screen. */}
-            {canPrint && (
+            {/* Prints the day's two forms together, from either tab — or, on the
+              roll-up, the all-branches summary. */}
+            {(canPrint || canPrintRollup) && (
               <button onClick={() => window.print()} className="btn-secondary">
                 Print
               </button>
@@ -328,6 +332,17 @@ export default function DailyCollectionView({
       {/* Off-screen, and the only thing that prints: the sales monitoring sheet
           on page one and the client's paper facsimile on page two. Kept outside
           the padded page container so the print page starts at the paper's edge. */}
+      {canPrintRollup && rollup && (
+        <DailyCollectionPrintPages
+          pages={[
+            <DailyCollectionRollupPrintSheet
+              key="rollup"
+              rollup={rollup}
+              companyName={companyName}
+            />,
+          ]}
+        />
+      )}
       {canPrint && (
         <DailyCollectionPrintPages
           pages={[

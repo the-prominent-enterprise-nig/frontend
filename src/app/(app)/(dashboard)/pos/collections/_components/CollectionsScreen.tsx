@@ -27,6 +27,7 @@ import { getSessionIfAvailable } from '@/src/libs/auth/actions/get-session'
 import { useMe } from '@/src/hooks/useMe'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { PillCombobox } from '../../checkout/_components/PillInputs'
+import { bankPickerOption } from '@/src/libs/pos/bank-names'
 import {
   DELIVERY_FEE_TENDERS,
   DELIVERY_FEE_TENDER_LABELS,
@@ -1560,7 +1561,7 @@ function PaymentPanel({
                   ariaLabel={selectedTileOptionLabel}
                   wrapperClassName="mt-1.5"
                   placeholder={`Select ${selectedTileOptionLabel.toLowerCase()}…`}
-                  options={selectedTileOptions.map((o) => ({ value: o.id, label: o.name }))}
+                  options={selectedTileOptions.map(bankPickerOption)}
                   value={selectedOptionId}
                   onChange={(id) => setForm({ ...form, paymentMethodOptionId: id ?? '' })}
                 />

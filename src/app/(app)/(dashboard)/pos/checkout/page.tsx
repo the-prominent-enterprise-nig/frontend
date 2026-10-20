@@ -101,6 +101,7 @@ import { getCreditApplications } from '../credit-applications/_actions/get-appli
 import { getDeliveryReceipt } from '../../inventory/delivery-receipts/_actions/get-delivery-receipt'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
 import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
+import { isoDateOf, todayIso } from '../daily-collection/_utils/business-date'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
@@ -117,6 +118,7 @@ import { toCents, dateInputFromToday, coveringMonthly, typedPlanProblem } from '
 import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
 import { PillCombobox, PillSelect } from './_components/PillInputs'
+import { bankPickerOption } from '@/src/libs/pos/bank-names'
 import {
   EMPTY_DELIVERY,
   deliveryFeeOptions,
@@ -1449,6 +1451,16 @@ export default function CheckoutPage() {
     if (handoff && belongsToAnOpenSession) {
       if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
         setCart(handoff.lines)
+        // Scenario 74 — the Payment Mode toggle comes back with the lines. The
+        // lines keep their invoiceType through the handoff but the toggle
+        // used to reset to Cash, so after the "New credit application" detour
+        // the cart read Cash while holding installment lines, and the next
+        // unit added joined as a cash line — missing from the application
+        // raised for the cart. (Continue to sale already restores it; see
+        // the creditApplicationId branch below.)
+        if (handoff.lines.some((l) => l.invoiceType === 'installment')) {
+          setPaymentMode('installment')
+        }
         // Scenario 67 — restored once the customer below is re-selected.
         if (handoff.isXDeal) {
           pendingResumedXDealRef.current = { reference: handoff.xDealReference ?? '' }
@@ -2530,11 +2542,14 @@ export default function CheckoutPage() {
               manualTermMonths: Number(line.manualTermInput),
               manualMonthlyInstallment: Number(line.manualMonthlyInput),
               firstDueDate: line.firstDueDateInput,
+              // Scenario 74 — so the line and the success screen can quote it.
+              includeRebate: true,
             })
           : await previewInstallment({
               totalAmount: lineAmount,
               downPayment,
               financingTermId: financingTermId!,
+              includeRebate: true,
               // Curated PriceListItemTerm (the real rate card) wins over the
               // generic factorRate calculation when one exists for this SKU +
               // term — matches the down-payment badge above, which already
@@ -2784,10 +2799,34 @@ export default function CheckoutPage() {
         exceptionNote: exceptionNote.trim() || undefined,
       })
     }
+    // Scenario 74 — the application prices its items under ONE Price Use and
+    // one term, so it takes the cart's: the first in-house installment line's
+    // (the client's "use the same selection as POS for CR-BR pricing"). Left
+    // out, the form fell back to WIP whatever the cashier had picked. A cart
+    // whose lines disagree says so on the form rather than silently choosing.
+    const firstFinanced = inhouseInstallmentCartLines[0]
+    const handoffPriceUseTypeId = firstFinanced?.priceUseTypeId || undefined
+    const mixedPriceUses =
+      new Set(inhouseInstallmentCartLines.map((l) => l.priceUseTypeId ?? '')).size > 1
+    if (mixedPriceUses && handoffPriceUseTypeId) {
+      localStorage.setItem(
+        'credit_application_draft_notice',
+        JSON.stringify({
+          priceUseName:
+            priceUseTypes.find((t) => t.id === handoffPriceUseTypeId)?.name ?? 'the first line',
+        })
+      )
+    } else {
+      localStorage.removeItem('credit_application_draft_notice')
+    }
     localStorage.setItem(
       'credit_application_draft',
       JSON.stringify({
         applicantCustomerId: selectedCustomer?.id,
+        ...(handoffPriceUseTypeId ? { priceUseTypeId: handoffPriceUseTypeId } : {}),
+        ...(firstFinanced?.financingTermId
+          ? { financingTermId: firstFinanced.financingTermId }
+          : {}),
         items: inhouseInstallmentCartLines.map((l) => ({
           itemId: l.itemId,
           itemLabel: l.itemName,
@@ -5130,6 +5169,10 @@ export default function CheckoutPage() {
   }
 
   const activeSession = openSessions.find((s) => s.id === sessionId)
+  // Scenario 74 — a till left open overnight keeps taking sales, but its
+  // Daily Collection and session reports file them under the day it opened.
+  // Said out loud here rather than blocked: closing is the cashier's call.
+  const sessionOpenedEarlier = !!activeSession && isoDateOf(activeSession.openedAt) < todayIso()
 
   // ─── Main layout ───────────────────────────────────────────────────────────
 
@@ -5226,6 +5269,27 @@ export default function CheckoutPage() {
           stock still in it. Those units no longer sell here; say so rather
           than let them just vanish from the serial picker. */}
       <EndedCaravansBanner variant="pos" hostBranchId={activeBranchId} enabled={!!activeBranchId} />
+
+      {sessionOpenedEarlier && activeSession && (
+        <div
+          data-testid="session-opened-earlier"
+          className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2.5 text-sm text-amber-800"
+        >
+          <AlertTriangle size={14} className="shrink-0" />
+          <span>
+            This session opened on{' '}
+            <strong className="font-semibold">
+              {new Date(activeSession.openedAt).toLocaleDateString('en-PH', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </strong>
+            . Its reports file today&apos;s sales under that day — close it and open a new session
+            if the business day has changed.
+          </span>
+        </div>
+      )}
 
       {/* Cancellation pending banner */}
       {cancellationReqId && (
@@ -7079,14 +7143,31 @@ export default function CheckoutPage() {
                                       <Loader2 size={10} className="animate-spin" /> Calculating…
                                     </span>
                                   ) : installmentPreviews[line.lineId] ? (
-                                    <div className="flex items-center justify-between">
-                                      <span>
-                                        {fmt(installmentPreviews[line.lineId]!.monthlyInstallment)}
-                                        /mo
-                                      </span>
-                                      <span className="font-semibold">
-                                        {fmt(installmentPreviews[line.lineId]!.totalPayable)} total
-                                      </span>
+                                    // Scenario 74 — the terms, the months and the rebate
+                                    // in one place, so the cashier can quote the whole plan.
+                                    <div data-testid="installment-terms">
+                                      <div className="flex items-center justify-between">
+                                        <span>
+                                          {installmentPreviews[line.lineId]!.lines.length} months ·{' '}
+                                          {fmt(
+                                            installmentPreviews[line.lineId]!.monthlyInstallment
+                                          )}
+                                          /mo
+                                        </span>
+                                        <span className="font-semibold">
+                                          {fmt(installmentPreviews[line.lineId]!.totalPayable)}{' '}
+                                          total
+                                        </span>
+                                      </div>
+                                      {(installmentPreviews[line.lineId]!.ppd ?? 0) > 0 && (
+                                        <p
+                                          data-testid="installment-rebate"
+                                          className="mt-0.5 text-xs text-prominent-purple-600"
+                                        >
+                                          Rebate {fmt(installmentPreviews[line.lineId]!.ppd!)}/mo
+                                          when paid in full by the due date
+                                        </p>
+                                      )}
                                     </div>
                                   ) : (
                                     <span className="opacity-70">
@@ -7380,7 +7461,7 @@ export default function CheckoutPage() {
                             ariaLabel={label}
                             wrapperClassName="mt-1.5"
                             placeholder={`Select ${label.toLowerCase()}…`}
-                            options={options.map((o) => ({ value: o.id, label: o.name }))}
+                            options={options.map(bankPickerOption)}
                             value={cashPaymentOptionId}
                             onChange={setCashPaymentOptionId}
                           />
@@ -7435,7 +7516,7 @@ export default function CheckoutPage() {
                               ariaLabel="Card Acquirer"
                               wrapperClassName="mb-1.5"
                               placeholder="Select card acquirer…"
-                              options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
+                              options={terminalOptions.map(bankPickerOption)}
                               value={cardTerminalOptionId}
                               onChange={setCardTerminalOptionId}
                             />
@@ -7738,7 +7819,18 @@ export default function CheckoutPage() {
                         <div key={i}>
                           <label className="mb-1 block text-xs font-medium text-gray-800">
                             {label}
-                            {isRequired && <span className="text-red-500"> *</span>}
+                            {/* Scenario 74 — say so when it isn't required, so a
+                                cashier on a plain cash sale doesn't hunt for a CR
+                                they don't need. The rule itself is Chloe's
+                                crIsRequired, unchanged. */}
+                            {isRequired ? (
+                              <span className="text-red-500"> *</span>
+                            ) : (
+                              <span data-testid="cr-optional" className="font-normal text-gray-500">
+                                {' '}
+                                (optional)
+                              </span>
+                            )}
                           </label>
                           <input
                             aria-label={label}
@@ -8883,6 +8975,12 @@ function SuccessScreen({
                   ) : o.installmentPreview ? (
                     <>
                       <div className="flex justify-between">
+                        <span>Terms</span>
+                        <span className="font-mono font-semibold" data-testid="success-term-months">
+                          {o.installmentPreview.lines.length} months
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
                         <span>Monthly Installment</span>
                         <span className="font-mono font-semibold">
                           {fmt(o.installmentPreview.monthlyInstallment)}
@@ -8894,6 +8992,14 @@ function SuccessScreen({
                           {fmt(o.installmentPreview.totalPayable)}
                         </span>
                       </div>
+                      {(o.installmentPreview.ppd ?? 0) > 0 && (
+                        <div className="flex justify-between">
+                          <span>Rebate (paid on time)</span>
+                          <span className="font-mono font-semibold" data-testid="success-rebate">
+                            {fmt(o.installmentPreview.ppd!)}/mo
+                          </span>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <span className="opacity-70">Preview unavailable.</span>

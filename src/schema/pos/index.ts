@@ -140,6 +140,15 @@ export interface SessionReconciliation {
    * exceed the shift's own sales.
    */
   totalCollectionsCash: number
+  /** Scenario 77 — totalCollectionsCash split: installment dues vs delivery
+   *  fees (Scenario 66). Both cash, both in the drawer. Optional so a backend
+   *  without them still renders the single line. */
+  totalInstallmentCollectionsCash?: number
+  totalDeliveryFeesCash?: number
+  /** Scenario 77 — the client's "separate box for MI": every installment
+   *  payment taken on this session, keyed like a tender ('cash',
+   *  'qr::GCash Send Money', 'card::BDO'). Display only. */
+  installmentCollections?: { byTender: Record<string, number>; total: number }
 }
 
 export interface SalesSummary {
@@ -1262,10 +1271,11 @@ export interface InstallmentPreview {
   totalPayable: number
   monthlyInstallment: number
   lines: InstallmentPreviewLine[]
-  /** Prompt-payment discount from the curated rate card
-   *  (`PriceListItemTerm.ppd`). Only present when a curated term was found
-   *  for this SKU and term — the generic factor-rate path has no PPD to
-   *  quote, so `undefined` means "no rate card said", not "zero". */
+  /** Prompt-payment discount (rebate) per month. The curated rate card's
+   *  own figure (`PriceListItemTerm.ppd`) when one quotes this SKU and term.
+   *  Without a rate card it is `undefined` ("no rate card said") — unless
+   *  the request sent `includeRebate` (checkout, Scenario 74), which fills
+   *  it with the 7.5%-of-monthly rule the installment account falls back to. */
   ppd?: number
 }
 
@@ -1283,6 +1293,11 @@ export interface ComputeInstallmentPreviewInput {
    * SKU + term wins over the generic factorRate calculation, if one exists
    * — see FinancingTermsService.preview(). */
   priceListItemId?: string
+  /** Scenario 74 — always return a `ppd`, falling back to the account's own
+   * 7.5% rule when no rate card quotes one. Checkout sends it; the credit
+   * application form leaves it off so a missing ppd still means "no rebate
+   * to prefill". */
+  includeRebate?: boolean
 }
 
 export interface InstallmentScheduleLineWithInvoice {

@@ -167,6 +167,9 @@ const CANCELLABLE_STATUSES = new Set([
 // can still fix instead. If one list moves, both must.
 const EDITABLE_STATUSES = CANCELLABLE_STATUSES
 
+/** Scenario 74 — the dispatch form's carrier starts here. */
+const DEFAULT_CARRIER = 'NIG'
+
 function formatDate(iso?: string | null) {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('en-PH', {
@@ -319,7 +322,10 @@ function ItemSerialGroup({
     <div>
       <label className="mb-1 block text-xs font-medium text-zinc-600">
         {itemLabel} {slotIndices.length > 0 && <span className="text-red-500">*</span>}{' '}
-        <span className="font-normal text-zinc-400">
+        {/* Scenario 74 — the body colour, not zinc-400: "1 of 1 assigned" is
+            the count the dispatcher works from, and the client found it hard
+            to read. */}
+        <span data-testid="serial-assigned-count" className="font-normal text-[#17171c]">
           {slotIndices.length === 0
             ? `(all ${pinnedSerials.length} picked by the requester)`
             : pinnedSerials.length > 0
@@ -894,7 +900,10 @@ export default function TransferDetailModal({
       driverName: '',
       driverPhone: '',
       vehiclePlate: '',
-      carrierName: '',
+      // Scenario 74 — NIG delivers its own transfers, so the carrier starts
+      // as "NIG" (client: "carrier not needed"). Still editable for the odd
+      // third-party haul, and still required.
+      carrierName: DEFAULT_CARRIER,
     },
   })
   const { fields: serialAssignmentFields } = useFieldArray({
@@ -1155,7 +1164,7 @@ export default function TransferDetailModal({
       driverName: '',
       driverPhone: '',
       vehiclePlate: '',
-      carrierName: '',
+      carrierName: DEFAULT_CARRIER,
     })
     setShowDispatchForm(true)
   }
@@ -2136,6 +2145,14 @@ export default function TransferDetailModal({
                       />
                     )}
                   />
+                  {/* Scenario 74 — the field is required but said nothing when
+                      emptied: Confirm Dispatch just did nothing. Same message
+                      style as the plate above. */}
+                  {dispatchForm.formState.errors.carrierName?.message && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {dispatchForm.formState.errors.carrierName.message}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex gap-2">

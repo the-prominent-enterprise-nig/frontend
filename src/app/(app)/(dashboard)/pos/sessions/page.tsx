@@ -45,6 +45,7 @@ import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import SessionSummaryCard, { type CashRow } from './_components/SessionSummaryCard'
 import { terminalPlaceId, terminalPlaceName } from '@/src/libs/format/locationLabel'
+import { bankDisplayName } from '@/src/libs/pos/bank-names'
 
 function formatCurrency(n: number) {
   // Coerced explicitly: Prisma Decimal fields arrive as strings over JSON, and
@@ -69,8 +70,18 @@ export default function SessionsPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const router = useRouter()
   const { branchId } = usePosBranchContext()
-  const branchFilter = branchId ? { branchId } : undefined
-  const { data, isLoading, isFetching, refetch } = useSessions(branchFilter)
+  // Scenario 74 — business days (Manila), inclusive; empty means no bound.
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const listFilter =
+    branchId || dateFrom || dateTo
+      ? {
+          ...(branchId ? { branchId } : {}),
+          ...(dateFrom ? { dateFrom } : {}),
+          ...(dateTo ? { dateTo } : {}),
+        }
+      : undefined
+  const { data, isLoading, isFetching, refetch } = useSessions(listFilter)
   const openMutation = useOpenSession()
   const closeMutation = useCloseSession()
   const handoverMutation = useHandoverSession()
@@ -213,6 +224,45 @@ export default function SessionsPage() {
               Open session
             </button>
           </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-[11px] text-[#5b5b6b]">
+            From
+            <input
+              type="date"
+              aria-label="Sessions from date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onClick={openDatePicker}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-9 cursor-pointer rounded-lg border border-[#d3d3db] bg-white px-2.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6]"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] text-[#5b5b6b]">
+            To
+            <input
+              type="date"
+              aria-label="Sessions to date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onClick={openDatePicker}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-9 cursor-pointer rounded-lg border border-[#d3d3db] bg-white px-2.5 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6]"
+            />
+          </label>
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom('')
+                setDateTo('')
+              }}
+              className="h-9 rounded-lg px-3 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb]"
+            >
+              Clear dates
+            </button>
+          )}
         </div>
 
         {/* Every other error on this page belongs to an open dialog and is
@@ -624,7 +674,9 @@ function methodLabel(method: string): string {
 function tenderLabel(key: string): string {
   const [method, ...rest] = key.split('::')
   const provider = rest.join('::').trim()
-  return provider ? `${methodLabel(method)} — ${provider}` : methodLabel(method)
+  // Scenario 77 — a bank provider by its full name ('card::MBTC' → 'Card —
+  // Metropolitan Bank and Trust Company'); the stored key is unchanged.
+  return provider ? `${methodLabel(method)} — ${bankDisplayName(provider)}` : methodLabel(method)
 }
 
 /** The desktop row template, shared by the list header and every row so the
@@ -648,6 +700,28 @@ const STATUS_CHIP: Record<string, { label: string; chip: string; dot: string }> 
 
 function shiftTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+}
+
+/** Scenario 74 — a click anywhere on a date box opens its calendar. Without
+ *  this the browser only opens it from the small icon; clicking the text just
+ *  selects the month/day/year part. showPicker() can throw (e.g. no user
+ *  gesture), and the box still works by typing, so a failure is ignored. */
+function openDatePicker(e: React.MouseEvent<HTMLInputElement>) {
+  try {
+    e.currentTarget.showPicker?.()
+  } catch {
+    // Typing the date still works.
+  }
+}
+
+/** Scenario 74 — "Mon, Oct 19": the business day a shift belongs to. The list
+ *  used to show times only, so two days' 8 AM shifts read identically. */
+function shiftDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-PH', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 /** "2h 14m" between two moments — how long the till has been, or was, open.
@@ -696,9 +770,16 @@ function SessionRow({
   const terminal = session.terminal?.name ?? session.terminalId
   const cashier = session.cashier?.name || session.cashierId
   const branch = terminalPlaceName(session.terminal)
+  const opened = `${shiftDate(session.openedAt)} · ${terminal} · opened ${shiftTime(session.openedAt)}`
+  // A shift that ran past midnight names the day it closed on as well, so
+  // "closed 1:05 AM" can't be misread as that morning.
+  const closedOtherDay =
+    !!session.closedAt && isoDateOf(session.closedAt) !== isoDateOf(session.openedAt)
 
   const subline = [
-    session.closedAt ? `closed ${shiftTime(session.closedAt)}` : 'still open',
+    session.closedAt
+      ? `closed ${closedOtherDay ? `${shiftDate(session.closedAt)} ` : ''}${shiftTime(session.closedAt)}`
+      : 'still open',
     length,
     showBranch ? branch : null,
   ]
@@ -775,9 +856,7 @@ function SessionRow({
       <div className={`hidden items-center gap-3 px-4 py-3 lg:grid ${ROW_GRID}`}>
         {caret}
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-[12.5px] font-medium">
-            {terminal} · opened {shiftTime(session.openedAt)}
-          </span>
+          <span className="truncate text-[12.5px] font-medium">{opened}</span>
           <span className="truncate text-[10.5px] text-[#5b5b6b]">{subline}</span>
         </div>
         <span className="min-w-0 truncate text-[12.5px] text-[#3d3d4a]">{cashier}</span>
@@ -805,9 +884,7 @@ function SessionRow({
               tabIndex={-1}
               className="flex min-w-0 flex-col text-left"
             >
-              <span className="truncate text-[12.5px] font-medium">
-                {terminal} · opened {shiftTime(session.openedAt)}
-              </span>
+              <span className="truncate text-[12.5px] font-medium">{opened}</span>
               <span className="truncate text-[11px] text-[#5b5b6b]">
                 {cashier} · {session._count?.transactions ?? 0} txns ·{' '}
                 {formatCurrency(session.openingCash)} float
@@ -835,6 +912,60 @@ function DetailPane({ title, children }: { title: string; children: React.ReactN
     <div className="flex min-w-0 flex-col gap-1.5 rounded-[10px] border border-[#e4e4e9] bg-white px-3.5 py-3">
       <span className="text-[9.5px] uppercase tracking-[.08em] text-[#5b5b6b]">{title}</span>
       {children}
+    </div>
+  )
+}
+
+/**
+ * Scenario 77 — the client's "separate box for MI" on close: every
+ * installment payment taken on the session, one line per method/provider,
+ * then the total. Cash ones are also in the drawer figure; a GCash or card
+ * one showed nowhere on close before this. Shared by the close screen and
+ * a closed session's detail, which wrap it in their own box.
+ */
+function InstallmentCollectionsList({
+  collections,
+  loading,
+}: {
+  collections: { byTender: Record<string, number>; total: number } | null | undefined
+  loading: boolean
+}) {
+  if (loading) return <Skeleton className="h-4 w-40" />
+  const rows = Object.entries(collections?.byTender ?? {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+  if (rows.length === 0) {
+    return (
+      <p data-testid="installment-collections-empty" className="text-[11.5px] text-[#5b5b6b]">
+        No installment payments taken this shift.
+      </p>
+    )
+  }
+  return (
+    <div data-testid="installment-collections" className="flex flex-col">
+      {rows.map(([key, amount], i) => (
+        <div
+          key={key}
+          data-testid="installment-collections-row"
+          className={`grid grid-cols-[minmax(0,1fr)_96px] items-baseline gap-2.5 py-1 ${
+            i ? 'border-t border-[#f4f4f6]' : ''
+          }`}
+        >
+          <span className="min-w-0 text-[12px] leading-snug text-[#3d3d4a]">
+            {tenderLabel(key)}
+          </span>
+          <span className="text-right text-[12px] tabular-nums">{peso(Number(amount))}</span>
+        </div>
+      ))}
+      <div className="mt-0.5 grid grid-cols-[minmax(0,1fr)_96px] items-baseline gap-2.5 border-t border-[#e4e4e9] pt-1.5">
+        <span className="text-[12px] font-semibold">Total</span>
+        <span
+          data-testid="installment-collections-total"
+          className="text-right text-[12px] font-semibold tabular-nums"
+        >
+          {peso(Number(collections?.total ?? 0))}
+        </span>
+      </div>
     </div>
   )
 }
@@ -1054,6 +1185,15 @@ function SessionDetail({ session }: { session: PosSession }) {
         </DetailPane>
       </div>
 
+      {/* Scenario 77 — installment payments on this session, every method.
+          "Cash taken in" above already counts the cash ones. */}
+      <DetailPane title="Installment collections (MI)">
+        <InstallmentCollectionsList
+          collections={recon?.installmentCollections}
+          loading={isLoading}
+        />
+      </DetailPane>
+
       {(isOff || session.closingNotes) && (
         <div
           className={`flex flex-col gap-0.5 rounded-[10px] px-3.5 py-2.5 ${
@@ -1151,6 +1291,11 @@ function CloseSessionModal({
   // denomination — matches the client form's own COINS line, and no cashier
   // wants to tally 25-sentimo pieces individually.
   const [coins, setCoins] = useState('')
+  // Scenario 74 — an empty drawer is a real count, not a missing one. Every
+  // denomination box shows 0 as blank, so without an explicit "it's empty" the
+  // cashier had no way to declare ₱0.00 and the session could never close.
+  // Any figure typed afterwards clears it again.
+  const [drawerEmpty, setDrawerEmpty] = useState(false)
   const [notes, setNotes] = useState('')
   // Why the drawer is off. Required before a variance can be submitted: an
   // unexplained variance is a number the branch checker can only escalate,
@@ -1220,7 +1365,8 @@ function CloseSessionModal({
   const noteTotal = DENOMINATIONS.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0)
   const total = noteTotal + coinsAmount
   const pieceCount = DENOMINATIONS.reduce((sum, d) => sum + (counts[d] ?? 0), 0)
-  const hasCount = pieceCount > 0 || coinsAmount > 0
+  // A Coins box holding "0" counts as counted too — the cashier typed it.
+  const hasCount = pieceCount > 0 || coinsAmount > 0 || coins.trim() !== '' || drawerEmpty
 
   // Display only — the backend recomputes both sides on close and is the
   // authority on the posted variance. Expected comes from its own helper, so
@@ -1338,11 +1484,23 @@ function CloseSessionModal({
       note: 'cash tendered at this terminal',
       amount: Number(tenderSummary?.totalCash ?? 0),
     },
+    // Scenario 77 — what used to be one "Counter collections" line, split:
+    // it also carried cash delivery fees (Scenario 66), which are in the
+    // drawer but are not installment dues. A backend without the split still
+    // shows the old single figure under the installment label.
     {
       key: 'collections',
-      label: 'Counter collections',
+      label: 'Installment collections',
       note: 'installment dues paid in cash at the counter',
-      amount: Number(reconciliation?.totalCollectionsCash ?? 0),
+      amount: Number(
+        reconciliation?.totalInstallmentCollectionsCash ?? reconciliation?.totalCollectionsCash ?? 0
+      ),
+    },
+    {
+      key: 'deliveryFees',
+      label: 'Delivery fees',
+      note: 'delivery fees paid in cash',
+      amount: Number(reconciliation?.totalDeliveryFeesCash ?? 0),
     },
     {
       key: 'pettyIn',
@@ -1377,7 +1535,7 @@ function CloseSessionModal({
   // Scenario 61 — the client's close lists sales, invoices and cash
   // collected; drops, petty cash and counter collections only earn a line on
   // a shift that had one.
-  const OPTIONAL_CASH_ROWS = ['collections', 'pettyIn', 'drops', 'pettyOut']
+  const OPTIONAL_CASH_ROWS = ['collections', 'deliveryFees', 'pettyIn', 'drops', 'pettyOut']
   const cashRows = expectedRows.filter(
     (row) => row.amount !== 0 || !OPTIONAL_CASH_ROWS.includes(row.key)
   )
@@ -1401,7 +1559,7 @@ function CloseSessionModal({
         }
         if (!existing) groups.push(group)
         group.total += Number(amount)
-        group.providers.push([provider || methodLabel(method), Number(amount)])
+        group.providers.push([bankDisplayName(provider) || methodLabel(method), Number(amount)])
         return groups
       },
       []
@@ -1440,7 +1598,10 @@ function CloseSessionModal({
   return (
     // absolute, not fixed: the working surface fills the content column so the
     // nav sidebar and top bar stay usable while a drawer is being counted.
-    <div className="absolute inset-0 z-50 flex flex-col bg-[#f2f2f3] text-[#17171c]">
+    <div
+      data-testid="close-session-screen"
+      className="absolute inset-0 z-50 flex flex-col bg-[#f2f2f3] text-[#17171c]"
+    >
       {/* Head */}
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] bg-white px-5 py-4">
         <div className="flex min-w-0 flex-col gap-1">
@@ -1562,6 +1723,22 @@ function CloseSessionModal({
               )}
             </div>
 
+            {/* Scenario 77 — the client's "separate box for MI". Installment
+                payments by every method; the cash ones are already in the
+                build-up above as "Installment collections". */}
+            <div
+              data-testid="close-installment-collections"
+              className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] bg-white px-4 py-3"
+            >
+              <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#5b5b6b]">
+                Installment collections (MI)
+              </span>
+              <InstallmentCollectionsList
+                collections={reconciliation?.installmentCollections}
+                loading={figuresLoading}
+              />
+            </div>
+
             <div className="flex flex-col gap-1.5">
               <label htmlFor="shift-notes" className="text-[12px] font-medium text-[#3d3d4a]">
                 Shift notes <span className="font-normal text-[#5b5b6b]">optional</span>
@@ -1593,6 +1770,7 @@ function CloseSessionModal({
                     onClick={() => {
                       setCounts(Object.fromEntries(DENOMINATIONS.map((d) => [d, 0])))
                       setCoins('')
+                      setDrawerEmpty(false)
                       setReason('')
                       setReasonNote('')
                       setReasonTouched(false)
@@ -1600,6 +1778,15 @@ function CloseSessionModal({
                     className="rounded-md px-2.5 py-1.5 text-[11.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
                   >
                     Clear count
+                  </button>
+                )}
+                {!hasCount && (
+                  <button
+                    type="button"
+                    onClick={() => setDrawerEmpty(true)}
+                    className="rounded-md border border-[#ddd0f7] bg-[#f1ebfb] px-2.5 py-1.5 text-[11.5px] font-medium text-[#3f1490] hover:bg-[#e8dffa]"
+                  >
+                    Drawer is empty — ₱0.00
                   </button>
                 )}
               </div>
@@ -1624,9 +1811,10 @@ function CloseSessionModal({
                       aria-label={`${d} peso count`}
                       value={counts[d] === 0 ? '' : counts[d]}
                       placeholder="0"
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setDrawerEmpty(false)
                         setCounts((p) => ({ ...p, [d]: parseInt(e.target.value) || 0 }))
-                      }
+                      }}
                       className={`${inputChrome} text-right tabular-nums`}
                     />
                     <span
@@ -1651,7 +1839,10 @@ function CloseSessionModal({
                     placeholder="0.00"
                     aria-label="Loose coin total"
                     value={coins}
-                    onChange={(e) => setCoins(e.target.value)}
+                    onChange={(e) => {
+                      setDrawerEmpty(false)
+                      setCoins(e.target.value)
+                    }}
                     className={`${inputChrome} text-right tabular-nums`}
                   />
                   <span
@@ -1668,8 +1859,11 @@ function CloseSessionModal({
                 <div className="flex min-w-0 flex-col">
                   <span className="text-[12.5px] font-semibold">Counted</span>
                   <span className="text-[10.5px] text-[#5b5b6b]">
-                    {pieceCount} {pieceCount === 1 ? 'note' : 'notes'}
-                    {coinsAmount ? ` + ₱${peso(coinsAmount)} in coins` : ''}
+                    {drawerEmpty
+                      ? 'Drawer declared empty'
+                      : `${pieceCount} ${pieceCount === 1 ? 'note' : 'notes'}${
+                          coinsAmount ? ` + ₱${peso(coinsAmount)} in coins` : ''
+                        }`}
                   </span>
                 </div>
                 <span className="text-[17px] font-semibold tabular-nums tracking-[-.01em]">
