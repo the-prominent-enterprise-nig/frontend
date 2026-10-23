@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { DOWN_PAYMENT_FLOOR_RATE, DOWN_PAYMENT_FLOOR_LABEL } from '@/src/libs/constants/financing'
 
 export const CreditApplicationStatusSchema = z.enum([
   'draft',
@@ -306,19 +305,10 @@ const CreateCreditApplicationBaseSchema = z.object({
   // the flat price and compute a floor off a different total (a real item
   // in the catalog differs by PHP 4,009 between the two).
   resolvedItemTotal: z.number().optional(),
-  // Also client-only. The down-payment floor the SALE will demand, which is
-  // not simply the floor rate applied to the total above: checkout measures
-  // its floor against the tax-effective line amount, while an application is
-  // priced from the ex-tax price list. With exclusive pricing and 12% VAT
-  // that makes checkout's floor ~12% higher, so an application approved at
-  // exactly its own floor could never be sold — the till would reject a down
-  // payment the server had already accepted. The form computes the stricter
-  // figure and passes it here. (Rate itself: DOWN_PAYMENT_FLOOR_RATE.)
-  downPaymentFloor: z.number().optional(),
   // Also client-only. Set when the rate card prices every item for the chosen
   // term: the down payment is then the sum of the card's own down payments,
   // fixed (PR #199 review — the card's monthly is calculated from exactly
-  // that amount). Checked instead of the floor while set.
+  // that amount). Checked instead of the usual any-amount-above-0 rule while set.
   downPaymentFixed: z.number().optional(),
 })
 
@@ -360,11 +350,12 @@ export function refinePurchaseAndPaperRecord(
     ['financingTermId', 'Financing term is required'],
     ['lcp', 'LCP is required'],
     ['downPaymentCollection', 'Down payment collection is required'],
-    ['firstDueDate', 'First due date is required'],
-    // A rebate of zero is a real answer; an empty box is not. Typing 0 is
-    // what says "the form shows no rebate", and that reads differently from
-    // nobody having looked.
-    ['ppdRebate', 'PPD rebate is required — enter 0 if the form shows none'],
+    // FMI — the first monthly installment. Pre-filled from the schedule, so
+    // it is only ever empty when no term is picked yet.
+    ['firstDueDate', 'FMI date is required'],
+    // The PPD rebate is deliberately NOT required (client, 2026-10-15): the
+    // paper form need not show one. Blank is stored as no rebate, which is
+    // what the detail page shows as "—".
   ]
   for (const [field, message] of required) {
     if (!String(data[field] ?? '').trim()) {
@@ -392,16 +383,15 @@ export function refinePurchaseAndPaperRecord(
  * down payment is caught under the field, at the moment it is typed, rather
  * than coming back as a generic banner after submit.
  *
- * The floor only applies once a financing term is chosen, which is exactly
- * when the server starts enforcing it — an application can still be raised
- * with no term yet. The half-centavo tolerance matches the server's, which
- * exists for float rounding on the client's computed 10%. */
+ * These only apply once a financing term is chosen, which is exactly when the
+ * server starts enforcing them — an application can still be raised with no
+ * term yet. There is no percentage floor (client, 2026-10-20: "can be below
+ * the required but never 0"): any amount above 0, as at checkout. */
 export function refineDownPayment(
   data: {
     financingTermId?: string
     downPayment?: string
     resolvedItemTotal?: number
-    downPaymentFloor?: number
     downPaymentFixed?: number
   },
   ctx: z.RefinementCtx
@@ -436,31 +426,22 @@ export function refineDownPayment(
     return
   }
 
-  // No resolved total yet (prices still loading) — the server still has the
-  // final say, so don't invent a floor from a number we don't have.
-  const total = data.resolvedItemTotal ?? 0
-  if (total <= 0) return
-
-  // Prefer the floor the form worked out from the tax-effective amount;
-  // fall back to a plain 10% when it hasn't been supplied (an API caller,
-  // or prices still resolving).
-  const floor = data.downPaymentFloor ?? total * DOWN_PAYMENT_FLOOR_RATE
-  if (downPayment < floor - 0.005) {
-    // Name the basis the figure was actually worked out on. The panel below
-    // this field shows the ex-tax item total, so "10% of the item total"
-    // against a VAT-inclusive floor reads as plain bad arithmetic on screen
-    // — ~11.2% of the number the collector can see. Only the fallback
-    // branch really is 10% of that total.
+  // A down payment is always collected; how small it is, is the approver's
+  // call. Never 0.
+  if (downPayment <= 0) {
     ctx.addIssue({
       code: 'custom',
       path: ['downPayment'],
-      message:
-        data.downPaymentFloor != null
-          ? `Down payment must be at least ${pesos(floor)} — ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount incl. VAT, which is what the till will require`
-          : `Down payment must be at least ${pesos(floor)} (${DOWN_PAYMENT_FLOOR_LABEL} of the item total)`,
+      message: 'Down payment must be more than 0',
     })
     return
   }
+
+  // No resolved total yet (prices still loading) — the server still has the
+  // final say, so don't invent a ceiling from a number we don't have.
+  const total = data.resolvedItemTotal ?? 0
+  if (total <= 0) return
+
   if (downPayment > total) {
     ctx.addIssue({
       code: 'custom',
@@ -758,6 +739,11 @@ export interface CreditApplication {
   downPaymentCollection?: 'online' | 'branch' | 'delivery' | null
   firstDueDate?: string | null
   ppdRebate?: number | null
+  /** The applicant's current address as given on THIS application. It is not
+   * written back to the customer. Null on applications raised before it was
+   * kept — show the customer's own address for those. */
+  applicantAddress?: string | null
+  applicantBarangayCode?: string | null
   /** Scenario 64 item 27 — PAPER RECORD. The credit decision itself is not
    * here; it stays with decideItems(). `applicantIsUnitUser` is tri-state —
    * null means the question was never asked, which is not the same as "no". */

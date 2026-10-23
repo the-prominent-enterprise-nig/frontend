@@ -131,10 +131,15 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     const branches = ((await branchesRes.json()).data ?? []) as { id: string; name: string }[]
     const branchId = branches.find((b) => b.name === 'Bago')!.id
 
+    // The search is fuzzy (STF3218AS can rank ahead of STF3238), so the item is
+    // picked by its name — the first hit could be a different fan and the
+    // application then would not match the cart.
     const itemsRes = await page.request.get('/api/inventory/items', {
-      params: { search: ITEM_QUERY, limit: '1' },
+      params: { search: ITEM_QUERY, limit: '20' },
     })
-    const items = ((await itemsRes.json()).data ?? []) as { id: string }[]
+    const found = ((await itemsRes.json()).data ?? []) as { id: string; name: string }[]
+    const items = found.filter((i) => i.name.includes(ITEM_QUERY))
+    expect(items.length, `no item named ${ITEM_QUERY}`).toBeGreaterThan(0)
 
     // Scenario 64 item 21 — an application is priced from the Price Use's
     // price list and nothing else, so it has to name one.

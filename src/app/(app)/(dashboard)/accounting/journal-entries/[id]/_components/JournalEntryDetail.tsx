@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { getJournalEntryById, type JournalEntry } from '@/src/libs/data/AccountingData'
-import { sourceDocumentLink } from '@/src/libs/format/sourceDocumentLink'
+import { sourceDocumentLink, type SourceLink } from '@/src/libs/format/sourceDocumentLink'
 import { entryJournalLabel, formatJournalType } from '@/src/libs/format/journalType'
 import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
 
@@ -26,6 +26,21 @@ function formatDate(v: string | undefined | null) {
     month: 'short',
     day: 'numeric',
   })
+}
+
+/** A line's amount, opening the document the entry came from when there is one
+ * to open. */
+function Amount({ value, source }: { value: number; source: SourceLink | null }) {
+  if (!source) return <>{formatMoney(value)}</>
+  return (
+    <Link
+      href={source.href}
+      title={`Open ${source.kind}`}
+      className="text-purple-700 hover:underline"
+    >
+      {formatMoney(value)}
+    </Link>
+  )
 }
 
 export default function JournalEntryDetail({ id }: { id: string }) {
@@ -66,7 +81,12 @@ export default function JournalEntryDetail({ id }: { id: string }) {
     sourceDocumentNo: entry.sourceDocumentNo,
     code: entry.reference,
     description: entry.description,
+    posDepositId: entry.posDepositId,
   })
+  // An amount opens its source only when that is a specific document. Where the
+  // entry can only point at a list (the header link above still does), an amount
+  // that opened a list would promise more than it delivers.
+  const amountSource = source && !source.list ? source : null
   // Most entries are not about items at all — a collection is cash in and a
   // receivable down, a VAT accrual is one account against another. An Item
   // column of dashes on every row says nothing, so it appears only when at
@@ -247,10 +267,10 @@ export default function JournalEntryDetail({ id }: { id: string }) {
                         )}
                         <td className="py-2 pr-4 text-gray-500">{t.description || '—'}</td>
                         <td className="py-2 pr-4 text-right font-medium tabular-nums">
-                          {t.debit ? formatMoney(t.debit) : '—'}
+                          {t.debit ? <Amount value={t.debit} source={amountSource} /> : '—'}
                         </td>
                         <td className="py-2 text-right font-medium tabular-nums">
-                          {t.credit ? formatMoney(t.credit) : '—'}
+                          {t.credit ? <Amount value={t.credit} source={amountSource} /> : '—'}
                         </td>
                       </tr>
                     ))}

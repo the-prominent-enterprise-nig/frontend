@@ -71,8 +71,8 @@ export interface PosDepositLineInput {
   /** A processor's clearing account; omitted for the branch's own cash. */
   clearsAccountId?: string
   note?: string
-  /** This bank's own deposit slip / reference number. */
-  reference?: string
+  /** This bank's own deposit slip / reference number. Required. */
+  reference: string
   /** The day this slip was banked — slips on different days post separate
    * journal entries. */
   depositDate?: string

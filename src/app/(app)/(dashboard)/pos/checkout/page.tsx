@@ -116,6 +116,8 @@ import type { CreditApplicationOverrideSnapshot } from '@/src/schema/pos'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import TypedPlanPanel from './_components/TypedPlanPanel'
 import { toCents, dateInputFromToday, coveringMonthly, typedPlanProblem } from './_utils/typed-plan'
+import { applicationFmiNote } from './_utils/application-fmi'
+import { fixedDownPaymentTotal, splitDownPayment, type DpRow } from './_utils/down-payment-groups'
 import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
 import { PillCombobox, PillSelect } from './_components/PillInputs'
@@ -413,6 +415,87 @@ const SHOW_CREDIT_OVERRIDE = false
  * figure with a "Change amount" link read as fixed, and cashiers did not find
  * out they could edit it. Prefilled with what the sale will use; when the rate
  * card fixes the amount for the chosen term it is a figure, not a field. */
+/** Installment rows that pay ONE down payment together: in-house rows on the
+ * same financing term, or every TPF row. See _utils/down-payment-groups. */
+type DpBucket = {
+  key: string
+  /** "12 months" or "TPF" — what the group has in common. */
+  label: string
+  /** The cart rows (display groups) in it, in cart order; the first hosts the box. */
+  groups: CartLine[][]
+  rows: DpRow[]
+  /** What the group pays now, in all. */
+  total: number
+  /** What all of its items cost — the most a down payment can be. */
+  max: number
+  /** The part the rate card fixes. */
+  fixedTotal: number
+}
+
+/** The single down payment box for a bucket of rows. Typing shares the figure
+ * across the rows at once; the text is kept locally while the field has focus
+ * so a half-typed "12." is not reformatted under the cashier's fingers. */
+function CombinedDownPaymentField({
+  bucket,
+  onCommit,
+}: {
+  bucket: DpBucket
+  onCommit: (total: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const allFixed = bucket.rows.every((r) => r.fixedPerLine != null)
+  const typed = draft != null ? parseFloat(draft) : NaN
+
+  let error: string | undefined
+  if (draft != null) {
+    if (!Number.isFinite(typed) || typed <= 0) {
+      error = 'A down payment is required — it can be small, but not 0.'
+    } else {
+      const split = splitDownPayment(bucket.rows, typed)
+      if (!split.ok) {
+        error =
+          split.reason === 'too_large'
+            ? `Can’t be more than the ${fmt(bucket.max)} these items cost.`
+            : bucket.fixedTotal > 0
+              ? `Must be more than the ${fmt(bucket.fixedTotal)} the rate card sets for part of this.`
+              : 'A down payment is required — it can be small, but not 0.'
+      }
+    }
+  } else if (bucket.total <= 0) {
+    error = 'A down payment is required — it can be small, but not 0.'
+  }
+
+  return (
+    <div data-testid="combined-down-payment">
+      <DownPaymentField
+        badge={allFixed ? 'Rate card' : `Combined · ${bucket.groups.length} items`}
+        value={draft ?? bucket.total.toFixed(2)}
+        fixedDisplay={allFixed ? fmt(bucket.total) : undefined}
+        error={error}
+        onChange={(v) => {
+          setDraft(v)
+          const n = parseFloat(v)
+          if (Number.isFinite(n) && n > 0) onCommit(n)
+        }}
+        onBlur={(v) => {
+          setDraft(null)
+          const n = parseFloat(v)
+          // Whole pesos, rounded up — the same tidying a single row gets.
+          if (Number.isFinite(n) && n > 0) onCommit(Math.ceil(n))
+        }}
+      />
+      <p className="mt-1 text-xs text-prominent-purple-500">
+        One down payment for these {bucket.groups.length} items on {bucket.label}
+        {allFixed
+          ? ' — set by the rate card.'
+          : bucket.fixedTotal > 0
+            ? `, shared out by price after the ${fmt(bucket.fixedTotal)} the rate card sets.`
+            : ', shared out by price.'}
+      </p>
+    </div>
+  )
+}
+
 function DownPaymentField({
   badge,
   value,
@@ -930,6 +1013,10 @@ export default function CheckoutPage() {
       // agreed — and possibly keying different ones.
       financingTermId?: string | null
       downPayment?: number | null
+      /** The FMI date on the application — the first installment's due date
+       *  for a rate-card plan sold on it (the server decides; see
+       *  applicationFmiNote). */
+      firstDueDate?: string | null
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
@@ -1878,6 +1965,111 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, financingTerms, downPaymentFree])
 
+  // One down payment for several items. The server already makes in-house
+  // lines on the same term ONE schedule with ONE down payment, and every TPF
+  // line ONE down payment; the till now asks for it that way too. A bucket is
+  // two or more rows that pay together — a lone row keeps its own box, and a
+  // plan typed at the till (its own panel), an X-Deal and an Employee
+  // Appliance Loan (their own down payment rules) stay out of it.
+  const dpBucketKeyOf = (group: CartLine[]): string | null => {
+    const l = group[0]
+    if (downPaymentFree || l.invoiceType !== 'installment' || l.manualPlan) return null
+    if (l.installmentProvider === 'tpf') return 'tpf'
+    return l.financingTermId ? `inhouse:${l.financingTermId}` : null
+  }
+  const dpBuckets = (() => {
+    const byKey = new Map<string, CartLine[][]>()
+    for (const group of displayGroups) {
+      const key = dpBucketKeyOf(group)
+      if (key) byKey.set(key, [...(byKey.get(key) ?? []), group])
+    }
+    const out = new Map<string, DpBucket>()
+    for (const [key, groups] of byKey) {
+      if (groups.length < 2) continue
+      const rows: DpRow[] = groups.map((g) => ({
+        lineIds: g.map((x) => x.lineId),
+        amount: g.reduce(
+          (sum, x) =>
+            sum + effectiveUnitPrice(x, activeTaxRate, inclusivePricing, isTaxExempt) * x.quantity,
+          0
+        ),
+        fixedPerLine: key === 'tpf' ? null : lineCardDownPayment(g[0]),
+      }))
+      const months = financingTerms.find((t) => t.id === groups[0][0].financingTermId)?.termMonths
+      out.set(key, {
+        key,
+        label: key === 'tpf' ? 'TPF installment' : `${months ?? '?'} months`,
+        groups,
+        rows,
+        total:
+          Math.round(groups.flat().reduce((sum, x) => sum + lineDownPayment(x), 0) * 100) / 100,
+        max: rows.reduce((sum, r) => sum + r.amount, 0),
+        fixedTotal: fixedDownPaymentTotal(rows),
+      })
+    }
+    return out
+  })()
+  const dpBucketFor = (group: CartLine[]): DpBucket | undefined => {
+    const key = dpBucketKeyOf(group)
+    return key ? dpBuckets.get(key) : undefined
+  }
+  /** Shares a typed total across a bucket's open rows. A figure that cannot be
+   * shared (more than the items cost, nothing left after the rate card's rows)
+   * changes nothing — the box says why. */
+  function setBucketDownPayment(bucket: DpBucket, total: number) {
+    const split = splitDownPayment(bucket.rows, total)
+    if (!split.ok) return
+    setCart((prev) =>
+      prev.map((l) =>
+        split.byLine.has(l.lineId)
+          ? {
+              ...l,
+              downPaymentInput: split.byLine.get(l.lineId)!.toFixed(2),
+              // An explicit entry — no later Price Use change may recompute it.
+              downPaymentAutoForPriceListItemId: undefined,
+            }
+          : l
+      )
+    )
+  }
+  /** The down payment slot of a row that is part of a bucket: the first row
+   * hosts the one box, the others show their share. */
+  function renderBucketDownPayment(group: CartLine[]) {
+    const bucket = dpBucketFor(group)!
+    if (bucket.groups[0][0].lineId === group[0].lineId) {
+      return (
+        <CombinedDownPaymentField
+          key={bucket.key}
+          bucket={bucket}
+          onCommit={(total) => setBucketDownPayment(bucket, total)}
+        />
+      )
+    }
+    const share = Math.round(group.reduce((sum, x) => sum + lineDownPayment(x), 0) * 100) / 100
+    const fixed = bucket.key !== 'tpf' && lineCardDownPayment(group[0]) != null
+    return (
+      <div
+        data-testid="down-payment-share"
+        className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[13px] font-semibold text-prominent-purple-700">Down payment</span>
+          <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+            {fixed ? 'Rate card' : 'Share'}
+          </span>
+        </div>
+        <div className="mt-1 pl-4">
+          <span className="text-[15px] font-bold text-prominent-purple-800">{fmt(share)}</span>
+        </div>
+        <p className="mt-1 text-xs text-prominent-purple-500">
+          {fixed
+            ? 'Set by the rate card, and part of the combined down payment above.'
+            : 'Part of the combined down payment above.'}
+        </p>
+      </div>
+    )
+  }
+
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -2282,6 +2474,7 @@ export default function CheckoutPage() {
               })),
               financingTermId: a.financingTermId ?? null,
               downPayment: a.downPayment != null ? Number(a.downPayment) : null,
+              firstDueDate: a.firstDueDate ?? null,
             }
           })
           .filter((a) => a.items.length > 0)
@@ -3430,10 +3623,6 @@ export default function CheckoutPage() {
     // with "down payment must be at least the floor % of its sale amount".
     const lineAmount = (l: CartLine) =>
       effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-    // Whole centavos, rounded UP, so a fractional 10% can't land a hair
-    // under the floor.
-    const lineFloor = (l: CartLine) =>
-      Math.ceil(lineAmount(l) * DOWN_PAYMENT_FLOOR_RATE * 100) / 100
     const approvedDp = application.downPayment ?? null
     // A line the rate card prices for the application's term takes exactly
     // its card down payment — fixed, see lineCardDownPayment(). The rest of
@@ -3464,13 +3653,13 @@ export default function CheckoutPage() {
           ? sharedDp - allocated
           : Math.round(sharedDp * (lineAmount(l) / total) * 100) / 100
         allocated += rawShare
-        // The approved down payment is a MINIMUM for the application as a
-        // whole, not a per-line cap. A line whose share falls under its own
-        // floor is raised to it — collecting a little more up front always
-        // completes, collecting less cannot. This is also what absorbs the
-        // quantity gap: an application carries no quantity, so ringing two
-        // units doubles the line while the approved figure covered one.
-        const share = Math.max(rawShare, lineFloor(l))
+        // The approved down payment is shared out as approved. There is no
+        // 10% floor to raise a share to any more (2026-10-20: an application
+        // may be approved below it, and the till takes it as approved) — only
+        // "never 0", so a share that rounds away still collects a centavo.
+        // The cashier can always take more: a figure already typed is never
+        // reduced (below).
+        const share = Math.max(rawShare, 0.01)
         dpByLine.set(l.lineId, share.toFixed(2))
       })
     }
@@ -3481,9 +3670,14 @@ export default function CheckoutPage() {
         if (!lines.some((x) => x.lineId === l.lineId)) return l
         // Never reduce a figure the cashier has already entered — they may
         // have agreed a larger down payment at the counter, and silently
-        // replacing it with the apportioned share both loses that and can
-        // drop the line under its floor.
-        const typed = parseFloat(l.downPaymentInput ?? '') || 0
+        // replacing it with the apportioned share loses that. Only a figure
+        // they TYPED counts: the 10% a term pre-fills is the system's own
+        // starting value (it carries the auto-fill marker), and keeping it
+        // over a smaller approved figure would put the line back at 10%.
+        const typed =
+          l.downPaymentAutoForPriceListItemId !== undefined
+            ? 0
+            : parseFloat(l.downPaymentInput ?? '') || 0
         const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
         // A card line's figure is exact, typed or not.
         const downPaymentInput = cardDpByLine.has(l.lineId)
@@ -6619,6 +6813,26 @@ export default function CheckoutPage() {
                               compact
                             />
                           )}
+                          {/* When the first installment will fall due. Only for
+                            a rate-card plan: a plan typed here has its own date. */}
+                          {creditApplicationId &&
+                            inhouseInstallmentCartLines.some((l) => !l.manualPlan) &&
+                            (() => {
+                              const note = applicationFmiNote(
+                                approvedCreditApplications.find((a) => a.id === creditApplicationId)
+                                  ?.firstDueDate
+                              )
+                              return note ? (
+                                <p
+                                  data-testid="application-fmi-note"
+                                  className={`mt-1.5 text-xs ${
+                                    note.warn ? 'text-amber-700' : 'text-prominent-purple-600'
+                                  }`}
+                                >
+                                  {note.text}
+                                </p>
+                              ) : null
+                            })()}
                           {/* Three states, because they need different things
                             from the cashier:
 
@@ -7034,6 +7248,8 @@ export default function CheckoutPage() {
                                     {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
                                   </p>
                                 </>
+                              ) : dpBucketFor(group) ? (
+                                renderBucketDownPayment(group)
                               ) : (
                                 <DownPaymentField
                                   badge={
@@ -7175,6 +7391,8 @@ export default function CheckoutPage() {
                                     {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
                                   </p>
                                 </>
+                              ) : dpBucketFor(group) ? (
+                                renderBucketDownPayment(group)
                               ) : (
                                 <DownPaymentField
                                   badge={

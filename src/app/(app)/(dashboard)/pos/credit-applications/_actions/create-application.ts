@@ -87,6 +87,10 @@ export async function createCreditApplication(
     // a claim about money that nobody made.
     lcp: parsed.data.lcp ? Number(parsed.data.lcp) : undefined,
     ppdRebate: parsed.data.ppdRebate ? Number(parsed.data.ppdRebate) : undefined,
+    // The applicant's current address as given on this application. Kept on
+    // the application; the customer's own record is not updated from it.
+    applicantAddress: parsed.data.applicantAddress?.trim() || undefined,
+    applicantBarangayCode: parsed.data.applicantBarangayCode?.trim() || undefined,
     // Same for the selects — @IsOptional() skips undefined/null, not ''.
     firstDueDate: parsed.data.firstDueDate || undefined,
     downPaymentCollection: parsed.data.downPaymentCollection || undefined,
