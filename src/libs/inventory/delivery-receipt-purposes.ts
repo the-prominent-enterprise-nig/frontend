@@ -68,21 +68,21 @@ export const DR_PURPOSE_CONFIG: Record<DrPurpose, DrPurposeConfig> = {
     label: 'For repair to service center',
     withDebitMemo: false,
     effect:
-      'Pick the repair ticket (UDS) — its unit and repair provider fill in. When approved, the unit goes to the provider on this DR and stays on the books. No debit memo and no journal entry.',
+      'Pick a repair ticket (UDS), or leave it blank and pick the unit and provider — approval opens the ticket for you. The unit goes to the provider and stays on the books.',
     counterparty: 'supplier',
   },
   repaired_to_customer: {
     label: 'Repaired unit to customer',
     withDebitMemo: false,
     effect:
-      'Pick the repair ticket (UDS) — its unit and customer fill in. When approved, the repaired unit is released back to its customer on this DR, which closes the ticket. No debit memo.',
+      'Pick the repair ticket (UDS) if there is one — its unit and customer fill in, and approval releases the repaired unit back to its customer and closes the ticket. Without a ticket, pick the customer and their unit; the DR records the hand-over and moves no stock. No debit memo.',
     counterparty: 'customer',
   },
   unrepaired_to_customer: {
     label: 'Unrepaired unit to customer',
     withDebitMemo: false,
     effect:
-      'Pick the repair ticket (UDS) — its unit and customer fill in. When approved, the unrepaired unit is returned to its customer on this DR, which closes the ticket. No debit memo.',
+      'Pick the repair ticket (UDS) if there is one — its unit and customer fill in, and approval returns the unrepaired unit to its customer and closes the ticket. Without a ticket, pick the customer and their unit; the DR records the hand-over and moves no stock. No debit memo.',
     counterparty: 'customer',
   },
   sales_invoice_to_follow: {
