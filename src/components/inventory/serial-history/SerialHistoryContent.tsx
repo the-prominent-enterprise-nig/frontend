@@ -59,10 +59,6 @@ function formatDate(iso: string): string {
   })
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
-}
-
 /** "Where is it now", in one line — the question the panel is opened for. */
 function whereNow(header: SerialHistoryHeader): string {
   const place = header.consignedToVenue ?? header.location
@@ -164,8 +160,10 @@ function TimelineEntry({ entry, isLast }: { entry: SerialMovementEntry; isLast: 
       <div className="min-w-0 flex-1 pt-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           <p className="text-[13.5px] font-semibold text-[#17171c]">{entry.label}</p>
-          <p className="text-[11.5px] text-[#8b8b9b]">
-            {formatDate(entry.occurredAt)} · {formatTime(entry.occurredAt)}
+          {/* Scenario 74 — the date only; the client's stock book carries no
+              time of day. */}
+          <p data-testid="serial-history-date" className="text-[11.5px] text-[#8b8b9b]">
+            {formatDate(entry.occurredAt)}
           </p>
         </div>
         <p className="mt-0.5 text-[13px] text-[#5b5b6b]">{entry.description}</p>

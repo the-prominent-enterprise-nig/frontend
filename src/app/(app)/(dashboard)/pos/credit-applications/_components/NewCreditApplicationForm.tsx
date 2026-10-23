@@ -106,11 +106,22 @@ export default function NewCreditApplicationForm({
   // Handing the restored rows to CreditApplicationItemFields and changing
   // its key remounts it with the labels in place.
   const [restoredItems, setRestoredItems] = useState<InitialCreditApplicationItem[] | null>(null)
+  // Scenario 74 — set when checkout handed over a cart whose installment lines
+  // were on different Price Uses; the form took the first line's.
+  const [priceUseNotice, setPriceUseNotice] = useState<string | null>(null)
 
   useEffect(() => {
     const raw = localStorage.getItem(DRAFT_KEY)
+    const rawNotice = localStorage.getItem(`${DRAFT_KEY}_notice`)
+    localStorage.removeItem(`${DRAFT_KEY}_notice`)
     if (!raw) return
     localStorage.removeItem(DRAFT_KEY)
+    try {
+      const notice = rawNotice ? (JSON.parse(rawNotice) as { priceUseName?: string }) : null
+      if (notice?.priceUseName) setPriceUseNotice(notice.priceUseName)
+    } catch {
+      // A bad notice is just not shown.
+    }
     try {
       const draft = JSON.parse(raw) as Partial<CreateCreditApplicationFormValues>
       reset({
@@ -603,6 +614,17 @@ export default function NewCreditApplicationForm({
               // units worth offering.
               unitBranchId={sessionBranchId}
             />
+
+            {priceUseNotice && (
+              <p
+                data-testid="price-use-notice"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+              >
+                The cart&apos;s installment items use different price uses. This application uses{' '}
+                <strong className="font-semibold">{priceUseNotice}</strong>, from the first item —
+                change it below if that&apos;s not right.
+              </p>
+            )}
 
             <CreditApplicationFinancingFields
               control={control}
