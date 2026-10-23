@@ -23,7 +23,8 @@ export interface Slip {
   /** A processor's clearing account; empty means the branch's own cash. */
   clearsAccountId: string
   note: string
-  /** This bank's own deposit slip number — each bank issues its own. */
+  /** This bank's own deposit slip number — each bank issues its own, and a
+   * deposit cannot be recorded without it. */
   reference: string
   /** The day this slip was banked, `YYYY-MM-DD`. Slips on different days post
    * separate journal entries. */
@@ -91,6 +92,7 @@ function SlipRow({
         onChange={(e) => onChange({ reference: e.target.value })}
         placeholder="Reference number"
         aria-label={`${label} reference`}
+        required
         maxLength={100}
         className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
       />
@@ -179,9 +181,11 @@ export const slipAmount = (slip: Slip): number => Number(slip.amount) || 0
 
 /** Why the slips cannot be saved yet, or null when they can. */
 export function slipsProblem(slips: Slip[]): string | null {
-  const incomplete = slips.some((s) => !s.bankAccountId || slipAmount(s) <= 0 || !s.depositDate)
+  const incomplete = slips.some(
+    (s) => !s.bankAccountId || slipAmount(s) <= 0 || !s.depositDate || !s.reference.trim()
+  )
   return incomplete
-    ? 'Every slip needs a bank account, an amount and a date — remove any empty slip.'
+    ? 'Every slip needs a bank account, an amount, a reference number and a date — remove any empty slip.'
     : null
 }
 
@@ -192,7 +196,7 @@ export function toLineInputs(slips: Slip[]): PosDepositLineInput[] {
     amount: slipAmount(s),
     clearsAccountId: clearsAccountOf(s),
     note: s.note || undefined,
-    reference: s.reference.trim() || undefined,
+    reference: s.reference.trim(),
     depositDate: s.depositDate,
   }))
 }

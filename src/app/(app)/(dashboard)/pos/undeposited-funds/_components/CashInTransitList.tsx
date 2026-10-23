@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Download, Landmark, Search, X } from 'lucide-react'
 import {
@@ -390,7 +391,12 @@ export function CashInTransitList({
       branchName: first.branchName,
     })
   }
-  const [openDepositId, setOpenDepositId] = useState<string | null>(null)
+  // A journal entry's amount links here with ?deposit=<id>, opening that
+  // deposit; closing it takes the id back out of the address.
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [openDepositId, setOpenDepositId] = useState<string | null>(searchParams.get('deposit'))
 
   /** After any deposit action: the table, the cards and the branch totals. */
   const refreshAll = (): void => {
@@ -491,7 +497,10 @@ export function CashInTransitList({
           accounts={ledger.accounts}
           canManage={canManage}
           canVerify={canVerify}
-          onClose={() => setOpenDepositId(null)}
+          onClose={() => {
+            setOpenDepositId(null)
+            if (searchParams.get('deposit')) router.replace(pathname)
+          }}
           onChanged={refreshAll}
         />
       )}
