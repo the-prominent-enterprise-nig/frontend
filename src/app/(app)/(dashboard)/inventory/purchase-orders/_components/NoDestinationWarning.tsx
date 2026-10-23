@@ -22,8 +22,8 @@ export function NoDestinationWarning({
 }: {
   warehouseId?: string | null
   deliveryInstructions?: string | null
-  /** Shown on a saved order or stock request rather than its form: the fix
-   * is to edit it. 'submit' is the stock request's Submit confirm, the last
+  /** Shown on a saved order or purchase request rather than its form: the fix
+   * is to edit it. 'submit' is the purchase request's Submit confirm, the last
    * point it can still be edited. */
   saved?: 'order' | 'request' | 'submit'
 }): React.ReactElement | null {

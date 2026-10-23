@@ -642,13 +642,13 @@ export default function CreateTransferModal({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-[#a3a3b2]`}>
-              Inventory &rsaquo; Stock transfers &rsaquo;{' '}
+              Inventory &rsaquo; Stock requests &rsaquo;{' '}
               {isEditing ? (editing?.transferNumber ?? 'Edit') : 'New'}
             </p>
             <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-[#17171c]">
               {isEditing
                 ? `Edit Request ${editing?.transferNumber ?? ''}`.trim()
-                : 'New Stock Transfer'}
+                : 'New Stock Request'}
             </h2>
             <p className="mt-1 text-[13px] text-[#5b5b6b]">
               {isEditing
@@ -675,11 +675,11 @@ export default function CreateTransferModal({
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
             <div className="grid grid-cols-1 gap-4">
-              {/* Transfer details */}
+              {/* Request details */}
               <div className="rounded-xl border border-[#e4e4e9] bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-[18px] py-[13px]">
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
-                    Transfer details
+                    Request details
                   </span>
                   {canCreateCaravan && !isEditing && (
                     <label className="flex cursor-pointer items-center gap-2 text-[12px] text-[#3d3d4a]">
@@ -696,7 +696,7 @@ export default function CreateTransferModal({
                       />
                       <span className="font-medium">For a caravan</span>
                       <span className="hidden text-[#8b8b9b] sm:inline">
-                        — sending stock to a caravan event hosted at a branch
+                        — requesting stock for a caravan event hosted at a branch
                       </span>
                     </label>
                   )}
@@ -920,8 +920,8 @@ export default function CreateTransferModal({
                             Send directly — no destination approval required
                           </span>
                           <span className="block text-[11.5px] text-[#5b5b6b]">
-                            Skips the receiving branch manager&apos;s sign-off. The stock request
-                            flow is unaffected; this only applies to this transfer.
+                            Skips the receiving branch manager&apos;s sign-off for this request
+                            only. Other stock requests still need it.
                           </span>
                           {/* A transfer doesn't record whether it was raised
                               directly, so an edit can't restore the choice —
@@ -948,7 +948,7 @@ export default function CreateTransferModal({
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-[18px] py-[13px]">
                 <div className="flex items-center gap-2.5">
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
-                    Items to transfer <span className="text-[#b42318]">*</span>
+                    Items to request <span className="text-[#b42318]">*</span>
                   </span>
                   <span className={`${MONO} text-[11px] text-[#5b5b6b]`}>
                     {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totalUnits} units
