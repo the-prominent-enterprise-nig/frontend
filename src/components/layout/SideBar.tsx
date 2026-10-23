@@ -129,8 +129,7 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
     label,
     href: hub.entryHref,
     icon,
-    // A tab with no permission requirement (Special Accounts) keeps the item
-    // visible to everyone, as that tab's own sidebar item was.
+    // A tab with no permission requirement keeps the item visible to everyone.
     requiredPermission: hub.tabs.some((tab) => tab.permissions.length === 0)
       ? undefined
       : hub.tabs.flatMap((tab) => tab.permissions),
@@ -273,7 +272,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Product Catalog',
         href: '/pos/catalog',
         icon: BookOpen,
-        requiredPermission: POS_PERMISSIONS.TRANSACTIONS_READ,
+        requiredPermission: [POS_PERMISSIONS.TRANSACTIONS_READ, POS_PERMISSIONS.CATALOG_READ],
         activeWhen: ['/pos/catalog'],
       },
       {
