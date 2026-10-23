@@ -209,6 +209,11 @@ export default function CreditApplicationDetail({
       priceUseTypeId: application.priceUseTypeId ?? '',
       financingTermId: application.financingTermId ?? '',
       downPayment: application.downPayment != null ? String(application.downPayment) : '',
+      // The two paper-record figures the client wants correctable after
+      // intake. A date column comes back as a full timestamp; the date input
+      // wants its yyyy-mm-dd.
+      firstDueDate: application.firstDueDate ? application.firstDueDate.slice(0, 10) : '',
+      ppdRebate: application.ppdRebate != null ? String(application.ppdRebate) : '',
     })
   }, [isEditOpen, application, resetEditForm])
 
@@ -691,9 +696,20 @@ export default function CreditApplicationDetail({
             <div>
               <dt className="text-xs text-zinc-500">Current address</dt>
               <dd className="mt-0.5">
+                {/* The address given on this application. The customer's own
+                    is only the fallback, for applications raised before one
+                    was kept here. */}
                 <PhAddressText
-                  address={applicant.address}
-                  barangayCode={applicant.barangayCode}
+                  address={
+                    application.applicantAddress || application.applicantBarangayCode
+                      ? application.applicantAddress
+                      : applicant.address
+                  }
+                  barangayCode={
+                    application.applicantAddress || application.applicantBarangayCode
+                      ? application.applicantBarangayCode
+                      : applicant.barangayCode
+                  }
                   className="text-zinc-900"
                 />
               </dd>
@@ -828,7 +844,7 @@ export default function CreditApplicationDetail({
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">First Due Date</dt>
+                <dt className="text-zinc-500">FMI Date</dt>
                 <dd className="mt-0.5 text-zinc-900">
                   {application.firstDueDate
                     ? new Date(application.firstDueDate).toLocaleDateString('en-PH', {
@@ -1425,6 +1441,56 @@ export default function CreditApplicationDetail({
                   errors={editErrors}
                   branchId={application.branchId}
                 />
+
+                {/* FMI and the PPD rebate. The financing block above never
+                    rewrites them: they are what the paper says, so a change
+                    of item or term leaves the figures typed here alone. */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="edit-fmi-date"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      FMI date
+                    </label>
+                    <Controller
+                      name="firstDueDate"
+                      control={editControl}
+                      render={({ field }) => (
+                        <input
+                          {...field}
+                          id="edit-fmi-date"
+                          value={field.value ?? ''}
+                          type="date"
+                          className={fieldClass}
+                        />
+                      )}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="edit-ppd-rebate"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      PPD rebate (₱) <span className="text-zinc-400">(optional)</span>
+                    </label>
+                    <Controller
+                      name="ppdRebate"
+                      control={editControl}
+                      render={({ field }) => (
+                        <input
+                          {...field}
+                          id="edit-ppd-rebate"
+                          value={field.value ?? ''}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          className={fieldClass}
+                        />
+                      )}
+                    />
+                  </div>
+                </div>
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
