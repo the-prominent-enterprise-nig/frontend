@@ -19,11 +19,7 @@ export type HubTab = {
   id: string
   label: string
   href: string
-  /**
-   * Holding any one of these shows the tab. Empty means no permission is
-   * required — only Special Accounts, whose page and sidebar item were never
-   * gated; left as it was rather than tightened here.
-   */
+  /** Holding any one of these shows the tab. Empty means no permission is required. */
   permissions: string[]
 }
 
@@ -116,13 +112,13 @@ export const EXPENSES_HUB: Hub = {
       id: 'recurring-expenses',
       label: 'Recurring',
       href: '/accounting/expenses/recurring',
-      permissions: [ACCOUNTING_PERMISSIONS.EXPENSE_READ],
+      permissions: [ACCOUNTING_PERMISSIONS.RECURRING_EXPENSES_READ],
     },
     {
       id: 'special-accounts',
       label: 'Special Accounts',
       href: '/accounting/special-accounts',
-      permissions: [],
+      permissions: [ACCOUNTING_PERMISSIONS.SPECIAL_ACCOUNTS_READ],
     },
     {
       // Scenario 52 — issues against the same Employee Cash Loan Special

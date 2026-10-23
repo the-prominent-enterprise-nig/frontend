@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
-import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { requirePermission } from '@/src/libs/guards/require-permission'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { HubTabs } from '../_shared/HubTabs'
 import SpecialAccountsList from './_components/SpecialAccountsList'
 
@@ -9,8 +10,10 @@ export const metadata = {
 }
 
 export default async function SpecialAccountsPage() {
-  const session = await getSessionOrNull()
-  if (!session) redirect('/login')
+  const session = requirePermission(
+    await getSessionOrNull(),
+    ACCOUNTING_PERMISSIONS.SPECIAL_ACCOUNTS_READ
+  )
 
   return (
     <>

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
 import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
-import { can, type SessionUser } from './permission'
+import { can, canAny, type SessionUser } from './permission'
 
 type Status = 'checking' | 'authorized'
 
@@ -31,11 +31,16 @@ type Status = 'checking' | 'authorized'
  *
  *   const { session, status } = useRequirePermission(POS_PERMISSIONS.GIFT_CARDS_READ)
  *   if (status !== 'authorized' || !session) return null
+ *
+ * A list means any one of them, as with requirePermission().
  */
-export function useRequirePermission(permission: string): {
+export function useRequirePermission(permission: string | string[]): {
   session: SessionUser | null
   status: Status
 } {
+  // A list passed inline is a new array every render; key the effect on its
+  // contents so it doesn't re-run each time.
+  const permissionKey = Array.isArray(permission) ? permission.join('|') : permission
   const router = useRouter()
   const [session, setSession] = useState<SessionUser | null>(null)
   const [status, setStatus] = useState<Status>('checking')
@@ -54,7 +59,12 @@ export function useRequirePermission(permission: string): {
         setUnavailable(new SessionUnavailableError(state.reason))
         return
       }
-      if (!can(state.session, permission)) {
+      const permissions = permissionKey.split('|')
+      const allowed =
+        permissions.length > 1
+          ? canAny(state.session, permissions)
+          : can(state.session, permissionKey)
+      if (!allowed) {
         router.replace('/403')
         return
       }
@@ -65,7 +75,7 @@ export function useRequirePermission(permission: string): {
     return () => {
       cancelled = true
     }
-  }, [router, permission])
+  }, [router, permissionKey])
 
   if (unavailable) throw unavailable
 
