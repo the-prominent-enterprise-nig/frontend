@@ -18,17 +18,6 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
-// The five stages the design tracks: the three live ones plus both terminal
-// outcomes, so the band reads as the whole life of a transfer rather than
-// only the part still needing a hand.
-const PIPELINE_STATUSES: { status: TransferStatus; note: string }[] = [
-  { status: 'requested', note: 'awaiting approval' },
-  { status: 'draft', note: 'ready to dispatch' },
-  { status: 'in_transit', note: 'on the road' },
-  { status: 'received', note: 'closed' },
-  { status: 'rejected', note: 'no stock moved' },
-]
-
 const PRIMARY_PILL_STATUSES: TransferStatus[] = [
   'requested',
   'draft',
@@ -466,7 +455,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Transfers</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Requests</h1>
             <p className="text-[13px] text-[#5b5b6b]">
               Move stock between branches with full ledger traceability.
             </p>
@@ -479,7 +468,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                 className="flex items-center gap-[7px] rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b]"
               >
                 <Plus className="h-3.5 w-3.5" />
-                New transfer
+                New request
               </button>
             )}
           </div>
@@ -488,45 +477,6 @@ export default function TransferList({ session }: { session: SessionUser }) {
         {/* Scenario 60 Part 3 — ended caravans still holding stock, for the
             people who can transfer it out. */}
         <EndedCaravansBanner variant="inventory" enabled={canCreate} />
-
-        {/* Pipeline band */}
-        <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#e4e4e9] bg-white lg:grid-cols-5">
-          {PIPELINE_STATUSES.map(({ status, note }, i) => {
-            const cfg = STATUS_CONFIG[status]
-            const Icon = cfg.icon
-            const count = statusCounts[status] ?? 0
-            const active = statusFilter === status
-            return (
-              <button
-                key={status}
-                type="button"
-                onClick={() => toggleStatus(status)}
-                className={`flex flex-col gap-1 px-[15px] py-[13px] text-left transition-colors ${
-                  active
-                    ? 'bg-[#faf7ff] shadow-[inset_0_-2px_0_#5b21b6]'
-                    : 'bg-white hover:bg-[#fbfbfc]'
-                } ${i > 0 ? 'border-l border-[#eeeef1]' : ''}`}
-              >
-                <span className="flex items-center gap-[7px]">
-                  <Icon className={`h-[13px] w-[13px] shrink-0 ${cfg.tone}`} />
-                  <span
-                    className={`${MONO} text-[10px] uppercase tracking-[0.08em] text-[#5b5b6b]`}
-                  >
-                    {cfg.label}
-                  </span>
-                </span>
-                <span
-                  className={`${MONO} text-[20px] font-semibold tracking-[-0.02em] ${
-                    count === 0 ? 'text-[#a3a3b2]' : 'text-[#17171c]'
-                  }`}
-                >
-                  {count}
-                </span>
-                <span className="text-[11px] text-[#5b5b6b]">{note}</span>
-              </button>
-            )
-          })}
-        </div>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-[9px]">

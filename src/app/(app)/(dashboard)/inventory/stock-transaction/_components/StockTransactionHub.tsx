@@ -20,8 +20,6 @@ import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import type { ProcurementHubPermissions } from '../../purchase-orders/_permissions/procurement-hub-permissions'
-import { PurchaseOrderList } from '../../purchase-orders/_components/PurchaseOrderList'
-import { PurchaseRequestList } from '../../purchase-requests/_components/PurchaseRequestList'
 import ReceivingReportsTab from '../../goods-receiving/_components/ReceivingReportsTab'
 import { TransferList } from '../../transfers/_components'
 import { ReturnList } from '../../returns/_components'
@@ -31,6 +29,7 @@ import { AdjustmentList } from '../../adjustments/_components'
 import DebitMemoList from '../../debit-memos/_components/DebitMemoList'
 import UdsList from '../../uds/_components/UdsList'
 import DeliveryReceiptList from '../../delivery-receipts/_components/DeliveryReceiptList'
+import { PurchaseOrderList } from '../../purchase-orders/_components/PurchaseOrderList'
 
 type TransactionTab = NavTab & { icon: LucideIcon; permissions: string[]; hidden?: boolean }
 
@@ -46,22 +45,18 @@ const TABS: TransactionTab[] = [
     permissions: [INVENTORY_PERMISSIONS.RECEIVE_READ],
   },
   {
+    // Kept as 'transfers' so existing ?tab=transfers links still land here.
     id: 'transfers',
-    label: 'Stock Transfer',
+    label: 'Stock Request',
     icon: ArrowLeftRight,
     permissions: [INVENTORY_PERMISSIONS.TRANSFERS_READ],
   },
   {
+    // Purchase requests are managed here too, in the list's open-requests section.
     id: 'purchase-orders',
     label: 'Purchase Order',
     icon: ShoppingCart,
     permissions: [PROCUREMENT_PERMISSIONS.PO_READ, PROCUREMENT_PERMISSIONS.PR_READ],
-  },
-  {
-    id: 'stock-requests',
-    label: 'Stock Request',
-    icon: ClipboardList,
-    permissions: [PROCUREMENT_PERMISSIONS.PR_READ],
   },
   {
     // Scenario 72 — stock leaving without a sale.
@@ -159,10 +154,9 @@ function TabBody({
           canViewCost={procurement.canViewCost}
           canViewApBill={procurement.canViewApBill}
           currentUserBranchId={session.branchId}
+          session={session}
         />
       )
-    case 'stock-requests':
-      return <PurchaseRequestList session={session} />
     case 'debit-memos':
       return <DebitMemoList session={session} />
     case 'uds':
@@ -186,7 +180,9 @@ export function StockTransactionHub({
   const searchParams = useSearchParams()
   const visible = TABS.filter((tab) => !tab.hidden && tab.permissions.some((p) => can(session, p)))
   const requested = searchParams.get('tab')
-  const active = visible.find((tab) => tab.id === requested) ?? visible[0]
+  // The old Stock Request tab (purchase requests) now lives in Purchase Order.
+  const resolved = requested === 'stock-requests' ? 'purchase-orders' : requested
+  const active = visible.find((tab) => tab.id === resolved) ?? visible[0]
 
   // A hidden or inaccessible ?tab= would show content with no tab highlighted,
   // so rewrite the URL to the tab that is actually shown.
