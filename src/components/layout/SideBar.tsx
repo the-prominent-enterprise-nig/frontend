@@ -986,7 +986,10 @@ const WORKSPACE_ITEMS: NavItem[] = [
     label: 'Audit Logs',
     href: '/settings/audit-logs',
     icon: ClipboardList,
-    requiredPermission: [...ADMIN_TIER, 'admin:audit-logs:read'],
+    // Not ADMIN_TIER: the page itself admits isAdmin, but the audit-log API
+    // behind it requires admin:audit-logs:read and nothing else, so an
+    // admin-tier role without that row would land on a page that can't load.
+    requiredPermission: 'admin:audit-logs:read',
   },
 ]
 

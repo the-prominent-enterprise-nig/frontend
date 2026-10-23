@@ -139,6 +139,19 @@ export const PRESET_EXCLUDED_PERMISSIONS = new Set([
   'accounting:account:update',
   'accounting:account:delete',
   'accounting:bir_export:generate',
+  // Tax setup (Scenario 69) is the same enterprise-wide infrastructure as the
+  // chart of accounts and fiscal periods above. seed.ts gives Branch Manager
+  // only tax-codes:override — departing from a defaulted code — never the
+  // setup or the period close itself.
+  'accounting:tax-codes:create',
+  'accounting:tax-codes:update',
+  'accounting:tax-closing:create',
+
+  // Data Query Center (Scenario 62): Business Owner only. seed.ts grants it to
+  // no other role, and both QueryCenterGuard and the sidebar require this exact
+  // row so no wildcard reaches it. As a plain `read` it would otherwise ride
+  // along with View Only on Accounting.
+  'accounting:query-center:read',
 
   // inventory:receive:cost-view: redundant with the exact action-name match above
   // for the one thing this list was built to prevent — actionMatches("cost-view",
