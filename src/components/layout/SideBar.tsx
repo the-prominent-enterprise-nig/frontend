@@ -1179,11 +1179,9 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
       .map((item) => ({ ...item, section: moduleLabel }))
 
     // Inside a module the settings block collapses to one header row that
-    // expands in place. Business Owner in Accounting was otherwise 44 rows —
-    // 8 settings entries stacked on top of that module's own 27 — pushing the
-    // module nav most of a screen down. Collapsed by default, but forced open
-    // whenever one of its own pages is the current route, so the sidebar never
-    // hides where you actually are.
+    // expands in place, below the module's own items. Collapsed by default,
+    // but forced open whenever one of its own pages is the current route, so
+    // the sidebar never hides where you actually are.
     const workspaceHasActiveRoute = visibleWorkspaceItems.some(
       (item) => pathname === item.href || pathname.startsWith(item.href + '/')
     )
@@ -1205,7 +1203,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
         ]
       : []
 
-    mainItems = [...workspaceGroup, ...labeledModuleItems]
+    mainItems = [...labeledModuleItems, ...workspaceGroup]
   }
 
   const withBadge = (item: NavItem): NavItem =>
