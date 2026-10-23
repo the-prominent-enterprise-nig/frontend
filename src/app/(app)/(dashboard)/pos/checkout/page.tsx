@@ -44,7 +44,9 @@ import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
 import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { useQueryClient } from '@tanstack/react-query'
 import { useSessions } from '../_hooks/usePos'
+import { POS_CATALOG_KEY, posCatalogQueryOptions } from '../_hooks/posCatalogQuery'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
@@ -557,6 +559,7 @@ const DR_SALE_ERRORS: Record<string, string> = {
 export default function CheckoutPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const { branchId: switcherBranchId } = usePosBranchContext()
   const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
     status: 'open',
@@ -1277,16 +1280,14 @@ export default function CheckoutPage() {
     setCatalogLoading(true)
     setCatalogError('')
 
+    // One cached copy per branch, shared with the Product Catalog page — the
+    // full catalog is ~5 MB, so coming back to Checkout shouldn't re-download it.
     Promise.all([
-      itemLookup(undefined, branchId),
+      queryClient.fetchQuery(posCatalogQueryOptions(branchId)),
       getUnitsOfMeasure().catch(() => ({ success: false, data: null })),
     ])
-      .then(([catalogRes, uomRes]) => {
-        if (!catalogRes.success) {
-          setCatalogError(catalogRes.error ?? 'Failed to load items')
-          return
-        }
-        const raw = (catalogRes.data ?? []) as LookupItem[]
+      .then(([catalogRows, uomRes]) => {
+        const raw = catalogRows as LookupItem[]
 
         const uomMap = Object.fromEntries((uomRes.data?.data ?? []).map((u) => [u.id, u]))
 
@@ -1306,9 +1307,11 @@ export default function CheckoutPage() {
         setCatalogItems(enriched)
         setCatalogStockKnown(!!branchId)
       })
-      .catch(() => setCatalogError('Failed to load items'))
+      .catch((err) =>
+        setCatalogError(err instanceof Error && err.message ? err.message : 'Failed to load items')
+      )
       .finally(() => setCatalogLoading(false))
-  }, [sessionId, openSessions, sessionsData])
+  }, [sessionId, openSessions, sessionsData, queryClient])
 
   // Fetch enabled payment methods whenever the active branch changes
   useEffect(() => {
@@ -4827,6 +4830,10 @@ export default function CheckoutPage() {
         totalAmount: 0,
         currency: 'PHP',
       })
+
+      // The sale moved stock, so the cached catalog is now behind. Marking it
+      // stale makes the next Checkout / Product Catalog visit re-read it.
+      void queryClient.invalidateQueries({ queryKey: [POS_CATALOG_KEY] })
 
       setSubmitting(false)
       setSuccess({

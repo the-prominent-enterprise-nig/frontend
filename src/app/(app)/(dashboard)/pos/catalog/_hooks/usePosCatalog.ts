@@ -1,8 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { STALE } from '@/src/libs/query/stale-times'
-import { itemLookup } from '../../_actions/pos-actions'
+import { posCatalogQueryOptions } from '../../_hooks/posCatalogQuery'
 
 /** One sellable item as the POS catalog endpoint returns it. Stock and price
  * are already resolved for the branch the request was made for. */
@@ -21,13 +20,9 @@ export interface PosCatalogItem {
 }
 
 export function usePosCatalog(branchId: string | null) {
+  // Shares one cache entry with Checkout — see posCatalogQueryOptions.
   return useQuery({
-    queryKey: ['pos-product-catalog', branchId],
-    queryFn: async (): Promise<PosCatalogItem[]> => {
-      const res = await itemLookup(undefined, branchId ?? undefined)
-      if (!res.success) throw new Error(res.error ?? 'Failed to load catalog')
-      return (res.data ?? []) as PosCatalogItem[]
-    },
-    staleTime: STALE.REALTIME,
+    ...posCatalogQueryOptions(branchId),
+    select: (rows) => rows as PosCatalogItem[],
   })
 }
