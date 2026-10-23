@@ -1,0 +1,336 @@
+'use client'
+
+import type { DailyCollectionReport } from '@/src/schema/pos/daily-collection'
+import type { SheetDraftController } from '../_hooks/useSheetDraft'
+import {
+  buildCollectionRecapLines,
+  withValuesOnly,
+  buildDenominationLines,
+  cashPosition,
+  footerAmount,
+  peso,
+  type DenominationLine,
+} from './form-model'
+
+/**
+ * The two blocks the paper form prints inside the bottom of its grid, given
+ * room to breathe on screen.
+ *
+ * Left is the client form's recap of what was collected; right proves the
+ * drawer holds it. They meet at CASH COLLECTED against TOTAL COLLECTION, and
+ * the verdict box states the result in words rather than leaving a reader to
+ * subtract two figures themselves.
+ */
+
+/** The recap's labels spelled out — the form assumes you already know them,
+ * a screen has room not to. */
+const LINE_NOTES: Record<string, string> = {
+  COD: 'Cash on delivery',
+  DP: 'Down payment',
+  MI: 'Monthly instalment, incl. FMI and FP',
+}
+
+const PANE_HEAD =
+  'border-b border-gray-200 px-4 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-gray-500'
+const ROW = 'flex items-baseline justify-between gap-3 px-4 py-2 text-sm'
+const FIGURE = 'font-mono tabular-nums'
+const INPUT =
+  'w-20 rounded-md border border-gray-300 bg-white px-2 py-1 text-right font-mono text-xs tabular-nums outline-none focus:border-prominent-purple-500 focus:ring-2 focus:ring-prominent-purple-100'
+
+interface Props {
+  report: DailyCollectionReport
+  /** Null for a read-only report. */
+  edit: SheetDraftController | null
+}
+
+export default function DailyCollectionTotals({ report, edit }: Props): React.JSX.Element {
+  const draft = edit?.draft ?? null
+  // While editing, the blocks add up what is being typed, so the totals and
+  // the verdict move as the cashier counts rather than only after a save.
+  const counts = draft
+    ? Object.fromEntries(
+        Object.entries(draft.denominations).map(([face, raw]) => [face, Number(raw) || 0])
+      )
+    : undefined
+  const denominations = buildDenominationLines(report, counts)
+  const position = cashPosition(report, counts ?? report.denominations)
+
+  return (
+    <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <ByTypePane report={report} />
+      <DenominationPane
+        report={report}
+        denominations={denominations}
+        edit={edit}
+        position={position}
+      />
+    </section>
+  )
+}
+
+/**
+ * What the branch collected, in the client's own order: every collection of
+ * the day by kind, cash and non-cash, then TOTAL COLLECTION. One list,
+ * no sub-grouping — the client asked for the shape of their own form, not a
+ * breakdown of it (2026-10-09).
+ *
+ * The two cash lines that are NOT in this drawer — what no session has
+ * counted yet, and what another counter took — sit under the cash total as
+ * plain rows. They are the only reason a count of this drawer comes to less
+ * than that total, so dropping them would read as a shortage; they stay one
+ * line each, with the detail left to the ledger's own row tags.
+ *
+ * The figures come from the same `buildCollectionRecapLines` the printed form
+ * uses, so no amount here can disagree with the paper.
+ *
+ * Only the rows carrying a value are drawn (`withValuesOnly`).
+ */
+function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.Element {
+  const lines = withValuesOnly(buildCollectionRecapLines(report))
+  const cash = lines.filter((l) => l.group === 'cash')
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
+      <p className={PANE_HEAD}>Collection</p>
+      {cash.map((line, i) =>
+        line.highlight ? (
+          <div key={line.label} className={`${ROW} border-y border-yellow-200 bg-yellow-50 py-3`}>
+            <span className="font-semibold text-gray-900">Total collection</span>
+            <span className={`${FIGURE} text-base font-semibold`}>{peso(line.amount ?? 0)}</span>
+          </div>
+        ) : (
+          <RecapRow
+            key={`${i}-${line.label}`}
+            label={line.label}
+            amount={line.amount}
+            note={line.note ?? LINE_NOTES[line.label]}
+          />
+        )
+      )}
+
+      {report.pendingCashOnHand > 0.005 && (
+        <PlainRow label="Not yet counted (open drawers)" amount={report.pendingCashOnHand} />
+      )}
+      {/* One row per satellite counter, named — "At Pandan". Naming them
+          needs no heading, no note and no collective noun, and reads the same
+          whether there is one or four. (No collective noun on purpose:
+          "satellite" means something specific in the client's own data.) */}
+      {report.offsiteCash.map((counter) => (
+        <PlainRow key={counter.id} label={`At ${counter.name}`} amount={counter.amount} />
+      ))}
+    </div>
+  )
+}
+
+/** A label and a figure, for cash the day collected but this drawer does not
+ * hold. No code, no note — it reads as plain English beside the coded recap
+ * rows above it. */
+function PlainRow({ label, amount }: { label: string; amount: number }): React.JSX.Element {
+  return (
+    <div className={`${ROW} border-b border-gray-100`}>
+      <span className="min-w-0 text-gray-700">{label}</span>
+      <span className={FIGURE}>{peso(amount)}</span>
+    </div>
+  )
+}
+
+function RecapRow({
+  label,
+  amount,
+  note,
+}: {
+  label: string
+  amount: number | null
+  note?: string
+}): React.JSX.Element {
+  return (
+    <div className={`${ROW} border-b border-gray-100`}>
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span
+          className={`font-mono text-xs font-semibold ${
+            amount ? 'text-prominent-purple-900' : 'text-gray-400'
+          }`}
+        >
+          {label}
+        </span>
+        <span className="truncate text-xs text-gray-500">{note ?? LINE_NOTES[label]}</span>
+      </span>
+      <span className={`${FIGURE} ${amount ? 'text-gray-900' : 'text-gray-400'}`}>
+        {amount ? peso(amount) : '—'}
+      </span>
+    </div>
+  )
+}
+
+function DenominationPane({
+  report,
+  denominations,
+  edit,
+  position,
+}: {
+  report: DailyCollectionReport
+  denominations: DenominationLine[]
+  edit: SheetDraftController | null
+  position: ReturnType<typeof cashPosition>
+}): React.JSX.Element {
+  // Note rows carry a face value; COINS, TOTAL and the float line do not.
+  const isFace = (label: string) => /^\d+$/.test(label)
+  const pieces = denominations
+    .filter((l) => isFace(l.label))
+    .reduce((sum, l) => sum + (l.count ?? 0), 0)
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-2.5">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+          Denomination
+        </p>
+        <p className="text-xs text-gray-500">
+          {edit ? 'Enter pieces' : `${pieces} ${pieces === 1 ? 'note' : 'notes'} counted`}
+        </p>
+      </div>
+
+      {denominations.map((line) => {
+        const face = isFace(line.label)
+        const coins = line.label === 'COINS'
+        const summary = !face && !coins
+
+        return (
+          <div
+            key={line.label}
+            className={`${ROW} border-b border-gray-100 ${summary ? 'bg-gray-50/60' : ''}`}
+          >
+            <span
+              className={`font-mono text-xs ${
+                line.emphasis ? 'font-semibold text-gray-900' : 'text-gray-600'
+              }`}
+            >
+              {line.label}
+            </span>
+            <span className="flex items-center gap-3">
+              {face &&
+                (edit ? (
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    aria-label={`Count of ${line.label} notes`}
+                    className={INPUT}
+                    value={edit.draft?.denominations[line.label] ?? ''}
+                    onChange={(e) => edit.setDenomination(line.label, e.target.value)}
+                  />
+                ) : (
+                  <span className={`${FIGURE} text-xs text-gray-500`}>{line.count ?? ''}</span>
+                ))}
+              {coins && edit ? (
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  aria-label="Total amount in coins"
+                  className={`${INPUT} w-28`}
+                  value={edit.draft?.denominations.coins ?? ''}
+                  onChange={(e) => edit.setDenomination('coins', e.target.value)}
+                />
+              ) : (
+                <span
+                  className={`${FIGURE} w-28 text-right ${
+                    line.emphasis ? 'font-semibold' : 'text-gray-700'
+                  }`}
+                >
+                  {footerAmount(line)}
+                </span>
+              )}
+            </span>
+          </div>
+        )
+      })}
+
+      <Verdict report={report} position={position} edit={edit} />
+    </div>
+  )
+}
+
+/**
+ * The result in one line: the figure the count is measured against, and what
+ * to do if it does not match.
+ *
+ * It names no other figure. The lines directly above already read TOTAL /
+ * LESS: OPENING FLOAT / CASH COLLECTED, and the collection panel beside it
+ * already lists the cash this count is not supposed to contain — open
+ * drawers, other counters, non-cash — so repeating either here only buried
+ * the one number that matters (client asked to cut the sub-classification,
+ * 2026-10-09).
+ *
+ * When the typed count contradicts the day's session closings, the reason
+ * lives here too: it is the field that blocks the save, so it belongs beside
+ * the figure that triggered it rather than three sections away.
+ */
+function Verdict({
+  report,
+  position,
+  edit,
+}: {
+  report: DailyCollectionReport
+  position: ReturnType<typeof cashPosition>
+  edit: SheetDraftController | null
+}): React.JSX.Element {
+  const { variance, balanced } = position
+  const over = variance > 0
+  // Nothing has been counted at a register yet, so there is no drawer count
+  // for this one to disagree with — the gap is the whole day, not a variance.
+  // Worth saying outright: the block invites a count, and a cashier who types
+  // one here before closing their shift reads the result as a cash overage.
+  const nothingClosedYet = report.openSessionCount > 0 && report.settledCashCollection < 0.005
+  const tone =
+    balanced || nothingClosedYet
+      ? balanced
+        ? 'bg-emerald-50 text-emerald-900'
+        : 'bg-amber-50 text-amber-900'
+      : over
+        ? 'bg-blue-50 text-blue-900'
+        : 'bg-red-50 text-red-900'
+  // A variance's figure is the CASH VARIANCE line directly above, so this box
+  // carries only the colour and what to do about it. With no variance line —
+  // the drawer balances, or nothing has closed to count — it says why.
+  const title = nothingClosedYet
+    ? 'No drawer count to check this against yet'
+    : balanced
+      ? 'Cash balances'
+      : null
+
+  return (
+    <div className={`mt-auto border-t border-gray-200 px-4 py-3 ${tone}`}>
+      {title && <p className="text-sm font-semibold">{title}</p>}
+      <p className={`text-xs leading-relaxed ${title ? 'mt-0.5' : ''}`}>
+        {nothingClosedYet ? (
+          <>
+            Close the day’s sessions in POS — each closing count lands here on its own. This block
+            only corrects it afterwards.
+          </>
+        ) : (
+          <>
+            Closed sessions collected {peso(report.settledCashCollection)} — that is what this count
+            must come to.
+            {!balanced && ' Recount, then check the day’s sessions before signing.'}
+          </>
+        )}
+      </p>
+
+      {edit?.countsChanged && (
+        <label className="mt-3 block">
+          <span className="text-xs font-semibold">
+            This count no longer matches the day’s session closings — say why:
+          </span>
+          <input
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 outline-none focus:border-prominent-purple-500 focus:ring-2 focus:ring-prominent-purple-100"
+            value={edit.draft?.denominationOverrideReason ?? ''}
+            onChange={(e) => edit.update('denominationOverrideReason', e.target.value)}
+            placeholder="Reason (required before this can be saved)"
+            aria-label="Reason for the corrected denomination count"
+          />
+        </label>
+      )}
+    </div>
+  )
+}

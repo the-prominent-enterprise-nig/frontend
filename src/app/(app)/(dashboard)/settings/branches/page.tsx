@@ -5,7 +5,7 @@ import { getBranches } from '../_actions/get-branches'
 import BranchesSection from './_components/BranchesSection'
 
 export const metadata = {
-  title: 'Branches | Prominent Enterprise',
+  title: 'Branches | NIG Central',
 }
 
 export default async function BranchesSettingsPage() {

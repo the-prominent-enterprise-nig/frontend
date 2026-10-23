@@ -10,7 +10,12 @@ const LineDiscountSchema = z.object({
 
 const ReceiveStockLineSchema = z
   .object({
-    itemId: z.string().min(1, 'Item is required'),
+    itemId: z.string().optional(),
+    // Scenario 55 (Stock-side Manual RR parity) — mirrors
+    // ManualReceivingReportLineFormSchema's own itemId/newItemName either-or:
+    // a line whose item genuinely has no catalog row yet is named here
+    // instead, resolved into a real Item at receiving time server-side.
+    newItemName: z.string().max(255).optional(),
     purchaseOrderLineId: z.string().optional(),
     quantityReceived: z.number().positive('Quantity must be greater than 0'),
     unitCost: z.number().min(0).optional(),
@@ -27,6 +32,12 @@ const ReceiveStockLineSchema = z
     discounts: z.array(LineDiscountSchema).optional(),
     taxCode: z.string().optional(),
     taxAmount: z.number().min(0).optional(),
+    // Scenario 55 (Stock-side Manual RR parity) — mirrors
+    // ManualReceivingReportLineFormSchema's own withholdingClass: 'goods'
+    // withholds 1% of this line's net cost, 'services' 2%. Read server-side
+    // only when the receipt carries no header vatTreatment (see
+    // receiveStock()'s perLineTax branch).
+    withholdingClass: z.string().optional(),
     // Promotional/free item included in the delivery — server forces
     // unitCost to 0 for these regardless of what's submitted (Scenario 05
     // followup, "freebies" gap).
@@ -34,7 +45,18 @@ const ReceiveStockLineSchema = z
     batchNumber: z.string().optional(),
     qualityHold: z.boolean().optional(),
     serialNumbers: z.array(z.string().min(1)).optional(),
+    // Scenario 55 Part 4 — IDs of already-registered, already-sold serials
+    // being repossessed on this line, picked from a real sale rather than
+    // typed as new. Mutually exclusive with serialNumbers in practice — a
+    // repossession picks existing units, never types brand-new ones.
+    existingSerialNumberIds: z.array(z.string().min(1)).optional(),
     notes: z.string().optional(),
+    // Scenario 55 Part 4 — which InstallmentAccount this unit was
+    // repossessed from. Only meaningful when the header's `reason` is
+    // `repossession`; the picker only renders for that reason. Auto-filled
+    // from the picked serial's sale when it resolves to exactly one account,
+    // editable/overridable either way.
+    installmentAccountId: z.string().optional(),
   })
   .refine(
     (line) =>
@@ -46,55 +68,144 @@ const ReceiveStockLineSchema = z
       path: ['serialNumbers'],
     }
   )
+  .refine(
+    (line) =>
+      !line.existingSerialNumberIds ||
+      line.existingSerialNumberIds.length === 0 ||
+      line.existingSerialNumberIds.length === line.quantityReceived,
+    {
+      message: 'Serial count must match quantity received',
+      path: ['existingSerialNumberIds'],
+    }
+  )
+  .refine((line) => !!line.itemId || !!line.newItemName?.trim(), {
+    message: 'Pick a catalog item or mark it "Non-catalog items".',
+    path: ['itemId'],
+  })
 
 export const ReceiveStockFormSchema = z
   .object({
-    code: z.string().optional(),
     purchaseOrderNumber: z.string().optional(),
-    purchaseOrderDate: z.string().optional(),
     supplierId: z.string().optional(),
-    // Tax as printed on the supplier's invoice. `withholding` is the rate
-    // rule (the supplier's default when omitted); `withheldAmount` is the
-    // amount actually withheld and overrides it. `vatTreatment` says how the
-    // entered unit costs relate to VAT — `inclusive` (what PH invoices
-    // normally quote) has the server back the VAT out of the cost rather
-    // than add it on top — and `vatAmount` overrides the derived figure.
-    withholding: z.enum(['none', 'pct_1']).optional(),
-    withheldAmount: z.number().min(0).optional(),
-    vatTreatment: z.enum(['inclusive', 'exclusive', 'exempt']).optional(),
-    vatAmount: z.number().min(0).optional(),
-    warehouseId: z.string().min(1, 'Destination warehouse is required'),
-    applicationType: z.enum(['new_stock', 'revert']),
+    // Scenario 55 (Stock-side Manual RR parity) — mirrors
+    // CreateManualReceivingReportFormSchema's own supplierId/newSourceName
+    // either-or: an unregistered source is named here instead of picked.
+    newSourceName: z.string().max(255).optional(),
+    // Required for every ordinary/PO/reasoned receipt — Location is asked
+    // for on the form. Repossession is the one exception: the destination
+    // is silently the receiver's own branch warehouse (or, unrestricted, one
+    // of the 2 real warehouses) rather than a field, so it can arrive here
+    // already set programmatically with no Location control ever rendered
+    // (see the refine below, and ReceiveStockModal's own auto-default
+    // effect).
+    warehouseId: z.string().optional(),
+    // Set once the receiver has seen and dismissed the cross-warehouse
+    // mismatch warning (New Receipt only) — re-sent on the confirmed retry so
+    // the backend posts instead of warning again.
+    confirmWarehouseMismatch: z.boolean().optional(),
+    // Scenario 55 (Stock-side Manual RR parity, follow-up) — applicationType
+    // (new_stock/revert) is gone from the form: 'revert' was never reachable
+    // anywhere else in the app (receive-against-PO always hardcodes
+    // new_stock too) and existed here only to waive the DR# requirement
+    // below, which this screen no longer offers a way to do. The backend
+    // DTO still requires the field, so receive-stock.ts sends 'new_stock'
+    // directly rather than carrying a fixed value through form state.
     modeOfTransfer: z.string().optional(),
-    nndpCost: z.number().positive().optional(),
     receivedAt: z.string().optional(),
     notes: z.string().max(1000).optional(),
     // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier
     // -> this Receiving Report. Both are the supplier's own paperwork,
     // typed in by whoever is physically receiving the delivery.
-    // Scenario 46 — the DR is required at receiving, the SI is not. The
-    // delivery receipt comes in the driver's hand with the goods, so it always
-    // exists at this moment; the supplier's invoice often follows days later
-    // and the client wants it filled in (and editable) when it does. See the
-    // refine below — this used to be the other way round.
+    // Scenario 46 — originally required at receiving, unlike the SI. Scenario
+    // 55 (Stock-side Manual RR parity, follow-up) dropped that requirement
+    // for this screen specifically, to mirror ManualReceivingReportDto's own
+    // deliveryReceiptNumber, which was never required either — a receiver
+    // here may not have the DR in hand yet. Still required server-side for
+    // every other caller (see receiveStock()'s perLineTax-gated ValidateIf).
     deliveryReceiptNumber: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
-    // Who physically brought the delivery — the Receiving Report's
-    // "Driver/Helper" line. Free text, not the Vehicle roster: that roster is
-    // our own fleet, for branch-to-branch transfers, and a supplier's crew
-    // will never be on it.
-    driverName: z.string().max(150).optional(),
-    helperName: z.string().max(150).optional(),
+    // Which tax model the server applies. Create RR sends perLineTax: true
+    // (per-line tax code/withholding class); Receive Against PO sends
+    // vatTreatment instead and keeps the supplier-driven model. Both used to
+    // be stripped here and perLineTax forced on in receive-stock.ts, which
+    // zeroed VAT/withholding on every PO receipt.
+    perLineTax: z.boolean().optional(),
+    vatTreatment: z.enum(['inclusive', 'exclusive', 'exempt']).optional(),
+    // Scenario 55 — why this is a no-PO receipt with no registered supplier:
+    // getting your own stock back (a repair return, a repossession) rather
+    // than a purchase. Mirrors StockReceiptReason server-side. When set,
+    // `supplierId` is no longer required (see the refine below) and a
+    // branch's own warehouse becomes a valid destination. '' is the
+    // picker's "unset" state (SearchableSelect has no undefined value of
+    // its own) — accepted here so the resolver doesn't reject an untouched
+    // form, normalized to undefined only when building the submit payload.
+    reason: z.union([z.enum(['repair_return', 'repossession', 'other']), z.literal('')]).optional(),
+    // Repair/Return only — where the unit is serviced. Decides which
+    // documents are required (UDS/RFS, see rrAttachments.ts).
+    repairType: z.enum(['in_store', 'home_service']).optional(),
+    // Scenario 73 — Repair/Return only: where the unit comes back from. A
+    // customer (the invoice blocks, Repair Type) or a service center, which
+    // replaces Repair Type with the service center the units come back from
+    // (the tickets' repair provider, a Supplier).
+    origin: z.enum(['customer', 'service_center']).optional(),
+    serviceCenterId: z.string().optional(),
+    // Scenario 73 — From Service Center: the actual repair cost per unit.
+    repairCosts: z
+      .array(z.object({ serialNumberId: z.string().min(1), actualCost: z.number().min(0) }))
+      .optional(),
+    // Already-uploaded UDS/RFS files, attached to the receipt server-side.
+    attachments: z
+      .array(z.object({ fileId: z.string().min(1), kind: z.enum(['UDS', 'RFS']) }))
+      .optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
   })
-  .refine((data) => !!data.supplierId || data.lines.some((line) => !!line.purchaseOrderLineId), {
-    message: 'Supplier is required when this receipt is not linked to a PO',
-    path: ['supplierId'],
-  })
-  .refine((data) => data.applicationType !== 'new_stock' || !!data.deliveryReceiptNumber?.trim(), {
-    message: "Delivery receipt number is required — it's on the paper that came with the goods",
-    path: ['deliveryReceiptNumber'],
-  })
+  .refine(
+    (data) =>
+      !!data.supplierId ||
+      !!data.newSourceName?.trim() ||
+      data.lines.some((line) => !!line.purchaseOrderLineId) ||
+      !!data.reason,
+    {
+      message: 'Source is required when this receipt is not linked to a PO',
+      path: ['supplierId'],
+    }
+  )
+  .refine(
+    (data) =>
+      data.reason !== 'repair_return' || data.origin === 'service_center' || !!data.repairType,
+    {
+      message: 'Pick In-Store or Home Service',
+      path: ['repairType'],
+    }
+  )
+  .refine(
+    (data) =>
+      data.reason !== 'repair_return' || data.origin !== 'service_center' || !!data.serviceCenterId,
+    {
+      message: 'Pick the service center the units came back from',
+      path: ['serviceCenterId'],
+    }
+  )
+  // Scenario 73 Part 5 — Home Service: the service center is known at intake.
+  .refine(
+    (data) =>
+      data.reason !== 'repair_return' ||
+      data.origin === 'service_center' ||
+      data.repairType !== 'home_service' ||
+      !!data.serviceCenterId,
+    {
+      message: 'Pick the service center handling this Home Service',
+      path: ['serviceCenterId'],
+    }
+  )
+  .refine(
+    (data) =>
+      !!data.warehouseId || data.reason === 'repossession' || data.reason === 'repair_return',
+    {
+      message: 'Destination warehouse is required',
+      path: ['warehouseId'],
+    }
+  )
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 
@@ -132,8 +243,8 @@ export const StockBalanceSchema = z.object({
   // Scenario 50 — all-time sold, scoped to the active filter.
   soldQty: z.coerce.number().default(0),
   // Scenario 50 — units on the road toward this location, summed from open
-  // transfer lines. Neither the balance rows nor the serials know about
-  // them: dispatch decrements the source and leaves the serial alone.
+  // transfer lines. The balance rows don't know about them (dispatch
+  // decrements the source); serials do since Scenario 56 (`in_transit`).
   inTransitQty: z.coerce.number().default(0),
   // Only present on a groupBy=item row: how many locations were rolled up.
   locationCount: z.number().optional(),
@@ -152,6 +263,8 @@ const StockBalanceSummarySchema = z.object({
   totalAvailableQty: z.number(),
   totalReservedQty: z.number(),
   totalSoldQty: z.number().optional(),
+  // Units in transit across the filtered set, summed server-side.
+  totalInTransitQty: z.number().optional(),
 })
 
 export const StockBalanceListResponseSchema = z
@@ -181,6 +294,11 @@ const BranchSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string().optional().nullable(),
+  // Scenario 60 — set on a caravan, so a receipt for stock coming back from
+  // one can name where it was set up and the event.
+  isTemporary: z.boolean().optional(),
+  eventName: z.string().optional().nullable(),
+  addressLine1: z.string().optional().nullable(),
 })
 
 const LedgerWarehouseSchema = z.object({
@@ -194,7 +312,13 @@ const LedgerWarehouseSchema = z.object({
 export const StockLedgerEntrySchema = z.object({
   id: z.string(),
   transactionType: z.string(),
+  /** Absolute size of the movement — no direction. Read `quantityChange`
+   *  for that: an `adjustment` goes either way, so transactionType alone
+   *  cannot tell an inflow from an outflow. */
   quantity: z.number(),
+  /** The signed movement: negative for sales, transfer-outs, write-offs and
+   *  supplier returns. Optional so older payloads still parse. */
+  quantityChange: z.number().optional().nullable(),
   condition: z.string().optional().nullable(),
   originalSaleId: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -212,6 +336,8 @@ export const StockLedgerEntrySchema = z.object({
   goodsReceiptLineId: z.string().optional().nullable(),
   receivingReportId: z.string().optional().nullable(),
   receivingReportCode: z.string().optional().nullable(),
+  // Scenario 56 — the linked PO's id, so the ledger's PO link opens it.
+  purchaseOrderId: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
   supplierInvoiceNumber: z.string().optional().nullable(),
@@ -254,6 +380,8 @@ const DiscrepancySchema = z.object({
   purchaseOrderId: z.string(),
   qtyOrdered: z.number(),
   qtyReceived: z.number(),
+  // Across every receipt against the PO line, this one included.
+  qtyReceivedToDate: z.number().optional(),
   qtyVariance: z.number(),
   hasQtyDiscrepancy: z.boolean(),
   hasConditionIssue: z.boolean(),
@@ -277,8 +405,11 @@ const ReceivingReportLineItemSchema = StockBalanceItemSchema.extend({
 
 const ReceivingReportLineSchema = z.object({
   id: z.string(),
-  goodsReceiptId: z.string(),
-  itemId: z.string(),
+  // Optional: a merged-in Manual Receiving Report row (see sourceType below)
+  // has no goodsReceiptId/itemId of its own — it's a different Prisma model
+  // entirely, normalized just enough to render in this same list/row shape.
+  goodsReceiptId: z.string().optional(),
+  itemId: z.string().optional(),
   item: ReceivingReportLineItemSchema.optional().nullable(),
   purchaseOrderLineId: z.string().optional().nullable(),
   purchaseOrderLine: ReceivingReportPoLineSchema.optional().nullable(),
@@ -302,10 +433,10 @@ const ReceivingReportLineSchema = z.object({
   discountedCost: z.number().optional().nullable(),
   taxCode: z.string().optional().nullable(),
   taxAmount: z.number().optional().nullable(),
-  qualityHold: z.boolean(),
+  qualityHold: z.boolean().optional(),
   isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),
-  discrepancy: DiscrepancySchema.nullable(),
+  discrepancy: DiscrepancySchema.nullable().optional(),
 })
 
 const ReceivingReportWarehouseSchema = z.object({
@@ -326,18 +457,49 @@ export const ReceivingReportSchema = z.object({
   id: z.string(),
   code: z.string(),
   status: z.string(),
-  applicationType: z.string(),
+  // Present on every row from getReceivingReports() (see stock.service.ts) —
+  // optional here only so this schema still fits the single-receipt detail
+  // response, which never sets it since a merged list is meaningless there.
+  sourceType: z.enum(['goods_receipt', 'manual_rr']).optional(),
+  applicationType: z.string().optional(),
   modeOfTransfer: z.string().optional().nullable(),
+  // Why the stock came in. A repair_return / repossession receipt takes units
+  // back from a customer, so it has no supplier invoice behind it.
+  reason: z.string().optional().nullable(),
+  repairType: z.string().optional().nullable(),
   receivedAt: z.string(),
   notes: z.string().optional().nullable(),
   warehouse: ReceivingReportWarehouseSchema.optional().nullable(),
   supplier: ReceivingReportSupplierSchema.optional().nullable(),
+  // Single-receipt response only: the customer a return/repossession came from.
+  returnedBy: z
+    .object({ id: z.string(), name: z.string(), customerCode: z.string().optional() })
+    .optional()
+    .nullable(),
+  returnedInvoices: z
+    .array(z.object({ number: z.string(), date: z.string().nullable().optional() }))
+    .optional(),
   receivedById: z.string().optional().nullable(),
   receivedByName: z.string().optional().nullable(),
   poDate: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
   driverName: z.string().optional().nullable(),
   helperName: z.string().optional().nullable(),
+  // Set only on a receipt that arrived from another branch rather than a
+  // supplier. Its number takes the printed report's PO slot — a transfer
+  // receipt has no purchase order behind it.
+  stockTransfer: z
+    .object({
+      id: z.string().optional(),
+      transferNumber: z.string().optional().nullable(),
+      transferDate: z.string().optional().nullable(),
+      // Where the goods came FROM. The reports list has no supplier to name
+      // on a transfer-sourced row, so it names this branch instead; only the
+      // list endpoint selects it, hence optional.
+      fromWarehouse: ReceivingReportWarehouseSchema.optional().nullable(),
+    })
+    .optional()
+    .nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
   supplierInvoiceNumber: z.string().optional().nullable(),
   journalEntryId: z.string().optional().nullable(),
@@ -348,6 +510,9 @@ export const ReceivingReportSchema = z.object({
   vatAmount: z.number().optional().nullable(),
   lines: z.array(ReceivingReportLineSchema),
   hasAnyDiscrepancy: z.boolean(),
+  // Scenario 56 — for a PO-linked receipt: does its order still expect more?
+  // Null when there's no PO (transfer, standalone). List response only.
+  deliveryStatus: z.enum(['partial', 'complete']).nullable().optional(),
   // Scenario 51 — the receipt-sourced invoice behind this receipt, if any.
   // Used to warn before a cost correction pushes an already-settled invoice
   // back to owing money.
@@ -357,6 +522,8 @@ export const ReceivingReportSchema = z.object({
       status: z.string(),
       totalAmount: z.number(),
       amountPaid: z.number(),
+      // Scenario 56 — the supplier's SI number, shown on the Reports list.
+      billNumber: z.string().nullable().optional(),
     })
     .optional()
     .nullable(),

@@ -11,6 +11,9 @@ export const CreateCategoryFormSchema = z.object({
   color: z.string().optional(),
   allowsCustomAttributes: z.boolean(),
   coverImageFileId: z.string().optional(),
+  // The GL account stock in this category belongs in. '' clears it, which is
+  // what the picker's "use the default" option submits.
+  defaultGlAccountId: z.string().optional(),
 })
 
 export const UpdateCategoryFormSchema = z.object({
@@ -22,6 +25,9 @@ export const UpdateCategoryFormSchema = z.object({
   color: z.string().optional(),
   allowsCustomAttributes: z.boolean(),
   coverImageFileId: z.string().optional(),
+  // The GL account stock in this category belongs in. '' clears it, which is
+  // what the picker's "use the default" option submits.
+  defaultGlAccountId: z.string().optional(),
 })
 
 export type CreateCategoryFormValues = z.infer<typeof CreateCategoryFormSchema>
@@ -48,6 +54,7 @@ export interface CategoryNode {
   path?: string | null
   coverImageFileId?: string | null
   coverImage?: CategoryCoverImage | null
+  categoryDefault?: { defaultGlAccountId?: string | null } | null
   children?: CategoryNode[]
   _count?: { children: number; itemAssignments: number }
 }
@@ -74,6 +81,10 @@ export const CategoryNodeSchema: z.ZodType<CategoryNode> = z.lazy(() =>
     path: z.string().nullable().optional(),
     coverImageFileId: z.string().nullable().optional(),
     coverImage: CategoryCoverImageSchema.nullable().optional(),
+    categoryDefault: z
+      .object({ defaultGlAccountId: z.string().nullable().optional() })
+      .nullable()
+      .optional(),
     children: z.array(CategoryNodeSchema).optional(),
     _count: z.object({ children: z.number(), itemAssignments: z.number() }).optional(),
   })

@@ -14,6 +14,8 @@ type Params = {
   /** Scenario 29 POS-02 — only return applications checkout can actually use
    * (approved or partially_approved). Use instead of status='approved'. */
   checkoutEligible?: boolean
+  /** Free-text match on application number, applicant name or customer code. */
+  search?: string
 }
 
 export async function getCreditApplications(params: Params = {}) {
@@ -25,6 +27,7 @@ export async function getCreditApplications(params: Params = {}) {
     applicantCustomerId: params.applicantCustomerId,
     unconsumed: params.unconsumed,
     checkoutEligible: params.checkoutEligible,
+    search: params.search,
   }
 
   return api.get<CreditApplicationListResponse>('/credit/applications', query)

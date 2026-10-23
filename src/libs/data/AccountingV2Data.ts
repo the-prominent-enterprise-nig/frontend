@@ -1,4 +1,5 @@
 import { api } from '@/src/libs/api/client'
+import type { TaxOverrideEntry } from '@/src/libs/tax/tax-override'
 
 // ============ Fixed Assets v2 (ACC-21) ============
 export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION'
@@ -71,40 +72,6 @@ export const FixedAssetsV2 = {
       body
     ),
   remove: (id: string) => api.delete(`/fixed-assets/${id}`),
-}
-
-// ============ Installment Interest Release (Scenario 29 ACC-04) ============
-export interface PendingInterestReleaseSchedule {
-  installmentScheduleId: string
-  transactionNumber?: string | null
-  periodsEligible: number
-  amount: number
-}
-export interface PendingInterestReleaseResult {
-  asOfDate: string
-  schedules: PendingInterestReleaseSchedule[]
-  totalPending: number
-}
-export interface InterestReleaseRunResultItem {
-  installmentScheduleId: string
-  journalEntryId: string
-  periodsReleased: number
-  amountReleased: number
-}
-export interface InterestReleaseRunResult {
-  asOfDate: string
-  schedulesReleased: number
-  totalReleased: number
-  results: InterestReleaseRunResultItem[]
-  skipped: { installmentScheduleId: string; reason: string }[]
-}
-export const InstallmentInterestRelease = {
-  getPending: (asOfDate?: string) =>
-    api.get<PendingInterestReleaseResult>('/accounting/installment-interest-release/pending', {
-      asOfDate,
-    }),
-  run: (body: { asOfDate?: string }) =>
-    api.post<InterestReleaseRunResult>('/accounting/installment-interest-release/run', body),
 }
 
 // ============ Budgets (ACC-23) ============
@@ -210,8 +177,16 @@ export const Reports = {
     }),
   balanceSheet: (asOf?: string) =>
     api.get<any>('/reports/balance-sheet', asOf ? { asOf } : undefined),
-  generalLedger: (params: { accountId?: string; startDate?: string; endDate?: string }) =>
-    api.get<any>('/reports/general-ledger', params as any),
+  generalLedger: (params: {
+    accountId?: string
+    startDate?: string
+    endDate?: string
+    // Scenario 62 — same scoping as the P&L a drill-down came from.
+    branchId?: string
+    view?: string
+    // One bank's own lines on the shared Cash and Cash Equivalents account.
+    bankAccountId?: string
+  }) => api.get<any>('/reports/general-ledger', params as any),
   cashFlow: (startDate: string, endDate: string) =>
     api.get<any>('/reports/cash-flow', { startDate, endDate }),
   aging: (type: 'ar' | 'ap', asOf?: string) =>
@@ -369,9 +344,13 @@ export interface ARPayment {
   withholdingVarianceNote?: string | null
   withholdingReviewerId?: string | null
   rebateAmount: number
+  penaltyAmount: number
   paymentDate: string
   method?: PaymentMethod | null
   reference?: string | null
+  /** The bank's own transaction reference — only meaningful when method is
+   *  BANK_TRANSFER, distinct from `reference` (the CR number). */
+  bankReferenceNumber?: string | null
   notes?: string | null
   isOverpayment: boolean
   overpaidAmount: number
@@ -398,6 +377,7 @@ export interface ARPayment {
     id: string
     number: string | null
     reference: string | null
+    bankReferenceNumber?: string | null
     amount: number
     settledOthers: {
       arInvoiceId: string
@@ -438,14 +418,25 @@ export interface RecordArPaymentInput {
   /** Named sub-choice under paymentMethodConfigId, e.g. which bank/gateway. */
   paymentMethodOptionId?: string
   reference?: string
+  /** The bank's own transaction reference — only meaningful when method is
+   *  BANK_TRANSFER, distinct from `reference` (the CR number). */
+  bankReferenceNumber?: string
   notes?: string
   withholdingAmount?: number
   withholdingCertificateNo?: string
   withholdingCertificateStatus?: WithholdingCertificateStatus
   rebateAmount?: number
+  penaltyAmount?: number
   bankAccountId?: string
   branchId?: string
   collectorId?: string
+  /**
+   * Scenario 53 Part 5b — the open POS session, when this collection is taken
+   * over the counter. Cash then counts toward that session's expected drawer
+   * total and posts to Undeposited Funds instead of Cash in Bank. Omitted for
+   * field collections and Accounting-side entries.
+   */
+  posSessionId?: string
 }
 
 export interface ARInvoiceSerialGoodsReceipt {
@@ -516,7 +507,14 @@ export interface ARInvoice {
   // returns the whole Customer row) — the list endpoint's lighter select
   // stops at id/name, so the letterhead block on the detail sheet treats
   // them as optional.
-  customer?: { id: string; name: string; address?: string | null; taxId?: string | null }
+  customer?: {
+    id: string
+    name: string
+    address?: string | null
+    taxId?: string | null
+    /** The customer's own VAT-exempt profile: where a new invoice's class starts. */
+    isTaxExempt?: boolean | null
+  }
   invoiceDate: string
   dueDate: string
   description?: string
@@ -526,6 +524,27 @@ export interface ARInvoice {
   amountPaid: number
   status: string
   costCenter?: string
+  /** Scenario 69 Part F — the invoice's output VAT class (VAT-OUT-12,
+   * VAT-OUT-GOV-12, VAT-OUT-0ZR or VAT-OUT-EXEMPT), the certificate a
+   * zero-rated or exempt one rests on, and who approved it. Null on an invoice
+   * that was never classified (older ones, and ones with no VAT left blank). */
+  outputVatCode?: string | null
+  taxExemptionRef?: string | null
+  outputVatApprovedBy?: string | null
+  outputVatApprovedByName?: string | null
+  /** Scenario 69 Part I — the class when it was changed from the one the invoice
+   * started on, with why, who and when. Null when it was not. */
+  taxOverride?: TaxOverrideEntry[] | null
+  /** Contractual retention: the share the customer holds back until acceptance,
+   * completion or the end of the warranty. totalAmount still bills the whole;
+   * the retained part sits in Retention Receivable until it is released,
+   * offset or written off. */
+  retentionPercent?: number | null
+  retentionAmount?: number
+  /** Released + offset + written off. */
+  retentionSettledAmount?: number
+  retentionReleaseDate?: string | null
+  retentionMilestone?: string | null
   payments?: ARPayment[]
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
@@ -561,6 +580,7 @@ export interface BulkPayInstallmentLineInput {
   invoiceId: string
   amount: number
   rebateAmount?: number
+  penaltyAmount?: number
 }
 
 export interface BulkRecordArPaymentInput {
@@ -572,9 +592,19 @@ export interface BulkRecordArPaymentInput {
   /** Required only once collectorId is given — that's the only time an OR
    * is actually cut; optional for a walk-in payment with no collector. */
   reference?: string
+  /** The bank's own transaction reference — only meaningful when method is
+   *  BANK_TRANSFER, distinct from `reference` (the CR number). */
+  bankReferenceNumber?: string
   notes?: string
   branchId?: string
   collectorId?: string
+  /**
+   * Scenario 53 Part 5b — the open POS session, when this collection is taken
+   * over the counter. Cash then counts toward that session's expected drawer
+   * total and posts to Undeposited Funds instead of Cash in Bank. Omitted for
+   * field collections and Accounting-side entries.
+   */
+  posSessionId?: string
 }
 
 export interface BulkRecordPaymentResult {
@@ -583,11 +613,27 @@ export interface BulkRecordPaymentResult {
   invoiceCount: number
 }
 
+/** One row of the AR Invoices landing: everything a customer owes, rolled up on the server. */
+export interface ARInvoiceCustomerRollup {
+  customerId: string
+  customerName: string
+  invoiceCount: number
+  total: number
+  paid: number
+  outstanding: number
+  /** Invoices whose displayed status is OVERDUE. */
+  overdueCount: number
+}
+
 export interface ARInvoiceCustomerResult {
   id: string
   name: string
   phone: string | null
   customerCode: string
+  /** Registered as exempt from VAT, with the certificate on file — a new
+   * invoice for this customer starts VAT-exempt (Scenario 69 Part F). */
+  isTaxExempt?: boolean
+  taxExemptionRef?: string | null
 }
 
 export interface ARReceiptListItem {
@@ -646,9 +692,119 @@ export interface ARInvoiceDocument {
   } | null
   document: ARInvoice
 }
+// ── Customer retention (rows 11K-11O) ──────────────────────────────────────
+
+export type RetentionActionType = 'RELEASE' | 'OFFSET' | 'WRITE_OFF' | 'PROVISION'
+export type RetentionOffsetReason = 'SALES_RETURN' | 'WARRANTY' | 'PENALTY' | 'OTHER'
+
+export interface RetentionActionRow {
+  id: string
+  type: RetentionActionType
+  amount: number
+  actionDate: string
+  reference: string | null
+  reasonCode: string | null
+  offsetAccount: string | null
+  method: string | null
+  approvedBy: string | null
+  notes: string | null
+  journalEntryId: string | null
+}
+
+export interface RetentionHistory {
+  invoiceNumber: string
+  retentionPercent: number | null
+  retentionAmount: number
+  /** Still held by the customer. */
+  held: number
+  actions: RetentionActionRow[]
+}
+
+export interface RetentionScheduleItem {
+  arInvoiceId: string
+  invoiceNumber: string
+  invoiceDate: string
+  customerId: string
+  customerName: string
+  invoiceTotal: number
+  retentionPercent: number | null
+  retained: number
+  released: number
+  offset: number
+  writtenOff: number
+  /** Set aside as doubtful but still held. */
+  provided: number
+  held: number
+  releaseDate: string | null
+  milestone: string | null
+  daysPastDue: number
+}
+
+export interface RetentionSchedule {
+  items: RetentionScheduleItem[]
+  totals: { held: number; pastDue: number }
+  /** What the Retention Receivable account holds; difference is that less the schedule. */
+  glBalance: number | null
+  difference: number | null
+}
+
 export const ARInvoices = {
-  list: (params?: { search?: string; status?: string; customerId?: string; branchId?: string }) =>
-    api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  retentionSchedule: () => api.get<RetentionSchedule>('/ar-invoices/retention/schedule'),
+  retentionHistory: (id: string) => api.get<RetentionHistory>(`/ar-invoices/${id}/retention`),
+  releaseRetention: (
+    id: string,
+    body: {
+      amount: number
+      releaseDate: string
+      method: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR'
+      bankAccountId?: string
+      reference: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/release`, body),
+  offsetRetention: (
+    id: string,
+    body: {
+      amount: number
+      offsetDate: string
+      offsetAccountId: string
+      reasonCode: RetentionOffsetReason
+      reference: string
+      approvedBy: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/offset`, body),
+  doubtfulRetention: (
+    id: string,
+    body: {
+      mode: 'WRITE_OFF' | 'PROVISION'
+      amount: number
+      actionDate: string
+      reference: string
+      approvedBy: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/doubtful`, body),
+  // Without `limit` this is every invoice, in full (~2 KB each — 25 MB at 12.7k). Dashboard
+  // widgets only count and sum, so they pass view: 'summary' (a handful of columns); callers that
+  // want a page pass limit/offset and read `total` for the full count.
+  list: (params?: {
+    search?: string
+    status?: string
+    customerId?: string
+    branchId?: string
+    limit?: number
+    offset?: number
+    view?: 'summary'
+  }) => api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  // One row per customer (count / total / paid / outstanding / overdue), customers owing the most
+  // first — the landing page's table, grouped on the server so it receives a page of customers
+  // instead of every invoice. `total` is the number of customers.
+  byCustomer: (params?: { search?: string; limit?: number; offset?: number }) =>
+    api.get<{ items: ARInvoiceCustomerRollup[]; total: number }>(
+      '/ar-invoices/by-customer',
+      params as any
+    ),
   // Scenario 44 — flat cross-customer Receipts register (one row per
   // ARPayment) backing the AR Invoices landing page, distinct from list()
   // above which returns ARInvoice rows for the customer-grouped rollup.
@@ -719,9 +875,102 @@ export const ARInvoices = {
     ),
 }
 
+// ============ Acknowledgement Receipts (Scenario 57) ============
+// The non-customer sibling of Collection Receipt — money received with no
+// Customer/ARInvoice behind it (e.g. a walk-in miscellaneous payment or a
+// refund). payerName is free text by developer decision: no search/link to
+// an existing Customer/Supplier/Employee record.
+export interface AcknowledgementReceipt {
+  id: string
+  /** System-generated ACK-YYYYMMDD-NNNN, set once at creation. */
+  number: string | null
+  payerName: string
+  /** Real GL account this receipt credits — a Chart of Accounts pick,
+   * matching the client's own reference tool. Null means it fell back to
+   * the MISC_COLLECTIONS mapping. */
+  accountId: string | null
+  account?: { id: string; name: string; number: string | null } | null
+  reason: string | null
+  amount: number
+  /** What cleared deposits have banked of it — above 0 for one a short
+   * deposit left partly to bank. */
+  depositedAmount?: number | string
+  paymentDate: string
+  /** Which of the two this record is — drives which title/download shows on
+   * the detail page. Null on records saved before this field existed. */
+  receiptType: 'COLLECTION' | 'ACKNOWLEDGEMENT' | null
+  method: PaymentMethod | null
+  /** SAME_DATE | LATER_DATE — whether the payment clears the bank on
+   * paymentDate itself or on a later date. Informational only. */
+  clearedType: string | null
+  clearedDate: string | null
+  /** Which of the tenant's own bank/cash accounts this landed in — matches
+   * "Received in" on the client's reference tool. Informational only. */
+  bankAccountId: string | null
+  reference: string | null
+  notes: string | null
+  branchId: string | null
+  branch?: { id: string; name: string; code: string } | null
+  collectorId: string | null
+  collector?: { id: string; name: string; stubNumber: string } | null
+  journalEntryId: string | null
+  createdAt: string
+  /** Letterhead info for the printed document — only present on get(id), not list(). */
+  enterprise?: { companyLegalName?: string | null; address?: string | null } | null
+}
+export interface CreateAcknowledgementReceiptInput {
+  payerName: string
+  accountId?: string
+  reason?: string
+  amount: number
+  paymentDate: string
+  receiptType: 'COLLECTION' | 'ACKNOWLEDGEMENT'
+  method?: PaymentMethod
+  clearedType?: string
+  clearedDate?: string
+  bankAccountId?: string
+  reference?: string
+  notes?: string
+  branchId?: string
+  collectorId?: string
+}
+/** Everything is editable (developer decision, 2026-09-27). Changing amount
+ * and/or accountId requires correctionReason — the backend posts a new
+ * adjusting journal entry for just the delta rather than touching the
+ * original (mirrors the RR unit-cost correction pattern). */
+export interface UpdateAcknowledgementReceiptInput {
+  payerName?: string
+  accountId?: string
+  reason?: string
+  amount?: number
+  correctionReason?: string
+  paymentDate?: string
+  receiptType?: 'COLLECTION' | 'ACKNOWLEDGEMENT'
+  method?: PaymentMethod
+  clearedType?: string
+  clearedDate?: string
+  bankAccountId?: string
+  reference?: string
+  notes?: string
+  branchId?: string
+  collectorId?: string
+}
+export const AcknowledgementReceipts = {
+  /** `unbanked: 'true'` asks for only what the branch still has to bank —
+   * not cancelled, not already on a deposit (Scenario 70 G11). */
+  list: (params?: { branchId?: string; unbanked?: 'true' }) =>
+    api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
+  get: (id: string) =>
+    api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
+  create: (body: CreateAcknowledgementReceiptInput) =>
+    api.post<AcknowledgementReceipt>('/accounting/acknowledgement-receipts', body),
+  update: (id: string, body: UpdateAcknowledgementReceiptInput) =>
+    api.patch<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`, body),
+}
+
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
-export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill'
+export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill' | 'x_deal'
 export interface CreditMemoLine {
   id: string
   itemId: string
@@ -756,6 +1005,8 @@ export interface CreditMemo {
   /** Set when this memo was auto-created from an approved POS return/refund
    * (Scenario 13 Part 3) rather than issued by hand. */
   sourceReturnRequestId?: string | null
+  /** Scenario 67 — set on an x_deal memo: the X-Deal sale it cleared. */
+  posTransactionId?: string | null
 }
 export interface CreateCreditMemoLineInput {
   itemId: string
@@ -782,6 +1033,43 @@ export const CreditMemos = {
     memoDate?: string
   }) => api.post<CreditMemo>('/credit-memos', body),
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/${id}/void`, {}),
+}
+
+// ============ X-Deal memos (Scenario 67) ============
+/** An open X-Deal sale an X-Deal memo can clear. */
+export interface XDealCandidate {
+  posTransactionId: string
+  transactionNumber: string
+  salesInvoiceNumber: string | null
+  saleDate: string
+  xDealReference: string | null
+  customer: { id: string; name: string }
+  branchName: string | null
+  installmentAccountId: string
+  accountNumber: string
+  arInvoiceId: string
+  invoiceNumber: string
+  outstanding: number
+}
+/** The journal entry an X-Deal memo would post. Debits: clearing +
+ * unearnedInterest; credits: outstanding (A/R) + financingIncome. */
+export interface XDealPreview {
+  posTransactionId: string
+  transactionNumber: string
+  invoiceNumber: string
+  xDealReference: string | null
+  outstanding: number
+  clearing: number
+  unearnedInterest: number
+  financingIncome: number
+}
+export const XDealMemos = {
+  candidates: () => api.get<XDealCandidate[]>('/credit-memos/x-deal/candidates'),
+  preview: (posTransactionId: string) =>
+    api.get<XDealPreview>('/credit-memos/x-deal/preview', { posTransactionId }),
+  issue: (body: { posTransactionId: string; reason?: string; memoDate?: string }) =>
+    api.post<CreditMemo>('/credit-memos/x-deal', body),
+  void: (id: string) => api.post<CreditMemo>(`/credit-memos/x-deal/${id}/void`, {}),
 }
 
 // ============ Debit Memos ============
@@ -871,6 +1159,9 @@ export interface APBillDebitMemo {
 }
 export interface APBill {
   id: string
+  // The company's own AP invoice control number (SUPAP0926-NNN), generated on
+  // save. Distinct from billNumber, which is the supplier's invoice number.
+  controlNumber?: string | null
   // Scenario 41 — the supplier's own invoice number, as printed on their
   // invoice. Never generated by this system. Null on a DRAFT bill
   // auto-generated straight off a goods receipt, before anyone's typed in
@@ -918,6 +1209,10 @@ export interface APBill {
     purchaseOrderNumber?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
+    // The receipt's own VAT and withholding — Decimal columns, so they arrive
+    // as strings. Present on APBills.get() (findOne includes the whole row).
+    vatAmount?: number | string | null
+    withheldAmount?: number | string | null
     // Line-level detail — populated by APBills.get() (the detail page) and by
     // APBills.list({ withDetail: 'true' }); the plain list view stays on the
     // lighter shape above.
@@ -992,6 +1287,18 @@ export interface APBill {
   // Reclassified out of AP into WHT Payable when the bill is received, not at
   // payment time. It is NOT a payment: see apOutstanding().
   withholdingAmount?: number
+  /** Scenario 69 Part D — the EWT tax code the withholding was computed at
+   * (EWT-GOODS-1, EWT-RENT-5, EWT-NONE…). Null on a bill that mixed rates
+   * (a receipt with goods and services lines) and on bills from before codes
+   * existed. */
+  withholdingTaxCode?: string | null
+  /** The ATC the code carried when the bill was made; null until NIG's
+   * accountant supplies the ATC list. */
+  withholdingAtc?: string | null
+  /** Scenario 69 Part I — the line input VAT codes and the withholding code that
+   * were changed from the supplier's defaults, with why, who and when. Null when
+   * nothing was. */
+  taxOverride?: TaxOverrideEntry[] | null
   totalAmount: number
   // Cash actually disbursed to the supplier. Never includes withholding.
   amountPaid: number
@@ -1088,6 +1395,21 @@ export interface CreateDisbursementBody {
    * bankAccountId/chequeNumber/method above; the server records that as one
    * source either way, and the voucher number derives from the first. */
   sources?: DisbursementSource[]
+  /** Amounts held back from the supplier on this payment, each credited to a
+   * Chart of Accounts account. The invoices are still settled in full; the
+   * sources fund the allocated total less these. */
+  deductions?: DisbursementDeduction[]
+}
+/** One deduction taken off a payment to a supplier. */
+export interface DisbursementDeduction {
+  accountId: string
+  /** Whose payment it comes out of. Omitted means the voucher's own payee. */
+  supplierId?: string
+  description?: string
+  amount: number
+  /** Scenario 72 Part 8 — applies this posted supplier debit memo. The server
+   * credits Due from Suppliers for the memo's amount, whatever is sent. */
+  supplierDebitMemoId?: string
 }
 /** One funding source of a disbursement. */
 export interface DisbursementSource {
@@ -1104,10 +1426,12 @@ export interface DisbursementSource {
 }
 /** One row of the Payments screen — a whole transaction, not one invoice's
  * share of it. `kind: 'payment'` rows are pre-disbursement payments made
- * through the retired per-bill route; they settle exactly one invoice. */
+ * through the retired per-bill route; they settle exactly one invoice.
+ * `kind: 'expense'` rows are paid Expenses, present only when the list is
+ * asked for them (`includeExpenses`); `id` is then the expense's id. */
 export interface APDisbursementListItem {
   id: string
-  kind: 'disbursement' | 'payment'
+  kind: 'disbursement' | 'payment' | 'expense'
   voucherNumber: string | null
   /** UNPAID until a cheque is cut. Raising a voucher posts nothing — it is the
    * authorisation to pay, and settlement is what moves the money. */
@@ -1121,15 +1445,37 @@ export interface APDisbursementListItem {
   method: string | null
   reference: string | null
   bankAccount: { id: string; name: string; accountNumber: string } | null
+  /** What the cheque is for: the invoices settled less any deductions. */
   amount: number
+  /** The invoices settled, before deductions. Absent on payments and expenses. */
+  settledAmount?: number
+  /** What was held back from the supplier, and the account it was credited to. */
+  deductions?: {
+    accountId: string
+    account: { id: string; number: string; name: string } | null
+    supplierId: string | null
+    supplier: { id: string; name: string } | null
+    description: string | null
+    amount: number
+    /** Set when the deduction applies a supplier debit memo. */
+    supplierDebitMemoId?: string | null
+    supplierDebitMemo?: { id: string; memoNumber: string; amount: number } | null
+  }[]
   clearedType: string | null
   clearedDate: string | null
   notes: string | null
   journalEntryId: string | null
-  invoices: { billId: string; billNumber: string | null; amount: number }[]
+  invoices: {
+    billId: string
+    billNumber: string | null
+    amount: number
+    /** What this voucher claims of the invoice's withholding. */
+    withholdingAmount?: number
+  }[]
   sources: {
     method: string
     reference: string | null
+    chequeNumber?: string | null
     description: string | null
     amount: number
     bankAccount: { id: string; name: string; accountNumber: string } | null
@@ -1254,7 +1600,13 @@ export const APBills = {
   /** Cancel an unpaid voucher — kept as CANCELLED, not deleted. */
   cancelDisbursement: (id: string) => api.delete(`/ap-bills/disbursements/${id}`),
   /** The Payments screen — one row per transaction. */
-  listDisbursements: (params?: { search?: string; supplierId?: string }) =>
+  listDisbursements: (params?: {
+    search?: string
+    supplierId?: string
+    /** Adds every paid Expense as a row of kind 'expense'. Only the Payments
+     * screen wants these — callers hunting for vouchers to settle do not. */
+    includeExpenses?: boolean
+  }) =>
     api.get<{ items: APDisbursementListItem[]; total: number }>(
       '/ap-bills/disbursements',
       params as any
@@ -1320,8 +1672,19 @@ export interface APBillLine {
    * and RR lines use, so a 3-way match compares like with like. */
   discountedCost?: number | null
   lineTotal: number
+  /** Scenario 69 Part G — the line's input VAT code from the tax code master
+   * (VAT-IN-12, VAT-IN-CAPEX, VAT-IN-NONVAT, VAT-IN-EXEMPT, VAT-IN-OOS). Null,
+   * or one of the older spellings, on a line from before codes. */
   taxCode?: string | null
+  /** Derived from the code's rate on the bill date. */
   taxAmount: number
+  /** The project or asset a VAT-IN-CAPEX line is for. */
+  projectAssetRef?: string | null
+  /** The account this line's net posts to when it is not the bill's own
+   * expense account: a capital good's asset account, an out-of-scope item's
+   * balance-sheet account. */
+  accountId?: string | null
+  account?: { id: string; number: string; name: string } | null
   /** A promotional/zero-cost unit that was still billed as a line. */
   isFreebie?: boolean
   notes?: string | null
@@ -1355,6 +1718,11 @@ export interface APBillGoodsReceiptOption {
 export interface APBillMatchCheck {
   applicable: boolean
   poTotal: number | null
+  /** Scenario 56 — the PO's value of just the received units; the match
+   * compares against this, so a bill for a partial delivery can match. */
+  poReceivedTotal?: number | null
+  /** True when the matched receipts cover only part of the order. */
+  partial?: boolean
   rrTotal: number | null
   invoiceTotal: number
   matched: boolean
@@ -1406,7 +1774,9 @@ export interface SupplierDebitMemo {
   id: string
   tenantId: string
   memoNumber: string
-  apBillId: string
+  /** Scenario 72 Part 8 — null until an AP voucher applies the memo. A memo
+   * raised before Part 8 carries the bill it named and settled directly. */
+  apBillId: string | null
   apBill?: {
     id: string
     billNumber: string | null
@@ -1434,6 +1804,15 @@ export interface SupplierDebitMemo {
   voidedBy?: string | null
   voidedAt?: string | null
   voidReason?: string | null
+  /** The "Return units to supplier" DR whose approval drafted this memo. Its
+   * goods follow the DR: prices may change here, the units may not. */
+  deliveryReceiptId?: string | null
+  deliveryReceipt?: { id: string; drNumber: string; status: string } | null
+  /** The voucher deduction that applied it. Applied memos are locked. */
+  appliedDeduction?: {
+    id: string
+    disbursement: { id: string; voucherNumber: string | null; status: string }
+  } | null
   lines: SupplierDebitMemoLine[]
 }
 
@@ -1451,7 +1830,7 @@ export interface SupplierDebitMemoLineInput {
 }
 
 export interface SupplierDebitMemoInput {
-  apBillId: string
+  supplierId: string
   warehouseId: string
   lines: SupplierDebitMemoLineInput[]
   deliveryReceiptNumber?: string
@@ -1467,6 +1846,8 @@ export const SupplierDebitMemos = {
     status?: SupplierDebitMemoStatus
     supplierId?: string
     apBillId?: string
+    /** 'true' — posted and not yet applied: what the AP voucher can pick. */
+    unapplied?: 'true' | 'false'
     fromDate?: string
     toDate?: string
   }) =>
@@ -1477,6 +1858,13 @@ export const SupplierDebitMemos = {
   update: (id: string, body: Partial<SupplierDebitMemoInput>) =>
     api.patch<SupplierDebitMemo>(`/supplier-debit-memos/${id}`, body),
   approve: (id: string) => api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/approve`, {}),
+  /** The inventory account each item currently resolves to (item → category →
+   * tenant mapping) — what the form prefills a goods line with, so what is on
+   * screen is what would post if nobody changes it. */
+  inventoryAccounts: (itemIds: string[]) =>
+    api.get<Record<string, string>>('/supplier-debit-memos/inventory-accounts', {
+      itemIds: itemIds.join(','),
+    }),
   void: (id: string, voidReason?: string) =>
     api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/void`, { voidReason }),
 }
@@ -1504,7 +1892,7 @@ export const APPaymentMethods = {
 export type BusinessExpenseStatus = 'DRAFT' | 'RECORDED' | 'VOID'
 // Scenario 40 Gap 1 + Part 2 — Payee is now typed; OTHER unlocks the
 // Special Account list, including CA_LIQUIDATION (Part 2's settlement flow).
-export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'OTHER'
+export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'AGENT' | 'OTHER'
 // Payee → Other sub-choice. UTILITIES/SALARIES_WAGES/PAYROLL behave like
 // SUPPLIER (each line picks its own category); SPECIAL_ACCOUNTS is the
 // pre-existing Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation
@@ -1546,6 +1934,14 @@ export interface BusinessExpenseLine {
   amount: number
   taxCode?: ExpenseTaxCode | string | null
   taxAmount: number
+  /** Scenario 69 Part G — the project or asset a VAT-IN-CAPEX line is for. */
+  projectAssetRef?: string | null
+  /** Scenario 69 Part E — the EWT tax code this line is withheld at, and what
+   * that came to (the code's rate × the amount net of VAT). Null / 0 = not
+   * withheld. The amount is derived server-side, never sent. */
+  withholdingTaxCode?: string | null
+  withholdingAtc?: string | null
+  withholdingAmount?: number
   /** Read-only. Set by the API when this line's account is one of the
    * mapped Special Accounts — it's how an advance or loan line reopens as
    * itself rather than as an ordinary category line. */
@@ -1556,6 +1952,24 @@ export interface BusinessExpenseLine {
   divisionBranch?: { id: string; name: string; code?: string | null } | null
   divisionDepartmentId?: string | null
   divisionDepartment?: { id: string; name: string; code?: string | null } | null
+  /** Fuel / vehicle-repair lines — the vehicle from the fleet roster. */
+  vehicleId?: string | null
+  vehicle?: { id: string; plateNo: string; tag?: string | null } | null
+  /** Fuel lines — litres bought (optional). */
+  liters?: number | null
+  /** Vehicle-repair lines — the kind of job, and a remark on it. */
+  repairServiceType?: string | null
+  serviceDetail?: string | null
+  /** Commission lines — the POS sale whose commission this line releases. */
+  posTransactionId?: string | null
+  posTransaction?: {
+    id: string
+    transactionNumber: string
+    salesInvoiceNumber?: string | null
+    subtotal: number | string
+    /** Whose commission it is — the line's Sales Agent. */
+    sellingAgent?: { id: string; name: string } | null
+  } | null
 }
 // One entry can be paid through several methods at once (e.g. part Cash,
 // part Bank Transfer) — rows must sum to the entry's total.
@@ -1583,6 +1997,8 @@ export interface BusinessExpense {
   supplier?: { id: string; name: string } | null
   /** SUPPLIER-only — the disbursement voucher number. */
   voucherNumber?: string | null
+  /** The fund the entry is drawn from. Its voucherPrefix series issues the voucher number. */
+  sourceOfFundId?: string | null
   customerId?: string | null
   customer?: { id: string; name: string } | null
   /** payeeType=CUSTOMER only — optional Sales Invoice reference. No
@@ -1594,6 +2010,11 @@ export interface BusinessExpense {
   salesInvoiceNumber?: string | null
   employeeId?: string | null
   employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
+  /** payeeType=AGENT — the sales agent being paid (commission release). */
+  agentId?: string | null
+  agent?: { id: string; name: string } | null
+  /** Free-text notes on the voucher (the form's ④ Notes). */
+  notes?: string | null
   specialAccountType?: SpecialAccountType | null
   liquidatesType?: LiquidatableType | null
   payee?: string | null
@@ -1602,6 +2023,9 @@ export interface BusinessExpense {
   subtotal: number
   taxAmount: number
   totalAmount: number
+  /** Scenario 69 Part E — withheld from the payee and owed to the BIR; the
+   * payments total totalAmount less this (the cash that actually leaves). */
+  withholdingAmount?: number
   payments: BusinessExpensePayment[]
   costCenter?: string | null
   /** Scenario 47 — set server-side from the creating user's branch; null on
@@ -1657,12 +2081,30 @@ export interface ExpenseDocument {
       lineEmployee: string | null
       linePayee: string | null
       taxCode: string | null
+      /** Scenario 69 Part G — the project or asset a VAT-IN-CAPEX line is for. */
+      projectAssetRef?: string | null
+      /** Fuel / vehicle-repair lines — the plate, and what kind of vehicle it is. */
+      plateNo?: string | null
+      vehicleType?: string | null
+      liters?: number | null
+      repairServiceType?: string | null
+      serviceDetail?: string | null
+      /** Commission lines — the Sales Invoice No. whose commission was released. */
+      saleNumber?: string | null
       amount: number
       taxAmount: number
+      withholdingTaxCode?: string | null
+      withholdingAtc?: string | null
+      withholdingAmount?: number
     }[]
     subtotal: number
     taxAmount: number
     totalAmount: number
+    /** Withheld from the payee, and the cash that actually left (the payment
+     * rows total `netPayable`). */
+    withholdingAmount?: number
+    netPayable?: number
+    notes?: string | null
     status: string
     payeeType: PayeeType | null
     otherCategory: OtherCategory | null
@@ -1699,7 +2141,13 @@ export interface SpecialAccountRegister {
  * money recovered — shown as two positive columns rather than one signed
  * figure, which is how a subsidiary ledger reads. */
 export interface SpecialAccountLedgerEntry {
-  expenseId: string
+  /** Null for a movement that is not an expense: a loan disbursement, an
+   * appliance sale, a collection against one. */
+  expenseId: string | null
+  /** Scenario 63 — the Employee Cash Loan behind it (a release or a
+   * payment), if any. */
+  loanId: string | null
+  source: 'expense' | 'loan' | 'loan_payment' | 'appliance_sale' | 'collection'
   date: string | null
   reference: string
   description: string | null
@@ -1732,7 +2180,76 @@ export interface CreateSpecialAccountBody {
   notes?: string
 }
 
+// ─── Recurring Expense list ──────────────────────────────────────────────
+/** One entry on the client's List of Recurring Expenses (rental, electricity, water…):
+ * a name and the account it is filed under. */
+export interface RecurringExpenseType {
+  id: string
+  name: string
+  accountId: string | null
+  account: { id: string; number: string; name: string } | null
+  sortOrder: number
+}
+export const RecurringExpenseTypes = {
+  list: () => api.get<RecurringExpenseType[]>('/recurring-expense-types'),
+  get: (id: string) => api.get<RecurringExpenseType>(`/recurring-expense-types/${id}`),
+  create: (body: { name: string; accountId?: string }) =>
+    api.post<RecurringExpenseType>('/recurring-expense-types', body),
+  /** `accountId: null` clears the account. */
+  update: (id: string, body: { name?: string; accountId?: string | null }) =>
+    api.patch<RecurringExpenseType>(`/recurring-expense-types/${id}`, body),
+  remove: (id: string) => api.delete(`/recurring-expense-types/${id}`),
+}
+
+/** The pickers behind a Fuel / Vehicle Repair / Commission expense line. */
+export interface ExpenseVehicleOption {
+  id: string
+  plateNo: string
+  /** The Vehicle Type, as the Drivers screen calls it — the roster's `tag`
+   * column. Blank when none has been entered. */
+  tag?: string | null
+  branchId?: string | null
+}
+/** `<plate number> - <vehicle type>` — how a vehicle reads in a picker. The
+ * roster has no make or model, so the Vehicle Type is the only description it
+ * holds; a vehicle without one reads as its plate alone. Never the driver, and
+ * not the category (Delivery / Service / Collector) either. */
+export function vehicleLabel(v: { plateNo: string; tag?: string | null }): string {
+  const type = v.tag?.trim()
+  return type ? `${v.plateNo} - ${type}` : v.plateNo
+}
+export interface ExpenseAgentOption {
+  id: string
+  name: string
+  branchId?: string | null
+}
+/** One sale credited to an agent. `commission` is what the system accrued on
+ * it (null when the agent had no rate then); `releasedOn` is the live voucher
+ * already carrying it, which the picker hides. */
+export interface ExpenseAgentSale {
+  id: string
+  number: string
+  /** Whose sale it is — picking it fills a commission line's Sales Agent. */
+  agentId?: string | null
+  agentName?: string | null
+  date: string
+  customerName: string | null
+  subtotal: number
+  totalAmount: number
+  commission: number | null
+  releasedOn: { expenseId: string; voucherNumber: string } | null
+}
+
 export const Expenses = {
+  vehicles: (search?: string) =>
+    api.get<ExpenseVehicleOption[]>('/expenses/lookups/vehicles', search ? { search } : undefined),
+  agents: (search?: string) =>
+    api.get<ExpenseAgentOption[]>('/expenses/lookups/agents', search ? { search } : undefined),
+  agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
+    api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
+  /** The sales a commission line can release — one agent's with `agentId`, any agent's without. */
+  commissionSales: (params?: { agentId?: string; search?: string; excludeExpenseId?: string }) =>
+    api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
   list: (params?: {
     search?: string
     status?: string
@@ -1782,8 +2299,12 @@ export interface EmployeeLite {
   branch?: { id: string; name: string } | null
 }
 export const EmployeesApi = {
+  // The Employees master-list page (src/app/.../accounting/employees) owns
+  // GET /accounting/employees itself now — this picker's bounded,
+  // active-only typeahead moved to its own sub-route so the two don't
+  // collide.
   search: (search?: string) =>
-    api.get<EmployeeLite[]>('/accounting/employees', search ? { search } : undefined),
+    api.get<EmployeeLite[]>('/accounting/employees/search', search ? { search } : undefined),
 }
 
 // ============ Bank Accounts ============
@@ -1798,11 +2319,64 @@ export interface BankAccount {
   isActive: boolean
   /** GL account this bank/fund posts to instead of the shared Default Cash/Bank mapping. */
   glAccountId?: string | null
+  /** The fund's control-voucher series, e.g. PCFBCBN0926- — null when it has none. */
+  voucherPrefix?: string | null
 }
 // Scenario 42 — the itemized worksheet. sourceType/direction mirror the
 // backend's BankReconciliationLineSourceType/Direction enums.
-export type BankReconciliationLineSourceType = 'AR_PAYMENT' | 'AP_PAYMENT' | 'CLEARING_SETTLEMENT'
+export type BankReconciliationLineSourceType =
+  | 'AR_PAYMENT'
+  | 'AP_PAYMENT'
+  | 'CLEARING_SETTLEMENT'
+  | 'FUND_TRANSFER_OUT'
+  | 'FUND_TRANSFER_IN'
+  /** Scenario 61 Part 6 — a cleared POS deposit, on its deposit date. */
+  | 'POS_DEPOSIT'
+  /** A recorded expense's (or payroll's) bank-paid row — a check until it clears. */
+  | 'EXPENSE_PAYMENT'
 export type BankReconciliationLineDirection = 'DEPOSIT' | 'WITHDRAWAL'
+
+/**
+ * Scenario 61 Part C — the bank side of a reconciliation. A checked line has
+ * cleared (it is already in the statement balance); an unchecked one is
+ * outstanding: deposits in transit are added, outstanding withdrawals and
+ * checks subtracted. Mirrors the backend's adjustedStatementBalance().
+ */
+export function adjustedStatementBalance(
+  statementBalance: number,
+  lines: { checked: boolean; direction: BankReconciliationLineDirection; amount: number }[]
+): number {
+  return lines
+    .filter((l) => !l.checked)
+    .reduce(
+      (bal, l) => (l.direction === 'DEPOSIT' ? bal + l.amount : bal - l.amount),
+      statementBalance
+    )
+}
+
+/**
+ * Scenario 61 Part C — RECONCILED is never picked by hand: it is set only by
+ * Mark Reconciled, which the backend refuses unless the difference is zero.
+ * Until then a worksheet is In Progress (still a difference) or For Review
+ * (zero — ready for someone to sign it off).
+ */
+export type ReconStatus = 'Reconciled' | 'For Review' | 'In Progress' | 'Draft'
+export function reconStatus(
+  reconciled: boolean,
+  discrepancy: number,
+  // An auto-created draft that does not have its statement balance yet.
+  awaitingStatement = false
+): ReconStatus {
+  if (reconciled) return 'Reconciled'
+  if (awaitingStatement) return 'Draft'
+  return Math.abs(discrepancy) < 0.01 ? 'For Review' : 'In Progress'
+}
+export const RECON_STATUS_STYLE: Record<ReconStatus, string> = {
+  Reconciled: 'text-emerald-700 font-medium',
+  'For Review': 'text-blue-700 font-medium',
+  'In Progress': 'text-amber-700 font-medium',
+  Draft: 'text-purple-700 font-medium',
+}
 export interface BankReconciliationLine {
   id: string
   bankReconciliationId: string
@@ -1824,6 +2398,11 @@ export interface BankReconciliation {
   /** Persisted at Complete time only — null until then. */
   discrepancy?: number | null
   reconciled: boolean
+  /** Made by the month-end job (or "Create drafts"), not typed in by a person. */
+  autoCreated?: boolean
+  /** True until the bank statement's closing balance is entered; the statement
+   * balance is then a placeholder and Mark Reconciled is locked. */
+  awaitingStatement?: boolean
   notes?: string | null
   reconciledAt?: string | null
   lines: BankReconciliationLine[]
@@ -1843,6 +2422,10 @@ export interface BankLedgerEntry {
   credit: number
   balance: number | null
   journalEntryId?: string | null
+  /** Scenario 61 Part C — CLEARED / OUTSTANDING for a reconciling item
+   * (collection, check payment, settlement, transfer); null for anything
+   * that isn't one (bank charges, adjusting entries, deposits…). */
+  clearingStatus?: 'CLEARED' | 'OUTSTANDING' | null
 }
 export interface BankLedgerWindow {
   bankAccount: { id: string; name: string; glAccountId: string | null }
@@ -1951,6 +2534,7 @@ export type ChecklistKey =
   | 'fixedAssetDepreciation'
   | 'accruals'
   | 'taxAccruals'
+  | 'taxCodeExceptions'
 
 export interface ChecklistItem {
   done: boolean
@@ -1997,6 +2581,7 @@ export const CHECKLIST_LABELS: Record<ChecklistKey, string> = {
   fixedAssetDepreciation: 'Fixed asset depreciation',
   accruals: 'Accruals',
   taxAccruals: 'Tax accruals',
+  taxCodeExceptions: 'Tax code exceptions reviewed',
 }
 
 export const FiscalPeriods = {
@@ -2016,7 +2601,107 @@ export const FiscalPeriods = {
   remove: (id: string) => api.delete(`/fiscal-periods/${id}`),
 }
 
-// ============ Tax ============
+// ============ Tax Codes (Scenario 69 Part C) ============
+export type TaxCodeType =
+  | 'OUTPUT_VAT'
+  | 'INPUT_VAT'
+  | 'EWT_PAYABLE'
+  | 'CWT_RECEIVABLE'
+  | 'WTC'
+  | 'OTHER'
+export type TaxBaseRule =
+  | 'GROSS'
+  | 'VAT_EXCLUSIVE'
+  | 'VAT_INCLUSIVE_EXTRACT'
+  | 'NET_OF_VAT'
+  | 'FIXED'
+  | 'VARIABLE'
+export type TaxCodeVersionStatus = 'CURRENT' | 'UPCOMING' | 'ENDED'
+/** One VERSION of a tax code. A rate change is a new version with a later
+ * effectiveFrom, so a transaction keeps the rate in force on its own date. */
+export interface TaxCode {
+  id: string
+  code: string
+  name: string
+  taxType: TaxCodeType
+  /** Percent, not a fraction: 12 means 12%. */
+  ratePercent: number
+  baseRule: TaxBaseRule
+  atc: string | null
+  /** The AccountMapping key the tax posts to; null = posts no tax. */
+  accountMappingKey: string | null
+  description: string | null
+  isDefault: boolean
+  requiresApproval: boolean
+  /** Same on every version of a code. */
+  isActive: boolean
+  /** YYYY-MM-DD */
+  effectiveFrom: string
+  effectiveTo: string | null
+  status: TaxCodeVersionStatus
+  createdAt: string
+  updatedAt: string
+}
+export interface TaxCodeListItem extends TaxCode {
+  versionCount: number
+  /** The change already scheduled after this version, if any. */
+  next: { id: string; ratePercent: number; effectiveFrom: string } | null
+}
+export interface TaxCodeInput {
+  code: string
+  name: string
+  taxType: TaxCodeType
+  ratePercent: number
+  baseRule: TaxBaseRule
+  atc?: string | null
+  accountMappingKey?: string | null
+  description?: string | null
+  isDefault?: boolean
+  requiresApproval?: boolean
+  isActive?: boolean
+  effectiveFrom: string
+  effectiveTo?: string | null
+}
+/** What can change on an existing version — the rate and dates cannot. */
+export interface TaxCodeEdit {
+  name?: string
+  description?: string | null
+  atc?: string | null
+  accountMappingKey?: string | null
+  isDefault?: boolean
+  requiresApproval?: boolean
+  /** Applies to every version of the code. */
+  isActive?: boolean
+}
+/** What a picker needs of a code: the version in force today, active codes only. */
+export interface TaxCodeOption {
+  code: string
+  name: string
+  taxType: TaxCodeType
+  /** Percent, not a fraction: 5 means 5%. */
+  ratePercent: number
+  baseRule: TaxBaseRule
+  accountMappingKey: string | null
+  requiresApproval: boolean
+  isDefault: boolean
+}
+export const TaxCodes = {
+  list: (params?: {
+    type?: TaxCodeType
+    search?: string
+    includeInactive?: boolean
+    asOf?: string
+  }) => api.get<TaxCodeListItem[]>('/tax-codes', params),
+  // Scenario 69 Part D — readable by whoever picks a code (supplier, AP bill and
+  // receiving screens), not just the people who maintain the master.
+  options: (type?: TaxCodeType) => api.get<TaxCodeOption[]>('/tax-codes/options', { type }),
+  history: (code: string) => api.get<TaxCode[]>(`/tax-codes/by-code/${encodeURIComponent(code)}`),
+  get: (id: string) => api.get<TaxCode>(`/tax-codes/${id}`),
+  // Posting a code that already exists adds a NEW VERSION of it.
+  create: (body: TaxCodeInput) => api.post<TaxCode>('/tax-codes', body),
+  update: (id: string, body: TaxCodeEdit) => api.patch<TaxCode>(`/tax-codes/${id}`, body),
+}
+
 // ============ Account Mapping ============
 export interface AccountMapping {
   key: string
@@ -2049,20 +2734,90 @@ export const BankAdjusting = {
     amount: number
     date: string
     description?: string
+    // Scenario 61 Part C — printed on the adjusting entry's voucher.
+    voucherControlNo: string
   }) => api.post<any>('/bank-accounts/adjusting-entry', body),
+}
+
+// Scenario 61 Part C — printable Journal Voucher for any journal entry
+// (bank adjusting entries, unidentified bank credits, reprints).
+export const JournalVouchers = {
+  getDocument: (journalEntryId: string) =>
+    api.get<unknown>(`/journal-entries/${journalEntryId}/document`),
 }
 
 // Scenario 40 Gap 5 — inter-account transfer (e.g. funding a Petty Cash
 // Fund / the Revolving Fund from the main operating account).
+// Scenario 61 — Inter-Account Transfer (formerly "Fund Transfer"). Now a
+// persisted record with a history, a voucher, and a limited edit.
+export type FundTransferBank = Pick<
+  BankAccount,
+  'id' | 'name' | 'bankName' | 'accountNumber' | 'accountType'
+>
+
+export type FundTransferStatus = 'POSTED' | 'VOID'
+// Scenario 72 Part 3 — derived by the backend from the clearing date.
+export type FundTransferClearingStatus = 'pending' | 'cleared' | 'void'
+
+export interface FundTransfer {
+  id: string
+  transferNumber: string
+  date: string
+  clearingDate: string | null
+  // Scenario 72 — a void transfer keeps its row; its journal entry is reversed.
+  status: FundTransferStatus
+  clearingStatus: FundTransferClearingStatus
+  // Scenario 72 Part 6 — the branch / location responsible; null = head office.
+  branchId: string | null
+  branch?: { id: string; name: string; code?: string | null } | null
+  voidedAt: string | null
+  voidedById: string | null
+  voidReason: string | null
+  sourceBankAccountId: string
+  destinationBankAccountId: string
+  sourceBankAccount: FundTransferBank
+  destinationBankAccount: FundTransferBank
+  amount: number
+  reference: string | null
+  description: string | null
+  journalEntryId: string | null
+  createdById: string | null
+  sourceClearedAt: string | null
+  destinationClearedAt: string | null
+  // Detail only.
+  sourceClearedInReconciliation?: { id: string; statementDate: string } | null
+  destinationClearedInReconciliation?: { id: string; statementDate: string } | null
+  journalEntry?: { id: string; code: string; status: string } | null
+  createdAt: string
+}
+
 export const BankTransfers = {
   create: (body: {
     sourceBankAccountId: string
     destinationBankAccountId: string
     amount: number
     date: string
+    clearingDate?: string
     reference?: string
     description?: string
-  }) => api.post<any>('/bank-accounts/transfer', body),
+    branchId?: string
+  }) => api.post<FundTransfer>('/bank-accounts/transfer', body),
+  list: (params?: {
+    bankAccountId?: string
+    startDate?: string
+    endDate?: string
+    search?: string
+    status?: FundTransferClearingStatus
+    branchId?: string
+  }) => api.get<FundTransfer[]>('/bank-accounts/transfers', params),
+  get: (id: string) => api.get<FundTransfer>(`/bank-accounts/transfers/${id}`),
+  // Only these two fields are editable once posted; null clears a field.
+  update: (id: string, body: { clearingDate?: string | null; reference?: string | null }) =>
+    api.patch<FundTransfer>(`/bank-accounts/transfers/${id}`, body),
+  getDocument: (id: string) => api.get<unknown>(`/bank-accounts/transfers/${id}/document`),
+  // Scenario 72 — reverses the transfer's journal entry; the reason is required.
+  void: (id: string, reason: string) =>
+    api.post<FundTransfer>(`/bank-accounts/transfers/${id}/void`, { reason }),
 }
 
 // ============ Clearing Settlements & Unidentified Bank Credits (Scenario 38 Gap 1) ============
@@ -2090,6 +2845,7 @@ export interface UnidentifiedBankCredit {
   amount: number
   creditDate: string
   bankRef?: string | null
+  voucherControlNo?: string | null
   status: 'unmatched' | 'reclassified'
   reclassifiedNote?: string | null
   reclassifiedAt?: string | null
@@ -2160,66 +2916,18 @@ export const UnidentifiedBankCredits = {
       '/bank-accounts/unidentified-bank-credits',
       status ? { status } : undefined
     ),
-  record: (body: { bankAccountId: string; amount: number; creditDate: string; bankRef?: string }) =>
-    api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
+  record: (body: {
+    bankAccountId: string
+    amount: number
+    creditDate: string
+    bankRef?: string
+    voucherControlNo: string
+  }) => api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
   reclassify: (id: string, body: { targetType: ClearingSettlementType; tpfProviderId?: string }) =>
     api.post<UnidentifiedBankCredit>(
       `/bank-accounts/unidentified-bank-credits/${id}/reclassify`,
       body
     ),
-}
-
-// ============ Employee Appliance Loans (Scenario 40 Part 4) ============
-export type EmployeeApplianceLoanStatus = 'ACTIVE' | 'PAID_OFF' | 'CANCELLED'
-export interface EmployeeApplianceLoanPaymentRow {
-  id: string
-  amount: number
-  paymentDate: string
-  note?: string | null
-  journalEntryId?: string | null
-}
-export interface EmployeeApplianceLoan {
-  id: string
-  loanNumber: string
-  employeeId: string
-  employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
-  itemDescription: string
-  listedCashPrice: number
-  downPayment: number
-  amountFinanced: number
-  termMonths: number
-  miFactor: number
-  monthlyInstallment: number
-  pnv: number
-  totalPrice: number
-  interestDifferential: number
-  ppd: number
-  openingBalance: number
-  currentBalance: number
-  status: EmployeeApplianceLoanStatus
-  startDate: string
-  nextDueDate?: string | null
-  journalEntryId?: string | null
-  payments?: EmployeeApplianceLoanPaymentRow[]
-}
-export const EmployeeApplianceLoans = {
-  list: (params?: { search?: string; status?: string; employeeId?: string }) =>
-    api.get<{ items: EmployeeApplianceLoan[]; total: number }>(
-      '/employee-appliance-loans',
-      params as any
-    ),
-  get: (id: string) => api.get<EmployeeApplianceLoan>(`/employee-appliance-loans/${id}`),
-  create: (body: {
-    employeeId: string
-    itemDescription: string
-    listedCashPrice: number
-    downPayment: number
-    termMonths: number
-    miFactor: number
-    startDate?: string
-  }) => api.post<EmployeeApplianceLoan>('/employee-appliance-loans', body),
-  recordPayment: (id: string, body: { amount: number; paymentDate: string; note?: string }) =>
-    api.post<EmployeeApplianceLoanPaymentRow>(`/employee-appliance-loans/${id}/payments`, body),
 }
 
 // ============ Helpers ============

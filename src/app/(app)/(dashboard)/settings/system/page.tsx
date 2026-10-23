@@ -4,7 +4,7 @@ import { isAdmin } from '@/src/libs/guards/permission'
 import { redirect } from 'next/navigation'
 
 export const metadata = {
-  title: 'System Settings | Prominent Enterprise',
+  title: 'System Settings | NIG Central',
 }
 
 export default async function SystemSettingsPage() {

@@ -1,7 +1,7 @@
 import ModuleGuard from '@/src/components/guards/ModuleGuard'
 
 export const metadata = {
-  title: 'CRM - Prominent Enterprise',
+  title: 'CRM - NIG Central',
   description: 'Manage leads, customers, and the sales pipeline',
 }
 

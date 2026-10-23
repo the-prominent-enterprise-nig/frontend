@@ -1,8 +1,15 @@
 'use client'
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Store } from 'lucide-react'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react'
+import { Check, ChevronDown, Search, Store } from 'lucide-react'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { hasPrivilegedRole } from '@/src/libs/guards/permission'
 import { getBranches, type Branch } from '../_actions/pos-actions'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
@@ -14,13 +21,15 @@ export function PosBranchSwitcher() {
   const [visible, setVisible] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const [dropdownLeft, setDropdownLeft] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const listboxId = useId()
   const { branchId, setBranch } = usePosBranchContext()
 
   useEffect(() => {
-    getSessionOrNull().then((session) => {
+    getSessionIfAvailable().then((session) => {
       if (!session) return
       const privileged = hasPrivilegedRole(session)
       if (privileged) setVisible(true)
@@ -37,9 +46,11 @@ export function PosBranchSwitcher() {
         const list = res.data ?? []
         if (privileged) setBranches(list)
         const currentBranchId = usePosBranchContext.getState().branchId
-        if (currentBranchId && !list.some((b) => b.id === currentBranchId)) {
-          usePosBranchContext.getState().setBranch(null)
-        }
+        if (!currentBranchId) return
+        // Also refreshes the persisted name, so a renamed branch (or a
+        // caravan now shown by its place) doesn't keep its old label.
+        const current = list.find((b) => b.id === currentBranchId)
+        usePosBranchContext.getState().setBranch(current ?? null)
       })
     })
   }, [])
@@ -74,6 +85,11 @@ export function PosBranchSwitcher() {
     }
   }, [open])
 
+  // Lands the cursor in the search box so typing filters straight away.
+  useEffect(() => {
+    if (open) searchRef.current?.focus()
+  }, [open])
+
   if (!visible) return null
 
   function handleChange(id: string): void {
@@ -84,6 +100,19 @@ export function PosBranchSwitcher() {
     }
     const branch = branches.find((b) => b.id === id)
     if (branch) setBranch(branch)
+  }
+
+  // With dozens of branches, scrolling is slow — typing narrows the list.
+  const needle = query.trim().toLowerCase()
+  const filteredBranches = needle
+    ? branches.filter((b) => b.name.toLowerCase().includes(needle))
+    : branches
+
+  function handleSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>): void {
+    // Enter picks the top match, so it works without leaving the keyboard.
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (filteredBranches[0] && needle) handleChange(filteredBranches[0].id)
   }
 
   const currentLabel = branchId
@@ -99,7 +128,10 @@ export function PosBranchSwitcher() {
         aria-expanded={open}
         aria-controls={listboxId}
         aria-label={currentLabel}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setQuery('')
+          setOpen((o) => !o)
+        }}
         className="flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50/60 py-1 pl-2.5 pr-2 text-xs text-purple-800 outline-none transition hover:border-purple-300 hover:bg-purple-100/60 focus-visible:ring-2 focus-visible:ring-purple-300"
       >
         <Store size={13} className="shrink-0 text-purple-500" />
@@ -112,43 +144,60 @@ export function PosBranchSwitcher() {
 
       {open && (
         <div
-          id={listboxId}
-          role="listbox"
           style={{ left: dropdownLeft }}
-          className="absolute z-50 mt-1.5 max-h-64 w-52 overflow-y-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg"
+          className="absolute z-50 mt-1.5 w-52 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg"
         >
-          <button
-            type="button"
-            role="option"
-            aria-selected={!branchId}
-            onClick={() => handleChange('')}
-            className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition hover:bg-purple-50 ${
-              !branchId ? 'font-medium text-purple-700' : 'text-zinc-700'
-            }`}
-          >
-            All Branches
-            {!branchId && <Check size={13} className="shrink-0 text-purple-600" />}
-          </button>
-          {branches.length > 0 && (
-            <>
+          <div className="flex items-center gap-1.5 border-b border-zinc-100 px-3 py-2">
+            <Search size={13} className="shrink-0 text-zinc-400" />
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search branches…"
+              aria-label="Search branches"
+              aria-controls={listboxId}
+              className="w-full min-w-0 bg-transparent text-xs text-zinc-700 outline-none placeholder:text-zinc-400"
+            />
+          </div>
+          <div id={listboxId} role="listbox" className="max-h-56 overflow-y-auto py-1">
+            {!needle && (
+              <button
+                type="button"
+                role="option"
+                aria-selected={!branchId}
+                onClick={() => handleChange('')}
+                className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition hover:bg-purple-50 ${
+                  !branchId ? 'font-medium text-purple-700' : 'text-zinc-700'
+                }`}
+              >
+                All Branches
+                {!branchId && <Check size={13} className="shrink-0 text-purple-600" />}
+              </button>
+            )}
+            {!needle && filteredBranches.length > 0 && (
               <div className="my-1 border-t border-zinc-100" />
-              {branches.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  role="option"
-                  aria-selected={b.id === branchId}
-                  onClick={() => handleChange(b.id)}
-                  className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition hover:bg-purple-50 ${
-                    b.id === branchId ? 'font-medium text-purple-700' : 'text-zinc-700'
-                  }`}
-                >
-                  <span className="truncate">{b.name}</span>
-                  {b.id === branchId && <Check size={13} className="shrink-0 text-purple-600" />}
-                </button>
-              ))}
-            </>
-          )}
+            )}
+            {filteredBranches.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                role="option"
+                aria-selected={b.id === branchId}
+                onClick={() => handleChange(b.id)}
+                className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition hover:bg-purple-50 ${
+                  b.id === branchId ? 'font-medium text-purple-700' : 'text-zinc-700'
+                }`}
+              >
+                <span className="truncate">{b.name}</span>
+                {b.id === branchId && <Check size={13} className="shrink-0 text-purple-600" />}
+              </button>
+            ))}
+            {needle && filteredBranches.length === 0 && (
+              <p className="px-3 py-2 text-xs text-zinc-400">No matches</p>
+            )}
+          </div>
         </div>
       )}
     </div>

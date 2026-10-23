@@ -16,9 +16,9 @@ import WidgetSettingsPanel from './WidgetSettingsPanel'
 // `shadow-md`/`shadow-lg`. Reused by the KPI tiles and Module Stats cards
 // too, so the whole dashboard shares one consistent depth language.
 export const CARD_SHADOW_RESTING =
-  'shadow-[0_1px_2px_rgba(15,23,42,0.04),0_2px_10px_-2px_rgba(15,23,42,0.06)]'
+  'shadow-[0_1px_2px_rgba(29,15,56,0.03),0_8px_24px_-8px_rgba(29,15,56,0.08)]'
 export const CARD_SHADOW_HOVER =
-  'hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_8px_24px_-4px_rgba(15,23,42,0.1)]'
+  'hover:shadow-[0_2px_4px_rgba(29,15,56,0.04),0_16px_32px_-8px_rgba(29,15,56,0.14)]'
 
 type Props = {
   id: string
@@ -102,10 +102,10 @@ export default function DashboardWidgetWrapper({
   const showChrome = !widget?.noChrome || isEditing
 
   const chromeClasses = showChrome
-    ? `rounded-2xl bg-white ring-1 transition-all duration-300 ${
+    ? `rounded-3xl bg-white ring-1 transition-all duration-300 ${
         isEditing
           ? 'ring-purple-300 shadow-lg shadow-purple-200/50'
-          : `ring-zinc-200/70 hover:ring-zinc-300/80 ${CARD_SHADOW_RESTING} ${CARD_SHADOW_HOVER}`
+          : `ring-purple-100/70 hover:ring-purple-200 ${CARD_SHADOW_RESTING} ${CARD_SHADOW_HOVER}`
       }`
     : ''
 
@@ -117,12 +117,16 @@ export default function DashboardWidgetWrapper({
       {/* Widget header — always shrink-0 so it never gets clipped */}
       {showChrome && (
         <div
-          className={`flex shrink-0 items-center gap-2 border-b border-zinc-100 px-3 py-2
-            ${isEditing ? 'cursor-grab active:cursor-grabbing bg-purple-50 widget-drag-handle' : 'bg-white'}`}
+          className={`flex shrink-0 items-center gap-2.5 border-b border-purple-50 px-4 py-3
+            ${isEditing ? 'cursor-grab active:cursor-grabbing bg-purple-50 widget-drag-handle' : 'bg-gradient-to-r from-white to-purple-50/40'}`}
         >
           {isEditing && <GripHorizontal className="h-4 w-4 shrink-0 text-purple-400" />}
-          {WidgetIcon && <WidgetIcon className="h-4 w-4 shrink-0 text-zinc-400" />}
-          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-800 select-none">
+          {WidgetIcon && (
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple-100/70">
+              <WidgetIcon className="h-3.5 w-3.5 text-purple-600" />
+            </span>
+          )}
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-prominent-purple-900 select-none">
             {label}
           </p>
           {!isEditing && headerExtra}
@@ -175,7 +179,7 @@ export default function DashboardWidgetWrapper({
                   isEditing
                     ? `absolute inset-0 overflow-auto ${showChrome ? 'p-3' : ''}`
                     : showChrome
-                      ? 'p-3'
+                      ? 'p-4'
                       : ''
                 }
               >

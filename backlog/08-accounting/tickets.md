@@ -8,16 +8,17 @@ last_synced: '2026-06-10'
 
 ## Summary
 
-| ID     | Title                                                                | Status | Priority |
-| ------ | -------------------------------------------------------------------- | ------ | -------- |
-| ACC-23 | AA Accountant, ISBAT work a collections worklist of overdue invoices | TO DO  | high     |
-| ACC-24 | AA Accountant, ISBAT paginate and sort the AR invoices table         | TO DO  | normal   |
+| ID    | Title                                                                                                 | Status | Priority |
+| ----- | ----------------------------------------------------------------------------------------------------- | ------ | -------- |
+| ACC-1 | AA Accountant, ISBAT work a collections worklist of overdue invoices                                  | TO DO  | high     |
+| ACC-2 | AA Accountant, ISBAT paginate and sort the AR invoices table                                          | TO DO  | normal   |
+| ACC-3 | AA Accounting Personnel, ISBAT record one deposit itemised across the banks that took the day's money | TO DO  | high     |
 
 ---
 
 ## Tickets
 
-### [ACC-23] — AA Accountant, ISBAT work a collections worklist of overdue invoices
+### [ACC-1] — AA Accountant, ISBAT work a collections worklist of overdue invoices
 
 **Status:** TO DO
 **Priority:** high
@@ -77,10 +78,10 @@ The system should:
 
 ---
 
-### SUBTASK (Frontend) — FE-ACC-23
+### SUBTASK (Frontend) — FE-ACC-1
 
 **Title:** FE: Collections worklist with contact log + promise-to-pay
-**Parent:** ACC-23
+**Parent:** ACC-1
 **Contract:** `contracts/accounting/collections.contract.md`
 
 **Scope:**
@@ -96,10 +97,10 @@ The system should:
 
 ---
 
-### SUBTASK (Backend) — BE-ACC-23-collections
+### SUBTASK (Backend) — BE-ACC-1-collections
 
 **Title:** BE: GET /accounting/collections + follow-up actions
-**Parent:** ACC-23
+**Parent:** ACC-1
 **Contract:** `contracts/accounting/collections.contract.md`
 
 **Scope:**
@@ -115,7 +116,7 @@ The system should:
 
 ---
 
-### [ACC-24] — AA Accountant, ISBAT paginate and sort the AR invoices table
+### [ACC-2] — AA Accountant, ISBAT paginate and sort the AR invoices table
 
 **Status:** TO DO
 **Priority:** normal
@@ -171,10 +172,10 @@ The system should:
 
 ---
 
-### SUBTASK (Frontend) — FE-ACC-24
+### SUBTASK (Frontend) — FE-ACC-2
 
 **Title:** FE: Server-side pagination + sorting on AR invoices table
-**Parent:** ACC-24
+**Parent:** ACC-2
 **Contract:** `contracts/accounting/ar-invoices-list.contract.md`
 
 **Scope:**
@@ -189,10 +190,10 @@ The system should:
 
 ---
 
-### SUBTASK (Backend) — BE-ACC-24-ar-pagination
+### SUBTASK (Backend) — BE-ACC-2-ar-pagination
 
 **Title:** BE: GET /ar-invoices — add page/pageSize/sort params
-**Parent:** ACC-24
+**Parent:** ACC-2
 **Contract:** `contracts/accounting/ar-invoices-list.contract.md`
 
 **Scope:**
@@ -205,3 +206,108 @@ The system should:
 **Acceptance Criteria:**
 
 - `meta.total` MUST reflect the filtered count
+
+---
+
+### [ACC-3] — AA Accounting Personnel, ISBAT record one deposit itemised across the banks that took the day's money
+
+**Status:** TO DO
+**Priority:** high
+**ClickUp:** pending — not yet pushed
+
+---
+
+**Scenario:**
+The client annotated their own closing sheet with what happens next: TOTAL BRANCH COLLECTION 87,365.00 goes to Undeposited Funds, and accounting clears it with **one entry**, itemised per bank, once each slip is verified — "So, after this Undeposited Funds must be Zero." Their note is explicit about the screen too: "Upon clicking the RECORD DEPOSITS, the field for the amount should be blank. In order the Acctg Personnel itemized the specific banks and its amount."
+
+Today a deposit holds one bank account and an amount the system works out itself from the sessions being banked, so the client's single record cannot be made: it takes one deposit plus four separate clearing settlements, the amount field is pre-filled, and the bond check never gets banked at all.
+
+**Given:**
+
+- A branch's sessions are closed and counted, and the day's collections are sitting in Cash on Hand — Branch Collections and in the card / e-wallet clearing accounts
+- Accounting holds the deposit slips: cash to Security Bank, the check to BDO Quezon, Maya QR and the Maya terminal to Metrobank, GCash Soundpay to UnionBank, ECPay to BPI Araneta
+
+**When:**
+
+- Accounting opens Record deposit for that branch's closing and enters one line per bank
+
+**Then:**
+The system should:
+
+- Open with the amount **blank**, and let accounting add a line per bank with its own amount
+- Post one balanced journal entry: a debit per bank line, against Cash on Hand — Branch Collections and each clearing account the lines say they clear
+- Leave every one of those holding accounts at zero for the day once the deposit is cleared
+- Refuse to clear while the lines do not add up to what is outstanding, and say by how much
+
+### Fields
+
+- **Bank Account:** per line; the existing searchable picker
+- **Amount:** per line; **blank on open** — never pre-filled from the sessions
+- **Clears:** per line — which holding account this line empties (branch collection, card clearing, e-wallet clearing)
+- **Deposit Date / Reference / Proof of deposit:** unchanged, one per deposit
+
+### Buttons
+
+- **Add line** — appends an empty bank/amount row
+- **Save as draft** — unchanged; posts nothing
+- **Clear deposit** — accounting only; disabled until a slip is attached and the lines reconcile
+
+---
+
+#### Empty States
+
+- A branch with nothing outstanding cannot open Record deposit, as today.
+
+---
+
+#### Post-Action Behavior
+
+- Undeposited Funds shows the branch at zero for that day, and the deposit appears under Deposited with its lines.
+
+---
+
+#### Figma Reference
+
+- [PLACEHOLDER: add Figma node] — the client's annotated screenshot of the current modal is the starting point.
+
+---
+
+### SUBTASK (Frontend) — FE-ACC-3
+
+**Title:** FE: Record deposit, itemised per bank, amount blank on open
+**Parent:** ACC-3
+**Contract:** `contracts/accounting/pos-deposits.contract.md`
+
+**Scope:**
+
+- [ ] Replace the single bank/amount pair with a line editor (bank, amount, what it clears)
+- [ ] Amount starts blank; nothing is pre-filled from the sessions
+- [ ] Show the outstanding figure and what the lines currently add up to, with the difference
+- [ ] Block Clear until the lines reconcile and a slip is attached
+
+**Acceptance Criteria:**
+
+- The amount field MUST be empty on open — this is the client's explicit request
+- The running difference MUST update as lines are typed
+
+---
+
+### SUBTASK (Backend) — BE-ACC-3-deposit-lines
+
+**Title:** BE: POST /pos-deposits — deposit lines, and one entry that clears every holding account
+**Parent:** ACC-3
+**Contract:** `contracts/accounting/pos-deposits.contract.md`
+
+**Scope:**
+
+- [ ] Migration: `PosDepositLine` (deposit, bank account, amount, cleared account), `PosDeposit.amount` becomes the lines' sum
+- [ ] `create` accepts lines instead of one `bankAccountId`; reject a total that does not match what the sessions and clearing accounts hold
+- [ ] `postClearedDeposit` posts one entry: a debit per line's bank GL, credits per cleared account
+- [ ] Keep `ClearingSettlement` for a processor that settles outside a branch deposit
+- [ ] Auth: unchanged (`accounting:cash-in-transit:manage` to draft, `:verify` to clear)
+
+**Acceptance Criteria:**
+
+- Gap tests G8, G9, G11 and G12 MUST pass with their `.failing` removed
+- A deposit whose lines do not reconcile MUST be refused with the difference in the message
+- Depends on POS-4: until a New Receipt reaches branch collection, the client's 56,000.00 line has nothing to clear

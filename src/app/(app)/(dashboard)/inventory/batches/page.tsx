@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { BatchList } from './_components'
 
 export const metadata = {
-  title: 'Batch Tracking | Prominent Enterprise',
+  title: 'Batch Tracking | NIG Central',
   description: 'Manage batches, track expiry, and apply quality holds',
 }
 

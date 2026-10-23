@@ -5,7 +5,10 @@ import {
   fillStable,
   findPriceListIdByName,
   sweepE2EPriceLists,
-  pickFromCustomSelect,
+  pickPriceUseType,
+  submitPriceListForm,
+  openAddItemsPanel,
+  openCustomSelect,
 } from './utils'
 
 // Scenario 15, Part 5 — a curated per-SKU down payment (from the admin's
@@ -60,9 +63,9 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
     )
-    await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
-    await pickFromCustomSelect(page, 'Select price use type…', 'CREDIT CARD')
-    await page.getByRole('button', { name: 'Create Price List' }).click()
+    await fillStable(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'), name)
+    await pickPriceUseType(page, 'CREDIT CARD')
+    await submitPriceListForm(page, 'Create Price List')
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
     })
@@ -74,6 +77,7 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await expect(page).toHaveURL(/\/inventory\/price-lists\/[^/]+$/, { timeout: 10_000 })
     await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 10_000 })
 
+    await openAddItemsPanel(page)
     await fillStable(page.getByLabel('Search items to add'), ITEM_NAME)
     await page
       .getByRole('button', { name: new RegExp(ITEM_NAME) })
@@ -91,9 +95,11 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await page.getByRole('button', { name: /^Add 1 Item$/ }).click()
 
     const itemRow = page.locator('tbody tr').filter({ hasText: ITEM_NAME })
-    await expect(itemRow).toContainText(CURATED_DOWN_PAYMENT.replace('.00', ''), {
-      timeout: 10_000,
-    })
+    // Inline-editable table: the saved down payment is an input value now.
+    await expect(itemRow.getByLabel(/^Down Payment for .* in this list$/)).toHaveValue(
+      new RegExp(`^${CURATED_DOWN_PAYMENT.replace('.00', '')}(\\.0+)?$`),
+      { timeout: 10_000 }
+    )
 
     // Approve directly from the item-management page's own header — a price
     // list only applies at checkout once active.
@@ -129,17 +135,15 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await remoteCard.first().click()
     await page.getByLabel('Price Use').selectOption({ label: 'CREDIT CARD' })
 
-    const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
+    const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
     await clickStable(page.getByRole('button', { name: 'Installment', exact: true }), termSelect)
-    await termSelect.selectOption({ index: 1 })
+    // Scenario 64 — shared Select, not a native <select>: no placeholder
+    // <option>, so the old selectOption({index:1}) is the first real option.
+    await openCustomSelect(termSelect)
+    await page.getByRole('option').first().click()
 
-    // The down payment starts collapsed behind a static "10% min" badge —
-    // reveal the editable input (pre-filled with the current value) to read it.
-    await clickStable(
-      page.getByRole('button', { name: 'Change amount' }),
-      page.getByPlaceholder('Down payment')
-    )
-    await expect(page.getByPlaceholder('Down payment')).toHaveValue(CURATED_DOWN_PAYMENT, {
+    // The down payment is a field from the start, pre-filled with the current value.
+    await expect(page.getByTestId('down-payment-input')).toHaveValue(CURATED_DOWN_PAYMENT, {
       timeout: 10_000,
     })
 

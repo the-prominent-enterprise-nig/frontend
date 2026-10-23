@@ -6,7 +6,7 @@ import { getBusinessProfile } from '@/src/libs/actions/enterprise.actions'
 import { isAdmin } from '@/src/libs/guards/permission'
 
 export const metadata = {
-  title: 'My Profile | Prominent Enterprise',
+  title: 'My Profile | NIG Central',
 }
 
 export default async function WorkspaceProfilePage() {

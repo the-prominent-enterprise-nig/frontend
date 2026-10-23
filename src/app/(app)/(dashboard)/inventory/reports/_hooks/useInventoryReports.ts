@@ -7,15 +7,30 @@ import { getTurnoverReport } from '../_actions/get-turnover-report'
 import { getAgingReport } from '../_actions/get-aging-report'
 import { getReconciliationReport } from '../_actions/get-reconciliation-report'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getCategories } from '../../items/_actions/get-lookup-data'
+import { getCategories, getItemTypes } from '../../items/_actions/get-lookup-data'
 import type { SerialAgingBucket } from '@/src/schema/inventory/reports'
 
 export type ReportTab = 'valuation' | 'turnover' | 'aging' | 'reconciliation'
 
+/** The aging report's filter row; each change reloads the report. */
+export interface AgingFilters {
+  asOf: string
+  warehouseId?: string
+  categoryId?: string
+  typeId?: string
+}
+
+/** Today as YYYY-MM-DD in the viewer's own timezone. */
+function todayIso(): string {
+  const now = new Date()
+  const offset = now.getTimezoneOffset() * 60 * 1000
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10)
+}
+
 const PAGE_SIZE = 20
 
 export function useInventoryReports() {
-  const [tab, setTab] = useState<ReportTab>('valuation')
+  const [tab, setTab] = useState<ReportTab>('aging')
 
   // Shared filters
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
@@ -33,6 +48,8 @@ export function useInventoryReports() {
   const [agingBucketFilter, setAgingBucketFilter] = useState<SerialAgingBucket | undefined>(
     undefined
   )
+  const [agingAsOf, setAgingAsOf] = useState<string>(todayIso)
+  const [agingTypeId, setAgingTypeId] = useState<string | undefined>(undefined)
 
   // Reconciliation-specific — no pagination (backend caps each section at
   // 50 sample rows server-side), just an optional date range.
@@ -89,10 +106,12 @@ export function useInventoryReports() {
       categoryId: categoryFilter,
       search: search || undefined,
       bucket: agingBucketFilter,
+      typeId: agingTypeId,
+      asOf: agingAsOf,
       page,
       limit: PAGE_SIZE,
     }),
-    [warehouseFilter, categoryFilter, search, agingBucketFilter, page]
+    [warehouseFilter, categoryFilter, search, agingBucketFilter, agingTypeId, agingAsOf, page]
   )
 
   const agingQuery = useQuery({
@@ -128,6 +147,13 @@ export function useInventoryReports() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const typesQuery = useQuery({
+    queryKey: ['inventory-item-types-lookup'],
+    queryFn: () => getItemTypes(),
+    staleTime: 5 * 60 * 1000,
+    enabled: tab === 'aging',
+  })
+
   return {
     tab,
     setTab: (v: ReportTab) => {
@@ -156,6 +182,8 @@ export function useInventoryReports() {
       setSearch('')
       setStatusFilter(undefined)
       setAgingBucketFilter(undefined)
+      setAgingAsOf(todayIso())
+      setAgingTypeId(undefined)
       setReconStartDate(undefined)
       setReconEndDate(undefined)
       resetPage()
@@ -191,6 +219,19 @@ export function useInventoryReports() {
       setAgingBucketFilter(v)
       resetPage()
     },
+    agingFilters: {
+      asOf: agingAsOf,
+      warehouseId: warehouseFilter,
+      categoryId: categoryFilter,
+      typeId: agingTypeId,
+    } satisfies AgingFilters,
+    applyAgingFilters: (next: AgingFilters) => {
+      setAgingAsOf(next.asOf || todayIso())
+      setWarehouseFilter(next.warehouseId)
+      setCategoryFilter(next.categoryId)
+      setAgingTypeId(next.typeId)
+      resetPage()
+    },
     agingData: agingQuery.data?.data,
     isAgingLoading: agingQuery.isLoading,
     isAgingFetching: agingQuery.isFetching,
@@ -210,5 +251,6 @@ export function useInventoryReports() {
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     categoryOptions: categoriesQuery.data?.data?.data ?? [],
+    typeOptions: typesQuery.data?.data ?? [],
   }
 }

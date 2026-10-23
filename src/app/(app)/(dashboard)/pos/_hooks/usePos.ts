@@ -35,6 +35,7 @@ import {
   voidGiftCard,
   getGiftCardHistory,
   getSessionDisplay,
+  getSessionReconciliation,
   getCashDrawerEvents,
   createCashDrawerEvent,
   getBranchPricing,
@@ -194,6 +195,26 @@ export function useSessions(
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
     ...options,
+  })
+}
+
+/**
+ * Scenario 53 — the cash build-up behind one session, fetched only when a row
+ * on the sessions list is actually expanded (`enabled`). The list row itself
+ * carries opening/expected/declared/variance, but not the lines that explain
+ * them: cash sales, counter collections, drops and petty cash. Without those
+ * a shortage and a cash drop nobody logged look identical.
+ *
+ * Same endpoint the close screen reads, so the two can never disagree. Runs
+ * happily against an open session — only its expected-side figures mean
+ * anything before close.
+ */
+export function useSessionReconciliation(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['pos-session-reconciliation', id],
+    queryFn: () => getSessionReconciliation(id),
+    enabled: enabled && !!id,
+    staleTime: 60 * 1000,
   })
 }
 

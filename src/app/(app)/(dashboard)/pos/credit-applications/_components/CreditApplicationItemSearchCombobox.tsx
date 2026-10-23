@@ -6,6 +6,10 @@ import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/g
 export type CreditApplicationItemMeta = {
   sellingPrice: number | null
   modelNumber: string | null
+  /** Scenario 64 item 29 — a serial item's row offers its in-stock units.
+   * Optional: rows seeded without a search (edit mode, restored drafts) carry
+   * the flag in form state instead. */
+  isSerialTracked?: boolean
 }
 
 type Props = {
@@ -14,7 +18,7 @@ type Props = {
   /** Fires with the picked item's price info — lets the parent form preview
    * an amount. Not fired for a value arriving via `initialLabel` (edit-mode
    * prefill). */
-  onSelectItem?: (meta: CreditApplicationItemMeta) => void
+  onSelectItem?: (meta: CreditApplicationItemMeta, label: string) => void
   error?: string
   initialLabel?: string
 }
@@ -33,7 +37,9 @@ export function CreditApplicationItemSearchCombobox({
     <SearchCombobox
       value={value}
       onChange={onChange}
-      onSelect={(option) => onSelectItem?.(option.meta as CreditApplicationItemMeta)}
+      onSelect={(option) =>
+        onSelectItem?.(option.meta as CreditApplicationItemMeta, option.primary)
+      }
       error={error}
       initialLabel={initialLabel}
       queryKey="credit-application-item-search"
@@ -51,6 +57,7 @@ export function CreditApplicationItemSearchCombobox({
             meta: {
               sellingPrice: item.sellingPrice ?? null,
               modelNumber: item.modelNumber ?? null,
+              isSerialTracked: item.isSerialTracked === true,
             } satisfies CreditApplicationItemMeta,
           }))
       }}

@@ -13,15 +13,12 @@ test.describe('Settings — Payment Methods', () => {
     const cardSection = page.getByTestId('payment-method-options-card')
     await expect(cardSection.getByText('BDO', { exact: true })).toBeVisible({ timeout: 10_000 })
     await expect(cardSection.getByText('BPI', { exact: true })).toBeVisible()
-    await expect(cardSection.getByText('Metrobank', { exact: true })).toBeVisible()
+    await expect(cardSection.getByText('MBTC', { exact: true })).toBeVisible()
     await expect(cardSection.getByText('Maya', { exact: true })).toBeVisible()
 
     const qrSection = page.getByTestId('payment-method-options-qr')
-    await expect(qrSection.getByText('Palawan', { exact: true })).toBeVisible()
-    await expect(qrSection.getByText('GCash Soundpay', { exact: true })).toBeVisible()
-    await expect(qrSection.getByText('ECPay', { exact: true })).toBeVisible()
-    await expect(qrSection.getByText('Maya QR', { exact: true })).toBeVisible()
-    await expect(qrSection.getByText('Security Bank (SCB) QR', { exact: true })).toBeVisible()
+    await expect(qrSection.getByText('Maya', { exact: true })).toBeVisible()
+    await expect(qrSection.getByText('Sbank', { exact: true })).toBeVisible()
   })
 
   test('adds, toggles, and deletes an option under QR', async ({ page }) => {

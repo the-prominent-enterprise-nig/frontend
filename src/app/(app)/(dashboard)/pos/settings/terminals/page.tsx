@@ -35,6 +35,7 @@ import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { terminalPlaceName } from '@/src/libs/format/locationLabel'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -47,6 +48,11 @@ type ModalState =
   | { type: 'edit'; terminal: PosTerminal }
   | { type: 'delete'; terminal: PosTerminal }
   | { type: 'cashiers'; terminal: PosTerminal }
+
+// A caravan's terminal reads as the caravan ("Caravan · Lemery").
+function terminalBranchLabel(t: PosTerminal): string {
+  return terminalPlaceName(t) ?? t.branchId
+}
 
 export default function TerminalsPage() {
   const { session, status } = useRequirePermission(POS_PERMISSIONS.TERMINALS_READ)
@@ -156,7 +162,7 @@ export default function TerminalsPage() {
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-5 py-3 font-mono text-gray-700">{t.terminalCode}</td>
                     <td className="px-5 py-3 font-medium text-gray-800">{t.name}</td>
-                    <td className="px-5 py-3 text-gray-600">{t.branch?.name ?? t.branchId}</td>
+                    <td className="px-5 py-3 text-gray-600">{terminalBranchLabel(t)}</td>
                     <td className="px-5 py-3">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[t.status]}`}
@@ -263,13 +269,15 @@ function TerminalModal({
   onSubmit: (f: Partial<CreateTerminalInput>) => void
 }) {
   const { data: branchesData } = useBranches()
+  // A caravan is offered too — the backend keeps its terminal on the host
+  // branch, so the caravan's cash still lands on the host's collection.
   const branches = branchesData?.data ?? []
   const { branchId: activeBranchId } = usePosBranchContext()
 
   const [form, setForm] = useState({
     terminalCode: initial?.terminalCode ?? '',
     name: initial?.name ?? '',
-    branchId: initial?.branchId ?? activeBranchId ?? '',
+    branchId: initial?.caravanBranchId ?? initial?.branchId ?? activeBranchId ?? '',
     status: (initial?.status ?? 'active') as 'active' | 'inactive',
     description: initial?.description ?? '',
   })

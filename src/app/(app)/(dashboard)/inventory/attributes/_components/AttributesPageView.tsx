@@ -61,12 +61,12 @@ export default function AttributesPageView({ session }: { session: SessionUser }
   }
 
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
+    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
       <div className="mx-auto max-w-7xl space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Item Attributes</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Item Attributes</h1>
             <p className="mt-1 text-sm text-zinc-500">
               Create and manage custom attributes for inventory items.
             </p>

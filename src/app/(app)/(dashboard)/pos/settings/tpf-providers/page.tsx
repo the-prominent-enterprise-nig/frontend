@@ -4,7 +4,7 @@ import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { TpfProviderList } from './_components/TpfProviderList'
 
-export const metadata = { title: 'TPF Providers | Prominent Enterprise' }
+export const metadata = { title: 'TPF Providers | NIG Central' }
 
 export default async function TpfProvidersPage() {
   const session = await getSessionOrNull()

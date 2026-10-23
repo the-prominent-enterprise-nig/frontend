@@ -5,7 +5,7 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import { CreditApplicationDetail } from '../_components'
 
 export const metadata = {
-  title: 'Credit Application | Prominent Enterprise',
+  title: 'Credit Application | NIG Central',
   description: 'Credit application detail, documents, and status',
 }
 

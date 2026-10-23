@@ -1,6 +1,6 @@
-# Prominent Enterprise
+# NIG Central
 
-Prominent Enterprise is a modern ERP web application that automates repetitive tasks, reduces paperwork, and streamlines business workflows with structured systems. Built with Next.js 16, React 19, and TypeScript.
+NIG Central is a modern ERP web application that automates repetitive tasks, reduces paperwork, and streamlines business workflows with structured systems. Built with Next.js 16, React 19, and TypeScript.
 
 ## Tech Stack
 

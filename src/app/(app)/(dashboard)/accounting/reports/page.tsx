@@ -4,7 +4,7 @@ import { requirePermission } from '@/src/libs/guards/require-permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import ReportsHub from './_components/ReportsHub'
 
-export const metadata = { title: 'Reports | Prominent Enterprise' }
+export const metadata = { title: 'Reports | NIG Central' }
 
 export default async function ReportsPage() {
   const session = await getSessionOrNull()

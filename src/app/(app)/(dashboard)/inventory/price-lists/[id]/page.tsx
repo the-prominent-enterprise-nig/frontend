@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PriceListDetailPageView } from './_components/PriceListDetailPageView'
 
 export const metadata = {
-  title: 'Price List Items | Prominent Enterprise',
+  title: 'Price List Items | NIG Central',
   description: 'Manage the priced items in a price list',
 }
 
@@ -23,7 +23,7 @@ export default async function PriceListDetailPage({ params }: { params: Promise<
   const { id } = await params
 
   return (
-    <div className="min-h-screen bg-zinc-50">
+    <div className="min-h-screen bg-[#fbfbfc]">
       <PriceListDetailPageView priceListId={id} session={session} />
     </div>
   )

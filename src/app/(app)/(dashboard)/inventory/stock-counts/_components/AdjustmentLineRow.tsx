@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useWatch, type Control } from 'react-hook-form'
 import { Controller } from 'react-hook-form'
 import { X } from 'lucide-react'
@@ -8,6 +9,10 @@ import type { ItemSummary } from '@/src/schema/inventory/items'
 import type { BatchSummary } from '@/src/schema/inventory/batches'
 import { BATCH_STATUS_LABELS, BATCH_STATUS_COLORS } from '@/src/schema/inventory/batches'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
 import {
   SERIAL_STATUS_LABELS,
   SERIAL_STATUS_COLORS,
@@ -39,7 +44,11 @@ export default function AdjustmentLineRow({
   const batchId = useWatch({ control, name: `lines.${index}.batchId` })
   const serialNumberId = useWatch({ control, name: `lines.${index}.serialNumberId` })
 
-  const selectedItem = items.find((i) => i.id === itemId)
+  // Tracking flags come from the search pick; a line that arrived with its
+  // item already set (a count's discrepancy rows) falls back to the list.
+  const [picked, setPicked] = useState<ItemSearchMeta | null>(null)
+  const listedItem = items.find((i) => i.id === itemId)
+  const tracking = picked ?? listedItem
   const itemBatches = batches.filter((b) => b.item?.id === itemId)
   const itemSerials = serials.filter((s) => s.item?.id === itemId)
 
@@ -60,14 +69,13 @@ export default function AdjustmentLineRow({
             name={`lines.${index}.itemId`}
             control={control}
             render={({ field }) => (
-              <select {...field} className={`${fieldClass} bg-white`}>
-                <option value="">Select item…</option>
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.sku} — {item.name}
-                  </option>
-                ))}
-              </select>
+              <ItemSearchCombobox
+                value={field.value}
+                onChange={field.onChange}
+                onSelect={(o) => setPicked((o.meta as ItemSearchMeta | undefined) ?? null)}
+                initialLabel={listedItem ? `${listedItem.name}` : undefined}
+                placeholder="Search item by name or SKU…"
+              />
             )}
           />
         </div>
@@ -78,8 +86,9 @@ export default function AdjustmentLineRow({
             render={({ field }) => (
               <input
                 {...field}
+                value={field.value ?? ''}
                 type="number"
-                placeholder="Expected"
+                placeholder="Expected qty (system)"
                 className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
                 onChange={(e) =>
                   field.onChange(e.target.value === '' ? '' : Number(e.target.value))
@@ -95,9 +104,10 @@ export default function AdjustmentLineRow({
             render={({ field }) => (
               <input
                 {...field}
+                value={field.value ?? ''}
                 type="number"
                 min="0"
-                placeholder="Actual"
+                placeholder="Actual qty (counted)"
                 className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
                 onChange={(e) =>
                   field.onChange(e.target.value === '' ? '' : Number(e.target.value))
@@ -117,7 +127,7 @@ export default function AdjustmentLineRow({
         </div>
       </div>
 
-      {selectedItem?.isBatchTracked && (
+      {tracking?.isBatchTracked && (
         <div className="mt-2 flex items-center gap-2">
           <Controller
             name={`lines.${index}.batchId`}
@@ -144,7 +154,7 @@ export default function AdjustmentLineRow({
         </div>
       )}
 
-      {selectedItem?.isSerialTracked && (
+      {tracking?.isSerialTracked && (
         <div className="mt-2 flex items-center gap-2">
           <Controller
             name={`lines.${index}.serialNumberId`}

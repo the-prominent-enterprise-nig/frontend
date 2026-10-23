@@ -1,7 +1,7 @@
 import SpecialAccountLedgerView from './_components/SpecialAccountLedgerView'
 
 export const metadata = {
-  title: 'Special Account Ledger | Prominent Enterprise',
+  title: 'Special Account Ledger | NIG Central',
 }
 
 // Identified by (control account, name) rather than by an id: the balances

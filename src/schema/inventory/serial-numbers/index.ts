@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { WarehouseBranchSchema } from '@/src/schema/inventory/warehouses'
 
 // Mirrors the backend's SerialNumberStatus enum exactly (backend/prisma/schema.prisma)
 export const SerialStatusSchema = z.enum([
@@ -11,12 +12,13 @@ export const SerialStatusSchema = z.enum([
   'in_repair',
   'pulled_out',
   'lost_in_transit',
+  'in_transit',
 ])
 export type SerialStatus = z.infer<typeof SerialStatusSchema>
 
 export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   in_stock: 'In Stock',
-  held: 'Held',
+  held: 'Reserved',
   sold: 'Sold',
   returned: 'Returned',
   defective: 'Defective',
@@ -24,7 +26,20 @@ export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   in_repair: 'In Repair',
   pulled_out: 'Pulled Out',
   lost_in_transit: 'Lost in Transit',
+  in_transit: 'In Transit',
 }
+
+/**
+ * The statuses a person can filter by, grouped by where the unit is. Leaves
+ * out `returned`: nothing sets it — a customer return goes straight back to
+ * in_stock, or defective when damaged (backend stock.service receive flow).
+ */
+export const SERIAL_STATUS_FILTER_GROUPS: { group: string; statuses: SerialStatus[] }[] = [
+  { group: 'On hand', statuses: ['in_stock', 'held'] },
+  { group: 'Moving', statuses: ['in_transit'] },
+  { group: 'Service', statuses: ['in_repair', 'defective', 'pulled_out'] },
+  { group: 'Gone', statuses: ['sold', 'scrapped', 'lost_in_transit'] },
+]
 
 export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   // Matches the Stock Balance tab's "In Stock" pill (StockBalanceList.tsx)
@@ -38,6 +53,7 @@ export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   in_repair: 'bg-orange-100 text-orange-700',
   pulled_out: 'bg-purple-100 text-purple-700',
   lost_in_transit: 'bg-pink-100 text-pink-700',
+  in_transit: 'bg-sky-100 text-sky-700',
 }
 
 // The leading dot the Serial Numbers tab's pill badges use — kept separate
@@ -53,6 +69,7 @@ export const SERIAL_STATUS_DOT_COLORS: Record<SerialStatus, string> = {
   in_repair: 'bg-orange-500',
   pulled_out: 'bg-purple-500',
   lost_in_transit: 'bg-pink-500',
+  in_transit: 'bg-sky-500',
 }
 
 // Statuses that mean this specific unit should not be sold as-is — the
@@ -64,6 +81,7 @@ export const NON_SALEABLE_SERIAL_STATUSES: SerialStatus[] = [
   'in_repair',
   'pulled_out',
   'lost_in_transit',
+  'in_transit',
 ]
 
 export const RegisterSerialsFormSchema = z.object({
@@ -88,66 +106,6 @@ export const RegisterSerialsFormInputSchema = z.object({
 
 export type RegisterSerialsFormInput = z.infer<typeof RegisterSerialsFormInputSchema>
 
-// Scenario 08 (Caravan) — the "Consign" bulk action. Stock goes out either
-// to one of our own branches (which then sells it) or to a place that isn't
-// a branch at all — a fair, a dealer's floor, a town we have no branch in.
-// For a venue nothing changes hands: the owning branch keeps the units on
-// its books and keeps selling them, so only their location is really being
-// recorded.
-export const ConsignToBranchFormSchema = z
-  .object({
-    destinationKind: z.enum(['branch', 'venue']),
-    hostBranchId: z.string().optional(),
-    venue: z.string().max(150, 'Venue name is too long').optional(),
-    eventName: z.string().max(150, 'Event name is too long').optional(),
-    eventStartDate: z.string().optional(),
-    eventEndDate: z.string().optional(),
-  })
-  .refine((data) => data.destinationKind !== 'branch' || !!data.hostBranchId?.trim(), {
-    message: 'Host branch is required',
-    path: ['hostBranchId'],
-  })
-  .refine((data) => data.destinationKind !== 'venue' || !!data.venue?.trim(), {
-    message: 'Say where the units are going',
-    path: ['venue'],
-  })
-  .refine(
-    (data) =>
-      !data.eventStartDate || !data.eventEndDate || data.eventEndDate >= data.eventStartDate,
-    { message: 'Event end date cannot be before the start date', path: ['eventEndDate'] }
-  )
-export type ConsignToBranchFormValues = z.infer<typeof ConsignToBranchFormSchema>
-
-export const UpdateSerialStatusFormSchema = z
-  .object({
-    status: SerialStatusSchema,
-    warehouseId: z.string().optional(),
-    soldToCustomerId: z.string().optional(),
-    saleDate: z.string().optional(),
-  })
-  // "Sold" is the one transition the backend actually needs extra data for
-  // (who bought it, and when) — every other status only needs the enum
-  // value itself, so this stays a conditional refinement rather than making
-  // these fields required across the whole schema.
-  .superRefine((data, ctx) => {
-    if (data.status !== 'sold') return
-    if (!data.soldToCustomerId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Select the customer this unit was sold to',
-        path: ['soldToCustomerId'],
-      })
-    }
-    if (!data.saleDate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Sale date is required',
-        path: ['saleDate'],
-      })
-    }
-  })
-export type UpdateSerialStatusFormValues = z.infer<typeof UpdateSerialStatusFormSchema>
-
 const SerialItemSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -167,9 +125,11 @@ const SerialWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
-  // Scenario 08 (Caravan) — the warehouse's own (home/ownership) branch,
-  // distinct from consignedToBranch below.
-  branch: SerialBranchSchema.optional().nullable(),
+  // The warehouse's own branch. For a unit out at a caravan this is the
+  // caravan itself (Scenario 60), carrying its event, location and host.
+  branch: WarehouseBranchSchema.extend({ code: z.string().optional().nullable() })
+    .optional()
+    .nullable(),
 })
 
 // Provenance — which receiving report this unit arrived on, if any. "age" is
@@ -218,6 +178,15 @@ export const SerialNumberSummarySchema = z.object({
   caravanEventStartDate: z.string().optional().nullable(),
   caravanEventEndDate: z.string().optional().nullable(),
   goodsReceiptLine: SerialReceiptSchema,
+  // The unit's cost — its receipt cost, else its item's catalog cost. Null
+  // for anyone without inventory:receive:cost-view (masked server-side).
+  unitCost: z.number().nullable().optional(),
+  // Set while an open transfer (requested through partially received)
+  // already claims this unit.
+  openTransfer: z.object({ transferNumber: z.string() }).nullable().optional(),
+  // Scenario 56 — RR age (first received) and branch age (arrived here).
+  firstReceivedAt: z.string().nullable().optional(),
+  locationSince: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })
@@ -243,46 +212,37 @@ export const SerialNumberListResponseSchema = z
     limit: meta.limit,
   }))
 
-// Scenario 08 (Caravan) — the "By Item" rollup of the same rows the Caravan
-// serial list returns. One row is one item at one destination for one event:
-// the same item out at a venue and hosted in for someone else's event are two
-// separate things to count, and the tab shows both halves at once.
+// Scenario 60 — the Caravan tab's "By Item" rollup of the same rows its
+// serial list returns. One row is one item at one caravan.
 export const CaravanItemGroupSchema = z.object({
   key: z.string(),
   item: SerialItemSchema.nullable(),
   quantity: z.number(),
-  // Per-status unit counts within the group, keyed by SerialStatus. Left as a
-  // loose record so a status added backend-side surfaces instead of failing
-  // the parse and blanking the whole tab.
-  statusCounts: z.record(z.string(), z.number()).default({}),
-  consignedToBranch: SerialBranchSchema.nullable(),
-  consignedToVenue: z.string().nullable(),
-  caravanEventName: z.string().nullable(),
-  caravanEventStartDate: z.string().nullable(),
-  caravanEventEndDate: z.string().nullable(),
+  statusCounts: z.record(z.string(), z.number()).optional(),
+  warehouseId: z.string().nullable(),
+  caravan: WarehouseBranchSchema.nullable(),
+  // The receiving reports these units arrived on, newest first — usually one.
+  receipts: z
+    .array(
+      z.object({
+        id: z.string(),
+        code: z.string(),
+        receivedAt: z.string().nullable(),
+        transferNumber: z.string().nullable(),
+      })
+    )
+    .default([]),
 })
 export type CaravanItemGroup = z.infer<typeof CaravanItemGroupSchema>
 
-// Rebuilds a serial's rollup key exactly as consignedSummary composes it
-// backend-side, so an expanded group can pick its own units out of an
-// item-filtered serial fetch — the list endpoint can filter by item but has no
-// venue/event filter to narrow to one group on its own.
+// Rebuilds a serial's rollup key exactly as caravanSummary composes it
+// backend-side (item + warehouse), so an expanded group can pick its own
+// units out of an item-filtered serial fetch.
 export function caravanGroupKey(serial: {
   item?: { id: string } | null
-  consignedToBranch?: { id: string } | null
-  consignedToVenue?: string | null
-  caravanEventName?: string | null
-  caravanEventStartDate?: string | null
-  caravanEventEndDate?: string | null
+  currentWarehouse?: { id: string } | null
 }): string {
-  return [
-    serial.item?.id ?? '',
-    serial.consignedToBranch?.id ?? '',
-    serial.consignedToVenue ?? '',
-    serial.caravanEventName ?? '',
-    serial.caravanEventStartDate ?? '',
-    serial.caravanEventEndDate ?? '',
-  ].join('|')
+  return `${serial.item?.id ?? ''}|${serial.currentWarehouse?.id ?? ''}`
 }
 
 export const CaravanItemGroupListResponseSchema = z
@@ -317,6 +277,8 @@ export const SerialMovementTypeSchema = z.enum([
   'credit_memo',
   'debit_memo',
   'service',
+  // Each step of a repair (UDS) the unit went through.
+  'uds',
 ])
 export type SerialMovementType = z.infer<typeof SerialMovementTypeSchema>
 
@@ -332,7 +294,21 @@ export const SerialMovementEntrySchema = z.object({
 })
 export type SerialMovementEntry = z.infer<typeof SerialMovementEntrySchema>
 
+/** Who and where the unit is now — sent with the timeline so the Serial
+ *  History panel can open from nothing but a serial id. */
+export const SerialHistoryHeaderSchema = z.object({
+  id: z.string(),
+  serialNumber: z.string(),
+  status: SerialStatusSchema,
+  createdAt: z.string(),
+  item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
+  location: z.string().nullable(),
+  consignedToVenue: z.string().nullable().optional(),
+})
+export type SerialHistoryHeader = z.infer<typeof SerialHistoryHeaderSchema>
+
 export const SerialMovementsResponseSchema = z.object({
   data: z.array(SerialMovementEntrySchema),
+  serial: SerialHistoryHeaderSchema.optional(),
 })
 export type SerialMovementsResponse = z.infer<typeof SerialMovementsResponseSchema>

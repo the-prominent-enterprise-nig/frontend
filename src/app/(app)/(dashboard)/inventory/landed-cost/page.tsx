@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { LandedCostPageView } from './_components'
 
 export const metadata = {
-  title: 'Landed Costs | Prominent Enterprise',
+  title: 'Landed Costs | NIG Central',
   description: 'Record and allocate additional landed costs on goods receipts',
 }
 

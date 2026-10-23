@@ -1,28 +1,52 @@
 'use client'
 
-import { Fragment, useEffect, useState } from 'react'
-import { useForm, Controller, useFieldArray } from 'react-hook-form'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Plus, Trash2, ScanBarcode, ChevronUp } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { PackagePlus, Plus, X } from 'lucide-react'
 import {
   ReceiveStockFormSchema,
   type ReceiveStockFormValues,
 } from '@/src/schema/inventory/goods-receiving'
+import { MANUAL_RR_TAX_CODES } from '@/src/schema/inventory/manual-receiving-reports'
+import { useEwtCodes } from '@/src/hooks/useEwtCodes'
+import { withholdingClassOptions } from '@/src/libs/tax/ewt'
+import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
-import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
-import {
-  ItemSearchCombobox,
-  type ItemSearchMeta,
-} from '../../purchase-requests/_components/ItemSearchCombobox'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
-
-type WarehouseOption = {
-  id: string
-  name: string
-  code: string
-  branch?: { id: string; name: string } | null
-}
+import Tooltip from '@/src/components/ui/Tooltip'
+import { showToast } from '@/src/components/ui/toast'
+import type { RepossessedSerialMeta } from '@/src/components/inventory/RepossessedSerialSearchCombobox'
+import type { InstallmentAccountMeta } from '@/src/components/inventory/InstallmentAccountSearchCombobox'
+import { uploadRrAttachment } from '../_actions/upload-rr-attachment'
+import { getServiceCenters } from '../_actions/service-center-units'
+import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
+import type { ServiceCenterUnit } from '@/src/schema/inventory/goods-receiving/service-center-units'
+import {
+  getInstallmentAccount,
+  type InstallmentAccountUnitItem,
+} from '../_actions/get-installment-account'
+import type { ItemSearchMeta } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { MONO, PLEX, fmtPeso } from '../../purchase-orders/_components/procurementTokens'
+import { ReceiveActionBar } from '../../purchase-orders/_components/receive-po/ReceiveActionBar'
+import { itemTitle } from '../../purchase-orders/_components/receive-po/itemTitle'
+import {
+  isDuplicateSerial,
+  type Blocker,
+  type IssueFix,
+} from '../../purchase-orders/_components/receive-po/receiveIssues'
+import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
+import { ReturnedUnitsPanel, type ReturnBlock } from './create-rr/ReturnedUnitsPanel'
+import { ServiceCenterUnitsPanel } from './create-rr/ServiceCenterUnitsPanel'
+import { RrAttachmentsPanel } from './create-rr/RrAttachmentsPanel'
+import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPanel'
+import { RrLineRow } from './create-rr/RrLineRow'
+import { requiredAttachmentKinds, type RrAttachmentKind } from './create-rr/rrAttachments'
+import { collectRrBlockers, rrLineIssues, toIssueLines } from './create-rr/rrChecks'
+import { costFromPricing, rrTotals, type RrLine } from './create-rr/rrTotals'
+import { PANEL, RR_LINE_GRID } from './create-rr/rrTokens'
 
 type Props = {
   isOpen: boolean
@@ -31,6 +55,11 @@ type Props = {
   isSubmitting: boolean
   warehouses: WarehouseOption[]
   items: ItemSummary[]
+  /** The receiver's own branch — a repossession line drops the Location
+   * field entirely and lands silently in this branch's own warehouse
+   * instead (developer-confirmed 2026-09-28). Null/undefined (unrestricted,
+   * e.g. Business Owner) falls back to one of the 2 real warehouses. */
+  actorBranchId?: string | null
   /** Unit cost is sensitive pricing data — hidden from Branch Manager/Stock
    * Controller, restricted to Business Owner/Accountant (Scenario 05 followup).
    * Server-side enforcement in receiveStock() is the real guard; this just
@@ -47,40 +76,99 @@ type Props = {
   submittingLabel?: string
 }
 
-const fieldClass =
-  'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
-const cellInputClass =
-  'w-full rounded border border-zinc-200 px-2 py-1 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
-
-const emptyLine = (): ReceiveStockFormValues['lines'][number] => ({
-  itemId: '',
-  quantityReceived: 0,
-  unitCost: undefined,
-  isFreebie: false,
-  batchNumber: '',
-  qualityHold: false,
-  notes: '',
-})
+/** What the form payload has no room for but the screen has to know: the item
+ * facts behind a line's bare `itemId`. */
+type ItemMeta = {
+  name: string
+  sku?: string
+  isSerialTracked: boolean
+  costPrice?: number | null
+  modelNumber?: string | null
+  brand?: { name: string } | null
+  primaryCategory?: { name: string; parentCategory?: { name: string } | null } | null
+}
 
 const defaultValues: ReceiveStockFormValues = {
-  code: '',
   purchaseOrderNumber: '',
-  purchaseOrderDate: '',
   supplierId: '',
-  withholding: 'none',
+  newSourceName: '',
   warehouseId: '',
-  applicationType: 'new_stock',
   modeOfTransfer: '',
-  nndpCost: undefined,
   receivedAt: '',
   notes: '',
   deliveryReceiptNumber: '',
   supplierInvoiceNumber: '',
-  driverName: '',
-  helperName: '',
-  lines: [],
+  reason: '',
+  // Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+  // own defaultValues.lines exactly: one line ready for input on open, not
+  // an empty list waiting on "+ Add Line". Goods + VAT is the common case
+  // (same reasoning as Manual RR's own comment) — a receiver overrides per
+  // line only for the exception.
+  lines: [{ quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }],
 }
 
+let returnBlockSeq = 0
+const newReturnBlock = (): ReturnBlock => ({
+  key: `return-block-${returnBlockSeq++}`,
+  accountId: '',
+  customerId: '',
+  customerLabel: '',
+  loading: false,
+  exhausted: false,
+})
+
+const emptyLine = (itemId: string): RrLine => ({
+  itemId,
+  quantityReceived: 1,
+  isFreebie: false,
+  qualityHold: false,
+  batchNumber: '',
+  notes: '',
+})
+
+const ISSUE_FIELD_LABELS: Record<string, string> = {
+  supplierId: 'Source',
+  warehouseId: 'Location',
+  quantityReceived: 'Qty',
+  unitCost: 'Unit price',
+  srp: 'SRP',
+  discounts: 'Discounts',
+  serialNumbers: 'Serial numbers',
+  itemId: 'Item',
+  taxAmount: 'Tax',
+  lines: 'Items',
+}
+
+/** "Line 2 · Unit price: …" from a zod issue path, so the toast names the
+ * field instead of leaving the receiver to hunt for it. */
+function describeIssue(path: PropertyKey[], message: string): string {
+  const lineAt = path[0] === 'lines' && typeof path[1] === 'number' ? path[1] : null
+  const key = String(path[lineAt == null ? 0 : 2] ?? '')
+  const label = ISSUE_FIELD_LABELS[key] ?? key
+  return `${lineAt != null ? `Line ${lineAt + 1} · ` : ''}${label}: ${message}`
+}
+
+/** Blank entries out, and an empty result collapsed to undefined — the wire
+ * format treats "not set" and "set to []" differently for mutual exclusion. */
+function filledOrUndefined(values: string[] | undefined): string[] | undefined {
+  const filled = values?.filter((v) => v.trim().length > 0)
+  return filled && filled.length > 0 ? filled : undefined
+}
+
+/**
+ * Create Receiving Report — the standalone half of receiving, for a delivery
+ * that arrives without being received against a purchase order from the
+ * Procurement side.
+ *
+ * Built on the same parts as that screen (checks card, serial capture, totals,
+ * action bar) rather than beside them: both produce the same GoodsReceipt and
+ * the same stock movement, and two hand-rolled receiving surfaces is how they
+ * came to disagree about what a complete receipt looks like.
+ *
+ * What's different here is only what a free-standing delivery genuinely adds —
+ * the receiver chooses the supplier, the destination and the items, and may
+ * link a PO after the fact rather than starting from one.
+ */
 export default function ReceiveStockModal({
   isOpen,
   onClose,
@@ -88,6 +176,7 @@ export default function ReceiveStockModal({
   isSubmitting,
   warehouses,
   items,
+  actorBranchId,
   canViewCost,
   title = 'Receive Stock',
   subtitle = 'Record incoming stock into inventory.',
@@ -100,722 +189,1306 @@ export default function ReceiveStockModal({
     reset,
     setValue,
     watch,
+    trigger,
+    getValues,
     formState: { errors },
   } = useForm<ReceiveStockFormValues>({
     resolver: zodResolver(ReceiveStockFormSchema),
     defaultValues,
   })
 
-  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const { fields, append, insert, remove, replace } = useFieldArray({ control, name: 'lines' })
 
-  const [expandedSerialRows, setExpandedSerialRows] = useState<Set<string>>(new Set())
-  const [serialText, setSerialText] = useState<Record<string, string>>({})
-  // Item details for whatever's been picked via live search this session —
-  // items is capped at the first 500 active items (useGoodsReceiving.ts), so
-  // a search result outside that window won't resolve through items.find().
-  // Populated via ItemSearchCombobox's onSelect, keyed by itemId.
-  const [pickedItems, setPickedItems] = useState<Record<string, { name: string } & ItemSearchMeta>>(
-    {}
-  )
+  const [submitted, setSubmitted] = useState(false)
+  // Scenario 55 (Stock-side Manual RR parity) — this and the maps below are
+  // all keyed by field.id (useFieldArray's own stable per-row identity),
+  // mirroring ManualRrForm.tsx exactly: a line is added blank now, so two
+  // simultaneously-blank rows would otherwise collide on any key derived
+  // from their (empty) data instead.
+  const [pickedItems, setPickedItems] = useState<Record<string, ItemMeta>>({})
+  const [lineModes, setLineModes] = useState<Record<string, 'catalog' | 'other'>>({})
+  // Scenario 55 (Stock-side Manual RR parity, follow-up) — a "Something
+  // else" line has no catalog isSerialTracked flag to read, so whether it's
+  // tracked is its own explicit toggle instead, mirroring ManualRrForm.tsx's
+  // own lineTrackSerial exactly.
+  const [otherLineTrackSerial, setOtherLineTrackSerial] = useState<Record<string, boolean>>({})
+  // Repossession and Repair/Return share one panel: a list of invoices the
+  // units are coming back from. What's checked under each is the receipt's
+  // lines (linked by installmentAccountId), so this holds display state only.
+  const [returnBlocks, setReturnBlocks] = useState<ReturnBlock[]>(() => [newReturnBlock()])
+  // Scenario 73 — From Service Center: the units ticked (each one a line) and
+  // their actual repair cost, by serialNumberId.
+  const [scPicked, setScPicked] = useState<ServiceCenterUnit[]>([])
+  const [scCosts, setScCosts] = useState<Record<string, number | undefined>>({})
+  // UDS/RFS scans picked so far, uploaded when the receipt is posted.
+  const [stagedFiles, setStagedFiles] = useState<Record<RrAttachmentKind, File[]>>({
+    UDS: [],
+    RFS: [],
+  })
+  // File -> uploaded id, so a retry after a failed post doesn't upload twice.
+  const uploadedIds = useRef(new Map<File, string>())
+  const [linkedPo, setLinkedPo] = useState<PurchaseOrderSummary | null>(null)
+  const [poPickerOpen, setPoPickerOpen] = useState(false)
+  // Gap 5 fix — set once the backend reports this receipt's warehouse
+  // differs from the linked PO's own (the split-tranche case, which is
+  // legitimate but worth a second look). Cleared on any warehouse change so
+  // a stale confirmation can't silently wave through an unrelated mismatch.
+  const [warehouseMismatchWarning, setWarehouseMismatchWarning] = useState<string | null>(null)
+  const [supplierName, setSupplierName] = useState<string | undefined>(undefined)
+  // Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+  // own sourceMode: which of Source's two inputs is live. Decides what
+  // post() below actually sends.
+  const [sourceMode, setSourceMode] = useState<'registered' | 'new'>('registered')
+  // Applied to every NEW line going forward, not retroactively to existing
+  // ones — same convention and reasoning as ManualRrForm.tsx's own Defaults
+  // bar, including the starting value: Goods + VAT is the common case.
+  const [defaultTaxCode, setDefaultTaxCode] = useState('VAT')
+  const [defaultWithholdingClass, setDefaultWithholdingClass] = useState('goods')
+  // Withholding is previewed at the rates the tax code master holds for the
+  // goods / services codes — the ones the server posts at.
+  const ewt = useEwtCodes()
 
   useEffect(() => {
-    if (!isOpen) {
-      reset(defaultValues)
-      setExpandedSerialRows(new Set())
-      setSerialText({})
-    }
+    if (isOpen) return
+    reset(defaultValues)
+    setSubmitted(false)
+    setPickedItems({})
+    setLineModes({})
+    setOtherLineTrackSerial({})
+    setReturnBlocks([newReturnBlock()])
+    setScPicked([])
+    setScCosts({})
+    setStagedFiles({ UDS: [], RFS: [] })
+    uploadedIds.current.clear()
+    setLinkedPo(null)
+    setPoPickerOpen(false)
+    setSupplierName(undefined)
+    setSourceMode('registered')
+    setDefaultTaxCode('VAT')
+    setDefaultWithholdingClass('goods')
   }, [isOpen, reset])
+
+  const watched = watch()
+  // NOT memoised, deliberately. `watch()` shallow-copies the form values, so
+  // `watched.lines` is the same array instance every render while setValue
+  // mutates the objects inside it — anything derived from it with a useMemo
+  // keyed on that reference computes once and then freezes, which is how a
+  // checks card comes to report serials as missing that are typed and visible.
+  // Every derivation below is a plain expression over a handful of rows.
+  const lines = (watched.lines ?? []) as RrLine[]
+  // Repossession and Repair/Return share one layout: units picked off a
+  // customer's invoice, no Source / Location / Reference #.
+  const isRepo = watched.reason === 'repossession'
+  const isUnitReturn = isRepo || watched.reason === 'repair_return'
+  // Scenario 73 — a Repair/Return coming back from a service center rather
+  // than handed in by a customer: no invoice, no Repair Type, no UDS/RFS.
+  const fromServiceCenter =
+    watched.reason === 'repair_return' && watched.origin === 'service_center'
+  const serviceCentersQuery = useQuery({
+    queryKey: ['service-centers-holding-units'],
+    queryFn: () => getServiceCenters(),
+    enabled: isOpen && fromServiceCenter,
+  })
+  const serviceCenters = serviceCentersQuery.data?.data ?? []
+  // Every supplier can be the service center: one whose units went out on a
+  // paper DR, or before the system, holds none on record and is only
+  // reachable through the search-by-serial fallback once picked. Those with
+  // units out lead, with their count.
+  const suppliersQuery = useQuery({
+    queryKey: ['rr-service-center-suppliers'],
+    queryFn: () => getSuppliers({ limit: 500 }),
+    enabled: isOpen && fromServiceCenter,
+  })
+  const serviceCenterOptions = [
+    ...serviceCenters.map((sc) => ({ value: sc.id, label: `${sc.name} · ${sc.ticketCount} out` })),
+    ...(suppliersQuery.data?.data?.data ?? [])
+      .filter((s) => !serviceCenters.some((sc) => sc.id === s.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((s) => ({ value: s.id, label: s.name })),
+  ]
+  const serviceCenterName = (id?: string): string | undefined =>
+    serviceCenters.find((sc) => sc.id === id)?.name ??
+    suppliersQuery.data?.data?.data.find((s) => s.id === id)?.name
+  const returnBlocksRef = useRef(returnBlocks)
+  returnBlocksRef.current = returnBlocks
+
+  const metaFor = (itemId?: string): ItemMeta | undefined => {
+    if (!itemId) return undefined
+    if (pickedItems[itemId]) return pickedItems[itemId]
+    const item = items.find((candidate) => candidate.id === itemId)
+    if (!item) return undefined
+    return {
+      name: item.name,
+      sku: item.sku,
+      isSerialTracked: item.isSerialTracked ?? false,
+      costPrice: item.costPrice,
+      modelNumber: item.modelNumber,
+      brand: item.brand,
+      primaryCategory: item.primaryCategory,
+    }
+  }
+
+  const poLineOf = (line: RrLine): PurchaseOrderSummary['lines'][number] | undefined =>
+    line.purchaseOrderLineId
+      ? linkedPo?.lines.find((candidate) => candidate.id === line.purchaseOrderLineId)
+      : undefined
+
+  const contextFor = (index: number) => {
+    const line = lines[index]
+    const poLine = line ? poLineOf(line) : undefined
+    const fieldId = fields[index]?.id ?? ''
+    const mode = lineModeFor(fieldId, line)
+    return {
+      // Scenario 55 (Stock-side Manual RR parity, follow-up) — a "Something
+      // else" line has no catalog meta to read isSerialTracked from; its own
+      // "Track by serial number" toggle decides instead, same as
+      // ManualRrForm.tsx's own isLineSerialTracked() — including that
+      // function's own fallback: a field.id with no explicit toggle state
+      // yet (a just-duplicated line) reads its copied serialNumbers instead,
+      // so a duplicated tracked line doesn't silently lose tracking.
+      isSerialTracked:
+        !line || mode !== 'catalog'
+          ? (otherLineTrackSerial[fieldId] ?? (line?.serialNumbers?.length ?? 0) > 0)
+          : (metaFor(line.itemId)?.isSerialTracked ?? false),
+      outstanding: poLine
+        ? Math.max(Number(poLine.quantity) - Number(poLine.receivedQuantity ?? 0), 0)
+        : null,
+      poCode: linkedPo?.code,
+    }
+  }
+
+  const labelFor = (index: number): string => {
+    const line = lines[index]
+    if (!line) return 'Line'
+    // Scenario 55 (Stock-side Manual RR parity) — a "Something else" line
+    // has no catalog meta to read a title from; its typed name is the title.
+    if (!line.itemId && line.newItemName) return line.newItemName
+    const meta = metaFor(line.itemId)
+    return itemTitle(meta) || meta?.name || 'Line'
+  }
+
+  /** Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+   * own lineModeFor(): falls back to whichever of itemId/newItemName is
+   * actually populated, so a PO-pulled line (always a real itemId) reads as
+   * 'catalog' with zero extra bookkeeping. */
+  function lineModeFor(fieldId: string, line?: RrLine): 'catalog' | 'other' {
+    if (fieldId in lineModes) return lineModes[fieldId]
+    return line?.newItemName ? 'other' : 'catalog'
+  }
+
+  const issueLines = toIssueLines(lines, contextFor, watched.reason)
+  const totals = rrTotals(watched, ewt.rateFor)
+  // ReceiveActionBar speaks the PO screen's totals shape; the two extra flags
+  // there are "does this delivery charge/withhold at all", read off the
+  // already-derived per-line totals now that there's no header treatment to
+  // ask instead (Scenario 55, Stock-side Manual RR parity).
+  const barTotals = {
+    ...totals,
+    chargesInputVat: totals.vat > 0,
+    withholdsTax: totals.withheld > 0,
+  }
+
+  const blockers = collectRrBlockers(
+    {
+      supplierId: watched.supplierId,
+      newSourceName: watched.newSourceName,
+      warehouseId: watched.warehouseId,
+      deliveryReceiptNumber: watched.deliveryReceiptNumber,
+      hasPoLink: lines.some((line) => !!line.purchaseOrderLineId),
+      reason: watched.reason,
+    },
+    issueLines,
+    labelFor
+  )
+  // receiveStock() rejects a submitted unitCost that isn't positive (a real
+  // stored 0, not just "blank" — see get-installment-account.ts's own
+  // unitCost, which can genuinely be a recorded zero for a historical sale).
+  // Caught here rather than left for the server to reject after the fact:
+  // ReturnedUnitsPanel already offers a Cost field the moment this applies.
+  if (watched.reason === 'repossession') {
+    lines.forEach((line, index) => {
+      if (!line.itemId || Number(line.unitCost) > 0) return
+      blockers.push({
+        key: `repossession-cost-${index}`,
+        kind: 'error',
+        lineIndex: index,
+        text: `${labelFor(index)}: needs a cost before it can be received.`,
+      } satisfies Blocker)
+    })
+  }
+
+  const requiredKinds = fromServiceCenter
+    ? []
+    : requiredAttachmentKinds(watched.reason, watched.repairType)
+  if (isUnitReturn) {
+    const linesBlocker = blockers.find((b) => b.key === 'lines')
+    if (linesBlocker) linesBlocker.text = 'Check at least one unit that is coming back.'
+    if (fromServiceCenter && !watched.serviceCenterId) {
+      blockers.push({
+        key: 'service-center',
+        kind: 'error',
+        text: 'Pick the service center the units came back from.',
+      } satisfies Blocker)
+    }
+    // Scenario 73 Part 5 — Home Service names its service center at intake.
+    if (
+      watched.reason === 'repair_return' &&
+      !fromServiceCenter &&
+      watched.repairType === 'home_service' &&
+      !watched.serviceCenterId
+    ) {
+      blockers.push({
+        key: 'home-service-center',
+        kind: 'error',
+        text: 'Pick the service center handling this Home Service.',
+      } satisfies Blocker)
+    }
+    if (watched.reason === 'repair_return' && !fromServiceCenter && !watched.repairType) {
+      blockers.push({
+        key: 'repair-type',
+        kind: 'error',
+        text: 'Pick the repair type: In-Store or Home Service.',
+      } satisfies Blocker)
+    }
+    requiredKinds
+      .filter((kind) => stagedFiles[kind].length === 0)
+      .forEach((kind) =>
+        blockers.push({
+          key: `attachment-${kind}`,
+          kind: 'error',
+          text: `Attach the ${kind} before creating the receipt.`,
+        } satisfies Blocker)
+      )
+  }
+
+  // Unit cost follows SRP through the discount chain, the same rule the PO
+  // form and the receive-against-PO screen apply. Without it the two could
+  // disagree on the same line: a receipt showing "3000 less 3% less 500"
+  // beside a hand-typed cost of something else is worse than no discount at
+  // all, because the numbers look reconciled and aren't.
+  const pricingKey = JSON.stringify(
+    lines.map((line) => [line?.srp, line?.discounts, line?.isFreebie])
+  )
+  useEffect(() => {
+    lines.forEach((line, index) => {
+      const next = costFromPricing(line)
+      if (next == null || next === Number(line?.unitCost)) return
+      setValue(`lines.${index}.unitCost`, next, { shouldValidate: false })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricingKey])
+
+  useEffect(() => {
+    setWarehouseMismatchWarning(null)
+  }, [watched.warehouseId])
+
+  // Scenario 55 — PO Number/Supplier Invoice No. disappear once a reason is
+  // picked (a reasoned receipt isn't fulfilling a PO or reconciling against a
+  // supplier invoice), so a stale value entered before switching Reason on
+  // would otherwise ride along invisibly instead of being what the
+  // now-hidden field last showed. Source is deliberately NOT cleared here
+  // (Scenario 55, Stock-side Manual RR parity) — it stays visible and
+  // optional once reasoned, same as ManualRrForm.tsx's own Source field, so
+  // a receiver who knows where a repair return or repossession actually came
+  // from can still say so.
+  useEffect(() => {
+    if (!watched.reason) return
+    if (watched.purchaseOrderNumber) setValue('purchaseOrderNumber', '', { shouldValidate: false })
+    if (watched.supplierInvoiceNumber)
+      setValue('supplierInvoiceNumber', '', { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watched.reason])
+
+  // Repossession drops Location from the form entirely (developer-confirmed
+  // 2026-09-28) — the destination still has to be a real warehouseId
+  // server-side (receiveStock() requires one unconditionally), so it's set
+  // here instead: the receiver's own branch warehouse, same one
+  // stock.service.ts already forces a branch-scoped reasoned receipt into
+  // regardless of what's submitted. Never overwrites an already-set value —
+  // a PO link, or a Location picked before switching Reason on, both stay.
+  useEffect(() => {
+    if (!isUnitReturn || watched.warehouseId) return
+    const ownBranch = actorBranchId
+      ? warehouses.find((w) => w.branchId === actorBranchId)
+      : undefined
+    const target = ownBranch ?? warehouses.find((w) => !w.branchId)
+    if (target) setValue('warehouseId', target.id, { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUnitReturn, watched.warehouseId, actorBranchId, warehouses])
+
+  const outstandingNotPulled = useMemo(() => {
+    if (!linkedPo) return []
+    return linkedPo.lines.filter(
+      (poLine) =>
+        Math.max(Number(poLine.quantity) - Number(poLine.receivedQuantity ?? 0), 0) > 0 &&
+        !lines.some((line) => line.purchaseOrderLineId === poLine.id)
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedPo, lines.length])
+
+  // Switching into Repossession / Repair-Return swaps the purchase-style item
+  // rows for the invoice picker (so the blank starter line goes), and switching
+  // back drops whatever units were checked and restores a blank line.
+  const wasUnitReturn = useRef(false)
+  useEffect(() => {
+    if (isUnitReturn === wasUnitReturn.current) return
+    wasUnitReturn.current = isUnitReturn
+    setReturnBlocks([newReturnBlock()])
+    setStagedFiles({ UDS: [], RFS: [] })
+    if (isUnitReturn) {
+      replace(lines.filter((l) => !!l.installmentAccountId))
+      return
+    }
+    const keep = lines.filter((l) => !l.installmentAccountId && !l.existingSerialNumberIds?.length)
+    replace(
+      keep.length > 0 ? keep : [{ quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }]
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUnitReturn])
+
+  // Repossession → Repair/Return (or back) while units are checked: a repo cost
+  // only applies to a repossession.
+  useEffect(() => {
+    if (!isUnitReturn) return
+    const units = returnBlocksRef.current.flatMap((b) => b.units ?? [])
+    lines.forEach((line, index) => {
+      if (!line.installmentAccountId) return
+      const unit = units.find((u) => u.serialNumberId === line.existingSerialNumberIds?.[0])
+      const next = !isRepo ? undefined : unit && unit.repoCost > 0 ? unit.repoCost : line.unitCost
+      if (next === line.unitCost) return
+      setValue(`lines.${index}.unitCost`, next, { shouldValidate: false })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watched.reason])
+
+  // Scenario 73 — switching Origin, or the service center, drops whatever was
+  // checked: a customer's invoice units and a service center's units are
+  // different lists, and one service center's units never belong to another.
+  const scKey = fromServiceCenter ? `sc:${watched.serviceCenterId ?? ''}` : 'customer'
+  const lastScKey = useRef(scKey)
+  const wasFromServiceCenter = useRef(fromServiceCenter)
+  useEffect(() => {
+    if (scKey === lastScKey.current) return
+    lastScKey.current = scKey
+    // A Home Service center need not hold any units, so it never carries
+    // over into From Service Center's picker, nor back.
+    if (wasFromServiceCenter.current !== fromServiceCenter) {
+      wasFromServiceCenter.current = fromServiceCenter
+      setValue('serviceCenterId', undefined, { shouldValidate: false })
+    }
+    setScPicked([])
+    setScCosts({})
+    setReturnBlocks([newReturnBlock()])
+    if (isUnitReturn) replace([])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scKey])
 
   if (!isOpen) return null
 
-  async function handleFormSubmit(data: ReceiveStockFormValues): Promise<void> {
-    const result = await onSubmit(data)
-    if (result.success) onClose()
+  const showErrors = submitted
+
+  // ─── Line mutations ───────────────────────────────────────────────────────
+
+  /** Resizes the serial array alongside the quantity: RHF does not clear a
+   * hidden index's value when the array shrinks, so a lowered qty otherwise
+   * leaves stale slots that silently fail the length refine. */
+  function setQuantity(index: number, raw: number): void {
+    const qty = Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0
+    const line = lines[index]
+    setValue(`lines.${index}.quantityReceived`, qty, { shouldValidate: showErrors })
+    if (!line || !contextFor(index).isSerialTracked) return
+    // A number input reports NaN the instant it's blanked mid-edit (e.g.
+    // backspacing "2" before typing "5") — resizing serials down to 0 on
+    // that transient keystroke would wipe what was already typed before the
+    // new digit even lands. Only resize once there's a real target qty.
+    if (!Number.isFinite(raw)) return
+    const serials = (line.serialNumbers ?? []).slice(0, qty)
+    while (serials.length < qty) serials.push('')
+    setValue(`lines.${index}.serialNumbers`, serials, { shouldValidate: showErrors })
+    // Scenario 55 Part 4 — same resize, but only for a repossession/repair-return
+    // line's picked ids. An ordinary serial-tracked line (e.g. pulled via Browse
+    // PO) has no existingSerialNumberIds concept at all — padding it anyway left
+    // blank entries that failed the schema's min(1) refine at submit.
+    if (!isUnitReturn) return
+    const existingSerials = (line.existingSerialNumberIds ?? []).slice(0, qty)
+    while (existingSerials.length < qty) existingSerials.push('')
+    setValue(`lines.${index}.existingSerialNumberIds`, existingSerials, {
+      shouldValidate: showErrors,
+    })
   }
 
-  const watchedLines = watch('lines')
-  const withholding = watch('withholding')
-  const watchedApplicationType = watch('applicationType')
-  const totalCost = (watchedLines ?? []).reduce(
-    (sum, line) => sum + (line.quantityReceived || 0) * (line.unitCost || 0),
-    0
-  )
-  const withheldAmount = withholding === 'pct_1' ? Math.round(totalCost * 0.01 * 100) / 100 : 0
-
-  function handleItemSelect(option: SearchComboboxOption): void {
-    const meta = option.meta as ItemSearchMeta | undefined
-    setPickedItems((prev) => ({
-      ...prev,
-      [option.id]: {
-        name: option.primary,
-        costPrice: meta?.costPrice ?? null,
-        isSerialTracked: meta?.isSerialTracked ?? false,
-      },
-    }))
+  function setSerial(index: number, unitIndex: number, value: string): void {
+    const next = (lines[index]?.serialNumbers ?? []).slice()
+    while (next.length <= unitIndex) next.push('')
+    next[unitIndex] = value
+    setValue(`lines.${index}.serialNumbers`, next, { shouldValidate: showErrors })
   }
 
-  function handleItemChange(idx: number, itemId: string): void {
-    setValue(`lines.${idx}.itemId`, itemId)
-    const item = pickedItems[itemId] ?? items.find((i) => i.id === itemId)
-    if (item?.costPrice != null) setValue(`lines.${idx}.unitCost`, item.costPrice)
-    const fieldId = fields[idx]?.id
-    if (!item?.isSerialTracked) {
-      setValue(`lines.${idx}.serialNumbers`, undefined)
-      if (fieldId) {
-        setSerialText((prev) => ({ ...prev, [fieldId]: '' }))
-        setExpandedSerialRows((prev) => {
-          const next = new Set(prev)
-          next.delete(fieldId)
-          return next
-        })
-      }
-    } else if (fieldId) {
-      // Serial-tracked items require a serial per unit — surface the entry
-      // field immediately rather than making staff hunt for a toggle.
-      setExpandedSerialRows((prev) => new Set(prev).add(fieldId))
+  // ─── Returned units (Repossession / Repair-Return) ────────────────────────
+
+  function patchBlock(key: string, patch: Partial<ReturnBlock>): void {
+    setReturnBlocks((prev) => prev.map((b) => (b.key === key ? { ...b, ...patch } : b)))
+  }
+
+  /** What a unit re-enters stock at: Repo Cost for a repossession (the
+   * client's formula), nothing for a repair/return — the unit is the
+   * customer's, coming in for service, same as the UDS return path. */
+  function costForUnit(unit: InstallmentAccountUnitItem): number | undefined {
+    return isRepo && unit.repoCost > 0 ? unit.repoCost : undefined
+  }
+
+  function addUnitLine(accountId: string, unit: InstallmentAccountUnitItem): void {
+    if (!unit.serialNumberId) return
+    // Read the live form value, not `lines`: pickInvoice calls this from an
+    // async callback (and the invoice combobox fires onChange + onSelect), so
+    // the same single-unit invoice could otherwise be appended twice and trip
+    // "duplicate serial" on its own unit.
+    const current = (getValues('lines') ?? []) as RrLine[]
+    if (current.some((l) => l.existingSerialNumberIds?.[0] === unit.serialNumberId)) return
+    rememberItem(unit.itemId, {
+      name: unit.itemName ?? unit.itemId,
+      isSerialTracked: true,
+      modelNumber: unit.modelNumber,
+      brand: unit.brand ? { name: unit.brand } : null,
+    })
+    append({
+      quantityReceived: 1,
+      itemId: unit.itemId,
+      existingSerialNumberIds: [unit.serialNumberId],
+      installmentAccountId: accountId,
+      unitCost: costForUnit(unit),
+    })
+  }
+
+  /** Picking an invoice lists its units for checking. The customer fills in
+   * from the invoice; a single-unit invoice is pre-checked since there is
+   * nothing to choose between. */
+  function pickInvoice(
+    key: string,
+    id: string,
+    meta?: InstallmentAccountMeta,
+    label?: string
+  ): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    if (id && returnBlocks.some((b) => b.key !== key && b.accountId === id)) {
+      showToast({ title: 'That invoice is already on this receipt', status: 'error' })
+      return
     }
+    // A different invoice replaces the old one — its checked units go with it.
+    if (block.accountId && block.accountId !== id) {
+      replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+    }
+    patchBlock(key, {
+      accountId: id,
+      invoiceLabel: label ?? '',
+      units: undefined,
+      exhausted: false,
+      loading: !!id,
+      fallbackSerialLabel: '',
+      ...(meta?.customerId
+        ? { customerId: meta.customerId, customerLabel: meta.customerName ?? '' }
+        : {}),
+    })
+    if (!id) return
+
+    void (async () => {
+      const res = await getInstallmentAccount(id)
+      // The receiver moved on to another invoice while this was loading.
+      if (returnBlocksRef.current.find((b) => b.key === key)?.accountId !== id) return
+      const all = res.data?.unitItems ?? []
+      // Only a unit still out with the customer can be taken back.
+      const available = all.filter((u) => u.serialNumberId && u.serialStatus === 'sold')
+      patchBlock(key, {
+        units: available,
+        exhausted: all.length > 0 && available.length === 0,
+        loading: false,
+        ...(res.data?.customer
+          ? {
+              customerId: res.data.customerId,
+              customerLabel: res.data.customer.name,
+              customerCode: res.data.customer.customerCode,
+            }
+          : {}),
+      })
+      if (available.length === 1) addUnitLine(id, available[0])
+    })()
   }
 
-  function isLineSerialTracked(idx: number): boolean {
-    const itemId = watchedLines?.[idx]?.itemId
-    if (!itemId) return false
-    return (
-      pickedItems[itemId]?.isSerialTracked ?? !!items.find((i) => i.id === itemId)?.isSerialTracked
+  function pickCustomer(key: string, id: string, label?: string): void {
+    patchBlock(key, { customerId: id, customerLabel: label ?? '', customerCode: undefined })
+  }
+
+  function toggleUnit(key: string, unit: InstallmentAccountUnitItem, checked: boolean): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    if (checked) {
+      addUnitLine(block.accountId, unit)
+      return
+    }
+    replace(
+      lines.filter(
+        (l) =>
+          !(
+            l.installmentAccountId === block.accountId &&
+            l.existingSerialNumberIds?.[0] === unit.serialNumberId
+          )
+      )
     )
   }
 
-  function parseSerials(text: string): string[] {
-    return text
-      .split(/[\n,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
+  function removeBlock(key: string): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (block?.accountId) replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+    setReturnBlocks((prev) => prev.filter((b) => b.key !== key))
   }
 
-  function toggleSerialEntry(fieldId: string): void {
-    setExpandedSerialRows((prev) => {
-      const next = new Set(prev)
-      if (next.has(fieldId)) {
-        next.delete(fieldId)
-      } else {
-        next.add(fieldId)
+  /** Hand-entered path (an invoice with no linked sale to list units from):
+   * one line per invoice, item then serial then cost. */
+  function manualLineIndex(accountId: string, serialNumberId?: string): number {
+    return lines.findIndex(
+      (l) =>
+        l.installmentAccountId === accountId &&
+        (!serialNumberId || l.existingSerialNumberIds?.[0] === serialNumberId)
+    )
+  }
+
+  function fallbackItem(key: string, option: SearchComboboxOption): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    rememberItem(option.id, { name: option.primary, sku: option.secondary, isSerialTracked: true })
+    const idx = manualLineIndex(block.accountId)
+    if (idx >= 0) {
+      setValue(`lines.${idx}.itemId`, option.id, { shouldValidate: false })
+      setValue(`lines.${idx}.existingSerialNumberIds`, undefined, { shouldValidate: false })
+    } else {
+      append({ quantityReceived: 1, itemId: option.id, installmentAccountId: block.accountId })
+    }
+    patchBlock(key, { fallbackSerialLabel: '' })
+  }
+
+  function fallbackSerial(
+    key: string,
+    id: string,
+    _meta?: RepossessedSerialMeta,
+    label?: string
+  ): void {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    const idx = manualLineIndex(block.accountId)
+    if (idx < 0) return
+    setValue(`lines.${idx}.existingSerialNumberIds`, id ? [id] : undefined, {
+      shouldValidate: showErrors,
+    })
+    patchBlock(key, { fallbackSerialLabel: label ?? '' })
+  }
+
+  /** A typed cost: either a checked unit whose sale recorded none, or the
+   * hand-entered line. receiveStock() rejects a cost that isn't positive. */
+  function setUnitCost(key: string, serialNumberId: string | undefined, value: number | undefined) {
+    const block = returnBlocks.find((b) => b.key === key)
+    if (!block) return
+    const idx = manualLineIndex(block.accountId, serialNumberId)
+    if (idx >= 0) setValue(`lines.${idx}.unitCost`, value, { shouldValidate: false })
+  }
+
+  function toggleFreebie(index: number): void {
+    const next = !lines[index]?.isFreebie
+    setValue(`lines.${index}.isFreebie`, next, { shouldValidate: false })
+    // The server forces a freebie's cost to 0 whatever is submitted, so the
+    // form says the same thing rather than posting a number it knows is void.
+    if (next) setValue(`lines.${index}.unitCost`, 0, { shouldValidate: false })
+  }
+
+  function toggleQualityHold(index: number): void {
+    const next = !lines[index]?.qualityHold
+    setValue(`lines.${index}.qualityHold`, next, { shouldValidate: false })
+    // Dropping the hold drops its reason with it — a stale explanation on an
+    // un-held line would post as a plain line note saying the opposite.
+    if (!next) setValue(`lines.${index}.notes`, '', { shouldValidate: false })
+  }
+
+  /** Scenario 73 — ticking a unit back from a service center makes it a line.
+   * Its actual cost starts at the ticket's estimate (only on the ticket's
+   * first unit, since the leg sums its units' costs). */
+  function toggleServiceCenterUnit(unit: ServiceCenterUnit, checked: boolean): void {
+    const next = checked
+      ? [...scPicked.filter((p) => p.serialNumberId !== unit.serialNumberId), unit]
+      : scPicked.filter((p) => p.serialNumberId !== unit.serialNumberId)
+    setScPicked(next)
+    if (checked) {
+      rememberItem(unit.item.id, {
+        name: unit.item.name,
+        sku: unit.item.sku,
+        isSerialTracked: true,
+        modelNumber: unit.item.modelNumber,
+        brand: unit.item.brand ? { name: unit.item.brand } : null,
+      })
+      const ticketPriced = scPicked.some((p) => p.uds && p.uds.id === unit.uds?.id)
+      const estimate = unit.uds?.repairEstimatedCost
+      if (!ticketPriced && estimate != null) {
+        setScCosts((prev) => ({ ...prev, [unit.serialNumberId]: estimate }))
       }
-      return next
+    } else {
+      setScCosts((prev) => ({ ...prev, [unit.serialNumberId]: undefined }))
+    }
+    replace(
+      next.map((p) => ({
+        quantityReceived: 1,
+        itemId: p.item.id,
+        existingSerialNumberIds: [p.serialNumberId],
+      }))
+    )
+  }
+
+  function rememberItem(itemId: string, meta: ItemMeta): void {
+    setPickedItems((prev) => ({ ...prev, [itemId]: meta }))
+  }
+
+  /** Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
+   * own addLine(): a blank row, priced and taxed with whatever the Defaults
+   * bar currently says. The receiver picks or types the item inside the row
+   * itself afterward — this screen no longer adds a line by scanning
+   * straight into a header search box. */
+  function addLine(): void {
+    append({
+      quantityReceived: 1,
+      isFreebie: false,
+      qualityHold: false,
+      batchNumber: '',
+      notes: '',
+      taxCode: defaultTaxCode || undefined,
+      withholdingClass: defaultWithholdingClass || undefined,
     })
   }
 
-  function handleSerialTextChange(fieldId: string, idx: number, text: string): void {
-    setSerialText((prev) => ({ ...prev, [fieldId]: text }))
-    const parsed = parseSerials(text)
-    setValue(`lines.${idx}.serialNumbers`, parsed.length > 0 ? parsed : undefined, {
-      shouldValidate: true,
+  /** Scenario 55 (Stock-side Manual RR parity, follow-up) — mirrors
+   * ManualRrForm.tsx's own duplicateLine() exactly. The copy's own
+   * mode/serial-tracked-ness needs no explicit bookkeeping — lineModeFor()/
+   * contextFor() already fall back to reading it off the copied itemId/
+   * newItemName/serialNumbers for a field.id that has no map entry yet. */
+  function duplicateLine(index: number): void {
+    const line = lines[index]
+    if (!line) return
+    insert(index + 1, { ...line, discounts: line.discounts ? [...line.discounts] : undefined })
+  }
+
+  function setLineMode(index: number, fieldId: string, mode: 'catalog' | 'other'): void {
+    setLineModes((prev) => ({ ...prev, [fieldId]: mode }))
+    setValue(`lines.${index}.itemId`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.newItemName`, '', { shouldValidate: false })
+    setValue(`lines.${index}.serialNumbers`, undefined, { shouldValidate: false })
+    setValue(`lines.${index}.existingSerialNumberIds`, undefined, { shouldValidate: false })
+    setOtherLineTrackSerial((prev) => ({ ...prev, [fieldId]: false }))
+  }
+
+  /** Scenario 55 (Stock-side Manual RR parity, follow-up) — mirrors
+   * ManualRrForm.tsx's own toggleLineTrackSerial() exactly. */
+  function toggleOtherLineTrackSerial(index: number, fieldId: string): void {
+    const next = !(otherLineTrackSerial[fieldId] ?? false)
+    setOtherLineTrackSerial((prev) => ({ ...prev, [fieldId]: next }))
+    const qty = Number(lines[index]?.quantityReceived) || 0
+    setValue(
+      `lines.${index}.serialNumbers`,
+      next ? Array.from({ length: qty }, () => '') : undefined,
+      { shouldValidate: showErrors }
+    )
+  }
+
+  /** Scenario 55 (Stock-side Manual RR parity) — picking a catalog item now
+   * happens inside an already-added row (mirrors
+   * ManualRrForm.tsx's own onSelectCatalogItem), not at an add step that
+   * merges into an existing line — two rows can end up pointing at the same
+   * item with nothing reconciling them, same accepted tradeoff Manual RR
+   * already ships with. */
+  function onSelectCatalogItem(index: number, option: SearchComboboxOption): void {
+    const meta = option.meta as ItemSearchMeta | undefined
+    const isSerialTracked = meta?.isSerialTracked ?? false
+    rememberItem(option.id, {
+      name: option.primary,
+      sku: option.secondary,
+      isSerialTracked,
+      costPrice: meta?.costPrice ?? null,
+    })
+    if (meta?.costPrice != null) {
+      setValue(`lines.${index}.unitCost`, meta.costPrice, { shouldValidate: false })
+    }
+    // Silently reconnect this line to the linked PO's own line for this item
+    // when there is an outstanding one — picking the item here instead of
+    // "Pull outstanding lines" otherwise left the line with no PO link at
+    // all, which also meant it never counted toward the PO's received
+    // quantity and never triggered the receiving-warehouse mismatch check.
+    if (linkedPo && !lines[index]?.purchaseOrderLineId) {
+      const poLine = linkedPo.lines.find(
+        (pl) =>
+          pl.itemId === option.id &&
+          Math.max(Number(pl.quantity) - Number(pl.receivedQuantity ?? 0), 0) > 0
+      )
+      if (poLine) {
+        setValue(`lines.${index}.purchaseOrderLineId`, poLine.id, { shouldValidate: false })
+      }
+    }
+    if (isSerialTracked) {
+      const qty = Number(lines[index]?.quantityReceived) || 1
+      setValue(
+        `lines.${index}.serialNumbers`,
+        Array.from({ length: qty }, () => ''),
+        {
+          shouldValidate: false,
+        }
+      )
+      // Serial inputs render inline as soon as isSerialTracked is true (see
+      // RrLineRow.tsx) — nothing left to open.
+    }
+  }
+
+  function pullPoLines(): void {
+    if (!linkedPo) return
+    let pulled = 0
+    linkedPo.lines.forEach((poLine) => {
+      const outstanding = Math.max(
+        Number(poLine.quantity) - Number(poLine.receivedQuantity ?? 0),
+        0
+      )
+      if (outstanding <= 0) return
+      if (lines.some((line) => line.purchaseOrderLineId === poLine.id)) return
+      const isSerialTracked = poLine.item?.isSerialTracked ?? false
+      rememberItem(poLine.itemId, {
+        name: poLine.item?.name ?? poLine.itemId,
+        sku: poLine.item?.sku,
+        isSerialTracked,
+        costPrice: Number(poLine.unitPrice),
+        modelNumber: poLine.item?.modelNumber,
+        brand: poLine.item?.brand,
+        primaryCategory: poLine.item?.primaryCategory,
+      })
+      append({
+        ...emptyLine(poLine.itemId),
+        purchaseOrderLineId: poLine.id,
+        quantityReceived: outstanding,
+        unitCost: Number(poLine.unitPrice) > 0 ? Number(poLine.unitPrice) : undefined,
+        srp: poLine.srp != null ? Number(poLine.srp) : undefined,
+        discounts: poLine.discounts ?? undefined,
+        isFreebie: poLine.isFreebie ?? false,
+        ...(isSerialTracked && { serialNumbers: Array.from({ length: outstanding }, () => '') }),
+      })
+      pulled += 1
+    })
+    if (pulled > 0) {
+      showToast({
+        title: `${pulled} outstanding ${pulled === 1 ? 'line' : 'lines'} pulled from ${linkedPo.code}`,
+        status: 'success',
+      })
+    }
+  }
+
+  function linkPo(po: PurchaseOrderSummary): void {
+    setLinkedPo(po)
+    setPoPickerOpen(false)
+    setValue('purchaseOrderNumber', po.code, { shouldValidate: false })
+    setValue('supplierId', po.supplierId, { shouldValidate: showErrors })
+    setSupplierName(po.supplier.name)
+    // Only adopt the PO's destination when it is one this form can actually
+    // post to — receiving is restricted to the real warehouses, and a PO
+    // raised for a branch's own location is not in this list.
+    if (!watched.warehouseId && po.warehouseId && warehouses.some((w) => w.id === po.warehouseId)) {
+      setValue('warehouseId', po.warehouseId, { shouldValidate: showErrors })
+    }
+  }
+
+  function unlinkPo(): void {
+    setLinkedPo(null)
+    setValue('purchaseOrderNumber', '', { shouldValidate: false })
+    // The goods stay on the receipt — only what they answer to is dropped.
+    lines.forEach((line, index) => {
+      if (!line.purchaseOrderLineId) return
+      setValue(`lines.${index}.purchaseOrderLineId`, undefined, { shouldValidate: false })
     })
   }
+
+  function applyLineFix(index: number, fix?: IssueFix): void {
+    const line = lines[index]
+    if (!line) return
+    if (fix === 'qty') setQuantity(index, Math.max(1, line.quantityReceived || 0))
+  }
+
+  // ─── Submit ───────────────────────────────────────────────────────────────
+
+  /** Posts straight from the entry screen — there is no review step. The two
+   * gates below are all that stand between this and a stock movement that can
+   * only be undone with a debit memo, so neither may fail silently. */
+  async function postNow(): Promise<void> {
+    setSubmitted(true)
+    if (blockers.length > 0) {
+      showToast({
+        title: `${blockers.length} ${blockers.length === 1 ? 'issue' : 'issues'} must be resolved first`,
+        description: blockers[0].text,
+        status: 'error',
+      })
+      return
+    }
+    // Belt and braces: the checks card is derived from watched values, the
+    // resolver is what the post actually has to satisfy. Failing silently here
+    // would look like a dead button.
+    if (!(await trigger())) {
+      const issues = ReceiveStockFormSchema.safeParse(getValues()).error?.issues ?? []
+      const described = issues.slice(0, 3).map((issue) => describeIssue(issue.path, issue.message))
+      showToast({
+        title: 'Some fields still need attention',
+        description:
+          described.length > 0
+            ? `${described.join(' · ')}${issues.length > 3 ? ` · +${issues.length - 3} more` : ''}`
+            : 'Check the fields highlighted in red.',
+        status: 'error',
+      })
+      // Bring the first red field into view — the form is long enough that it
+      // is usually off-screen when Create is pressed.
+      setTimeout(() => {
+        document
+          .querySelector<HTMLElement>('[class*="border-[#b42318]"], [aria-invalid="true"]')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 50)
+      return
+    }
+    void handleSubmit(post)()
+  }
+
+  /** Uploads the required UDS/RFS scans (once each — a retry after a failed
+   * post reuses the ids) and returns what the receipt attaches, or null after
+   * telling the receiver which upload failed. */
+  async function uploadAttachments(
+    kinds: RrAttachmentKind[]
+  ): Promise<{ fileId: string; kind: RrAttachmentKind }[] | null> {
+    const out: { fileId: string; kind: RrAttachmentKind }[] = []
+    for (const kind of kinds) {
+      for (const file of stagedFiles[kind]) {
+        let fileId = uploadedIds.current.get(file)
+        if (!fileId) {
+          const form = new FormData()
+          form.set('file', file)
+          const uploaded = await uploadRrAttachment(form)
+          if (!uploaded.success || !uploaded.data) {
+            showToast({
+              title: `Could not upload ${file.name}`,
+              description: uploaded.message || uploaded.error,
+              status: 'error',
+            })
+            return null
+          }
+          fileId = uploaded.data.id
+          uploadedIds.current.set(file, fileId)
+        }
+        out.push({ fileId, kind })
+      }
+    }
+    return out
+  }
+
+  async function post(data: ReceiveStockFormValues): Promise<void> {
+    const reason = data.reason || undefined
+    const unitReturn = reason === 'repossession' || reason === 'repair_return'
+    const scReturn = reason === 'repair_return' && data.origin === 'service_center'
+    const homeService =
+      reason === 'repair_return' && !scReturn && data.repairType === 'home_service'
+    const attachments =
+      unitReturn && !scReturn
+        ? await uploadAttachments(requiredAttachmentKinds(reason, data.repairType))
+        : []
+    if (!attachments) return
+    const repairCosts = scReturn
+      ? scPicked
+          .map((p) => ({ serialNumberId: p.serialNumberId, actualCost: scCosts[p.serialNumberId] }))
+          .filter((c): c is { serialNumberId: string; actualCost: number } =>
+            Number.isFinite(c.actualCost)
+          )
+      : []
+    const result = await onSubmit({
+      ...data,
+      reason,
+      repairType: reason === 'repair_return' && !scReturn ? data.repairType : undefined,
+      // Scenario 73 — Origin is only ever sent as From Service Center; a
+      // customer return keeps today's payload exactly.
+      origin: scReturn ? 'service_center' : undefined,
+      serviceCenterId: scReturn || homeService ? data.serviceCenterId : undefined,
+      repairCosts: repairCosts.length > 0 ? repairCosts : undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      // Scenario 55 (Stock-side Manual RR parity) — mirrors
+      // ManualRrForm.tsx's own handleSubmit: sourceMode decides which of the
+      // two ever actually goes out, whatever the other field is still
+      // holding from before a toggle. A PO link always wins regardless of
+      // mode — its supplierId is the one already set by linkPo().
+      supplierId:
+        linkedPo || sourceMode === 'registered' ? data.supplierId || undefined : undefined,
+      newSourceName:
+        !linkedPo && sourceMode === 'new' ? data.newSourceName?.trim() || undefined : undefined,
+      lines: data.lines.map((line) => ({
+        ...line,
+        // Same either-or as the header Source field, per line: a catalog
+        // pick wins outright, otherwise the typed name goes out.
+        newItemName: line.itemId ? undefined : line.newItemName?.trim() || undefined,
+        batchNumber: line.batchNumber?.trim() || undefined,
+        notes: line.notes?.trim() || undefined,
+        taxCode: line.taxCode || undefined,
+        discounts: line.discounts && line.discounts.length > 0 ? line.discounts : undefined,
+        // Mutually exclusive on the wire (receiveStock() rejects a line that
+        // sets both) — only one of these two is ever real per line, gated on
+        // the same reason check.
+        serialNumbers: !unitReturn ? filledOrUndefined(line.serialNumbers) : undefined,
+        existingSerialNumberIds: unitReturn
+          ? filledOrUndefined(line.existingSerialNumberIds)
+          : undefined,
+        // The invoice a returned unit came back from — dropped on any other
+        // reason so a stale pick from switching reasons mid-form can't ride
+        // along.
+        installmentAccountId: unitReturn ? line.installmentAccountId || undefined : undefined,
+      })),
+      confirmWarehouseMismatch: warehouseMismatchWarning !== null,
+    })
+    if (result.success) {
+      onClose()
+      return
+    }
+    if (result.errorCode === 'receiving_warehouse_mismatch') {
+      // Not an error yet — splitting one PO's receipt across both real
+      // warehouses is normal. Show what it clashes with and let the
+      // receiver confirm before posting.
+      setWarehouseMismatchWarning(
+        result.message || 'This purchase order was raised for a different warehouse.'
+      )
+    }
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  const hasLines = fields.length > 0
 
   return (
-    <div className="absolute inset-0 z-50 flex flex-col bg-white">
-      {/* Header */}
-      <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">{subtitle}</p>
+    // absolute, not fixed: the working surface fills the content column (the
+    // app shell's `main` is the positioning frame) so the nav sidebar and top
+    // bar stay usable while a delivery is being received. Same shell as the
+    // receive-against-PO screen.
+    <div
+      className={`${PLEX} absolute inset-0 z-50 flex flex-col overflow-y-auto bg-[#f2f2f3] text-[#17171c]`}
+    >
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-5 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+            Inventory › Receiving › New
+          </div>
+          <h2 className="text-[21px] font-semibold tracking-[-.02em]">{title}</h2>
+          <p className="text-[12.5px] text-[#5b5b6b]">{subtitle}</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-        >
-          <X className="h-5 w-5" />
-        </button>
+
+        <div className="flex items-start gap-4">
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-[11px] text-[#5b5b6b]">Receiving</span>
+            <span
+              className={`${MONO} text-[18px] font-semibold tracking-[-.02em] ${
+                totals.units > 0 ? 'text-[#17171c]' : 'text-[#a3a3b2]'
+              }`}
+            >
+              {totals.units} {totals.units === 1 ? 'unit' : 'units'} · {totals.lines}{' '}
+              {totals.lines === 1 ? 'line' : 'lines'}
+            </span>
+          </div>
+          <Tooltip label="Close" side="bottom" align="end">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+            >
+              <X className="h-4.5 w-4.5" />
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
-      <form
-        onSubmit={handleSubmit(handleFormSubmit)}
-        noValidate
-        className="flex flex-1 flex-col overflow-hidden"
-      >
-        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
-          {/* Reference Number + Date Received */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Reference Number
-              </label>
-              <Controller
-                name="code"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="Auto-generated if blank"
-                    className={fieldClass}
-                  />
-                )}
-              />
-              <p className="mt-0.5 text-xs text-zinc-400">
-                Leave blank to auto-generate (RR-YYYYMMDD-NNNN)
-              </p>
-            </div>
+      <div className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col gap-3.5 px-3.5 py-4 lg:px-5">
+        <RrDeliveryPanel
+          control={control}
+          errors={errors}
+          warehouses={warehouses}
+          showErrors={showErrors}
+          supplierId={watched.supplierId ?? ''}
+          supplierName={supplierName}
+          linkedPo={linkedPo}
+          reason={watched.reason || undefined}
+          sourceMode={sourceMode}
+          onSourceModeChange={setSourceMode}
+          onSupplierChange={(id, name) => {
+            setValue('supplierId', id, { shouldValidate: showErrors })
+            setSupplierName(name)
+          }}
+          onBrowsePo={() => setPoPickerOpen(true)}
+          onUnlinkPo={unlinkPo}
+          origin={watched.origin}
+          serviceCenterOptions={serviceCenterOptions}
+          serviceCentersLoading={serviceCentersQuery.isLoading || suppliersQuery.isLoading}
+        />
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Date Received</label>
-              <Controller
-                name="receivedAt"
-                control={control}
-                render={({ field }) => (
-                  <input {...field} type="datetime-local" className={fieldClass} />
-                )}
-              />
-            </div>
-          </div>
-
-          {/* PO Number + PO Date */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">PO Number</label>
-              <Controller
-                name="purchaseOrderNumber"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="e.g. PO-2025-001"
-                    className={fieldClass}
-                  />
-                )}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Purchase Order Date
-              </label>
-              <Controller
-                name="purchaseOrderDate"
-                control={control}
-                render={({ field }) => <input {...field} type="date" className={fieldClass} />}
-              />
-            </div>
-          </div>
-
-          {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
-                Receiving Report */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Delivery Receipt No.
-                {watchedApplicationType === 'new_stock' && <span className="text-red-500"> *</span>}
-                <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
-              </label>
-              <Controller
-                name="deliveryReceiptNumber"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    value={field.value ?? ''}
-                    type="text"
-                    placeholder="e.g. DR-00123"
-                    className={fieldClass}
-                  />
-                )}
-              />
-              {errors.deliveryReceiptNumber && (
-                <p className="mt-1 text-xs text-red-600">{errors.deliveryReceiptNumber.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Supplier Invoice No.
-                <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
-              </label>
-              <Controller
-                name="supplierInvoiceNumber"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    value={field.value ?? ''}
-                    type="text"
-                    placeholder="e.g. SI-00456"
-                    className={fieldClass}
-                  />
-                )}
-              />
-              {errors.supplierInvoiceNumber && (
-                <p className="mt-1 text-xs text-red-600">{errors.supplierInvoiceNumber.message}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Who physically brought the delivery — the Receiving Report's
-                "Driver/Helper" line. Free text on purpose: the Vehicle roster
-                is our own fleet, for branch-to-branch transfers, and a
-                supplier's delivery crew will never be on it. */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Driver
-                <span className="ml-1 text-xs font-normal text-zinc-400">(who delivered)</span>
-              </label>
-              <Controller
-                name="driverName"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    value={field.value ?? ''}
-                    type="text"
-                    placeholder="e.g. Juan dela Cruz"
-                    className={fieldClass}
-                  />
-                )}
-              />
-              {errors.driverName && (
-                <p className="mt-1 text-xs text-red-600">{errors.driverName.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Helper</label>
-              <Controller
-                name="helperName"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    value={field.value ?? ''}
-                    type="text"
-                    placeholder="e.g. Pedro Santos"
-                    className={fieldClass}
-                  />
-                )}
-              />
-              {errors.helperName && (
-                <p className="mt-1 text-xs text-red-600">{errors.helperName.message}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Supplier */}
-          <div className="sm:w-1/2">
-            <label className="mb-1 block text-sm font-medium text-zinc-700">
-              Supplier <span className="text-red-500">*</span>
-            </label>
-            <Controller
-              name="supplierId"
-              control={control}
-              render={({ field }) => (
-                <SupplierSearchCombobox
-                  value={field.value ?? ''}
-                  onChange={field.onChange}
-                  error={errors.supplierId?.message}
-                />
-              )}
+        {fromServiceCenter ? (
+          <ServiceCenterUnitsPanel
+            serviceCenterId={watched.serviceCenterId ?? ''}
+            serviceCenterName={serviceCenterName(watched.serviceCenterId)}
+            picked={scPicked}
+            costs={scCosts}
+            canViewCost={canViewCost}
+            showErrors={showErrors}
+            onToggle={toggleServiceCenterUnit}
+            onCost={(serialNumberId, value) =>
+              setScCosts((prev) => ({ ...prev, [serialNumberId]: value }))
+            }
+          />
+        ) : isUnitReturn ? (
+          <>
+            <ReturnedUnitsPanel
+              mode={isRepo ? 'repossession' : 'repair_return'}
+              blocks={returnBlocks}
+              lines={lines}
+              canViewCost={canViewCost}
+              showErrors={showErrors}
+              itemNameFor={(itemId) => (itemId ? metaFor(itemId)?.name : undefined)}
+              onPickInvoice={pickInvoice}
+              onPickCustomer={pickCustomer}
+              onToggleUnit={toggleUnit}
+              onFallbackItem={fallbackItem}
+              onFallbackSerial={fallbackSerial}
+              onUnitCost={setUnitCost}
+              onAddBlock={() => setReturnBlocks((prev) => [...prev, newReturnBlock()])}
+              onRemoveBlock={removeBlock}
             />
-            <p className="mt-0.5 text-xs text-zinc-400">
-              Required unless a line below is linked to a PO.
-            </p>
-          </div>
-
-          {/* Destination Location */}
-          <div className="sm:w-1/2">
-            <label className="mb-1 block text-sm font-medium text-zinc-700">
-              Destination Location <span className="text-red-500">*</span>
-            </label>
-            <Controller
-              name="warehouseId"
-              control={control}
-              render={({ field }) => (
-                <select {...field} className={`${fieldClass} bg-white`}>
-                  <option value="">Select location…</option>
-                  {warehouses.map((wh) => (
-                    <option key={wh.id} value={wh.id}>
-                      {wh.branch?.name ?? wh.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            />
-            {errors.warehouseId && (
-              <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
+            {requiredKinds.length > 0 && (
+              <RrAttachmentsPanel
+                required={requiredKinds}
+                staged={stagedFiles}
+                onChange={(kind, files) => setStagedFiles((prev) => ({ ...prev, [kind]: files }))}
+                showErrors={showErrors}
+              />
             )}
-          </div>
-
-          {/* Application Type + Mode of Transfer */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Application Type <span className="text-red-500">*</span>
-              </label>
-              <Controller
-                name="applicationType"
-                control={control}
-                render={({ field }) => (
-                  <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="new_stock">New Stock</option>
-                    <option value="revert">Revert</option>
-                  </select>
-                )}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Mode of Transfer
-              </label>
-              <Controller
-                name="modeOfTransfer"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="e.g. Road, Air, Sea"
-                    className={fieldClass}
-                  />
-                )}
-              />
-            </div>
-          </div>
-
-          {/* NNDP Cost */}
-          {canViewCost && (
-            <div className="sm:w-1/2">
-              <label className="mb-1 block text-sm font-medium text-zinc-700">NNDP Cost</label>
-              <Controller
-                name="nndpCost"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={field.value ?? ''}
-                    className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) =>
-                      field.onChange(e.target.value === '' ? undefined : Number(e.target.value))
-                    }
-                  />
-                )}
-              />
-              {errors.nndpCost && (
-                <p className="mt-1 text-xs text-red-600">{errors.nndpCost.message}</p>
-              )}
-            </div>
-          )}
-
-          {/* Withholding */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Withholding</label>
-              <Controller
-                name="withholding"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? 'none'}
-                    className={`${fieldClass} bg-white`}
-                  >
-                    <option value="none">None</option>
-                    <option value="pct_1">1% Withholding</option>
-                  </select>
-                )}
-              />
-            </div>
-
-            {withholding === 'pct_1' && canViewCost && (
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Withheld Amount
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={withheldAmount.toFixed(2)}
-                  className={`${fieldClass} bg-zinc-50 text-zinc-600`}
-                />
+          </>
+        ) : (
+          <div className={PANEL}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-3.5">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[13.5px] font-semibold">
+                    Items received <span className="text-[#b42318]">*</span>
+                  </span>
+                  <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                    {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totals.units} units
+                  </span>
+                </div>
+                <span className="text-[11.5px] text-[#8b8b9b]">
+                  Pick a catalog item, or mark it &ldquo;Non-catalog items&rdquo; for anything not
+                  in the catalog.
+                </span>
               </div>
-            )}
-          </div>
 
-          {/* Items to Receive */}
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-zinc-800">Items to Receive</h3>
-              <button
-                type="button"
-                onClick={() => append(emptyLine())}
-                className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Item
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {outstandingNotPulled.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={pullPoLines}
+                    className="rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-2.5 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+                  >
+                    Pull {outstandingNotPulled.length} outstanding{' '}
+                    {outstandingNotPulled.length === 1 ? 'line' : 'lines'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={addLine}
+                  className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Line
+                </button>
+              </div>
             </div>
 
-            {fields.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 py-8 text-center text-sm text-zinc-400">
-                No items added yet. Click &ldquo;Add Item&rdquo; to begin.
+            {/* Scenario 55 (Stock-side Manual RR parity) — mirrors
+              ManualRrForm.tsx's own Defaults bar exactly: applied to every
+              new line going forward, not retroactively. */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
+              <span className="text-[11px] text-[#8b8b9b]">Input tax type</span>
+              <select
+                value={defaultTaxCode}
+                onChange={(e) => setDefaultTaxCode(e.target.value)}
+                aria-label="Default tax code"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+              >
+                {MANUAL_RR_TAX_CODES.map((code) => (
+                  <option key={code.value} value={code.value}>
+                    {code.label}
+                  </option>
+                ))}
+              </select>
+              <span className="ml-2 text-[11px] text-[#8b8b9b]">Withholding tax</span>
+              <select
+                value={defaultWithholdingClass}
+                onChange={(e) => setDefaultWithholdingClass(e.target.value)}
+                aria-label="Default withholding"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+              >
+                {withholdingClassOptions(ewt.rateFor).map((cls) => (
+                  <option key={cls.value} value={cls.value}>
+                    {cls.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {!hasLines ? (
+              <div className="flex flex-col items-center gap-2 px-5.5 py-10 text-center">
+                <PackagePlus className="h-7 w-7 text-[#d3d3db]" />
+                <span className="text-[13.5px] font-semibold">No items added yet.</span>
+                <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#5b5b6b]">
+                  {linkedPo
+                    ? `Add a line, or pull the lines ${linkedPo.code} is still waiting on.`
+                    : 'Add a line, then pick a catalog item or name what arrived.'}
+                </span>
+                <button
+                  type="button"
+                  onClick={addLine}
+                  className="mt-2 rounded-lg bg-[#5b21b6] px-3.75 py-2.25 text-[13px] font-medium text-white hover:bg-[#4a189b]"
+                >
+                  Add a line
+                </button>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-zinc-200">
-                <table className="w-full text-sm">
-                  <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    <tr>
-                      <th className="px-3 py-2">Item</th>
-                      <th className="px-3 py-2">Qty</th>
-                      {canViewCost && <th className="px-3 py-2">Unit Cost</th>}
-                      <th className="px-3 py-2 text-center">Freebie</th>
-                      <th className="px-3 py-2">Batch No.</th>
-                      <th className="px-3 py-2 text-center">QC Hold</th>
-                      <th className="px-3 py-2 text-center">Serials</th>
-                      <th className="px-3 py-2" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {fields.map((field, idx) => (
-                      <Fragment key={field.id}>
-                        <tr className="hover:bg-zinc-50">
-                          <td className="px-3 py-2 min-w-64">
-                            <Controller
-                              name={`lines.${idx}.itemId`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <ItemSearchCombobox
-                                  value={f.value}
-                                  onChange={(itemId) => handleItemChange(idx, itemId)}
-                                  onSelect={handleItemSelect}
-                                  error={errors.lines?.[idx]?.itemId?.message}
-                                  initialLabel={
-                                    pickedItems[f.value]?.name ??
-                                    items.find((i) => i.id === f.value)?.name
-                                  }
-                                />
-                              )}
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <Controller
-                              name={`lines.${idx}.quantityReceived`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <input
-                                  {...f}
-                                  type="number"
-                                  min="0.01"
-                                  step="any"
-                                  value={f.value === 0 ? '' : f.value}
-                                  placeholder="0"
-                                  className={`w-24 ${cellInputClass}`}
-                                  onChange={(e) =>
-                                    f.onChange(e.target.value === '' ? 0 : Number(e.target.value))
-                                  }
-                                />
-                              )}
-                            />
-                            {errors.lines?.[idx]?.quantityReceived && (
-                              <p className="mt-0.5 text-xs text-red-600">
-                                {errors.lines[idx]?.quantityReceived?.message}
-                              </p>
-                            )}
-                          </td>
-                          {canViewCost && (
-                            <td className="px-3 py-2">
-                              {watchedLines?.[idx]?.isFreebie ? (
-                                <span className="inline-block w-28 text-zinc-400">Free</span>
-                              ) : (
-                                <>
-                                  <Controller
-                                    name={`lines.${idx}.unitCost`}
-                                    control={control}
-                                    render={({ field: f }) => (
-                                      <input
-                                        {...f}
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={f.value ?? ''}
-                                        className={`w-28 ${cellInputClass}`}
-                                        onChange={(e) =>
-                                          f.onChange(
-                                            e.target.value === ''
-                                              ? undefined
-                                              : Number(e.target.value)
-                                          )
-                                        }
-                                      />
-                                    )}
-                                  />
-                                  {errors.lines?.[idx]?.unitCost && (
-                                    <p className="mt-0.5 text-xs text-red-600">
-                                      {errors.lines[idx]?.unitCost?.message}
-                                    </p>
-                                  )}
-                                </>
-                              )}
-                            </td>
-                          )}
-                          <td className="px-3 py-2 text-center">
-                            <Controller
-                              name={`lines.${idx}.isFreebie`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <input
-                                  type="checkbox"
-                                  checked={f.value ?? false}
-                                  onChange={(e) => {
-                                    f.onChange(e.target.checked)
-                                    if (e.target.checked) {
-                                      setValue(`lines.${idx}.unitCost`, undefined)
-                                    }
-                                  }}
-                                  className="h-4 w-4 rounded border-zinc-300"
-                                />
-                              )}
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <Controller
-                              name={`lines.${idx}.batchNumber`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <input
-                                  {...f}
-                                  type="text"
-                                  placeholder="Optional"
-                                  className="w-28 rounded border border-zinc-200 px-2 py-1 text-sm"
-                                />
-                              )}
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <Controller
-                              name={`lines.${idx}.qualityHold`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <input
-                                  type="checkbox"
-                                  checked={f.value ?? false}
-                                  onChange={(e) => f.onChange(e.target.checked)}
-                                  className="h-4 w-4 rounded border-zinc-300"
-                                />
-                              )}
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            {isLineSerialTracked(idx) ? (
-                              <div className="flex justify-center">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleSerialEntry(field.id)}
-                                  className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
-                                >
-                                  {expandedSerialRows.has(field.id) ? (
-                                    <ChevronUp className="h-3 w-3" />
-                                  ) : (
-                                    <ScanBarcode className="h-3 w-3" />
-                                  )}
-                                  {(watchedLines?.[idx]?.serialNumbers?.length ?? 0) > 0
-                                    ? `${watchedLines?.[idx]?.serialNumbers?.length}/${watchedLines?.[idx]?.quantityReceived || 0} entered`
-                                    : 'Enter serials'}
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="block text-center text-xs text-zinc-300">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <button
-                              type="button"
-                              onClick={() => remove(idx)}
-                              className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </td>
-                        </tr>
-                        {expandedSerialRows.has(field.id) && (
-                          <tr className="bg-zinc-50">
-                            <td colSpan={7} className="px-4 py-3">
-                              <label
-                                htmlFor={`serial-entry-${field.id}`}
-                                className="mb-1 block text-xs font-medium text-zinc-600"
-                              >
-                                Serial numbers for this line — one per line or comma-separated (must
-                                total {watchedLines?.[idx]?.quantityReceived || 0})
-                              </label>
-                              <textarea
-                                id={`serial-entry-${field.id}`}
-                                rows={3}
-                                value={serialText[field.id] ?? ''}
-                                onChange={(e) =>
-                                  handleSerialTextChange(field.id, idx, e.target.value)
-                                }
-                                placeholder="SN-001&#10;SN-002&#10;SN-003"
-                                className={`${fieldClass} resize-none font-mono text-xs`}
-                              />
-                              {errors.lines?.[idx]?.serialNumbers && (
-                                <p className="mt-1 text-xs text-red-600">
-                                  {errors.lines[idx]?.serialNumbers?.message}
-                                </p>
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {errors.lines && !Array.isArray(errors.lines) && (
-              <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>
+              <>
+                <div
+                  className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+                >
+                  <span>Item / SKU</span>
+                  <span className="text-right">Qty</span>
+                  <span className="text-right">SRP</span>
+                  <span>Discounts</span>
+                  <span className="text-right">Unit Price</span>
+                  <span className="text-right">Line Total</span>
+                  <span className="text-center">Free</span>
+                  <span />
+                </div>
+
+                {fields.map((field, index) => {
+                  const line = lines[index]
+                  if (!line) return null
+                  const context = contextFor(index)
+                  const mode = lineModeFor(field.id, line)
+                  return (
+                    <RrLineRow
+                      key={field.id}
+                      control={control}
+                      lineIndex={index}
+                      line={line}
+                      mode={mode}
+                      onSetMode={(m) => setLineMode(index, field.id, m)}
+                      itemName={line.itemId ? metaFor(line.itemId)?.name : undefined}
+                      isSerialTracked={context.isSerialTracked}
+                      poChip={
+                        context.outstanding != null && linkedPo
+                          ? `${context.outstanding} outstanding on ${linkedPo.code}`
+                          : undefined
+                      }
+                      canViewCost={canViewCost}
+                      showErrors={showErrors}
+                      itemError={errors.lines?.[index]?.itemId?.message}
+                      issues={rrLineIssues(issueLines, index, context, line).filter(
+                        (issue) => showErrors || issue.kind === 'warn'
+                      )}
+                      isDuplicateSerial={(unit) => isDuplicateSerial(issueLines, index, unit)}
+                      onSelectCatalogItem={(option) => onSelectCatalogItem(index, option)}
+                      onQtyChange={(raw) => setQuantity(index, raw)}
+                      onSerialChange={(unit, value) => setSerial(index, unit, value)}
+                      onClearSerials={() =>
+                        setValue(
+                          `lines.${index}.serialNumbers`,
+                          Array.from({ length: line.quantityReceived || 0 }, () => ''),
+                          { shouldValidate: showErrors }
+                        )
+                      }
+                      onToggleTrackSerial={() => toggleOtherLineTrackSerial(index, field.id)}
+                      onToggleFreebie={() => toggleFreebie(index)}
+                      onToggleQualityHold={() => toggleQualityHold(index)}
+                      onQcReasonChange={(value) =>
+                        setValue(`lines.${index}.notes`, value, { shouldValidate: false })
+                      }
+                      onDuplicate={() => duplicateLine(index)}
+                      onRemove={() => remove(index)}
+                      onFixIssue={(fix) => applyLineFix(index, fix)}
+                    />
+                  )
+                })}
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
+                  <span className="text-[11.5px] text-[#8b8b9b]">
+                    Held lines land in quarantine, not as sellable stock. Freebies are received at
+                    zero cost.
+                  </span>
+                  <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
+                    {totals.units} units{canViewCost && ` · ${fmtPeso(totals.invoice)} invoiced`}
+                    {canViewCost &&
+                      totals.withheld > 0 &&
+                      ` · ${fmtPeso(totals.withheld)} withheld · ${fmtPeso(totals.net)} net`}
+                  </span>
+                </div>
+              </>
             )}
           </div>
-
-          {/* Notes */}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
-            <Controller
-              name="notes"
-              control={control}
-              render={({ field }) => (
-                <textarea
-                  {...field}
-                  rows={2}
-                  placeholder="Optional notes about this receipt…"
-                  className={`${fieldClass} resize-none`}
-                />
-              )}
-            />
-          </div>
+        )}
+        <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
+          <label className="text-[12px] font-medium text-[#3d3d4a]">
+            Notes <span className="font-normal text-[#8b8b9b]">optional</span>
+          </label>
+          <Controller
+            name="notes"
+            control={control}
+            render={({ field }) => (
+              <textarea
+                {...field}
+                value={field.value ?? ''}
+                rows={2}
+                placeholder="Damage on arrival, short-shipped cartons, anything the next person should know…"
+                className="w-full resize-y rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[13px] leading-[1.5] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
+              />
+            )}
+          />
+          {errors.notes && (
+            <span className="text-[11.5px] text-[#b42318]">{errors.notes.message}</span>
+          )}
         </div>
+      </div>
 
-        <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting || fields.length === 0}
-            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-          >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isSubmitting ? submittingLabel : submitLabel}
-          </button>
+      {warehouseMismatchWarning && (
+        <div className="border-t border-[#f3d7a3] bg-[#fdf6e9] px-4 py-2.5 text-[12.5px] text-[#8a4b06] lg:px-5">
+          {warehouseMismatchWarning} Press <span className="font-semibold">Receive anyway</span> to
+          continue.
         </div>
-      </form>
+      )}
+      <ReceiveActionBar
+        blockerCount={blockers.length}
+        showBlockers={showErrors}
+        totals={barTotals}
+        deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
+        isSubmitting={isSubmitting}
+        onCancel={onClose}
+        onPrimary={postNow}
+        primaryLabel={warehouseMismatchWarning ? 'Receive anyway' : submitLabel}
+        submittingLabel={submittingLabel}
+      />
+
+      {poPickerOpen && (
+        <PoLinkPicker
+          supplierId={watched.supplierId || undefined}
+          supplierName={supplierName}
+          onPick={linkPo}
+          onClose={() => setPoPickerOpen(false)}
+        />
+      )}
     </div>
   )
 }
+
+/** Re-exported for the tests and callers that reach for it. */
+export { outstandingOf }

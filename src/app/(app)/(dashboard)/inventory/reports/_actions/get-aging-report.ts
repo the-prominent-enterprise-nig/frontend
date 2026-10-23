@@ -7,8 +7,17 @@ type Params = {
   warehouseId?: string
   categoryId?: string
   itemId?: string
+  typeId?: string
+  asOf?: string
   search?: string
+  serialNumber?: string
+  brandId?: string
+  model?: string
+  receivedFrom?: string
+  receivedTo?: string
   bucket?: SerialAgingBucket
+  sortBy?: 'dateIn' | 'age'
+  sortDir?: 'asc' | 'desc'
   page?: number
   limit?: number
 }
@@ -18,8 +27,17 @@ export async function getAgingReport(params: Params = {}) {
     warehouseId: params.warehouseId,
     categoryId: params.categoryId,
     itemId: params.itemId,
+    typeId: params.typeId,
+    asOf: params.asOf,
     search: params.search,
+    serialNumber: params.serialNumber,
+    brandId: params.brandId,
+    model: params.model,
+    receivedFrom: params.receivedFrom,
+    receivedTo: params.receivedTo,
     bucket: params.bucket,
+    sortBy: params.sortBy,
+    sortDir: params.sortDir,
     page: params.page,
     limit: params.limit,
   }

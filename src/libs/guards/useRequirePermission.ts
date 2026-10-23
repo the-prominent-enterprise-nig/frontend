@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
+import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
 import { can, type SessionUser } from './permission'
 
 type Status = 'checking' | 'authorized'
@@ -12,10 +13,17 @@ type Status = 'checking' | 'authorized'
  * (dashboard)/pos are 'use client' at the page.tsx level (offline-sync
  * state, heavy interactivity), so the standard
  * `await getSessionOrNull(); if (!can(...)) redirect('/403')` server
- * pattern doesn't apply directly. getSessionOrNull is a server action, so
+ * pattern doesn't apply directly. getSessionState is a server action, so
  * it's still callable here — this just moves the same check into an
  * effect and redirects client-side via the router instead of throwing
  * NEXT_REDIRECT synchronously. See Scenario 22 Part 5.
+ *
+ * Only a session the backend rejected sends the user to /login. If the backend
+ * could not be asked (busy, timing out) the check is retried a couple of times,
+ * and if it still cannot be answered the hook throws SessionUnavailableError
+ * into the nearest error boundary, whose "Try again" remounts the page and
+ * re-runs this check. Callers need no change: they already render nothing while
+ * status is 'checking'.
  *
  * Callers should render nothing (or a lightweight loading state) while
  * status is 'checking', to avoid a flash of protected content before the
@@ -31,21 +39,26 @@ export function useRequirePermission(permission: string): {
   const router = useRouter()
   const [session, setSession] = useState<SessionUser | null>(null)
   const [status, setStatus] = useState<Status>('checking')
+  const [unavailable, setUnavailable] = useState<SessionUnavailableError | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
-    getSessionOrNull().then((result) => {
+    getSessionStateWithRetry(() => cancelled).then((state) => {
       if (cancelled) return
-      if (!result) {
+      if (state.status === 'unauthenticated') {
         router.replace('/login')
         return
       }
-      if (!can(result, permission)) {
+      if (state.status === 'unavailable') {
+        setUnavailable(new SessionUnavailableError(state.reason))
+        return
+      }
+      if (!can(state.session, permission)) {
         router.replace('/403')
         return
       }
-      setSession(result)
+      setSession(state.session)
       setStatus('authorized')
     })
 
@@ -53,6 +66,8 @@ export function useRequirePermission(permission: string): {
       cancelled = true
     }
   }, [router, permission])
+
+  if (unavailable) throw unavailable
 
   return { session, status }
 }

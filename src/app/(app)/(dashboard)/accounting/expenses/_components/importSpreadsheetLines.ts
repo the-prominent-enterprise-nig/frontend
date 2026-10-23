@@ -57,6 +57,9 @@ export interface ImportResult {
   /** Column A values with no matching account, deduplicated. Those lines
    * still import — with a blank Account for the user to fill in. */
   unmatchedAccounts: string[]
+  /** Column A values shared by several accounts that the row couldn't choose
+   * between, deduplicated. Those lines import with a blank Account too. */
+  ambiguousAccounts: string[]
   /** Column B values that matched no branch or department **and** sit on an
    * account with no per-name ledger, deduplicated — the ones that might be a
    * division we are missing. Names on advance/loan rows are excluded: they
@@ -224,10 +227,48 @@ function looseBranchMatch(raw: string, divisions: DivisionOption[]): string | nu
   return hits.length === 1 ? hits[0].value : null
 }
 
+/**
+ * One account for a column A name that more than one account shares. A row
+ * naming a person goes to the one that keeps a per-name ledger, since that
+ * is what ties the amount to their balance. Anything still undecided is left
+ * blank for the user rather than guessed: a deduction on the wrong account
+ * looks fine on the voucher and silently misses the person's balance.
+ */
+function pickAccount(candidates: Account[], namesAPerson: boolean): string {
+  if (candidates.length === 1) return candidates[0].id
+  const ids = [...new Set(candidates.map((a) => a.id))]
+  if (ids.length === 1) return ids[0]
+  const ledgers = candidates.filter((a) => a.isSpecialAccountControl)
+  if (namesAPerson && new Set(ledgers.map((a) => a.id)).size === 1) return ledgers[0].id
+  return ''
+}
+
 function parseAmount(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const n = typeof value === 'number' ? value : Number(String(value).replace(/[,\s₱]/g, ''))
   return Number.isFinite(n) && n !== 0 ? n : null
+}
+
+/** Every spelling one name might be written in: as given, surname-first
+ * flipped, and both with middle initials dropped — the sheet writes
+ * "ADVENCULA, JUVY B." where a customer record says "Juvy Advencula",
+ * and a single stray initial should not defeat the match. */
+export function nameKeys(name: string): string[] {
+  const dropInitials = (v: string) =>
+    norm(v)
+      .split(' ')
+      .filter((w) => w.length > 1)
+      .join(' ')
+  const keys = [norm(name), dropInitials(name)]
+  const parts = name
+    .split(/[,.]/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (parts.length >= 2) {
+    const flipped = `${parts.slice(1).join(' ')} ${parts[0]}`
+    keys.push(norm(flipped), dropInitials(flipped))
+  }
+  return [...new Set(keys.filter(Boolean))]
 }
 
 export async function importSpreadsheetLines(
@@ -252,11 +293,21 @@ export async function importSpreadsheetLines(
   const controlAccountIds = new Set(
     accounts.filter((a) => a.isSpecialAccountControl).map((a) => a.id)
   )
-  const accountByName = new Map<string, string>()
-  for (const a of accounts) {
-    accountByName.set(norm(a.name), a.id)
-    if (a.number) accountByName.set(norm(`${a.number} ${a.name}`), a.id)
+  // A chart can hold two accounts with one name — the client's has "Loans to
+  // Officers and Employees" both as 1-01-060 (keeps a per-name ledger) and as
+  // 1-03-041 (doesn't) — that was the old chart; the current one has it once,
+  // as 1-01-322, but the same-name guard stays for any future duplicate. Every candidate is kept so the row can pick; a plain
+  // Map let whichever came last win, which sent every loan deduction to the
+  // account with no ledger and drew down nobody's balance.
+  const accountsByName = new Map<string, Account[]>()
+  const index = (key: string, a: Account): void => {
+    accountsByName.set(key, [...(accountsByName.get(key) ?? []), a])
   }
+  for (const a of accounts) {
+    index(norm(a.name), a)
+    if (a.number) index(norm(`${a.number} ${a.name}`), a)
+  }
+  const ambiguousAccounts = new Set<string>()
   const divisionByName = new Map<string, string>()
   for (const d of divisions) {
     // A branch matches on its own name. A department matches only on
@@ -294,27 +345,6 @@ export async function importSpreadsheetLines(
     if (!key) return
     customerByName.set(key, customerByName.has(key) ? null : c)
   }
-  /** Every spelling one name might be written in: as given, surname-first
-   * flipped, and both with middle initials dropped — the sheet writes
-   * "ADVENCULA, JUVY B." where a customer record says "Juvy Advencula",
-   * and a single stray initial should not defeat the match. */
-  const nameKeys = (name: string): string[] => {
-    const dropInitials = (v: string) =>
-      norm(v)
-        .split(' ')
-        .filter((w) => w.length > 1)
-        .join(' ')
-    const keys = [norm(name), dropInitials(name)]
-    const parts = name
-      .split(/[,.]/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-    if (parts.length >= 2) {
-      const flipped = `${parts.slice(1).join(' ')} ${parts[0]}`
-      keys.push(norm(flipped), dropInitials(flipped))
-    }
-    return [...new Set(keys.filter(Boolean))]
-  }
   for (const c of customers) for (const k of nameKeys(c.name)) remember(k, c)
 
   const lines: ImportedLine[] = []
@@ -351,11 +381,14 @@ export async function importSpreadsheetLines(
     }
 
     const aliased = ACCOUNT_NAME_ALIASES[norm(accountLabel)]
-    const accountId =
-      accountByName.get(norm(accountLabel)) ??
-      (aliased ? (accountByName.get(norm(aliased)) ?? '') : '')
+    const candidates =
+      accountsByName.get(norm(accountLabel)) ??
+      (aliased ? accountsByName.get(norm(aliased)) : undefined) ??
+      []
+    const accountId = pickAccount(candidates, looksLikeAPersonName(particulars))
     if (accountLabel && !accountId) {
-      unmatchedAccounts.add(accountLabel)
+      if (candidates.length > 1) ambiguousAccounts.add(accountLabel)
+      else unmatchedAccounts.add(accountLabel)
     }
 
     let division = ''
@@ -430,6 +463,7 @@ export async function importSpreadsheetLines(
     skippedEmptyRows,
     skippedSummaryRows,
     unmatchedAccounts: [...unmatchedAccounts],
+    ambiguousAccounts: [...ambiguousAccounts],
     unmatchedDivisions: [...unmatchedDivisions],
     matchedCustomers: lines.filter((l) => l.collectFromId).length,
   }

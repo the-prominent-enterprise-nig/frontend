@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
+import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
 import Link from 'next/link'
 import {
   TrendingUp,
@@ -10,15 +11,11 @@ import {
   BarChart2,
   Activity,
   ChevronRight,
-  Building2,
   CreditCard,
   Wallet,
   Clock,
-  Scale,
   BookOpen,
   ShieldAlert,
-  CalendarDays,
-  Repeat,
   LayoutGrid,
   PieChart,
 } from 'lucide-react'
@@ -310,7 +307,7 @@ export default function AccountingPage() {
       Reports.balanceSheet(), // 2
       Reports.aging('ar'), // 3
       Reports.aging('ap'), // 4
-      ARInvoices.list(), // 5
+      ARInvoices.list({ view: 'summary' }), // 5
       APBills.list(), // 6
       BankAccounts.list(), // 7
       FixedAssetsV2.list(), // 8
@@ -465,25 +462,13 @@ export default function AccountingPage() {
     setSpinning(false)
   }, [])
 
-  useEffect(() => {
-    load()
-    // Scenario 29 — this dashboard previously only ever fetched once on
-    // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
-    // CRM's dashboard fix and POS's own overview page (refetchInterval:
-    // 30_000 + refetchOnWindowFocus: true), the working reference pattern
-    // already established in this codebase.
-    const interval = setInterval(load, 30_000)
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') load()
-    }
-    window.addEventListener('focus', load)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('focus', load)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [load])
+  // Scenario 29 — this dashboard previously only ever fetched once on
+  // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
+  // CRM's dashboard fix and POS's own overview page (refetchInterval:
+  // 30_000 + refetchOnWindowFocus: true), the working reference pattern
+  // already established in this codebase. `load` fans out 11 API calls, so
+  // the poll pauses in hidden tabs and never overlaps itself (see the hook).
+  useVisiblePolling(load, 30_000)
 
   const loading = !s.loaded
 
@@ -553,20 +538,7 @@ export default function AccountingPage() {
                     icon: BarChart2,
                   },
                   { label: 'Bank Recon', href: '/accounting/bank-reconciliation', icon: Wallet },
-                  { label: 'Fixed Assets', href: '/accounting/fixed-assets', icon: Building2 },
-                  { label: 'Budgets', href: '/accounting/budgets', icon: Scale },
-                  {
-                    label: 'Fiscal Periods',
-                    href: '/accounting/fiscal-periods',
-                    icon: CalendarDays,
-                  },
-                  { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
                   { label: 'Reports', href: '/accounting/reports', icon: Clock },
-                  {
-                    label: 'Cash Flow Forecast',
-                    href: '/accounting/cash-forecast',
-                    icon: Activity,
-                  },
                 ] as const
               ).map(({ label, href, icon: Icon }, i) => (
                 <Link

@@ -3,13 +3,25 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { CustomerPurchase, CustomerPurchaseSchema } from '@/src/schema/inventory/returns'
 
-/** What this customer has actually bought, so the return form can offer their
- *  own units instead of the whole catalogue. */
+/** Either the named account, or the paper a walk-in brought back. */
+export type CustomerPurchaseLookup = { customerId: string } | { invoiceNumber: string }
+
+/**
+ * What was actually sold, so the return form can offer real units instead of
+ * the whole catalogue.
+ *
+ * Two ways in, because the counter has two kinds of customer. A named account
+ * is looked up by id and offers their whole history. A walk-in has no account
+ * at all — `CustomerReturn.customerId` is nullable precisely for them — so
+ * they are found by the document number on what they are holding.
+ */
 export async function getCustomerPurchases(
-  customerId: string
+  lookup: CustomerPurchaseLookup
 ): Promise<ApiResponse<CustomerPurchase[]>> {
   const result = await api.get<CustomerPurchase[]>('/inventory/stock/customer-purchases', {
-    customerId,
+    ...('customerId' in lookup
+      ? { customerId: lookup.customerId }
+      : { invoiceNumber: lookup.invoiceNumber }),
   })
 
   if (!result.success) {

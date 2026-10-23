@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
+import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, Trash2, Paperclip } from 'lucide-react'
 import {
@@ -14,6 +15,12 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import { uploadRfsForm } from '../_actions/upload-rfs-form'
 import { showToast } from '@/src/components/ui/toast'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { UdsSerialSearchCombobox } from './UdsSerialSearchCombobox'
+import {
+  NoSupplierOnFileNote,
+  ProviderCoverageWarning,
+  useProviderOptions,
+} from './ProviderCoverageWarning'
 
 type WarehouseOption = {
   id: string
@@ -28,11 +35,6 @@ type WarehouseOption = {
 function branchLabel(wh: WarehouseOption): string {
   return wh.branch?.name ?? wh.name
 }
-type SerialOption = {
-  id: string
-  serialNumber: string
-  item?: { sku: string; name: string } | null
-}
 type SupplierOption = { id: string; code: string; name: string }
 
 type Props = {
@@ -41,7 +43,6 @@ type Props = {
   onSubmit: (data: CreateUdsFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
   warehouseOptions: WarehouseOption[]
-  serialOptions: SerialOption[]
   supplierOptions: SupplierOption[]
   // A Branch Manager only ever issues a UDS against their own branch — the
   // list is scoped (and locked outright when it resolves to one warehouse)
@@ -51,10 +52,14 @@ type Props = {
   currentUserBranchId?: string | null
 }
 
+/** What the fields hold while being typed — an untouched picker is `''`, which
+ *  the schema narrows to `undefined` on submit so it is simply not sent. */
+type CreateUdsFormInput = z.input<typeof CreateUdsFormSchema>
+
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-const defaultValues: CreateUdsFormValues = {
+const defaultValues: CreateUdsFormInput = {
   warehouseId: '',
   reason: 'repair',
   expectedReturnDate: '',
@@ -70,7 +75,6 @@ export default function CreateUdsModal({
   onSubmit,
   isSubmitting,
   warehouseOptions,
-  serialOptions,
   supplierOptions,
   currentUserBranchId,
 }: Props) {
@@ -90,13 +94,19 @@ export default function CreateUdsModal({
     watch,
     setValue,
     formState: { errors },
-  } = useForm<CreateUdsFormValues>({
+  } = useForm<CreateUdsFormInput, unknown, CreateUdsFormValues>({
     resolver: zodResolver(CreateUdsFormSchema),
     defaultValues,
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
   const reason = watch('reason')
+  const providerId = watch('repairProviderId')
+  const lineSerialIds = (watch('lines') ?? []).map((l) => l.serialNumberId)
+  const { options: providerOptions, noneOnFile } = useProviderOptions(
+    supplierOptions,
+    lineSerialIds
+  )
 
   const [isUploading, setIsUploading] = useState(false)
   const [rfsFormName, setRfsFormName] = useState<string | null>(null)
@@ -154,8 +164,10 @@ export default function CreateUdsModal({
     <div className="absolute inset-0 z-50 flex flex-col bg-white">
       <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Issue Unit Document Sheet</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">
+          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
+            Issue Unit Document Sheet
+          </h2>
+          <p className="mt-0.5 text-[13px] text-[#5b5b6b]">
             Track units leaving the branch for repair, pull-out, or maintenance.
           </p>
         </div>
@@ -203,28 +215,22 @@ export default function CreateUdsModal({
               <Controller
                 name="warehouseId"
                 control={control}
-                render={({ field }) =>
-                  lockedToWarehouseId ? (
-                    <select
-                      {...field}
-                      disabled
-                      className={`${fieldClass} bg-zinc-50 text-zinc-500`}
-                    >
-                      <option value={lockedToWarehouseId}>
-                        {branchLabel(ownBranchWarehouses[0])}
-                      </option>
-                    </select>
-                  ) : (
-                    <select {...field} className={fieldClass}>
-                      <option value="">— None —</option>
-                      {(currentUserBranchId ? ownBranchWarehouses : warehouseOptions).map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {branchLabel(w)}
-                        </option>
-                      ))}
-                    </select>
-                  )
-                }
+                render={({ field }) => (
+                  <SearchableSelect
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    disabled={Boolean(lockedToWarehouseId)}
+                    clearable={!lockedToWarehouseId}
+                    portal
+                    placeholder="Search location…"
+                    options={(lockedToWarehouseId
+                      ? ownBranchWarehouses
+                      : currentUserBranchId
+                        ? ownBranchWarehouses
+                        : warehouseOptions
+                    ).map((w) => ({ value: w.id, label: branchLabel(w) }))}
+                  />
+                )}
               />
               {lockedToWarehouseId && (
                 <p className="mt-1 text-xs text-zinc-400">
@@ -259,16 +265,18 @@ export default function CreateUdsModal({
                   name="repairProviderId"
                   control={control}
                   render={({ field }) => (
-                    <select {...field} className={fieldClass}>
-                      <option value="">— None —</option>
-                      {supplierOptions.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.code} — {s.name}
-                        </option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      clearable
+                      portal
+                      placeholder="Search repair provider…"
+                      options={providerOptions}
+                    />
                   )}
                 />
+                <NoSupplierOnFileNote show={noneOnFile} />
+                <ProviderCoverageWarning supplierId={providerId} serialIds={lineSerialIds} />
               </div>
 
               <div>
@@ -317,14 +325,10 @@ export default function CreateUdsModal({
                         name={`lines.${idx}.serialNumberId`}
                         control={control}
                         render={({ field: f }) => (
-                          <SearchableSelect
+                          <UdsSerialSearchCombobox
                             value={f.value}
                             onChange={f.onChange}
-                            placeholder="Search serial number…"
-                            options={serialOptions.map((s) => ({
-                              value: s.id,
-                              label: `${s.serialNumber}${s.item ? ` — ${s.item.sku} ${s.item.name}` : ''}`,
-                            }))}
+                            supplierId={providerId || undefined}
                           />
                         )}
                       />
@@ -396,9 +400,9 @@ export default function CreateUdsModal({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+            className="flex items-center gap-[7px] rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
           >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {isSubmitting ? 'Issuing…' : 'Issue UDS'}
           </button>
         </div>

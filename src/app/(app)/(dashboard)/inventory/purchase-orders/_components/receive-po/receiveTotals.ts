@@ -1,9 +1,15 @@
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import {
+  fallbackEwtRate,
+  NO_WITHHOLDING_CODE,
+  supplierEwtCode,
+  type EwtRateFor,
+} from '@/src/libs/tax/ewt'
 
-// Mirrors FLAT_VAT_RATE_PERCENT and the 1% withholding rate the server
-// applies (tax.constants.ts / StockService.receiveStock) — preview only.
+// Mirrors FLAT_VAT_RATE_PERCENT, which the server applies (tax.constants.ts /
+// StockService.receiveStock) — preview only. Withholding is the supplier's EWT
+// tax code at the rate the tax code master holds (see useEwtCodes()).
 const INPUT_VAT_RATE = 0.12
-const WITHHOLDING_RATE = 0.01
 
 const round2 = (n: number): number => Math.round(n * 100) / 100
 
@@ -28,6 +34,9 @@ export type ReceiptTotals = {
   lines: number
   chargesInputVat: boolean
   withholdsTax: boolean
+  /** The EWT code the delivery is withheld at, and its rate in percent. */
+  withholdingCode?: string
+  withholdingPercent?: number
 }
 
 export type TotalsLine = {
@@ -41,13 +50,15 @@ export type TotalsLine = {
  *
  * Both taxes are derived from the supplier's own profile rather than typed off
  * the SI — the server recomputes them the same way when it posts
- * (StockService.receiveStock / APBillsService.computeWithholding) and ignores
- * anything sent from here, so a figure derived any other way could only ever
- * disagree with what actually lands.
+ * (StockService.receiveStock) and ignores anything sent from here, so a figure
+ * derived any other way could only ever disagree with what actually lands. The
+ * withholding rate is the one `rateFor` reads off the tax code master for the
+ * supplier's EWT code.
  */
 export function receiptTotals(
   lines: TotalsLine[],
-  supplier: PurchaseOrderSummary['supplier']
+  supplier: PurchaseOrderSummary['supplier'],
+  rateFor: EwtRateFor = fallbackEwtRate
 ): ReceiptTotals {
   let invoice = 0
   let units = 0
@@ -63,8 +74,14 @@ export function receiptTotals(
   const chargesInputVat = supplier?.defaultInputVat !== 'none'
   const vat = chargesInputVat ? round2(invoice - invoice / (1 + INPUT_VAT_RATE)) : 0
   const stock = round2(invoice - vat)
-  const withholdsTax = supplier?.defaultWithholding === 'pct_1'
-  const withheld = withholdsTax ? round2(stock * WITHHOLDING_RATE) : 0
+  // A supplier that hasn't loaded yet says nothing either way — no
+  // withholding to preview, rather than the default one.
+  const knowsWithholding =
+    supplier?.defaultWithholding != null || !!supplier?.defaultWithholdingTaxCode
+  const withholdingCode = knowsWithholding ? supplierEwtCode(supplier) : NO_WITHHOLDING_CODE
+  const withholdingRate = rateFor(withholdingCode)
+  const withholdsTax = withholdingRate > 0
+  const withheld = withholdsTax ? round2(stock * withholdingRate) : 0
 
   return {
     invoice: round2(invoice),
@@ -76,6 +93,8 @@ export function receiptTotals(
     lines: lineCount,
     chargesInputVat,
     withholdsTax,
+    withholdingCode,
+    withholdingPercent: withholdingRate * 100,
   }
 }
 

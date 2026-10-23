@@ -8,6 +8,7 @@ import { collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../../_actions/get-branches'
 import { createCollectorSchema, type CreateCollectorInput } from '@/src/schema/crm/collector'
 import CollectorAreaPicker from '@/src/components/crm/CollectorAreaPicker'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 const initial: CreateCollectorInput = {
   stubNumber: '',
@@ -78,11 +79,11 @@ export default function NewCollectorForm() {
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
-            label="Stub number *"
+            label="Collector code *"
             error={errors.stubNumber}
             value={form.stubNumber}
             onChange={(v) => setField('stubNumber', v)}
-            placeholder="COL-0001"
+            placeholder="Antique_North"
           />
           <Field
             label="Name *"
@@ -95,37 +96,28 @@ export default function NewCollectorForm() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="branchId" className="block text-[13px] font-medium text-gray-700">
-              Branch
-            </label>
-            <select
-              id="branchId"
+            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+            <SearchableSelect
               value={form.branchId ?? ''}
-              onChange={(e) => setField('branchId', e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Unassigned</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setField('branchId', v)}
+              options={branches.map((b) => ({ value: b.id, label: b.name }))}
+              placeholder="Unassigned"
+              clearable
+              className="mt-1 w-full"
+            />
           </div>
 
           <div>
-            <label htmlFor="status" className="block text-[13px] font-medium text-gray-700">
-              Status
-            </label>
-            <select
-              id="status"
+            <label className="block text-[13px] font-medium text-gray-700">Status</label>
+            <SearchableSelect
               value={form.status ?? 'active'}
-              onChange={(e) => setField('status', e.target.value as CreateCollectorInput['status'])}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
+              onChange={(v) => setField('status', v as CreateCollectorInput['status'])}
+              options={[
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' },
+              ]}
+              className="mt-1 w-full"
+            />
           </div>
         </div>
 

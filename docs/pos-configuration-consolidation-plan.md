@@ -328,7 +328,7 @@ Per product decision: keep both `/pos/pin` (Sidebar/PosNav, no guard, every POS 
    import { getCashierPinStatus } from '../_actions/pos-actions'
    import { CashierPinManager } from '@/src/components/pos/CashierPinManager'
 
-   export const metadata = { title: 'Cashier PIN | Prominent Enterprise' }
+   export const metadata = { title: 'Cashier PIN | NIG Central' }
 
    export default async function CashierPinPage() {
      const statusRes = await getCashierPinStatus()

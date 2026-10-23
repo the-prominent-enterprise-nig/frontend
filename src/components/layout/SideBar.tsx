@@ -2,9 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { createPortal } from 'react-dom'
 import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
-import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
+import { hasExactPermission, hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import {
@@ -12,49 +15,41 @@ import {
   BarChart3,
   BellRing,
   BookOpen,
-  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
   ClipboardList,
+  ClipboardCheck,
   ClipboardX,
   Coins,
   Contact,
   CreditCard,
   FileBarChart,
-  FileCheck2,
+  Database,
   FilePlus,
-  PackageX,
-  ClipboardCheck,
   HandCoins,
   House,
   IdCard,
   Key,
   Landmark,
   Layers,
-  Library,
   Monitor,
   MoreHorizontal,
-  TrendingUp,
   Package,
   PackageCheck,
-  Percent,
   Receipt,
   ReceiptText,
   PhilippinePeso,
-  RefreshCcw,
   ScrollText,
   Settings,
   ShieldCheck,
-  ShoppingBag,
   ShoppingCart,
   Tag,
-  Tags,
-  Truck,
   Undo2,
   Users,
   UsersRound,
   UserPlus,
+  Banknote,
   Wallet,
   Warehouse,
   Network,
@@ -63,6 +58,14 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import {
+  BOOKS_HUB,
+  CASH_BANKING_HUB,
+  EXPENSES_HUB,
+  PAYABLES_HUB,
+  RECEIVABLES_HUB,
+  type Hub,
+} from '@/src/app/(app)/(dashboard)/accounting/_shared/hubs'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
@@ -87,14 +90,23 @@ type NavItem = {
    * the /pos/pin route itself caught it with a 403.
    */
   requiresModuleAccess?: string
+  /** Must hold this exact permission row — wildcards don't count. */
+  exactPermission?: string
   badge?: { text: string; variant: 'count' | 'new'; color?: string }
-  subItems?: Array<{ label: string; href: string; icon: LucideIcon }>
+  subItems?: Array<{
+    label: string
+    href: string
+    icon: LucideIcon
+    requiredPermission?: string | string[]
+  }>
   /** Renders as an expand/collapse header instead of a link. The items it
    *  controls are ordinary entries placed directly after it. */
   collapsible?: { open: boolean; onToggle: () => void }
   section?: string
   activeWhen?: string[]
   usePrefix?: boolean
+  /** Lit on any path equal to, or under, one of these — a hub whose tabs are separate routes. */
+  activePrefixes?: string[]
 }
 
 type NavGroup = {
@@ -126,6 +138,30 @@ const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
   'users-round': UsersRound,
 }
 
+/**
+ * One sidebar item for an Accounting hub. Visible when the user can open any of
+ * its tabs, lit on every tab's route and everything under it, and linked to the
+ * hub's entry route, which redirects to the first tab they can open.
+ */
+function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
+  return {
+    label,
+    href: hub.entryHref,
+    icon,
+    // A tab with no permission requirement (Special Accounts) keeps the item
+    // visible to anyone with accounting access, as that tab's own sidebar
+    // item was — requiresModuleAccess, so it still disappears for someone
+    // with no accounting access at all.
+    requiredPermission: hub.tabs.some((tab) => tab.permissions.length === 0)
+      ? undefined
+      : hub.tabs.flatMap((tab) => tab.permissions),
+    requiresModuleAccess: hub.tabs.some((tab) => tab.permissions.length === 0)
+      ? 'accounting'
+      : undefined,
+    activePrefixes: hub.tabs.map((tab) => tab.href),
+  }
+}
+
 const navItemsBySegment: Record<string, NavConfig> = {
   'Business Owner': {
     main: [],
@@ -134,177 +170,76 @@ const navItemsBySegment: Record<string, NavConfig> = {
   inventory: {
     main: [
       {
-        label: 'Stock',
-        href: '/inventory/stock',
-        icon: Package,
-        requiredPermission: INVENTORY_PERMISSIONS.STOCKS_READ,
-      },
-      {
-        label: 'Catalog',
+        label: 'Item Master',
         href: '/inventory/catalog',
         icon: Tag,
         requiredPermission: INVENTORY_PERMISSIONS.ITEMS_READ,
       },
       {
-        label: 'Price Lists',
-        href: '/inventory/price-lists',
-        icon: Tags,
-        requiredPermission: INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
+        label: 'Stock Ledger',
+        href: '/inventory/stock',
+        icon: BookOpen,
+        requiredPermission: [INVENTORY_PERMISSIONS.STOCKS_READ, INVENTORY_PERMISSIONS.RECEIVE_READ],
       },
       {
-        label: 'Purchase Orders',
-        href: '/inventory/purchase-orders',
-        icon: ShoppingCart,
-        requiredPermission: [PROCUREMENT_PERMISSIONS.PO_READ, PROCUREMENT_PERMISSIONS.PR_READ],
-        activeWhen: ['/inventory/purchase-orders'],
-      },
-      {
-        label: 'Stock Transfers',
-        href: '/inventory/operations',
+        label: 'Stock Transaction',
+        href: '/inventory/stock-transaction',
         icon: ArrowLeftRight,
         requiredPermission: [
-          INVENTORY_PERMISSIONS.TRANSFERS_READ,
           INVENTORY_PERMISSIONS.RECEIVE_READ,
+          INVENTORY_PERMISSIONS.TRANSFERS_READ,
           INVENTORY_PERMISSIONS.RETURNS_READ,
-          INVENTORY_PERMISSIONS.QUALITY_HOLD_READ,
-          INVENTORY_PERMISSIONS.BACKORDERS_READ,
-          INVENTORY_PERMISSIONS.STOCK_ADJUST,
-          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_CONFIRM,
-          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_INVESTIGATE,
-          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_APPROVE,
+          INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ,
+          INVENTORY_PERMISSIONS.UDS_READ,
+          INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_READ,
+          INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE,
+          INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE,
+          PROCUREMENT_PERMISSIONS.PO_READ,
+          PROCUREMENT_PERMISSIONS.PR_READ,
         ],
       },
       {
-        label: 'Debit Memos',
-        href: '/inventory/debit-memos',
-        icon: PackageX,
-        requiredPermission: INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ,
+        label: 'Master Data',
+        href: '/inventory/master-data',
+        icon: Layers,
+        requiredPermission: [
+          INVENTORY_PERMISSIONS.WAREHOUSES_READ,
+          INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
+          INVENTORY_PERMISSIONS.COSTING_READ,
+          INVENTORY_PERMISSIONS.COSTING_CONFIGURE,
+          INVENTORY_PERMISSIONS.WILDCARD,
+          INVENTORY_PERMISSIONS.TRANSFERS_READ,
+          PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
+        ],
       },
       {
-        label: 'Suppliers',
-        href: '/inventory/suppliers',
-        icon: Truck,
-        requiredPermission: PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
-      },
-      // Counting is hidden from the nav for now. The route and its page are
-      // untouched — /inventory/counting still loads, it is just not linked.
-      // The entry carries no `section` marker, so commenting it out leaves
-      // every group heading where it was.
-      // {
-      //   label: 'Counting',
-      //   href: '/inventory/counting',
-      //   icon: RefreshCcw,
-      //   requiredPermission: INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
-      // },
-      // Finance is hidden from the nav for now, same as Counting above. The
-      // route and its page are untouched — /inventory/finance still loads, it
-      // is just not linked.
-      // {
-      //   label: 'Finance',
-      //   href: '/inventory/finance',
-      //   icon: Coins,
-      //   requiredPermission: INVENTORY_PERMISSIONS.COSTING_READ,
-      // },
-      {
-        label: 'Warehouses',
-        href: '/inventory/warehouses',
-        icon: Warehouse,
-        requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSES_READ,
-      },
-      {
-        label: 'Unit Documents',
-        href: '/inventory/uds',
-        icon: ClipboardCheck,
-        requiredPermission: INVENTORY_PERMISSIONS.UDS_READ,
-      },
-      {
-        label: 'Reports',
+        label: 'Stock Report',
         href: '/inventory/reports',
         icon: FileBarChart,
         requiredPermission: INVENTORY_PERMISSIONS.REPORTS_VALUATION,
       },
-      {
-        label: 'Settings',
-        href: '/inventory/settings',
-        icon: Settings,
-        requiresModuleAccess: 'inventory',
-      },
+      // Counting and Finance are hidden from the nav. Their routes still load:
+      // /inventory/counting (Stock Adjustments is linked from Stock Transaction
+      // above), /inventory/finance.
     ],
     bottom: [],
   },
   accounting: {
-    // Reordered per developer request (2026-09-01): most-used screens first,
-    // down to screens touched rarely (setup/configuration) last. This is an
-    // inferred usage ranking (no telemetry backs it) — adjust if it doesn't
-    // match actual usage. Same items, same permissions — order only.
+    // Grouped by workflow: books → receivables → payables → expenses/special
+    // accounts → memos → banking → reporting. Books, receivables, payables,
+    // expenses and banking are hubs (accounting/_shared/hubs.ts).
     main: [
-      // ── Daily / most used ──
-      {
-        label: 'Journal Entries',
-        href: '/accounting/journal-entries',
-        icon: ReceiptText,
-        requiredPermission: ACCOUNTING_PERMISSIONS.JOURNAL_ENTRY_READ,
-      },
-      {
-        label: 'AR Invoices',
-        href: '/accounting/ar-invoices',
-        icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
-      },
-      {
-        label: 'Customers',
-        href: '/accounting/customers',
-        icon: Users,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
-      },
-      {
-        label: 'Expenses',
-        href: '/accounting/expenses',
-        icon: Coins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
-      },
-      {
-        section: 'Accounting',
-        label: 'Special Accounts',
-        href: '/accounting/special-accounts',
-        icon: Wallet,
-        requiresModuleAccess: 'accounting',
-      },
-      {
-        label: 'Unapplied Collections',
-        href: '/accounting/unapplied-collections',
-        icon: Wallet,
-        requiredPermission: ACCOUNTING_PERMISSIONS.UNAPPLIED_COLLECTIONS_READ,
-      },
-      {
-        label: 'AP Invoices',
-        href: '/accounting/ap-bills',
-        icon: ReceiptText,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
-      },
-      {
-        // Scenario 46 Part F — the disbursement register existed since
-        // Scenario 43 but had no nav entry, reachable only via a secondary
-        // button on AP Invoices. It is the record of everything that left the
-        // bank, so it sits at the same level rather than nested under AP.
-        label: 'Payments',
-        href: '/accounting/ap-bills/payments',
-        icon: PhilippinePeso,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
-      },
-      {
-        label: 'General Ledger',
-        href: '/accounting/general-ledger',
-        icon: Library,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      {
-        label: 'Receiving Reports',
-        href: '/accounting/receiving-reports',
-        icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      // ── Regular / weekly ──
+      // Journal Entries, General Ledger, Chart of Accounts and Account Mapping are
+      // the books themselves; AR Invoices and Customers are the receivables side.
+      hubNavItem(BOOKS_HUB, 'Books', BookOpen),
+      hubNavItem(RECEIVABLES_HUB, 'Receivables', Receipt),
+      // AP Invoices, the Payments register (Scenario 46 Part F — everything that
+      // left the bank) and Receiving Reports are one payables workflow, so they
+      // are tabs of one hub rather than three items.
+      hubNavItem(PAYABLES_HUB, 'Payables', PhilippinePeso),
+      // Expenses (with its Recurring list), Special Accounts and Employee Cash Loans.
+      // Employee Cash Loans issue against a Special Account ledger (Scenario 52).
+      hubNavItem(EXPENSES_HUB, 'Expenses', Coins),
       // Two entries, not four. Credit and debit stay separate — that is the
       // split accounting actually thinks in — while customer and supplier
       // debit memos share one table, told apart by a Party column.
@@ -318,106 +253,33 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Debit Memos',
         href: '/accounting/debit-memos',
         icon: FilePlus,
+        usePrefix: true,
         requiredPermission: [
           ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
           ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
+          ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ,
         ],
       },
-      {
-        label: 'Withholding Tax (CWT)',
-        href: '/accounting/withholding-tax',
-        icon: FileCheck2,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
-      },
-      {
-        label: 'Employee Appliance Loans',
-        href: '/accounting/employee-appliance-loans',
-        icon: HandCoins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_APPLIANCE_LOAN_READ,
-      },
-      {
-        label: 'Interest Release',
-        href: '/accounting/installment-interest-release',
-        icon: Percent,
-        requiredPermission: ACCOUNTING_PERMISSIONS.INSTALLMENT_INTEREST_RELEASE,
-      },
-      // ── Periodic / monthly ──
-      {
-        label: 'Bank Reconciliation',
-        href: '/accounting/bank-reconciliation',
-        icon: HandCoins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
-      },
-      {
-        label: 'Recurring Entries',
-        href: '/accounting/recurring-entries',
-        icon: RefreshCcw,
-        requiredPermission: ACCOUNTING_PERMISSIONS.RECURRING_ENTRIES_READ,
-      },
+      // Scenario 62 — Bank and Cash Accounts, Undeposited Funds, Inter-Account
+      // Transfer and Bank Reconciliation are one workflow, so they are tabs of one
+      // hub rather than four items. See hubNavItem and accounting/_shared/hubs.ts.
+      hubNavItem(CASH_BANKING_HUB, 'Cash & Banking', Landmark),
       {
         label: 'Reports',
         href: '/accounting/reports',
         icon: FileBarChart,
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
+      // Tax Codes, Tax Reports and Tax Closing are hidden from the nav (not on main yet).
+      // Their routes still load: /accounting/tax-codes, /accounting/tax-reports,
+      // /accounting/tax-closing.
+      // Scenario 62 — raw data from every module, read-only. Business Owner
+      // only; exact permission so the Accountant's accounting:* can't reach.
       {
-        label: 'Fiscal Periods',
-        href: '/accounting/fiscal-periods',
-        icon: CalendarDays,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
-      },
-      // ── Occasional / planning ──
-      {
-        label: 'Cash Forecast',
-        href: '/accounting/cash-forecast',
-        icon: TrendingUp,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_FORECAST_READ,
-      },
-      {
-        label: 'Budgets',
-        href: '/accounting/budgets',
-        icon: BarChart3,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BUDGET_READ,
-      },
-      {
-        label: 'Fixed Assets',
-        href: '/accounting/fixed-assets',
-        icon: ShoppingBag,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FIXED_ASSET_READ,
-      },
-      // ── Setup / configuration (touched rarely) ──
-      {
-        label: 'Chart of Accounts',
-        href: '/accounting/chart-of-accounts',
-        icon: BookOpen,
-        requiredPermission: ACCOUNTING_PERMISSIONS.ACCOUNT_READ,
-      },
-      {
-        label: 'Account Mapping',
-        href: '/accounting/account-mapping',
-        icon: Key,
-        requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
-      },
-      {
-        label: 'AP Payment Methods',
-        href: '/accounting/ap-payment-methods',
-        icon: CreditCard,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_PAYMENT_METHODS_READ,
-      },
-      {
-        label: 'Bank Accounts',
-        href: '/accounting/bank-accounts',
-        icon: Wallet,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
-      },
-      // Its own entry, not a button on Bank Reconciliation: moving money
-      // between two fund accounts is a disbursement, not part of agreeing a
-      // statement to the books.
-      {
-        label: 'Fund Transfer',
-        href: '/accounting/fund-transfers',
-        icon: Landmark,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
+        label: 'Data Query Center',
+        href: '/accounting/query-center',
+        icon: Database,
+        exactPermission: ACCOUNTING_PERMISSIONS.QUERY_CENTER_READ,
       },
     ],
     bottom: [],
@@ -432,6 +294,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos', '/pos/checkout', '/pos/transactions'],
       },
       {
+        label: 'Product Catalog',
+        href: '/pos/catalog',
+        icon: BookOpen,
+        requiredPermission: POS_PERMISSIONS.TRANSACTIONS_READ,
+        activeWhen: ['/pos/catalog'],
+      },
+      {
         label: 'Management',
         href: '/pos/sessions',
         icon: Monitor,
@@ -442,10 +311,34 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
       },
       {
+        // POS's own customers screen, over the same Customer records CRM
+        // lists — same table, same CustomerService, different permission
+        // (2026-09-19 review request). It exists so a cashier can create
+        // and correct customer profiles for a sale or a credit application
+        // while holding no crm:* permission at all.
+        label: 'Customers',
+        href: '/pos/customers',
+        icon: Users,
+        requiredPermission: 'pos:customers:read',
+        activeWhen: ['/pos/customers'],
+      },
+      {
         label: 'Collections',
         href: '/pos/collections',
         icon: Coins,
         requiredPermission: 'pos:collections:manage',
+      },
+      {
+        // Scenario 57 — money received with no customer/invoice behind it
+        // (a walk-in payment, a refund). Its own sidebar item rather than
+        // buttons on the Collections page (developer decision, 2026-09-21),
+        // same permission as Collections since it's the same "money
+        // received at the counter" capability.
+        label: 'New Receipts',
+        href: '/pos/collections/acknowledgement',
+        icon: ReceiptText,
+        requiredPermission: 'pos:collections:manage',
+        usePrefix: true,
       },
       {
         // Scenario 47 — sidebar gate matches the page's own guard
@@ -473,10 +366,23 @@ const navItemsBySegment: Record<string, NavConfig> = {
         usePrefix: true,
       },
       {
-        label: 'Cash-in-Transit',
-        href: '/pos/cash-in-transit',
-        icon: Wallet,
-        requiredPermission: 'pos:cash-in-transit:read',
+        // Scenario 53 — the client's own end-of-day document. Its own
+        // permission, so the cashier who closes the shift can print and sign
+        // it without the Branch-Manager-tier sales reports coming with it.
+        // Clipboard, not Wallet — it is a sheet to fill and sign, and the
+        // wallet belongs to the cash balance below it.
+        label: 'Daily Collection',
+        href: '/pos/daily-collection',
+        icon: ClipboardList,
+        requiredPermission: POS_PERMISSIONS.DAILY_COLLECTION_READ,
+      },
+      {
+        // Scenario 53 — POS speaks in Undeposited Funds now; Accounting keeps
+        // the Cash-in-Transit name for the GL account it reconciles against.
+        label: 'Undeposited Funds',
+        href: '/pos/undeposited-funds',
+        icon: Banknote,
+        requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,
       },
       {
         label: 'Void Requests',
@@ -495,6 +401,15 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/cancellation-requests',
         icon: ClipboardX,
         requiredPermission: 'pos:transaction:override',
+      },
+      {
+        // Scenario 71 Part 4 — the end-of-day look at every price override,
+        // typed term and waiver. Same gate as the other manager approvals; the
+        // pending-entry badge is attached in SideBar below.
+        label: 'Override Review',
+        href: '/pos/override-review',
+        icon: ClipboardCheck,
+        requiredPermission: POS_PERMISSIONS.TRANSACTIONS_OVERRIDE,
       },
       {
         label: 'Release Approvals',
@@ -624,7 +539,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Settings',
         href: '/crm/settings',
         icon: Settings,
-        requiresModuleAccess: 'crm',
+        // Matches the permission /crm/settings itself redirects on — without
+        // this the item showed to anyone who could reach the crm module at
+        // all (e.g. Cashier, added 2026-09-18 for Customers) and 403'd on
+        // click.
+        requiredPermission: CRM_PERMISSIONS.PIPELINE_MANAGE,
       },
     ],
     bottom: [],
@@ -646,9 +565,11 @@ function NavLink({
 }) {
   const isActive = item.activeWhen
     ? item.activeWhen.includes(pathname)
-    : item.usePrefix
-      ? pathname === item.href || pathname.startsWith(item.href + '/')
-      : pathname === item.href
+    : item.activePrefixes
+      ? item.activePrefixes.some((p) => pathname === p || pathname.startsWith(p + '/'))
+      : item.usePrefix
+        ? pathname === item.href || pathname.startsWith(item.href + '/')
+        : pathname === item.href
   return (
     <div className="relative group">
       <Link
@@ -709,6 +630,42 @@ function NavLink({
   )
 }
 
+function FlyoutPanel({
+  item,
+  pathname,
+  onPick,
+}: {
+  item: NavItem
+  pathname: string
+  onPick: () => void
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+      <p className="border-b border-zinc-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        {item.label}
+      </p>
+      {item.subItems?.map((sub) => {
+        const subActive = pathname === sub.href
+        return (
+          <Link
+            key={sub.href}
+            href={sub.href}
+            onClick={onPick}
+            className={`flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors ${
+              subActive
+                ? 'bg-prominent-orange-50 text-prominent-orange-700'
+                : 'text-zinc-700 hover:bg-zinc-50'
+            }`}
+          >
+            <sub.icon className="h-4 w-4 shrink-0" />
+            {sub.label}
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
 function AdminSettingsDropdownItem({
   item,
   pathname,
@@ -723,14 +680,51 @@ function AdminSettingsDropdownItem({
   isMobile?: boolean
 }) {
   const isActive = item.subItems?.some((s) => pathname === s.href) ?? pathname === item.href
+  const triggerRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null)
+
+  // Click outside or Escape closes an open desktop panel.
+  useEffect(() => {
+    if (!anchor) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return
+      setAnchor(null)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAnchor(null)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [anchor])
+
+  // The sidebar's nav list scrolls, which clips anything absolutely positioned
+  // inside it. Desktop panels therefore render in a portal at the trigger's
+  // screen position; mobile keeps the in-place flyout.
+  const togglePanel = () => {
+    if (anchor) return setAnchor(null)
+    const rect = triggerRef.current?.getBoundingClientRect()
+    if (rect) setAnchor({ top: rect.top, left: rect.right })
+  }
+  const pickSubItem = () => {
+    setAnchor(null)
+    onClick?.()
+  }
 
   return (
     <div className="relative group/dropdown">
       {/* Trigger — not a link, just a visual row */}
       <div
-        className={`flex cursor-default items-center gap-2.5 rounded-lg px-2 py-1.5 transition-all duration-150 ${
+        ref={triggerRef}
+        onClick={isMobile ? undefined : togglePanel}
+        className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 transition-all duration-150 ${
           collapsed ? 'justify-center' : ''
-        } ${isActive ? 'bg-prominent-orange-200/20' : isMobile ? 'hover:bg-gray-100' : 'hover:bg-gray-100/20'}`}
+        } ${isActive ? 'bg-prominent-orange-200/20' : isMobile ? 'hover:bg-gray-100' : ''}`}
       >
         <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
           <item.icon
@@ -738,10 +732,7 @@ function AdminSettingsDropdownItem({
           />
         </span>
         {!collapsed && !isMobile && (
-          <>
-            <span className="flex-1 text-[13px] font-medium text-white">{item.label}</span>
-            <ChevronUp className="h-3 w-3 text-white/50" />
-          </>
+          <span className="flex-1 text-[13px] font-medium text-white">{item.label}</span>
         )}
         {!collapsed && isMobile && (
           <>
@@ -755,36 +746,24 @@ function AdminSettingsDropdownItem({
         )}
       </div>
 
-      {/* Flyout — upward on desktop, right when collapsed */}
-      <div
-        className={`pointer-events-none absolute z-50 opacity-0 transition-all duration-150 group-hover/dropdown:pointer-events-auto group-hover/dropdown:opacity-100 ${
-          collapsed ? 'left-full top-0 min-w-45 pl-3' : 'bottom-full left-0 w-full pb-2'
-        }`}
-      >
-        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
-          <p className="border-b border-zinc-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-            {item.label}
-          </p>
-          {item.subItems?.map((sub) => {
-            const subActive = pathname === sub.href
-            return (
-              <Link
-                key={sub.href}
-                href={sub.href}
-                onClick={onClick}
-                className={`flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors ${
-                  subActive
-                    ? 'bg-prominent-orange-50 text-prominent-orange-700'
-                    : 'text-zinc-700 hover:bg-zinc-50'
-                }`}
-              >
-                <sub.icon className="h-4 w-4 shrink-0" />
-                {sub.label}
-              </Link>
-            )
-          })}
+      {isMobile && (
+        <div className="pointer-events-none absolute z-50 bottom-full left-0 w-full pb-2 opacity-0 transition-all duration-150 group-hover/dropdown:pointer-events-auto group-hover/dropdown:opacity-100">
+          <FlyoutPanel item={item} pathname={pathname} onPick={pickSubItem} />
         </div>
-      </div>
+      )}
+
+      {!isMobile &&
+        anchor &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{ top: anchor.top, left: anchor.left }}
+            className="fixed z-[60] min-w-48 pl-3"
+          >
+            <FlyoutPanel item={item} pathname={pathname} onPick={pickSubItem} />
+          </div>,
+          document.body
+        )}
 
       {/* Collapsed tooltip */}
       {collapsed && (
@@ -957,6 +936,17 @@ const WORKSPACE_ITEMS: NavItem[] = [
     requiredPermission: [...ADMIN_TIER, 'admin:users:read'],
   },
   {
+    // Business-Owner-level master list — also the source of the
+    // employee-cash-loan borrower picker and the "Create Customer"
+    // quick-link on its own detail page (accounting/employees).
+    section: 'My Workspace',
+    label: 'Employees',
+    href: '/accounting/employees',
+    icon: IdCard,
+    requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_READ,
+    usePrefix: true,
+  },
+  {
     section: 'My Workspace',
     label: 'Roles & Access',
     href: '/settings/roles',
@@ -1104,6 +1094,29 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     })
   }, [isOwner, pathname])
 
+  // The Override Review badge. It follows the branch switcher — the review page
+  // is filtered by it, so a count across every branch beside a page showing one
+  // branch's entries disagreed — and shares its query key with the page, so
+  // approving or rejecting there updates it at once. Only fetched for someone who
+  // can open the review, and only inside POS where the item shows.
+  const canReviewOverrides = hasPermission(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
+  const posBranchId = usePosBranchContext((s) => s.branchId)
+  const { data: overridePending } = useQuery({
+    queryKey: ['pos-override-pending-count', posBranchId],
+    // A plain request through the API proxy, not a server action: server actions
+    // run one at a time and a newer one cancels an older, so a count refreshing in
+    // the background could knock out a save the user had just made on the page.
+    queryFn: async () => {
+      const qs = posBranchId ? `?branchId=${encodeURIComponent(posBranchId)}` : ''
+      const res = await fetch(`/api/pos/override-review/pending-count${qs}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error('Could not load the pending override count')
+      return (await res.json()) as { count: number }
+    },
+    enabled: canReviewOverrides && segment === 'pos',
+    staleTime: 15_000,
+  })
+  const overridePendingCount = overridePending?.count ?? 0
+
   const workspaceItems: NavItem[] = WORKSPACE_ITEMS.map((item) =>
     item.href === '/settings/pending-invites' && pendingInviteCount > 0
       ? {
@@ -1129,15 +1142,22 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     session?.primaryRole === 'Branch Manager' ? branchManagerWorkspaceItems(session?.branchId) : []
   const allWorkspaceItems = [...workspaceItems, ...bmWorkspaceItems]
 
+  const hasAnyPermission = (required?: string | string[]) => {
+    if (!required) return true
+    const list = Array.isArray(required) ? required : [required]
+    return list.some((p) => hasPermission(session, p))
+  }
+
+  // A parent with sub-items shows only while at least one child is visible.
   const filterItem = (item: NavItem) => {
     if (item.requiresModuleAccess && !hasModuleAccess(session, item.requiresModuleAccess)) {
       return false
     }
-    if (!item.requiredPermission) return true
-    const required = Array.isArray(item.requiredPermission)
-      ? item.requiredPermission
-      : [item.requiredPermission]
-    return required.some((p) => hasPermission(session, p))
+    if (item.exactPermission) return hasExactPermission(session, item.exactPermission)
+    return (
+      hasAnyPermission(item.requiredPermission) &&
+      (!item.subItems || item.subItems.some((sub) => hasAnyPermission(sub.requiredPermission)))
+    )
   }
 
   // One path for every role now: the settings block is whatever
@@ -1185,6 +1205,22 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     mainItems = [...workspaceGroup, ...labeledModuleItems]
   }
 
+  const withBadge = (item: NavItem): NavItem =>
+    item.href === '/pos/override-review' && overridePendingCount > 0
+      ? {
+          ...item,
+          badge: { text: String(overridePendingCount), variant: 'count', color: 'bg-orange-500' },
+        }
+      : item
+
+  const withVisibleSubItems = (item: NavItem): NavItem =>
+    item.subItems
+      ? {
+          ...item,
+          subItems: item.subItems.filter((sub) => hasAnyPermission(sub.requiredPermission)),
+        }
+      : item
+
   // Module nav items — filtered by the user's moduleAccess
   const moduleNavItems: NavItem[] = MODULES.filter((m) => hasModuleAccess(session, m.key)).map(
     (m, idx) => ({
@@ -1198,7 +1234,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
 
   // Always prepend Dashboard item so it's visible on every route
   // Deduplicate by href — moduleNavItems and config.main can both contain the same module root href
-  const rawMain = [DASHBOARD_ITEM, ...moduleNavItems, ...mainItems.filter(filterItem)]
+  const rawMain = [
+    DASHBOARD_ITEM,
+    ...moduleNavItems,
+    ...mainItems.filter(filterItem).map(withVisibleSubItems).map(withBadge),
+  ]
   const seen = new Set<string>()
   const main = rawMain.filter((item) => {
     if (seen.has(item.href)) return false

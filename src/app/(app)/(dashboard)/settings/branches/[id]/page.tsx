@@ -10,7 +10,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const { id } = await params
   const result = await getBranch(id)
   return {
-    title: result.data ? `${result.data.name} | Branches` : 'Branch | Prominent Enterprise',
+    title: result.data ? `${result.data.name} | Branches` : 'Branch | NIG Central',
   }
 }
 

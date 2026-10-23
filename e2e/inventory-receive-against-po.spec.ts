@@ -57,10 +57,12 @@ async function createReceivablePo(page: Page): Promise<Fixture> {
   expect(created.ok(), `PO create failed: ${await created.text()}`).toBe(true)
   const po = (await created.json()) as { id: string; code: string }
 
-  // `approved` is the earliest receivable status, and reaching it needs no
-  // supplier-facing side effects (unlike `sent`).
+  // Only a `sent` PO offers Receive in the list now (an approved one shows
+  // Send), so the fixture goes approve → send.
   const approved = await page.request.patch(`/api/procurement/purchase-orders/${po.id}/approve`)
   expect(approved.ok(), `PO approve failed: ${await approved.text()}`).toBe(true)
+  const sent = await page.request.patch(`/api/procurement/purchase-orders/${po.id}/send`)
+  expect(sent.ok(), `PO send failed: ${await sent.text()}`).toBe(true)
 
   return { poId: po.id, poCode: po.code }
 }
@@ -69,11 +71,19 @@ async function createReceivablePo(page: Page): Promise<Fixture> {
  * action, the same tradeoff the other procurement specs make. Never throws:
  * cleanup runs in afterEach regardless of where a test body failed. */
 async function cancelPo(page: Page, poId: string): Promise<void> {
-  await page.request
+  const cancelled = await page.request
     .patch(`/api/procurement/purchase-orders/${poId}/cancel`, {
       data: { reason: 'E2E fixture cleanup' },
     })
-    .catch(() => {})
+    .catch(() => null)
+  // A sent PO can't be cancelled — close() is its only way out.
+  if (!cancelled?.ok()) {
+    await page.request
+      .patch(`/api/procurement/purchase-orders/${poId}/close`, {
+        data: { reason: 'E2E fixture cleanup' },
+      })
+      .catch(() => {})
+  }
 }
 
 /** Opens the receive screen on the PO this spec built, found by its own code
@@ -91,7 +101,7 @@ async function openReceiveScreen(page: Page, poCode: string): Promise<void> {
   await expect(search).toBeVisible({ timeout: 20_000 })
   await fillStable(search, poCode)
 
-  // approved renders Receive as an icon button (aria-label "Receive stock").
+  // A sent PO renders Receive as a primary button (aria-label "Receive stock").
   const receive = page.getByRole('button', { name: /^Receive( stock)?$/ })
   await expect(receive.first()).toBeVisible({ timeout: 20_000 })
   await receive.first().click()
@@ -114,25 +124,21 @@ test.describe('Inventory — Receive stock against a PO', () => {
     fixture = null
   })
 
-  test('shows the delivery and refuses to move on without a DR number', async ({ page }) => {
+  test('shows the delivery and refuses to post without a DR number', async ({ page }) => {
     await expect(page.getByText('Purchase Orders ›', { exact: false })).toBeVisible()
-    await expect(page.getByText('PO receiving progress')).toBeVisible()
     await expect(page.getByText('Delivery details')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Receive all remaining' })).toBeVisible()
-
-    // Nothing has been received against a freshly approved PO, so the whole
-    // order is still outstanding.
-    await expect(page.getByText('0 of 8 units received so far')).toBeVisible()
 
     // The DR number is the one thing receiving cannot proceed without: it is
     // on the paper the driver hands over with the goods, so it always exists
     // at this moment (the supplier's invoice often follows days later).
     await expect(page.getByText('Needs DR number')).toBeVisible()
-    await expect(page.getByText('Delivery receipt number is required.')).toBeVisible()
+    await expect(page.getByText('Delivery receipt number is required.').first()).toBeVisible()
 
-    await page.getByRole('button', { name: 'Review receipt' }).click()
-    // Still on the entry stage — the review panel never opened.
-    await expect(page.getByText('Confirm this receipt')).toHaveCount(0)
+    // Posting is refused while a blocker stands — the screen stays open.
+    await page.getByRole('button', { name: 'Receive stock' }).click()
+    await expect(page.getByText(/must be resolved first/).first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('heading', { name: 'Receive stock against PO' })).toBeVisible()
 
     await fillStable(
       page.getByPlaceholder('As printed on the delivery receipt'),
@@ -147,30 +153,64 @@ test.describe('Inventory — Receive stock against a PO', () => {
   test('caps quantity at the PO remainder rather than letting an over-receipt through', async ({
     page,
   }) => {
-    // The serial-tracked line was ordered 3, none received.
+    // The first line is serial-tracked and has no quantity box — its quantity
+    // is counted from the serials (next test) — so the spinbutton here is the
+    // plain line's, ordered 5 with none received.
     const qty = page.getByRole('spinbutton', { name: 'Quantity to receive' }).first()
-    await expect(qty).toHaveValue('3')
+    await expect(qty).toHaveValue('5')
 
     // Typing well past the remainder snaps back to it — the backend increments
     // receivedQuantity unconditionally and only flags the variance, so the cap
     // has to hold here.
     await qty.fill('28')
-    await expect(qty).toHaveValue('3')
-    await expect(page.getByText('Capped at 3')).toBeVisible({ timeout: 10_000 })
+    await expect(qty).toHaveValue('5')
+    await expect(page.getByText('Capped at 5')).toBeVisible({ timeout: 10_000 })
 
     // The stepper obeys the same ceiling.
     await page.getByRole('button', { name: 'Increase quantity' }).first().click()
-    await expect(qty).toHaveValue('3')
+    await expect(qty).toHaveValue('5')
 
-    // Down is unrestricted — a short delivery is legitimate, and says so.
+    // Down is unrestricted — a short delivery is legitimate and just stays
+    // open on the PO.
     await page.getByRole('button', { name: 'Decrease quantity' }).first().click()
-    await expect(qty).toHaveValue('2')
-    await expect(page.getByText('Short delivery', { exact: false }).first()).toBeVisible()
+    await expect(qty).toHaveValue('4')
   })
 
-  test('blocks the review step until every serial on the line is unique', async ({ page }) => {
-    const serials = page.getByPlaceholder(/^Scan or type serial /)
+  test('a serial-tracked line receives only the serials entered', async ({ page }) => {
+    // The receiver cannot count a pallet before scanning it, so a serial line
+    // has no quantity to type: it is whatever the filled boxes add up to, and
+    // a blank box is a unit not received yet rather than a missing serial.
+    const lineQty = (n: number) =>
+      page.getByRole('status', { name: new RegExp(`^Quantity to receive: ${n} of 3`) })
+    const serials = page.locator('input[data-serial-scan]')
     await expect(serials).toHaveCount(3)
+    await expect(lineQty(0)).toBeVisible()
+
+    await fillStable(
+      page.getByPlaceholder('As printed on the delivery receipt'),
+      'DR-E2E-RECEIVE-04'
+    )
+
+    // Two of three, with the middle one left blank.
+    await fillStable(serials.nth(0), 'E2E-PART-0001')
+    await fillStable(serials.nth(2), 'E2E-PART-0003')
+    await expect(lineQty(2)).toBeVisible()
+    await expect(page.getByText('2 / 3 serials')).toBeVisible()
+    await expect(page.getByText('2 / 3 entered')).toBeVisible()
+
+    // Nothing is nagging about the unit that was left out.
+    await expect(page.getByText(/units? still needs? a serial number/)).toHaveCount(0)
+    await expect(page.getByText('Serial required for this unit.')).toHaveCount(0)
+
+    // Emptying a box takes it back out of the quantity.
+    await fillStable(serials.nth(2), '')
+    await expect(lineQty(1)).toBeVisible()
+  })
+
+  test('blocks posting until every serial on the line is unique', async ({ page }) => {
+    // Serial-tracked lines open with their serial drawer expanded.
+    const serials = page.getByPlaceholder(/^Serial \d+$/)
+    await expect(serials).toHaveCount(3, { timeout: 10_000 })
 
     await fillStable(
       page.getByPlaceholder('As printed on the delivery receipt'),
@@ -184,45 +224,57 @@ test.describe('Inventory — Receive stock against a PO', () => {
     await fillStable(serials.nth(2), 'E2E-DUP-0003')
 
     await expect(page.getByText('Already used on this receipt.').first()).toBeVisible()
+    await expect(page.getByText(/Duplicate serial E2E-DUP-0001/i).first()).toBeVisible()
 
-    await page.getByRole('button', { name: 'Review receipt' }).click()
-    await expect(page.getByText('Confirm this receipt')).toHaveCount(0)
-
-    // Making it unique clears the block and the review panel opens.
+    // Making it unique clears the block.
     await fillStable(serials.nth(1), 'E2E-DUP-0002')
     await expect(page.getByText('Already used on this receipt.')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Review receipt' }).click()
-    await expect(page.getByText('Confirm this receipt')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/Duplicate serial/i)).toHaveCount(0)
   })
 
-  test('requires the acknowledgement tick before the receipt will post', async ({ page }) => {
-    await fillStable(
-      page.getByPlaceholder('As printed on the delivery receipt'),
-      'DR-E2E-RECEIVE-03'
-    )
-    const serials = page.getByPlaceholder(/^Scan or type serial /)
-    for (let i = 0; i < 3; i += 1) {
-      await fillStable(serials.nth(i), `E2E-ACK-000${i + 1}`)
-    }
+  test('a scanner finishing a barcode moves on to the next serial box', async ({ page }) => {
+    // A barcode scanner is a keyboard that types the code and then a
+    // terminator — Enter by default, Tab when configured for form entry. Both
+    // have to hand focus to the next box, or a receiver scanning three units
+    // types all three into the first one.
+    const serials = page.locator('input[data-serial-scan]')
+    await expect(serials).toHaveCount(3)
 
-    await page.getByRole('button', { name: 'Review receipt' }).click()
-    await expect(page.getByText('Confirm this receipt')).toBeVisible({ timeout: 10_000 })
-    await expect(
-      page.getByText('Posting updates inventory on hand and cannot be undone', { exact: false })
-    ).toBeVisible()
+    await serials.nth(0).click()
+    await page.keyboard.type('E2E-SCAN-0001')
+    await page.keyboard.press('Enter')
+    await expect(serials.nth(1)).toBeFocused()
 
-    // Posting without ticking is refused, and nothing is sent.
-    await page.getByRole('button', { name: 'Confirm & receive stock' }).click()
-    await expect(page.getByText('Tick the confirmation before posting')).toBeVisible({
-      timeout: 10_000,
-    })
-    await expect(page.getByText('Stock received and posted to inventory')).toHaveCount(0)
+    await page.keyboard.type('E2E-SCAN-0002')
+    await page.keyboard.press('Tab')
+    await expect(serials.nth(2)).toBeFocused()
 
-    // Back to quantities returns to the working surface with the entry intact.
-    await page.getByRole('button', { name: 'Back to quantities' }).click()
-    await expect(page.getByText('Confirm this receipt')).toHaveCount(0)
-    await expect(page.getByPlaceholder('As printed on the delivery receipt')).toHaveValue(
-      'DR-E2E-RECEIVE-03'
-    )
+    // The last box has nowhere to go — focus stays put and Enter must not
+    // submit anything.
+    await page.keyboard.type('E2E-SCAN-0003')
+    await page.keyboard.press('Enter')
+    await expect(serials.nth(2)).toBeFocused()
+
+    await expect(serials.nth(0)).toHaveValue('E2E-SCAN-0001')
+    await expect(serials.nth(1)).toHaveValue('E2E-SCAN-0002')
+    await expect(serials.nth(2)).toHaveValue('E2E-SCAN-0003')
+  })
+
+  test('a scanner set up with no terminator is recognised by its speed', async ({ page }) => {
+    // Many scanners send only the barcode — no Enter, no Tab — so there is no
+    // key to react to. A burst of fast keystrokes that then goes quiet is the
+    // scan; a person typing at their own pace is not, and must not be moved.
+    const serials = page.locator('input[data-serial-scan]')
+    await expect(serials).toHaveCount(3)
+
+    await serials.nth(0).click()
+    await page.keyboard.type('4800049720107', { delay: 10 })
+    await expect(serials.nth(1)).toBeFocused()
+    await expect(serials.nth(0)).toHaveValue('4800049720107')
+
+    await page.keyboard.type('E2E-SLOW-0002', { delay: 120 })
+    await page.waitForTimeout(400)
+    await expect(serials.nth(1)).toBeFocused()
+    await expect(serials.nth(1)).toHaveValue('E2E-SLOW-0002')
   })
 })

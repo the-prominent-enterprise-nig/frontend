@@ -14,6 +14,8 @@ export type SearchComboboxOption = {
   id: string
   primary: string
   secondary?: string
+  /** Short right-aligned note beside `primary` — e.g. "4 in stock". */
+  badge?: string
   /** Opaque extra data a caller's own `search` mapper can attach to an
    * option and read back via `onSelect` — e.g. a flag that changes how the
    * parent form renders once a specific result is picked. Never read by
@@ -279,7 +281,14 @@ export function SearchCombobox({
                       : 'text-zinc-800'
                   }`}
                 >
-                  <span className="w-full truncate font-medium">{option.primary}</span>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate font-medium">{option.primary}</span>
+                    {option.badge && (
+                      <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                        {option.badge}
+                      </span>
+                    )}
+                  </span>
                   {option.secondary && (
                     <span className="w-full truncate font-mono text-xs text-zinc-400">
                       {option.secondary}

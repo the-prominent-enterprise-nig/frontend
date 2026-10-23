@@ -1,4 +1,4 @@
-# Prominent Enterprise — Frontend
+# NIG Central — Frontend
 
 Modern ERP web app for multi-branch businesses. Covers accounting, inventory, POS, CRM, and more.
 

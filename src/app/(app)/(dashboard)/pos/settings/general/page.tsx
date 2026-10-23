@@ -3,7 +3,7 @@ import { requirePermission } from '@/src/libs/guards/require-permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import PosConfigClient from './_components/PosConfigClient'
 
-export const metadata = { title: 'POS General Configuration | Prominent Enterprise' }
+export const metadata = { title: 'POS General Configuration | NIG Central' }
 
 export default async function PosConfigPage() {
   const session = await getSessionOrNull()

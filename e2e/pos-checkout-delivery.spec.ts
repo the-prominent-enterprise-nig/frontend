@@ -1,0 +1,866 @@
+import {
+  test,
+  expect,
+  type APIRequestContext,
+  type Page,
+  type PlaywrightWorkerArgs,
+} from '@playwright/test'
+import {
+  gotoReady,
+  fillStable,
+  sweepE2ECustomers,
+  sweepE2EPriceLists,
+  sweepE2EPriceUseTypes,
+  deleteCustomers,
+  openCustomSelect,
+  pickCartPriceUse,
+} from './utils'
+
+// Scenario 66 — delivery at POS checkout: Deliver to, Delivery Address and a
+// delivery fee collected on its own collection receipt, never part of the
+// sale. Scenario 68 totalled the fee into the checkout and paid it with the
+// sale's tender; Scenario 70 (DT-F…) undid the tender half: the Delivery
+// section is the last one before Confirm, the Total is the sale's alone
+// with the fee as a note under it (a collection on its own CR, not part of
+// the sale), and the fee always has its own Paid with and CR — the sale's
+// payment box measures the sale alone.
+// The money side (the fee's receipt and JE, the CR rules, reports) is
+// covered by backend/test/pos-delivery-fee-checkout.e2e-spec.ts and
+// pos-delivery-fee-reports.e2e-spec.ts; this spec covers the checkout UI that
+// drives it. Case IDs (DF-F…) match docs/scenario-66-pos-delivery-fee-plan.md.
+//
+// Checkout posts through Next server actions, so a browser request listener
+// never sees the backend call — "nothing was posted" is checked through the
+// API instead, by the sale's Sales Invoice No.
+//
+// Fixtures follow pos-checkout-x-deal (Scenario 65): a fresh non-serial item,
+// stocked at Bago, priced on a Price Use + price list of its own.
+
+const PREFIX = 'E2E Delivery'
+const BRANCH = 'Bago'
+const ITEM_PRICE = 8000
+const ADDRESS =
+  '12 Rizal St., Abuanan, Bago City, Negros Occidental, Region VI (Western Visayas), Philippines'
+const BARANGAY_CODE = '064502001'
+
+type Fixtures = {
+  itemId: string
+  itemName: string
+  priceUseTypeName: string
+  priceUseTypeId: string
+  priceListId: string
+  branchId: string
+}
+
+let fx: Fixtures
+const createdCustomerIds: string[] = []
+/** What DELIVERY_FEE_INCOME pointed at before this spec, to put back. */
+let mappingBefore: string | null | undefined
+
+async function ownerRequest(
+  playwright: PlaywrightWorkerArgs['playwright'],
+  baseURL: string
+): Promise<APIRequestContext> {
+  return playwright.request.newContext({
+    baseURL,
+    storageState: 'e2e/.auth/business-owner.json',
+  })
+}
+
+async function createFixtures(request: APIRequestContext): Promise<Fixtures> {
+  const stamp = Date.now()
+
+  const anyItemRes = await request.get('/api/inventory/items?limit=1')
+  const baseUnitId = ((await anyItemRes.json()).data ?? [])[0].baseUnit.id as string
+
+  const itemName = `${PREFIX} Item ${stamp}`
+  const itemRes = await request.post('/api/inventory/items', {
+    data: {
+      sku: `E2E-DELIVERY-${stamp}`,
+      name: itemName,
+      baseUnitId,
+      isSerialTracked: false,
+      sellingPrice: ITEM_PRICE,
+    },
+  })
+  expect(itemRes.ok(), await itemRes.text()).toBeTruthy()
+  const item = await itemRes.json()
+  await request.post(`/api/inventory/items/${item.id}/submit`)
+  await request.post(`/api/inventory/items/${item.id}/confirm-accounting`, { data: {} })
+  await request.post(`/api/inventory/items/${item.id}/approve`, { data: {} })
+
+  const branches = ((await (await request.get('/api/branches?limit=200')).json()).data ?? []) as {
+    id: string
+    name: string
+  }[]
+  const branchId = branches.find((b) => b.name === BRANCH)!.id
+  const warehouses = ((await (await request.get('/api/inventory/warehouses?limit=200')).json())
+    .data ?? []) as { id: string; branchId: string | null }[]
+  const warehouse = warehouses.find((w) => w.branchId === branchId)!
+
+  const adjustRes = await request.post('/api/inventory/adjustments', {
+    data: {
+      warehouseId: warehouse.id,
+      adjustmentDate: new Date().toISOString().slice(0, 10),
+      reasonCode: 'found',
+      notes: 'E2E delivery fixture stock',
+      lines: [{ itemId: item.id, expectedQty: 0, actualQty: 50 }],
+    },
+  })
+  expect(adjustRes.ok(), await adjustRes.text()).toBeTruthy()
+  const adjustment = await adjustRes.json()
+  for (const step of ['confirm', 'investigate', 'approve']) {
+    const stepRes = await request.patch(`/api/inventory/adjustments/${adjustment.id}/${step}`)
+    expect(stepRes.ok(), await stepRes.text()).toBeTruthy()
+  }
+
+  const priceUseTypeName = `${PREFIX} PU ${stamp}`
+  const putRes = await request.post('/api/inventory/price-use-types', {
+    data: { name: priceUseTypeName },
+  })
+  expect(putRes.ok(), await putRes.text()).toBeTruthy()
+  const priceUseType = await putRes.json()
+
+  const listRes = await request.post('/api/inventory/price-lists', {
+    data: { name: `${PREFIX} List ${stamp}`, priceUseTypeId: priceUseType.id },
+  })
+  expect(listRes.ok(), await listRes.text()).toBeTruthy()
+  const priceList = await listRes.json()
+  const itemsRes = await request.post(`/api/inventory/price-lists/${priceList.id}/items`, {
+    data: { items: [{ itemId: item.id, price: ITEM_PRICE }] },
+  })
+  expect(itemsRes.ok(), await itemsRes.text()).toBeTruthy()
+  const approveRes = await request.post(`/api/inventory/price-lists/${priceList.id}/approve`, {
+    data: {},
+  })
+  expect(approveRes.ok(), await approveRes.text()).toBeTruthy()
+
+  return {
+    itemId: item.id,
+    itemName,
+    priceUseTypeName,
+    priceUseTypeId: priceUseType.id,
+    priceListId: priceList.id,
+    branchId,
+  }
+}
+
+/** DELIVERY_FEE_INCOME → 4-02-030, as the seed and the Scenario 66 backfill do. */
+async function mapDeliveryIncome(request: APIRequestContext): Promise<void> {
+  const mappings = (await (await request.get('/api/account-mapping')).json()) as
+    | { key: string; accountId: string | null }[]
+    | { data: { key: string; accountId: string | null }[] }
+  const list = Array.isArray(mappings) ? mappings : mappings.data
+  mappingBefore = list.find((m) => m.key === 'DELIVERY_FEE_INCOME')?.accountId ?? null
+
+  const accountsBody = await (await request.get('/api/accounts?search=4-02-030')).json()
+  const accounts = (Array.isArray(accountsBody) ? accountsBody : accountsBody.data) as {
+    id: string
+    number: string
+  }[]
+  const deliveryIncome = accounts.find((a) => a.number === '4-02-030')!
+  const res = await request.patch('/api/account-mapping/DELIVERY_FEE_INCOME', {
+    data: { accountId: deliveryIncome.id },
+  })
+  expect(res.ok(), await res.text()).toBeTruthy()
+}
+
+async function createCustomer(
+  request: APIRequestContext,
+  label: string,
+  extra: Record<string, unknown> = {}
+): Promise<{ id: string; name: string }> {
+  const name = `${PREFIX} ${label} ${Date.now()}`
+  const res = await request.post('/api/crm/customers', {
+    data: {
+      name,
+      customerType: 'individual',
+      phone: `0917${Date.now().toString().slice(-7)}`,
+      ...extra,
+    },
+  })
+  expect(res.ok(), await res.text()).toBeTruthy()
+  const customer = await res.json()
+  createdCustomerIds.push(customer.id)
+  return { id: customer.id, name }
+}
+
+const withAddress = { address: ADDRESS, barangayCode: BARANGAY_CODE }
+
+async function ensureOpenSession(request: APIRequestContext, branchId: string): Promise<void> {
+  const terminals = (await (
+    await request.get('/api/pos/terminals', { params: { branchId } })
+  ).json()) as { id: string; status: string }[]
+  const terminal = terminals.find((t) => t.status === 'active') ?? terminals[0]
+  const open = (await (
+    await request.get('/api/pos/sessions', { params: { terminalId: terminal.id, status: 'open' } })
+  ).json()) as { id: string }[]
+  if (open.length) return
+  await request.post('/api/pos/sessions/open', {
+    data: { terminalId: terminal.id, openingCash: 1000 },
+  })
+}
+
+async function pickSessionIfAsked(page: Page): Promise<void> {
+  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
+  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
+  const autoSelected = page.getByText(/^Counter \d+$/).first()
+  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
+  if (await sessionSelect.isVisible()) {
+    const value = await sessionSelect
+      .locator('option', { hasText: BRANCH })
+      .first()
+      .getAttribute('value')
+    await sessionSelect.selectOption(value!)
+  }
+}
+
+async function openCheckout(page: Page): Promise<void> {
+  await gotoReady(page, '/pos/checkout')
+  await pickSessionIfAsked(page)
+}
+
+async function addItem(page: Page): Promise<void> {
+  const search = page.getByPlaceholder('Search by name or serial')
+  await expect(search).toBeVisible({ timeout: 15_000 })
+  await search.fill(fx.itemName)
+  const card = page
+    .getByRole('button')
+    .filter({ has: page.getByText(fx.itemName, { exact: true }) })
+  await expect(card.first()).toBeVisible({ timeout: 15_000 })
+  await card.first().click()
+  await pickCartPriceUse(page, fx.priceUseTypeName)
+}
+
+async function selectCustomer(page: Page, name: string): Promise<void> {
+  const input = page.getByPlaceholder('Search by name or phone…')
+  await input.click()
+  await fillStable(input, name)
+  await page.getByRole('button', { name: new RegExp(name) }).click()
+}
+
+/** The selected customer's card ends in an icon-only ✕ (no accessible name on
+ * this base), so it is found as the X-icon button in the card holding the name. */
+async function clearSelectedCustomer(page: Page, name: string): Promise<void> {
+  await page
+    .getByText(name, { exact: true })
+    .first()
+    .locator(
+      "xpath=ancestor::div[.//button[.//*[contains(@class,'lucide-x')]]][1]//button[.//*[contains(@class,'lucide-x')]]"
+    )
+    .first()
+    .click()
+  await expect(page.getByPlaceholder('Search by name or phone…')).toBeVisible()
+}
+
+/** A cash sale ready to confirm: cart, customer, Sales Invoice No., payment. */
+async function readyCashSale(page: Page, customerName: string, salesInvoiceNumber: string) {
+  await openCheckout(page)
+  await addItem(page)
+  await selectCustomer(page, customerName)
+  await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
+}
+
+async function fillPayment(page: Page, cr: string, amount = '100000'): Promise<void> {
+  await fillStable(page.getByLabel('Amount received'), amount)
+  // The label is the payment method's own reference label ("CR Number" by
+  // default), so match its start rather than one exact spelling.
+  await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), cr)
+}
+
+/** Scenario 68 — a cart whose sale collects nothing at the register: a fully
+ * bartered (₱0 down) X-Deal, which the Business Owner completes directly.
+ * The delivery fee is then the only money taken, with its own Paid with. */
+async function readyBarterSale(page: Page, customerName: string, salesInvoiceNumber: string) {
+  await openCheckout(page)
+  await addItem(page)
+  await selectCustomer(page, customerName)
+  await page.getByTestId('x-deal-checkbox').check()
+  await page.getByTestId('x-deal-reference').fill(`XD-REF-DF-${Date.now()}`)
+  const termPicker = page.getByRole('combobox', { name: 'Select a term…' })
+  await expect(termPicker).toBeVisible({ timeout: 10_000 })
+  await openCustomSelect(termPicker)
+  await page.getByRole('listbox').getByRole('option').first().click()
+  await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
+}
+
+const createPlan = (page: Page) => page.getByRole('button', { name: /Create Installment Plan/ })
+
+const section = (page: Page) => page.getByTestId('delivery-section')
+const toggle = (page: Page) => page.getByTestId('delivery-toggle')
+const deliverTo = (page: Page) => page.getByLabel('Deliver to')
+const feeInput = (page: Page) => page.getByLabel('Delivery fee', { exact: true })
+const feeCr = (page: Page) => page.getByLabel('Delivery fee CR No.')
+const confirm = (page: Page) => page.getByRole('button', { name: 'Confirm Sale' })
+
+async function salesBySalesInvoice(request: APIRequestContext, salesInvoiceNumber: string) {
+  const res = await request.get('/api/pos/transactions', {
+    params: { search: salesInvoiceNumber },
+  })
+  const body = await res.json()
+  return ((body.data ?? body) as { id: string; salesInvoiceNumber: string | null }[]).filter(
+    (t) => t.salesInvoiceNumber === salesInvoiceNumber
+  )
+}
+
+test.describe('POS Checkout — Delivery (Scenario 66)', () => {
+  test.beforeAll(async ({ playwright }, testInfo) => {
+    const request = await ownerRequest(playwright, testInfo.project.use.baseURL!)
+    await sweepE2ECustomers(request, PREFIX)
+    await sweepE2EPriceLists(request, PREFIX)
+    await sweepE2EPriceUseTypes(request, PREFIX)
+    fx = await createFixtures(request)
+    await ensureOpenSession(request, fx.branchId)
+    await mapDeliveryIncome(request)
+    await request.dispose()
+  })
+
+  test.afterAll(async ({ playwright }, testInfo) => {
+    const request = await ownerRequest(playwright, testInfo.project.use.baseURL!)
+    await deleteCustomers(request, createdCustomerIds)
+    if (fx) {
+      await request.delete(`/api/inventory/price-lists/${fx.priceListId}`).catch(() => {})
+      await request.delete(`/api/inventory/price-use-types/${fx.priceUseTypeId}`).catch(() => {})
+      await request.delete(`/api/inventory/items/${fx.itemId}`).catch(() => {})
+    }
+    if (mappingBefore !== undefined) {
+      await request
+        .patch('/api/account-mapping/DELIVERY_FEE_INCOME', { data: { accountId: mappingBefore } })
+        .catch(() => {})
+    }
+    await request.dispose()
+  })
+
+  test('DF-F01: For delivery pre-fills Deliver to and the address from the customer; the tender and CR wait for a fee', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F01', withAddress)
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, customer.name)
+
+    await expect(deliverTo(page)).toHaveCount(0)
+    await toggle(page).check()
+
+    await expect(deliverTo(page)).toHaveValue(customer.name)
+    await expect(page.getByTestId('delivery-customer-address')).toContainText(ADDRESS, {
+      timeout: 15_000,
+    })
+    await expect(feeInput(page)).toHaveValue('')
+    await expect(feeCr(page)).toHaveCount(0)
+    await expect(page.getByTestId('delivery-fee-method')).toHaveCount(0)
+    await expect(section(page)).toContainText('Free delivery — no fee to collect.')
+  })
+
+  test("DF-F02 / DT-F01 (Scenario 70): the Total stays the sale's alone — the delivery fee is a note under it, never added in; the fee has its own Paid with and CR", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F02', withAddress)
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, customer.name)
+    await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,000.00')
+    await expect(page.getByTestId('order-summary-delivery-fee')).toHaveCount(0)
+
+    await toggle(page).check()
+    await fillStable(feeInput(page), '150')
+
+    // Order Summary: the Total is still the items; the fee is a note.
+    await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,000.00')
+    await expect(page.getByTestId('order-summary-delivery-fee')).toContainText('₱150.00')
+    // The Total at the very bottom is the sale's too, with the fee as a note
+    // under it. Nothing anywhere adds the two.
+    await expect(page.getByTestId('checkout-grand-total')).toHaveText('₱8,000.00')
+    await expect(page.getByTestId('checkout-fee-total')).toContainText('₱150.00')
+    await expect(page.getByText('Total w/ delivery fee')).toHaveCount(0)
+    await expect(page.getByText('₱8,150.00')).toHaveCount(0)
+    // The fee has its own Paid with and its own CR — never the sale's tender.
+    await expect(page.getByTestId('delivery-fee-method')).toBeVisible()
+    await expect(page.getByTestId('delivery-fee-with-sale')).toHaveCount(0)
+    await expect(feeCr(page)).toBeVisible()
+  })
+
+  test("DT-F06 (Scenario 70): the order down the panel is Delivery, then the Total, then the sale's Amount received and CR, then Confirm", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF06', withAddress)
+    await readyCashSale(page, customer.name, `SI-DTF06-${Date.now()}`)
+    await toggle(page).check()
+    await fillStable(feeInput(page), '150')
+
+    const y = async (locator: ReturnType<Page['getByTestId']>) => (await locator.boundingBox())!.y
+    const summaryY = await y(page.getByTestId('order-summary-total'))
+    const deliveryY = await y(section(page))
+    const totalY = await y(page.getByTestId('checkout-grand-total'))
+    const amountReceivedY = (await page.getByLabel('Amount received').boundingBox())!.y
+    const crY = (await page.getByRole('textbox', { name: /^CR Number/ }).boundingBox())!.y
+    const confirmY = (await confirm(page).boundingBox())!.y
+    expect(summaryY).toBeLessThan(deliveryY)
+    expect(deliveryY).toBeLessThan(totalY)
+    expect(totalY).toBeLessThan(amountReceivedY)
+    expect(amountReceivedY).toBeLessThan(crY)
+    expect(crY).toBeLessThan(confirmY)
+    // A sale has no "Total Tendered" row; it keeps only the Change, which comes
+    // after the payment fields it belongs to.
+    await fillPayment(page, `CR-DTF06-${Date.now()}`, '10000')
+    await expect(page.getByText('Total Tendered')).toHaveCount(0)
+    const changeY = (await page.getByText('Change', { exact: true }).boundingBox())!.y
+    expect(changeY).toBeGreaterThan(crY)
+    expect(changeY).toBeLessThan(confirmY)
+  })
+
+  test('DT-F07 (Scenario 70): Copy beside the Total puts the plain amount on the clipboard — no peso sign, no commas — and it pastes into Amount received', async ({
+    page,
+  }) => {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    const customer = await createCustomer(page.request, 'DTF07', withAddress)
+    await readyCashSale(page, customer.name, `SI-DTF07-${Date.now()}`)
+    // The delivery fee is not part of the Total, so it is not what gets copied.
+    await toggle(page).check()
+    await fillStable(feeInput(page), '150')
+
+    const copyButton = page.getByTestId('checkout-total-copy')
+    await expect(copyButton).toContainText('Copy')
+    await copyButton.click()
+    await expect(copyButton).toContainText('Copied')
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('8000.00')
+
+    const received = page.getByLabel('Amount received')
+    await received.click()
+    await page.keyboard.press('ControlOrMeta+V')
+    await expect(received).toHaveValue('8000.00')
+  })
+
+  test("DT-F02: the sale's Amount received covers the sale only — paying the sale total alone is enough, the fee is paid separately", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF02', withAddress)
+    const salesInvoiceNumber = `SI-DTF02-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    await fillStable(feeCr(page), `CR-DTF02-FEE-${Date.now()}`)
+    await fillPayment(page, `CR-DTF02-SALE-${Date.now()}`, '8000')
+
+    // No "Underpaid" — the ₱150 isn't part of this payment.
+    await expect(page.getByRole('button', { name: /Underpaid/ })).toHaveCount(0)
+    await expect(confirm(page)).toBeVisible()
+  })
+
+  test("DT-F03: sale and fee are paid apart — the sale's change is the sale's, and the success screen lists the Sale total and the Delivery fee on separate lines, never added into one total", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF03', withAddress)
+    const salesInvoiceNumber = `SI-DTF03-${Date.now()}`
+    const feeCrNumber = `CR-DTF03-FEE-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    await fillStable(feeCr(page), feeCrNumber)
+    // The fee has no Amount received of its own: it is paid in full with its
+    // own Paid with.
+    await expect(page.getByLabel('Delivery fee amount received')).toHaveCount(0)
+    await fillPayment(page, `CR-DTF03-SALE-${Date.now()}`, '8200')
+
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    // The sale's change only — the fee was never in the sale's payment.
+    await expect(page.getByText('Change: ₱200.00')).toBeVisible()
+    await expect(page.getByTestId('success-sale-total-line')).toContainText('Sale total')
+    await expect(page.getByTestId('success-sale-total-line')).toContainText('₱8,000.00')
+    await expect(page.getByTestId('success-delivery-fee-line')).toContainText('₱150.00')
+    await expect(page.getByText('Total w/ delivery fee')).toHaveCount(0)
+
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    // Never in the sale: its payment and its total are the sale's alone.
+    expect(Number(tx.totalAmount)).toBe(8000)
+    const paid = (tx.payments as { amount: number | string }[]).reduce(
+      (sum, p) => sum + Number(p.amount),
+      0
+    )
+    expect(paid).toBe(8000)
+    expect(tx.deliveryFeeCollectionReceipt).toMatchObject({
+      reference: feeCrNumber,
+      method: 'CASH',
+      amount: 150,
+    })
+  })
+
+  test("DT-F04: the fee's tender is its own — a sale paid by check does not carry its check onto the fee, and the fee can be paid by a check of its own", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF04', withAddress)
+    const salesInvoiceNumber = `SI-DTF04-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await page
+      .getByTestId('cash-sub-mode-toggle')
+      .getByRole('button', { name: 'Check', exact: true })
+      .click()
+    await fillStable(page.getByLabel('Check Number'), '0099887')
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    await fillStable(feeCr(page), `CR-DTF04-FEE-${Date.now()}`)
+    // Paid with starts at Cash on Hand whatever the sale is paid with.
+    const paidWith = page.getByTestId('delivery-fee-method')
+    await expect(
+      paidWith.getByRole('button', { name: 'Cash on Hand', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true')
+    await paidWith.getByRole('button', { name: 'Check', exact: true }).click()
+    await fillStable(page.getByLabel('Delivery fee check number'), '0055443')
+    await fillPayment(page, `CR-DTF04-SALE-${Date.now()}`, '8000')
+
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(page.getByTestId('success-delivery')).toContainText('Check #0055443')
+    await expect(page.getByTestId('success-delivery')).not.toContainText('0099887')
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    expect(tx.deliveryFeeCollectionReceipt).toMatchObject({
+      method: 'CHECK',
+      checkNumber: '0055443',
+      amount: 150,
+    })
+    expect(
+      (tx.payments as { checkNumber?: string | null }[]).some((p) => p.checkNumber === '0099887')
+    ).toBeTruthy()
+  })
+
+  test('DF-F03: Confirm is blocked for a blank Deliver to, and for a fee with no CR — nothing is posted', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F03', withAddress)
+    const salesInvoiceNumber = `SI-DFF03-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await fillPayment(page, `CR-DFF03-SALE-${Date.now()}`)
+
+    await deliverTo(page).fill('   ')
+    await confirm(page).click()
+    await expect(page.getByText('Enter who receives the delivery (Deliver to).')).toBeVisible()
+
+    await fillStable(deliverTo(page), 'Maria Santos')
+    await fillStable(feeInput(page), '150')
+    await confirm(page).click()
+    await expect(
+      page.getByText('Enter the collection receipt (CR) number for the delivery fee.')
+    ).toBeVisible()
+
+    expect(await salesBySalesInvoice(page.request, salesInvoiceNumber)).toHaveLength(0)
+  })
+
+  test("DF-F04: the fee's CR can't be the payment's CR", async ({ page }) => {
+    const customer = await createCustomer(page.request, 'F04', withAddress)
+    const salesInvoiceNumber = `SI-DFF04-${Date.now()}`
+    const cr = `CR-DFF04-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await fillStable(feeInput(page), '150')
+    await fillStable(feeCr(page), ` ${cr.toLowerCase()} `)
+    await fillPayment(page, cr)
+
+    await confirm(page).click()
+    await expect(
+      page.getByText(
+        "The delivery fee needs its own CR number — it can't be the same as the payment's."
+      )
+    ).toBeVisible()
+    expect(await salesBySalesInvoice(page.request, salesInvoiceNumber)).toHaveLength(0)
+  })
+
+  test('DF-F05 / DF-F15: a sale with a fee posts it on its own receipt — the success screen and the transaction detail show the delivery apart from the total', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F05', withAddress)
+    const salesInvoiceNumber = `SI-DFF05-${Date.now()}`
+    const feeCrNumber = `CR-DFF05-FEE-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    await fillStable(feeCr(page), feeCrNumber)
+    await fillPayment(page, `CR-DFF05-SALE-${Date.now()}`)
+
+    // Not clickStable — this submits a real sale.
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    const success = page.getByTestId('success-delivery')
+    await expect(success).toContainText(customer.name)
+    await expect(success).toContainText(ADDRESS)
+    await expect(success).toContainText('₱150.00')
+    await expect(success).toContainText(feeCrNumber)
+
+    // The sale itself: delivery stored, total untouched, fee on its own receipt.
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    expect(sale).toBeTruthy()
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    expect(tx.deliverTo).toBe(customer.name)
+    expect(tx.deliveryAddress).toBe(ADDRESS)
+    expect(tx.deliveryBarangayCode).toBe(BARANGAY_CODE)
+    expect(Number(tx.deliveryFee)).toBe(150)
+    expect(tx.deliveryFeeCollectionReceipt).toMatchObject({
+      reference: feeCrNumber,
+      method: 'CASH',
+      amount: 150,
+    })
+
+    // DF-F15 — the transaction detail.
+    await gotoReady(page, '/pos/transactions')
+    const row = page.locator('tr', { hasText: salesInvoiceNumber })
+    await expect(async () => {
+      await fillStable(page.getByPlaceholder('Search…'), salesInvoiceNumber)
+      await expect(row).toBeVisible({ timeout: 5_000 })
+    }).toPass({ timeout: 45_000 })
+    await row.click()
+    const block = page.getByTestId('transaction-delivery')
+    await expect(block).toBeVisible({ timeout: 10_000 })
+    await expect(block).toContainText(customer.name)
+    await expect(block).toContainText('₱150.00')
+    await expect(block).toContainText(feeCrNumber)
+  })
+
+  test('DF-F06: a free delivery asks for no CR and shows as free', async ({ page }) => {
+    const customer = await createCustomer(page.request, 'F06', withAddress)
+    await readyCashSale(page, customer.name, `SI-DFF06-${Date.now()}`)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillPayment(page, `CR-DFF06-SALE-${Date.now()}`)
+
+    await expect(feeCr(page)).toHaveCount(0)
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(page.getByTestId('success-delivery')).toContainText('Free delivery')
+  })
+
+  test('DF-F07: an edited Deliver to survives a customer change; the address follows the new customer', async ({
+    page,
+  }) => {
+    const first = await createCustomer(page.request, 'F07a', withAddress)
+    const secondAddress =
+      '5 Mabini St., Alianza, Bago City, Negros Occidental, Region VI (Western Visayas), Philippines'
+    const second = await createCustomer(page.request, 'F07b', {
+      address: secondAddress,
+      barangayCode: '064502002',
+    })
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, first.name)
+    await toggle(page).check()
+    await fillStable(deliverTo(page), 'Lola Remedios')
+
+    await clearSelectedCustomer(page, first.name)
+    await selectCustomer(page, second.name)
+
+    await expect(deliverTo(page)).toHaveValue('Lola Remedios')
+    await expect(page.getByTestId('delivery-customer-address')).toContainText(secondAddress, {
+      timeout: 15_000,
+    })
+  })
+
+  test('DF-F08: turning delivery off clears it and the sale carries none', async ({ page }) => {
+    const customer = await createCustomer(page.request, 'F08', withAddress)
+    const salesInvoiceNumber = `SI-DFF08-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await fillStable(feeInput(page), '150')
+    await toggle(page).uncheck()
+
+    await expect(deliverTo(page)).toHaveCount(0)
+    await expect(page.getByTestId('order-summary-delivery-fee')).toHaveCount(0)
+    await toggle(page).check()
+    await expect(feeInput(page)).toHaveValue('')
+    await toggle(page).uncheck()
+
+    await fillPayment(page, `CR-DFF08-SALE-${Date.now()}`)
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    expect(tx.deliverTo).toBeNull()
+    expect(Number(tx.deliveryFee)).toBe(0)
+    expect(tx.deliveryFeeCollectionReceipt).toBeNull()
+  })
+
+  test('DF-F16: an edited address must be saved — it then closes into a card the sale carries (PR #201 review)', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F16', withAddress)
+    const salesInvoiceNumber = `SI-DFF16-${Date.now()}`
+    const edited = ADDRESS.replace('12 Rizal St.', 'Purok 1')
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await page
+      .getByTestId('delivery-customer-address')
+      .getByRole('button', { name: 'Change address' })
+      .click({ timeout: 15_000 })
+
+    const picker = page.getByTestId('delivery-address-picker')
+    const street = picker.getByPlaceholder('e.g. Blk 3 Lot 12, Mabuhay St.')
+    await expect(picker).toContainText('Barangay selected: Abuanan', { timeout: 15_000 })
+    await expect(street).toHaveValue('12 Rizal St.')
+    await fillStable(street, 'Purok 1')
+    await fillPayment(page, `CR-DFF16-SALE-${Date.now()}`)
+
+    await confirm(page).click()
+    await expect(page.getByText('Save the delivery address first.')).toBeVisible()
+    expect(await salesBySalesInvoice(page.request, salesInvoiceNumber)).toHaveLength(0)
+
+    await page.getByTestId('delivery-save-address').click()
+    const saved = page.getByTestId('delivery-saved-address')
+    await expect(saved).toContainText('Edited address saved')
+    await expect(saved).toContainText(edited)
+    await expect(picker).toHaveCount(0)
+
+    // Reopening starts from the saved pick, not the customer's address.
+    await saved.getByRole('button', { name: 'Change address' }).click()
+    await expect(picker).toContainText('Barangay selected: Abuanan', { timeout: 15_000 })
+    await expect(street).toHaveValue('Purok 1')
+    await page.getByTestId('delivery-save-address').click()
+
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    expect(tx.deliveryAddress).toBe(edited)
+    expect(tx.deliveryBarangayCode).toBe(BARANGAY_CODE)
+  })
+
+  test('DF-F17 / DT-F05: when the sale itself collects nothing, the fee is still paid in the Delivery section with the full set of Paid with choices; a check needs its number and posts as a check', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F17', withAddress)
+    const salesInvoiceNumber = `SI-DFF17-${Date.now()}`
+    await readyBarterSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    // The items collect nothing at the register; the fee is paid in the
+    // Delivery section.
+    await expect(page.getByText(/Nothing to collect for the items/)).toBeVisible()
+    await expect(page.getByText(/delivery fee is paid in the Delivery section/)).toBeVisible()
+
+    const paidWith = page.getByTestId('delivery-fee-method')
+    for (const label of [
+      'Cash on Hand',
+      'Check',
+      'Bank Transfer',
+      'GCash',
+      'Billers',
+      'QR',
+      'Debit/Credit Card',
+    ]) {
+      await expect(paidWith.getByRole('button', { name: label, exact: true })).toBeVisible()
+    }
+    await expect(
+      paidWith.getByRole('button', { name: 'Cash on Hand', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true')
+
+    await paidWith.getByRole('button', { name: 'Check', exact: true }).click()
+    const checkNumber = page.getByLabel('Delivery fee check number')
+    await expect(checkNumber).toBeVisible()
+    await fillStable(feeCr(page), `CR-DFF17-FEE-${Date.now()}`)
+
+    await createPlan(page).click()
+    await expect(page.getByText('Enter the check number for the delivery fee.')).toBeVisible()
+    expect(await salesBySalesInvoice(page.request, salesInvoiceNumber)).toHaveLength(0)
+
+    await fillStable(checkNumber, '0012345')
+    await createPlan(page).click()
+    await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(page.getByTestId('success-delivery')).toContainText('Check #0012345')
+
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    expect(tx.deliveryFeeCollectionReceipt).toMatchObject({
+      method: 'CHECK',
+      checkNumber: '0012345',
+      amount: 150,
+    })
+  })
+
+  test("DF-F18: each Paid with choice shows the sale's own details; a card installment needs a term", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F18', withAddress)
+    await readyBarterSale(page, customer.name, `SI-DFF18-${Date.now()}`)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '150')
+    const paidWith = page.getByTestId('delivery-fee-method')
+
+    await paidWith.getByRole('button', { name: 'Bank Transfer', exact: true }).click()
+    await expect(paidWith.getByText('Verified at register')).toBeVisible()
+    await expect(page.getByLabel('Delivery fee check number')).toHaveCount(0)
+
+    await paidWith.getByRole('button', { name: 'Debit/Credit Card', exact: true }).click()
+    await expect(paidWith.getByText('Verified at register')).toHaveCount(0)
+    await paidWith.getByRole('button', { name: 'Installment', exact: true }).click()
+    await expect(page.getByLabel('Delivery fee card term')).toBeVisible()
+
+    await fillStable(feeCr(page), `CR-DFF18-FEE-${Date.now()}`)
+    await createPlan(page).click()
+    await expect(
+      page.getByText("Select a term for the delivery fee's card installment.")
+    ).toBeVisible()
+
+    // Switching tender starts the details over.
+    await paidWith.getByRole('button', { name: 'Cash on Hand', exact: true }).click()
+    await expect(page.getByLabel('Delivery fee card term')).toHaveCount(0)
+  })
+
+  test('DF-F12: delivery is unavailable offline', async ({ page }) => {
+    const customer = await createCustomer(page.request, 'F12', withAddress)
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, customer.name)
+
+    await page.context().setOffline(true)
+    try {
+      await expect(toggle(page)).toBeDisabled()
+      await expect(page.getByTestId('delivery-unavailable')).toContainText(
+        'Delivery needs a connection'
+      )
+    } finally {
+      await page.context().setOffline(false)
+    }
+    await expect(toggle(page)).toBeEnabled()
+  })
+
+  test('DF-F13: the TPF panel asks for no approved amount (Scenario 64 Part 2 regression)', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F13', withAddress)
+    await openCheckout(page)
+    await addItem(page)
+    await selectCustomer(page, customer.name)
+
+    await page.getByRole('button', { name: 'Installment', exact: true }).click()
+    await page.getByRole('button', { name: 'TPF Installment', exact: true }).first().click()
+    await expect(page.getByText('TPF Provider *')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByPlaceholder(/Approved amount/)).toHaveCount(0)
+  })
+})

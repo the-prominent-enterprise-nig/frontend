@@ -10,10 +10,16 @@
  */
 
 import { useRouter } from 'next/navigation'
-import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw } from 'lucide-react'
+import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, Search } from 'lucide-react'
 import { useReceivingReports } from '../../../inventory/goods-receiving/_hooks/useReceivingReports'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
+import { MANUAL_RR_STATUS_LABELS } from '@/src/schema/inventory/manual-receiving-reports'
+
+const MANUAL_RR_STATUS_COLORS: Record<string, string> = {
+  draft: 'bg-amber-100 text-amber-700',
+  posted: 'bg-green-100 text-green-700',
+}
 
 const fmtMoney = (n: number) =>
   n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
@@ -48,6 +54,32 @@ function DiscrepancyBadge({ report }: { report: ReceivingReport }) {
   )
 }
 
+// A Manual Receiving Report has no PO to compare against, so "discrepancy"
+// isn't a meaningful concept for it — its draft/posted lifecycle status goes
+// in this same column instead.
+function StatusCell({ report }: { report: ReceivingReport }) {
+  if (report.sourceType === 'manual_rr') {
+    return (
+      <span
+        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+          MANUAL_RR_STATUS_COLORS[report.status] ?? 'bg-zinc-100 text-zinc-600'
+        }`}
+      >
+        {MANUAL_RR_STATUS_LABELS[report.status as 'draft' | 'posted'] ?? report.status}
+      </span>
+    )
+  }
+  return <DiscrepancyBadge report={report} />
+}
+
+/** Manual Receiving Reports live at their own route, not
+ * {detailBasePath}/{id} — a merged row has to know which one it is. */
+function detailHref(report: ReceivingReport, detailBasePath: string): string {
+  return report.sourceType === 'manual_rr'
+    ? `/accounting/receiving-reports/manual-rr/${report.id}`
+    : `${detailBasePath}/${report.id}`
+}
+
 type Props = {
   // Amounts are financial info (unit cost / total cost) — shown for
   // Accounting's own Receiving Reports view, hidden for Inventory's
@@ -71,23 +103,38 @@ export default function ReceivingReportsTable({
     totalPages,
     isLoading,
     isFetching,
+    search,
     warehouseId,
     hasDiscrepancy,
     startDate,
     endDate,
+    setSearch,
     setHasDiscrepancy,
     setStartDate,
     setEndDate,
     resetFilters,
     setPage,
-  } = useReceivingReports()
+    // This component is Accounting-only (see the module comment above) — the
+    // separate Inventory ReceivingReportsTab still gets GoodsReceipts alone.
+  } = useReceivingReports({ includeManual: true })
 
-  const hasFilters = warehouseId || hasDiscrepancy !== undefined || startDate || endDate
+  const hasFilters = search || warehouseId || hasDiscrepancy !== undefined || startDate || endDate
 
   return (
     <div className="space-y-4">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-60 flex-1 sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search RR no., PO no., supplier, or DR/invoice no…"
+            className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-prominent-purple-500"
+          />
+        </div>
+
         <select
           value={hasDiscrepancy === undefined ? '' : hasDiscrepancy ? 'true' : 'false'}
           onChange={(e) => {
@@ -184,7 +231,7 @@ export default function ReceivingReportsTable({
                     <tr
                       key={report.id}
                       className="cursor-pointer hover:bg-zinc-50"
-                      onClick={() => router.push(`${detailBasePath}/${report.id}`)}
+                      onClick={() => router.push(detailHref(report, detailBasePath))}
                     >
                       <td className="px-4 py-3 font-mono font-medium text-zinc-900">
                         {report.code}
@@ -224,7 +271,7 @@ export default function ReceivingReportsTable({
                         </td>
                       )}
                       <td className="px-4 py-3 text-center">
-                        <DiscrepancyBadge report={report} />
+                        <StatusCell report={report} />
                       </td>
                       {/* Scenario 46 — the inline expansion is gone. A row now
                           opens the receiving report's own page, which shows the

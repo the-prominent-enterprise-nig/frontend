@@ -5,7 +5,8 @@ import {
   fillStable,
   findPriceListIdByName,
   sweepE2EPriceLists,
-  pickFromCustomSelect,
+  pickPriceUseType,
+  submitPriceListForm,
 } from './utils'
 
 const NAME_PREFIX = 'E2E Price List Approval — '
@@ -21,9 +22,9 @@ test.describe('Inventory — Price List Approval Workflow', () => {
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
     )
-    await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
-    await pickFromCustomSelect(page, 'Select price use type…', 'PROMO')
-    await page.getByRole('button', { name: 'Create Price List' }).click()
+    await fillStable(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'), name)
+    await pickPriceUseType(page, 'PROMO')
+    await submitPriceListForm(page, 'Create Price List')
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
     })

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { caravanLabelWithPlace } from '@/src/libs/format/locationLabel'
 
 export const WarehouseStatusSchema = z.enum(['active', 'inactive'])
 export const LocationTypeSchema = z.enum(['shelf', 'bin', 'zone', 'dock'])
@@ -39,6 +40,92 @@ export type CreateWarehouseFormValues = z.infer<typeof CreateWarehouseFormSchema
 export type UpdateWarehouseFormValues = z.infer<typeof UpdateWarehouseFormSchema>
 export type CreateLocationFormValues = z.infer<typeof CreateLocationFormSchema>
 
+// Scenario 60 Part 2 — a warehouse's branch, with the caravan fields the
+// backend sends alongside it (false/null for an ordinary branch). A caravan
+// is a temporary Branch parked at a host branch for an event.
+export const WarehouseBranchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  isTemporary: z.boolean().optional(),
+  eventName: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+  // Set once the host branch closes the caravan by hand — ended from then on.
+  closedAt: z.string().nullable().optional(),
+  hostBranch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  // A caravan's location — where it is physically set up. Null when none was given.
+  addressLine1: z.string().nullable().optional(),
+})
+export type WarehouseBranch = z.infer<typeof WarehouseBranchSchema>
+
+type LabelledWarehouse = { name: string; branch?: WarehouseBranch | null } | null | undefined
+
+export function isCaravanBranch(branch: WarehouseBranch | null | undefined): boolean {
+  return !!branch?.isTemporary
+}
+
+/** Ended once its host closed it, or its end date is before today — mirrors
+ * the backend rule that stops new stock going in (stock can still be
+ * transferred out). */
+export function isCaravanEnded(branch: WarehouseBranch | null | undefined): boolean {
+  if (!branch?.isTemporary) return false
+  if (branch.closedAt) return true
+  if (!branch.endDate) return false
+  return branch.endDate.slice(0, 10) < new Date().toISOString().slice(0, 10)
+}
+
+// Scenario 60 Part 3 — a caravan that needs attention: running (counting
+// down to its end date) or ended with stock still in it, which has to be
+// transferred out. See GET /inventory/caravans/alerts.
+export const CaravanAlertSchema = WarehouseBranchSchema.extend({
+  ended: z.boolean(),
+  warehouseId: z.string().nullable(),
+  unitsHeld: z.number(),
+})
+export type CaravanAlert = z.infer<typeof CaravanAlertSchema>
+
+/** Whole days from today to a caravan's end date — 0 on its last day,
+ * negative once it has ended. Null when it has no end date. */
+export function caravanDaysLeft(endDate: string | null | undefined): number | null {
+  if (!endDate) return null
+  const today = Date.parse(new Date().toISOString().slice(0, 10))
+  return Math.round((Date.parse(endDate.slice(0, 10)) - today) / 86_400_000)
+}
+
+/** "Ends today", "3 days left", "Ended 2 days ago", "Closed today". */
+export function caravanCountdown(
+  endDate: string | null | undefined,
+  closedAt?: string | null
+): string {
+  if (closedAt) return closedText(closedAt)
+  const days = caravanDaysLeft(endDate)
+  if (days === null) return 'No end date'
+  if (days === 0) return 'Ends today'
+  if (days > 0) return `${days} ${days === 1 ? 'day' : 'days'} left`
+  const ago = -days
+  return `Ended ${ago === 1 ? 'yesterday' : `${ago} days ago`}`
+}
+
+// closedAt is a full timestamp, so compare local calendar days — a close at
+// 7 AM in Manila is still "today", though it is yesterday in UTC.
+function closedText(closedAt: string): string {
+  const localDay = (d: Date): number => Date.parse(d.toLocaleDateString('en-CA'))
+  const ago = Math.round((localDay(new Date()) - localDay(new Date(closedAt))) / 86_400_000)
+  if (ago <= 0) return 'Closed today'
+  return `Closed ${ago === 1 ? 'yesterday' : `${ago} days ago`}`
+}
+
+/**
+ * How a warehouse reads anywhere a location is named. Each branch has one
+ * warehouse, so it shows as its branch; a caravan says so outright and names
+ * its host, so no one mistakes event stock for a branch of its own.
+ */
+export function warehouseLabel(wh: LabelledWarehouse, fallback = '—'): string {
+  const branch = wh?.branch
+  if (branch?.isTemporary) return caravanLabelWithPlace(branch)
+  return branch?.name ?? wh?.name ?? fallback
+}
+
 export const WarehouseSummarySchema = z.object({
   id: z.string(),
   code: z.string(),
@@ -51,7 +138,7 @@ export const WarehouseSummarySchema = z.object({
   region: z.enum(['panay', 'negros']).nullable().optional(),
   // Each branch has exactly one warehouse — pickers display this branch name
   // rather than the warehouse's own "{branch} Warehouse" name.
-  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  branch: WarehouseBranchSchema.nullable().optional(),
   _count: z.object({ locations: z.number() }).optional(),
 })
 

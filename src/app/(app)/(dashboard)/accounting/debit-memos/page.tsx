@@ -6,7 +6,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { DebitMemosHub } from './_components/DebitMemosHub'
 
 export const metadata = {
-  title: 'Debit Memos | Prominent Enterprise',
+  title: 'Debit Memos | NIG Central',
   description: 'Customer debit memos and supplier returns in one place',
 }
 
@@ -20,6 +20,7 @@ export default async function DebitMemosPage() {
   const hasAccess = canAny(session, [
     ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
     ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
+    ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ,
   ])
 
   if (!hasAccess) redirect('/403')

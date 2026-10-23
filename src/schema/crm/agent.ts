@@ -8,6 +8,8 @@ export const createAgentSchema = z.object({
   status: AgentStatusEnum.optional(),
   /** Flat commission rate as a fraction, e.g. 0.05 = 5%. Null/omitted = no commission. */
   commissionRate: z.number().min(0).max(1).nullable().optional(),
+  /** Null/omitted = a tenant-wide agent, visible from every branch's checkout picker. */
+  branchId: z.string().nullable().optional(),
 })
 export type CreateAgentInput = z.infer<typeof createAgentSchema>
 

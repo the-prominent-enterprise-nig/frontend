@@ -12,6 +12,12 @@ type Props = {
   isSubmitting: boolean
   onCancel: () => void
   onPrimary: () => void
+  /** What the post is called on this screen. Receiving against a PO is
+   * "Receive stock"; the standalone screen creates a receiving report and says
+   * so, because that document — not the movement — is what the receiver was
+   * sent here to produce. */
+  primaryLabel?: string
+  submittingLabel?: string
 }
 
 /** Fixed to the bottom of the working surface: on a long delivery the receive
@@ -24,6 +30,8 @@ export function ReceiveActionBar({
   isSubmitting,
   onCancel,
   onPrimary,
+  primaryLabel = 'Receive stock',
+  submittingLabel = 'Receiving…',
 }: Props) {
   const blocked = blockerCount > 0
 
@@ -70,7 +78,7 @@ export function ReceiveActionBar({
           className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4.5 py-2.5 text-[13.5px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-          {isSubmitting ? 'Receiving…' : 'Receive stock'}
+          {isSubmitting ? submittingLabel : primaryLabel}
         </button>
       </div>
     </div>

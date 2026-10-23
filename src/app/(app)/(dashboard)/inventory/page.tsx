@@ -358,11 +358,9 @@ export default function InventoryPage() {
     // which was being mislabeled as this before.
     const agingRaw = pick(12)?.summary ?? {}
     const agingBreakdown = [
-      { label: '0–30 days', value: agingRaw['0_30']?.count ?? 0, color: '#10b981' },
-      { label: '31–60 days', value: agingRaw['31_60']?.count ?? 0, color: '#f59e0b' },
-      { label: '61–90 days', value: agingRaw['61_90']?.count ?? 0, color: '#f97316' },
-      { label: '91–180 days', value: agingRaw['91_180']?.count ?? 0, color: '#f97316' },
-      { label: '180+ days', value: agingRaw['180_plus']?.count ?? 0, color: '#ef4444' },
+      { label: '0–6 months', value: agingRaw['0_6']?.count ?? 0, color: '#10b981' },
+      { label: '7–14 months', value: agingRaw['7_14']?.count ?? 0, color: '#f59e0b' },
+      { label: '15+ months', value: agingRaw['15_plus']?.count ?? 0, color: '#ef4444' },
     ]
     const abcSegments = [
       { label: 'Healthy', value: healthyCount, color: '#10b981' },
@@ -559,7 +557,7 @@ export default function InventoryPage() {
                   { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
                   {
                     label: 'Goods Receiving',
-                    href: '/inventory/operations?tab=receiving',
+                    href: '/inventory/stock-transaction?tab=receiving',
                     icon: Package,
                   },
                   { label: 'Stock Counts', href: '/inventory/counting', icon: Layers },
@@ -836,7 +834,7 @@ export default function InventoryPage() {
                             </span>
                             <p className="text-[10px] text-gray-400">{alert.currentQty} on hand</p>
                             <Link
-                              href="/inventory/operations?tab=receiving"
+                              href="/inventory/stock-transaction?tab=receiving&new=1"
                               className="inline-flex items-center gap-0.5 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-800 hover:bg-red-200"
                             >
                               Receive
@@ -1091,7 +1089,7 @@ export default function InventoryPage() {
                   {loading ? '—' : s.openPrCount} Open PR{s.openPrCount === 1 ? '' : 's'}
                 </Link>
                 <Link
-                  href="/inventory/purchase-orders"
+                  href="/inventory/purchase-orders?tab=orders"
                   className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
                 >
                   {loading ? '—' : s.openPoCount} Open PO{s.openPoCount === 1 ? '' : 's'}
@@ -1113,7 +1111,7 @@ export default function InventoryPage() {
                       href={
                         p.type === 'PR'
                           ? '/inventory/purchase-requests'
-                          : '/inventory/purchase-orders'
+                          : `/inventory/purchase-orders?tab=orders&po=${p.id}`
                       }
                       className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
                     >

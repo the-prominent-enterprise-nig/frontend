@@ -5,31 +5,28 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft,
-  BellPlus,
   ChevronRight,
-  Download,
   GitMerge,
-  Paperclip,
-  Pencil,
+  Mail,
+  MapPin,
+  Phone,
   Receipt,
-  Trash2,
   X,
+  type LucideIcon,
 } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
-import { getCustomerHistoryWithPayments } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import {
+  getCustomerPurchases,
+  type CustomerPurchasesPage,
+} from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import TablePagination from '@/src/components/common/TablePagination'
 import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
+import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import type { Customer, Lead, Reminder } from '@/src/schema/crm/types'
-import type {
-  InstallmentSchedule,
-  CustomerHistoryItem,
-  PosTransaction,
-  PosInvoiceType,
-  InstallmentProvider,
-} from '@/src/schema/pos'
+import type { InstallmentSchedule, PosTransaction, PosInvoiceType } from '@/src/schema/pos'
 import {
   DUE_STATUS_LABELS,
   dueOutstanding,
@@ -39,76 +36,38 @@ import {
   sumDuesPaid,
 } from '@/src/libs/pos/installment-dues'
 
-// One row per ITEM bought, not per transaction. The per-transaction view this
-// replaced could only ever say "mixed" for a cart that financed one item and
-// paid cash for another — invoiceType lives on PosTransactionLine, not just
-// PosTransaction, so only a line-level list can show which item was which.
-// Payments (CollectionReceipt rows) are deliberately not here; they live in
-// Installment Plans, Upcoming Payables and the Customer Ledger.
-type PurchasedItem = {
-  key: string
-  itemName: string | null
-  sku: string | null
-  serials: string[]
-  quantity: number
-  unitPrice: number
-  lineTotal: number
-  invoiceType: PosInvoiceType
-  installmentProvider: InstallmentProvider | null
-  termMonths: number | null
-  occurredAt: string
-  transactionNumber: string
-  /** The parent sale. TransactionDetail re-fetches the full record itself
-   * (react-query on summary.id) — the invoices it lists only come back from
-   * findOne(), never from this history endpoint — so passing the summary is
-   * enough and no extra fetch is needed here. */
-  transaction: PosTransaction
-  /** Refunds are stored with POSITIVE amounts and netted out by the caller
-   * (see sessions.service.ts's `totalSales - totalRefunds`), so the sign is
-   * applied here for display rather than read off the row. */
-  isReturn: boolean
-}
+// One row per SALE — one Sales Invoice No. — however many items are on it
+// (client request, 2026-10-11). The earlier one-row-per-item list split a
+// five-item invoice into five rows, so the customer's invoices could not be
+// counted or matched against the paper ones. The units stay visible: they are
+// listed inside the row. Payments (CollectionReceipt rows) are deliberately not
+// here; they live in Installment Plans (In house), Upcoming Payables and the
+// Customer Ledger.
 
 /** Server-side page size for the customer's transaction history. */
 const HISTORY_PAGE_SIZE = 20
 
-function flattenPurchasedItems(history: CustomerHistoryItem[]): PurchasedItem[] {
-  const rows: PurchasedItem[] = []
-  for (const tx of history) {
-    if (tx.kind !== 'SALE') continue
-    // Voided sales never happened; refunds/exchanges do belong here, signed.
-    if (tx.status === 'voided') continue
-    const isReturn = tx.transactionType === 'refund'
-    const sign = isReturn ? -1 : 1
-    for (const line of tx.lines ?? []) {
-      rows.push({
-        key: line.id,
-        itemName: line.itemName,
-        sku: line.sku ?? null,
-        // Split-type items (aircon indoor+outdoor) carry two serials on one line.
-        serials: [line.serialNumber, line.secondarySerialNumber].filter((sn): sn is string =>
-          Boolean(sn)
-        ),
-        // Number() throughout — quantity/unitPrice/lineTotal are Prisma
-        // Decimals and arrive as strings despite the `number` types here.
-        quantity: sign * Number(line.quantity),
-        unitPrice: Number(line.unitPrice),
-        lineTotal: sign * Number(line.lineTotal),
-        invoiceType: line.invoiceType ?? tx.invoiceType ?? 'cash',
-        installmentProvider: line.installmentProvider ?? null,
-        termMonths: line.termMonths ?? null,
-        occurredAt: tx.occurredAt ?? tx.createdAt,
-        transactionNumber: tx.transactionNumber,
-        transaction: tx,
-        isReturn,
-      })
-    }
+/** What a sale line shows as its unit: the item, its quantity when more than
+ * one, and the serial(s) — a split-type unit (aircon indoor + outdoor) carries
+ * two on one line. Number() because quantity is a Prisma Decimal and arrives
+ * as a string despite the `number` type. */
+function unitOf(line: NonNullable<PosTransaction['lines']>[number]): {
+  name: string
+  quantity: number
+  serials: string[]
+} {
+  return {
+    name: line.itemName ?? 'Unknown item',
+    quantity: Number(line.quantity),
+    serials: [line.serialNumber, line.secondarySerialNumber].filter((sn): sn is string =>
+      Boolean(sn)
+    ),
   }
-  return rows.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
 }
 
-// Per-line payment mode. 'charge' is a retired checkout option kept for
-// historical rows (see PosInvoiceType in schema.prisma), so it still needs a label.
+// How the sale was paid for — 'mixed' when its lines differ. 'charge' is a
+// retired checkout option kept for historical rows (see PosInvoiceType in
+// schema.prisma), so it still needs a label.
 const INVOICE_TYPE_LABEL: Record<PosInvoiceType, string> = {
   cash: 'Cash',
   charge: 'Charge',
@@ -133,17 +92,42 @@ export default function Customer360({
   canEdit,
   canDelete,
   canScheduleReminder,
+  canApplyForCredit,
   currentUserId,
   tenantId,
+  scope = 'crm',
 }: {
   id: string
   canEdit: boolean
   canDelete: boolean
   canScheduleReminder: boolean
+  canApplyForCredit: boolean
   currentUserId: string
   tenantId: string
+  /** Which module this view is mounted under. POS reuses this exact
+   * component (client request, 2026-09-21: "POS customer view should match
+   * CRM customer view") rather than keeping a narrower parallel screen, the
+   * same one-component-two-doors treatment `CustomerForm` already gets.
+   *
+   * Every endpoint behind this view is reachable by a Cashier — `/crm/
+   * customers/:id/360` needs only `crm:customers:read`, the installment
+   * schedules and transaction history are POS routes — so the sections
+   * themselves need no gating. Only the LINKS differ: a Cashier is confined
+   * to the `pos` module by ROLE_MODULE_ACCESS, so a `/crm/...` href would
+   * bounce off /403 even though the underlying data loaded fine. Under
+   * `pos`, links to CRM-only destinations (leads, installment account
+   * detail) render as plain text instead of being followed. The customer
+   * ledger is NOT one of them any more — POS got its own read-only
+   * /pos/customers/:id/ledger page (2026-09-21), so that link simply
+   * follows `base`. */
+  scope?: 'crm' | 'pos'
 }) {
   const router = useRouter()
+  // Where this view's own routes live. The Delete/Edit/back links have to
+  // return to the module the user came in through, not always CRM.
+  const base = scope === 'pos' ? '/pos/customers' : '/crm/customers'
+  // CRM-module destinations a POS user cannot open (see `scope` above).
+  const isCrm = scope === 'crm'
   const [data, setData] = useState<CustomerView | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -161,17 +145,15 @@ export default function Customer360({
   // transactions (TransactionsList.tsx's TransactionDetail).
   const [scheduleDetailTarget, setScheduleDetailTarget] = useState<InstallmentSchedule | null>(null)
 
-  // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId/history-with-payments)
-  // — covers cash/full-payment sales too, unlike Installment Plans above.
-  // The endpoint still merges in Collections payments; this page now shows
-  // only the sale lines from it (see flattenPurchasedItems).
-  const [transactionHistory, setTransactionHistory] = useState<CustomerHistoryItem[]>([])
+  // CRM-01: the customer's sales, one row per Sales Invoice No. (server-paged,
+  // GET /pos/transactions/customer/:customerId/purchases) — covers cash/full-
+  // payment sales too, unlike Installment Plans (In house) below. Narrowed by
+  // an SI Date range; the response's `totals` cover that whole range, not just
+  // the page on screen.
+  const [purchases, setPurchases] = useState<CustomerPurchasesPage | null>(null)
   const [historyPage, setHistoryPage] = useState(1)
-  const [historyMeta, setHistoryMeta] = useState<{
-    page: number
-    total: number
-    pageCount: number
-  } | null>(null)
+  const [siFrom, setSiFrom] = useState('')
+  const [siTo, setSiTo] = useState('')
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
   // TransactionDetail (the same receipt modal POS's own pages use) requires
@@ -180,13 +162,8 @@ export default function Customer360({
   const [posSession, setPosSession] = useState<SessionUser | null>(null)
   const [selectedTransaction, setSelectedTransaction] = useState<PosTransaction | null>(null)
   useEffect(() => {
-    getSessionOrNull().then((s) => setPosSession(s))
+    getSessionIfAvailable().then((s) => setPosSession(s))
   }, [])
-
-  const purchasedItems = useMemo(
-    () => flattenPurchasedItems(transactionHistory),
-    [transactionHistory]
-  )
 
   const upcomingPayables = useMemo(
     () => flattenUpcomingPayables(installmentSchedules),
@@ -201,7 +178,7 @@ export default function Customer360({
     const res = await customersApi.remove(id)
     setDeleting(false)
     if (res.success) {
-      router.push('/crm/customers')
+      router.push(base)
       router.refresh()
     } else {
       setDeleteError(res.error ?? 'Failed to delete customer')
@@ -231,15 +208,32 @@ export default function Customer360({
   }, [id])
 
   useEffect(() => {
+    let cancelled = false
     setHistoryLoading(true)
-    getCustomerHistoryWithPayments(id, historyPage, HISTORY_PAGE_SIZE).then((res) => {
+    getCustomerPurchases(id, {
+      page: historyPage,
+      limit: HISTORY_PAGE_SIZE,
+      from: siFrom || undefined,
+      to: siTo || undefined,
+    }).then((res) => {
+      if (cancelled) return
       if (res.success && res.data) {
-        setTransactionHistory(res.data.items)
-        setHistoryMeta(res.data.meta)
+        setPurchases(res.data)
+        setHistoryError(null)
       } else setHistoryError(res.error ?? 'Failed to load transaction history')
       setHistoryLoading(false)
     })
-  }, [id, historyPage])
+    return () => {
+      cancelled = true
+    }
+  }, [id, historyPage, siFrom, siTo])
+
+  // A new date range starts from its first page.
+  function changeSiRange(from: string, to: string) {
+    setSiFrom(from)
+    setSiTo(to)
+    setHistoryPage(1)
+  }
 
   if (loading) {
     return <div className="px-6 py-8 text-gray-400">Loading customer…</div>
@@ -247,10 +241,7 @@ export default function Customer360({
   if (error || !data) {
     return (
       <div className="px-6 py-8 lg:px-10">
-        <Link
-          href="/crm/customers"
-          className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500"
-        >
+        <Link href={base} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500">
           <ArrowLeft className="h-4 w-4" /> Back to customers
         </Link>
         <p className="text-red-600">{error ?? 'Not found'}</p>
@@ -261,7 +252,7 @@ export default function Customer360({
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href="/crm/customers"
+        href={base}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" /> Back to customers
@@ -311,62 +302,63 @@ export default function Customer360({
               the raw AR invoice list — the AR invoices list itself stays
               reachable from Accounting → AR Invoices. */}
           <Link
-            href={`/crm/customers/${id}/ledger`}
+            href={`${base}/${id}/ledger`}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
-            <Receipt className="h-4 w-4" />
             View Customer Ledger
           </Link>
-          {canScheduleReminder && (
-            <button
-              onClick={() => setReminderOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              <BellPlus className="h-4 w-4" />
-              Schedule reminder
-            </button>
-          )}
-          {canEdit && (
+          {/* 2026-09-18 client request — apply for credit straight from the
+              customer's profile, instead of opening the POS credit
+              applications page and searching for them again. Carries the
+              applicant through so the modal opens with them pre-selected. */}
+          {canApplyForCredit && (
             <Link
-              href={`/crm/customers/${id}/edit`}
-              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              href={`/pos/credit-applications/new?applicantCustomerId=${id}&applicantName=${encodeURIComponent(
+                data.name ?? ''
+              )}`}
+              className="inline-flex items-center gap-2 rounded-xl bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800"
             >
-              <Pencil className="h-4 w-4" />
-              Edit
+              Apply for Credit
             </Link>
+          )}
+          {(canScheduleReminder || canEdit || canDelete) && (
+            <RowActionsMenu
+              horizontal
+              bordered
+              items={[
+                ...(canScheduleReminder
+                  ? [
+                      {
+                        label: 'Schedule reminder',
+                        onClick: () => setReminderOpen(true),
+                      },
+                    ]
+                  : []),
+                ...(canEdit
+                  ? [
+                      {
+                        label: 'Edit',
+                        onClick: () => router.push(`${base}/${id}/edit`),
+                      },
+                    ]
+                  : []),
+                ...(canDelete
+                  ? [
+                      {
+                        label: deleting ? 'Deleting…' : 'Delete customer',
+                        variant: 'danger' as const,
+                        onClick: handleDelete,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           )}
         </div>
       </header>
 
-      {upcomingPayables.length > 0 && (
-        <div
-          className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 ${
-            URGENCY_STRIP_CLASSES[
-              payableUrgency(upcomingPayables[0].status, upcomingPayables[0].dueDate)
-            ]
-          }`}
-        >
-          <div className="text-[13px]">
-            <span className="text-gray-500">Next payment due </span>
-            <span className="font-semibold text-gray-900">
-              {formatPeso(upcomingPayables[0].amountDue)}
-            </span>
-            <span className="text-gray-500">
-              {' '}
-              on {new Date(upcomingPayables[0].dueDate).toLocaleDateString()}
-            </span>
-          </div>
-          <div className="text-[12px] text-gray-500">
-            {upcomingPayables.length} upcoming ·{' '}
-            {formatPeso(upcomingPayables.reduce((sum, p) => sum + p.amountDue, 0))} total
-            <a
-              href="#upcoming-payables"
-              className="ml-2 font-medium text-prominent-orange-700 hover:underline"
-            >
-              View all ↓
-            </a>
-          </div>
-        </div>
+      {deleteError && (
+        <p className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-800">{deleteError}</p>
       )}
 
       <div className="mt-6">
@@ -374,108 +366,103 @@ export default function Customer360({
             PH address, and cramming that into a 1/3-width column read badly
             (developer-flagged, 2026-08-09). */}
         <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Contact</h2>
-          <dl className="space-y-2 text-[13px]">
-            <Row label="Email" value={data.email ?? '—'} />
-            <Row label="Phone" value={data.phone ?? '—'} />
-            <Row label="Address" value={data.address ?? '—'} />
-            <Row label="Tax exempt" value={data.isTaxExempt ? 'Yes' : 'No'} />
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-[14px] font-semibold text-prominent-purple-900">Contact</h2>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                data.isTaxExempt ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <Receipt className="h-3 w-3" aria-hidden />
+              {data.isTaxExempt ? 'Tax exempt' : 'Not tax exempt'}
+            </span>
+          </div>
+          <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
+            <ContactField
+              icon={Mail}
+              label="Email"
+              value={data.email}
+              href={data.email ? `mailto:${data.email}` : undefined}
+            />
+            <ContactField
+              icon={Phone}
+              label="Phone"
+              value={data.phone}
+              href={data.phone ? `tel:${data.phone}` : undefined}
+            />
+            <ContactField
+              icon={MapPin}
+              label="Address"
+              value={data.address}
+              className="sm:col-span-2"
+            />
           </dl>
         </section>
       </div>
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-[14px] font-semibold text-gray-900">Transaction History</h2>
-            <p className="text-[11px] text-gray-400">
-              Items bought — click for the sales invoice · payments are in the{' '}
-              <Link href={`/crm/customers/${id}/ledger`} className="underline hover:text-gray-600">
-                Customer Ledger
-              </Link>
-            </p>
+            <SiDateFilter from={siFrom} to={siTo} onChange={changeSiRange} />
           </div>
-          {historyLoading ? (
+          {purchases && (
+            <div className="mb-3 flex flex-wrap items-baseline gap-x-6 gap-y-1 rounded-lg bg-gray-50 px-4 py-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                  Total purchases{siFrom || siTo ? ' in this period' : ''}
+                </p>
+                <p className="text-lg font-bold text-gray-900" data-testid="purchases-total">
+                  {formatPeso(purchases.totals.totalPurchases)}
+                </p>
+              </div>
+              <p className="text-[12px] text-gray-500">
+                {purchases.totals.purchaseCount}{' '}
+                {purchases.totals.purchaseCount === 1 ? 'transaction' : 'transactions'}
+              </p>
+            </div>
+          )}
+          {historyLoading && !purchases ? (
             <p className="py-4 text-center text-[13px] text-gray-400">
               Loading transaction history…
             </p>
           ) : historyError ? (
             <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
-          ) : purchasedItems.length === 0 ? (
+          ) : !purchases || purchases.items.length === 0 ? (
             <p className="py-4 text-center text-[13px] text-gray-400">
-              No items bought by this customer.
+              {siFrom || siTo
+                ? 'No purchases by this customer in that period.'
+                : 'No items bought by this customer.'}
             </p>
           ) : (
             <>
-              <ul className="divide-y divide-gray-100">
-                {purchasedItems.map((it) => (
-                  <li
-                    key={it.key}
-                    onClick={() => setSelectedTransaction(it.transaction)}
-                    className="flex cursor-pointer items-start justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px] hover:bg-gray-50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-gray-800">
-                        {it.itemName ?? 'Unknown item'}
-                        {it.isReturn && (
-                          <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
-                            returned
-                          </span>
-                        )}
-                      </p>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-400">
-                        <span>
-                          {new Date(it.occurredAt).toLocaleDateString('en-PH', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </span>
-                        <span>·</span>
-                        <span>
-                          {Math.abs(it.quantity)} × {formatPeso(it.unitPrice)}
-                        </span>
-                        {it.sku && (
-                          <>
-                            <span>·</span>
-                            <span className="font-mono">{it.sku}</span>
-                          </>
-                        )}
-                        <span>·</span>
-                        <span className="font-mono">{it.transactionNumber}</span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 font-medium ${INVOICE_TYPE_CLASSES[it.invoiceType]}`}
-                        >
-                          {INVOICE_TYPE_LABEL[it.invoiceType]}
-                          {it.invoiceType === 'installment' && it.termMonths
-                            ? ` · ${it.termMonths}mo`
-                            : ''}
-                          {it.installmentProvider === 'tpf' ? ' · TPF' : ''}
-                        </span>
-                      </div>
-                      {it.serials.length > 0 && (
-                        <p className="mt-0.5 truncate font-mono text-[11px] text-gray-400">
-                          SN: {it.serials.join(' / ')}
-                        </p>
-                      )}
-                    </div>
-                    <span
-                      className={`shrink-0 font-medium ${it.isReturn ? 'text-orange-600' : 'text-gray-800'}`}
-                    >
-                      {it.isReturn ? '-' : ''}
-                      {formatPeso(Math.abs(it.lineTotal))}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {historyMeta && historyMeta.total > 0 && (
+              <div className={`overflow-x-auto ${historyLoading ? 'opacity-60' : ''}`}>
+                <table className="w-full min-w-[720px] border-collapse text-[13px]">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      <th className="px-2 py-2">SI #</th>
+                      <th className="px-2 py-2">Sales Invoice Date</th>
+                      <th className="px-2 py-2">Unit</th>
+                      <th className="px-2 py-2">Payment</th>
+                      <th className="px-2 py-2 text-right">Deducted</th>
+                      <th className="px-2 py-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {purchases.items.map((tx) => (
+                      <PurchaseRow key={tx.id} tx={tx} onOpen={() => setSelectedTransaction(tx)} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {purchases.meta.total > 0 && (
                 <TablePagination
-                  page={historyMeta.page}
-                  pageCount={historyMeta.pageCount}
+                  page={purchases.meta.page}
+                  pageCount={purchases.meta.pageCount}
                   onPageChange={setHistoryPage}
-                  pageStart={(historyMeta.page - 1) * HISTORY_PAGE_SIZE}
-                  pageSize={transactionHistory.length}
-                  totalItems={historyMeta.total}
+                  pageStart={(purchases.meta.page - 1) * HISTORY_PAGE_SIZE}
+                  pageSize={purchases.items.length}
+                  totalItems={purchases.meta.total}
                   noun="transaction"
                 />
               )}
@@ -486,7 +473,9 @@ export default function Customer360({
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Installment Plans</h2>
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">
+            Installment Plans (In house)
+          </h2>
           {installmentLoading ? (
             <p className="py-4 text-center text-[13px] text-gray-400">Loading installment plans…</p>
           ) : installmentError ? (
@@ -534,12 +523,18 @@ export default function Customer360({
           <ul className="divide-y divide-gray-100">
             {data.leads.map((l) => (
               <li key={l.id} className="py-2.5 text-[13px]">
-                <Link
-                  href={`/crm/leads/${l.id}`}
-                  className="font-medium text-prominent-orange-700 hover:underline"
-                >
-                  {[l.firstName, l.lastName].filter(Boolean).join(' ')}
-                </Link>
+                {isCrm ? (
+                  <Link
+                    href={`/crm/leads/${l.id}`}
+                    className="font-medium text-prominent-orange-700 hover:underline"
+                  >
+                    {[l.firstName, l.lastName].filter(Boolean).join(' ')}
+                  </Link>
+                ) : (
+                  <span className="font-medium text-gray-800">
+                    {[l.firstName, l.lastName].filter(Boolean).join(' ')}
+                  </span>
+                )}
                 <span className="ml-2 text-[12px] text-gray-500">{l.status}</span>
               </li>
             ))}
@@ -586,12 +581,12 @@ export default function Customer360({
                       className="flex w-full items-center justify-between gap-2 rounded-lg -mx-1 px-1 text-left hover:bg-gray-50"
                     >
                       <span className="text-gray-700">
-                        <span className="font-medium text-gray-800">
-                          {productLabel(p.schedule.posTransactionLines)}
+                        <span className="font-mono text-[12px] font-medium text-gray-800">
+                          {p.siNumber}
                         </span>
                         {' · '}
-                        <span className="font-mono text-[11px] text-gray-400">
-                          {p.invoiceNumber}
+                        <span className="font-medium text-gray-800">
+                          {productLabel(p.schedule.posTransactionLines)}
                         </span>
                         {' · '}
                         Payment {p.lineNumber} of {p.totalLines} · due{' '}
@@ -609,7 +604,7 @@ export default function Customer360({
               </ul>
               {upcomingPayables.length > 10 && (
                 <Link
-                  href={`/crm/customers/${id}/ledger`}
+                  href={`${base}/${id}/ledger`}
                   className="mt-3 inline-block text-[12px] text-prominent-orange-700 hover:underline"
                 >
                   +{upcomingPayables.length - 10} more — View full customer ledger →
@@ -625,132 +620,9 @@ export default function Customer360({
           schedule={scheduleDetailTarget}
           customerId={id}
           customerName={data.name}
+          base={base}
           onClose={() => setScheduleDetailTarget(null)}
         />
-      )}
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Bank Details</h2>
-          {!data.bankAccounts || data.bankAccounts.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No bank details on file. Add one from Edit.
-            </p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {data.bankAccounts.map((acc) => (
-                <li
-                  key={acc.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13px]"
-                >
-                  <span className="font-medium text-gray-800">
-                    {acc.bankName} — {acc.accountNumber}
-                  </span>
-                  <span className="flex items-center gap-2 text-gray-500">
-                    {acc.accountName && <span>{acc.accountName}</span>}
-                    {acc.isPrimary && (
-                      <span className="rounded-full bg-prominent-orange-50 px-2 py-0.5 text-[11px] font-medium text-prominent-orange-700">
-                        Primary
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Co-maker (Guarantor)</h2>
-          {!data.coMakers || data.coMakers.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No co-maker on file. Add one from Edit.
-            </p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {data.coMakers.map((cm) => (
-                <li
-                  key={cm.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13px]"
-                >
-                  <span className="font-medium text-gray-800">
-                    {cm.name} — {cm.relationship}
-                  </span>
-                  <span className="flex items-center gap-2 text-gray-500">
-                    <span>{cm.contactNumber}</span>
-                    {cm.email && <span>{cm.email}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">ID & Consent</h2>
-          {!data.idType && !data.idNumber && !data.idDocumentFile && !data.consentGiven ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No ID information on file. Add it from Edit.
-            </p>
-          ) : (
-            <div className="space-y-2.5 text-[13px]">
-              {(data.idType || data.idNumber) && (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium text-gray-800">{data.idType || 'ID'}</span>
-                  {data.idNumber && <span className="text-gray-500">{data.idNumber}</span>}
-                </div>
-              )}
-              {data.idDocumentFile && (
-                <a
-                  href={`/api/files/${data.idDocumentFile.id}/download`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-prominent-purple-700 hover:underline"
-                >
-                  <Paperclip className="h-3.5 w-3.5" />
-                  {data.idDocumentFile.originalName}
-                  <Download className="h-3.5 w-3.5" />
-                </a>
-              )}
-              <div className="flex items-center gap-1.5 text-gray-500">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${data.consentGiven ? 'bg-green-500' : 'bg-gray-300'}`}
-                />
-                {data.consentGiven
-                  ? `Consent given${data.consentGivenAt ? ` on ${new Date(data.consentGivenAt).toLocaleDateString()}` : ''}`
-                  : 'Consent not yet given'}
-              </div>
-            </div>
-          )}
-        </section>
-      </div>
-
-      {canDelete && (
-        <div className="mt-6 rounded-xl border border-red-200 bg-red-50/60 p-5">
-          <h2 className="text-[14px] font-semibold text-red-900">Danger Zone</h2>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-md text-[13px] text-red-700">
-              Deleting {data.name} is permanent and can&apos;t be undone from here.
-            </p>
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              <Trash2 className="h-4 w-4" />
-              {deleting ? 'Deleting…' : 'Delete customer'}
-            </button>
-          </div>
-          {deleteError && (
-            <p className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-800">
-              {deleteError}
-            </p>
-          )}
-        </div>
       )}
 
       <ScheduleReminderModal
@@ -773,6 +645,47 @@ export default function Customer360({
   )
 }
 
+/** One contact detail: an icon tile, a small label above, the value below.
+ * Reads as a card of facts rather than a label/value table — the address is
+ * long and wraps, which a right-aligned row pushed to the far edge of the page. */
+function ContactField({
+  icon: Icon,
+  label,
+  value,
+  href,
+  className = '',
+}: {
+  icon: LucideIcon
+  label: string
+  value?: string | null
+  href?: string
+  className?: string
+}) {
+  return (
+    <div className={`flex min-w-0 items-start gap-3 ${className}`}>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-prominent-purple-50 text-prominent-purple-700">
+        <Icon className="h-4 w-4" aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{label}</dt>
+        <dd className="mt-0.5 break-words text-[13px] font-medium text-prominent-purple-900">
+          {value ? (
+            href ? (
+              <a href={href} className="hover:text-prominent-purple-700 hover:underline">
+                {value}
+              </a>
+            ) : (
+              value
+            )
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
+        </dd>
+      </div>
+    </div>
+  )
+}
+
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
     <div className="flex justify-between gap-3">
@@ -790,6 +703,124 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 
 function formatPeso(n: number) {
   return `₱${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/** SI Date range — narrows Transaction History (and its total) to the sales
+ * rung up between two dates, both ends inclusive. */
+function SiDateFilter({
+  from,
+  to,
+  onChange,
+}: {
+  from: string
+  to: string
+  onChange: (from: string, to: string) => void
+}) {
+  const inputClass =
+    'rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[13px] text-gray-800'
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[13px] text-gray-600">
+      <span className="font-medium">Sales Invoice Date</span>
+      <input
+        type="date"
+        aria-label="Sales Invoice Date from"
+        value={from}
+        max={to || undefined}
+        onChange={(e) => onChange(e.target.value, to)}
+        className={inputClass}
+      />
+      <span>to</span>
+      <input
+        type="date"
+        aria-label="Sales Invoice Date to"
+        value={to}
+        min={from || undefined}
+        onChange={(e) => onChange(from, e.target.value)}
+        className={inputClass}
+      />
+      {(from || to) && (
+        <button
+          type="button"
+          onClick={() => onChange('', '')}
+          className="rounded-lg px-2 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** One sale: its Sales Invoice No., date, every unit on it, how it was paid
+ * and what it came to. A refund reads as a negative, like the ledger. */
+function PurchaseRow({ tx, onOpen }: { tx: PosTransaction; onOpen: () => void }) {
+  const isReturn = tx.transactionType === 'refund'
+  const invoiceType = tx.invoiceType ?? 'cash'
+  const units = (tx.lines ?? []).map(unitOf)
+  return (
+    <tr onClick={onOpen} className="cursor-pointer align-top hover:bg-gray-50">
+      <td className="px-2 py-2.5 font-mono text-[12px] text-gray-800" data-testid="purchase-si">
+        {tx.salesInvoiceNumber ?? tx.transactionNumber}
+      </td>
+      <td className="whitespace-nowrap px-2 py-2.5 text-gray-600">
+        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        })}
+      </td>
+      <td className="px-2 py-2.5">
+        {units.length === 0 ? (
+          <span className="text-gray-400">—</span>
+        ) : (
+          <ul className="space-y-1">
+            {units.map((u, i) => (
+              <li key={i}>
+                <span className="font-medium text-gray-800">{u.name}</span>
+                {u.quantity !== 1 && (
+                  <span className="text-gray-500"> ×{Math.abs(u.quantity)}</span>
+                )}
+                {u.serials.length > 0 && (
+                  <span className="block font-mono text-[11px] text-gray-400">
+                    SN: {u.serials.join(' / ')}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {isReturn && (
+          <span className="mt-1 inline-block rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+            returned
+          </span>
+        )}
+      </td>
+      <td className="px-2 py-2.5">
+        <span
+          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${INVOICE_TYPE_CLASSES[invoiceType]}`}
+        >
+          {INVOICE_TYPE_LABEL[invoiceType]}
+        </span>
+      </td>
+      {/* What came off the sale before tax — PosTransaction.discountTotal,
+          the gap between Subtotal and Total. Blank for a return, whose row
+          is already the negative of what was sold. */}
+      <td
+        className="whitespace-nowrap px-2 py-2.5 text-right text-gray-600"
+        data-testid="purchase-deducted"
+      >
+        {!isReturn && Number(tx.discountTotal) > 0
+          ? `-${formatPeso(Number(tx.discountTotal))}`
+          : '—'}
+      </td>
+      <td
+        className={`whitespace-nowrap px-2 py-2.5 text-right font-medium ${isReturn ? 'text-orange-600' : 'text-gray-800'}`}
+      >
+        {isReturn ? '-' : ''}
+        {formatPeso(Math.abs(Number(tx.totalAmount)))}
+      </td>
+    </tr>
+  )
 }
 
 // Scenario 23 Gap 2 — a schedule can now cover several items sharing one
@@ -819,7 +850,9 @@ type UpcomingPayable = {
   key: string
   schedule: InstallmentSchedule
   invoiceId: string
-  invoiceNumber: string
+  /** The sale's Sales Invoice No. — what the customer holds and what the
+   * ledger prints as Ref. Not the internal POS transaction number. */
+  siNumber: string
   lineNumber: number
   totalLines: number
   dueDate: string
@@ -839,7 +872,13 @@ function flattenUpcomingPayables(schedules: InstallmentSchedule[]): UpcomingPaya
         key: `${schedule.id}-${line.lineNumber}`,
         schedule,
         invoiceId: line.arInvoice.id,
-        invoiceNumber: line.arInvoice.invoiceNumber,
+        // Same fallback chain as the plan header below: the internal
+        // transaction number only stands in for a sale booked before the SI
+        // became required at checkout.
+        siNumber:
+          schedule.posTransaction?.salesInvoiceNumber ??
+          schedule.posTransaction?.transactionNumber ??
+          line.arInvoice.invoiceNumber,
         lineNumber: line.lineNumber,
         totalLines: schedule.lines.length,
         // The LINE's own due date and amount, not the invoice's. They agreed
@@ -885,12 +924,6 @@ const URGENCY_TEXT_CLASSES: Record<PayableUrgency, string> = {
   upcoming: 'text-gray-700',
 }
 
-const URGENCY_STRIP_CLASSES: Record<PayableUrgency, string> = {
-  overdue: 'border-red-200 bg-red-50',
-  dueSoon: 'border-orange-200 bg-orange-50',
-  upcoming: 'border-gray-200 bg-gray-50',
-}
-
 // The plan's overall finished/ongoing state — distinct from
 // InstallmentStatusBadge above, which marks one due-date line's own AR
 // status. closed/early_closed/written_off all mean "no longer active", just
@@ -924,6 +957,13 @@ function InstallmentPlanStatusBadge({ status }: { status: string }) {
   )
 }
 
+// Customer detail says "To Pay" for a posted, unpaid due; DUE_STATUS_LABELS'
+// "Due" stays as-is for POS Collections, which shares it.
+const CUSTOMER_DUE_STATUS_LABELS: Record<string, string> = {
+  ...DUE_STATUS_LABELS,
+  SENT: 'To Pay',
+}
+
 function InstallmentStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     PAID: 'bg-green-100 text-green-700',
@@ -937,9 +977,31 @@ function InstallmentStatusBadge({ status }: { status: string }) {
     <span
       className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}
     >
-      {DUE_STATUS_LABELS[status] ?? status}
+      {CUSTOMER_DUE_STATUS_LABELS[status] ?? status}
     </span>
   )
+}
+
+/** Where this plan sits in the customer ledger. Keyed by its InstallmentAccount
+ * when there is one (the ledger draws in-house plans from the account), and
+ * otherwise by the POS sale, which the server resolves to whatever shape that
+ * sale became. */
+function customerLedgerHref(
+  base: string,
+  customerId: string,
+  schedule: InstallmentSchedule
+): string {
+  const key = schedule.installmentAccount
+    ? `acct:${schedule.installmentAccount.id}`
+    : schedule.posTransactionId
+      ? `txn:${schedule.posTransactionId}`
+      : null
+  // `base` is the module's own customers root — POS reaches the same ledger
+  // through /pos/customers/:id/ledger (read-only), so this is no longer
+  // CRM-only.
+  const href = `${base}/${customerId}/ledger`
+  // No key to narrow by — the whole ledger is still the right destination.
+  return key ? `${href}?transactionId=${encodeURIComponent(key)}` : href
 }
 
 /** Scenario 23 Gap 2 (developer-requested redesign) — the full breakdown
@@ -951,11 +1013,14 @@ function InstallmentScheduleDetailModal({
   schedule,
   customerId,
   customerName,
+  base,
   onClose,
 }: {
   schedule: InstallmentSchedule
   customerId: string
   customerName: string
+  /** The module's customers root — '/crm/customers' or '/pos/customers'. */
+  base: string
   onClose: () => void
 }) {
   const router = useRouter()
@@ -966,8 +1031,22 @@ function InstallmentScheduleDetailModal({
   // per-month figure, and it nets against totalPayable because both exclude
   // the down payment — which settles no due and is reported on its own row
   // above.
-  const totalPayments = sumDuesPaid(schedule.lines)
-  const remainingBalance = Math.max(0, Number(schedule.totalPayable) - totalPayments)
+  const duesPaid = sumDuesPaid(schedule.lines)
+  // Scenario 54 — this modal used to report the plan WITHOUT its down
+  // payment (Total price = totalPayable, payments = dues only) while the
+  // customer ledger it links to counts it, so the same plan read as two
+  // different sets of numbers depending on which screen you were on. Both
+  // now speak in contract terms: the contract is the down payment plus
+  // everything the dues bill, which is also exactly what the plan's single
+  // ARInvoice was opened at (see transactions.service.ts's `contractAmount`).
+  const contractTotal =
+    Math.round((Number(schedule.downPayment) + Number(schedule.totalPayable)) * 100) / 100
+  // That same invoice's amountPaid is the whole contract's collected-to-date
+  // — cash, withholding and rebate alike — so it already includes the down
+  // payment, which settles no due and so never reaches `duesPaid`.
+  const contractPaid = Number(schedule.lines[0]?.arInvoice.amountPaid ?? 0)
+  const downPaymentPaid = Math.max(0, Math.round((contractPaid - duesPaid) * 100) / 100)
+  const remainingBalance = Math.max(0, Math.round((contractTotal - contractPaid) * 100) / 100)
   const hasUnpaidLine = schedule.lines.some(isDueOpen)
 
   function goToCollections() {
@@ -994,17 +1073,27 @@ function InstallmentScheduleDetailModal({
             {productLabel(schedule.posTransactionLines)}
           </h2>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            {/* The complete Sales Invoice No. — the document the customer
+                holds and the Ref every row of this plan's ledger prints.
+                Falls back to the internal transaction number only for a
+                sale booked before it became required at checkout. */}
             <p className="text-sm text-gray-500">
-              {schedule.posTransaction?.transactionNumber ?? schedule.id}
+              {schedule.posTransaction?.salesInvoiceNumber ??
+                schedule.posTransaction?.transactionNumber ??
+                schedule.id}
             </p>
-            {schedule.installmentAccount && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {/* Opens the customer ledger narrowed to this plan — for a plan
+                  with an account that is the plan's own paper-form ledger.
+                  The separate /installments/<account> link is gone: that view
+                  now lives here, at /ledger?transactionId=acct:<id>. */}
               <Link
-                href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
+                href={customerLedgerHref(base, customerId, schedule)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
               >
                 View customer ledger →
               </Link>
-            )}
+            </div>
           </div>
 
           {/* Developer-requested (2026-08-09): the header's "+1 more" hides
@@ -1050,8 +1139,10 @@ function InstallmentScheduleDetailModal({
               <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd)} />
             )}
             <div className="border-t border-gray-200 pt-2">
-              <Row label="Total price" value={formatPeso(schedule.totalPayable)} bold />
-              <Row label="Installment payments made" value={formatPeso(totalPayments)} />
+              <Row label="Total price (contract)" value={formatPeso(contractTotal)} bold />
+              <Row label="Down payment received" value={formatPeso(downPaymentPaid)} />
+              <Row label="Installment payments made" value={formatPeso(duesPaid)} />
+              <Row label="Total payments received" value={formatPeso(contractPaid)} />
               <Row label="Remaining balance" value={formatPeso(remainingBalance)} bold />
             </div>
           </div>

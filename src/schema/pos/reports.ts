@@ -7,6 +7,9 @@ export const SalesDetailRowSchema = z.object({
   transactionNumber: z.string(),
   branchId: z.string().nullable(),
   branchName: z.string(),
+  // Scenario 60 Part 3 — the caravan the unit was sold out of ('' for the
+  // host's own sales). branchName already reads "<host> — <caravan>" then.
+  caravanName: z.string().optional(),
   brandName: z.string(),
   categoryName: z.string(),
   modelNumber: z.string(),

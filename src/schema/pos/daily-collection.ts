@@ -1,0 +1,317 @@
+import { z } from 'zod'
+
+/**
+ * Scenario 53 Part 6 — mirrors DailyCollectionService's return type. The shape
+ * follows the client's own Daily Collection Report form: a running ledger,
+ * DESC-type subtotals, a denomination block and the day's deposits.
+ */
+/** FP — full payment: the collection that settles an account. */
+/** FMI — the first monthly instalment of a contract. */
+/** OTHERS — a New Receipt: money the branch took in against no sale and no
+ * due, like a refunded performance bond (Scenario 70 G3). */
+export const CollectionKindSchema = z.enum([
+  'COD',
+  'DP',
+  'DC',
+  'MI',
+  'FMI',
+  'MI-PARTIAL',
+  'FP',
+  'OTHERS',
+])
+export type CollectionKind = z.infer<typeof CollectionKindSchema>
+
+export const DailyCollectionRowSchema = z.object({
+  date: z.string(),
+  siNumber: z.string().nullable(),
+  customerName: z.string(),
+  kind: CollectionKindSchema,
+  channel: z.enum(['OFFICE', 'FIELD', 'OTHERS']),
+  crNumber: z.string().nullable(),
+  cashInvoiceNumber: z.string().nullable(),
+  ppd: z.number(),
+  penalty: z.number(),
+  tender: z.string(),
+  amount: z.number(),
+  isCash: z.boolean(),
+  /** A voided collection receipt, listed at 0.00 so the receipt numbers run
+   * without gaps, as the client's form lists them. */
+  cancelled: z.boolean().optional(),
+  /** The collector who took this in the field, as `COL-0001 — Juan Cruz`.
+   * Null on a counter collection and on every POS sale row. Fills the form's
+   * AGENT column. */
+  collectorLabel: z.string().nullable().optional(),
+  /** Taken on a session that has not closed yet: in the ledger and in TOTAL
+   * COLLECTION, but with no drawer count behind it so it stays out of
+   * cashOnHand and the denomination reconciliation. */
+  pendingCount: z.boolean().optional(),
+  /** The other counter this collection was taken at — a satellite office
+   * filing under this branch. Null for the branch's own counter, so only a
+   * row whose cash is in another drawer carries a tag. */
+  sourceCounter: z.string().nullable().optional(),
+})
+export type DailyCollectionRow = z.infer<typeof DailyCollectionRowSchema>
+
+/** One non-cash tender's take for the day. `tender` is the raw key
+ * ('card::BDO'); `label` is what the form prints ('Card — BDO'), built by the
+ * API so the screen, the print sheet and the workbook cannot disagree. */
+export const NonCashTenderSchema = z.object({
+  tender: z.string(),
+  /** 'DP' for a non-cash down payment, otherwise the kind of the sale it came from. */
+  kind: z.string().default('COD'),
+  label: z.string(),
+  amount: z.number(),
+  /** Who paid this tender that day, largest first. */
+})
+export type NonCashTender = z.infer<typeof NonCashTenderSchema>
+
+/** Another sheet in the same host's family — the host branch, or a caravan it
+ * runs. A caravan files its own sheet, so these are the way between them. */
+export const SheetLinkSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+})
+export type SheetLink = z.infer<typeof SheetLinkSchema>
+
+/** One counter whose cash is on this sheet but not in its drawer — a
+ * satellite office filing under this branch. In the
+ * ledger and in TOTAL COLLECTED, and outside the denomination reconciliation:
+ * that cash is in another drawer, counted by its own cashier. */
+export const OffsiteCashLineSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.literal('satellite'),
+  amount: z.number(),
+})
+export type OffsiteCashLine = z.infer<typeof OffsiteCashLineSchema>
+
+export const DailyCollectionDepositSchema = z.object({
+  bankName: z.string(),
+  reference: z.string().nullable(),
+  depositedAt: z.string(),
+  amount: z.number(),
+  /** The holding account the slip emptied; null for the branch's own cash. */
+  clearsAccountId: z.string().nullable().default(null),
+})
+export type DailyCollectionDeposit = z.infer<typeof DailyCollectionDepositSchema>
+
+/** One CREDIT line, always named for its tender. Banked, it carries the bank
+ * and the date; undeposited, neither. */
+export const TenderCreditLineSchema = z.object({
+  /** 'cash', 'check', or a tender key such as 'card::Maya'. Null on a slip's
+   * excess no tender of the day took. */
+  tender: z.string().nullable(),
+  /** Print-ready: 'CASH', 'CARD — MAYA'. */
+  label: z.string(),
+  amount: z.number(),
+  bankName: z.string().nullable(),
+  reference: z.string().nullable(),
+  depositedAt: z.string().nullable(),
+})
+export type TenderCreditLine = z.infer<typeof TenderCreditLineSchema>
+
+/** The stored, hand-entered half of the form. */
+export const DailyCollectionSheetSchema = z.object({
+  checkedBy: z.string().nullable(),
+  certifiedCorrectBy: z.string().nullable(),
+  remarks: z.string().nullable(),
+  denominationOverrideReason: z.string().nullable(),
+  updatedAt: z.string(),
+})
+export type DailyCollectionSheet = z.infer<typeof DailyCollectionSheetSchema>
+
+export const DailyCollectionReportSchema = z.object({
+  /** Letterhead on the printed form — the enterprise's trading name. */
+  companyName: z.string().default(''),
+  branchId: z.string().nullable(),
+  branchName: z.string(),
+  /** The branch's assigned manager — pre-fills CHECKED BY until the branch
+   * saves a name of its own. */
+  branchManagerName: z.string().nullable().default(null),
+  date: z.string(),
+  rows: z.array(DailyCollectionRowSchema),
+  /** Non-cash sales and down payments, listed in the ledger with their payment
+   * mode but never moving its BALANCE. */
+  nonCashRows: z.array(DailyCollectionRowSchema).default([]),
+  deposits: z.array(DailyCollectionDepositSchema),
+  /** The CREDIT column per tender. Banking a tender adds the bank and date
+   * to its line; what is still unbanked stays UNDEPOSITED under it. */
+  credits: z.array(TenderCreditLineSchema).default([]),
+  byKind: z.record(CollectionKindSchema, z.number()),
+  /** Cash only — the ledger, the BALANCE column and the denomination count
+   * all are, so they reconcile against the drawer. */
+  totalCollection: z.number(),
+  /** The day's non-cash take, per tender and the provider behind it — the
+   * NON-CASH COLLECTIONS block printed below the cash ledger. */
+  nonCash: z.array(NonCashTenderSchema).default([]),
+  nonCashCollection: z.number(),
+  /** Cash plus non-cash: everything the branch took that day. */
+  grandTotalCollection: z.number().default(0),
+  /** A caravan's own sheet: its registers alone, filed apart from its host's. */
+  isCaravan: z.boolean().default(false),
+  /** On a caravan's sheet, the branch hosting it. Null otherwise. */
+  hostBranch: SheetLinkSchema.nullable().default(null),
+  /** The host's caravans trading on this date — this one included, on a
+   * caravan's sheet. Empty on the roll-up. */
+  hostedCaravans: z.array(SheetLinkSchema).default([]),
+  /** Cash taken at a counter other than this branch's own. Counted by that
+   * counter's own cashier, so it is deliberately not in `cashOnHand` and
+   * whoever counts this drawer must not be asked to find it. */
+  offsiteCash: z.array(OffsiteCashLineSchema).default([]),
+  offsiteCashCollection: z.number().default(0),
+  /** Sessions still open that took part of their shift on this date. Their
+   * collections ARE on the form; their drawer count is not, so the count can
+   * only be reconciled against the settled part until they close. */
+  openSessionCount: z.number().default(0),
+  /** Opening float across the day's CLOSED sessions — in the drawer when the
+   * denominations are counted, but not a collection. */
+  openingFloat: z.number().default(0),
+  /** Settled float plus settled cash: what the denomination count must come
+   * to. Excludes anything still in an open drawer. */
+  cashOnHand: z.number().default(0),
+  /** Cash taken on sessions that have closed — the part of totalCollection
+   * the count stands behind. */
+  settledCashCollection: z.number().default(0),
+  /** Cash taken on sessions still open. Already inside totalCollection;
+   * settled + pending === totalCollection. */
+  pendingCashCollection: z.number().default(0),
+  /** Opening float in drawers not yet counted. */
+  pendingFloat: z.number().default(0),
+  /** What the open drawers should hold (pending cash + pending float) — the
+   * figure that moves into cashOnHand as they close. Not a variance. */
+  pendingCashOnHand: z.number().default(0),
+  totalDeposited: z.number(),
+  /** Undeposited cash: everything collected less what was banked, open-session
+   * takings included. Matches where the ledger's BALANCE column lands. */
+  balance: z.number(),
+  /** What the form prints: the branch's corrected count when it has saved
+   * one, the sessions' own closing counts otherwise. */
+  denominations: z.record(z.string(), z.number()),
+  denominationTotal: z.number(),
+  /** The sessions' own counts, kept readable even when overridden — an edit
+   * to a signed cash count has to stay visible, and the screen needs these to
+   * offer "restore the counted figures". */
+  countedDenominations: z.record(z.string(), z.number()).default({}),
+  countedDenominationTotal: z.number().default(0),
+  /** The handwritten half of the form, null until a branch saves one. */
+  sheet: DailyCollectionSheetSchema.nullable().default(null),
+  /** False for the "All branches" roll-up, which no one signs and nobody can
+   * save a form against. */
+  editable: z.boolean().default(false),
+  /** True when the API deliberately left the figures out: a branch that has
+   * not submitted its form, read by someone who is not that branch. The day's
+   * collections are the branch's to declare, so until the cashier files there
+   * is nothing here to read — the screen says so rather than drawing an empty
+   * form. */
+  withheld: z.boolean().default(false),
+})
+export type DailyCollectionReport = z.infer<typeof DailyCollectionReportSchema>
+
+/**
+ * Scenario 53 Part 6 — the owner's roll-up: every branch's day on one row.
+ * Mirrors DailyCollectionService.buildRollup().
+ */
+export const DailyCollectionBranchStatusSchema = z.enum([
+  'NO_TRADE',
+  'OPEN',
+  'BALANCED',
+  'OVER',
+  'SHORT',
+])
+export type DailyCollectionBranchStatus = z.infer<typeof DailyCollectionBranchStatusSchema>
+
+export const DailyCollectionBranchSummarySchema = z.object({
+  branchId: z.string(),
+  branchName: z.string(),
+  /** Cash ledger lines — a card-only day reports 0 and still has a grand
+   * total, which is why both are on the row. */
+  entryCount: z.number(),
+  /** Null on a branch that has not filed, read by someone who is not that
+   * branch — withheld by the API, not merely undrawn by the screen. */
+  totalCollection: z.number().nullable(),
+  nonCashCollection: z.number().nullable(),
+  grandTotalCollection: z.number().nullable(),
+  /** The drawer less the opening float. */
+  cashCounted: z.number().nullable(),
+  variance: z.number().nullable(),
+  filed: z.boolean(),
+  /** When the branch filed, null until it has. */
+  filedAt: z.string().nullable().default(null),
+  openSessionCount: z.number(),
+  status: DailyCollectionBranchStatusSchema,
+})
+export type DailyCollectionBranchSummary = z.infer<typeof DailyCollectionBranchSummarySchema>
+
+export const DailyCollectionRollupSchema = z.object({
+  date: z.string(),
+  branches: z.array(DailyCollectionBranchSummarySchema),
+  totals: z.object({
+    branchCount: z.number(),
+    tradingCount: z.number(),
+    filedCount: z.number(),
+    entryCount: z.number(),
+    totalCollection: z.number(),
+    nonCashCollection: z.number(),
+    grandTotalCollection: z.number(),
+    cashCounted: z.number(),
+    /** Summed over the branches this caller may read, which on the network
+     * view means the filed ones only. */
+    variance: z.number(),
+  }),
+})
+export type DailyCollectionRollup = z.infer<typeof DailyCollectionRollupSchema>
+
+/** The client form's own column order, kept beside the schema so the screen
+ * and the exported workbook stay in step. */
+export const LEDGER_HEADERS = [
+  'Date',
+  'SI#',
+  'Customer',
+  'Desc',
+  'Office',
+  'Field',
+  'Others',
+  'Cash Invoice',
+  'PPD',
+  'Pen',
+  'Amount/Debit',
+  'Credit',
+  'Balance',
+] as const
+
+/** DESC subtotal order, as the client prints it. */
+export const COLLECTION_KINDS: CollectionKind[] = [
+  'COD',
+  'DP',
+  'DC',
+  'MI',
+  'FMI',
+  'MI-PARTIAL',
+  'FP',
+  'OTHERS',
+]
+
+/**
+ * What the screen sends when a branch saves its form. The whole document goes
+ * at once — an omitted field is a cleared field, which is why this is a PUT.
+ *
+ * A corrected denomination count must say why: it is the only field here that
+ * contradicts something the system already recorded (the closing count the
+ * cashier declared, which the session's cash-variance journal entry was posted
+ * against). The correction never rewrites that count — it is stored beside it.
+ */
+export const SaveDailyCollectionSheetSchema = z
+  .object({
+    date: z.string().min(1, 'A business date is required'),
+    branchId: z.string().uuid().optional(),
+    checkedBy: z.string().max(150).nullable(),
+    certifiedCorrectBy: z.string().max(150).nullable(),
+    remarks: z.string().max(1000).nullable(),
+    denominationOverride: z.record(z.string(), z.number().nonnegative()).nullable(),
+    denominationOverrideReason: z.string().max(500).nullable(),
+  })
+  .refine((v) => !v.denominationOverride || Boolean(v.denominationOverrideReason?.trim()), {
+    message: 'Correcting the denomination count requires a reason',
+    path: ['denominationOverrideReason'],
+  })
+export type SaveDailyCollectionSheetInput = z.infer<typeof SaveDailyCollectionSheetSchema>

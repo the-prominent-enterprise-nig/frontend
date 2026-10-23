@@ -1,11 +1,12 @@
 'use client'
 
-import { Fragment, useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import {
   Search,
   Plus,
   Minus,
   X,
+  Trash2,
   Tag,
   ShoppingCart,
   AlertTriangle,
@@ -18,7 +19,6 @@ import {
   ShieldCheck,
   Loader2,
   ChevronDown,
-  ChevronUp,
   ChevronRight,
   KeyRound,
   WifiOff,
@@ -30,32 +30,25 @@ import {
   List,
   Printer,
   FileSignature,
-  Trash2,
-  Paperclip,
+  IdCard,
 } from 'lucide-react'
-import PhoneInput from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import {
   computePricingTotals,
   resolveLineTaxRate,
-  displayUnitPriceExclTax,
   effectiveUnitPrice,
   lineTaxAmount,
 } from './_utils/calculations'
-import { useRouter } from 'next/navigation'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { BILLER_OPTION_NAMES, GCASH_OPTION_NAMES } from './_utils/qr-option-groups'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
+import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { useQueryClient } from '@tanstack/react-query'
 import { useSessions } from '../_hooks/usePos'
+import { POS_CATALOG_KEY, posCatalogQueryOptions } from '../_hooks/posCatalogQuery'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import CustomerExtraFields, {
-  type CustomerExtraFieldsValues,
-} from '@/src/components/crm/CustomerExtraFields'
-import { ID_TYPE_OPTIONS, type CoMakerFormValues } from '@/src/schema/crm/customer'
-import type { DuplicateCheckResult } from '@/src/schema/crm/types'
-import { customersApi } from '@/src/libs/api/crm'
-import { uploadIdDocument } from '@/src/app/(app)/(dashboard)/crm/customers/_actions/upload-id-document'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
   itemLookup,
@@ -63,14 +56,17 @@ import {
   addPayment,
   validatePromoCode,
   parkSale,
-  searchCustomers,
-  createWalkInCustomer,
+  searchCustomersAndEmployees,
+  createCustomerFromEmployee,
+  getCustomerById,
   getLoyaltyByCustomer,
   earnPoints,
   redeemPoints,
-  getCustomerTransactions,
   getActiveLoyaltyProgram,
   getActivePosConfig,
+  getSellingAgents,
+  getPosOverrideReasons,
+  type PosOverrideReason,
   validateManagerByPin,
   syncTransactions,
   updateSessionDisplay,
@@ -93,16 +89,56 @@ import {
   type SerialNumberRecord,
   type PosPriceUseType,
 } from '../_actions/pos-actions'
+import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import {
+  DOWN_PAYMENT_FLOOR_RATE,
+  DOWN_PAYMENT_FLOOR_LABEL,
+  DOWN_PAYMENT_FLOOR_TOLERANCE,
+  isCardTerm,
+} from '@/src/libs/constants/financing'
+import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
+import { getDeliveryReceipt } from '../../inventory/delivery-receipts/_actions/get-delivery-receipt'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
 import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
+import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
+import {
+  creditApplicationStatusLabel,
+  creditOverrideLines,
+  isDecidedApplication,
+} from '@/src/libs/pos/credit-override'
+import type { CreditApplicationOverrideSnapshot } from '@/src/schema/pos'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
+import TypedPlanPanel from './_components/TypedPlanPanel'
+import { toCents, dateInputFromToday, coveringMonthly, typedPlanProblem } from './_utils/typed-plan'
+import CopyAmountButton from './_components/CopyAmountButton'
+import DeliverySection from './_components/DeliverySection'
+import { PillCombobox, PillSelect } from './_components/PillInputs'
+import {
+  EMPTY_DELIVERY,
+  deliveryFeeOptions,
+  deliveryFeeTenderLabel,
+  deliveryPayload,
+  deliveryProblem,
+  parseDeliveryFee,
+  qrTenderLabel,
+  resolveDeliveryAddress,
+  type CustomerAddress,
+  type DeliveryState,
+} from './_utils/delivery'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
+import {
+  readCheckoutHandoff,
+  writeCheckoutHandoff,
+  clearCheckoutHandoff,
+} from '@/src/libs/pos/checkout-handoff'
+import { XDealBadge } from '@/src/components/pos/XDealBadge'
 import type {
   PosPaymentMethod,
   PosCardTxnMode,
@@ -111,6 +147,7 @@ import type {
   PayNowMethod,
   PromoValidationResult,
   PosCustomer,
+  PosEmployeeResult,
   LoyaltyAccount,
   LoyaltyProgram,
   PosTransaction,
@@ -119,9 +156,31 @@ import type {
   FinancingTerm,
   TpfProvider,
   InstallmentPreview,
+  PosSession,
 } from '@/src/schema/pos'
+import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
+import { caravanPlaceLabel, terminalPlaceId } from '@/src/libs/format/locationLabel'
+import { useOutputVatCodes } from '@/src/hooks/useOutputVatCodes'
+import {
+  OUTPUT_VAT_EXEMPT,
+  OUTPUT_VAT_STANDARD,
+  OUTPUT_VAT_ZERO_RATED,
+  POS_OUTPUT_VAT_CODES,
+  restrictedKind,
+  shortVatName,
+} from '@/src/libs/tax/output-vat'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/** Scenario 66 — what the success screen shows of a sale's delivery. */
+type SuccessDelivery = {
+  deliverTo: string
+  address: string
+  fee: number
+  /** How the fee was paid, with its details — "Check #0012", "Bank Transfer — BDO". */
+  tenderLabel: string | null
+  feeCr: string | null
+}
 
 interface LookupItem {
   id: string
@@ -182,16 +241,23 @@ interface CartLine {
   priceListItemId?: string | null
   /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
    * rate card, resolved alongside priceListItemId. Preferred over the
-   * generic 10%-floor auto-fill when set. */
+   * generic 10%-floor auto-fill when set — and, for a term the card quotes
+   * (priceListCardTermMonths), the down payment itself: see
+   * lineCardDownPayment(). */
   priceListDownPayment?: number | null
+  /** The terms, in months, this line's rate card quotes a monthly for. */
+  priceListCardTermMonths?: number[] | null
   /** True once unitPrice reflects either a real Price Use resolution or a
    * manual override — false means still pending / no match, and checkout
    * submission should be blocked on this line. */
   priceResolved?: boolean
-  /** Set once a manager PIN-approves a manual price on this line. A
-   * Price Use change must not silently clobber this. */
-  priceOverrideBy?: string | null
-  priceOverrideApproverName?: string
+  /** True once a price was typed over this line (Scenario 71: any cashier, no
+   * manager or PIN). A Price Use change must not silently clobber it. */
+  priceOverridden?: boolean
+  /** The price-list row this line was priced from before it was overridden —
+   * the server reads the list price off it. Null when there was no match, or
+   * the line was never overridden. */
+  overriddenFromPriceListItemId?: string | null
   /** Per-line payment mode — a cart can mix cash/installment lines.
    * Defaults to 'cash' when unset. Installment lines carry their own
    * financingTermId + down payment, independent of every other line. */
@@ -204,6 +270,21 @@ interface CartLine {
   payNowMethod?: PayNowMethod
   financingTermId?: string
   downPaymentInput?: string
+  /** Which priceListItemId downPaymentInput was auto-derived for (curated
+   * or 10%-floor) — unset when the cashier typed it themselves, or copied
+   * in from an approved credit application. Lets a later Price Use change
+   * tell "stale auto-fill, safe to recompute" apart from "an entry that
+   * must never be silently overwritten". */
+  downPaymentAutoForPriceListItemId?: string | null
+  /** Scenario 71 — the cashier typed this in-house installment line's plan
+   * instead of taking a Financing Term or rate-card one. Then the fields below
+   * carry it (as typed, so a half-filled box stays as it is) and the down
+   * payment is downPaymentInput as usual; financingTermId is not sent. */
+  manualPlan?: boolean
+  manualTermInput?: string
+  manualMonthlyInput?: string
+  /** yyyy-mm-dd — the first installment's due date (FMI). */
+  firstDueDateInput?: string
 }
 
 interface PaymentRow {
@@ -219,6 +300,19 @@ interface PaymentRow {
   // choice comes from the transaction-scoped cardTerminalOptionId state
   // instead (set via Item Payment Mode), not stored per-row.
   paymentMethodOptionId?: string
+}
+
+// ─── Typed installment plans (Scenario 71) ────────────────────────────────────
+
+/** The line without any typed-plan state. */
+function withoutTypedPlan(l: CartLine): CartLine {
+  return {
+    ...l,
+    manualPlan: false,
+    manualTermInput: undefined,
+    manualMonthlyInput: undefined,
+    firstDueDateInput: undefined,
+  }
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -237,6 +331,14 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   custom: 'Custom',
 }
 
+/** Payment methods withheld from the till (client, 2026-10-01 — "just hide
+ *  the point system"). Hidden, not removed: the loyalty account still loads
+ *  and still earns, the enum and the backend path are untouched, and taking a
+ *  method out of this list puts it back. Any payment row already saved under
+ *  one of these still renders and still settles — this only governs what can
+ *  be chosen from here on. */
+const HIDDEN_PAYMENT_METHODS: PosPaymentMethod[] = ['loyalty_points']
+
 const REF_METHODS: PosPaymentMethod[] = [
   'card',
   'bank_transfer',
@@ -252,29 +354,22 @@ const REF_METHODS: PosPaymentMethod[] = [
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 
-/** One line of "what was on this sale" for the past-purchases list.
- *
- * Quantities are only shown when >1 — "2x Kolin Aircon" is worth saying,
- * "1x" on every other row is noise. Beyond two items it degrades to a
- * "+N more" count rather than overflowing the row; the full detail lives on
- * the transaction itself.
- *
- * itemName is resolved server-side (PosTransactionLine has no name column);
- * a line whose item has since been deleted falls back to "Item" rather than
- * rendering an empty row. */
-function summariseItems(
-  lines: { itemName?: string | null; quantity: number }[] | undefined
-): string {
-  if (!lines?.length) return 'No items'
+// A caravan's register (stored on its host) reads as the caravan, so it
+// can't be mistaken for one of the host's own: "Caravan · Lemery · TN-01".
+function sessionTerminalLabel(s: {
+  terminalId: string
+  terminal?: PosSession['terminal']
+}): string {
+  const code = s.terminal?.terminalCode ?? s.terminalId
+  const caravan = s.terminal?.caravanBranch
+  if (caravan) return `${caravanPlaceLabel({ ...caravan, isTemporary: true })} · ${code}`
+  const branch = s.terminal?.branch?.name
+  return branch ? `${branch} · ${code}` : code
+}
 
-  const label = (l: { itemName?: string | null; quantity: number }): string => {
-    const name = l.itemName?.trim() || 'Item'
-    return Number(l.quantity) > 1 ? `${Number(l.quantity)}x ${name}` : name
-  }
-
-  const shown = lines.slice(0, 2).map(label).join(', ')
-  const rest = lines.length - 2
-  return rest > 0 ? `${shown} +${rest} more` : shown
+// Where a session's register physically is: its caravan, else its branch.
+function sessionPlaceId(s: { terminal?: PosSession['terminal'] }): string | undefined {
+  return terminalPlaceId(s.terminal)
 }
 
 /** Brand / Group / Model instead of the long free-text name, wherever all
@@ -299,6 +394,129 @@ function lineTotal(line: CartLine) {
 
 function customerDisplayName(c: PosCustomer) {
   return c.name || `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() || 'Customer'
+}
+
+/** The Promo Code box in the order summary is hidden at the developer's request
+ * (2026-10-14). Only the entry box is gone — promo validation, the discount
+ * maths and an already-applied promo's chip are untouched — so turning this back
+ * on restores it with nothing else to change. */
+const SHOW_PROMO_ENTRY = false
+
+/** "Override the credit application" is hidden at the developer's request
+ * (2026-10-15): waiving the credit application and typing the terms reaches the
+ * same sale. Only the checkbox and its picker are gone — the backend, the
+ * review flag and an already-recorded override on a past sale are untouched —
+ * so turning this back on restores it with nothing else to change. */
+const SHOW_CREDIT_OVERRIDE = false
+
+/** The down payment on an installment row. It is a field from the start — a
+ * figure with a "Change amount" link read as fixed, and cashiers did not find
+ * out they could edit it. Prefilled with what the sale will use; when the rate
+ * card fixes the amount for the chosen term it is a figure, not a field. */
+function DownPaymentField({
+  badge,
+  value,
+  fixedDisplay,
+  error,
+  onChange,
+  onBlur,
+}: {
+  badge: string
+  value: string
+  /** Set when the rate card fixes the amount — shown as a figure. */
+  fixedDisplay?: string
+  /** Shown under the field, which turns red — so a missing down payment is
+   * caught where it is typed, not only when Checkout is pressed. */
+  error?: string
+  onChange: (next: string) => void
+  onBlur: (current: string) => void
+}) {
+  return (
+    <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[13px] font-semibold text-prominent-purple-700">Down payment</span>
+        <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+          {badge}
+        </span>
+      </div>
+      {fixedDisplay !== undefined ? (
+        <div className="mt-1 pl-4">
+          <span className="text-[15px] font-bold text-prominent-purple-800">{fixedDisplay}</span>
+        </div>
+      ) : (
+        <input
+          type="number"
+          min={0}
+          step={1}
+          inputMode="decimal"
+          aria-label="Down payment"
+          data-testid="down-payment-input"
+          placeholder="Down payment"
+          value={value}
+          aria-invalid={error ? true : undefined}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={(e) => onBlur(e.target.value)}
+          className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-right text-[15px] font-bold text-prominent-purple-800 outline-none [appearance:textfield] focus:ring-2 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+            error
+              ? 'border-red-400 focus:border-red-500 focus:ring-red-100'
+              : 'border-purple-200 focus:border-prominent-purple-400 focus:ring-prominent-purple-100'
+          }`}
+        />
+      )}
+      {error && fixedDisplay === undefined && (
+        <p role="alert" data-testid="down-payment-error" className="mt-1 text-xs text-red-600">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Scenario 71 — the statuses a credit application override may use: those already
+ * decided, and those still waiting for a decision. A declined or cancelled one never. */
+const OVERRIDABLE_APPLICATION_STATUSES = new Set([
+  'approved',
+  'partially_approved',
+  'draft',
+  'submitted',
+  'under_investigation',
+  'pending_approval',
+])
+
+/** One of the customer's credit applications as an override can use it: what it
+ * covers (its approved items once decided, every item it names before that). */
+type OverrideApplication = {
+  id: string
+  applicationNumber: string
+  status: string
+  requestedAmount: number
+  items: { itemId: string; itemName: string }[]
+  financingTermId?: string | null
+  downPayment?: number | null
+}
+
+/** Scenario 71 — what the receipt screen needs to say about an override: the reason and
+ * note the cashier gave, which exceptions applied, and each overridden line's list
+ * price (the receipt prices its lines itself, on the sale's own VAT basis). */
+type SaleException = {
+  reason: string | null
+  note: string | null
+  creditApplicationWaived: boolean
+  /** Scenario 71 — the credit application was overridden, and what differed. */
+  creditOverride: CreditApplicationOverrideSnapshot | null
+  typedTerms: boolean
+  lineLists: Record<string, number | null>
+}
+
+/** Which document a typed number belongs to, when its own prefix says so: "DR-1014",
+ * "DR 1014" and "DR1014" are a Delivery Receipt, "SI-2201" a Sales Invoice. It needs
+ * a digit after the prefix, so a word that merely starts with the letters ("DRAKE")
+ * is left alone. Null means nothing to go on — keep whatever is selected. */
+function detectDocumentType(value: string): 'sales_invoice' | 'delivery_receipt' | null {
+  const v = value.trim()
+  if (/^dr[\s\-_.#:]*\d/i.test(v)) return 'delivery_receipt'
+  if (/^si[\s\-_.#:]*\d/i.test(v)) return 'sales_invoice'
+  return null
 }
 
 const OFFLINE_QUEUE_KEY = 'pos_offline_queue'
@@ -326,15 +544,37 @@ const DECIMAL_CODES = new Set([
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+/** Scenario 72 Part 6 — the backend's Delivery Receipt sale guards, in
+ * words a cashier can act on. */
+const DR_SALE_ERRORS: Record<string, string> = {
+  delivery_receipt_customer_mismatch:
+    'This sale invoices a delivery receipt — it has to be for the delivery receipt’s own customer.',
+  delivery_receipt_not_ready_for_sale:
+    'That delivery receipt is no longer waiting for a sale — it may already have been invoiced or voided. Unlink it to continue.',
+  delivery_receipt_sale_installment_not_supported:
+    'A delivery receipt’s sale is cash or charge only for now — switch the lines off installment, or unlink the delivery receipt.',
+}
+
 export default function CheckoutPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const { branchId: switcherBranchId } = usePosBranchContext()
   const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
     status: 'open',
     ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
   })
   const rawSessions = sessionsData?.data
-  const openSessions = useMemo(() => rawSessions ?? [], [rawSessions])
+  // A caravan's register is stored on its host, so the host's session list
+  // includes it — but checkout only offers registers that are at the
+  // switcher's place: Ajuy's own under Ajuy, the caravan's under the caravan.
+  const openSessions = useMemo(
+    () =>
+      (rawSessions ?? []).filter(
+        (s) => !switcherBranchId || sessionPlaceId(s) === switcherBranchId
+      ),
+    [rawSessions, switcherBranchId]
+  )
 
   // Session
   const [sessionId, setSessionId] = useState('')
@@ -361,20 +601,39 @@ export default function CheckoutPage() {
   // Auth session branchId — Branch Managers are scoped to their assigned branch,
   // which is the same branch they can configure via "My Branch" settings.
   const [authBranchId, setAuthBranchId] = useState<string | null>(null)
+  // Scenario 57 — the selling agent tagged on this sale. Restored after
+  // 1b82138 removed it: PosTransaction.sellingAgentId still drives
+  // commission and the Salesperson row on an installment ledger, so the
+  // field was the only part that had gone. Optional, as it was before —
+  // a walk-in sale need not have an agent behind it.
+  const [sellingAgentId, setSellingAgentId] = useState('')
+  const [sellingAgents, setSellingAgents] = useState<{ id: string; name: string }[]>([])
   const [isBranchManager, setIsBranchManager] = useState(false)
-  // Whether this login already holds the approval authority a serialized
+  // Whether this login already holds the approval authority an installment
   // sale would otherwise need to ask someone else for (Business Owner or
-  // Branch Manager) — drives the serial-sale banner below.
+  // Branch Manager) — drives the installment approval banner below.
   const [canOverride, setCanOverride] = useState(false)
   // Scenario 17 Part 7 — whether this login can mark a Promissory Note as
   // signed (Cashier-level, cascades to Branch Manager/Business Owner).
   const [canSignPromissoryNote, setCanSignPromissoryNote] = useState(false)
+  // The session check can fail because the backend is busy, not because the
+  // cashier is signed out. Only a session the backend rejected goes to /login;
+  // one that could not be checked (after retries) goes to the route's error
+  // boundary, whose "Try again" remounts this page and asks again.
+  const [sessionUnavailable, setSessionUnavailable] = useState<SessionUnavailableError | null>(null)
   useEffect(() => {
-    getSessionOrNull().then((s) => {
-      if (!s) {
+    let cancelled = false
+    getSessionStateWithRetry(() => cancelled).then((state) => {
+      if (cancelled) return
+      if (state.status === 'unavailable') {
+        setSessionUnavailable(new SessionUnavailableError(state.reason))
+        return
+      }
+      if (state.status === 'unauthenticated') {
         router.replace('/login')
         return
       }
+      const s = state.session
       // Scenario 22 Part 5 — checkout had no route-level permission check at
       // all (only ModuleGuard's broad "holds SOME pos permission" check at
       // the layout level). A role without pos:transactions:create could
@@ -390,7 +649,11 @@ export default function CheckoutPage() {
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
       setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
     })
+    return () => {
+      cancelled = true
+    }
   }, [router])
+  if (sessionUnavailable) throw sessionUnavailable
 
   const activeBranchId = useMemo(() => {
     // Branch Managers: use their assigned branch (matches "My Branch" settings)
@@ -400,7 +663,23 @@ export default function CheckoutPage() {
     return session?.terminal?.branchId ?? (session?.terminal as any)?.branch?.id ?? null
   }, [openSessions, sessionId, isBranchManager, authBranchId])
 
+  // Scenario 60 — a caravan's terminal sells the stock physically at the
+  // caravan, so stock lookups ask for the caravan. Everything else (prices,
+  // payment methods, the daily collection) stays on activeBranchId, the host.
+  const stockBranchId = useMemo(() => {
+    const session = openSessions.find((s) => s.id === sessionId)
+    return session?.terminal?.caravanBranchId ?? activeBranchId
+  }, [openSessions, sessionId, activeBranchId])
+
   // Cart
+  useEffect(() => {
+    getSellingAgents().then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setSellingAgents(res.data.map((a) => ({ id: a.id, name: a.name })))
+      }
+    })
+  }, [])
+
   const [cart, setCart] = useState<CartLine[]>([])
 
   // Item search
@@ -420,6 +699,10 @@ export default function CheckoutPage() {
   const [serialSearchQuery, setSerialSearchQuery] = useState('')
   // Read-only "also available elsewhere" section — never sellable from here.
   const [elsewhereSerials, setElsewhereSerials] = useState<SerialNumberRecord[]>([])
+  // Whether the "elsewhere" lookup actually succeeded. A failed lookup and a
+  // genuine "no branch has it" both leave elsewhereSerials empty, so the
+  // picker's "not in stock at any branch" note needs this to tell them apart.
+  const [elsewhereLoaded, setElsewhereLoaded] = useState(false)
   // Which branch's individual serials are showing in the side panel —
   // master-detail style, one at a time; null means the panel is closed and
   // the summary view stays compact.
@@ -444,9 +727,13 @@ export default function CheckoutPage() {
       toBranchId: activeBranchId ?? undefined,
       customerName: selectedCustomer ? customerDisplayName(selectedCustomer) : undefined,
     })
+    // Already requested — by this cashier before the picker was reopened, or
+    // by another branch meanwhile — is a success from the cashier's side: the
+    // unit is on its way to being requested, so show it as such, not "Retry".
+    const alreadyRequested = !res.success && res.errorCode === 'SERIAL_ALREADY_REQUESTED'
     setSerialRequestStatus((prev) => ({
       ...prev,
-      [sn.id]: res.success ? 'requested' : 'error',
+      [sn.id]: res.success || alreadyRequested ? 'requested' : 'error',
     }))
   }
 
@@ -454,22 +741,61 @@ export default function CheckoutPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<PosCustomer | null>(null)
   const [loyaltyAccount, setLoyaltyAccount] = useState<LoyaltyAccount | null>(null)
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null)
-  const [customerHistory, setCustomerHistory] = useState<PosTransaction[]>([])
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<PosCustomer[]>([])
+  // Not-yet-linked employees matching the same search — shown alongside
+  // customerResults in one picker; selecting one get-or-creates their real
+  // Customer record (see selectEmployee below), never used as the buyer id
+  // directly.
+  const [employeeResults, setEmployeeResults] = useState<PosEmployeeResult[]>([])
+  const [resolvingEmployee, setResolvingEmployee] = useState(false)
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
   const [searchingCustomers, setSearchingCustomers] = useState(false)
-  const [showNewCustomerModal, setShowNewCustomerModal] = useState(false)
   const customerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Tax exempt
-  const [isTaxExempt, setIsTaxExempt] = useState(false)
+  // VAT treatment (Scenario 69 Part F) — the output VAT class of this sale:
+  // VATable by default, or zero-rated / VAT-exempt, which are restricted: they
+  // need the certificate they rest on and a manager's approval.
+  const [outputVatCode, setOutputVatCode] = useState<string>(OUTPUT_VAT_STANDARD)
   const [taxExemptionRef, setTaxExemptionRef] = useState('')
+  // Scenario 69 Part I — why the class is not the one the sale started on.
+  const [taxOverrideReason, setTaxOverrideReason] = useState('')
+  // "No VAT is charged". Zero-rated and VAT-exempt price the same way (the VAT
+  // inside the price comes off), so the price maths below keys off this one
+  // flag — named for the switch it replaced.
+  const isTaxExempt = outputVatCode !== OUTPUT_VAT_STANDARD
+  const { options: vatChoices } = useOutputVatCodes(POS_OUTPUT_VAT_CODES)
 
-  // Sales Invoice No. — required on every sale, typed in from the physical
-  // invoice booklet (maps to PosTransaction.salesInvoiceNumber).
+  // The sale's document number — required on every sale, typed in from the
+  // physical booklet. It is either a Sales Invoice No. or a Delivery Receipt
+  // No.: a DR is just the other kind of sales document, nothing else about the
+  // sale changes, only which number we ask for. Maps to
+  // PosTransaction.salesInvoiceNumber / .deliveryReceiptNumber.
   const [invoiceNumberInput, setInvoiceNumberInput] = useState('')
+  const [documentType, setDocumentType] = useState<'sales_invoice' | 'delivery_receipt'>(
+    'sales_invoice'
+  )
+  // Set when typing a number flipped the document type for the cashier, so the
+  // change is explained rather than silent. Cleared by the toggle and a new sale.
+  const [documentSwitchNote, setDocumentSwitchNote] = useState('')
+  const documentLabel =
+    documentType === 'delivery_receipt' ? 'Delivery Receipt No.' : 'Sales Invoice No.'
+  /** The typed number under the field the backend expects for this document. */
+  const documentNumberPayload = (trimmed: string) =>
+    documentType === 'delivery_receipt'
+      ? { deliveryReceiptNumber: trimmed }
+      : { salesInvoiceNumber: trimmed }
+
+  // Scenario 66 — Deliver to / Delivery Address / delivery fee. The fee is
+  // collected on its own collection receipt and never enters the Total, the
+  // tender, the change or the loyalty points below.
+  const [delivery, setDelivery] = useState<DeliveryState>(EMPTY_DELIVERY)
+  // The selected customer's own address, fetched in full when delivery is
+  // turned on — customer search results carry no address.
+  const [deliveryCustomerAddress, setDeliveryCustomerAddress] = useState<CustomerAddress | null>(
+    null
+  )
+  const [deliveryAddressLoading, setDeliveryAddressLoading] = useState(false)
 
   // Promo
   const [promoInput, setPromoInput] = useState('')
@@ -482,7 +808,7 @@ export default function CheckoutPage() {
   // just applied to every line at once via the toggle's onClick below
   // instead of chosen per line). If any item needs a different mode, that's
   // a separate transaction.
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment' | 'credit_card'>('cash')
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment'>('cash')
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -495,10 +821,13 @@ export default function CheckoutPage() {
   // Scenario 37 — same treatment for Cash's own sub-choice (Cash on Hand /
   // Bank Transfer / QR), captured once via Item Payment Mode (transaction-
   // scoped, see hasCashLine), carried into whatever payment row gets added.
-  const [cashSubMode, setCashSubMode] = useState<'cash_on_hand' | 'bank_transfer' | 'qr'>(
-    'cash_on_hand'
-  )
+  const [cashSubMode, setCashSubMode] = useState<
+    'cash_on_hand' | 'check' | 'bank_transfer' | 'qr' | 'gcash' | 'billers' | 'card'
+  >('cash_on_hand')
   const [cashPaymentOptionId, setCashPaymentOptionId] = useState<string | undefined>()
+  // The check's own number, captured once for the transaction while the Check
+  // sub-mode is chosen.
+  const [checkNumber, setCheckNumber] = useState('')
   // Scenario 38 Gap 7 — the cashier confirms the transfer already landed at
   // the register (e.g. checked the business's own banking app in real
   // time), so it posts straight to Cash in Bank instead of the usual
@@ -537,13 +866,33 @@ export default function CheckoutPage() {
   // not one global selection, so a cart can finance different items under
   // different terms. Keyed by CartLine.lineId.
   const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
+
+  /**
+   * The rate card's own down payment for a line under its chosen term, or
+   * null when the card does not price the line for that term. Where it
+   * exists it IS the down payment — fixed, per unit, not a minimum (PR #199
+   * review): the card's monthly was calculated from exactly that amount, so
+   * anything else mis-states what the customer owes. Mirrors the server's
+   * PriceListsService.resolveCardDownPayment(). Callers apply it to in-house
+   * lines only — never TPF, never an Employee Appliance Loan.
+   */
+  function lineCardDownPayment(l: CartLine): number | null {
+    // A plan the cashier typed has no rate card behind it (Scenario 71).
+    if (l.manualPlan) return null
+    const termMonths = financingTerms.find((t) => t.id === l.financingTermId)?.termMonths
+    const onCard = isCardTerm(
+      { downPayment: l.priceListDownPayment, cardTermMonths: l.priceListCardTermMonths },
+      termMonths
+    )
+    return onCard ? Math.round(Number(l.priceListDownPayment) * l.quantity * 100) / 100 : null
+  }
+
   // TPF financing — one financier/reference covers however many TPF-mode
   // lines are in the cart, mirroring how one creditApplicationId already
   // covers however many inhouse installment lines.
   const [tpfProviders, setTpfProviders] = useState<TpfProvider[]>([])
   const [tpfProviderId, setTpfProviderId] = useState('')
   const [tpfReferenceNumber, setTpfReferenceNumber] = useState('')
-  const [tpfApprovedAmount, setTpfApprovedAmount] = useState('')
   const [installmentPreviews, setInstallmentPreviews] = useState<
     Record<string, InstallmentPreview | null>
   >({})
@@ -554,17 +903,10 @@ export default function CheckoutPage() {
     Record<string, boolean>
   >({})
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  // Down payment is a flat 10%-of-sale-amount floor, never a function of the
-  // chosen term — shown by default as a fixed stat so it doesn't read as an
-  // editable box that mysteriously never changes. Keyed by line.lineId (the
-  // same key the displayGroups card uses) so each item's reveal is independent.
-  const [downPaymentEditOpen, setDownPaymentEditOpen] = useState<Record<string, boolean>>({})
-
   // Scenario 37 — the tender row's method already comes from Item Payment
   // Mode by default (see preferredPaymentMethodKey) — showing an always-open
   // dropdown for the same choice reads as asking twice. Default to a plain
-  // label instead, same "reveal on demand" pattern as downPaymentEditOpen
-  // above. Keyed by row index.
+  // label instead, same "reveal on demand" idea. Keyed by row index.
   const [paymentMethodEditOpen, setPaymentMethodEditOpen] = useState<Record<number, boolean>>({})
 
   // Scenario 17 Part 6 — every installment sale requires an approved,
@@ -577,11 +919,111 @@ export default function CheckoutPage() {
       id: string
       applicationNumber: string
       requestedAmount: number
-      items: { itemName: string }[]
+      // itemId as well as the name: the backend requires the sale's
+      // installment lines to match this set EXACTLY, so the picker has to be
+      // able to tell which applications can actually be used with the cart
+      // in front of the cashier.
+      items: { itemId: string; itemName: string }[]
+      // The terms the customer agreed to and the owner approved. Carried so
+      // selecting an application can fill the cart's own term/down payment
+      // in, rather than the cashier re-keying figures that were already
+      // agreed — and possibly keying different ones.
+      financingTermId?: string | null
+      downPayment?: number | null
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
+  // Scenario 64 item 28 — an application arriving from "Continue to sale" on
+  // its own detail page. It cannot simply be selected on arrival: the picker's
+  // list is only fetched once there is an installment line in the cart, and
+  // there is no cart yet. So it is held here while the cart is built from the
+  // application's own items, and selected once those lines exist.
+  const [arrivingCreditApplication, setArrivingCreditApplication] = useState<{
+    id: string
+    stage: 'fetching' | 'adding'
+    expectedLines?: number
+    /** The Price Use the application was approved under. Every new cart line
+     *  otherwise defaults to WIP, so an application approved under any other
+     *  Price Use would be priced at the till off a different list than the
+     *  one the owner approved — different unit price, different totals, and a
+     *  down payment that can land under the floor for the sale it becomes. */
+    priceUseTypeId?: string | null
+    /** itemId -> the unit this application remembered, when that serial is
+     *  still in stock. Empty when there is nothing reusable. */
+    rememberedSerials?: Map<string, { id: string; label: string }>
+  } | null>(null)
+  /** The application whose lines have already been put in the cart. Survives
+   *  re-renders, unlike the state above, which is what makes it the guard. */
+  const arrivalBuiltRef = useRef<string | null>(null)
+  /** Scenario 72 Part 6 — the "sales invoice to follow" Delivery Receipt this
+   *  sale invoices. Its units are held for it, so they never appear in the
+   *  serial picker (in_stock only); they arrive already on the lines, and the
+   *  sale sends deliveryReceiptId so the backend lets it claim them. */
+  const [deliveryReceipt, setDeliveryReceipt] = useState<{
+    id: string
+    drNumber: string
+  } | null>(null)
+  const [arrivingDr, setArrivingDr] = useState<{
+    id: string
+    stage: 'fetching' | 'adding'
+    drNumber?: string
+    expectedLines?: number
+  } | null>(null)
+  const drBuiltRef = useRef<string | null>(null)
+  /** The application an arrival wants selected in the picker, held until the
+   *  picker's own list has actually loaded it.
+   *
+   *  Setting `creditApplicationId` straight after building the cart does not
+   *  survive: switching the new lines to installment changes
+   *  creditAppsContextKey, and the effect watching that key clears the
+   *  selection — correctly, since a real context change must not carry a
+   *  stale choice over. So the intent is kept here and reasserted below once
+   *  the list contains it. */
+  const arrivalSelectRef = useRef<string | null>(null)
   const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
+
+  // Scenario 60 — Employee Appliance Loan: waives the down-payment floor
+  // and the credit-application requirement for an employee-tagged customer.
+  // Gated on the tag (only rendered when isEmployeeCustomer), but still a
+  // real checked/unchecked toggle rather than a fully automatic behavior —
+  // the cashier confirms it, same spirit as a manager override.
+  const [employeeApplianceLoanChecked, setEmployeeApplianceLoanChecked] = useState(false)
+  const [hrApplianceLoanApplicationNumber, setHrApplianceLoanApplicationNumber] = useState('')
+
+  // Scenario 67 — X-Deal (barter): rung up as an inhouse installment sale
+  // with no credit application, whose balance an X-Deal credit memo offsets.
+  // Scenario 68: part of it may be paid now as the down payment, and the
+  // memo is issued with the sale itself (at approval). Any customer,
+  // cashier-confirmed; mutually exclusive with the Employee Appliance Loan
+  // above.
+  const [xDealChecked, setXDealChecked] = useState(false)
+  // Scenario 71 — the cashier waives the credit application on an in-house
+  // installment sale. Needs a reason and a note (the exception section) and is
+  // flagged in the end-of-day review.
+  const [creditApplicationWaived, setCreditApplicationWaived] = useState(false)
+  // Scenario 71 — the cashier overrides the credit application: sells on one that
+  // does not cover the cart, or is not approved yet. Same reason and note, same
+  // end-of-day review; the application is linked as it is.
+  const [creditApplicationOverridden, setCreditApplicationOverridden] = useState(false)
+  const creditApplicationOverriddenRef = useRef(false)
+  useEffect(() => {
+    creditApplicationOverriddenRef.current = creditApplicationOverridden
+  }, [creditApplicationOverridden])
+  const pendingResumedOverrideRef = useRef(false)
+  const [overrideApplications, setOverrideApplications] = useState<OverrideApplication[]>([])
+  const [overrideApplicationsLoading, setOverrideApplicationsLoading] = useState(false)
+  const overrideApplicationsRequestRef = useRef(0)
+  const [xDealReference, setXDealReference] = useState('')
+  // Read by the credit-application loader, whose effect closure would
+  // otherwise see the value from when it was scheduled.
+  const xDealCheckedRef = useRef(false)
+  useEffect(() => {
+    xDealCheckedRef.current = xDealChecked
+  }, [xDealChecked])
+  // A resumed parked X-Deal, held until its customer has been re-selected —
+  // selecting a customer resets the X-Deal (see the customer-change effect).
+  const pendingResumedXDealRef = useRef<{ reference: string } | null>(null)
+  const pendingResumedWaiverRef = useRef(false)
 
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
@@ -613,6 +1055,13 @@ export default function CheckoutPage() {
   // Price Use (Price List integration) — each cart line picks its own
   const [priceUseTypes, setPriceUseTypes] = useState<PosPriceUseType[]>([])
   const [priceOverrideTargetLineId, setPriceOverrideTargetLineId] = useState<string | null>(null)
+  // Scenario 71 — one reason and one note for the whole sale, asked once when
+  // any line carries a price override. Nobody approves it at the till; both go
+  // to the end-of-day review.
+  const [overrideReasons, setOverrideReasons] = useState<PosOverrideReason[]>([])
+  const [exceptionReasonId, setExceptionReasonId] = useState('')
+  const exceptionSectionRef = useRef<HTMLDivElement>(null)
+  const [exceptionNote, setExceptionNote] = useState('')
   const priceResolutionLines = useMemo(
     () => cart.map((l) => ({ itemId: l.itemId, priceUseTypeId: l.priceUseTypeId })),
     [cart]
@@ -623,20 +1072,34 @@ export default function CheckoutPage() {
   )
 
   // Back-fills each cart line's unitPrice from the bulk resolution — skips
-  // any line that already has a manual priceOverrideBy (a PIN-approved
-  // value a Price Use change must not silently clobber).
+  // any line with a typed-over price (a value a Price Use change must not
+  // silently clobber).
   useEffect(() => {
     setCart((prev) =>
       prev.map((line) => {
-        if (line.priceOverrideBy) return line
+        if (line.priceOverridden) return line
         if (!line.priceUseTypeId) return line
+        // A downPaymentInput this line auto-filled for its PREVIOUS
+        // priceListItemId (curated or 10%-floor) is now stale the moment
+        // Price Use resolves to a different one — e.g. WIP's curated 2,900
+        // must not linger once the line switches to CR-BR's 2,600. A value
+        // the cashier actually typed (or one copied from an approved
+        // credit application) never carries this marker, so it survives.
+        // Recomputed immediately (never just cleared to blank) since a
+        // financingTermId may already be active and the installment-preview
+        // fetch reads downPaymentInput directly — a blank value would send
+        // a 0 down payment to that preview until something else refilled it.
+        const isStaleAutoDownPayment = (newPriceListItemId: string | null) =>
+          line.downPaymentAutoForPriceListItemId !== undefined &&
+          line.downPaymentAutoForPriceListItemId !== newPriceListItemId
         const resolved = resolvedPrices[resolutionKey(line.itemId, line.priceUseTypeId)]
         if (!resolved) {
           // No active price list matches this line's picked Price Use — clear
           // unitPrice back to 0 too, not just the resolved flags. Leaving the
           // old Price Use's unitPrice in place kept the Order Summary total
           // frozen on the stale price even though the per-line cell correctly
-          // switched to "No price — Override".
+          // switched to "No price — Override". Nothing to recompute a down
+          // payment against here, so a stale auto-fill just goes blank.
           return line.priceResolved
             ? {
                 ...line,
@@ -644,16 +1107,40 @@ export default function CheckoutPage() {
                 priceResolved: false,
                 priceListItemId: null,
                 priceListDownPayment: null,
+                priceListCardTermMonths: null,
+                ...(isStaleAutoDownPayment(null)
+                  ? { downPaymentInput: undefined, downPaymentAutoForPriceListItemId: undefined }
+                  : {}),
               }
             : line
         }
         if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line
+        const recomputedDownPayment = isStaleAutoDownPayment(resolved.priceListItemId)
+          ? {
+              downPaymentInput: (resolved.downPayment != null
+                ? Number(resolved.downPayment) * line.quantity
+                : Math.ceil(
+                    effectiveUnitPrice(
+                      { ...line, unitPrice: resolved.price },
+                      activeTaxRate,
+                      inclusivePricing,
+                      isTaxExempt
+                    ) *
+                      line.quantity *
+                      DOWN_PAYMENT_FLOOR_RATE
+                  )
+              ).toFixed(2),
+              downPaymentAutoForPriceListItemId: resolved.priceListItemId,
+            }
+          : {}
         return {
           ...line,
           unitPrice: resolved.price,
           priceListItemId: resolved.priceListItemId,
           priceListDownPayment: resolved.downPayment,
+          priceListCardTermMonths: resolved.cardTermMonths ?? null,
           priceResolved: true,
+          ...recomputedDownPayment,
         }
       })
     )
@@ -672,6 +1159,10 @@ export default function CheckoutPage() {
     deliveryReceiptNumber?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
+    /** Scenario 71 — what the credit check would have said (over the limit, an
+     * overdue balance). An in-house installment sale posts at once, so this is
+     * the only place the cashier hears it. */
+    creditWarnings?: string[]
     // Per-line outcome — a cart can mix cash/charge/installment lines, so
     // there's no single invoiceType/installmentPreview for the whole sale
     // anymore. Empty for an offline-buffered sale (always pure cash).
@@ -687,9 +1178,16 @@ export default function CheckoutPage() {
       financedBalance?: number | null
     }[]
     invoices?: PosTransactionInvoice[]
+    /** Scenario 66 — shown beside the sale, never inside its totals. */
+    delivery?: SuccessDelivery | null
+    /** Scenario 67 */
+    isXDeal?: boolean
+    xDealReference?: string | null
+    /** Scenario 71 — the override behind this sale, shown on screen only. */
+    exception?: SaleException | null
   } | null>(null)
 
-  // Pending manager approval (serial-tracked sale awaiting Release Form review)
+  // Pending manager approval (installment sale awaiting Release Form review)
   const [pendingApproval, setPendingApproval] = useState<{
     releaseFormRequestId: string
     totalAmount: number
@@ -697,6 +1195,11 @@ export default function CheckoutPage() {
     /** Scenario 17 Part 7 — set only for installment sales, so
      * PendingApprovalScreen knows whether to show the Promissory Note card. */
     creditApplicationId?: string
+    /** Scenario 66 — the held sale's delivery, recorded when it is approved. */
+    delivery?: { deliverTo: string; fee: number; feeCr: string | null } | null
+    /** Scenario 67 */
+    isXDeal?: boolean
+    xDealReference?: string | null
   } | null>(null)
 
   // Reserve mode success (Scenario 03, Part 3) — separate from `success`
@@ -754,8 +1257,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!sessionsData) return
     const currentSession = openSessions.find((s) => s.id === sessionId)
-    const currentSessionBranchId =
-      currentSession?.terminal?.branchId ?? currentSession?.terminal?.branch?.id
+    const currentSessionBranchId = currentSession ? sessionPlaceId(currentSession) : undefined
     const isStale =
       sessionId &&
       (!currentSession || (switcherBranchId && currentSessionBranchId !== switcherBranchId))
@@ -770,20 +1272,21 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!sessionsData) return
     const session = openSessions.find((s) => s.id === sessionId)
-    const branchId = session?.terminal?.branchId ?? session?.terminal?.branch?.id
+    const branchId =
+      session?.terminal?.caravanBranchId ??
+      session?.terminal?.branchId ??
+      session?.terminal?.branch?.id
     setCatalogLoading(true)
     setCatalogError('')
 
+    // One cached copy per branch, shared with the Product Catalog page — the
+    // full catalog is ~5 MB, so coming back to Checkout shouldn't re-download it.
     Promise.all([
-      itemLookup(undefined, branchId),
+      queryClient.fetchQuery(posCatalogQueryOptions(branchId)),
       getUnitsOfMeasure().catch(() => ({ success: false, data: null })),
     ])
-      .then(([catalogRes, uomRes]) => {
-        if (!catalogRes.success) {
-          setCatalogError(catalogRes.error ?? 'Failed to load items')
-          return
-        }
-        const raw = (catalogRes.data ?? []) as LookupItem[]
+      .then(([catalogRows, uomRes]) => {
+        const raw = catalogRows as LookupItem[]
 
         const uomMap = Object.fromEntries((uomRes.data?.data ?? []).map((u) => [u.id, u]))
 
@@ -803,9 +1306,11 @@ export default function CheckoutPage() {
         setCatalogItems(enriched)
         setCatalogStockKnown(!!branchId)
       })
-      .catch(() => setCatalogError('Failed to load items'))
+      .catch((err) =>
+        setCatalogError(err instanceof Error && err.message ? err.message : 'Failed to load items')
+      )
       .finally(() => setCatalogLoading(false))
-  }, [sessionId, openSessions, sessionsData])
+  }, [sessionId, openSessions, sessionsData, queryClient])
 
   // Fetch enabled payment methods whenever the active branch changes
   useEffect(() => {
@@ -846,6 +1351,14 @@ export default function CheckoutPage() {
     })
   }, [])
 
+  // Scenario 71 — the business's own reasons for a price override, for the
+  // dropdown shown once any line is overridden.
+  useEffect(() => {
+    getPosOverrideReasons({ activeOnly: true }).then((res) => {
+      if (res.success && Array.isArray(res.data)) setOverrideReasons(res.data)
+    })
+  }, [])
+
   // Clear a stale submit-time validation error as soon as the cart changes —
   // e.g. removing/swapping the line that triggered a cross-branch serial
   // rejection — instead of leaving the old message on screen until the next
@@ -863,49 +1376,157 @@ export default function CheckoutPage() {
     setSerialSearchQuery('')
     setSerialRequestStatus({})
     setExpandedBranch(null)
-    getAvailableSerialNumbers(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
-      (res) => {
-        if (res.success && Array.isArray(res.data)) {
-          setSerialNumbers(res.data)
-        } else if (!res.success) {
-          // A failed fetch (e.g. missing permission) must not look like
-          // "zero serials in stock" — that's a data state, this is an error.
-          setSerialError(res.error || 'Failed to load serial numbers.')
-        }
-        setSerialLoading(false)
+    getAvailableSerialNumbers(serialPickerTarget.itemId, stockBranchId ?? undefined).then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setSerialNumbers(res.data)
+      } else if (!res.success) {
+        // A failed fetch (e.g. missing permission) must not look like
+        // "zero serials in stock" — that's a data state, this is an error.
+        setSerialError(res.error || 'Failed to load serial numbers.')
       }
-    )
-  }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
+      setSerialLoading(false)
+    })
+  }, [serialPickerTarget?.itemId, serialPickerStage, stockBranchId])
 
   // Read-only "also available elsewhere" lookup — purely informational, so a
   // failure here stays silent rather than surfacing as a picker-blocking
   // error the way the sellable fetch above does.
   useEffect(() => {
+    setElsewhereLoaded(false)
     if (!serialPickerTarget) {
       setElsewhereSerials([])
       return
     }
-    getCompanyWideSerialAvailability(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
+    getCompanyWideSerialAvailability(serialPickerTarget.itemId, stockBranchId ?? undefined).then(
       (res) => {
         if (res.success && Array.isArray(res.data)) {
           setElsewhereSerials(res.data)
+          setElsewhereLoaded(true)
         } else {
           setElsewhereSerials([])
         }
       }
     )
-  }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
+  }, [serialPickerTarget?.itemId, serialPickerStage, stockBranchId])
 
-  // Resume a parked sale or QMS tab stored in localStorage
+  // Restores a sale that was handed here DELIBERATELY: resumed from Parked
+  // Sales, carried across by the credit-application detour, or a QMS tab.
+  //
+  // Wandering off the till and back does not restore anything — that cart
+  // is gone, which is the behaviour the client asked to return to
+  // (2026-09-19). Automatic persistence (a scheduled parked row, a pagehide
+  // stash, a cart reappearing on its own) was removed with it: three
+  // separate lost-customer bugs came out of mechanisms firing without the
+  // cashier asking for them. Anything that survives a navigation now does
+  // so because someone pressed a button.
+  //
+  // ONE effect owns this. It used to be two — a stash reader and a
+  // ?customerId= reader — which raced: the stash resolved its customer
+  // asynchronously and could land AFTER the query string had attached a
+  // freshly created one, silently replacing it. The two also disagreed
+  // about what a customer is: the query-string path attached a bare
+  // {id, name} stub with no code, phone or loyalty context.
+  //
+  // Precedence is explicit: a customer named in the URL was just created
+  // for THIS sale, so it wins over whatever the stash remembers. Either way
+  // the full record is fetched, so both routes end up with the same object.
+  const handoffConsumed = useRef(false)
   useEffect(() => {
-    const raw = localStorage.getItem('pos_resumed_cart')
-    if (raw) {
-      try {
-        const data = JSON.parse(raw) as { lines?: CartLine[] }
-        if (Array.isArray(data.lines) && data.lines.length > 0) setCart(data.lines)
-      } catch {}
-      localStorage.removeItem('pos_resumed_cart')
+    // Waits for the open-session list: a handoff is only honoured if the
+    // session it was rung up under is still open, so a fresh shift never
+    // inherits the last cashier's cart. Until the list arrives there is no
+    // way to tell, so nothing is consumed yet.
+    if (sessionsLoading) return
+    if (handoffConsumed.current) return
+    handoffConsumed.current = true
+
+    const handoff = readCheckoutHandoff<CartLine>()
+    // A handoff with no sessionId predates this rule (or was written with
+    // no session selected) — honoured, since discarding it would lose a
+    // cart for no stated reason.
+    const belongsToAnOpenSession =
+      !handoff?.sessionId || openSessions.some((os) => os.id === handoff.sessionId)
+    if (handoff && !belongsToAnOpenSession) {
+      clearCheckoutHandoff()
     }
+    if (handoff && belongsToAnOpenSession) {
+      if (Array.isArray(handoff.lines) && handoff.lines.length > 0) {
+        setCart(handoff.lines)
+        // Scenario 67 — restored once the customer below is re-selected.
+        if (handoff.isXDeal) {
+          pendingResumedXDealRef.current = { reference: handoff.xDealReference ?? '' }
+          setPaymentMode('installment')
+        }
+        // Scenario 71 — the reason and note given for a price override.
+        if (handoff.exceptionReasonId) setExceptionReasonId(handoff.exceptionReasonId)
+        if (handoff.exceptionNote) setExceptionNote(handoff.exceptionNote)
+        // Restored once the customer below is re-selected.
+        if (handoff.creditApplicationWaived) pendingResumedWaiverRef.current = true
+        if (handoff.creditApplicationOverridden) pendingResumedOverrideRef.current = true
+      }
+      // Scenario 64 item 28. Carried instead of lines, never alongside them —
+      // the cart is derived below from the application's own approved items,
+      // here at the till where price, tax and UoM actually resolve.
+      if (handoff.creditApplicationId) {
+        const restoredCart = Array.isArray(handoff.lines) && handoff.lines.length > 0
+        if (restoredCart) {
+          // The cart came back with the handoff — serials, quantities and
+          // prices as the cashier left them. Rebuilding it from the
+          // application's items would discard all of that and re-ask for a
+          // serial already chosen, so only the picker selection is wanted.
+          arrivalSelectRef.current = handoff.creditApplicationId
+          setPaymentMode('installment')
+        } else {
+          setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
+        }
+      }
+      // Scenario 72 Part 6 — same shape as a credit application arrival: no
+      // lines travel, the cart is built below from the DR itself.
+      if (handoff.deliveryReceiptId) {
+        setArrivingDr({ id: handoff.deliveryReceiptId, stage: 'fetching' })
+      }
+      // The booklet numbers, back as they were typed.
+      if (handoff.deliveryReceiptNumber) {
+        setDocumentType('delivery_receipt')
+        setInvoiceNumberInput(handoff.deliveryReceiptNumber)
+      } else if (handoff.salesInvoiceNumber) {
+        setInvoiceNumberInput(handoff.salesInvoiceNumber)
+      }
+      if (handoff.paymentReferences?.length) {
+        const refs = handoff.paymentReferences
+        // By row order, and only onto rows that came back with the cart — a
+        // reference belongs to the payment it was issued for, so it is never
+        // applied to a row that did not exist when it was typed.
+        setPayments((prev) =>
+          prev.map((row, index) =>
+            refs[index] && !row.referenceNumber ? { ...row, referenceNumber: refs[index] } : row
+          )
+        )
+      }
+      clearCheckoutHandoff()
+    }
+
+    const createdCustomerId = searchParams.get('customerId')
+    const customerId = createdCustomerId ?? handoff?.customerId
+    if (customerId) {
+      getCustomerById(customerId).then((res) => {
+        if (res.success && res.data) {
+          void selectCustomer(res.data)
+        } else if (createdCustomerId) {
+          // The record exists — it was just saved — so a failed lookup is a
+          // transport problem, not a missing customer. Fall back to the
+          // name the form handed over so the sale still has someone on it
+          // rather than silently losing them.
+          void selectCustomer({
+            id: createdCustomerId,
+            name: searchParams.get('customerName') || 'Customer',
+          })
+        }
+      })
+    }
+    // Clear the query string so a refresh doesn't re-attach.
+    if (createdCustomerId) router.replace('/pos/checkout')
+
     const tabMeta = localStorage.getItem(POS_FROM_TAB_KEY)
     if (tabMeta) {
       try {
@@ -918,7 +1539,11 @@ export default function CheckoutPage() {
         setFromTab(meta)
       } catch {}
     }
-  }, [])
+    // Runs once, on the first render where the session list is known —
+    // handoffConsumed guards re-entry. searchParams/router are read once,
+    // on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsLoading, openSessions])
 
   // Network detection
   useEffect(() => {
@@ -956,18 +1581,20 @@ export default function CheckoutPage() {
     }
   }, [OFFLINE_QUEUE_KEY])
 
-  // Debounced customer search
+  // Debounced customer + employee search
   useEffect(() => {
     if (!customerSearch.trim()) {
       setCustomerResults([])
+      setEmployeeResults([])
       setCustomerSearchOpen(false)
       return
     }
     if (customerTimer.current) clearTimeout(customerTimer.current)
     customerTimer.current = setTimeout(async () => {
       setSearchingCustomers(true)
-      const res = await searchCustomers(customerSearch.trim())
-      setCustomerResults(res.data ?? [])
+      const res = await searchCustomersAndEmployees(customerSearch.trim())
+      setCustomerResults(res.data?.customers ?? [])
+      setEmployeeResults(res.data?.employees ?? [])
       setCustomerSearchOpen(true)
       setSearchingCustomers(false)
     }, 300)
@@ -1016,7 +1643,7 @@ export default function CheckoutPage() {
     }
     let cancelled = false
     const timer = setTimeout(() => {
-      searchSerialsAcrossItems(q, activeBranchId ?? undefined).then((res) => {
+      searchSerialsAcrossItems(q, stockBranchId ?? undefined).then((res) => {
         if (!cancelled && res.success && Array.isArray(res.data)) setSerialSearchResults(res.data)
       })
     }, 300)
@@ -1024,7 +1651,7 @@ export default function CheckoutPage() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [searchQuery, activeBranchId])
+  }, [searchQuery, stockBranchId])
 
   const displayItems = useMemo(() => {
     // A plain (non-serialized) bundle has no single sellable unit and stays
@@ -1109,6 +1736,148 @@ export default function CheckoutPage() {
   const inhouseInstallmentCartLines = installmentCartLines.filter(
     (l) => l.installmentProvider !== 'tpf'
   )
+
+  /**
+   * The picker used to list every approved, unconsumed application for the
+   * customer, regardless of what is in the cart — so a cashier could pick one
+   * that TransactionsService.validateAndPrepare() is certain to reject, and
+   * only find out at submit. The rule there is an EXACT match: every approved
+   * item must be an installment line, and no installment line may sit outside
+   * the application.
+   *
+   * Mismatched applications are labelled rather than hidden: a cashier who
+   * knows the customer has an approved application needs to see that it
+   * exists and why it cannot be used here, not an empty list. Usable ones are
+   * listed first so the common case stays a single glance.
+   */
+  // How many of this customer's approved applications actually fit the cart.
+  // Zero is a different situation from "none exist": the cashier has
+  // applications but none usable here, so raising one is the way forward
+  // rather than picking from a list where every row is marked as not matching.
+  const matchingCreditApplicationCount = (() => {
+    const cartItemIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
+    if (cartItemIds.size === 0) return 0
+    return approvedCreditApplications.filter((a) => {
+      const appItemIds = new Set(a.items.map((i) => i.itemId))
+      return (
+        appItemIds.size === cartItemIds.size && [...appItemIds].every((id) => cartItemIds.has(id))
+      )
+    }).length
+  })()
+
+  const creditApplicationOptions = (() => {
+    const cartItemIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
+    const decorated = approvedCreditApplications.map((a) => {
+      const appItemIds = new Set(a.items.map((i) => i.itemId))
+      const matches =
+        cartItemIds.size > 0 &&
+        appItemIds.size === cartItemIds.size &&
+        [...appItemIds].every((id) => cartItemIds.has(id))
+      const scope = a.items.map((i) => i.itemName).join(', ')
+      const amount = a.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })
+      return {
+        matches,
+        value: a.id,
+        label: `${a.applicationNumber} · ${scope} · ₱${amount}${
+          matches ? '' : ' — does not match this cart'
+        }`,
+      }
+    })
+    return [...decorated.filter((o) => o.matches), ...decorated.filter((o) => !o.matches)].map(
+      ({ value, label }) => ({ value, label })
+    )
+  })()
+  // Institutional (business) customers under the government sub-category
+  // skip the credit application requirement entirely — a private business
+  // or an individual customer still needs one for every installment sale.
+  const isGovernmentInstitutionalCustomer =
+    selectedCustomer?.customerType === 'business' &&
+    selectedCustomer?.businessCategory === 'government'
+  // Scenario 60 — an employee-tagged customer can waive the down-payment
+  // floor and the credit-application requirement the same way a government
+  // institutional customer already does, but only once the cashier
+  // explicitly checks the box below (employeeApplianceLoanChecked) rather
+  // than automatically on every sale to that customer.
+  const isEmployeeCustomer = selectedCustomer?.customerType === 'employee'
+  const employeeApplianceLoanActive = isEmployeeCustomer && employeeApplianceLoanChecked
+  const xDealActive = !!selectedCustomer && xDealChecked
+  // Neither needs a credit application, and neither has the 10% down-payment
+  // floor: an Employee Appliance Loan's down payment is optional (Chloe,
+  // development) and so is an X-Deal's cash portion (Scenario 68).
+  // Scenario 71 — a credit application can be waived on an ordinary in-house
+  // installment sale; an X-Deal, an Employee Appliance Loan and a government
+  // institution already need none, so there is nothing to waive for them.
+  const canWaiveCreditApplication =
+    !!selectedCustomer &&
+    inhouseInstallmentCartLines.length > 0 &&
+    !employeeApplianceLoanActive &&
+    !xDealActive &&
+    !isGovernmentInstitutionalCustomer
+  const creditApplicationWaivedActive = creditApplicationWaived && canWaiveCreditApplication
+  // Scenario 71 — overriding needs the same conditions as waiving (there has to be an
+  // in-house installment line to attach an application to, and a customer who needs one).
+  const creditApplicationOverriddenActive =
+    creditApplicationOverridden && canWaiveCreditApplication && !creditApplicationWaived
+  const skipsCreditApplication =
+    employeeApplianceLoanActive || xDealActive || creditApplicationWaivedActive
+  const skipsCreditApplicationLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
+  const downPaymentWaived = employeeApplianceLoanActive || xDealActive
+  const downPaymentWaivedLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
+  // Nothing is forced to ₱0 any more: an X-Deal's part paid now is its cash
+  // portion (Scenario 68), typed by the cashier like an Employee Appliance
+  // Loan's optional down payment.
+  const downPaymentZeroed = false
+  // No rate-card figure either — the cashier's amount stands.
+  const downPaymentFree = employeeApplianceLoanActive || xDealActive
+  // An Employee Appliance Loan's down payment only counts once typed
+  // explicitly (the term pick's auto-fill, marked by
+  // downPaymentAutoForPriceListItemId, is ignored for it). An X-Deal never
+  // gets that auto-fill — ticking it clears the marker and the term pick
+  // skips it.
+  const lineDownPayment = (l: CartLine): number => {
+    if (downPaymentZeroed) return 0
+    if (employeeApplianceLoanActive && l.downPaymentAutoForPriceListItemId !== undefined) return 0
+    return parseFloat(l.downPaymentInput ?? '0') || 0
+  }
+  const xDealDownPaymentTotal = xDealActive
+    ? Math.round(
+        cart
+          .filter((l) => l.invoiceType === 'installment' && l.installmentProvider !== 'tpf')
+          .reduce((s, l) => s + lineDownPayment(l), 0) * 100
+      ) / 100
+    : 0
+  // Whether a cash portion is being taken here at all — an X-Deal only when
+  // part of it is paid now.
+  const xDealCollectsNothing = xDealActive && xDealDownPaymentTotal <= 0
+
+  // A line the rate card prices for its term carries exactly the card's down
+  // payment (lineCardDownPayment). Whatever left another figure in the field —
+  // one typed before a Price Use change, a restored or resumed cart — it is
+  // brought back in line here, so the field, the installment preview, the
+  // submit check and the sale itself all say the same amount. Not while the
+  // down payment is waived (Employee Appliance Loan) or optional (X-Deal):
+  // the cashier's figure stands.
+  useEffect(() => {
+    if (downPaymentFree) return
+    setCart((prev) => {
+      let changed = false
+      const next = prev.map((l) => {
+        if (l.invoiceType !== 'installment' || l.installmentProvider === 'tpf') return l
+        const fixed = lineCardDownPayment(l)
+        if (fixed == null || l.downPaymentInput === fixed.toFixed(2)) return l
+        changed = true
+        return {
+          ...l,
+          downPaymentInput: fixed.toFixed(2),
+          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+        }
+      })
+      return changed ? next : prev
+    })
+    // lineCardDownPayment reads only the line and financingTerms, both deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, financingTerms, downPaymentFree])
+
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -1118,18 +1887,24 @@ export default function CheckoutPage() {
   // Scenario 37 — whether the cash bucket's one tender method (paymentMode,
   // set via the transaction-wide Payment Mode toggle — there's no per-item
   // choice anymore) is Credit Card. One card swipe covers whatever's being
-  // paid by card in this sale, so the POS Terminal/Straight-Installment/Term
-  // fields render once, not per line.
+  // paid by card in this sale, so the Card Acquirer/Straight-Installment/Term
+  // fields render once, not per line. An X-Deal with nothing paid now has no
+  // down payment to take, so a cash/card choice made before ticking it is
+  // kept (unticking restores it) but not acted on until a down payment is.
   const hasCreditCardLine =
-    (cashCartLines.length > 0 && paymentMode === 'credit_card') ||
-    (installmentCartLines.length > 0 && installmentPaymentMethod === 'credit_card')
+    (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
+    (installmentCartLines.length > 0 &&
+      !xDealCollectsNothing &&
+      installmentPaymentMethod === 'credit_card')
   // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR). Also
   // covers the down payment's cash tendering now that it shares this pool —
   // cash-lines and installment-lines never coexist in one cart, so only one
   // of the two OR branches is ever true.
   const hasCashLine =
-    (cashCartLines.length > 0 && paymentMode === 'cash') ||
-    (installmentCartLines.length > 0 && installmentPaymentMethod === 'cash')
+    (cashCartLines.length > 0 && paymentMode !== 'installment') ||
+    (installmentCartLines.length > 0 &&
+      !xDealCollectsNothing &&
+      installmentPaymentMethod === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
   // value (net of promo discount, prorated by the cash lines' share of the
@@ -1161,30 +1936,18 @@ export default function CheckoutPage() {
     ) / 100
   const tpfShareOfPromo = subtotal > 0 ? Math.min(1, tpfLinesGross / subtotal) * promoDiscount : 0
   const tpfLinesTotal = Math.max(0, Math.round((tpfLinesGross - tpfShareOfPromo) * 100) / 100)
+  // Scenario 60 — both totals collapse to 0 for an Employee Appliance
+  // Loan, overriding whatever's left in downPaymentInput from before the
+  // checkbox was checked; nothing is collected at the register for it.
   const installmentDownPaymentsTotal =
-    Math.round(
-      inhouseInstallmentCartLines.reduce(
-        (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
-        0
-      ) * 100
-    ) / 100
+    Math.round(inhouseInstallmentCartLines.reduce((s, l) => s + lineDownPayment(l), 0) * 100) / 100
   const tpfDownPaymentsTotal =
-    Math.round(
-      tpfInstallmentCartLines.reduce(
-        (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
-        0
-      ) * 100
-    ) / 100
+    Math.round(tpfInstallmentCartLines.reduce((s, l) => s + lineDownPayment(l), 0) * 100) / 100
   // Every down payment being collected at this register, whoever carries the
   // balance afterwards — inhouse and TPF share one tender method and one
   // pool, so the toggle labels itself with the combined figure.
   const allDownPaymentsTotal =
     Math.round((installmentDownPaymentsTotal + tpfDownPaymentsTotal) * 100) / 100
-  // What the financier itself funds, once the customer's down payment is out.
-  const tpfFinancedTotal = Math.max(
-    0,
-    Math.round((tpfLinesTotal - tpfDownPaymentsTotal) * 100) / 100
-  )
   // A cart that's nothing BUT TPF lines is the one case the backend records
   // the financier's own settlement for by itself, at create time (see
   // transactions.service.ts's pure-TPF block) — so the register must collect
@@ -1204,6 +1967,26 @@ export default function CheckoutPage() {
   // regularTenderTarget in handleConfirm), not in the UI.
   const regularTenderTarget = Math.round((cashLinesTotal + tpfCollectedAtRegister) * 100) / 100
   const tenderTarget = Math.round((regularTenderTarget + installmentDownPaymentsTotal) * 100) / 100
+
+  // CR Number (collection receipt) is optional on a plain sale. It stays
+  // required where a payment can't go through without one: card / bank /
+  // e-wallet / etc. (or whatever the method's own config says), and any sale
+  // collecting a down payment — the backend refuses a down payment without a
+  // reference because that reference IS its collection receipt.
+  const saleHasDownPayment = allDownPaymentsTotal > 0
+  const crIsRequired = (p: PaymentRow) =>
+    REF_METHODS.includes(p.method) || p.refRequired === true || saleHasDownPayment
+
+  // Scenario 66 — the delivery fee as entered (0 while blank or not yet a
+  // valid amount).
+  const deliveryFeeAmount = delivery.enabled ? (parseDeliveryFee(delivery.fee) ?? 0) : 0
+  // Scenario 70 — the fee is paid with its own tender (the Delivery section's
+  // Paid with), on its own CR, never through the sale's payment box. So the
+  // payment box's Total, Amount received, change and "Underpaid" measure the
+  // sale alone (tenderTarget). The Totals (Order Summary and the block above
+  // Confirm) are the sale's too; the fee is only a note under them — it is a
+  // collection on its own CR, not part of the sale. This undoes Scenario 68's
+  // "fee rides on the sale's tender" and its "Total = items + fee".
 
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
   const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
@@ -1234,6 +2017,43 @@ export default function CheckoutPage() {
   // Manager override check
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
+  // Scenario 71 — any line with a typed-over price makes the sale carry a
+  // reason and a note.
+  const anyPriceOverridden = cart.some((l) => l.priceOverridden)
+  // Scenario 71 — typed terms need a reason and a note just as an override does.
+  const anyTypedPlan = cart.some((l) => l.manualPlan)
+  const anyException =
+    anyPriceOverridden ||
+    anyTypedPlan ||
+    creditApplicationWaivedActive ||
+    creditApplicationOverriddenActive
+  // Only a TPF installment sale still waits for approval (Scenario 71): an
+  // in-house one posts the moment it is confirmed, whoever rings it.
+  const installmentHeldForApproval = tpfInstallmentCartLines.length > 0 && !canOverride
+  const exceptionTitle =
+    [
+      anyPriceOverridden,
+      anyTypedPlan,
+      creditApplicationWaivedActive,
+      creditApplicationOverriddenActive,
+    ].filter(Boolean).length > 1
+      ? 'Exceptions on this Sale'
+      : creditApplicationOverriddenActive
+        ? 'Credit Application Override'
+        : creditApplicationWaivedActive
+          ? 'Credit Application Waived'
+          : anyTypedPlan
+            ? 'Typed Installment Terms'
+            : 'Price Override'
+  // A zero-rated or VAT-exempt sale needs the same manager PIN approval a big
+  // discount does — and shares its slot, so one approval covers both. A table
+  // tab's sale already exists; nothing is classified at this point.
+  const needsVatApproval = isTaxExempt && !fromTab?.posTransactionId
+  // Scenario 69 Part I — a sale starts on VAT-OUT-12, or on VAT-OUT-EXEMPT when
+  // its customer is tax-exempt. Any other class is a change from that, and needs
+  // its reason (a restricted one keeps its manager's approval besides).
+  const defaultOutputVat = selectedCustomer?.isTaxExempt ? OUTPUT_VAT_EXEMPT : OUTPUT_VAT_STANDARD
+  const departsFromDefault = !fromTab?.posTransactionId && outputVatCode !== defaultOutputVat
 
   // The Payment section used to start on an empty "+ Add payment method"
   // placeholder for every sale, reading as a missing/broken step rather than
@@ -1314,7 +2134,6 @@ export default function CheckoutPage() {
       // so it can't silently carry over into a later, unrelated TPF line.
       setTpfProviderId('')
       setTpfReferenceNumber('')
-      setTpfApprovedAmount('')
       return
     }
     getActiveTpfProviders().then((res) => {
@@ -1327,12 +2146,96 @@ export default function CheckoutPage() {
   // has its own amount/term/down-payment, so each gets its own preview call
   // (POST /pos/financing-terms/preview is already single-amount-scoped, no
   // backend change needed to call it once per line instead of once per cart).
-  const installmentLinesDepKey = installmentCartLines
-    .map(
-      (l) =>
-        `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}`
+  const installmentLinesDepKey =
+    installmentCartLines
+      .map(
+        (l) =>
+          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}:${l.manualPlan ? `${l.manualTermInput}/${l.manualMonthlyInput}/${l.firstDueDateInput}` : ''}`
+      )
+      .join('|') + `|dpWaived:${downPaymentZeroed}|emp:${employeeApplianceLoanActive}`
+
+  // Approval happens in someone ELSE's session — only Business Owner holds
+  // pos:application:approve — so "approve in another tab, come back to the
+  // till" is the normal path, not an edge case. Neither dependency below
+  // changes on that return trip, so the cart kept showing the pre-approval
+  // (empty) list: no application to apply, no down payment on the line, and
+  // therefore nothing to collect, which reaches the cashier as a payment
+  // box that will not accept a number. The only way out was re-entering the
+  // whole cart, which changed the deps and refetched by accident.
+  //
+  // Bumping this on focus/visibility re-runs the fetch below with the same
+  // context, so a freshly-approved application is picked up on return.
+  const [creditAppsRefreshNonce, setCreditAppsRefreshNonce] = useState(0)
+
+  // Focus alone only covers a cashier who LEAVES and returns. One who stays
+  // on this screen while the owner approves from another machine never fires
+  // a focus event, so the list would sit stale indefinitely.
+  //
+  // CreditApplicationService.notifyResolved() already pushes
+  // 'credit_application_resolved' to the user who submitted the application
+  // — i.e. this cashier — so the event needed is already on the wire. Listen
+  // for it rather than polling: the refresh lands the moment the decision is
+  // made, and a till that is simply waiting makes no requests at all.
+  useNotificationsSocket(true, {
+    onNotificationCreated: (payload) => {
+      if (payload.eventType === 'credit_application_resolved') {
+        setCreditAppsRefreshNonce((v) => v + 1)
+      }
+    },
+  })
+
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState === 'visible') setCreditAppsRefreshNonce((v) => v + 1)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [])
+
+  // Tells a real context change (different customer, different line count)
+  // from a plain refresh. Only the former may clear the cashier's choice —
+  // wiping it on every tab-focus would be its own bug.
+  const creditAppsContextKey = `${selectedCustomer?.id ?? ''}:${installmentCartLines.length}`
+  const lastCreditAppsContextRef = useRef<string | null>(null)
+  // This fetch now fires on focus and on a socket event, not just on a cart
+  // change, so two can genuinely be in flight at once — alt-tab twice and
+  // the first response can land after the second and overwrite it, leaving a
+  // stale list that may auto-select an application already consumed
+  // elsewhere. Same requestIdRef guard usePriceResolution.ts uses.
+  const creditAppsRequestIdRef = useRef(0)
+
+  // Scenario 60 — resets the Employee Appliance Loan checkbox + HR
+  // reference whenever the selected customer actually changes (not on
+  // every re-render): auto-checks for a newly-selected employee-tagged
+  // customer, clears for anyone else, so a previous customer's choice
+  // never silently carries over onto a new one.
+  const lastEmployeeLoanCustomerIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const customerId = selectedCustomer?.id ?? null
+    if (lastEmployeeLoanCustomerIdRef.current === customerId) return
+    lastEmployeeLoanCustomerIdRef.current = customerId
+    setHrApplianceLoanApplicationNumber('')
+    // Scenario 67 — same reset for the X-Deal, except when this customer is
+    // the one a resumed parked X-Deal was waiting for.
+    const resumedXDeal = customerId ? pendingResumedXDealRef.current : null
+    pendingResumedXDealRef.current = null
+    setXDealChecked(!!resumedXDeal)
+    setXDealReference(resumedXDeal?.reference ?? '')
+    // A waiver belongs to the customer it was given for (Scenario 71) — except
+    // when this is the customer a resumed parked sale was waiting for.
+    setCreditApplicationWaived(customerId ? pendingResumedWaiverRef.current : false)
+    pendingResumedWaiverRef.current = false
+    // Same for an override — it names one of THIS customer's applications.
+    setCreditApplicationOverridden(
+      SHOW_CREDIT_OVERRIDE && customerId ? pendingResumedOverrideRef.current : false
     )
-    .join('|')
+    pendingResumedOverrideRef.current = false
+    setEmployeeApplianceLoanChecked(isEmployeeCustomer && !resumedXDeal)
+  }, [selectedCustomer?.id, isEmployeeCustomer])
 
   // Scenario 17 Part 6 — reload this customer's approved, unused credit
   // applications whenever the customer or cart's installment-line count
@@ -1340,12 +2243,15 @@ export default function CheckoutPage() {
   // never carry over. One credit application covers every installment line
   // in the cart (the backend gate runs once per transaction, not per line).
   useEffect(() => {
-    setCreditApplicationId('')
+    const contextChanged = lastCreditAppsContextRef.current !== creditAppsContextKey
+    lastCreditAppsContextRef.current = creditAppsContextKey
+    if (contextChanged) setCreditApplicationId('')
     if (installmentCartLines.length === 0 || !selectedCustomer) {
       setApprovedCreditApplications([])
       return
     }
     setCreditApplicationsLoading(true)
+    const requestId = ++creditAppsRequestIdRef.current
     getCreditApplications({
       checkoutEligible: true, // Scenario 29 POS-02 — approved or partially_approved
       applicantCustomerId: selectedCustomer.id,
@@ -1353,35 +2259,241 @@ export default function CheckoutPage() {
       limit: 50,
     })
       .then((res) => {
-        setApprovedCreditApplications(
+        // A newer request superseded this one — drop the stale response.
+        if (requestId !== creditAppsRequestIdRef.current) return
+        const list = (res.data?.data ?? [])
+          .map((a) => {
+            // Only the approved items are ever usable — a
+            // partially_approved application's declined items are never
+            // includable, so neither the displayed scope nor the total
+            // should count them.
+            const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
+            return {
+              id: a.id,
+              applicationNumber: a.applicationNumber,
+              // requestedAmount comes off the wire as a Prisma Decimal,
+              // which JSON-serializes to a string — summing it unconverted
+              // does string concatenation (0 + "8800" = "08800") instead
+              // of addition.
+              requestedAmount: approvedOnly.reduce((sum, i) => sum + Number(i.requestedAmount), 0),
+              items: approvedOnly.map((i) => ({
+                itemId: i.itemId,
+                itemName: i.item?.name ?? '—',
+              })),
+              financingTermId: a.financingTermId ?? null,
+              downPayment: a.downPayment != null ? Number(a.downPayment) : null,
+            }
+          })
+          .filter((a) => a.items.length > 0)
+
+        setApprovedCreditApplications(list)
+
+        // One approved application and one cart waiting for it: there is
+        // nothing to choose between, so choosing is just a step the cashier
+        // can forget. Picking it also fills the term and down payment in,
+        // which is the whole point of having approved them.
+        //
+        // Two or more is a real choice — which application this sale should
+        // consume changes what gets marked used — so that still asks.
+        // Never for an X-Deal, which must not consume an application.
+        if (
+          list.length === 1 &&
+          !xDealCheckedRef.current &&
+          !creditApplicationOverriddenRef.current
+        ) {
+          setCreditApplicationId(list[0].id)
+          applyCreditApplicationTerms(list[0].id, list)
+        }
+      })
+      .finally(() => {
+        if (requestId !== creditAppsRequestIdRef.current) return
+        setCreditApplicationsLoading(false)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installmentCartLines.length, selectedCustomer, creditAppsRefreshNonce])
+
+  // The customer's approved, unused credit applications, shown on the customer
+  // card the moment they are picked — whatever the cart holds. The picker
+  // further down only exists once the cart has an installment line, which
+  // left a cashier unable to see whether a customer had an application at all
+  // until they had built a cart around it. Same eligibility as the picker
+  // (approved or partially approved, not yet consumed by a sale); null means
+  // the lookup failed, which is not the same as "none on file".
+  const [customerApplications, setCustomerApplications] = useState<
+    { id: string; applicationNumber: string; requestedAmount: number; itemNames: string[] }[] | null
+  >([])
+  const customerApplicationsRequestRef = useRef(0)
+  const selectedCustomerId = selectedCustomer?.id ?? null
+  useEffect(() => {
+    const requestId = ++customerApplicationsRequestRef.current
+    if (!selectedCustomerId) {
+      setCustomerApplications([])
+      return
+    }
+    setCustomerApplications([])
+    getCreditApplications({
+      checkoutEligible: true,
+      applicantCustomerId: selectedCustomerId,
+      unconsumed: true,
+      limit: 50,
+    })
+      .then((res) => {
+        if (requestId !== customerApplicationsRequestRef.current) return
+        if (!res.success) {
+          setCustomerApplications(null)
+          return
+        }
+        setCustomerApplications(
           (res.data?.data ?? [])
             .map((a) => {
-              // Only the approved items are ever usable — a
-              // partially_approved application's declined items are never
-              // includable, so neither the displayed scope nor the total
-              // should count them.
+              // A partially approved application's declined items are never
+              // usable, so neither the items nor the amount count them.
               const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
               return {
                 id: a.id,
                 applicationNumber: a.applicationNumber,
-                // requestedAmount comes off the wire as a Prisma Decimal,
-                // which JSON-serializes to a string — summing it unconverted
-                // does string concatenation (0 + "8800" = "08800") instead
-                // of addition.
+                // Decimals arrive as strings — summing unconverted concatenates.
                 requestedAmount: approvedOnly.reduce(
                   (sum, i) => sum + Number(i.requestedAmount),
                   0
                 ),
-                items: approvedOnly.map((i) => ({
-                  itemName: i.item?.name ?? '—',
-                })),
+                itemNames: approvedOnly.map((i) => i.item?.name ?? '—'),
               }
             })
-            .filter((a) => a.items.length > 0)
+            .filter((a) => a.itemNames.length > 0)
         )
       })
-      .finally(() => setCreditApplicationsLoading(false))
-  }, [installmentCartLines.length, selectedCustomer])
+      .catch(() => {
+        if (requestId === customerApplicationsRequestRef.current) setCustomerApplications(null)
+      })
+  }, [selectedCustomerId, creditAppsRefreshNonce])
+
+  // Scenario 71 — with the override ticked, every application of this customer that
+  // is not used, declined or cancelled is a candidate, whether or not it covers the
+  // cart or has been decided. Loaded only while the override is on.
+  useEffect(() => {
+    const requestId = ++overrideApplicationsRequestRef.current
+    if (!creditApplicationOverriddenActive || !selectedCustomerId) {
+      setOverrideApplications([])
+      setOverrideApplicationsLoading(false)
+      return
+    }
+    setOverrideApplicationsLoading(true)
+    getCreditApplications({
+      applicantCustomerId: selectedCustomerId,
+      unconsumed: true,
+      limit: 50,
+    })
+      .then((res) => {
+        if (requestId !== overrideApplicationsRequestRef.current) return
+        setOverrideApplications(
+          (res.data?.data ?? [])
+            .filter((a) => OVERRIDABLE_APPLICATION_STATUSES.has(String(a.status)))
+            .map((a) => {
+              // What it covers: the approved items once decided, every item it names
+              // before that (a draft has none approved yet).
+              const covered = (a.items ?? []).filter((i) =>
+                isDecidedApplication(String(a.status))
+                  ? i.status === 'approved'
+                  : i.status !== 'declined'
+              )
+              return {
+                id: a.id,
+                applicationNumber: a.applicationNumber,
+                status: String(a.status),
+                requestedAmount: covered.reduce((sum, i) => sum + Number(i.requestedAmount), 0),
+                items: covered.map((i) => ({ itemId: i.itemId, itemName: i.item?.name ?? '—' })),
+                financingTermId: a.financingTermId ?? null,
+                downPayment: a.downPayment != null ? Number(a.downPayment) : null,
+              }
+            })
+        )
+      })
+      .catch(() => {
+        if (requestId === overrideApplicationsRequestRef.current) setOverrideApplications([])
+      })
+      .finally(() => {
+        if (requestId === overrideApplicationsRequestRef.current) {
+          setOverrideApplicationsLoading(false)
+        }
+      })
+  }, [creditApplicationOverriddenActive, selectedCustomerId, creditAppsRefreshNonce])
+
+  const overrideApplicationOptions = overrideApplications.map((a) => ({
+    value: a.id,
+    label: `${a.applicationNumber} · ${creditApplicationStatusLabel(a.status)} · ${a.items
+      .map((i) => i.itemName)
+      .join(', ')}`,
+  }))
+
+  /** What the picked application differs from the cart by — what the sale will keep
+   * on record, and what the cashier is shown before confirming. Null until one is
+   * picked. */
+  function creditOverrideSnapshot(): CreditApplicationOverrideSnapshot | null {
+    if (!creditApplicationOverriddenActive) return null
+    const application = overrideApplications.find((a) => a.id === creditApplicationId)
+    if (!application) return null
+    const soldIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
+    const coveredIds = new Set(application.items.map((i) => i.itemId))
+    return {
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      applicationStatus: application.status,
+      applicationItems: application.items.map((i) => i.itemName),
+      soldItems: [...new Set(inhouseInstallmentCartLines.map((l) => l.itemName))],
+      missing: application.items.filter((i) => !soldIds.has(i.itemId)).map((i) => i.itemName),
+      extra: [
+        ...new Set(
+          inhouseInstallmentCartLines
+            .filter((l) => !coveredIds.has(l.itemId))
+            .map((l) => l.itemName)
+        ),
+      ],
+    }
+  }
+
+  // applyCreditApplicationTerms() bails on an empty cart (`lines.length === 0`),
+  // and on the way BACK to this page the applications fetch above resolves
+  // before the cart has been restored. The auto-select still ran, so the
+  // application showed as chosen while its down payment was never apportioned
+  // — a cart that looks complete but collects nothing, which reaches the
+  // cashier as "Nothing to collect at checkout for this cart" and a payment
+  // box that will not take a number.
+  //
+  // Re-apply once the lines actually exist. Keyed on application + line count
+  // so it runs once per real change rather than on every render — after that
+  // the cashier is free to change the term or the down payment (Scenario 70:
+  // nothing is locked, and the server doesn't check them against the
+  // application).
+  //
+  // Two reasons to apply: a line has no down payment yet, or a line's term
+  // isn't the one the application ended on. The second is the cart that went
+  // out to raise the application on 5 months and came back restored "as the
+  // cashier left it" — every line already had the 5-month down payment, so the
+  // old down-payment-only guard skipped it and checkout kept 5 months though
+  // the application said 12. A typed down payment is still never lowered
+  // (applyCreditApplicationTerms only raises it), and an application with no
+  // term leaves the lines' own.
+  const appliedTermsKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!creditApplicationId || inhouseInstallmentCartLines.length === 0) return
+    const key = `${creditApplicationId}:${inhouseInstallmentCartLines.length}`
+    if (appliedTermsKeyRef.current === key) return
+    // The list may not have landed yet — try again when it does.
+    const application = approvedCreditApplications.find((a) => a.id === creditApplicationId)
+    if (!application) return
+    appliedTermsKeyRef.current = key
+    // A plan the cashier typed is theirs: the application's terms never
+    // overwrite it (Scenario 71).
+    const termedLines = inhouseInstallmentCartLines.filter((l) => !l.manualPlan)
+    const missingDownPayment = termedLines.some((l) => !(parseFloat(l.downPaymentInput ?? '') > 0))
+    const termDiffers =
+      !!application.financingTermId &&
+      termedLines.some((l) => l.financingTermId !== application.financingTermId)
+    if (!missingDownPayment && !termDiffers) return
+    applyCreditApplicationTerms(creditApplicationId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creditApplicationId, inhouseInstallmentCartLines.length, approvedCreditApplications])
 
   useEffect(() => {
     for (const line of installmentCartLines) {
@@ -1392,7 +2504,18 @@ export default function CheckoutPage() {
             100
         ) / 100
       const financingTermId = line.financingTermId
-      if (!financingTermId || lineAmount <= 0) {
+      // Scenario 71 — a typed plan previews from what was typed, once it is
+      // complete enough to mean something; the panel says what is missing.
+      const typedReady =
+        !!line.manualPlan &&
+        typedPlanProblem({
+          months: line.manualTermInput,
+          monthly: line.manualMonthlyInput,
+          firstDueDate: line.firstDueDateInput,
+          downPayment: lineDownPayment(line),
+          saleAmount: lineAmount,
+        }) === null
+      if (line.manualPlan ? !typedReady : !financingTermId || lineAmount <= 0) {
         setInstallmentPreviews((prev) => ({ ...prev, [line.lineId]: null }))
         setInstallmentPreviewErrors((prev) => ({ ...prev, [line.lineId]: null }))
         continue
@@ -1402,12 +2525,34 @@ export default function CheckoutPage() {
       }
       installmentPreviewTimers.current[line.lineId] = setTimeout(async () => {
         setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: true }))
-        const downPayment = parseFloat(line.downPaymentInput ?? '0') || 0
-        const res = await previewInstallment({
-          totalAmount: lineAmount,
-          downPayment,
-          financingTermId,
-        })
+        const downPayment = lineDownPayment(line)
+        const res = line.manualPlan
+          ? await previewInstallment({
+              totalAmount: lineAmount,
+              downPayment,
+              manualTermMonths: Number(line.manualTermInput),
+              manualMonthlyInstallment: Number(line.manualMonthlyInput),
+              firstDueDate: line.firstDueDateInput,
+            })
+          : await previewInstallment({
+              totalAmount: lineAmount,
+              downPayment,
+              financingTermId: financingTermId!,
+              // Curated PriceListItemTerm (the real rate card) wins over the
+              // generic factorRate calculation when one exists for this SKU +
+              // term — matches the down-payment badge above, which already
+              // sources from this same line.priceListItemId. Previously omitted
+              // here, so the preview silently fell back to the generic formula
+              // even for a rate-card SKU (found 2026-09-22: DP badge showed the
+              // curated ₱3,590 but the monthly installment showed the generic
+              // ₱4,575.60 instead of the rate card's ₱5,130).
+              // Not for an Employee Appliance Loan that takes a down payment: the
+              // card's monthly was worked out from the card's own down payment.
+              priceListItemId:
+                employeeApplianceLoanActive && downPayment > 0
+                  ? undefined
+                  : (line.priceListItemId ?? undefined),
+            })
         setInstallmentPreviews((prev) => ({
           ...prev,
           [line.lineId]: res.success ? (res.data ?? null) : null,
@@ -1467,39 +2612,510 @@ export default function CheckoutPage() {
 
   // ─── Customer actions ──────────────────────────────────────────────────────
 
+  // Resolves the employee to their real Customer record (get-or-create, see
+  // PosCustomersService.getOrCreateFromEmployee) and picks that — from this
+  // point on it's exactly a normal customer pick, tagged customerType
+  // 'employee', which is what already drives the Employee Appliance Loan
+  // option below (Scenario 60).
+  async function selectEmployee(employee: PosEmployeeResult) {
+    setResolvingEmployee(true)
+    const res = await createCustomerFromEmployee(employee.id)
+    setResolvingEmployee(false)
+    if (!res.success || !res.data) {
+      setError(res.error || 'Could not resolve this employee to a customer record.')
+      return
+    }
+    await selectCustomer(res.data)
+  }
+
+  // Scenario 66 — the delivery's pre-fill, re-run when delivery is turned on
+  // or the customer changes. Deliver to follows the customer's name until the
+  // cashier types in it; the address follows the customer's own unless the
+  // cashier picked another one in the address picker.
+  useEffect(() => {
+    if (!delivery.enabled) return
+    const name = selectedCustomer?.name ?? ''
+    setDelivery((d) => ({
+      ...d,
+      deliverTo: d.deliverToEdited ? d.deliverTo : name,
+      // A picker following the customer starts over for the new one; one the
+      // cashier picked in is left exactly as it is.
+      pickerKey: d.addressSource === 'customer' ? d.pickerKey + 1 : d.pickerKey,
+    }))
+
+    const customerId = selectedCustomer?.id
+    if (!customerId) {
+      setDeliveryCustomerAddress(null)
+      setDeliveryAddressLoading(false)
+      return
+    }
+    let cancelled = false
+    setDeliveryAddressLoading(true)
+    getCustomerById(customerId).then((res) => {
+      if (cancelled) return
+      // Typed PosCustomer, but the endpoint returns the whole CRM customer.
+      const full = res.success
+        ? (res.data as { address?: string | null; barangayCode?: string | null } | undefined)
+        : undefined
+      const address = full?.address?.trim()
+      setDeliveryCustomerAddress(
+        address ? { address, barangayCode: full?.barangayCode ?? null } : null
+      )
+      setDeliveryAddressLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [delivery.enabled, selectedCustomer?.id, selectedCustomer?.name])
+
   async function selectCustomer(customer: PosCustomer) {
     setSelectedCustomer(customer)
+    // A customer registered as tax-exempt starts the sale VAT-exempt, with the
+    // certificate on their profile filled in. Only a default: the cashier can
+    // change it, and the sale still needs a manager's approval. A table tab's
+    // sale already exists, so there is nothing to classify.
+    if (customer.isTaxExempt && !fromTab?.posTransactionId) {
+      setOutputVatCode(OUTPUT_VAT_EXEMPT)
+      setTaxExemptionRef(customer.taxExemptionRef ?? '')
+    }
     setCustomerSearch('')
     setCustomerResults([])
+    setEmployeeResults([])
     setCustomerSearchOpen(false)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
-    const [loyaltyRes, histRes] = await Promise.all([
-      getLoyaltyByCustomer(customer.id),
-      getCustomerTransactions(customer.id),
-    ])
+    const loyaltyRes = await getLoyaltyByCustomer(customer.id)
     if (loyaltyRes.success && loyaltyRes.data) {
       setLoyaltyAccount(loyaltyRes.data)
       const programRes = await getActiveLoyaltyProgram()
       if (programRes.success && programRes.data) setLoyaltyProgram(programRes.data)
     }
-    if (histRes.success) setCustomerHistory((histRes.data ?? []).slice(0, 5))
+  }
+
+  // "New Customer" leaves checkout for POS's own create form
+  // (2026-09-18 client request) instead of the old in-page modal, so walk-ins
+  // and CRM-added customers go through one form and one endpoint. The cart is
+  // plain React state and this is a real route change, so it has to be stashed
+  // first or the in-progress sale is silently lost — reusing the same
+  // localStorage handoff the parked-sales page already resumes through
+  // (see the rehydrate effect above).
+  /**
+   * Creating a customer starts a new sale, so the till is left empty rather
+   * than carrying the old cart through the detour (client decision,
+   * 2026-09-19). Anything already rung up is PARKED first — cleared from
+   * the screen, never discarded — so it can be picked back up from Parked
+   * Sales by this cashier or anyone else at the branch.
+   *
+   * This deliberately replaces the old stash-and-restore handoff. That
+   * carried the cart and the customer across in localStorage, and the
+   * overlap between it, the ?customerId= return and the parked row is what
+   * produced three separate lost-customer bugs. One rule now: leave the
+   * till clean, put the sale somewhere durable, come back to a fresh
+   * screen.
+   */
+  async function goToCreateCustomer() {
+    // Any previous handoff is stale the moment we decide not to carry one.
+    clearCheckoutHandoff()
+
+    const session = openSessions.find((os) => os.id === sessionId)
+    if (cart.length > 0 && session) {
+      const res = await parkSale({
+        sessionId: session.id,
+        terminalId: session.terminalId,
+        label: `Held to add a customer — ${selectedCustomer?.name?.trim() || 'Walk-in'}`,
+        cartData: {
+          lines: cart,
+          customerId: selectedCustomer?.id,
+          promoCodeId: promoResult?.promoCode?.id,
+          isXDeal: xDealActive || undefined,
+          xDealReference: xDealActive ? xDealReference.trim() : undefined,
+          exceptionReasonId: exceptionReasonId || undefined,
+          exceptionNote: exceptionNote.trim() || undefined,
+          creditApplicationWaived: creditApplicationWaived || undefined,
+          creditApplicationOverridden: creditApplicationOverridden || undefined,
+        },
+      })
+      if (!res.success) {
+        // Refuse to navigate rather than silently drop the sale: nothing
+        // else is holding it, so leaving would destroy it.
+        setError(
+          res.error ?? 'Could not hold this sale. Complete or park it before adding a customer.'
+        )
+        return
+      }
+      resetSale()
+    } else if (cart.length > 0 && !session) {
+      setError('Select a session before adding a customer, so the current sale can be held.')
+      return
+    }
+
+    router.push('/pos/customers/new?returnTo=/pos/checkout')
+  }
+
+  /**
+   * Raises a credit application for the cart that's already on screen.
+   *
+   * An installment sale needs an APPROVED application, and approval is
+   * Business Owner only — so this cannot make the sale completable in one
+   * visit. What it removes is the retyping: the cashier used to leave
+   * checkout, find the customer again, and re-enter every item by hand.
+   *
+   * Reuses the two handoffs that already exist rather than inventing a
+   * third: the cart goes through pos_resumed_cart (same as "New Customer"),
+   * and the application form's own draft key carries the customer and the
+   * installment lines across, labels included, so its item pickers render
+   * filled in rather than blank.
+   */
+  function goToRaiseCreditApplication() {
+    if (cart.length > 0) {
+      // Unlike "New Customer", this detour DOES carry the cart: the
+      // application is raised for these exact items, so leaving them behind
+      // would mean re-entering every one of them on the form. Stamped with
+      // the session so a later shift can't inherit it.
+      writeCheckoutHandoff({
+        lines: cart,
+        customerId: selectedCustomer?.id,
+        sessionId: sessionId || undefined,
+        // Both are read off physical booklets, so losing them on this detour
+        // meant finding the same two booklets and copying the same numbers
+        // again on the way back.
+        ...(documentType === 'delivery_receipt'
+          ? { deliveryReceiptNumber: invoiceNumberInput.trim() || undefined }
+          : { salesInvoiceNumber: invoiceNumberInput.trim() || undefined }),
+        paymentReferences: payments.map((p) => p.referenceNumber ?? ''),
+        exceptionReasonId: exceptionReasonId || undefined,
+        exceptionNote: exceptionNote.trim() || undefined,
+      })
+    }
+    localStorage.setItem(
+      'credit_application_draft',
+      JSON.stringify({
+        applicantCustomerId: selectedCustomer?.id,
+        items: inhouseInstallmentCartLines.map((l) => ({
+          itemId: l.itemId,
+          itemLabel: l.itemName,
+          estimatedPrice: l.unitPrice,
+          // Scenario 64 item 28 — the physical unit already picked at the
+          // till, remembered on the application so coming back to sell it
+          // does not ask for a serial that has already been chosen.
+          serialNumberId: l.serialNumberId,
+          // Item 29 — so the form's unit picker shows that unit, and offers
+          // one for a serial line whose unit was not picked yet.
+          serialNumberLabel: l.serialNumberLabel,
+          isSerialTracked: l.isSerialTracked,
+        })),
+      })
+    )
+    const params = new URLSearchParams({
+      applicantCustomerId: selectedCustomer?.id ?? '',
+      applicantName: selectedCustomer?.name ?? '',
+    })
+    router.push(`/pos/credit-applications/new?${params.toString()}`)
   }
 
   function clearCustomer() {
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setCustomerSearch('')
   }
 
   // ─── Cart actions ──────────────────────────────────────────────────────────
 
-  function addToCart(item: LookupItem, qty = 1) {
+  // Scenario 64 item 28 — turn the arriving application into a cart.
+  //
+  // Two passes, because both halves depend on state this render does not have
+  // yet: the items have to be in the cart before they can be switched to
+  // installment, and the picker's own list is not fetched until an installment
+  // line exists. `stage` walks it through rather than a chain of booleans.
+  useEffect(() => {
+    if (!arrivingCreditApplication || arrivingCreditApplication.stage !== 'fetching') return
+    if (!selectedCustomer || catalogItems.length === 0) return
+    // Once per application, and enforced with a ref rather than the `stage`
+    // above, because `stage` only advances after the fetch resolves. The
+    // customer and the catalogue both arrive asynchronously, so a dep landing
+    // mid-flight re-entered this and added every line a second time — which
+    // the till showed as being asked for a serial twice for one item, and for
+    // a serial-tracked item with one serial on hand, the second was
+    // unanswerable. (React's dev double-invoke reproduces the same thing.)
+    if (arrivalBuiltRef.current === arrivingCreditApplication.id) return
+    arrivalBuiltRef.current = arrivingCreditApplication.id
+
+    let cancelled = false
+    // Set only once the cart has actually been built. The ref guard above
+    // stops a second run adding the lines twice — but an attempt that gets
+    // CANCELLED must release the guard, or the next run returns at it and the
+    // arrival is stranded forever. That deadlock is exactly what happened:
+    // the catalogue reloads when the session auto-selects, this effect
+    // re-runs, its cleanup cancels the in-flight attempt, and the new run
+    // finds the guard already claimed. The till sat empty with the last
+    // diagnostic still on screen.
+    let completed = false
+    void (async () => {
+      try {
+        const res = await getCreditApplications({
+          checkoutEligible: true,
+          applicantCustomerId: selectedCustomer.id,
+          unconsumed: true,
+          limit: 50,
+        })
+        if (cancelled) return
+
+        const application = (res.data?.data ?? []).find(
+          (a) => a.id === arrivingCreditApplication.id
+        )
+        // Only the approved items: a partially approved application's declined
+        // items are never sellable, and silently carting one would have someone
+        // promising a customer what the owner refused.
+        const approved = (application?.items ?? []).filter((i) => i.status === 'approved')
+        const approvedPriceUseTypeId = application?.priceUseTypeId ?? null
+        // Scenario 64 item 28 — the unit the cashier had already picked when
+        // this application was raised. A preference, never a hold: only reused
+        // when that serial is STILL in stock, since nothing reserved it and it
+        // may have been sold, transferred or written off while the application
+        // waited for approval.
+        const rememberedSerials = new Map<string, { id: string; label: string }>()
+        for (const line of approved) {
+          const sn = line.serialNumber
+          if (sn?.status === 'in_stock') {
+            rememberedSerials.set(line.itemId, { id: sn.id, label: sn.serialNumber })
+          }
+        }
+
+        // `catalogItems` is the page's own lookup, and itemLookup caps at 500
+        // rows against a catalogue of ~1,400 — so an application's item is very
+        // often simply not in it, which showed up as arriving at an empty till.
+        // Anything missing is fetched by its own SKU rather than assumed absent.
+        const found: LookupItem[] = []
+        for (const line of approved) {
+          const local = catalogItems.find((c) => c.id === line.itemId)
+          if (local) {
+            found.push(local)
+            continue
+          }
+          const sku = line.item?.sku
+          if (!sku) continue
+          // stockBranchId, like the catalog load: at a caravan's register the
+          // stock is the caravan's, not the host's.
+          const lookup = await itemLookup(sku, stockBranchId ?? undefined)
+          if (cancelled) return
+          const match = ((lookup.data ?? []) as LookupItem[]).find((c) => c.id === line.itemId)
+          if (match) found.push(match)
+        }
+
+        if (found.length === 0) {
+          // Say why, rather than landing on an empty till. Silently clearing the
+          // arrival left the seller looking at a blank screen with no idea
+          // whether the click had even registered.
+          setError(
+            application
+              ? 'None of this application’s approved items could be loaded for this branch, so the cart could not be built. Add them by hand, then pick the application below.'
+              : 'That credit application could not be loaded — it may already have been used for a sale.'
+          )
+          arrivalBuiltRef.current = null
+          setArrivingCreditApplication(null)
+          return
+        }
+        // A short cart is worth saying out loud rather than letting the seller
+        // notice at payment.
+        if (found.length < approved.length) {
+          setError(
+            `${found.length} of ${approved.length} approved items were added — the rest could not be loaded for this branch.`
+          )
+        }
+
+        // Last gate before touching the cart. Cancellation was checked inside
+        // the lookup loop but not here, so an attempt cancelled after its
+        // final lookup still added its lines — and the retry, which now
+        // correctly reclaims the released guard, added them again. Two lines
+        // for one item, and a serial prompt for each.
+        if (cancelled) return
+        completed = true
+        found.forEach((item) => addToCart(item))
+        setArrivingCreditApplication({
+          id: arrivingCreditApplication.id,
+          stage: 'adding',
+          expectedLines: found.length,
+          priceUseTypeId: approvedPriceUseTypeId,
+          rememberedSerials,
+        })
+      } catch (e) {
+        // Without this the arrival died silently. An unhandled rejection in a
+        // void async IIFE leaves the page on whatever it last rendered — which
+        // is precisely the "nothing at the till" this was reported as, with
+        // the last diagnostic still on screen and no clue why.
+        if (cancelled) return
+        arrivalBuiltRef.current = null
+        setArrivingCreditApplication(null)
+        setError(
+          `Could not build the cart from this application: ${
+            e instanceof Error ? e.message : String(e)
+          }`
+        )
+      }
+    })()
+    return () => {
+      cancelled = true
+      // Hand the guard back so a re-run can finish the job.
+      if (!completed) arrivalBuiltRef.current = null
+    }
+    // addToCart is stable enough for this one-shot arrival; re-running on every
+    // cart change would re-add the lines it just added.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately catalogItems.length, not catalogItems: the array's identity
+    // changes on every catalogue reload, and each change cancelled an attempt
+    // that was already in flight. Only whether it has loaded matters here —
+    // anything missing from it is fetched by SKU above anyway.
+  }, [arrivingCreditApplication, selectedCustomer, catalogItems.length])
+
+  useEffect(() => {
+    if (arrivingCreditApplication?.stage !== 'adding') return
+    if (cart.length < (arrivingCreditApplication.expectedLines ?? 0)) return
+    // Installment is the whole point of an application — leaving the lines on
+    // cash would show the cashier a picker with nothing in it.
+    const lineIds = cart.map((l) => l.lineId)
+    // Put back the unit that was already chosen, so returning to sell an
+    // application does not ask for a serial picked before it was even raised.
+    // Only onto a line that has none — anything picked since is the cashier's
+    // own, more recent, choice.
+    const remembered = arrivingCreditApplication.rememberedSerials
+    if (remembered && remembered.size > 0) {
+      setCart((prev) =>
+        prev.map((l) => {
+          if (l.serialNumberId || !l.isSerialTracked) return l
+          const hit = remembered.get(l.itemId)
+          return hit ? { ...l, serialNumberId: hit.id, serialNumberLabel: hit.label } : l
+        })
+      )
+    }
+    // Price Use before the term and down payment: changing it re-resolves the
+    // line's price, and the down payment the application approved is measured
+    // against that price.
+    if (arrivingCreditApplication.priceUseTypeId) {
+      setLinePriceUseTypeId(lineIds, arrivingCreditApplication.priceUseTypeId)
+    }
+    setLineInvoiceType(lineIds, 'installment')
+    // The Cash/Installment toggle is its own state, separate
+    // from the lines' invoice type — without this the lines read installment
+    // while the toggle still highlights Cash.
+    setPaymentMode('installment')
+    if (cashSubMode === 'card') setCashSubMode('cash_on_hand')
+    arrivalSelectRef.current = arrivingCreditApplication.id
+    setCreditApplicationId(arrivingCreditApplication.id)
+    setArrivingCreditApplication(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingCreditApplication, cart.length])
+
+  // Scenario 72 Part 6 — builds the cart from an arriving Delivery Receipt:
+  // one line per held unit, plus one per non-serial item at the DR's
+  // quantity. Once-only per DR (the ref), released if the attempt is
+  // cancelled — the same deadlock the credit-application arrival guards
+  // against above.
+  useEffect(() => {
+    if (!arrivingDr || arrivingDr.stage !== 'fetching') return
+    if (!selectedCustomer || catalogItems.length === 0) return
+    if (drBuiltRef.current === arrivingDr.id) return
+    drBuiltRef.current = arrivingDr.id
+    let cancelled = false
+    let completed = false
+    void (async () => {
+      const res = await getDeliveryReceipt(arrivingDr.id)
+      if (cancelled) return
+      const dr = res.data
+      if (!dr || dr.status !== 'approved' || dr.purpose !== 'sales_invoice_to_follow') {
+        setError('That delivery receipt is not waiting for a sale — it may already be invoiced.')
+        drBuiltRef.current = null
+        setArrivingDr(null)
+        return
+      }
+      const toAdd: { item: LookupItem; qty: number; serial?: { id: string; label: string } }[] = []
+      for (const line of dr.lines) {
+        let item: LookupItem | undefined = catalogItems.find((c) => c.id === line.itemId)
+        if (!item) {
+          const lookup = await itemLookup(line.item.sku, stockBranchId ?? undefined)
+          if (cancelled) return
+          item = ((lookup.data ?? []) as LookupItem[]).find((c) => c.id === line.itemId)
+        }
+        if (!item) continue
+        toAdd.push({
+          item,
+          qty: line.serialNumber ? 1 : line.quantity,
+          serial: line.serialNumber
+            ? { id: line.serialNumber.id, label: line.serialNumber.serialNumber }
+            : undefined,
+        })
+      }
+      if (cancelled) return
+      if (toAdd.length < dr.lines.length) {
+        setError(
+          `${toAdd.length} of ${dr.lines.length} items on ${dr.drNumber} could be loaded for this branch.`
+        )
+      }
+      completed = true
+      toAdd.forEach(({ item, qty, serial }) => addToCart(item, qty, serial))
+      const serialLines = toAdd.filter(({ item }) => item.isSerialTracked).length
+      const plainItems = new Set(
+        toAdd.filter(({ item }) => !item.isSerialTracked).map(({ item }) => item.id)
+      )
+      setArrivingDr({
+        id: dr.id,
+        stage: 'adding',
+        drNumber: dr.drNumber,
+        expectedLines: serialLines + plainItems.size,
+      })
+    })().catch((e: unknown) => {
+      if (cancelled) return
+      drBuiltRef.current = null
+      setArrivingDr(null)
+      setError(
+        `Could not build the cart from this delivery receipt: ${e instanceof Error ? e.message : String(e)}`
+      )
+    })
+    return () => {
+      cancelled = true
+      if (!completed) drBuiltRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingDr, selectedCustomer, catalogItems.length])
+
+  // The DR's held units went onto its lines as they were created (addToCart's
+  // presetSerial); this puts the cart on cash — a DR sale is cash / charge
+  // only for now (developer decision, 2026-10-15) — and links the DR.
+  useEffect(() => {
+    if (arrivingDr?.stage !== 'adding') return
+    if (cart.length < (arrivingDr.expectedLines ?? 0)) return
+    setLineInvoiceType(
+      cart.map((l) => l.lineId),
+      'cash'
+    )
+    setPaymentMode('cash')
+    // This sale invoices the DR, so its number is a Sales Invoice No. — a DR
+    // number restored from a handoff belongs to the old booklet flow.
+    if (documentType === 'delivery_receipt') {
+      setDocumentType('sales_invoice')
+      setInvoiceNumberInput('')
+      setDocumentSwitchNote('')
+    }
+    setDeliveryReceipt({ id: arrivingDr.id, drNumber: arrivingDr.drNumber ?? '' })
+    setArrivingDr(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingDr, cart.length])
+
+  // Reasserts the arrival's application once the picker's list has loaded it.
+  // Runs at most once per arrival: the ref is cleared as soon as it takes, so
+  // this can never fight a cashier who then picks a different application.
+  useEffect(() => {
+    const wanted = arrivalSelectRef.current
+    if (!wanted) return
+    if (!approvedCreditApplications.some((a) => a.id === wanted)) return
+    arrivalSelectRef.current = null
+    if (creditApplicationId !== wanted) setCreditApplicationId(wanted)
+  }, [approvedCreditApplications, creditApplicationId])
+
+  /** `presetSerial` — Scenario 72 Part 6: a unit already chosen elsewhere
+   *  (a Delivery Receipt's held unit), put on the line as it is created
+   *  rather than patched on afterwards, and with no picker opened for it. */
+  function addToCart(item: LookupItem, qty = 1, presetSerial?: { id: string; label: string }) {
     // Reserve mode (Scenario 03, Part 3): a SkuReservation is one item +
     // quantity, no serial required — treat every item as plain SKU+qty and
     // cap the cart at a single line (a new pick replaces it, matching this
@@ -1541,6 +3157,8 @@ export default function CheckoutPage() {
             pricingMode: item.pricingMode ?? null,
             isSerialTracked: true,
             requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+            serialNumberId: presetSerial?.id,
+            serialNumberLabel: presetSerial?.label,
             priceResolved: false,
             priceListItemId: null,
             priceUseTypeId: defaultPriceUseTypeId,
@@ -1576,6 +3194,8 @@ export default function CheckoutPage() {
         pricingMode: item.pricingMode ?? null,
         isSerialTracked: isReserveMode ? false : (item.isSerialTracked ?? false),
         requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+        serialNumberId: presetSerial?.id,
+        serialNumberLabel: presetSerial?.label,
         // Reserve mode never submits as a real sale, so Price Use resolution
         // doesn't apply — treat it as already "resolved" so it never blocks.
         priceResolved: isReserveMode,
@@ -1584,7 +3204,7 @@ export default function CheckoutPage() {
       }
       return isReserveMode ? [newLine] : [...prev, newLine]
     })
-    if (item.isSerialTracked && !isReserveMode) {
+    if (item.isSerialTracked && !isReserveMode && !presetSerial) {
       setSerialPickerStage('primary')
       setSerialPickerTarget({
         lineId,
@@ -1627,6 +3247,7 @@ export default function CheckoutPage() {
                 ? {
                     financingTermId: undefined,
                     downPaymentInput: undefined,
+                    downPaymentAutoForPriceListItemId: undefined,
                     installmentProvider: undefined,
                   }
                 : {}),
@@ -1640,12 +3261,34 @@ export default function CheckoutPage() {
   // Changing a line's own Price Use just updates the field — the back-fill
   // effect above reacts to the resulting resolution fetch and fills/clears
   // unitPrice/priceListItemId/priceResolved the same way it does on initial
-  // add, skipping this line entirely if it already carries a manual
-  // priceOverrideBy.
+  // add, skipping this line entirely if it already carries a typed-over
+  // price (priceOverridden).
   function setLinePriceUseTypeId(lineIds: string | string[], priceUseTypeId: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
     setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, priceUseTypeId } : l)))
   }
+
+  // A typed plan only exists on an in-house installment line of an ordinary
+  // sale (the server refuses it anywhere else), so it is dropped the moment the
+  // line goes to cash or TPF, or the sale becomes an X-Deal or an Employee
+  // Appliance Loan — rather than leaving the cashier to find out at Confirm.
+  useEffect(() => {
+    setCart((prev) => {
+      let changed = false
+      const next = prev.map((l) => {
+        if (!l.manualPlan) return l
+        const stillValid =
+          l.invoiceType === 'installment' &&
+          l.installmentProvider !== 'tpf' &&
+          !xDealActive &&
+          !employeeApplianceLoanActive
+        if (stillValid) return l
+        changed = true
+        return withoutTypedPlan(l)
+      })
+      return changed ? next : prev
+    })
+  }, [cart, xDealActive, employeeApplianceLoanActive])
 
   // Switching an installment line's provider clears whatever the OTHER
   // provider's fields held — inhouse's financingTermId doesn't apply to TPF,
@@ -1662,13 +3305,202 @@ export default function CheckoutPage() {
         // moment to hang the down-payment pre-fill off the way inhouse does
         // (see setLineFinancingTermId) — seed it here instead, so the panel
         // never opens on a blank field that reads as "nothing to collect".
+        // Same curated-over-floor priority as setLineFinancingTermId().
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
+        const fallbackDownPayment =
+          l.priceListDownPayment != null
+            ? Number(l.priceListDownPayment).toFixed(2)
+            : Math.ceil(lineAmount * DOWN_PAYMENT_FLOOR_RATE).toFixed(2)
         return {
           ...l,
           installmentProvider: provider,
           financingTermId: undefined,
-          downPaymentInput: l.downPaymentInput ?? Math.ceil(0.1 * lineAmount).toFixed(2),
+          downPaymentInput: l.downPaymentInput ?? fallbackDownPayment,
+          downPaymentAutoForPriceListItemId: l.downPaymentInput
+            ? l.downPaymentAutoForPriceListItemId
+            : (l.priceListItemId ?? null),
+        }
+      })
+    )
+  }
+
+  /**
+   * Scenario 71 — waives the credit application. The rows then take what the
+   * price list quotes: any in-house row with no term yet gets its rate card's
+   * first quoted term, which fills the down payment and the monthly as picking
+   * a term always does. Everything stays editable ("Type the terms yourself"
+   * starts from what the row quotes).
+   */
+  function toggleCreditApplicationWaiver(on: boolean) {
+    setCreditApplicationWaived(on)
+    if (!on) return
+    setCreditApplicationOverridden(false)
+    setCreditApplicationId('')
+    const termFor = (l: CartLine) =>
+      [...(l.priceListCardTermMonths ?? [])]
+        .sort((a, b) => a - b)
+        .map((months) => financingTerms.find((t) => t.termMonths === months)?.id)
+        .find(Boolean)
+    const idsByTerm = new Map<string, string[]>()
+    for (const l of inhouseInstallmentCartLines) {
+      if (l.financingTermId || l.manualPlan) continue
+      const termId = termFor(l)
+      if (!termId) continue
+      idsByTerm.set(termId, [...(idsByTerm.get(termId) ?? []), l.lineId])
+    }
+    for (const [termId, lineIds] of idsByTerm) setLineFinancingTermId(lineIds, termId)
+  }
+
+  /**
+   * Scenario 71 — overrides the credit application: the cashier picks one of the
+   * customer's applications that does not cover the cart or is not approved yet,
+   * and the sale goes ahead on it with a reason and a note. Starts with nothing
+   * picked either way, so an application chosen for the ordinary route (or for
+   * the override) never carries across by accident.
+   */
+  function toggleCreditApplicationOverride(on: boolean) {
+    setCreditApplicationOverridden(on)
+    setCreditApplicationId('')
+    if (on) setCreditApplicationWaived(false)
+  }
+
+  /**
+   * Scenario 67 — ticking X-Deal puts the whole cart in the only shape an
+   * X-Deal can take (inhouse installment, no credit application) rather than
+   * leaving the cashier to find out at Confirm. Unticking leaves the cart
+   * as it is; the usual down-payment floor and credit-application
+   * requirement simply apply again.
+   */
+  function toggleXDeal(on: boolean) {
+    setXDealChecked(on)
+    if (!on) return
+    setCreditApplicationWaived(false)
+    setCreditApplicationOverridden(false)
+    setEmployeeApplianceLoanChecked(false)
+    setCreditApplicationId('')
+    setPaymentMode('installment')
+    if (cashSubMode === 'card') setCashSubMode('cash_on_hand')
+    const lineIds = cart.map((l) => l.lineId)
+    setLineInvoiceType(lineIds, 'installment')
+    setLineInstallmentProvider(lineIds, 'inhouse')
+    // Scenario 68 — starts fully bartered (₱0 now); the cashier types in
+    // whatever part is paid at the register.
+    setCart((prev) =>
+      prev.map((l) => ({
+        ...l,
+        downPaymentInput: '',
+        downPaymentAutoForPriceListItemId: undefined,
+      }))
+    )
+  }
+
+  /**
+   * Copies an approved application's agreed terms onto the cart.
+   *
+   * Without this the cashier re-keys the down payment and term at checkout,
+   * with the line defaulting to a generic 10% — so the figures actually
+   * charged could differ from the ones the customer agreed to and the owner
+   * approved, and nothing would object. The application is the record of
+   * that agreement, so selecting one should carry it.
+   *
+   * An application holds ONE term and ONE total down payment for the whole
+   * bundle, while the cart tracks them per line, so a multi-item bundle
+   * apportions the down payment pro-rata by line value — with any rounding
+   * remainder pushed onto the last line so the parts still sum to the
+   * approved total.
+   */
+  function applyCreditApplicationTerms(
+    applicationId: string,
+    /** The list to look the application up in. The auto-apply below calls
+     * this from inside the fetch that produced the list, before React has
+     * committed it to state, so it has to pass its own copy. */
+    from?: typeof approvedCreditApplications
+  ) {
+    const application = (from ?? approvedCreditApplications).find((a) => a.id === applicationId)
+    if (!application) return
+    // Not a plan the cashier typed — those stay as typed (Scenario 71).
+    const lines = inhouseInstallmentCartLines.filter((l) => !l.manualPlan)
+    if (lines.length === 0) return
+
+    // Apportion on the SAME amount the submit check measures against —
+    // effectiveUnitPrice × quantity, tax included. Splitting on the raw
+    // unitPrice instead left every share about 12% short under exclusive
+    // pricing, so a sale built from an approved application was refused
+    // with "down payment must be at least the floor % of its sale amount".
+    const lineAmount = (l: CartLine) =>
+      effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
+    // Whole centavos, rounded UP, so a fractional 10% can't land a hair
+    // under the floor.
+    const lineFloor = (l: CartLine) =>
+      Math.ceil(lineAmount(l) * DOWN_PAYMENT_FLOOR_RATE * 100) / 100
+    const approvedDp = application.downPayment ?? null
+    // A line the rate card prices for the application's term takes exactly
+    // its card down payment — fixed, see lineCardDownPayment(). The rest of
+    // the approved figure is shared out over the other lines as before.
+    const termFor = (l: CartLine) => ({
+      ...l,
+      financingTermId: application.financingTermId ?? l.financingTermId,
+    })
+    const cardDpByLine = new Map<string, number>()
+    for (const l of lines) {
+      const fixed = lineCardDownPayment(termFor(l))
+      if (fixed != null) cardDpByLine.set(l.lineId, fixed)
+    }
+    const shared = lines.filter((l) => !cardDpByLine.has(l.lineId))
+    const total = shared.reduce((sum, l) => sum + lineAmount(l), 0)
+    const sharedDp =
+      approvedDp != null
+        ? approvedDp - [...cardDpByLine.values()].reduce((sum, v) => sum + v, 0)
+        : null
+
+    let allocated = 0
+    const dpByLine = new Map<string, string>()
+    for (const [lineId, fixed] of cardDpByLine) dpByLine.set(lineId, fixed.toFixed(2))
+    if (sharedDp != null && total > 0) {
+      shared.forEach((l, idx) => {
+        const isLast = idx === shared.length - 1
+        const rawShare = isLast
+          ? sharedDp - allocated
+          : Math.round(sharedDp * (lineAmount(l) / total) * 100) / 100
+        allocated += rawShare
+        // The approved down payment is a MINIMUM for the application as a
+        // whole, not a per-line cap. A line whose share falls under its own
+        // floor is raised to it — collecting a little more up front always
+        // completes, collecting less cannot. This is also what absorbs the
+        // quantity gap: an application carries no quantity, so ringing two
+        // units doubles the line while the approved figure covered one.
+        const share = Math.max(rawShare, lineFloor(l))
+        dpByLine.set(l.lineId, share.toFixed(2))
+      })
+    }
+
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!dpByLine.has(l.lineId) && !application.financingTermId) return l
+        if (!lines.some((x) => x.lineId === l.lineId)) return l
+        // Never reduce a figure the cashier has already entered — they may
+        // have agreed a larger down payment at the counter, and silently
+        // replacing it with the apportioned share both loses that and can
+        // drop the line under its floor.
+        const typed = parseFloat(l.downPaymentInput ?? '') || 0
+        const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
+        // A card line's figure is exact, typed or not.
+        const downPaymentInput = cardDpByLine.has(l.lineId)
+          ? cardDpByLine.get(l.lineId)!.toFixed(2)
+          : dpByLine.has(l.lineId)
+            ? Math.max(typed, apportioned).toFixed(2)
+            : l.downPaymentInput
+        return {
+          ...l,
+          financingTermId: application.financingTermId ?? l.financingTermId,
+          downPaymentInput,
+          // An approved application's figure is authoritative, same as a
+          // cashier's own typed entry — a later Price Use change must not
+          // treat it as a stale auto-fill and silently recompute it away.
+          downPaymentAutoForPriceListItemId: dpByLine.has(l.lineId)
+            ? undefined
+            : l.downPaymentAutoForPriceListItemId,
         }
       })
     )
@@ -1685,30 +3517,153 @@ export default function CheckoutPage() {
         // collect" but can't actually be submitted that way. Scenario 15,
         // Part 5 — a curated per-SKU down payment from the real NIG rate
         // card wins over the generic 10%-floor fallback when one exists.
+        //
+        // A term the card quotes fixes the down payment outright, so it is
+        // set even over a typed figure (PR #199 review).
+        //
+        // Scenario 68 — not on an X-Deal: its down payment is whatever part
+        // the cashier says is paid now, blank meaning fully bartered.
+        if (xDealActive) return { ...l, financingTermId }
+        const fixed = lineCardDownPayment({ ...l, financingTermId })
+        if (fixed != null) {
+          return {
+            ...l,
+            financingTermId,
+            downPaymentInput: fixed.toFixed(2),
+            downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+          }
+        }
         if (l.downPaymentInput) return { ...l, financingTermId }
         const downPaymentInput =
           l.priceListDownPayment != null
-            ? Number(l.priceListDownPayment).toFixed(2)
+            ? (Number(l.priceListDownPayment) * l.quantity).toFixed(2)
             : // Whole pesos, rounded UP — never centavos, and never below the
-              // 10% floor (ceil instead of round guarantees that even if the
-              // exact 10% has a fractional remainder).
+              // floor (ceil instead of round guarantees that even if the
+              // exact figure has a fractional remainder).
               Math.ceil(
                 effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) *
                   l.quantity *
-                  0.1
+                  DOWN_PAYMENT_FLOOR_RATE
               ).toFixed(2)
-        return { ...l, financingTermId, downPaymentInput }
+        return {
+          ...l,
+          financingTermId,
+          downPaymentInput,
+          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+        }
       })
     )
   }
 
   function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, downPaymentInput } : l)))
+    setCart((prev) =>
+      prev.map((l) =>
+        ids.has(l.lineId)
+          ? // An explicit cashier edit — no longer an auto-fill a later
+            // Price Use change is allowed to silently recompute.
+            { ...l, downPaymentInput, downPaymentAutoForPriceListItemId: undefined }
+          : l
+      )
+    )
   }
 
-  function toggleDownPaymentEdit(lineId: string) {
-    setDownPaymentEditOpen((prev) => ({ ...prev, [lineId]: !prev[lineId] }))
+  // ─── Typed installment plan (Scenario 71) ──────────────────────────────────
+  //
+  // A row's figures are per unit, like its down payment: every unit of a row
+  // gets the same months, installment and first due date, and the server adds
+  // them up when units (or rows) share a plan.
+
+  /** The line's sale amount, measured the way the submit checks do. */
+  function saleAmountOf(l: CartLine): number {
+    return (
+      Math.round(
+        effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity * 100
+      ) / 100
+    )
+  }
+
+  /** Turns the typed plan on for a row, seeded from what the row shows now, so
+   * the cashier edits a plan instead of starting from a blank. */
+  function startTypedPlan(lineIds: string[]) {
+    const ids = new Set(lineIds)
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!ids.has(l.lineId)) return l
+        const sale = saleAmountOf(l)
+        const months = financingTerms.find((t) => t.id === l.financingTermId)?.termMonths ?? 12
+        const downPayment =
+          parseFloat(l.downPaymentInput ?? '') || Math.ceil(sale * DOWN_PAYMENT_FLOOR_RATE)
+        // What the row is quoting right now (a rate card's monthly included)
+        // when a term is picked; otherwise the figure that just covers the sale.
+        const shown = l.financingTermId ? installmentPreviews[l.lineId] : null
+        const monthly = shown
+          ? Number(shown.monthlyInstallment)
+          : coveringMonthly(sale, downPayment, months)
+        return {
+          ...l,
+          manualPlan: true,
+          manualTermInput: String(months),
+          manualMonthlyInput: monthly.toFixed(2),
+          firstDueDateInput: dateInputFromToday({ months: 1 }),
+          downPaymentInput: downPayment.toFixed(2),
+          downPaymentAutoForPriceListItemId: undefined,
+        }
+      })
+    )
+  }
+
+  function patchTypedPlan(
+    lineIds: string[],
+    patch: Partial<
+      Pick<
+        CartLine,
+        'manualTermInput' | 'manualMonthlyInput' | 'firstDueDateInput' | 'downPaymentInput'
+      >
+    >
+  ) {
+    const ids = new Set(lineIds)
+    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, ...patch } : l)))
+  }
+
+  /** "50% down, the balance in 60 days" — the common case in one tap. */
+  function applySixtyDayPlan(lineIds: string[]) {
+    const ids = new Set(lineIds)
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!ids.has(l.lineId)) return l
+        const sale = saleAmountOf(l)
+        const downPayment = Math.ceil(toCents(sale) / 2) / 100
+        return {
+          ...l,
+          manualPlan: true,
+          manualTermInput: '1',
+          manualMonthlyInput: coveringMonthly(sale, downPayment, 1).toFixed(2),
+          firstDueDateInput: dateInputFromToday({ days: 60 }),
+          downPaymentInput: downPayment.toFixed(2),
+          downPaymentAutoForPriceListItemId: undefined,
+        }
+      })
+    )
+  }
+
+  /** Back to the rate card / Financing Term plan the row had. */
+  function applyRateCardPlan(lineIds: string[]) {
+    const ids = new Set(lineIds)
+    const termId = cart.find((l) => ids.has(l.lineId))?.financingTermId
+    setCart((prev) =>
+      prev.map((l) =>
+        ids.has(l.lineId)
+          ? {
+              ...withoutTypedPlan(l),
+              downPaymentInput: undefined,
+              downPaymentAutoForPriceListItemId: undefined,
+            }
+          : l
+      )
+    )
+    // The term the row had comes back with its own down payment.
+    if (termId) setLineFinancingTermId(lineIds, termId)
   }
 
   function setQty(itemId: string, qty: number) {
@@ -1814,34 +3769,94 @@ export default function CheckoutPage() {
     setOverrideError('')
   }
 
-  // A price override reuses the same shared managerOverride/managerUserId
-  // slot the submission payload sends for discount overrides — the backend
-  // treats "PIN-approved on this sale" as one sale-level fact regardless of
-  // which line it applies to (same limitation the existing discount-override
-  // system already has for multi-line, multi-approver sales).
-  function handlePriceOverrideApprove(
-    lineId: string,
-    result: { managerId: string; managerName: string; newPrice: number }
-  ) {
-    setCart((prev) =>
-      prev.map((l) =>
-        l.lineId === lineId
+  // Scenario 71 — a price override needs no manager and no PIN: whoever is at
+  // the till types the price. It keeps the price-list row the line started from
+  // (the server reads the list price off it) and leaves the sale needing a
+  // reason and a note, asked for once in the order summary.
+  // The price-list price a line resolves to under its Price Use — what an
+  // override is measured against. Decimal columns arrive as strings, so it is
+  // made a number here, once.
+  function listPriceFor(line: CartLine): number | null {
+    if (!line.priceUseTypeId) return null
+    const resolved = resolvedPrices[resolutionKey(line.itemId, line.priceUseTypeId)]
+    return resolved ? Number(resolved.price) : null
+  }
+
+  // What a line would have cost at its price-list price, on the same VAT basis
+  // as the figure shown beside it (so the struck-through number and the
+  // charged number compare like for like). Null when no list price resolves.
+  function listLineTotal(line: CartLine, qty: number): number | null {
+    const list = listPriceFor(line)
+    if (list === null) return null
+    return (
+      effectiveUnitPrice(
+        { ...line, unitPrice: list },
+        activeTaxRate,
+        inclusivePricing,
+        isTaxExempt
+      ) * qty
+    )
+  }
+
+  // A row of several units of one serialized item shows a single price, so the
+  // override goes on every line in that row, not just the first.
+  function overrideTargets(prev: CartLine[], lineId: string): Set<string> {
+    const target = prev.find((l) => l.lineId === lineId)
+    if (!target) return new Set()
+    return new Set(
+      target.isSerialTracked
+        ? prev.filter((l) => l.itemId === target.itemId).map((l) => l.lineId)
+        : [lineId]
+    )
+  }
+
+  function applyPriceOverride(lineId: string, newPrice: number) {
+    setCart((prev) => {
+      const ids = overrideTargets(prev, lineId)
+      return prev.map((l) =>
+        ids.has(l.lineId)
           ? {
               ...l,
-              unitPrice: result.newPrice,
-              priceOverrideBy: result.managerId,
-              priceOverrideApproverName: result.managerName,
+              unitPrice: newPrice,
+              priceOverridden: true,
+              // A line already overridden keeps what it was first priced from.
+              overriddenFromPriceListItemId: l.priceOverridden
+                ? l.overriddenFromPriceListItemId
+                : (l.priceListItemId ?? null),
               priceResolved: true,
               priceListItemId: null,
               priceListDownPayment: null,
             }
           : l
       )
-    )
-    setManagerOverrideApproved(true)
-    setOverrideManagerId(result.managerId)
-    setOverrideManagerName(result.managerName)
+    })
     setPriceOverrideTargetLineId(null)
+  }
+
+  // Puts the line back on its price-list price. The back-fill effect does not
+  // re-run for a price that has not changed, so the resolved price is applied
+  // here directly; with no match it goes back to "No price — Override".
+  function clearPriceOverride(lineId: string) {
+    setCart((prev) => {
+      const ids = overrideTargets(prev, lineId)
+      return prev.map((l) => {
+        if (!ids.has(l.lineId)) return l
+        const resolved = l.priceUseTypeId
+          ? resolvedPrices[resolutionKey(l.itemId, l.priceUseTypeId)]
+          : undefined
+        const cleared = { ...l, priceOverridden: false, overriddenFromPriceListItemId: null }
+        return resolved
+          ? {
+              ...cleared,
+              unitPrice: resolved.price,
+              priceListItemId: resolved.priceListItemId,
+              priceListDownPayment: resolved.downPayment,
+              priceListCardTermMonths: resolved.cardTermMonths ?? null,
+              priceResolved: true,
+            }
+          : { ...cleared, unitPrice: 0, priceResolved: false, priceListItemId: null }
+      })
+    })
   }
 
   // ─── Payment actions ───────────────────────────────────────────────────────
@@ -1851,14 +3866,54 @@ export default function CheckoutPage() {
   // bank_transfer/qr), so the cashier isn't asked to re-pick a method that
   // was already chosen above. Still just a default — freely changeable via
   // the row's own dropdown for split-tender or anything else.
+  /**
+   * Scenario 68 — an X-Deal's down payment, in the create request: the
+   * tender the Down Payment toggle and Cash's sub-choice already describe
+   * (a check is cash with its number; GCash and Billers are QR options), and
+   * the CR from the payment row. Nothing at all when nothing is paid now.
+   */
+  function xDealDownPaymentPayload(): {
+    xDealDownPaymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+    xDealDownPaymentReferenceNumber?: string
+    xDealDownPaymentCheckNumber?: string
+    xDealDownPaymentMethodOptionId?: string
+    xDealDownPaymentVerifiedAtRegister?: boolean
+  } {
+    if (!xDealActive || xDealDownPaymentTotal <= 0) return {}
+    const method = (preferredPaymentMethodKey() ?? 'cash') as
+      | 'cash'
+      | 'card'
+      | 'bank_transfer'
+      | 'qr'
+    const reference = payments
+      .filter((p) => p.amount > 0 && p.referenceNumber.trim())
+      .map((p) => p.referenceNumber.trim())
+      .join(', ')
+    return {
+      xDealDownPaymentMethod: method,
+      xDealDownPaymentReferenceNumber: reference || undefined,
+      ...(method === 'cash' && cashSubMode === 'check'
+        ? { xDealDownPaymentCheckNumber: checkNumber.trim() || undefined }
+        : {}),
+      ...(method === 'card' && cardTerminalOptionId
+        ? { xDealDownPaymentMethodOptionId: cardTerminalOptionId }
+        : (method === 'bank_transfer' || method === 'qr') && cashPaymentOptionId
+          ? { xDealDownPaymentMethodOptionId: cashPaymentOptionId }
+          : {}),
+      ...(method === 'bank_transfer' && bankTransferVerifiedAtRegister
+        ? { xDealDownPaymentVerifiedAtRegister: true }
+        : {}),
+    }
+  }
+
   function preferredPaymentMethodKey(): PosPaymentMethod | null {
     if (hasCreditCardLine) return 'card'
     if (hasCashLine) {
-      return cashSubMode === 'cash_on_hand'
+      return cashSubMode === 'cash_on_hand' || cashSubMode === 'check'
         ? 'cash'
         : cashSubMode === 'bank_transfer'
           ? 'bank_transfer'
-          : 'qr'
+          : 'qr' // qr, gcash and billers all tender through 'qr'
     }
     return null
   }
@@ -1922,6 +3977,12 @@ export default function CheckoutPage() {
         lines: cart,
         customerId: selectedCustomer?.id,
         promoCodeId: promoResult?.promoCode?.id,
+        isXDeal: xDealActive || undefined,
+        xDealReference: xDealActive ? xDealReference.trim() : undefined,
+        exceptionReasonId: exceptionReasonId || undefined,
+        exceptionNote: exceptionNote.trim() || undefined,
+        creditApplicationWaived: creditApplicationWaived || undefined,
+        creditApplicationOverridden: creditApplicationOverridden || undefined,
       },
     })
     setParking(false)
@@ -1933,8 +3994,6 @@ export default function CheckoutPage() {
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setPromoResult(null)
     setPromoInput('')
     setPayments([])
@@ -1943,6 +4002,14 @@ export default function CheckoutPage() {
   }
 
   // ─── Confirm sale ──────────────────────────────────────────────────────────
+
+  // The offline queue drops sale-level fields (plan decision D9), and a sale
+  // resumed from a table tab already exists — neither can carry a delivery.
+  const deliveryUnavailableReason = isOffline
+    ? 'Delivery needs a connection — add it once the POS is back online.'
+    : fromTab?.posTransactionId
+      ? "This sale was opened from a table tab, so a delivery can't be added to it."
+      : null
 
   async function handleConfirm() {
     if (!sessionId) {
@@ -1983,9 +4050,57 @@ export default function CheckoutPage() {
       setError('This discount needs a manager override before checking out.')
       return
     }
+    // Scenario 71 — a price override needs no approval, only a reason and a
+    // note. The offline queue drops sale-level fields, so it cannot carry them.
+    if (anyException) {
+      if (isOffline) {
+        setError(
+          'A price override, typed terms or a credit application waiver need a network connection — clear them, or wait until the POS is back online.'
+        )
+        return
+      }
+      const what = [
+        anyPriceOverridden && 'the price override',
+        anyTypedPlan && 'the typed terms',
+        creditApplicationWaivedActive && 'the credit application waiver',
+        creditApplicationOverriddenActive && 'the credit application override',
+      ]
+        .filter(Boolean)
+        .join(' and ')
+      if (!exceptionReasonId) {
+        setError(`Pick a reason for ${what}.`)
+        exceptionSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+      if (!exceptionNote.trim()) {
+        setError(`Add a note for ${what}.`)
+        exceptionSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+    }
 
-    if (isTaxExempt && !taxExemptionRef.trim()) {
-      setError('Enter a certificate or exemption reference for tax-exempt sales.')
+    if (needsVatApproval && !taxExemptionRef.trim()) {
+      setError(
+        `Enter the certificate or reference that supports this ${restrictedKind(outputVatCode)} sale.`
+      )
+      return
+    }
+    if (needsVatApproval && isOffline) {
+      setError(
+        `A ${restrictedKind(outputVatCode)} sale needs a manager's approval, which needs a network connection.`
+      )
+      return
+    }
+    if (needsVatApproval && !managerOverrideApproved) {
+      setError(
+        `A ${restrictedKind(outputVatCode)} sale needs a manager's approval before checking out.`
+      )
+      return
+    }
+    if (departsFromDefault && taxOverrideReason.trim().length < 3) {
+      setError(
+        `Say why this sale is not ${shortVatName(defaultOutputVat)} (at least 3 characters).`
+      )
       return
     }
 
@@ -2004,16 +4119,79 @@ export default function CheckoutPage() {
     }
 
     if (!invoiceNumberInput.trim()) {
-      setError('Enter the Sales Invoice No. for this sale.')
+      setError(`Enter the ${documentLabel} for this sale.`)
       return
     }
 
-    const lineMissingTerm = inhouseInstallmentCartLines.find((l) => !l.financingTermId)
+    // Scenario 66 — the delivery, checked the way the server will (R1–R6).
+    // The fee's CR is compared with the payment rows' CR, which the down
+    // payment shares, so the two stay separate receipts.
+    if (delivery.enabled) {
+      if (deliveryUnavailableReason) {
+        setError(deliveryUnavailableReason)
+        return
+      }
+      const problem = deliveryProblem(
+        delivery,
+        deliveryCustomerAddress,
+        payments.filter((p) => p.amount > 0).map((p) => p.referenceNumber)
+      )
+      if (problem) {
+        setError(problem)
+        return
+      }
+    }
+
+    if (employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()) {
+      setError('Enter the HR appliance loan application number.')
+      return
+    }
+
+    // Scenario 67 — the same cart-shape rules the backend enforces, checked
+    // here so the cashier gets a plain message instead of a rejected sale.
+    // The Payment Mode / provider locks below normally make the first two
+    // unreachable; these are the backstop for a cart that changed after
+    // X-Deal was ticked.
+    if (xDealActive) {
+      if (!xDealReference.trim()) {
+        setError('Enter the X-Deal reference.')
+        return
+      }
+      if (cart.some((l) => l.invoiceType !== 'installment' || l.installmentProvider === 'tpf')) {
+        setError('Every item in an X-Deal must be on inhouse installment.')
+        return
+      }
+      if (new Set(cart.map((l) => l.financingTermId ?? '')).size > 1) {
+        setError('Every item in an X-Deal must use the same financing term.')
+        return
+      }
+      // Scenario 68 — some of it has to be bartered, or it's a cash sale.
+      const xDealSaleTotal = cart.reduce(
+        (s, l) =>
+          s + effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity,
+        0
+      )
+      if (xDealDownPaymentTotal >= Math.round(xDealSaleTotal * 100) / 100 - 0.005) {
+        setError(
+          "An X-Deal's cash portion must be less than the sale total — a sale paid in full is not an X-Deal."
+        )
+        return
+      }
+    }
+
+    const lineMissingTerm = inhouseInstallmentCartLines.find(
+      (l) => !l.manualPlan && !l.financingTermId
+    )
     if (lineMissingTerm) {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
       return
     }
-    if (inhouseInstallmentCartLines.length > 0 && !creditApplicationId) {
+    if (
+      inhouseInstallmentCartLines.length > 0 &&
+      !creditApplicationId &&
+      !isGovernmentInstitutionalCustomer &&
+      !skipsCreditApplication
+    ) {
       setError(
         'Select the approved credit application for this customer — every installment sale requires one.'
       )
@@ -2028,13 +4206,16 @@ export default function CheckoutPage() {
         setError("Enter the financier's reference number for the TPF-financed item(s).")
         return
       }
-      // Same 10% floor as inhouse — the financier funds only the balance,
+      // Same "never 0" rule as inhouse — the financier funds only the balance,
       // so a missing down payment isn't "financed in full", it's unbilled.
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-        const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
-        if (downPayment <= 0) {
+        const downPayment = lineDownPayment(l)
+        // Scenario 60 — an Employee Appliance Loan waives the down payment
+        // (and the ">0" check below) entirely. There is no percentage floor
+        // (2026-10-15): any amount above 0 will do.
+        if (!downPaymentWaived && downPayment <= 0) {
           setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
           return
         }
@@ -2042,34 +4223,63 @@ export default function CheckoutPage() {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
-        if (downPayment < 0.1 * lineAmount - 0.005) {
-          setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
-          return
-        }
       }
     }
     for (const l of inhouseInstallmentCartLines) {
       const lineAmount =
         effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-      const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
+      const downPayment = lineDownPayment(l)
+      // Scenario 71 — a typed plan answers to its own rules, not the 10% floor
+      // or a rate card's fixed down payment.
+      if (l.manualPlan) {
+        const problem = typedPlanProblem({
+          months: l.manualTermInput,
+          monthly: l.manualMonthlyInput,
+          firstDueDate: l.firstDueDateInput,
+          downPayment,
+          saleAmount: Math.round(lineAmount * 100) / 100,
+        })
+        if (problem) {
+          setError(`${l.itemName}: ${problem}`)
+          return
+        }
+        continue
+      }
       if (downPayment < 0 || downPayment > lineAmount) {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
         return
       }
-      // 0.005 (half a centavo) tolerance absorbs float noise from the
-      // tax-inclusive/exclusive price conversion above — without it, typing
-      // the exact rounded-to-centavo value shown by the "Min" hint below
-      // can land a hair under the true unrounded floor and be rejected.
-      if (downPayment < 0.1 * lineAmount - 0.005) {
-        setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
+      // A line the rate card prices for its term must carry exactly the
+      // card's down payment — the same rule the server applies. Not when the
+      // down payment is waived (Employee Appliance Loan) or optional (X-Deal).
+      const fixed = downPaymentFree ? null : lineCardDownPayment(l)
+      if (fixed != null) {
+        if (Math.abs(downPayment - fixed) > DOWN_PAYMENT_FLOOR_TOLERANCE) {
+          setError(
+            `${l.itemName}'s down payment is fixed by the price list at ${fmt(fixed)} for this term.`
+          )
+          return
+        }
+        continue
+      }
+      // No percentage floor (2026-10-15): the down payment can be as low as
+      // the cashier sets it, but never 0. Waived entirely for an Employee
+      // Appliance Loan (development) or an X-Deal (Scenario 67 / 68).
+      if (!downPaymentFree && downPayment <= 0) {
+        setError(`${l.itemName} needs a down payment — it can be small, but not 0.`)
         return
       }
     }
 
     // Down payment — forced explicit choice before its amount can even be
     // tendered, same as before the down payment shared this pool.
-    if (installmentCartLines.length > 0 && !installmentPaymentMethod) {
-      setError('Choose how the down payment will be paid — Cash or Credit/Debit Card.')
+    // An X-Deal with nothing paid now has nothing to choose a method for.
+    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !xDealCollectsNothing) {
+      setError(
+        xDealActive
+          ? 'Choose how the cash portion will be paid — Cash or Credit/Debit Card.'
+          : 'Choose how the down payment will be paid — Cash or Credit/Debit Card.'
+      )
       return
     }
 
@@ -2086,21 +4296,24 @@ export default function CheckoutPage() {
         setError('Only cash payments are accepted while offline.')
         return
       }
-      // CR Number (collection receipt) is required on every row whenever
-      // this sale has an inhouse installment/down-payment component, or a
-      // pure-TPF cart's own down payment — it doubles as the receipt/CR
-      // number issued at the time the down payment is collected, so plain
-      // cash isn't exempt the way it is elsewhere. A plain sale still needs
-      // a reference for card/bank/e-wallet/etc. (REF_METHODS), just not for
-      // plain cash.
+      // CR Number (collection receipt) is optional on a plain sale — see
+      // crIsRequired for where it still isn't. Reserve mode only asks for a
+      // reference on REF_METHODS.
       const missingRef = payments.find(
         (p) =>
           p.amount > 0 &&
           !p.referenceNumber.trim() &&
-          (inhouseInstallmentCartLines.length > 0 ||
-            (isPureTpfCart && tpfDownPaymentsTotal > 0) ||
-            REF_METHODS.includes(p.method))
+          (saleMode === 'sale' ? crIsRequired(p) : REF_METHODS.includes(p.method))
       )
+      if (
+        hasCashLine &&
+        cashSubMode === 'check' &&
+        !checkNumber.trim() &&
+        payments.some((p) => p.method === 'cash' && p.amount > 0)
+      ) {
+        setError('Check Number is required for check payments.')
+        return
+      }
       if (missingRef) {
         setError(`CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
         return
@@ -2132,9 +4345,10 @@ export default function CheckoutPage() {
         taxAmount: taxTotal,
         subtotal: vatExclSubtotalForBackend,
         totalAmount,
-        salesInvoiceNumber: invoiceNumberInput.trim(),
-        isTaxExempt,
+        ...documentNumberPayload(invoiceNumberInput.trim()),
+        outputVatCode,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
+        taxOverrideReason: departsFromDefault ? taxOverrideReason.trim() : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
         lines: cart.map((l) => ({
           itemId: l.itemId,
@@ -2180,15 +4394,33 @@ export default function CheckoutPage() {
           // priceUseTypeId — every line below sends its own explicit value,
           // so the backend's transaction-level fallback (for older/other
           // callers) never needs to apply here.
+          // Never sent for an X-Deal — the backend rejects one outright, so
+          // a barter can never consume an application.
           creditApplicationId:
-            inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
-          salesInvoiceNumber: invoiceNumberInput.trim(),
+            inhouseInstallmentCartLines.length > 0 &&
+            creditApplicationId &&
+            !xDealActive &&
+            !creditApplicationWaivedActive
+              ? creditApplicationId
+              : undefined,
+          // Scenario 72 Part 6 — lets this sale claim the units the DR holds.
+          deliveryReceiptId: deliveryReceipt?.id,
+          // Scenario 71 — no application, on the cashier's say-so (with a
+          // reason and a note below).
+          creditApplicationWaived: creditApplicationWaivedActive || undefined,
+          // Scenario 71 — an application that does not cover the cart or is not
+          // approved yet, sold on anyway (the id above is that application).
+          creditApplicationOverridden: creditApplicationOverriddenActive || undefined,
+          ...documentNumberPayload(invoiceNumberInput.trim()),
+          // Scenario 66 — nothing at all when delivery is off.
+          ...deliveryPayload(delivery, deliveryCustomerAddress),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
-          tpfApprovedAmount:
-            tpfInstallmentCartLines.length > 0 && tpfApprovedAmount
-              ? parseFloat(tpfApprovedAmount)
-              : undefined,
+          // tpfApprovedAmount is deliberately not sent (client request,
+          // 2026-09-24 — Scenario 64). The column stays and stays null: it is
+          // optional in the DTO and nullable in the schema, and nothing reads
+          // it back, so the financier's reference number is the only TPF
+          // detail the cashier is asked for.
           // Which register account the TPF down payment debits — the same
           // Cash/Debit-Credit choice (and Cash's own sub-mode) the cashier
           // made for the down payment above, not a separate control.
@@ -2216,11 +4448,30 @@ export default function CheckoutPage() {
           taxAmount: taxTotal,
           subtotal: vatExclSubtotalForBackend,
           totalAmount,
-          isTaxExempt,
+          outputVatCode,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
+          taxOverrideReason: departsFromDefault ? taxOverrideReason.trim() : undefined,
+          isEmployeeApplianceLoan: employeeApplianceLoanActive || undefined,
+          hrApplianceLoanApplicationNumber: employeeApplianceLoanActive
+            ? hrApplianceLoanApplicationNumber.trim()
+            : undefined,
+          isXDeal: xDealActive || undefined,
+          xDealReference: xDealActive ? xDealReference.trim() : undefined,
+          // Scenario 68 — an X-Deal's down payment travels with the sale: the
+          // backend records it (before the X-Deal memo) when the sale is
+          // created, at approval for a held one. Never through addPayment.
+          ...xDealDownPaymentPayload(),
+          // Scenario 71 — a price override no longer rides on this: no manager
+          // approves it, so it sends a reason and a note instead.
+          exceptionReasonId: anyException ? exceptionReasonId : undefined,
+          exceptionNote: anyException ? exceptionNote.trim() : undefined,
           managerOverride: managerOverrideApproved || undefined,
-          managerUserId: managerOverrideApproved ? overrideManagerId : undefined,
+          managerUserId: managerOverrideApproved ? overrideManagerId || undefined : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
+          // Scenario 57 — restored. Undefined rather than '' when unset, so
+          // an agentless sale sends no agent at all instead of an empty
+          // string the DTO would have to special-case.
+          sellingAgentId: sellingAgentId || undefined,
           lines: cart.map((l) => ({
             itemId: l.itemId,
             itemName: l.itemName,
@@ -2234,26 +4485,42 @@ export default function CheckoutPage() {
             secondarySerialNumberId: l.secondarySerialNumberId,
             priceListItemId: l.priceListItemId ?? undefined,
             priceUseTypeId: l.priceUseTypeId ?? undefined,
-            priceOverride: l.priceOverrideBy ? true : undefined,
+            priceOverride: l.priceOverridden ? true : undefined,
+            overriddenFromPriceListItemId:
+              l.priceOverridden && l.overriddenFromPriceListItemId
+                ? l.overriddenFromPriceListItemId
+                : undefined,
             invoiceType: l.invoiceType ?? 'cash',
             installmentProvider:
               l.invoiceType === 'installment' ? l.installmentProvider : undefined,
             payNowMethod: (l.invoiceType ?? 'cash') === 'cash' ? l.payNowMethod : undefined,
             financingTermId:
-              l.invoiceType === 'installment' && l.installmentProvider !== 'tpf'
+              l.invoiceType === 'installment' && l.installmentProvider !== 'tpf' && !l.manualPlan
                 ? l.financingTermId
                 : undefined,
+            // Scenario 71 — a plan the cashier typed travels as typed.
+            ...(l.manualPlan
+              ? {
+                  manualPlan: true,
+                  manualTermMonths: Number(l.manualTermInput),
+                  manualMonthlyInstallment: Number(l.manualMonthlyInput),
+                  firstDueDate: l.firstDueDateInput,
+                }
+              : {}),
             // Both providers collect one — inhouse's funds its schedule,
-            // TPF's is simply the slice the financier doesn't fund.
-            downPayment:
-              l.invoiceType === 'installment'
-                ? parseFloat(l.downPaymentInput ?? '0') || 0
-                : undefined,
+            // TPF's is simply the slice the financier doesn't fund. Waived
+            // to 0 for an Employee Appliance Loan (Scenario 60), overriding
+            // whatever was typed/defaulted before the checkbox was checked.
+            downPayment: l.invoiceType === 'installment' ? lineDownPayment(l) : undefined,
           })),
         })
 
         if (!txRes.success || !txRes.data) {
-          const rawMsg = txRes.error ?? txRes.message ?? 'Failed to create transaction.'
+          const rawMsg =
+            DR_SALE_ERRORS[(txRes.error ?? txRes.message ?? '').trim()] ??
+            txRes.error ??
+            txRes.message ??
+            'Failed to create transaction.'
           const idToName = Object.fromEntries(cart.map((l) => [l.itemId, l.itemName]))
           const errMsg = rawMsg.replace(
             /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
@@ -2301,7 +4568,7 @@ export default function CheckoutPage() {
           return
         }
 
-        // Serial-tracked line in the cart — backend deferred to manager approval
+        // Installment line in the cart — backend deferred to manager approval
         // instead of completing the sale. Show the pending screen and bail out
         // before any payment/loyalty steps run (there is no transaction yet).
         if (isPendingApproval(txRes.data)) {
@@ -2338,7 +4605,20 @@ export default function CheckoutPage() {
             totalAmount,
             serialLines: displayLines,
             creditApplicationId:
-              inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
+              inhouseInstallmentCartLines.length > 0 &&
+              !xDealActive &&
+              !creditApplicationWaivedActive
+                ? creditApplicationId
+                : undefined,
+            isXDeal: xDealActive,
+            xDealReference: xDealActive ? xDealReference.trim() : null,
+            delivery: delivery.enabled
+              ? {
+                  deliverTo: delivery.deliverTo.trim(),
+                  fee: deliveryFeeAmount,
+                  feeCr: deliveryFeeAmount > 0 ? delivery.feeCr.trim() : null,
+                }
+              : null,
           })
           return
         }
@@ -2357,10 +4637,12 @@ export default function CheckoutPage() {
         txData = txRes.data
       }
 
-      if (tenderTarget > 0) {
-        // The merged payments pool covers cash/TPF + delivery fee first,
-        // then whatever's left over goes to the down payment below — same
-        // rows can straddle both if the cashier tendered it all in one go.
+      // Scenario 68 — an X-Deal's down payment was recorded with the sale.
+      if (tenderTarget > 0 && !xDealActive) {
+        // The merged payments pool covers cash/TPF first, then whatever's
+        // left over goes to the down payment below — same rows can straddle
+        // both if the cashier tendered it all in one go. (A delivery fee is
+        // never in this pool: it has its own receipt, recorded at create.)
         const rows = payments.filter((p) => p.amount > 0)
         const consumed: number[] = rows.map(() => 0)
         const payRowPortion = async (
@@ -2372,6 +4654,10 @@ export default function CheckoutPage() {
             paymentMethod: row.method,
             amount,
             referenceNumber: row.referenceNumber || undefined,
+            checkNumber:
+              row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+                ? checkNumber.trim() || undefined
+                : undefined,
             paymentMethodConfigId: row.configId,
             // Scenario 37 — card's terminal/txn-mode/term, and bank_transfer/qr's
             // bank/gateway, all come from the Payment Method toggle's
@@ -2381,7 +4667,11 @@ export default function CheckoutPage() {
                 ? cardTerminalOptionId
                 : row.method === 'bank_transfer' || row.method === 'qr'
                   ? cashPaymentOptionId
-                  : row.paymentMethodOptionId,
+                  : row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+                    ? configuredMethods
+                        .find((m) => m.key === 'cash')
+                        ?.options.find((o) => o.isEnabled && o.name === 'Check')?.id
+                    : row.paymentMethodOptionId,
             cardTxnMode: row.method === 'card' ? cardTxnMode : undefined,
             cardInstallmentTerm: row.method === 'card' ? cardInstallmentTerm : undefined,
             bankTransferVerifiedAtRegister:
@@ -2406,7 +4696,10 @@ export default function CheckoutPage() {
           return true
         }
 
-        let remaining = regularTenderTarget
+        // A pure-TPF cart's down payment is already recorded by create()
+        // (its own PosPayment row, CR number and JE line), so tendering it
+        // again here would double the drawer cash and the posting.
+        let remaining = isPureTpfCart ? 0 : regularTenderTarget
         for (let i = 0; i < rows.length && remaining > 0.009; i++) {
           const take = parseFloat(Math.min(rows[i].amount, remaining).toFixed(2))
           if (take <= 0) continue
@@ -2500,6 +4793,10 @@ export default function CheckoutPage() {
         currency: 'PHP',
       })
 
+      // The sale moved stock, so the cached catalog is now behind. Marking it
+      // stale makes the next Checkout / Product Catalog visit re-read it.
+      void queryClient.invalidateQueries({ queryKey: [POS_CATALOG_KEY] })
+
       setSubmitting(false)
       setSuccess({
         transactionId: txId,
@@ -2510,7 +4807,41 @@ export default function CheckoutPage() {
         salesInvoiceNumber: txData?.salesInvoiceNumber ?? null,
         deliveryReceiptNumber: txData?.deliveryReceiptNumber ?? null,
         loyaltyEarned,
+        creditWarnings: Array.isArray(txData?.creditWarnings) ? txData.creditWarnings : [],
+        exception: anyException
+          ? {
+              reason: overrideReasons.find((r) => r.id === exceptionReasonId)?.name ?? null,
+              note: exceptionNote.trim() || null,
+              creditApplicationWaived: creditApplicationWaivedActive,
+              creditOverride: creditOverrideSnapshot(),
+              typedTerms: anyTypedPlan,
+              lineLists: Object.fromEntries(
+                cart.filter((l) => l.priceOverridden).map((l) => [l.lineId, listPriceFor(l)])
+              ),
+            }
+          : null,
+        isXDeal: xDealActive,
+        xDealReference: xDealActive ? xDealReference.trim() : null,
         invoices: txData?.invoices ?? [],
+        delivery: delivery.enabled
+          ? {
+              deliverTo: delivery.deliverTo.trim(),
+              address: resolveDeliveryAddress(delivery, deliveryCustomerAddress).address,
+              fee: deliveryFeeAmount,
+              // What the fee was paid with — its own tender, chosen in the
+              // Delivery section.
+              tenderLabel:
+                deliveryFeeAmount > 0
+                  ? deliveryFeeTenderLabel(
+                      delivery,
+                      deliveryFeeOptions(delivery.tender, configuredMethods).find(
+                        (o) => o.id === delivery.optionId
+                      )?.name
+                    )
+                  : null,
+              feeCr: deliveryFeeAmount > 0 ? delivery.feeCr.trim() : null,
+            }
+          : null,
         lineOutcomes: cart.map((l) => ({
           lineId: l.lineId,
           itemName: l.itemName,
@@ -2544,11 +4875,10 @@ export default function CheckoutPage() {
 
   function resetSale() {
     setCart([])
+    setDeliveryReceipt(null)
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setCustomerSearch('')
     setPromoInput('')
     setPromoResult(null)
@@ -2558,9 +4888,17 @@ export default function CheckoutPage() {
     setSuccess(null)
     setPendingApproval(null)
     setReservationSuccess(null)
-    setIsTaxExempt(false)
+    setOutputVatCode(OUTPUT_VAT_STANDARD)
     setTaxExemptionRef('')
+    setTaxOverrideReason('')
+    setExceptionReasonId('')
+    setExceptionNote('')
+    setCreditApplicationWaived(false)
     setInvoiceNumberInput('')
+    setDocumentType('sales_invoice')
+    setDocumentSwitchNote('')
+    setDelivery(EMPTY_DELIVERY)
+    setDeliveryCustomerAddress(null)
     setSearchQuery('')
     setManagerOverrideApproved(false)
     setOverrideManagerName('')
@@ -2569,7 +4907,6 @@ export default function CheckoutPage() {
     setSaleMode('sale')
     setTpfProviderId('')
     setTpfReferenceNumber('')
-    setTpfApprovedAmount('')
     setInstallmentPreviews({})
     setInstallmentPreviewErrors({})
     setInstallmentPreviewLoading({})
@@ -2669,6 +5006,14 @@ export default function CheckoutPage() {
   }
 
   async function handleRequestCancellation() {
+    // Same guard handleConfirm already has. Without it, an unselected session
+    // (the normal state whenever more than one is open) posted to
+    // /pos/sessions//cancellation-requests — a doubled slash Nest matches no
+    // route for, surfacing as a raw "Cannot POST" instead of a usable error.
+    if (!sessionId) {
+      setCancelError('Select an open session first.')
+      return
+    }
     if (!cancelReason.trim()) {
       setCancelError('Grounds for cancellation are required.')
       return
@@ -2729,6 +5074,11 @@ export default function CheckoutPage() {
         customerDisplayName={customerDisplayName}
         cart={cart}
         payments={payments}
+        qrOptionName={
+          configuredMethods
+            .find((m) => m.key === 'qr')
+            ?.options.find((o) => o.id === cashPaymentOptionId)?.name
+        }
         promoDiscount={promoDiscount}
         activeTaxRate={activeTaxRate}
         inclusivePricing={inclusivePricing}
@@ -2744,6 +5094,9 @@ export default function CheckoutPage() {
         totalAmount={pendingApproval.totalAmount}
         serialLines={pendingApproval.serialLines}
         creditApplicationId={pendingApproval.creditApplicationId}
+        delivery={pendingApproval.delivery ?? null}
+        isXDeal={pendingApproval.isXDeal}
+        xDealReference={pendingApproval.xDealReference}
         canSignPromissoryNote={canSignPromissoryNote}
         onReset={resetSale}
         fmt={fmt}
@@ -2832,8 +5185,7 @@ export default function CheckoutPage() {
               <option value="">Select session…</option>
               {openSessions.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.terminal?.branch?.name ? `${s.terminal.branch.name} · ` : ''}
-                  {s.terminal?.terminalCode ?? s.terminalId} — {s.cashier?.name || 'Cashier'}
+                  {sessionTerminalLabel(s)} — {s.cashier?.name || 'Cashier'}
                 </option>
               ))}
             </select>
@@ -2844,7 +5196,9 @@ export default function CheckoutPage() {
           </div>
         ) : activeSession ? (
           <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
-            {activeSession.terminal?.name ?? activeSession.terminalId}
+            {activeSession.terminal?.caravanBranch
+              ? sessionTerminalLabel(activeSession)
+              : (activeSession.terminal?.name ?? activeSession.terminalId)}
           </span>
         ) : null}
 
@@ -2865,7 +5219,8 @@ export default function CheckoutPage() {
                 setShowCancelModal(true)
                 setCancelError('')
               }}
-              disabled={!!cancellationReqId}
+              disabled={!!cancellationReqId || !sessionId}
+              title={!sessionId ? 'Select an open session first' : undefined}
               className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
             >
               <XCircle size={13} /> Cancel Sale
@@ -2873,6 +5228,11 @@ export default function CheckoutPage() {
           </div>
         )}
       </div>
+
+      {/* Scenario 60 Part 3 — a caravan this branch hosts has ended with
+          stock still in it. Those units no longer sell here; say so rather
+          than let them just vanish from the serial picker. */}
+      <EndedCaravansBanner variant="pos" hostBranchId={activeBranchId} enabled={!!activeBranchId} />
 
       {/* Cancellation pending banner */}
       {cancellationReqId && (
@@ -2884,20 +5244,27 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Serial-tracked sale banner */}
-      {!cancellationReqId && cart.some((l) => l.isSerialTracked) && (
+      {/* Installment banner. Only a sale with a TPF installment line still
+          waits for approval (Scenario 71) — an in-house installment sale posts
+          the moment it is confirmed, and a cash sale of a serialized appliance
+          always did. */}
+      {!cancellationReqId && installmentCartLines.length > 0 && (
         <div
-          className={`flex items-center gap-3 border-b px-5 py-3 ${canOverride ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}
+          className={`flex items-center gap-3 border-b px-5 py-3 ${installmentHeldForApproval ? 'border-amber-200 bg-amber-50' : 'border-green-200 bg-green-50'}`}
         >
-          {canOverride ? (
-            <CheckCircle2 size={14} className="shrink-0 text-green-500" />
-          ) : (
+          {installmentHeldForApproval ? (
             <ShieldCheck size={14} className="shrink-0 text-amber-500" />
+          ) : (
+            <CheckCircle2 size={14} className="shrink-0 text-green-500" />
           )}
-          <p className={`text-sm font-medium ${canOverride ? 'text-green-700' : 'text-amber-700'}`}>
-            {canOverride
-              ? 'This sale includes a serialized item — since you can already approve sales, it will post immediately.'
-              : 'This sale includes a serialized item — it will need Business Owner or Branch Manager approval before the invoice is created.'}
+          <p
+            className={`text-sm font-medium ${installmentHeldForApproval ? 'text-amber-700' : 'text-green-700'}`}
+          >
+            {installmentHeldForApproval
+              ? 'This sale includes a TPF installment item — it will need Business Owner or Branch Manager approval before the invoice is created.'
+              : canOverride && tpfInstallmentCartLines.length > 0
+                ? 'This sale includes an installment item — since you can already approve sales, it will post immediately.'
+                : 'This sale includes an installment item — it posts as soon as you confirm.'}
           </p>
         </div>
       )}
@@ -3063,8 +5430,126 @@ export default function CheckoutPage() {
 
         {/* ── Right: Customer + Summary + Payment ─────────────────────────────── */}
         <div
-          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-130 lg:w-150 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
+          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-140 lg:w-165 xl:w-180 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
+          {/* Scenario 72 Part 6 — the Delivery Receipt this sale invoices,
+              first thing in the panel so the cashier sees it before ringing up. */}
+          {deliveryReceipt && (
+            <div className="flex items-start justify-between gap-3 border-b border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-900">
+              <p>
+                <span className="font-semibold">Invoicing {deliveryReceipt.drNumber}</span> — its
+                held units are on the lines. This sale marks the delivery receipt invoiced.
+              </p>
+              <button
+                type="button"
+                onClick={() => setDeliveryReceipt(null)}
+                className="shrink-0 text-xs font-medium text-emerald-700 underline hover:text-emerald-900"
+              >
+                Unlink
+              </button>
+            </div>
+          )}
+          {/* Leads the panel, above Customer. Required on every sale — the
+              number off the physical booklet: a Sales Invoice No., or a
+              Delivery Receipt No. when the sale is covered by a DR instead.
+              Same field, same rules; the toggle only changes which number we
+              ask for. Deliberately never abbreviated "SI" here: that
+              abbreviation already means Supplier Invoice on the AP Bills /
+              goods-receiving side. */}
+          {saleMode === 'sale' && (
+            <div className="border-b border-purple-200 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                {documentLabel} *
+              </p>
+              <div
+                role="radiogroup"
+                aria-label="Document type"
+                className="mb-2 flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1"
+              >
+                {(['sales_invoice', 'delivery_receipt'] as const).map((type) => {
+                  const selected = documentType === type
+                  // Scenario 72 — a sale invoicing a linked DR is a Sales Invoice.
+                  const locked = Boolean(deliveryReceipt) && type === 'delivery_receipt'
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      data-testid={`document-type-${type}`}
+                      disabled={locked}
+                      onClick={() => {
+                        if (selected) return
+                        setDocumentType(type)
+                        setDocumentSwitchNote('')
+                        // The typed number belongs to the document it was read
+                        // off — never carried across to the other kind.
+                        setInvoiceNumberInput('')
+                      }}
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                        selected
+                          ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                          : locked
+                            ? 'cursor-not-allowed bg-white text-gray-300'
+                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                      }`}
+                    >
+                      {type === 'sales_invoice' ? 'Sales Invoice' : 'Delivery Receipt'}
+                    </button>
+                  )
+                })}
+              </div>
+              <input
+                type="text"
+                aria-label={documentLabel}
+                data-testid="document-number-input"
+                value={invoiceNumberInput}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setInvoiceNumberInput(next)
+                  // "DR-1014" typed under Sales Invoice is a Delivery Receipt in the
+                  // cashier's hand — it used to be saved as an invoice that happened
+                  // to be numbered DR, and read "Sales Invoice No." everywhere.
+                  const detected = detectDocumentType(next)
+                  // Never flips away from the Sales Invoice a linked DR needs.
+                  if (detected && detected !== documentType && !deliveryReceipt) {
+                    setDocumentType(detected)
+                    setDocumentSwitchNote(
+                      detected === 'delivery_receipt'
+                        ? 'Switched to Delivery Receipt — the number starts with DR.'
+                        : 'Switched to Sales Invoice — the number starts with SI.'
+                    )
+                  }
+                }}
+                placeholder={
+                  documentType === 'delivery_receipt'
+                    ? 'Enter delivery receipt number'
+                    : 'Enter sales invoice number'
+                }
+                maxLength={100}
+                // Same look as the CR Number field — the number is read off a
+                // paper booklet, so it is typed large and bold.
+                className="w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+              />
+              {documentSwitchNote && (
+                <p
+                  className="mt-1.5 text-xs font-medium text-prominent-purple-700"
+                  data-testid="document-switch-note"
+                >
+                  {documentSwitchNote}
+                </p>
+              )}
+              {deliveryReceipt && (
+                <p
+                  className="mt-1.5 text-xs font-medium text-emerald-700"
+                  data-testid="document-type-locked-note"
+                >
+                  This sale invoices {deliveryReceipt.drNumber} — enter its Sales Invoice No.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
@@ -3079,33 +5564,32 @@ export default function CheckoutPage() {
                       <User size={13} className="text-purple-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
                         {customerDisplayName(selectedCustomer)}
+                        {isEmployeeCustomer && (
+                          <span className="rounded-full bg-prominent-purple-200 px-1.5 py-0.5 text-[10px] font-medium text-prominent-purple-900">
+                            Employee
+                          </span>
+                        )}
                       </p>
                       <div className="flex items-center gap-2">
                         {selectedCustomer.phone && (
                           <p className="text-xs text-gray-700">{selectedCustomer.phone}</p>
                         )}
-                        {loyaltyAccount && (
-                          <p className="text-xs font-medium text-purple-500">
-                            {loyaltyAccount.currentPoints} pts
-                          </p>
-                        )}
+                        {/* The points balance that sat here is hidden (client,
+                            2026-10-01). Only the display is gone — the loyalty
+                            account is still loaded and still earns and redeems,
+                            so nothing is lost if it comes back. Deleting the
+                            data path would have taken the Loyalty Points
+                            payment method with it, which was not what was
+                            asked for. */}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {customerHistory.length > 0 && (
-                      <button
-                        onClick={() => setHistoryOpen((v) => !v)}
-                        className="flex items-center gap-0.5 text-xs font-medium text-purple-400 hover:text-purple-700"
-                      >
-                        {historyOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-                        {customerHistory.length} past
-                      </button>
-                    )}
                     <button
                       onClick={clearCustomer}
+                      aria-label="Clear customer"
                       className="text-purple-300 hover:text-purple-600"
                     >
                       <X size={13} />
@@ -3113,36 +5597,52 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {historyOpen && customerHistory.length > 0 && (
-                  <div className="mt-1 divide-y divide-gray-300 rounded-lg border border-purple-200 bg-gray-200">
-                    {customerHistory.map((tx) => (
-                      <div
-                        key={tx.id}
-                        className="flex items-center justify-between px-3 py-1.5 text-xs"
-                      >
-                        {/* What they bought, not the receipt id — a cashier
-                            recognises "Kolin 1.5HP Split Type" instantly and
-                            can never recognise POS-1788852307273-E863R. The
-                            number is kept on the title for lookups. */}
-                        <span
-                          className="min-w-0 flex-1 truncate pr-2 text-gray-700"
-                          title={tx.transactionNumber}
-                        >
-                          {summariseItems(tx.lines)}
-                        </span>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span className="text-gray-700">
-                            {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                          <span className="font-semibold text-gray-800">{fmt(tx.totalAmount)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* Approved credit applications on file — visible as soon as the
+                    customer is picked, not only once the cart has an installment
+                    line. Nothing for a customer who never needs one (employee,
+                    government) unless they happen to have one. */}
+                {!isOffline &&
+                  (customerApplications === null ||
+                    customerApplications.length > 0 ||
+                    (!isEmployeeCustomer && !isGovernmentInstitutionalCustomer)) && (
+                    <div className="mt-2" data-testid="customer-credit-applications">
+                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-prominent-purple-700">
+                        Approved credit applications
+                      </p>
+                      {customerApplications === null ? (
+                        <p className="text-xs text-gray-600">
+                          Couldn&apos;t check credit applications.
+                        </p>
+                      ) : customerApplications.length === 0 ? (
+                        <p className="text-xs text-gray-600">
+                          No approved credit application on file.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-gray-300 rounded-lg border border-purple-200 bg-gray-200">
+                          {customerApplications.map((a) => (
+                            <li
+                              key={a.id}
+                              data-testid="customer-credit-application"
+                              className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs"
+                            >
+                              <span
+                                className="min-w-0 flex-1 truncate text-gray-700"
+                                title={a.itemNames.join(', ')}
+                              >
+                                <span className="font-semibold text-gray-900">
+                                  {a.applicationNumber}
+                                </span>{' '}
+                                · {a.itemNames.join(', ')}
+                              </span>
+                              <span className="shrink-0 font-semibold text-gray-800">
+                                {fmt(a.requestedAmount)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
               </div>
             ) : (
               <>
@@ -3168,54 +5668,173 @@ export default function CheckoutPage() {
                 </div>
 
                 {customerSearchOpen && (
-                  <div className="mt-1 max-h-36 overflow-y-auto rounded-xl border border-purple-200 bg-white shadow-lg">
-                    {customerResults.length === 0 ? (
-                      <p className="px-3 py-2 text-xs text-gray-700">No customers found</p>
+                  <div className="mt-1 max-h-48 overflow-y-auto rounded-xl border border-purple-200 bg-white shadow-lg">
+                    {customerResults.length === 0 && employeeResults.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-700">
+                        No customers or employees found
+                      </p>
                     ) : (
-                      customerResults.map((c) => (
-                        <button
-                          key={c.id}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
-                          onMouseDown={() => selectCustomer(c)}
-                        >
-                          <User size={11} className="shrink-0 text-gray-700" />
-                          <div>
-                            <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
-                            {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
-                          </div>
-                        </button>
-                      ))
+                      <>
+                        {customerResults.map((c) => (
+                          <button
+                            key={c.id}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
+                            onMouseDown={() => selectCustomer(c)}
+                          >
+                            <User size={11} className="shrink-0 text-gray-700" />
+                            <div>
+                              <p className="flex items-center gap-1.5 font-medium text-gray-900">
+                                {customerDisplayName(c)}
+                                {c.customerType === 'employee' && (
+                                  <span className="rounded-full bg-prominent-purple-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
+                                    Employee
+                                  </span>
+                                )}
+                              </p>
+                              {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
+                            </div>
+                          </button>
+                        ))}
+                        {employeeResults.length > 0 && (
+                          <p className="border-t border-gray-100 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                            Employees
+                          </p>
+                        )}
+                        {employeeResults.map((emp) => (
+                          <button
+                            key={emp.id}
+                            disabled={resolvingEmployee}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50 disabled:opacity-50"
+                            onMouseDown={() => selectEmployee(emp)}
+                          >
+                            <IdCard size={11} className="shrink-0 text-gray-700" />
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {[emp.firstName, emp.middleName, emp.lastName]
+                                  .filter(Boolean)
+                                  .join(' ')}
+                              </p>
+                              <p className="text-xs text-gray-700">
+                                {emp.employeeCode}
+                                {emp.branch ? ` · ${emp.branch.name}` : ''}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </>
                     )}
                   </div>
                 )}
 
                 <button
-                  onClick={() => setShowNewCustomerModal(true)}
+                  onClick={goToCreateCustomer}
                   className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-purple-300 py-2 text-xs text-gray-700 transition-colors hover:border-purple-500 hover:bg-purple-50 hover:text-purple-600 active:scale-[0.98]"
                 >
                   <UserPlus size={12} /> New Customer
                 </button>
               </>
             )}
+
+            {/* Scenario 60 — only shown for a customer already tagged as an
+                employee; the cashier still explicitly confirms it rather
+                than this being fully automatic like the government
+                institutional skip below. */}
+            {selectedCustomer && isEmployeeCustomer && (
+              <div className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5">
+                <label className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={employeeApplianceLoanChecked}
+                    onChange={(e) => {
+                      setEmployeeApplianceLoanChecked(e.target.checked)
+                      if (e.target.checked) setXDealChecked(false)
+                    }}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-prominent-purple-900">
+                      Employee Appliance Loan
+                    </span>
+                    <span className="block text-gray-700">
+                      Down payment is optional, no credit application required
+                    </span>
+                  </span>
+                </label>
+                {employeeApplianceLoanChecked && (
+                  <input
+                    className="mt-2 w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                    placeholder="HR Appliance Loan Application Number *"
+                    value={hrApplianceLoanApplicationNumber}
+                    onChange={(e) => setHrApplianceLoanApplicationNumber(e.target.value)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Scenario 67 — any customer can be on the other side of a
+                barter, so unlike the employee loan above this isn't gated on
+                a customer tag. Offline is excluded: an installment sale
+                already can't complete offline, and the offline queue drops
+                sale-level flags. */}
+            {selectedCustomer && saleMode === 'sale' && (
+              <div
+                data-testid="x-deal-panel"
+                className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
+              >
+                <label className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    data-testid="x-deal-checkbox"
+                    checked={xDealChecked}
+                    disabled={isOffline}
+                    onChange={(e) => toggleXDeal(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-prominent-purple-900">X-Deal</span>
+                    {isOffline && <span className="block text-gray-700">Unavailable offline</span>}
+                  </span>
+                </label>
+                {xDealChecked && (
+                  <input
+                    data-testid="x-deal-reference"
+                    className="mt-2 w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                    placeholder="X-Deal Reference (agreement no.) *"
+                    maxLength={100}
+                    value={xDealReference}
+                    onChange={(e) => {
+                      setXDealReference(e.target.value)
+                      // The "Enter the X-Deal reference." error would otherwise
+                      // linger beside a button that already reads "Create
+                      // Installment Plan", reading as if the reference were refused.
+                      if (error === 'Enter the X-Deal reference.') setError('')
+                    }}
+                  />
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Required on every sale — the number off the physical sales
-              invoice booklet. Deliberately never abbreviated "SI" here:
-              that abbreviation already means Supplier Invoice on the AP
-              Bills / goods-receiving side. */}
+          {/* Scenario 57 — who sold it. Optional: a walk-in has no agent
+              behind it, and forcing a choice would put a false name on the
+              commission trail. SearchableSelect rather than the hand-rolled
+              combobox this block used before 1b82138 — the type-ahead is the
+              current idiom and already handles reopen/Enter properly. */}
           {saleMode === 'sale' && (
             <div className="border-b border-purple-200 p-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-                Sales Invoice No. *
+                Selling Agent{' '}
+                <span className="font-normal normal-case tracking-normal text-gray-500">
+                  — optional
+                </span>
               </p>
-              <input
-                type="text"
-                aria-label="Sales Invoice No."
-                value={invoiceNumberInput}
-                onChange={(e) => setInvoiceNumberInput(e.target.value)}
-                placeholder="Enter sales invoice number"
-                maxLength={100}
-                className="w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              <SearchableSelect
+                value={sellingAgentId}
+                onChange={setSellingAgentId}
+                options={sellingAgents.map((a) => ({ value: a.id, label: a.name }))}
+                placeholder="No agent"
+                clearable
+                portal
               />
             </div>
           )}
@@ -3233,219 +5852,318 @@ export default function CheckoutPage() {
 
           {/* Order summary */}
           <div className="border-b border-purple-200 p-5">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-700">
+            <p className="mb-4 text-sm font-bold uppercase tracking-wider text-prominent-purple-900">
               Order Summary
             </p>
-            <div className="space-y-1.5 text-sm">
+            <div className="space-y-2 text-base">
               {/* Cart — moved into Order Summary so it's always visible next
                   to the totals, instead of scrolled past at the bottom of
                   the catalog list. */}
               {cart.length > 0 && (
-                <div className="max-h-72 overflow-y-auto rounded-lg border border-purple-100 bg-white">
-                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-2 backdrop-blur-sm">
+                <div className="max-h-[28rem] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      <ShoppingCart size={12} className="text-purple-500" />
-                      <span className="text-xs font-semibold text-gray-700">
+                      <ShoppingCart size={16} className="text-purple-500" />
+                      <span className="text-sm font-semibold text-gray-700">
                         Cart · {displayGroups.length} item{displayGroups.length !== 1 ? 's' : ''}
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-gray-900">{fmt(subtotal)}</span>
                   </div>
-                  <div className="scroll-fade-x overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <tbody className="divide-y divide-gray-50">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-base">
+                      <tbody className="divide-y divide-gray-100">
                         {displayGroups.map((group) => {
                           const line = group[0]
                           const groupQty = group.length
                           const lineTaxRate = resolveLineTaxRate(line, activeTaxRate)
                           const isGrouped = groupQty > 1
 
+                          // The item's small print, on one muted line: SKU, serial, tax.
+                          // A serial is plain text once assigned and turns amber only
+                          // when one is still needed, so the row's colour means
+                          // "attention", not decoration.
+                          const serialPart = !line.isSerialTracked ? null : isGrouped ? (
+                            group.some((l) => !l.serialNumberId) ? (
+                              <button
+                                onClick={() =>
+                                  setSerialPickerTarget(group.find((l) => !l.serialNumberId)!)
+                                }
+                                className="font-semibold text-amber-600 underline-offset-2 hover:underline"
+                              >
+                                ⚠ {group.filter((l) => !l.serialNumberId).length} of {groupQty}{' '}
+                                serial{groupQty !== 1 ? 's' : ''} needed
+                              </button>
+                            ) : (
+                              <span className="flex flex-wrap gap-x-1">
+                                <span>SN:</span>
+                                {group.map((l, i) => (
+                                  <button
+                                    key={l.lineId}
+                                    onClick={() => setSerialPickerTarget(l)}
+                                    className="font-medium text-gray-700 underline-offset-2 hover:text-green-700 hover:underline"
+                                  >
+                                    {l.serialNumberLabel}
+                                    {i < group.length - 1 ? ',' : ''}
+                                  </button>
+                                ))}
+                              </span>
+                            )
+                          ) : (
+                            <button
+                              onClick={() => setSerialPickerTarget(line)}
+                              className={`underline-offset-2 hover:underline ${line.serialNumberId ? 'font-medium text-gray-700 hover:text-green-700' : 'font-semibold text-amber-600'}`}
+                            >
+                              {line.serialNumberId
+                                ? `SN: ${line.serialNumberLabel}`
+                                : '⚠ Select serial'}
+                            </button>
+                          )
+                          const metaParts: React.JSX.Element[] = [
+                            line.sku ? <span key="sku">{line.sku}</span> : null,
+                            serialPart,
+                            lineTaxRate != null ? (
+                              <span key="tax">
+                                {line.taxRate == null
+                                  ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
+                                  : `VAT ${lineTaxRate}%`}
+                              </span>
+                            ) : (
+                              <span key="tax">No tax</span>
+                            ),
+                          ].filter((part): part is React.JSX.Element => part !== null)
+
                           return (
                             <Fragment key={line.lineId}>
-                              <tr className="group hover:bg-gray-50">
-                                <td className="px-4 py-2">
-                                  <p className="text-xs font-medium text-gray-900">
-                                    {itemDisplayLabel({
-                                      name: line.itemName,
-                                      brandName: line.brandName,
-                                      categoryName: line.categoryName,
-                                      modelNumber: line.modelNumber,
-                                    })}
-                                    {isGrouped && (
-                                      <span className="ml-1 text-gray-400">× {groupQty}</span>
-                                    )}
-                                  </p>
-                                  {line.sku && (
-                                    <p className="text-[10px] text-gray-400">{line.sku}</p>
-                                  )}
-                                  {line.isSerialTracked &&
-                                    (isGrouped ? (
-                                      group.some((l) => !l.serialNumberId) ? (
-                                        <button
-                                          onClick={() =>
-                                            setSerialPickerTarget(
-                                              group.find((l) => !l.serialNumberId)!
-                                            )
-                                          }
-                                          className="mt-0.5 text-[10px] font-medium text-amber-500 underline-offset-2 hover:underline"
-                                        >
-                                          ⚠ {group.filter((l) => !l.serialNumberId).length} of{' '}
-                                          {groupQty} serial{groupQty !== 1 ? 's' : ''} needed
-                                        </button>
-                                      ) : (
-                                        <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px]">
-                                          <span className="text-gray-400">SN:</span>
-                                          {group.map((l, i) => (
-                                            <button
-                                              key={l.lineId}
-                                              onClick={() => setSerialPickerTarget(l)}
-                                              className="font-medium text-green-600 underline-offset-2 hover:underline"
-                                            >
-                                              {l.serialNumberLabel}
-                                              {i < group.length - 1 ? ',' : ''}
-                                            </button>
-                                          ))}
-                                        </p>
-                                      )
-                                    ) : (
-                                      <button
-                                        onClick={() => setSerialPickerTarget(line)}
-                                        className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
-                                      >
-                                        {line.serialNumberId
-                                          ? `SN: ${line.serialNumberLabel}`
-                                          : '⚠ Select serial'}
-                                      </button>
-                                    ))}
-                                  {lineTaxRate != null ? (
-                                    <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
-                                      {line.taxRate == null
-                                        ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
-                                        : `VAT ${lineTaxRate}%`}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
-                                      No Tax
-                                    </span>
-                                  )}
-                                  {saleMode !== 'reserve' && (
-                                    <div className="mt-1">
-                                      <PriceUseSelector
-                                        compact
-                                        priceUseTypes={priceUseTypes}
-                                        value={line.priceUseTypeId ?? ''}
-                                        onChange={(id) =>
-                                          setLinePriceUseTypeId(
-                                            group.map((l) => l.lineId),
-                                            id
-                                          )
-                                        }
-                                        isLoading={isResolvingPrices}
-                                      />
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <button
-                                      onClick={() =>
-                                        line.isSerialTracked
-                                          ? removeLastUnitOfItem(line.itemId)
-                                          : line.allowDecimal
-                                            ? removeFromCart(line.itemId)
-                                            : setQty(line.itemId, line.quantity - 1)
-                                      }
-                                      disabled={!!cancellationReqId}
-                                      className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
-                                    >
-                                      <Minus size={10} />
-                                    </button>
-                                    {line.allowDecimal ? (
-                                      <div className="flex flex-col items-center gap-0.5">
-                                        <input
-                                          type="number"
-                                          min="0.001"
-                                          step="0.1"
-                                          value={line.quantity}
-                                          onChange={(e) => {
-                                            const v = parseFloat(e.target.value)
-                                            if (!isNaN(v) && v > 0) setQty(line.itemId, v)
-                                          }}
-                                          className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                        />
-                                        {line.uomCode && (
-                                          <span className="text-[9px] text-gray-400 uppercase">
-                                            {line.uomCode}
+                              <tr className="group">
+                                <td className="px-4 py-3">
+                                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-5 gap-y-1.5">
+                                    <div className="col-start-1 row-start-1 min-w-0">
+                                      <p className="text-[15px] font-medium text-prominent-purple-900">
+                                        {itemDisplayLabel({
+                                          name: line.itemName,
+                                          brandName: line.brandName,
+                                          categoryName: line.categoryName,
+                                          modelNumber: line.modelNumber,
+                                        })}
+                                        {isGrouped && (
+                                          <span className="ml-1.5 font-medium text-gray-500">
+                                            × {groupQty}
                                           </span>
                                         )}
-                                      </div>
-                                    ) : (
-                                      <span className="w-6 text-center text-xs font-semibold">
-                                        {line.isSerialTracked ? groupQty : line.quantity}
-                                      </span>
-                                    )}
-                                    <button
-                                      onClick={() =>
-                                        line.isSerialTracked
-                                          ? addUnitOfItem(line.itemId)
-                                          : line.allowDecimal
-                                            ? setMeasuredItem({
-                                                id: line.itemId,
-                                                name: line.itemName,
-                                                sku: line.sku,
-                                                price: line.unitPrice,
-                                                taxRate: line.taxRate,
-                                                uomCode: line.uomCode,
-                                                allowDecimal: true,
-                                              })
-                                            : setQty(line.itemId, line.quantity + 1)
-                                      }
-                                      className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
-                                    >
-                                      <Plus size={10} />
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
-                                  {line.priceResolved ? (
-                                    <div className="flex flex-col items-end gap-0.5">
-                                      {fmt(
-                                        displayUnitPriceExclTax(
-                                          line,
-                                          activeTaxRate,
-                                          inclusivePricing
-                                        ) * groupQty
+                                      </p>
+                                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+                                        {metaParts.map((part, i) => (
+                                          <Fragment key={i}>
+                                            {i > 0 && (
+                                              <span aria-hidden className="text-gray-300">
+                                                ·
+                                              </span>
+                                            )}
+                                            {part}
+                                          </Fragment>
+                                        ))}
+                                      </p>
+                                    </div>
+                                    <div className="col-start-1 flex flex-col items-start gap-2">
+                                      {saleMode !== 'reserve' && (
+                                        <div className="min-w-0">
+                                          <PriceUseSelector
+                                            priceUseTypes={priceUseTypes}
+                                            value={line.priceUseTypeId ?? ''}
+                                            onChange={(id) =>
+                                              setLinePriceUseTypeId(
+                                                group.map((l) => l.lineId),
+                                                id
+                                              )
+                                            }
+                                            isLoading={isResolvingPrices}
+                                            bare
+                                          />
+                                        </div>
                                       )}
-                                      {line.priceOverrideBy && (
+                                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                                        <div className="flex shrink-0 items-center justify-center gap-1.5">
+                                          <button
+                                            onClick={() =>
+                                              line.isSerialTracked
+                                                ? removeLastUnitOfItem(line.itemId)
+                                                : line.allowDecimal
+                                                  ? removeFromCart(line.itemId)
+                                                  : setQty(line.itemId, line.quantity - 1)
+                                            }
+                                            disabled={!!cancellationReqId}
+                                            aria-label="Decrease quantity"
+                                            className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-purple-100 hover:text-purple-700 disabled:opacity-40"
+                                          >
+                                            <Minus size={16} />
+                                          </button>
+                                          {line.allowDecimal ? (
+                                            <div className="flex flex-col items-center gap-0.5">
+                                              <input
+                                                type="number"
+                                                min="0.001"
+                                                step="0.1"
+                                                value={line.quantity}
+                                                onChange={(e) => {
+                                                  const v = parseFloat(e.target.value)
+                                                  if (!isNaN(v) && v > 0) setQty(line.itemId, v)
+                                                }}
+                                                className="w-20 rounded-lg border border-gray-300 px-2 py-2 text-center text-base font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                              />
+                                              {line.uomCode && (
+                                                <span className="text-[11px] text-gray-500 uppercase">
+                                                  {line.uomCode}
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <span className="min-w-6 text-center text-base font-semibold text-gray-900">
+                                              {line.isSerialTracked ? groupQty : line.quantity}
+                                            </span>
+                                          )}
+                                          <button
+                                            onClick={() =>
+                                              line.isSerialTracked
+                                                ? addUnitOfItem(line.itemId)
+                                                : line.allowDecimal
+                                                  ? setMeasuredItem({
+                                                      id: line.itemId,
+                                                      name: line.itemName,
+                                                      sku: line.sku,
+                                                      price: line.unitPrice,
+                                                      taxRate: line.taxRate,
+                                                      uomCode: line.uomCode,
+                                                      allowDecimal: true,
+                                                    })
+                                                  : setQty(line.itemId, line.quantity + 1)
+                                            }
+                                            aria-label="Increase quantity"
+                                            className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-purple-100 hover:text-purple-700"
+                                          >
+                                            <Plus size={16} />
+                                          </button>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => removeFromCart(line.itemId)}
+                                          aria-label="Remove item"
+                                          title="Remove item"
+                                          className="ml-2 flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-red-600"
+                                        >
+                                          <Trash2 size={14} />
+                                          Remove
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="col-start-2 row-span-3 row-start-1 flex flex-col items-end justify-start text-right text-lg font-bold text-gray-900">
+                                      {line.priceResolved ? (
+                                        <div className="flex flex-col items-end gap-1">
+                                          {line.priceOverridden &&
+                                            (() => {
+                                              const listTotal = listLineTotal(line, groupQty)
+                                              const charged =
+                                                effectiveUnitPrice(
+                                                  line,
+                                                  activeTaxRate,
+                                                  inclusivePricing,
+                                                  isTaxExempt
+                                                ) * groupQty
+                                              return listTotal !== null &&
+                                                Math.abs(listTotal - charged) >= 0.005 ? (
+                                                <span
+                                                  data-testid="override-list-price"
+                                                  className="text-sm font-medium text-gray-400 line-through"
+                                                >
+                                                  {fmt(listTotal)}
+                                                </span>
+                                              ) : null
+                                            })()}
+                                          {fmt(
+                                            effectiveUnitPrice(
+                                              line,
+                                              activeTaxRate,
+                                              inclusivePricing,
+                                              isTaxExempt
+                                            ) * groupQty
+                                          )}
+                                          {line.priceOverridden && (
+                                            <span
+                                              data-testid="override-badge"
+                                              className="whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700"
+                                            >
+                                              Overridden · for review
+                                            </span>
+                                          )}
+                                          <div className="mt-1 flex flex-col items-end gap-0.5 text-sm font-medium">
+                                            {line.priceResolved && !line.priceOverridden && (
+                                              <button
+                                                type="button"
+                                                data-testid="override-price"
+                                                onClick={() =>
+                                                  setPriceOverrideTargetLineId(line.lineId)
+                                                }
+                                                disabled={isOffline}
+                                                className="text-purple-600 hover:text-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                                title={
+                                                  isOffline
+                                                    ? 'A price override needs a connection.'
+                                                    : 'Type a different price for this item'
+                                                }
+                                              >
+                                                Override price
+                                              </button>
+                                            )}
+                                            {line.priceOverridden && (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  data-testid="change-override"
+                                                  onClick={() =>
+                                                    setPriceOverrideTargetLineId(line.lineId)
+                                                  }
+                                                  disabled={isOffline}
+                                                  className="text-purple-600 hover:text-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                                  title={
+                                                    isOffline
+                                                      ? 'A price override needs a connection.'
+                                                      : 'Price typed over the list price — click to change it'
+                                                  }
+                                                >
+                                                  Change override
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  data-testid="clear-override"
+                                                  onClick={() => clearPriceOverride(line.lineId)}
+                                                  className="text-gray-500 hover:text-gray-800"
+                                                  title="Go back to the list price"
+                                                >
+                                                  Clear override
+                                                </button>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ) : !line.priceUseTypeId ? (
+                                        <span className="text-xs font-medium text-gray-500">
+                                          — Select Price Use
+                                        </span>
+                                      ) : (
                                         <button
                                           onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                          className="text-[9px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
-                                          title={`Overridden by ${line.priceOverrideApproverName ?? 'a manager'}`}
+                                          disabled={isOffline}
+                                          title={
+                                            isOffline
+                                              ? 'A price override needs a connection.'
+                                              : undefined
+                                          }
+                                          className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
                                         >
-                                          Overridden
+                                          No price — Override
                                         </button>
                                       )}
                                     </div>
-                                  ) : !line.priceUseTypeId ? (
-                                    <span className="text-[10px] font-medium text-gray-400">
-                                      — Select Price Use
-                                    </span>
-                                  ) : (
-                                    <button
-                                      onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                      className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
-                                    >
-                                      No price — Override
-                                    </button>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-right">
-                                  <button
-                                    onClick={() => removeFromCart(line.itemId)}
-                                    className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
-                                  >
-                                    <X size={12} />
-                                  </button>
+                                  </div>
                                 </td>
                               </tr>
                             </Fragment>
@@ -3457,11 +6175,11 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <div className="flex justify-between text-gray-700">
+              <div className="flex justify-between pt-1 text-base text-gray-700">
                 <span>
                   Subtotal ({cart.length} item{cart.length !== 1 ? 's' : ''})
                 </span>
-                <span>{fmt(vatExclSubtotalForBackend)}</span>
+                <span className="font-medium">{fmt(vatExclSubtotalForBackend)}</span>
               </div>
               {promoDiscount > 0 && (
                 <div className="flex justify-between text-green-600">
@@ -3472,7 +6190,7 @@ export default function CheckoutPage() {
               {cart.length > 0 &&
                 !isTaxExempt &&
                 (hasMixedTaxRates || uniformLineTaxRate != null) && (
-                  <div className="flex justify-between text-gray-700 text-xs">
+                  <div className="flex justify-between text-sm text-gray-600">
                     <span>
                       {hasMixedTaxRates
                         ? 'Mixed VAT rates'
@@ -3484,120 +6202,290 @@ export default function CheckoutPage() {
                   </div>
                 )}
               {isTaxExempt && (
-                <div className="flex justify-between text-green-600 text-xs">
-                  <span>Tax Exempt</span>
+                <div className="flex justify-between text-sm text-green-700">
+                  <span>
+                    {outputVatCode === OUTPUT_VAT_ZERO_RATED ? 'Zero-rated' : 'VAT-exempt'}
+                  </span>
                   <span>—</span>
                 </div>
               )}
             </div>
             <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
               <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-2xl font-bold text-gray-900">{fmt(totalAmount)}</span>
+              <span className="text-2xl font-bold text-gray-900" data-testid="order-summary-total">
+                {fmt(totalAmount)}
+              </span>
             </div>
-
-            {/* Tax exempt toggle */}
-            <div className="mt-3 flex items-center justify-between border-t border-purple-200 pt-3">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck
-                  size={13}
-                  className={isTaxExempt ? 'text-green-500' : 'text-gray-700'}
-                />
-                <span className="text-xs text-gray-700">Tax Exempt</span>
-              </div>
-              <button
-                onClick={() => {
-                  setIsTaxExempt((v) => !v)
-                  setTaxExemptionRef('')
-                }}
-                className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${isTaxExempt ? 'bg-green-500' : 'bg-gray-200'}`}
+            {/* Scenario 70 — the delivery fee is a note under the Total, never
+                part of it: it is collected on its own receipt and JE. */}
+            {deliveryFeeAmount > 0 && (
+              <div
+                className="mt-2 flex items-center justify-between gap-3 text-xs text-purple-700"
+                data-testid="order-summary-delivery-fee"
               >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${isTaxExempt ? 'translate-x-4' : 'translate-x-0'}`}
-                />
-              </button>
-            </div>
-            {isTaxExempt && (
-              <input
-                className="mt-2 w-full rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100"
-                placeholder="Certificate / exemption reference"
-                value={taxExemptionRef}
-                onChange={(e) => setTaxExemptionRef(e.target.value)}
-              />
-            )}
-          </div>
-
-          {/* Promo code */}
-          <div className="border-b border-purple-200 p-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-              Promo Code
-            </p>
-            {promoResult?.valid ? (
-              <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2">
-                <div className="flex items-center gap-2 text-sm text-green-700">
-                  <Tag size={12} />
-                  <span className="font-mono font-semibold">{promoResult.promoCode?.code}</span>
-                  <span className="text-green-500">−{fmt(promoResult.discountAmount ?? 0)}</span>
-                </div>
-                <button onClick={clearPromo} className="text-green-300 hover:text-green-600">
-                  <X size={13} />
-                </button>
+                <span>Delivery fee — collected on its own CR, not part of the sale</span>
+                <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
               </div>
-            ) : (
-              <>
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 rounded-lg border border-purple-200 px-3 py-2 font-mono text-sm uppercase tracking-wider outline-none placeholder:normal-case placeholder:tracking-normal focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    placeholder="Enter promo code"
-                    value={promoInput}
-                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => e.key === 'Enter' && applyPromo()}
-                  />
-                  <button
-                    onClick={applyPromo}
-                    disabled={!promoInput.trim() || validatingPromo || cart.length === 0}
-                    className="rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-300 active:scale-[0.97] disabled:opacity-40"
-                  >
-                    {validatingPromo ? '…' : 'Apply'}
-                  </button>
-                </div>
-                {promoError && <p className="mt-1.5 text-xs text-red-500">{promoError}</p>}
-              </>
             )}
 
-            {/* Manager override banner */}
-            {needsManagerOverride && (
-              <div className="mt-3">
-                {managerOverrideApproved ? (
-                  <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
-                    <ShieldCheck size={13} />
-                    <span>
-                      Override approved by{' '}
-                      <span className="font-semibold">{overrideManagerName}</span>
-                    </span>
+            {/* VAT treatment (Scenario 69 Part F). Not offered on a table tab's
+                sale: it already exists, so there is nothing left to classify. */}
+            {!fromTab?.posTransactionId && (
+              <div className="mt-3 border-t border-purple-200 pt-3" data-testid="vat-treatment">
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <ShieldCheck
+                    size={13}
+                    className={isTaxExempt ? 'text-green-500' : 'text-gray-700'}
+                  />
+                  <span className="text-xs text-gray-700">VAT treatment</span>
+                </div>
+                <div
+                  role="radiogroup"
+                  aria-label="VAT treatment"
+                  className="grid grid-cols-3 gap-1 rounded-lg bg-gray-100 p-0.5"
+                >
+                  {vatChoices.map((choice) => {
+                    const selected = outputVatCode === choice.code
+                    return (
+                      <button
+                        key={choice.code}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        data-testid={`vat-treatment-${choice.code}`}
+                        title={choice.name}
+                        onClick={() => {
+                          if (selected) return
+                          setOutputVatCode(choice.code)
+                          // The certificate belongs to the class it supports.
+                          setTaxExemptionRef('')
+                        }}
+                        className={`rounded-md px-1.5 py-1 text-xs font-medium transition-colors ${
+                          selected
+                            ? choice.requiresApproval
+                              ? 'bg-green-500 text-white shadow-sm'
+                              : 'bg-white text-gray-900 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {shortVatName(choice.code)}
+                      </button>
+                    )
+                  })}
+                </div>
+                {needsVatApproval && (
+                  <div className="mt-2 space-y-2" data-testid="vat-treatment-restricted">
+                    <input
+                      className="w-full rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100"
+                      placeholder="Certificate / exemption reference"
+                      aria-label="Certificate or exemption reference"
+                      value={taxExemptionRef}
+                      onChange={(e) => setTaxExemptionRef(e.target.value)}
+                    />
+                    {managerOverrideApproved ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+                        <ShieldCheck size={13} />
+                        <span>
+                          Approved by <span className="font-semibold">{overrideManagerName}</span>
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <div className="flex items-center gap-2 text-xs text-amber-700">
+                          <AlertTriangle size={13} />
+                          <span>
+                            A {restrictedKind(outputVatCode)} sale needs a manager&apos;s approval
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOverrideError('')
+                            setShowOverrideDialog(true)
+                          }}
+                          className="ml-2 flex shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                        >
+                          <KeyRound size={11} /> Approve
+                        </button>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                    <div className="flex items-center gap-2 text-xs text-amber-700">
-                      <AlertTriangle size={13} />
-                      <span>
-                        Discount {discountPct.toFixed(0)}% exceeds {discountThreshold}% threshold —
-                        manager override required
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setOverrideError('')
-                        setShowOverrideDialog(true)
-                      }}
-                      className="ml-2 shrink-0 flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-600"
-                    >
-                      <KeyRound size={11} /> Override
-                    </button>
+                )}
+                {departsFromDefault && (
+                  <div className="mt-2" data-testid="vat-override">
+                    <input
+                      className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                      placeholder={`Why is this not ${shortVatName(defaultOutputVat)}? (required)`}
+                      aria-label="Reason the VAT treatment was changed"
+                      maxLength={500}
+                      value={taxOverrideReason}
+                      onChange={(e) => setTaxOverrideReason(e.target.value)}
+                    />
                   </div>
                 )}
               </div>
             )}
           </div>
+
+          {/* Scenario 71 — the reason and note behind a price override. No one
+              approves it here; management reviews it at the end of the day. */}
+          {anyException && (
+            <div
+              ref={exceptionSectionRef}
+              className="border-b border-purple-200 p-5"
+              data-testid="price-override-exception"
+            >
+              {/* Required, so it has to read as required: an amber card with a tag
+                  and starred fields while anything is missing, green once the
+                  reason and note are both in. */}
+              <div
+                className={`rounded-xl border-2 p-4 shadow-sm transition-colors ${
+                  exceptionReasonId && exceptionNote.trim()
+                    ? 'border-green-300 bg-green-50'
+                    : 'border-amber-400 bg-amber-50'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {exceptionReasonId && exceptionNote.trim() ? (
+                      <CheckCircle2 size={18} className="shrink-0 text-green-600" />
+                    ) : (
+                      <AlertTriangle size={18} className="shrink-0 text-amber-600" />
+                    )}
+                    <p className="text-sm font-bold text-prominent-purple-900">{exceptionTitle}</p>
+                  </div>
+                  {exceptionReasonId && exceptionNote.trim() ? (
+                    <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-green-700">
+                      Done
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-red-700">
+                      Required
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-gray-600">
+                  No approval needed. Management reviews it at the end of the day.
+                </p>
+
+                <label className="mb-1 mt-3 block text-xs font-semibold text-gray-800">
+                  Reason <span className="text-red-600">*</span>
+                </label>
+                <div className={exceptionReasonId ? '' : 'rounded-lg ring-2 ring-amber-400'}>
+                  <Select
+                    value={exceptionReasonId}
+                    onChange={setExceptionReasonId}
+                    options={overrideReasons.map((r) => ({ value: r.id, label: r.name }))}
+                    placeholder="Pick a reason…"
+                    compact
+                  />
+                </div>
+
+                <label className="mb-1 mt-3 block text-xs font-semibold text-gray-800">
+                  Note <span className="text-red-600">*</span>{' '}
+                  <span className="font-normal text-gray-500">(required)</span>
+                </label>
+                <input
+                  className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${
+                    exceptionNote.trim()
+                      ? 'border-purple-200'
+                      : 'border-amber-400 ring-2 ring-amber-400'
+                  }`}
+                  placeholder="Short note"
+                  aria-label="Note for the price override or typed terms"
+                  maxLength={500}
+                  value={exceptionNote}
+                  onChange={(e) => setExceptionNote(e.target.value)}
+                />
+
+                {!(exceptionReasonId && exceptionNote.trim()) && (
+                  <p className="mt-2.5 text-xs font-semibold text-amber-800">
+                    Pick a reason and write a note to continue.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Promo code — the entry box is hidden (developer, 2026-10-14); see
+              SHOW_PROMO_ENTRY. An already-applied promo (a resumed parked sale) still
+              shows its chip so it can be cleared, and the manager-override banner
+              below still appears when a discount needs it. */}
+          {(SHOW_PROMO_ENTRY || promoResult?.valid || needsManagerOverride) && (
+            <div className="border-b border-purple-200 p-5">
+              {(SHOW_PROMO_ENTRY || promoResult?.valid) && (
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                  Promo Code
+                </p>
+              )}
+              {promoResult?.valid ? (
+                <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2">
+                  <div className="flex items-center gap-2 text-sm text-green-700">
+                    <Tag size={12} />
+                    <span className="font-mono font-semibold">{promoResult.promoCode?.code}</span>
+                    <span className="text-green-500">−{fmt(promoResult.discountAmount ?? 0)}</span>
+                  </div>
+                  <button onClick={clearPromo} className="text-green-300 hover:text-green-600">
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : SHOW_PROMO_ENTRY ? (
+                <>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 rounded-lg border border-purple-200 px-3 py-2 font-mono text-sm uppercase tracking-wider outline-none placeholder:normal-case placeholder:tracking-normal focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                      placeholder="Enter promo code"
+                      value={promoInput}
+                      onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => e.key === 'Enter' && applyPromo()}
+                    />
+                    <button
+                      onClick={applyPromo}
+                      disabled={!promoInput.trim() || validatingPromo || cart.length === 0}
+                      className="rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-300 active:scale-[0.97] disabled:opacity-40"
+                    >
+                      {validatingPromo ? '…' : 'Apply'}
+                    </button>
+                  </div>
+                  {promoError && <p className="mt-1.5 text-xs text-red-500">{promoError}</p>}
+                </>
+              ) : null}
+
+              {/* Manager override banner */}
+              {needsManagerOverride && (
+                <div className={SHOW_PROMO_ENTRY || promoResult?.valid ? 'mt-3' : ''}>
+                  {managerOverrideApproved ? (
+                    <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+                      <ShieldCheck size={13} />
+                      <span>
+                        Override approved by{' '}
+                        <span className="font-semibold">{overrideManagerName}</span>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <div className="flex items-center gap-2 text-xs text-amber-700">
+                        <AlertTriangle size={13} />
+                        <span>
+                          Discount {discountPct.toFixed(0)}% exceeds {discountThreshold}% threshold
+                          — manager override required
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setOverrideError('')
+                          setShowOverrideDialog(true)
+                        }}
+                        className="ml-2 shrink-0 flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                      >
+                        <KeyRound size={11} /> Override
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sale Mode — each cart line below picks its own Cash / Charge /
               Installment mode; Reserve stays a separate whole-cart mode. */}
@@ -3648,7 +6536,7 @@ export default function CheckoutPage() {
             )}
             {saleMode === 'sale' && hasChargeOrInstallmentLine && !selectedCustomer && (
               <p className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                A customer must be selected — this cart has an installment item.
+                Select a customer for the installment item.
               </p>
             )}
             {saleMode === 'sale' && hasChargeOrInstallmentLine && (
@@ -3658,50 +6546,254 @@ export default function CheckoutPage() {
                     <p className="text-xs font-medium text-prominent-purple-700">
                       {inhouseInstallmentCartLines.length} item
                       {inhouseInstallmentCartLines.length !== 1 ? 's' : ''} on inhouse installment
+                      <span className="font-normal text-prominent-purple-500">
+                        {' '}
+                        · Down payment {fmt(installmentDownPaymentsTotal)}
+                      </span>
                     </p>
-                    <p className="mt-1 text-[13px] text-prominent-purple-500">
-                      Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
-                      financed into each item&apos;s own AR schedule.
-                    </p>
-                    {selectedCustomer && (
-                      <div className="mt-2.5">
-                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
-                          Approved Credit Application
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={creditApplicationId}
-                            onChange={(e) => setCreditApplicationId(e.target.value)}
-                            disabled={creditApplicationsLoading}
-                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
-                          >
-                            <option value="">
-                              {creditApplicationsLoading
-                                ? 'Loading…'
-                                : approvedCreditApplications.length === 0
-                                  ? 'No approved application on file'
-                                  : 'Select an approved application…'}
-                            </option>
-                            {approvedCreditApplications.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.applicationNumber} · {a.items.map((i) => i.itemName).join(', ')}{' '}
-                                · ₱
-                                {a.requestedAmount.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                })}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={12}
-                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
-                          />
+                    {selectedCustomer && isGovernmentInstitutionalCustomer && (
+                      <p className="mt-2.5 text-[13px] text-prominent-purple-500">
+                        Government institutional customer — no credit application required.
+                      </p>
+                    )}
+                    {selectedCustomer && skipsCreditApplication && (
+                      <p className="mt-2.5 text-[13px] text-prominent-purple-500">
+                        {creditApplicationWaivedActive
+                          ? 'Credit application waived — flagged for management review.'
+                          : `${skipsCreditApplicationLabel} — no credit application required.`}
+                      </p>
+                    )}
+                    {selectedCustomer &&
+                      !isGovernmentInstitutionalCustomer &&
+                      !skipsCreditApplication &&
+                      !creditApplicationOverriddenActive && (
+                        <div className="mt-2.5">
+                          <label className="mb-1 block text-[13px] text-prominent-purple-700">
+                            Approved Credit Application
+                          </label>
+                          {/* The picker only exists once there is something to
+                            pick. With none on file it was a control whose
+                            every state said "nothing here" — and the one
+                            action available was buried in its dropdown. The
+                            button below replaces it outright until an
+                            application exists. */}
+                          {/* "Raise a new application" is an extraAction on the
+                            picker, not a button hidden inside the empty state
+                            — same shape as the co-maker Select's "Add a new
+                            co-maker". It used to appear ONLY when the customer
+                            had no approved application at all, which made a
+                            second purchase impossible from the till: a
+                            CreditApplication's posTransactionId is unique, so
+                            one approved application backs exactly one sale and
+                            every repeat installment customer needs a fresh
+                            one. The same applies when the approved one covers
+                            different items than the cart, or the customer
+                            wants different terms. Previously the only way out
+                            was to abandon the cart and start in Credit
+                            Applications. */}
+                          {(creditApplicationsLoading || approvedCreditApplications.length > 0) && (
+                            <Select
+                              value={creditApplicationId}
+                              onChange={(v) => {
+                                setCreditApplicationId(v)
+                                if (v) applyCreditApplicationTerms(v)
+                              }}
+                              options={creditApplicationOptions}
+                              placeholder={
+                                creditApplicationsLoading
+                                  ? 'Loading…'
+                                  : 'Select an approved application…'
+                              }
+                              // Only genuinely dead while loading. With no
+                              // applications the picker still opens, because the
+                              // extraAction below is the way out of that state.
+                              disabled={creditApplicationsLoading}
+                              extraAction={
+                                creditApplicationsLoading
+                                  ? undefined
+                                  : {
+                                      label: 'New application for this cart',
+                                      onClick: goToRaiseCreditApplication,
+                                    }
+                              }
+                              compact
+                            />
+                          )}
+                          {/* Three states, because they need different things
+                            from the cashier:
+
+                            1. No applications at all — the picker has nothing
+                               to offer, so raising one is the ONLY way
+                               forward and gets a real button. It lived inside
+                               the picker's extraAction for a while, which
+                               meant the one action available was hidden
+                               behind opening a dropdown that looked empty.
+                            2. Applications exist but none fit this cart —
+                               every row is labelled "does not match", so
+                               picking one cannot work either. Same button,
+                               plus a line saying why the list is no help.
+                            3. At least one fits — the picker is the action.
+                               Raising another stays available as a quiet
+                               link, because a cashier can legitimately need a
+                               second application (client, 2026-09-29) without
+                               it competing with the obvious choice. */}
+                          {!creditApplicationsLoading &&
+                            approvedCreditApplications.length === 0 && (
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={goToRaiseCreditApplication}
+                                  className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
+                                >
+                                  New credit application
+                                </button>
+                                <p className="mt-2 text-[13px] text-amber-700">
+                                  Every installment sale requires an approved credit application.
+                                </p>
+                              </div>
+                            )}
+
+                          {!creditApplicationsLoading &&
+                            approvedCreditApplications.length > 0 &&
+                            matchingCreditApplicationCount === 0 && (
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={goToRaiseCreditApplication}
+                                  className="w-full rounded-lg bg-prominent-purple-700 px-3 py-2 text-[13px] font-medium text-white hover:bg-prominent-purple-800"
+                                >
+                                  New application for this cart
+                                </button>
+                                <p className="mt-2 text-[12px] text-amber-600">
+                                  {approvedCreditApplications.length === 1
+                                    ? 'The approved application on file is for different items, so it cannot be used with this cart.'
+                                    : `None of the ${approvedCreditApplications.length} approved applications on file match this cart's items.`}
+                                </p>
+                              </div>
+                            )}
+
+                          {!creditApplicationsLoading && matchingCreditApplicationCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={goToRaiseCreditApplication}
+                              className="mt-1.5 text-[12px] font-medium text-prominent-purple-700 hover:underline"
+                            >
+                              + New application for this cart
+                            </button>
+                          )}
                         </div>
-                        {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <p className="mt-1 text-[13px] text-amber-700">
-                            Every installment sale requires an approved credit application — open
-                            one in Credit Applications first.
-                          </p>
+                      )}
+
+                    {/* Scenario 71 — the ways round the credit application sit right
+                        here, beside the "New credit application" button, so a cashier
+                        who finds the requirement does not have to scroll back up the
+                        page for them. */}
+                    {/* Scenario 71 — waive the credit application. Offered once there
+                is an in-house installment line to waive it for; an X-Deal,
+                an Employee Appliance Loan and a government institution already
+                need none. No approval here: it needs a reason and a note in
+                the order summary and management reviews it at the end of the
+                day. */}
+                    {saleMode === 'sale' && canWaiveCreditApplication && (
+                      <div
+                        data-testid="credit-waiver-panel"
+                        className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
+                      >
+                        <label className="flex items-start gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            data-testid="credit-waiver-checkbox"
+                            checked={creditApplicationWaived}
+                            disabled={isOffline}
+                            onChange={(e) => toggleCreditApplicationWaiver(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium text-prominent-purple-900">
+                              Waive the credit application
+                            </span>
+                            {isOffline && (
+                              <span className="block text-gray-700">Unavailable offline</span>
+                            )}
+                          </span>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* Scenario 71 — override the credit application: sell on one that does not
+                cover this cart or is not approved yet. Like the waiver it needs no
+                approval here — a reason and a note in the order summary, and
+                management reviews it at the end of the day. */}
+                    {SHOW_CREDIT_OVERRIDE && saleMode === 'sale' && canWaiveCreditApplication && (
+                      <div
+                        data-testid="credit-override-panel"
+                        className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
+                      >
+                        <label className="flex items-start gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            data-testid="credit-override-checkbox"
+                            checked={creditApplicationOverridden}
+                            disabled={isOffline}
+                            onChange={(e) => toggleCreditApplicationOverride(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium text-prominent-purple-900">
+                              Override the credit application
+                            </span>
+                            {isOffline && (
+                              <span className="block text-gray-700">Unavailable offline</span>
+                            )}
+                          </span>
+                        </label>
+
+                        {creditApplicationOverriddenActive && (
+                          <div className="mt-2.5 space-y-2" data-testid="credit-override-body">
+                            <p className="rounded-lg bg-amber-100 px-3 py-2 text-[13px] text-amber-800">
+                              Credit application overridden. The sale posts against the application
+                              you pick, even if it doesn&apos;t cover this cart or isn&apos;t
+                              approved yet, and is flagged for review.
+                            </p>
+                            <Select
+                              value={creditApplicationId}
+                              onChange={(v) => {
+                                setCreditApplicationId(v)
+                                if (v) applyCreditApplicationTerms(v, overrideApplications)
+                              }}
+                              options={overrideApplicationOptions}
+                              placeholder={
+                                overrideApplicationsLoading
+                                  ? 'Loading…'
+                                  : overrideApplications.length === 0
+                                    ? 'No application to override'
+                                    : 'Select the application to override…'
+                              }
+                              disabled={
+                                overrideApplicationsLoading || overrideApplications.length === 0
+                              }
+                              compact
+                            />
+                            {!overrideApplicationsLoading && overrideApplications.length === 0 && (
+                              <p className="text-[12px] text-amber-700">
+                                This customer has no application that can be overridden. Waive the
+                                credit application instead, or raise one from Credit Applications.
+                              </p>
+                            )}
+                            {(() => {
+                              const diff = creditOverrideSnapshot()
+                              return diff ? (
+                                <div
+                                  className="space-y-0.5 rounded-lg bg-prominent-purple-50 px-3 py-2 text-[12px] text-prominent-purple-800"
+                                  data-testid="credit-override-diff"
+                                >
+                                  {creditOverrideLines(diff).map((line) => (
+                                    <p key={line}>{line}</p>
+                                  ))}
+                                </div>
+                              ) : null
+                            })()}
+                          </div>
                         )}
                       </div>
                     )}
@@ -3715,17 +6807,26 @@ export default function CheckoutPage() {
                 <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
                   Payment Mode
                 </p>
-                {/* Cash / Installment / Debit-Credit Card — one choice for
+                {/* Cash / Installment — one choice for
                     the whole cart, never per item. If any item needs a
                     different mode, it's a separate transaction. */}
                 <div className="relative">
                   <div className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1">
-                    {(['cash', 'installment', 'credit_card'] as const).map((mode) => (
+                    {(['cash', 'installment'] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
+                        // Scenario 67 — an X-Deal is installment-only.
+                        disabled={xDealActive && mode !== 'installment'}
+                        title={
+                          xDealActive && mode !== 'installment'
+                            ? 'An X-Deal is always an inhouse installment sale'
+                            : undefined
+                        }
                         onClick={() => {
                           setPaymentMode(mode)
+                          if (mode === 'installment' && cashSubMode === 'card')
+                            setCashSubMode('cash_on_hand')
                           setLineInvoiceType(
                             cart.map((l) => l.lineId),
                             mode === 'installment' ? 'installment' : 'cash'
@@ -3734,14 +6835,10 @@ export default function CheckoutPage() {
                         className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                           paymentMode === mode
                             ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                            : 'bg-white text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white'
                         }`}
                       >
-                        {mode === 'cash'
-                          ? 'Cash'
-                          : mode === 'installment'
-                            ? 'Installment'
-                            : 'Debit/Credit Card'}
+                        {mode === 'cash' ? 'Cash' : 'Installment'}
                       </button>
                     ))}
                   </div>
@@ -3755,15 +6852,40 @@ export default function CheckoutPage() {
                   const lineSaleAmount =
                     effectiveUnitPrice(line, activeTaxRate, inclusivePricing, isTaxExempt) *
                     line.quantity
-                  const minDownPayment = 0.1 * lineSaleAmount
+                  const minDownPayment = DOWN_PAYMENT_FLOOR_RATE * lineSaleAmount
                   // Whole pesos, rounded up — matches the auto-fill in
                   // setLineFinancingTermId() so the displayed floor is never
                   // a centavo amount the field itself won't accept.
                   const minDownPaymentWhole = Math.ceil(minDownPayment)
-                  const downPaymentValue = line.downPaymentInput
-                    ? parseFloat(line.downPaymentInput) || 0
-                    : minDownPaymentWhole
-                  const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
+                  // Scenario 60 — an Employee Appliance Loan waives the down
+                  // payment entirely, overriding whatever was typed/defaulted
+                  // before the checkbox was checked, both for display here
+                  // and for what actually gets submitted (see handleConfirm).
+                  //
+                  // Otherwise, same priority as setLineFinancingTermId()'s
+                  // auto-fill: a curated per-SKU down payment from the real
+                  // rate card wins over the generic 10%-floor fallback when
+                  // one exists — the DISPLAY-time version of that rule, for
+                  // before a term has been picked yet (downPaymentInput still
+                  // unset) so the shown figure doesn't disagree with what
+                  // picking a term is about to fill in.
+                  // Waived entirely for an Employee Appliance Loan (development).
+                  const curatedDownPaymentWhole =
+                    line.priceListDownPayment != null
+                      ? Math.round(Number(line.priceListDownPayment) * line.quantity)
+                      : null
+                  // Set when the card quotes this line's term: the down payment
+                  // is then the card's, and there is nothing to change.
+                  const fixedDownPayment =
+                    groupProvider === 'inhouse' && !downPaymentFree
+                      ? lineCardDownPayment(line)
+                      : null
+                  const downPaymentValue = downPaymentWaived
+                    ? lineDownPayment(line)
+                    : (fixedDownPayment ??
+                      (line.downPaymentInput
+                        ? parseFloat(line.downPaymentInput) || 0
+                        : (curatedDownPaymentWhole ?? minDownPaymentWhole)))
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
                       {/* Name only, as a label for the config below — price
@@ -3784,47 +6906,113 @@ export default function CheckoutPage() {
                               <button
                                 key={provider}
                                 onClick={() => setLineInstallmentProvider(groupLineIds, provider)}
+                                // Scenario 67 — an X-Deal is inhouse-only.
+                                disabled={xDealActive && provider === 'tpf'}
                                 className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
                                   groupProvider === provider
                                     ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-50'
                                 }`}
                               >
                                 {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
                               </button>
                             ))}
                           </div>
-                          {groupProvider === 'inhouse' && (
+                          {groupProvider === 'inhouse' && line.manualPlan && (
+                            <TypedPlanPanel
+                              line={line}
+                              lineIds={groupLineIds}
+                              saleAmount={Math.round(lineSaleAmount * 100) / 100}
+                              downPayment={lineDownPayment(line)}
+                              preview={installmentPreviews[line.lineId] ?? null}
+                              previewLoading={!!installmentPreviewLoading[line.lineId]}
+                              onPatch={patchTypedPlan}
+                              onSixtyDay={applySixtyDayPlan}
+                              onRateCard={applyRateCardPlan}
+                            />
+                          )}
+                          {groupProvider === 'inhouse' && !line.manualPlan && (
                             <>
-                              <div className="relative">
-                                <select
-                                  value={line.financingTermId ?? ''}
-                                  onChange={(e) =>
-                                    setLineFinancingTermId(groupLineIds, e.target.value)
-                                  }
-                                  className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                              <Select
+                                value={line.financingTermId ?? ''}
+                                onChange={(v) => setLineFinancingTermId(groupLineIds, v)}
+                                options={financingTerms.map((t) => ({
+                                  value: t.id,
+                                  label: `${t.termMonths} months`,
+                                }))}
+                                placeholder="Select a term…"
+                                compact
+                              />
+                              {downPaymentZeroed ? (
+                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Down payment
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      Waived
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 pl-4">
+                                    <span className="text-[15px] font-bold text-prominent-purple-800">
+                                      {fmt(0)}
+                                    </span>
+                                    <span className="ml-2 text-xs text-prominent-purple-500">
+                                      {downPaymentWaivedLabel}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : xDealActive ? (
+                                // Scenario 68 — the part paid now, if any.
+                                <div
+                                  data-testid="x-deal-down-payment"
+                                  className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5"
                                 >
-                                  <option value="">Select a term…</option>
-                                  {financingTerms.map((t) => (
-                                    <option key={t.id} value={t.id}>
-                                      {t.termMonths} months
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown
-                                  size={11}
-                                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                                />
-                              </div>
-                              {downPaymentEditingThisLine ? (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Cash portion
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      X-Deal · optional
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    inputMode="decimal"
+                                    aria-label="X-Deal cash portion"
+                                    placeholder="0.00"
+                                    value={line.downPaymentInput ?? ''}
+                                    onChange={(e) =>
+                                      setLineDownPaymentInput(groupLineIds, e.target.value)
+                                    }
+                                    className="mt-1 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                  />
+                                  <p className="mt-1 text-xs text-prominent-purple-500">
+                                    {(parseFloat(line.downPaymentInput ?? '') || 0) > 0
+                                      ? `Paid now at this counter. The rest, ${fmt(
+                                          Math.max(
+                                            0,
+                                            lineSaleAmount -
+                                              (parseFloat(line.downPaymentInput ?? '') || 0)
+                                          )
+                                        )}, is cleared by the X-Deal credit memo when the sale is approved.`
+                                      : 'The X-Deal credit memo clears the whole sale when it is approved.'}
+                                  </p>
+                                </div>
+                              ) : employeeApplianceLoanActive ? (
                                 <>
                                   <input
                                     type="number"
                                     min={0}
                                     step={1}
-                                    placeholder="Down payment"
-                                    autoFocus
-                                    value={line.downPaymentInput ?? ''}
+                                    placeholder="Down payment (optional)"
+                                    value={
+                                      line.downPaymentAutoForPriceListItemId !== undefined
+                                        ? ''
+                                        : (line.downPaymentInput ?? '')
+                                    }
                                     onChange={(e) =>
                                       setLineDownPaymentInput(groupLineIds, e.target.value)
                                     }
@@ -3843,45 +7031,54 @@ export default function CheckoutPage() {
                                     className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
-                                    Must be at least {fmt(minDownPaymentWhole)} and no more than{' '}
-                                    {fmt(lineSaleAmount)}.
+                                    {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
                                   </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                  >
-                                    Use the minimum instead
-                                  </button>
                                 </>
                               ) : (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      10% min
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 flex items-center gap-2 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(downPaymentValue)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Change amount
-                                    </button>
-                                  </div>
-                                </div>
+                                <DownPaymentField
+                                  badge={
+                                    curatedDownPaymentWhole !== null
+                                      ? 'Rate card'
+                                      : `${DOWN_PAYMENT_FLOOR_LABEL} default`
+                                  }
+                                  value={line.downPaymentInput ?? downPaymentValue.toFixed(2)}
+                                  fixedDisplay={
+                                    fixedDownPayment != null ? fmt(downPaymentValue) : undefined
+                                  }
+                                  error={
+                                    !downPaymentFree &&
+                                    fixedDownPayment == null &&
+                                    downPaymentValue <= 0
+                                      ? 'A down payment is required — it can be small, but not 0.'
+                                      : undefined
+                                  }
+                                  onChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
+                                  onBlur={(v) => {
+                                    // Whole pesos, rounded up, never below the 10% floor —
+                                    // normalised on blur rather than fighting the typing.
+                                    const parsed = parseFloat(v)
+                                    // Left empty, the field goes back to the figure the sale will use.
+                                    if (!Number.isFinite(parsed)) {
+                                      setLineDownPaymentInput(
+                                        groupLineIds,
+                                        downPaymentValue.toFixed(2)
+                                      )
+                                      return
+                                    }
+                                    setLineDownPaymentInput(
+                                      groupLineIds,
+                                      Math.ceil(parsed).toFixed(2)
+                                    )
+                                  }}
+                                />
                               )}
-                              <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
-                                <span className="text-prominent-purple-400">●</span>
-                                Fixed at 10% of the sale amount — the same for every term.
-                              </p>
+                              {!downPaymentFree && fixedDownPayment != null && (
+                                <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
+                                  <span className="text-prominent-purple-400">●</span>
+                                  Set by the rate card for this term — its monthly installment is
+                                  calculated from this down payment.
+                                </p>
+                              )}
                               {line.financingTermId && (
                                 <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
                                   {installmentPreviewLoading[line.lineId] ? (
@@ -3906,19 +7103,61 @@ export default function CheckoutPage() {
                                   )}
                                 </div>
                               )}
+                              {!xDealActive && !employeeApplianceLoanActive && (
+                                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                  <button
+                                    type="button"
+                                    data-testid="type-terms"
+                                    onClick={() => startTypedPlan(groupLineIds)}
+                                    className="text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                  >
+                                    Type the terms yourself
+                                  </button>
+                                  <button
+                                    type="button"
+                                    data-testid="sixty-day-plan"
+                                    onClick={() => applySixtyDayPlan(groupLineIds)}
+                                    className="text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                  >
+                                    50% down · balance in 60 days
+                                  </button>
+                                </div>
+                              )}
                             </>
                           )}
                           {groupProvider === 'tpf' && (
                             <>
-                              {downPaymentEditingThisLine ? (
+                              {downPaymentZeroed ? (
+                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Down payment
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      Waived
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 pl-4">
+                                    <span className="text-[15px] font-bold text-prominent-purple-800">
+                                      {fmt(0)}
+                                    </span>
+                                    <span className="ml-2 text-xs text-prominent-purple-500">
+                                      {downPaymentWaivedLabel}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : employeeApplianceLoanActive ? (
                                 <>
                                   <input
                                     type="number"
                                     min={0}
                                     step={1}
-                                    placeholder="Down payment"
-                                    autoFocus
-                                    value={line.downPaymentInput ?? ''}
+                                    placeholder="Down payment (optional)"
+                                    value={
+                                      line.downPaymentAutoForPriceListItemId !== undefined
+                                        ? ''
+                                        : (line.downPaymentInput ?? '')
+                                    }
                                     onChange={(e) =>
                                       setLineDownPaymentInput(groupLineIds, e.target.value)
                                     }
@@ -3933,46 +7172,47 @@ export default function CheckoutPage() {
                                     className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
-                                    Must be at least {fmt(minDownPaymentWhole)} and no more than{' '}
-                                    {fmt(lineSaleAmount)}.
+                                    {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
                                   </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                  >
-                                    Use the minimum instead
-                                  </button>
                                 </>
                               ) : (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      10% min
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 flex items-center gap-2 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(downPaymentValue)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Change amount
-                                    </button>
-                                  </div>
-                                </div>
+                                <DownPaymentField
+                                  badge={
+                                    curatedDownPaymentWhole !== null
+                                      ? 'Rate card'
+                                      : `${DOWN_PAYMENT_FLOOR_LABEL} default`
+                                  }
+                                  value={line.downPaymentInput ?? downPaymentValue.toFixed(2)}
+                                  fixedDisplay={
+                                    fixedDownPayment != null ? fmt(downPaymentValue) : undefined
+                                  }
+                                  error={
+                                    !downPaymentFree &&
+                                    fixedDownPayment == null &&
+                                    downPaymentValue <= 0
+                                      ? 'A down payment is required — it can be small, but not 0.'
+                                      : undefined
+                                  }
+                                  onChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
+                                  onBlur={(v) => {
+                                    // Whole pesos, rounded up, never below the 10% floor —
+                                    // normalised on blur rather than fighting the typing.
+                                    const parsed = parseFloat(v)
+                                    // Left empty, the field goes back to the figure the sale will use.
+                                    if (!Number.isFinite(parsed)) {
+                                      setLineDownPaymentInput(
+                                        groupLineIds,
+                                        downPaymentValue.toFixed(2)
+                                      )
+                                      return
+                                    }
+                                    setLineDownPaymentInput(
+                                      groupLineIds,
+                                      Math.ceil(parsed).toFixed(2)
+                                    )
+                                  }}
+                                />
                               )}
-                              <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500">
-                                Collected here; the financier funds the{' '}
-                                {fmt(Math.max(0, lineSaleAmount - downPaymentValue))} balance and
-                                owns the schedule. Their details are entered once, just below.
-                              </p>
                             </>
                           )}
                         </div>
@@ -3986,39 +7226,28 @@ export default function CheckoutPage() {
                       {tpfInstallmentCartLines.length} item
                       {tpfInstallmentCartLines.length !== 1 ? 's' : ''} on TPF installment
                     </p>
-                    <p className="mt-1 text-[13px] text-prominent-purple-500">
-                      {fmt(tpfDownPaymentsTotal)} down payment collected from the customer now;{' '}
-                      {fmt(tpfFinancedTotal)} funded by the financier
-                      {isPureTpfCart ? ' (recorded automatically, not tendered here)' : ''}. No
-                      local schedule — the financier owns the amortization.
-                    </p>
                     <div className="mt-2.5 space-y-2">
                       <div>
                         <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           TPF Provider *
                         </label>
-                        <div className="relative">
-                          <select
-                            value={tpfProviderId}
-                            onChange={(e) => setTpfProviderId(e.target.value)}
-                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                          >
-                            <option value="">
-                              {tpfProviders.length === 0
-                                ? 'No TPF providers on file'
-                                : 'Select a TPF provider…'}
-                            </option>
-                            {tpfProviders.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={12}
-                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
-                          />
-                        </div>
+                        {/* The shared Select rather than a native <select> +
+                            hand-placed chevron: the open list is styleable,
+                            which the native popup never is, and it matches
+                            the Selling Agent picker above. `compact` keeps
+                            the dense sizing this panel already had. */}
+                        <Select
+                          value={tpfProviderId}
+                          onChange={setTpfProviderId}
+                          options={tpfProviders.map((p) => ({ value: p.id, label: p.name }))}
+                          placeholder={
+                            tpfProviders.length === 0
+                              ? 'No TPF providers on file'
+                              : 'Select a TPF provider…'
+                          }
+                          disabled={tpfProviders.length === 0}
+                          compact
+                        />
                         {tpfProviders.length === 0 && (
                           <p className="mt-1 text-[13px] text-amber-700">
                             Add a TPF provider under POS Settings first.
@@ -4030,27 +7259,18 @@ export default function CheckoutPage() {
                         placeholder="Financier's reference number *"
                         value={tpfReferenceNumber}
                         onChange={(e) => setTpfReferenceNumber(e.target.value)}
-                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        placeholder="Approved amount (optional)"
-                        value={tpfApprovedAmount}
-                        onChange={(e) => setTpfApprovedAmount(e.target.value)}
-                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                        className="w-full rounded-lg border border-prominent-purple-200 bg-white px-3 py-2 text-sm font-semibold text-prominent-purple-900 outline-none placeholder:font-normal placeholder:text-gray-400 focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                       />
                     </div>
                   </div>
                 )}
-                {installmentCartLines.length > 0 && (
+                {installmentCartLines.length > 0 && !xDealCollectsNothing && (
                   <div
                     data-testid="dp-payment-mode-toggle"
                     className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
                   >
                     <p className="mb-1.5 text-xs font-medium text-gray-800">
-                      Down Payment
+                      {xDealActive ? 'Cash Portion' : 'Down Payment'}
                       <span className="ml-1 font-normal text-gray-500">
                         ({fmt(allDownPaymentsTotal)})
                       </span>
@@ -4085,7 +7305,25 @@ export default function CheckoutPage() {
                   >
                     <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
                     <div className="flex gap-1.5">
-                      {(['cash_on_hand', 'bank_transfer', 'qr'] as const).map((mode) => (
+                      {(paymentMode === 'installment'
+                        ? ([
+                            'cash_on_hand',
+                            'check',
+                            'bank_transfer',
+                            'gcash',
+                            'billers',
+                            'qr',
+                          ] as const)
+                        : ([
+                            'cash_on_hand',
+                            'check',
+                            'bank_transfer',
+                            'gcash',
+                            'billers',
+                            'qr',
+                            'card',
+                          ] as const)
+                      ).map((mode) => (
                         <button
                           key={mode}
                           type="button"
@@ -4102,34 +7340,68 @@ export default function CheckoutPage() {
                         >
                           {mode === 'cash_on_hand'
                             ? 'Cash on Hand'
-                            : mode === 'bank_transfer'
-                              ? 'Bank Transfer'
-                              : 'QR'}
+                            : mode === 'check'
+                              ? 'Check'
+                              : mode === 'bank_transfer'
+                                ? 'Bank Transfer'
+                                : mode === 'card'
+                                  ? 'Debit/Credit Card'
+                                  : mode === 'gcash'
+                                    ? 'GCash'
+                                    : mode === 'billers'
+                                      ? 'Billers'
+                                      : 'QR'}
                         </button>
                       ))}
                     </div>
                     {cashSubMode !== 'cash_on_hand' &&
+                      cashSubMode !== 'check' &&
+                      cashSubMode !== 'card' &&
                       (() => {
-                        const config = configuredMethods.find((m) => m.key === cashSubMode)
-                        const options = config?.options.filter((o) => o.isEnabled) ?? []
+                        const config = configuredMethods.find(
+                          (m) =>
+                            m.key ===
+                            (cashSubMode === 'gcash' || cashSubMode === 'billers'
+                              ? 'qr'
+                              : cashSubMode)
+                        )
+                        const options =
+                          config?.options.filter((o) => {
+                            if (!o.isEnabled) return false
+                            const inGcash = GCASH_OPTION_NAMES.includes(o.name)
+                            const inBillers = BILLER_OPTION_NAMES.includes(o.name)
+                            if (cashSubMode === 'gcash') return inGcash
+                            if (cashSubMode === 'billers') return inBillers
+                            if (cashSubMode === 'qr') return !inGcash && !inBillers
+                            return true
+                          }) ?? []
                         if (options.length === 0) return null
-                        const label = cashSubMode === 'bank_transfer' ? 'Bank' : 'Gateway'
+                        const label =
+                          cashSubMode === 'bank_transfer'
+                            ? 'Bank'
+                            : cashSubMode === 'billers'
+                              ? 'Biller'
+                              : 'Gateway'
                         return (
-                          <select
-                            aria-label={label}
-                            className="mt-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                            value={cashPaymentOptionId ?? ''}
-                            onChange={(e) => setCashPaymentOptionId(e.target.value || undefined)}
-                          >
-                            <option value="">{`Select ${label.toLowerCase()}…`}</option>
-                            {options.map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.name}
-                              </option>
-                            ))}
-                          </select>
+                          <PillCombobox
+                            ariaLabel={label}
+                            wrapperClassName="mt-1.5"
+                            placeholder={`Select ${label.toLowerCase()}…`}
+                            options={options.map((o) => ({ value: o.id, label: o.name }))}
+                            value={cashPaymentOptionId}
+                            onChange={setCashPaymentOptionId}
+                          />
                         )
                       })()}
+                    {cashSubMode === 'check' && (
+                      <input
+                        aria-label="Check Number"
+                        className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                        placeholder="Check Number (required)"
+                        value={checkNumber}
+                        onChange={(e) => setCheckNumber(e.target.value)}
+                      />
+                    )}
                     {cashSubMode === 'bank_transfer' && (
                       <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
                         <input
@@ -4149,26 +7421,31 @@ export default function CheckoutPage() {
                     data-testid="card-txn-mode-toggle"
                     className="rounded-lg border border-purple-100 p-2.5"
                   >
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select POS Terminal</p>
+                    {/* "Card Acquirer", not "POS Terminal" (2026-09-24):
+                        these options — BDO/BPI/Metrobank/Maya — are the
+                        institutions that provide the terminal and settle the
+                        money, not the terminal itself. "Acquirer" rather
+                        than "bank" deliberately: Maya is a non-bank acquirer,
+                        so any bank-flavoured label is wrong for it. Not to be
+                        confused with the ISSUING bank (the customer's own
+                        card) or the network (Visa/Mastercard) — neither is
+                        what's picked here. bank_transfer keeps its own plain
+                        "Bank" label; both can be on screen at once. */}
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select Card Acquirer</p>
                     {(() => {
                       const cardConfig = configuredMethods.find((m) => m.key === 'card')
                       const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
                       return (
                         <>
                           {terminalOptions.length > 0 && (
-                            <select
-                              aria-label="POS Terminal"
-                              className="mb-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                              value={cardTerminalOptionId ?? ''}
-                              onChange={(e) => setCardTerminalOptionId(e.target.value || undefined)}
-                            >
-                              <option value="">Select pos terminal…</option>
-                              {terminalOptions.map((o) => (
-                                <option key={o.id} value={o.id}>
-                                  {o.name}
-                                </option>
-                              ))}
-                            </select>
+                            <PillCombobox
+                              ariaLabel="Card Acquirer"
+                              wrapperClassName="mb-1.5"
+                              placeholder="Select card acquirer…"
+                              options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
+                              value={cardTerminalOptionId}
+                              onChange={setCardTerminalOptionId}
+                            />
                           )}
                           <div className="flex gap-1.5">
                             {(['straight', 'installment'] as const).map((mode) => (
@@ -4192,9 +7469,10 @@ export default function CheckoutPage() {
                             ))}
                           </div>
                           {cardTxnMode === 'installment' && (
-                            <select
+                            <PillSelect
                               aria-label="Term"
-                              className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${!cardInstallmentTerm ? 'border-amber-300 bg-amber-50' : 'border-purple-200'}`}
+                              filled={!!cardInstallmentTerm}
+                              wrapperClassName="mt-1.5"
                               value={cardInstallmentTerm ?? ''}
                               onChange={(e) =>
                                 setCardInstallmentTerm(
@@ -4202,13 +7480,13 @@ export default function CheckoutPage() {
                                 )
                               }
                             >
-                              <option value="">Select term… * required</option>
+                              <option value="">Select Term (required)</option>
                               {[3, 6, 9, 12, 18, 24].map((m) => (
                                 <option key={m} value={m}>
                                   {m} months
                                 </option>
                               ))}
-                            </select>
+                            </PillSelect>
                           )}
                         </>
                       )
@@ -4218,6 +7496,63 @@ export default function CheckoutPage() {
               </div>
             )}
           </div>
+
+          {/* Scenario 70 — Delivery follows the Order Summary: Deliver
+              to / address, then the fee with its OWN Paid with and CR, apart
+              from the sale's payment. The Total follows, then the sale's
+              payment fields under it, then Confirm. */}
+          {saleMode === 'sale' && (
+            <DeliverySection
+              state={delivery}
+              setState={setDelivery}
+              customerName={selectedCustomer?.name ?? null}
+              customerAddress={deliveryCustomerAddress}
+              customerAddressLoading={deliveryAddressLoading}
+              unavailableReason={deliveryUnavailableReason}
+              configuredMethods={configuredMethods}
+              fmt={fmt}
+            />
+          )}
+
+          {/* Scenario 70 — the Total comes first, then the payment fields under it
+              (Amount received, CR Number, Change), then Confirm. It is
+              the sale's own figure (what the register collects for the items);
+              the delivery fee under it is a note, not part of it — the fee is a
+              collection on its own CR, paid in the Delivery section above, and
+              never part of the sale. */}
+          {saleMode === 'sale' &&
+            cart.length > 0 &&
+            (tenderTarget > 0 || deliveryFeeAmount > 0) && (
+              <div className="border-t border-purple-200 p-5" data-testid="checkout-totals">
+                {tenderTarget > 0 && (
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-semibold text-gray-700">
+                      {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
+                      <span
+                        className="text-2xl font-bold text-gray-900"
+                        data-testid="checkout-grand-total"
+                      >
+                        {fmt(tenderTarget)}
+                      </span>
+                    </span>
+                  </div>
+                )}
+                {deliveryFeeAmount > 0 && (
+                  <div
+                    className={`flex items-center justify-between gap-3 text-xs text-purple-700 ${
+                      tenderTarget > 0 ? 'mt-2' : ''
+                    }`}
+                    data-testid="checkout-fee-total"
+                  >
+                    <span>Delivery fee — collected on its own CR, not part of the sale</span>
+                    <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
           {/* Payment */}
           <div className="flex-1 p-5">
@@ -4237,7 +7572,9 @@ export default function CheckoutPage() {
 
             {saleMode === 'sale' && tenderTarget <= 0 ? (
               <p className="rounded-lg bg-gray-100 px-3 py-2 text-center text-xs text-gray-500">
-                Nothing to collect at checkout for this cart.
+                Nothing to collect for the items at checkout for this cart.
+                {deliveryFeeAmount > 0 &&
+                  ' The delivery fee is paid in the Delivery section below.'}
               </p>
             ) : saleMode === 'reserve' && payments.length === 0 ? (
               <button
@@ -4248,12 +7585,6 @@ export default function CheckoutPage() {
               </button>
             ) : payments.length === 0 ? null : (
               <div className="space-y-2">
-                {saleMode === 'sale' && (
-                  <div className="flex items-center justify-between text-lg font-bold text-gray-900">
-                    <span>Total</span>
-                    <span>{fmt(tenderTarget)}</span>
-                  </div>
-                )}
                 {payments.map((p, i) => {
                   if (saleMode === 'sale') {
                     // Method is fully decided by Item Payment Mode above (Cash's
@@ -4261,20 +7592,27 @@ export default function CheckoutPage() {
                     // picker or split-tender here, just how much was received.
                     return (
                       <div key={i} className="space-y-1">
-                        <label className="text-xs font-medium text-gray-500">Amount received</label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          aria-label="Amount received"
-                          className="w-full rounded-lg border border-purple-200 px-3 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                          placeholder="0.00"
-                          value={p.amount === 0 ? '' : p.amount}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value)
-                            updatePayment(i, { amount: isNaN(val) ? 0 : val })
-                          }}
-                        />
+                        <label className="block text-[13px] text-gray-700">Amount received</label>
+                        {/* Scenario 70 — large and written from the left, with the
+                            peso sign in front, like the Delivery fee field. */}
+                        <div className="relative">
+                          <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-base font-semibold text-gray-500">
+                            ₱
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            aria-label="Amount received"
+                            className="w-full rounded-lg border-2 border-purple-200 bg-white py-3 pl-9 pr-3 text-base font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:text-sm placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                            placeholder="0.00"
+                            value={p.amount === 0 ? '' : p.amount}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value)
+                              updatePayment(i, { amount: isNaN(val) ? 0 : val })
+                            }}
+                          />
+                        </div>
                       </div>
                     )
                   }
@@ -4318,6 +7656,11 @@ export default function CheckoutPage() {
                               ? configuredMethods
                                   .filter((m) => {
                                     if (isOffline) return m.key === 'cash'
+                                    if (
+                                      m.key &&
+                                      HIDDEN_PAYMENT_METHODS.includes(m.key as PosPaymentMethod)
+                                    )
+                                      return false
                                     return m.key === null
                                       ? enabledPaymentMethods.includes('custom')
                                       : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
@@ -4330,6 +7673,8 @@ export default function CheckoutPage() {
                               : Object.entries(PAYMENT_LABELS)
                                   .filter(([v]) => {
                                     if (isOffline) return v === 'cash'
+                                    if (HIDDEN_PAYMENT_METHODS.includes(v as PosPaymentMethod))
+                                      return false
                                     return enabledPaymentMethods.includes(v as PosPaymentMethod)
                                   })
                                   .map(([v, l]) => (
@@ -4376,21 +7721,12 @@ export default function CheckoutPage() {
                     always need their own reference, installment or not —
                     same as reserve mode. */}
                 {payments.some(
-                  (p) =>
-                    (saleMode === 'sale' &&
-                      (inhouseInstallmentCartLines.length > 0 ||
-                        (isPureTpfCart && tpfDownPaymentsTotal > 0))) ||
-                    REF_METHODS.includes(p.method) ||
-                    p.refFieldLabel
+                  (p) => saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
                 ) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
                       const needsRef =
-                        (saleMode === 'sale' &&
-                          (inhouseInstallmentCartLines.length > 0 ||
-                            (isPureTpfCart && tpfDownPaymentsTotal > 0))) ||
-                        REF_METHODS.includes(p.method) ||
-                        p.refFieldLabel
+                        saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
                       const label =
                         p.refFieldLabel ??
                         (saleMode === 'sale'
@@ -4398,42 +7734,26 @@ export default function CheckoutPage() {
                           : PAYMENT_LABELS[p.method]
                             ? `${PAYMENT_LABELS[p.method]} reference`
                             : 'Reference')
-                      // An installment/down-payment sale requires a CR
-                      // Number on the cash-lines payment regardless of
-                      // method; otherwise sale mode falls back to the same
-                      // REF_METHODS-only requirement as reserve mode
-                      // (matches the same-scoped check at submit time).
+                      // Same predicate as the submit-time check: a sale only
+                      // requires it where crIsRequired says so; reserve mode
+                      // keeps the REF_METHODS / config rule.
                       const isRequired =
                         saleMode === 'sale'
-                          ? inhouseInstallmentCartLines.length > 0 ||
-                            (isPureTpfCart && tpfDownPaymentsTotal > 0) ||
-                            REF_METHODS.includes(p.method)
+                          ? crIsRequired(p)
                           : (p.refRequired ?? REF_METHODS.includes(p.method))
-                      // Scenario 37 — POS Terminal (card) / Bank (bank_transfer) /
-                      // Gateway (qr) all live in Item Payment Mode now (transaction-
-                      // scoped, see hasCreditCardLine/hasCashLine) — not repeated
-                      // here, just a pointer back so it doesn't read as missing.
-                      const optionPointer =
-                        p.method === 'card'
-                          ? 'Terminal/Straight-Installment/Term'
-                          : p.method === 'bank_transfer'
-                            ? 'Bank'
-                            : p.method === 'qr'
-                              ? 'Gateway'
-                              : null
                       return needsRef ? (
-                        <div key={i} className="space-y-1.5">
+                        <div key={i}>
+                          <label className="mb-1 block text-xs font-medium text-gray-800">
+                            {label}
+                            {isRequired && <span className="text-red-500"> *</span>}
+                          </label>
                           <input
-                            className="w-full rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                            placeholder={`${label}${isRequired ? ' *' : ''}`}
+                            aria-label={label}
+                            className="w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                            placeholder={label}
                             value={p.referenceNumber}
                             onChange={(e) => updatePayment(i, { referenceNumber: e.target.value })}
                           />
-                          {optionPointer && (
-                            <p className="text-[11px] text-gray-400">
-                              {optionPointer} set via Payment Method above.
-                            </p>
-                          )}
                         </div>
                       ) : null
                     })}
@@ -4454,13 +7774,22 @@ export default function CheckoutPage() {
             )}
 
             {/* Totals */}
-            {(saleMode === 'reserve' ? payments.length > 0 : tenderTarget > 0) &&
+            {/* Scenario 70 — a sale shows only the Change (no "Total Tendered"
+                row: the Amount received just above says it); a reservation
+                keeps its Deposit Tendered and what remains. */}
+            {(saleMode === 'reserve' ? payments.length > 0 : tenderTarget > 0 && change > 0.009) &&
               payments.length > 0 && (
-                <div className="mt-4 space-y-1.5 border-t border-purple-200 pt-4 text-sm">
-                  <div className="flex justify-between text-gray-700">
-                    <span>{saleMode === 'reserve' ? 'Deposit Tendered' : 'Total Tendered'}</span>
-                    <span className="font-mono font-medium text-gray-700">{fmt(totalPaid)}</span>
-                  </div>
+                <div
+                  className={`space-y-1.5 text-sm ${
+                    saleMode === 'reserve' ? 'mt-4 border-t border-purple-200 pt-4' : 'mt-3'
+                  }`}
+                >
+                  {saleMode === 'reserve' && (
+                    <div className="flex justify-between text-gray-700">
+                      <span>Deposit Tendered</span>
+                      <span className="font-mono font-medium text-gray-700">{fmt(totalPaid)}</span>
+                    </div>
+                  )}
                   {saleMode === 'reserve' ? (
                     reserveBalance > 0.009 && (
                       <div className="flex items-center justify-between rounded-lg bg-gray-200 px-3 py-2 text-gray-700">
@@ -4495,16 +7824,31 @@ export default function CheckoutPage() {
                   (l.isSerialTracked && !l.serialNumberId) ||
                   (l.requiresSecondarySerial && !l.secondarySerialNumberId)
               )
+              // A plan the cashier typed has no Financing Term to be missing.
               const anyInstallmentMissingTerm = inhouseInstallmentCartLines.some(
-                (l) => !l.financingTermId
+                (l) => !l.manualPlan && !l.financingTermId
               )
               const installmentMissingCreditApplication =
-                inhouseInstallmentCartLines.length > 0 && !creditApplicationId
+                inhouseInstallmentCartLines.length > 0 &&
+                !creditApplicationId &&
+                !isGovernmentInstitutionalCustomer &&
+                !skipsCreditApplication
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
-              const tpfMissingDownPayment = tpfInstallmentCartLines.some(
-                (l) => !(parseFloat(l.downPaymentInput ?? '0') > 0)
-              )
+              const tpfMissingDownPayment =
+                !downPaymentWaived &&
+                tpfInstallmentCartLines.some((l) => !(parseFloat(l.downPaymentInput ?? '0') > 0))
+              // An in-house line whose down payment is the cashier's to set and is 0 —
+              // the field above says so too; a typed plan and a rate-card-fixed
+              // line have their own rules.
+              const inhouseMissingDownPayment =
+                !downPaymentFree &&
+                inhouseInstallmentCartLines.some(
+                  (l) => !l.manualPlan && lineCardDownPayment(l) == null && lineDownPayment(l) <= 0
+                )
+              const missingHrLoanNumber =
+                employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
+              const missingXDealReference = xDealActive && !xDealReference.trim()
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
 
@@ -4531,33 +7875,42 @@ export default function CheckoutPage() {
                             ? 'Select a financing term for every installment item'
                             : saleMode === 'sale' && installmentMissingCreditApplication
                               ? 'Select an approved credit application'
-                              : saleMode === 'sale' &&
-                                  installmentCartLines.length > 0 &&
-                                  !installmentPaymentMethod
-                                ? 'Choose a down payment method'
-                                : saleMode === 'sale' && tpfMissingReference
-                                  ? 'Select a TPF provider and enter a reference number'
-                                  : saleMode === 'sale' && tpfMissingDownPayment
-                                    ? 'Enter the down payment for the TPF-financed item(s)'
-                                    : saleMode === 'sale' &&
-                                        !hasChargeOrInstallmentLine &&
-                                        !selectedCustomer
-                                      ? 'Select a customer'
-                                      : saleMode === 'sale' && balance > 0.009
-                                        ? `Underpaid by ${fmt(balance)}`
-                                        : saleMode === 'sale' && loyaltyOverBalance
-                                          ? 'Insufficient loyalty points'
-                                          : needsManagerOverride && !managerOverrideApproved
-                                            ? 'Manager override required'
-                                            : cart.some((l) => l.isSerialTracked)
-                                              ? 'Submit for Approval'
-                                              : saleMode === 'reserve'
-                                                ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                : allCharge
-                                                  ? 'Issue Charge Invoice'
-                                                  : allInstallment
-                                                    ? 'Create Installment Plan'
-                                                    : 'Confirm Sale'
+                              : saleMode === 'sale' && inhouseMissingDownPayment
+                                ? 'Enter a down payment — it can be small, but not 0'
+                                : saleMode === 'sale' &&
+                                    installmentCartLines.length > 0 &&
+                                    !installmentPaymentMethod &&
+                                    !xDealCollectsNothing
+                                  ? xDealActive
+                                    ? 'Choose how the cash portion is paid'
+                                    : 'Choose a down payment method'
+                                  : saleMode === 'sale' && tpfMissingReference
+                                    ? 'Select a TPF provider and enter a reference number'
+                                    : saleMode === 'sale' && tpfMissingDownPayment
+                                      ? 'Enter the down payment for the TPF-financed item(s)'
+                                      : saleMode === 'sale' && missingHrLoanNumber
+                                        ? 'Enter the HR appliance loan application number'
+                                        : saleMode === 'sale' && missingXDealReference
+                                          ? 'Enter the X-Deal reference'
+                                          : saleMode === 'sale' &&
+                                              !hasChargeOrInstallmentLine &&
+                                              !selectedCustomer
+                                            ? 'Select a customer'
+                                            : saleMode === 'sale' && balance > 0.009
+                                              ? `Underpaid by ${fmt(balance)}`
+                                              : saleMode === 'sale' && loyaltyOverBalance
+                                                ? 'Insufficient loyalty points'
+                                                : needsManagerOverride && !managerOverrideApproved
+                                                  ? 'Manager override required'
+                                                  : cart.some((l) => l.isSerialTracked)
+                                                    ? 'Checkout'
+                                                    : saleMode === 'reserve'
+                                                      ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                      : allCharge
+                                                        ? 'Issue Charge Invoice'
+                                                        : allInstallment
+                                                          ? 'Create Installment Plan'
+                                                          : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'
@@ -4676,14 +8029,6 @@ export default function CheckoutPage() {
         </Overlay>
       )}
 
-      {/* New Customer Modal */}
-      {showNewCustomerModal && (
-        <NewCustomerModal
-          onClose={() => setShowNewCustomerModal(false)}
-          onCreated={selectCustomer}
-        />
-      )}
-
       {/* Manager Override Dialog */}
       {showOverrideDialog && (
         <Overlay
@@ -4699,7 +8044,9 @@ export default function CheckoutPage() {
             <div>
               <h2 className="text-lg font-bold text-gray-900">Manager Override</h2>
               <p className="text-xs text-gray-500">
-                Discount {discountPct.toFixed(0)}% exceeds the {discountThreshold}% threshold.
+                {needsManagerOverride &&
+                  `Discount ${discountPct.toFixed(0)}% exceeds the ${discountThreshold}% threshold. `}
+                {needsVatApproval && `This is a ${restrictedKind(outputVatCode)} sale.`}
               </p>
             </div>
           </div>
@@ -4753,9 +8100,10 @@ export default function CheckoutPage() {
           return (
             <PriceOverrideDialog
               itemName={targetLine.itemName}
-              currentPrice={targetLine.priceResolved ? targetLine.unitPrice : null}
+              currentPrice={targetLine.priceResolved ? Number(targetLine.unitPrice) : null}
+              listPrice={listPriceFor(targetLine)}
               onClose={() => setPriceOverrideTargetLineId(null)}
-              onApprove={(result) => handlePriceOverrideApprove(targetLine.lineId, result)}
+              onApply={(price) => applyPriceOverride(targetLine.lineId, price)}
             />
           )
         })()}
@@ -4815,7 +8163,10 @@ export default function CheckoutPage() {
                 : true
             )
             .reduce<Record<string, SerialNumberRecord[]>>((groups, sn) => {
-              const branchLabel = sn.currentWarehouse?.name ?? 'Another branch'
+              const home = sn.currentWarehouse?.branch
+              const branchLabel = home?.isTemporary
+                ? caravanPlaceLabel(home)
+                : (sn.currentWarehouse?.name ?? 'Another branch')
               groups[branchLabel] = [...(groups[branchLabel] ?? []), sn]
               return groups
             }, {})
@@ -4945,6 +8296,27 @@ export default function CheckoutPage() {
                     )}
                   </div>
 
+                  {/* Out of stock here AND at every other branch — there is no
+                      unit to request, so no stock request (and no purchase
+                      request) can come from this picker. Only once the
+                      lookup really succeeded: a failed lookup looks identical. */}
+                  {!serialLoading &&
+                    !serialError &&
+                    !serialSearchQuery &&
+                    visibleSerials.length === 0 &&
+                    elsewhereLoaded &&
+                    !hasElsewhere && (
+                      <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p className="text-sm font-semibold text-gray-700">
+                          Not in stock at any branch
+                        </p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          No other branch has a unit to request. Ask your Branch Manager to raise a
+                          purchase request with procurement.
+                        </p>
+                      </div>
+                    )}
+
                   {hasElsewhere && (
                     <div className="mt-4 border-t border-gray-100 pt-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
@@ -5003,7 +8375,10 @@ export default function CheckoutPage() {
                     </div>
                     <div className="max-h-88 space-y-1.5 overflow-y-auto pr-1">
                       {expandedSerials.map((sn) => {
-                        const status = serialRequestStatus[sn.id]
+                        // Falls back to the server's view so a unit requested
+                        // before the picker was reopened still shows as such.
+                        const status =
+                          serialRequestStatus[sn.id] ?? (sn.openTransfer ? 'requested' : undefined)
                         return (
                           <div
                             key={sn.id}
@@ -5016,9 +8391,18 @@ export default function CheckoutPage() {
                               {sn.serialNumber}
                             </span>
                             {status === 'requested' ? (
-                              <span className="flex items-center gap-1 text-xs font-semibold text-green-600">
-                                <CheckCircle2 size={12} /> Requested
-                              </span>
+                              <div className="flex flex-col items-center rounded-lg border border-green-200 bg-green-50 px-2 py-1">
+                                <span className="flex items-center gap-1 text-xs font-semibold text-green-700">
+                                  <CheckCircle2 size={12} /> Requested
+                                </span>
+                                {/* Own line, never wrapped — beside the label
+                                    in this narrow panel it broke mid-number. */}
+                                {sn.openTransfer && (
+                                  <span className="whitespace-nowrap font-mono text-[10px] text-green-700/70">
+                                    {sn.openTransfer.transferNumber}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <button
                                 onClick={() => requestSerial(sn)}
@@ -5279,6 +8663,7 @@ function SuccessScreen({
   customerDisplayName,
   cart,
   payments,
+  qrOptionName,
   promoDiscount,
   activeTaxRate,
   inclusivePricing,
@@ -5294,6 +8679,7 @@ function SuccessScreen({
     deliveryReceiptNumber?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
+    creditWarnings?: string[]
     lineOutcomes: {
       lineId: string
       itemName: string
@@ -5306,6 +8692,11 @@ function SuccessScreen({
       financedBalance?: number | null
     }[]
     invoices?: PosTransactionInvoice[]
+    delivery?: SuccessDelivery | null
+    /** Scenario 67 */
+    isXDeal?: boolean
+    xDealReference?: string | null
+    exception?: SaleException | null
   }
   totalAmount: number
   selectedCustomer: PosCustomer | null
@@ -5314,6 +8705,9 @@ function SuccessScreen({
   customerDisplayName: (c: PosCustomer) => string
   cart: CartLine[]
   payments: PaymentRow[]
+  /** The GCash / Biller / gateway the cashier picked for a QR payment, so the
+   * receipt names it rather than printing a bare "QR". */
+  qrOptionName?: string
   promoDiscount: number
   activeTaxRate: { rate: number; name: string } | null
   inclusivePricing: boolean
@@ -5355,6 +8749,10 @@ function SuccessScreen({
   // the receipt has to lead with the collected figure rather than imply the
   // customer paid the lot.
   const totalTendered = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
+  // Scenario 70 — the delivery fee is paid with its own tender on its own
+  // receipt, so the sale's payments (and the change on them) are the sale's
+  // alone.
+  const deliveryFeeCollected = success.delivery?.fee ?? 0
   const paidNow = Math.max(0, Math.round((totalTendered - success.change) * 100) / 100)
   const notCollectedHere = Math.max(0, Math.round((totalAmount - paidNow) * 100) / 100)
   const tpfOutcomes = installmentOutcomes.filter((o) => o.installmentProvider === 'tpf')
@@ -5370,10 +8768,13 @@ function SuccessScreen({
           : allInhouse
             ? 'Financed on installment'
             : 'Financed / billed to account'
-  const headlineAmount = notCollectedHere > 0 ? paidNow : totalAmount
-  // Worth spelling out only when the cash handed over isn't the headline
-  // figure — otherwise it just repeats the number directly above it.
-  const showTendered = totalTendered > 0 && Math.abs(totalTendered - headlineAmount) >= 0.01
+  // What the sale itself took at this register.
+  const saleCollected = notCollectedHere > 0 ? paidNow : totalAmount
+  // Everything taken at this register: the sale's part plus the fee.
+  const headlineAmount = Math.round((saleCollected + deliveryFeeCollected) * 100) / 100
+  // Worth spelling out only when the cash handed over for the sale isn't the
+  // sale's collected figure — otherwise it just repeats the number above it.
+  const showTendered = totalTendered > 0 && Math.abs(totalTendered - saleCollected) >= 0.01
 
   const borderColor = success.offlineBuffered
     ? 'border-amber-200'
@@ -5382,14 +8783,6 @@ function SuccessScreen({
       : allInstallment
         ? 'border-prominent-purple-100'
         : 'border-green-100'
-
-  const iconBg = success.offlineBuffered
-    ? 'bg-amber-100'
-    : allCharge
-      ? 'bg-blue-100'
-      : allInstallment
-        ? 'bg-prominent-purple-100'
-        : 'bg-green-100'
 
   return (
     <div className="flex min-h-full items-start justify-center bg-zinc-50 p-6">
@@ -5416,20 +8809,8 @@ function SuccessScreen({
             )}
           </div>
 
-          {/* Icon + title */}
+          {/* Title */}
           <div className="flex flex-col items-center gap-3 px-8 pb-4 pt-6">
-            <div className={`flex h-14 w-14 items-center justify-center rounded-full ${iconBg}`}>
-              {success.offlineBuffered ? (
-                <WifiOff size={28} className="text-amber-600" />
-              ) : hasChargeOrInstallment ? (
-                <Receipt
-                  size={28}
-                  className={allInstallment ? 'text-prominent-purple-600' : 'text-blue-600'}
-                />
-              ) : (
-                <CheckCircle2 size={28} className="text-green-600" />
-              )}
-            </div>
             <div className="text-center">
               <p className="text-xl font-bold text-gray-900">
                 {success.offlineBuffered
@@ -5442,6 +8823,30 @@ function SuccessScreen({
                         ? 'Sale Complete — Mixed'
                         : 'Sale Complete'}
               </p>
+              {success.isXDeal && (
+                <div className="mt-2 flex flex-col items-center gap-1">
+                  <XDealBadge reference={success.xDealReference} />
+                  <p className="text-xs text-gray-500" data-testid="success-x-deal-note">
+                    Cleared by an X-Deal credit memo, issued with the sale.
+                  </p>
+                </div>
+              )}
+              {success.creditWarnings && success.creditWarnings.length > 0 && (
+                <div
+                  data-testid="success-credit-warnings"
+                  className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs text-amber-800"
+                >
+                  <p className="font-semibold">
+                    Heads-up — the credit check had something to say, and nobody saw it before this
+                    posted. It goes to management in the end-of-day review:
+                  </p>
+                  <ul className="mt-1 list-disc pl-4">
+                    {success.creditWarnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {success.offlineBuffered ? (
                 <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
               ) : hasChargeOrInstallment ? (
@@ -5481,9 +8886,6 @@ function SuccessScreen({
                           {fmt(o.financedBalance ?? 0)}
                         </span>
                       </div>
-                      <span className="opacity-70">
-                        No local schedule — the financier owns the amortization.
-                      </span>
                     </>
                   ) : o.installmentPreview ? (
                     <>
@@ -5528,22 +8930,19 @@ function SuccessScreen({
               <span>Date</span>
               <span>{receiptDate}</span>
             </div>
-            {/* Sales Invoice No. leads — it's the document the customer and
-                BIR actually go by. Transaction No. sits last, dimmed: it's
-                an internal system reference, only useful for lookups. */}
-            {success.salesInvoiceNumber && (
+            {/* The sale's document number leads — the Sales Invoice No., or the
+                Delivery Receipt No. when the sale was covered by a DR; it's
+                what the customer and BIR actually go by. A DR sale stores its
+                number as the invoice number too, so this is one row either
+                way. Transaction No. sits last, dimmed: it's an internal
+                system reference, only useful for lookups. */}
+            {(success.deliveryReceiptNumber || success.salesInvoiceNumber) && (
               <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
-                <span className="shrink-0">Sales Invoice No.</span>
-                <span className="break-all text-right font-mono font-medium text-gray-700">
-                  {success.salesInvoiceNumber}
+                <span className="shrink-0">
+                  {success.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
                 </span>
-              </div>
-            )}
-            {success.deliveryReceiptNumber && (
-              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
-                <span className="shrink-0">Delivery Receipt No.</span>
-                <span className="break-all text-right font-mono text-[10px]">
-                  {success.deliveryReceiptNumber}
+                <span className="break-all text-right font-mono font-medium text-gray-700">
+                  {success.deliveryReceiptNumber || success.salesInvoiceNumber}
                 </span>
               </div>
             )}
@@ -5609,6 +9008,60 @@ function SuccessScreen({
             })}
           </div>
 
+          {/* Scenario 71 — the override behind this sale, with its reason and note.
+              Internal: on screen for the cashier and manager, kept off the
+              customer's printed copy. */}
+          {success.exception && (
+            <div
+              className="border-t border-dashed border-gray-200 px-6 py-3 print:hidden"
+              data-testid="success-exception"
+            >
+              <PosExceptionPanel
+                exception={{
+                  reason: success.exception.reason,
+                  note: success.exception.note,
+                  creditApplicationWaived: success.exception.creditApplicationWaived,
+                  creditOverride: success.exception.creditOverride,
+                  typedTerms: success.exception.typedTerms,
+                  overriddenBy: null,
+                  lines: cart
+                    .filter((l) => l.lineId in success.exception!.lineLists)
+                    .map((l) => {
+                      const charged = effectiveUnitPrice(
+                        l,
+                        activeTaxRate,
+                        inclusivePricing,
+                        isTaxExempt
+                      )
+                      const listRaw = success.exception!.lineLists[l.lineId]
+                      const list =
+                        listRaw === null
+                          ? null
+                          : effectiveUnitPrice(
+                              { ...l, unitPrice: listRaw },
+                              activeTaxRate,
+                              inclusivePricing,
+                              isTaxExempt
+                            )
+                      return {
+                        itemName: l.itemName,
+                        quantity: l.quantity,
+                        listUnitPrice: list,
+                        unitPrice: charged,
+                        difference:
+                          list === null
+                            ? null
+                            : Math.round((list - charged) * l.quantity * 100) / 100,
+                      }
+                    }),
+                }}
+              />
+              <p className="mt-1.5 text-[10px] text-gray-400">
+                Not printed on the customer&apos;s copy.
+              </p>
+            </div>
+          )}
+
           {/* Payments */}
           <div className="space-y-1.5 border-t border-dashed border-gray-200 px-6 py-3">
             {payments
@@ -5616,7 +9069,11 @@ function SuccessScreen({
               .map((p, i) => (
                 <div key={i} className="text-[11px] text-gray-500">
                   <div className="flex justify-between">
-                    <span>{PAYMENT_LABELS[p.method] ?? p.method}</span>
+                    <span>
+                      {p.method === 'qr'
+                        ? qrTenderLabel(qrOptionName)
+                        : (PAYMENT_LABELS[p.method] ?? p.method)}
+                    </span>
                     <span>{fmt(p.amount)}</span>
                   </div>
                   {p.referenceNumber && (
@@ -5638,20 +9095,37 @@ function SuccessScreen({
               nobody paid at this register spelled out above it whenever the
               two differ. */}
           <div className="border-t border-gray-100 bg-gray-50 px-6 py-4 text-center">
-            {notCollectedHere > 0 && (
+            {(notCollectedHere > 0 || deliveryFeeCollected > 0) && (
               <div className="mb-3 space-y-1">
-                <div className="flex justify-between text-[11px] text-gray-500">
+                {/* Scenario 70 — the sale and the delivery fee on their own lines:
+                    two documents (the invoice and the fee's CR). The fee is part
+                    of what was collected, not part of the sale total. */}
+                <div
+                  className="flex justify-between text-[11px] text-gray-500"
+                  data-testid="success-sale-total-line"
+                >
                   <span>Sale total</span>
                   <span className="font-medium text-gray-700">{fmt(totalAmount)}</span>
                 </div>
-                <div className="flex justify-between text-[11px] text-gray-500">
-                  <span>{notCollectedLabel}</span>
-                  <span className="font-medium text-gray-700">−{fmt(notCollectedHere)}</span>
-                </div>
+                {notCollectedHere > 0 && (
+                  <div className="flex justify-between text-[11px] text-gray-500">
+                    <span>{notCollectedLabel}</span>
+                    <span className="font-medium text-gray-700">−{fmt(notCollectedHere)}</span>
+                  </div>
+                )}
+                {deliveryFeeCollected > 0 && (
+                  <div
+                    className="flex justify-between text-[11px] text-gray-500"
+                    data-testid="success-delivery-fee-line"
+                  >
+                    <span>Delivery fee (own CR, not part of the sale)</span>
+                    <span className="font-medium text-gray-700">+{fmt(deliveryFeeCollected)}</span>
+                  </div>
+                )}
               </div>
             )}
             <p className="text-sm text-gray-500">
-              {notCollectedHere > 0 ? 'Paid Now' : 'Total Charged'}
+              {notCollectedHere > 0 || deliveryFeeCollected > 0 ? 'Paid Now' : 'Total Charged'}
             </p>
             <p className="text-3xl font-bold text-gray-900">{fmt(headlineAmount)}</p>
             {(showTendered || success.change > 0) && (
@@ -5667,14 +9141,52 @@ function SuccessScreen({
             )}
           </div>
 
+          {/* Scenario 66 — the delivery, and its fee on its own receipt:
+              apart from Paid Now / Sale total above, which never include it. */}
+          {success.delivery && (
+            <div
+              className="space-y-1 border-t border-dashed border-gray-200 px-6 py-3"
+              data-testid="success-delivery"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Delivery
+              </p>
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">Deliver to</span>
+                <span className="text-right text-gray-700">{success.delivery.deliverTo}</span>
+              </div>
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">Address</span>
+                <span className="text-right text-gray-700">{success.delivery.address}</span>
+              </div>
+              {success.delivery.fee > 0 ? (
+                <>
+                  <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                    <span className="shrink-0">Delivery fee</span>
+                    <span className="text-right font-medium text-gray-700">
+                      {fmt(success.delivery.fee)}
+                      {success.delivery.tenderLabel && ` · ${success.delivery.tenderLabel}`}
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                    <span className="shrink-0">Delivery fee CR#</span>
+                    <span className="break-all text-right font-mono text-[10px]">
+                      {success.delivery.feeCr}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    On its own collection receipt — not part of the sale total.
+                  </p>
+                </>
+              ) : (
+                <p className="text-[11px] text-gray-500">Free delivery</p>
+              )}
+            </div>
+          )}
+
           {success.journalEntryId && (
             <p className="px-6 pt-3 text-center font-mono text-[10px] text-gray-400">
               JE: {success.journalEntryId}
-            </p>
-          )}
-          {success.loyaltyEarned && selectedCustomer && (
-            <p className="px-6 pt-2 text-center text-xs font-medium text-purple-500">
-              Points earned for {customerDisplayName(selectedCustomer)}
             </p>
           )}
 
@@ -5687,7 +9199,7 @@ function SuccessScreen({
           onClick={onReset}
           className="mt-4 w-full rounded-xl bg-purple-700 px-8 py-3 text-sm font-bold text-white hover:bg-purple-800"
         >
-          New Sale
+          Back to POS
         </button>
       </div>
     </div>
@@ -5762,6 +9274,9 @@ function PendingApprovalScreen({
   totalAmount,
   serialLines,
   creditApplicationId,
+  delivery,
+  isXDeal,
+  xDealReference,
   canSignPromissoryNote,
   onReset,
   fmt,
@@ -5770,6 +9285,9 @@ function PendingApprovalScreen({
   totalAmount: number
   serialLines: { itemName: string; serialNumberLabel?: string }[]
   creditApplicationId?: string
+  delivery: { deliverTo: string; fee: number; feeCr: string | null } | null
+  isXDeal?: boolean
+  xDealReference?: string | null
   canSignPromissoryNote: boolean
   onReset: () => void
   fmt: (n: number) => string
@@ -5834,6 +9352,14 @@ function PendingApprovalScreen({
           <p className="mt-1 text-sm text-amber-600">
             Waiting for a Business Owner or Branch Manager to review.
           </p>
+          {isXDeal && (
+            <div className="mt-2 flex flex-col items-center gap-1">
+              <XDealBadge reference={xDealReference} />
+              <p className="text-xs text-gray-500" data-testid="pending-x-deal-note">
+                When approved, the X-Deal credit memo is issued automatically.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="w-full space-y-2 rounded-xl bg-gray-50 px-5 py-4 text-left">
@@ -5849,6 +9375,15 @@ function PendingApprovalScreen({
             <span className="text-sm font-semibold text-gray-700">Total</span>
             <span className="text-lg font-bold text-gray-900">{fmt(totalAmount)}</span>
           </div>
+          {/* Scenario 66 — nothing is recorded for the delivery until the
+              sale is made (plan decision D5): approval creates it. */}
+          {delivery && (
+            <p className="pt-1 text-xs text-gray-500" data-testid="pending-delivery">
+              {delivery.fee > 0
+                ? `Delivery fee ${fmt(delivery.fee)} on CR# ${delivery.feeCr} is recorded when the sale is approved.`
+                : `Free delivery to ${delivery.deliverTo}, recorded when the sale is approved.`}
+            </p>
+          )}
         </div>
 
         {creditApplicationId && (
@@ -6024,26 +9559,22 @@ function CatalogCard({
    * until this is true. */
   stockKnown: boolean
 }) {
-  // Only serial-tracked items are hard-blocked at zero — a serial-tracked
-  // sale is impossible with nothing to pick, unlike a bulk/quantity item
-  // where allowNegativeStock or a backorder might still apply.
+  // Only serial-tracked items are flagged at zero — a bulk/quantity item may
+  // still sell via allowNegativeStock or a backorder. A flagged item is not
+  // blocked: adding it opens the serial picker, whose "Also available
+  // elsewhere" section is where the cashier requests a unit from another
+  // branch (the picker already handles zero local stock).
   const isOutOfStock = stockKnown && item.isSerialTracked && (item.stockQty ?? 0) === 0
   const isLowStock =
     stockKnown && item.stockQty !== undefined && item.stockQty > 0 && item.stockQty <= 5
 
   return (
     <button
-      disabled={isOutOfStock}
-      onMouseDown={() =>
-        isOutOfStock
-          ? undefined
-          : item.allowDecimal && onAddMeasured
-            ? onAddMeasured(item)
-            : onAdd(item)
-      }
+      title={isOutOfStock ? 'Out of stock here — tap to request from another branch' : undefined}
+      onMouseDown={() => (item.allowDecimal && onAddMeasured ? onAddMeasured(item) : onAdd(item))}
       className={`group relative flex flex-col rounded-xl border p-3 text-left shadow-sm transition-all ${
         isOutOfStock
-          ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-60'
+          ? 'border-gray-200 bg-gray-50 opacity-75 hover:border-purple-300 hover:opacity-100'
           : 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-md active:scale-[0.97]'
       }`}
     >
@@ -6073,7 +9604,7 @@ function CatalogCard({
           )}
           {isOutOfStock ? (
             <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">
-              Out of stock
+              Out of stock · find branch
             </p>
           ) : (
             isLowStock && (
@@ -6107,17 +9638,11 @@ function CatalogListRow({
 
   return (
     <button
-      disabled={isOutOfStock}
-      onMouseDown={() =>
-        isOutOfStock
-          ? undefined
-          : item.allowDecimal && onAddMeasured
-            ? onAddMeasured(item)
-            : onAdd(item)
-      }
+      title={isOutOfStock ? 'Out of stock here — tap to request from another branch' : undefined}
+      onMouseDown={() => (item.allowDecimal && onAddMeasured ? onAddMeasured(item) : onAdd(item))}
       className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all ${
         isOutOfStock
-          ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-60'
+          ? 'border-gray-200 bg-gray-50 opacity-75 hover:border-purple-300 hover:opacity-100'
           : 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm active:scale-[0.99]'
       }`}
     >
@@ -6134,7 +9659,7 @@ function CatalogListRow({
           {item.sku && <p className="truncate text-[11px] text-gray-400">{item.sku}</p>}
           {isOutOfStock ? (
             <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">
-              Out of stock
+              Out of stock · find branch
             </p>
           ) : (
             isLowStock && (
@@ -6157,410 +9682,6 @@ function CatalogListRow({
         )}
       </div>
     </button>
-  )
-}
-
-// ─── New Customer Modal ───────────────────────────────────────────────────────
-
-function NewCustomerModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void
-  onCreated: (customer: PosCustomer) => void
-}) {
-  const [form, setForm] = useState({
-    firstName: '',
-    middleName: '',
-    lastName: '',
-    phone: '',
-    email: '',
-    customerType: 'individual' as CustomerExtraFieldsValues['customerType'],
-    companyName: '',
-    businessCategory: '',
-    employeeNumber: '',
-    birthday: '',
-    groupId: '',
-    taxId: '',
-    isTaxExempt: false,
-    taxExemptionRef: '',
-    address: '',
-    barangayCode: '',
-    notes: '',
-    coMakers: [] as CoMakerFormValues[],
-    idType: '',
-    idNumber: '',
-    idDocumentFileId: '',
-    consentGiven: false,
-  })
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-
-  // Same non-blocking, debounced check CRM's "Add Customer" form uses — never
-  // prevents submission, just warns so the cashier can double-check before
-  // creating a second profile for the same person.
-  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateCheckResult | null>(null)
-  const [duplicateDismissed, setDuplicateDismissed] = useState(false)
-  const duplicateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const [uploadingId, setUploadingId] = useState(false)
-  const [idDocumentName, setIdDocumentName] = useState<string | null>(null)
-
-  useEffect(() => {
-    const email = form.email.trim()
-    const phone = form.phone.trim()
-    if (!email && !phone) {
-      setDuplicateWarning(null)
-      return
-    }
-    if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
-    duplicateTimer.current = setTimeout(async () => {
-      const res = await customersApi.checkDuplicate({
-        email: email || undefined,
-        phone: phone || undefined,
-      })
-      if (res.success && res.data) {
-        setDuplicateWarning(res.data.duplicate ? res.data : null)
-        setDuplicateDismissed(false)
-      }
-    }, 300)
-    return () => {
-      if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
-    }
-  }, [form.email, form.phone])
-
-  async function handleIdFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setUploadingId(true)
-    const formData = new FormData()
-    formData.set('file', file)
-    const result = await uploadIdDocument(formData)
-    setUploadingId(false)
-
-    if (result.success && result.data) {
-      setForm((p) => ({ ...p, idDocumentFileId: result.data!.id }))
-      setIdDocumentName(result.data.originalName)
-    } else {
-      setError(result.message ?? 'ID document upload failed')
-      e.target.value = ''
-    }
-  }
-
-  async function handleSubmit() {
-    if (!form.firstName.trim()) {
-      setError('First name is required.')
-      return
-    }
-    if (!form.phone.trim()) {
-      setError('Phone number is required.')
-      return
-    }
-    setError('')
-    setSubmitting(true)
-    const res = await createWalkInCustomer({
-      firstName: form.firstName.trim(),
-      middleName: form.middleName.trim() || undefined,
-      lastName: form.lastName.trim(),
-      phoneNumber: form.phone.trim(),
-      email: form.email.trim() || undefined,
-      customerType: form.customerType,
-      companyName:
-        form.customerType === 'business' ? form.companyName.trim() || undefined : undefined,
-      businessCategory:
-        form.customerType === 'business' && form.businessCategory
-          ? (form.businessCategory as 'private' | 'government')
-          : undefined,
-      employeeNumber:
-        form.customerType === 'employee' ? form.employeeNumber.trim() || undefined : undefined,
-      birthday: form.birthday ? new Date(form.birthday) : undefined,
-      groupId: form.groupId.trim() || undefined,
-      taxId: form.taxId.trim() || undefined,
-      isTaxExempt: form.isTaxExempt,
-      taxExemptionRef: form.isTaxExempt ? form.taxExemptionRef.trim() || undefined : undefined,
-      address: form.address.trim() || undefined,
-      barangayCode: form.barangayCode || undefined,
-      // Fixed, not user-selectable — a walk-in customer always starts active.
-      status: 'active',
-      note: form.notes.trim() || undefined,
-      coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
-      idType: form.idType || undefined,
-      idNumber: form.idNumber || undefined,
-      idDocumentFileId: form.idDocumentFileId || undefined,
-      consentGiven: form.consentGiven,
-      consentGivenAt: form.consentGiven ? new Date() : undefined,
-    })
-    setSubmitting(false)
-    if (!res.success || !res.data) {
-      setError(res.error ?? 'Failed to create customer')
-      return
-    }
-    onCreated(res.data)
-    onClose()
-  }
-
-  return (
-    <Overlay onClose={onClose} width="2xl">
-      <h2 className="mb-4 text-lg font-bold text-gray-900">New Customer</h2>
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-      <div className="max-h-[78vh] space-y-3 overflow-y-auto pr-1">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">First Name *</label>
-            <input
-              autoFocus
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.firstName}
-              onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Last Name</label>
-            <input
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.lastName}
-              onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Middle Name</label>
-            <input
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.middleName}
-              onChange={(e) => setForm((p) => ({ ...p, middleName: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
-            <PhoneInput
-              value={form.phone}
-              defaultCountry="PH"
-              international
-              countryCallingCodeEditable={false}
-              onChange={(v) => setForm((p) => ({ ...p, phone: v ?? '' }))}
-              numberInputProps={{ className: 'phone-input-field' }}
-              className="ph-phone-input"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Email</label>
-            <input
-              type="email"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={form.email}
-              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-            />
-          </div>
-        </div>
-
-        {duplicateWarning?.duplicate && !duplicateDismissed && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] text-amber-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div className="flex-1">
-              A customer named{' '}
-              <span className="font-medium">{duplicateWarning.customer?.name}</span> already has
-              this {duplicateWarning.matchedField}. You can still create this profile if it&apos;s a
-              different person.
-            </div>
-            <button
-              type="button"
-              onClick={() => setDuplicateDismissed(true)}
-              className="shrink-0 text-amber-600 hover:text-amber-800"
-              aria-label="Dismiss duplicate warning"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        <CustomerExtraFields
-          values={form}
-          onChange={(patch) => setForm((p) => ({ ...p, ...patch }))}
-        />
-
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-semibold text-gray-600">
-              Co-maker (guarantor)
-            </label>
-            <button
-              type="button"
-              onClick={() =>
-                setForm((p) => ({
-                  ...p,
-                  coMakers: [
-                    ...p.coMakers,
-                    { name: '', relationship: '', contactNumber: '', email: '' },
-                  ],
-                }))
-              }
-              className="flex items-center gap-1 text-[12px] font-medium text-purple-700 hover:text-purple-800"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add co-maker
-            </button>
-          </div>
-          <div className="mt-2 space-y-3">
-            {form.coMakers.map((cm, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
-              >
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Name</label>
-                  <input
-                    value={cm.name}
-                    maxLength={255}
-                    placeholder="e.g. Juan Dela Cruz"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], name: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Relationship
-                  </label>
-                  <input
-                    value={cm.relationship}
-                    maxLength={100}
-                    placeholder="e.g. Spouse"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], relationship: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Contact number
-                  </label>
-                  <input
-                    value={cm.contactNumber}
-                    maxLength={50}
-                    placeholder="e.g. 0917 000 1111"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], contactNumber: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Email</label>
-                  <input
-                    value={cm.email ?? ''}
-                    maxLength={255}
-                    type="email"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], email: e.target.value }
-                      setForm((p) => ({ ...p, coMakers: next }))
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((p) => ({
-                      ...p,
-                      coMakers: p.coMakers.filter((_, i) => i !== idx),
-                    }))
-                  }
-                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                  aria-label="Remove co-maker"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-gray-600">
-            ID & Consent <span className="font-normal text-gray-400">(optional)</span>
-          </label>
-          <div className="mt-2 grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[12px] font-medium text-gray-600">ID Type</label>
-              <select
-                value={form.idType}
-                onChange={(e) => setForm((p) => ({ ...p, idType: e.target.value }))}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-              >
-                <option value="">Select ID type</option>
-                {ID_TYPE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[12px] font-medium text-gray-600">ID Number</label>
-              <input
-                value={form.idNumber}
-                maxLength={100}
-                onChange={(e) => setForm((p) => ({ ...p, idNumber: e.target.value }))}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-              />
-            </div>
-          </div>
-          <div className="mt-3">
-            <label className="block text-[12px] font-medium text-gray-600">ID Document</label>
-            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-500">
-              <Paperclip className="h-4 w-4 shrink-0" />
-              <span className="truncate">
-                {uploadingId ? 'Uploading…' : (idDocumentName ?? 'Attach a scanned ID')}
-              </span>
-              <input
-                type="file"
-                className="hidden"
-                disabled={uploadingId}
-                onChange={handleIdFileChange}
-              />
-            </label>
-          </div>
-          <div className="mt-3 flex items-start gap-2">
-            <input
-              id="pos-new-customer-consent"
-              type="checkbox"
-              checked={form.consentGiven}
-              onChange={(e) => setForm((p) => ({ ...p, consentGiven: e.target.checked }))}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300"
-            />
-            <label htmlFor="pos-new-customer-consent" className="text-[13px] text-gray-700">
-              Customer has given consent to store their ID information on file.
-            </label>
-          </div>
-        </div>
-      </div>
-      <div className="mt-5 flex justify-end gap-3">
-        <button
-          onClick={onClose}
-          className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSubmit}
-          disabled={submitting || !form.firstName.trim() || !form.phone.trim()}
-          className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800 disabled:opacity-50"
-        >
-          {submitting ? 'Creating…' : 'Create Customer'}
-        </button>
-      </div>
-    </Overlay>
   )
 }
 

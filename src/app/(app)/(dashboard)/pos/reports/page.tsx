@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import SalesReportsView from './_components/SalesReportsView'
 
 export const metadata = {
-  title: 'Sales Reports | Prominent Enterprise',
+  title: 'Sales Reports | NIG Central',
   description: 'Sales per branch and per brand, with Excel export',
 }
 

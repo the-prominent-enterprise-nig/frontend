@@ -26,7 +26,7 @@ export default function ModuleStatsWidget() {
     return (
       <div className={`grid gap-3 ${isCompact ? 'grid-cols-2' : 'grid-cols-4'}`}>
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-[150px] rounded-xl bg-zinc-100 animate-pulse" />
+          <div key={i} className="h-[170px] rounded-2xl bg-zinc-100 animate-pulse" />
         ))}
       </div>
     )
@@ -104,32 +104,32 @@ export default function ModuleStatsWidget() {
         return (
           <div
             key={mod.id}
-            className={`rounded-xl border ${mod.accent} bg-white p-2.5 transition-all duration-300 ${CARD_SHADOW_RESTING} ${CARD_SHADOW_HOVER} hover:-translate-y-0.5`}
+            className={`rounded-2xl border ${mod.accent} bg-white p-4 transition-all duration-300 ${CARD_SHADOW_RESTING} ${CARD_SHADOW_HOVER} hover:-translate-y-0.5`}
           >
-            <Link href={mod.href} className="block space-y-2">
-              <div className="flex items-center gap-2">
-                <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${mod.bg}`}>
-                  <Icon className={`h-3.5 w-3.5 ${mod.color}`} />
+            <Link href={mod.href} className="block space-y-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${mod.bg}`}>
+                  <Icon className={`h-4 w-4 ${mod.color}`} />
                 </div>
-                <p className="text-xs font-semibold text-zinc-700">{mod.label}</p>
+                <p className="text-sm font-semibold text-prominent-purple-900">{mod.label}</p>
               </div>
               <div className="space-y-1">
                 {mod.stats.map((stat) => (
                   <div key={stat.label} className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] text-zinc-400">{stat.label}</p>
-                    <p className="text-xs font-bold text-zinc-900">{stat.value}</p>
+                    <p className="text-xs text-zinc-400">{stat.label}</p>
+                    <p className="text-sm font-bold text-prominent-purple-900">{stat.value}</p>
                   </div>
                 ))}
               </div>
             </Link>
             {!isCompact && mod.links.length > 0 && (
-              <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-zinc-100 pt-1.5">
+              <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-zinc-100 pt-2.5">
                 {mod.links.map((link, i) => (
                   <span key={link.href} className="flex items-center gap-1.5">
                     {i > 0 && <span className="text-zinc-300">·</span>}
                     <Link
                       href={link.href}
-                      className="text-[10px] font-medium text-zinc-500 transition-colors hover:text-purple-600"
+                      className="text-[11px] font-medium text-zinc-500 transition-colors hover:text-purple-600"
                     >
                       {link.label}
                     </Link>

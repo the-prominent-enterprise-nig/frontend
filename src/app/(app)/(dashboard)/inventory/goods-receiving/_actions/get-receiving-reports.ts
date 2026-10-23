@@ -14,6 +14,10 @@ type Params = {
   startDate?: string
   endDate?: string
   hasDiscrepancy?: boolean
+  /** Merges in Manual Receiving Reports alongside GoodsReceipts, sorted
+   * together by date — opt-in so Inventory's own receiving list (which also
+   * calls this action) is unaffected. */
+  includeManual?: boolean
 }
 
 export async function getReceivingReports(params: Params = {}) {
@@ -28,6 +32,7 @@ export async function getReceivingReports(params: Params = {}) {
     startDate: params.startDate,
     endDate: params.endDate,
     hasDiscrepancy: params.hasDiscrepancy,
+    includeManual: params.includeManual,
   }
 
   return api.get<ReceivingReportListResponse>('/inventory/stock/receiving-reports', query)

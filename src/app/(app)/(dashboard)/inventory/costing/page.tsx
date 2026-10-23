@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { CostingPageView } from './_components'
 
 export const metadata = {
-  title: 'Costing & COGS | Prominent Enterprise',
+  title: 'Costing & COGS | NIG Central',
   description: 'Stock valuation and COGS management',
 }
 

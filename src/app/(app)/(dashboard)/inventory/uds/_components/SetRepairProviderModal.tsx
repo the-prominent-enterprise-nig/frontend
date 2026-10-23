@@ -1,6 +1,7 @@
 'use client'
 
-import { useForm, Controller } from 'react-hook-form'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2 } from 'lucide-react'
 import {
@@ -9,11 +10,13 @@ import {
   type Uds,
 } from '@/src/schema/inventory/uds'
 import type { ApiResponse } from '@/src/libs/api/client'
+import {
+  NoSupplierOnFileNote,
+  ProviderCoverageWarning,
+  useProviderOptions,
+} from './ProviderCoverageWarning'
 
-type SupplierOption = { id: string; code: string; name: string }
-
-const fieldClass =
-  'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+export type SupplierOption = { id: string; code: string; name: string }
 
 type Props = {
   uds: Uds | null
@@ -40,6 +43,11 @@ export default function SetRepairProviderModal({
     resolver: zodResolver(SetRepairProviderFormSchema),
     defaultValues: { repairProviderId: uds?.repairProviderId ?? '' },
   })
+  const providerId = useWatch({ control, name: 'repairProviderId' })
+  const { options: providerOptions, noneOnFile } = useProviderOptions(
+    supplierOptions,
+    uds?.lines.map((l) => l.serialNumberId) ?? []
+  )
 
   if (!isOpen || !uds) return null
 
@@ -49,11 +57,11 @@ export default function SetRepairProviderModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">
+            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
               {uds.repairProvider ? 'Change Repair Provider' : 'Set Repair Provider'}
             </h2>
             <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
@@ -67,8 +75,12 @@ export default function SetRepairProviderModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="space-y-4 px-6 py-5">
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          noValidate
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Repair Provider <span className="text-red-500">*</span>
@@ -77,23 +89,27 @@ export default function SetRepairProviderModal({
                 name="repairProviderId"
                 control={control}
                 render={({ field }) => (
-                  <select {...field} className={fieldClass}>
-                    <option value="">— Select —</option>
-                    {supplierOptions.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.code} — {s.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={field.value ?? ''}
+                    onChange={(v) => field.onChange(v)}
+                    placeholder="Search repair provider…"
+                    portal
+                    options={providerOptions}
+                  />
                 )}
               />
               {errors.repairProviderId && (
                 <p className="mt-1 text-xs text-red-600">{errors.repairProviderId.message}</p>
               )}
+              <NoSupplierOnFileNote show={noneOnFile} />
+              <ProviderCoverageWarning
+                supplierId={providerId}
+                serialIds={uds.lines.map((l) => l.serialNumberId)}
+              />
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
@@ -105,9 +121,9 @@ export default function SetRepairProviderModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              className="flex items-center gap-[7px] rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
             >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {isSubmitting ? 'Saving…' : 'Save'}
             </button>
           </div>

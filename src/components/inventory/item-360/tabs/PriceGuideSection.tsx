@@ -56,7 +56,6 @@ export default function PriceGuideSection({ itemId }: { itemId: string }) {
                 <th className="px-3 py-2">Price Use</th>
                 <th className="px-3 py-2 text-right">Price</th>
                 <th className="px-3 py-2 text-right">Down Payment</th>
-                <th className="px-3 py-2 text-right">Floor Price</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -90,13 +89,10 @@ export default function PriceGuideSection({ itemId }: { itemId: string }) {
                       <td className="px-3 py-2 text-right text-zinc-600">
                         {money(entry.downPayment)}
                       </td>
-                      <td className="px-3 py-2 text-right text-zinc-600">
-                        {money(entry.floorPrice)}
-                      </td>
                     </tr>
                     {isOpen && hasTerms && (
                       <tr className="bg-zinc-50/60">
-                        <td colSpan={5} className="px-3 py-3">
+                        <td colSpan={4} className="px-3 py-3">
                           <p className="mb-2 text-xs font-medium text-zinc-500">
                             Installment terms
                           </p>

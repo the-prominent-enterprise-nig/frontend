@@ -8,6 +8,7 @@ import {
   APBills,
   APBillSuppliers,
   BankAccounts,
+  SupplierDebitMemos,
   apOutstanding,
   fmtMoney,
   type APBill,
@@ -15,10 +16,13 @@ import {
   type APBillSupplierOption,
   type BankAccount,
   type APBillLineDiscount,
+  type SupplierDebitMemo,
 } from '@/src/libs/data/AccountingV2Data'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { Select } from '@/src/components/ui/Select'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { accountsToOptions, postableAccounts } from '@/src/libs/accounting/coa-options'
 
 const PAYABLE_STATUSES = ['RECEIVED', 'PARTIAL', 'OVERDUE']
 
@@ -37,19 +41,13 @@ const CLEARED_OPTIONS = [
   { value: 'LATER_DATE', label: 'On a later date' },
 ]
 
-const METHOD_OPTIONS = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'check', label: 'Check' },
-  { value: 'bank_transfer', label: 'Bank Transfer' },
-]
-
 interface PaymentSource {
+  /** Not asked for any more — the Paid from row is just the account, a
+   * reference and an amount. The server still wants one per source, so a new
+   * row says 'check' (the old default) and a voucher being amended keeps
+   * whatever it was raised with. */
   method: string
   bankAccountId: string
-  /** Free text for what this source was for — the halves of a split payment
-   * need telling apart. Replaced the per-source Check # box, which duplicated
-   * Reference Number: the cheque number was being typed into both. */
-  description: string
   reference: string
   /** Blank on the only row — a single source funds the whole payment, so its
    * amount is the total and there is nothing to type. Filled in once a second
@@ -58,7 +56,47 @@ interface PaymentSource {
 }
 
 function blankSource(): PaymentSource {
-  return { method: 'check', bankAccountId: '', description: '', reference: '', amount: '' }
+  return { method: 'check', bankAccountId: '', reference: '', amount: '' }
+}
+
+/** One deduction taken off what the supplier is paid. */
+interface DeductionRow {
+  accountId: string
+  /** Blank means the voucher's own payee — the usual case, and one that follows
+   * the payee if it is changed. */
+  supplierId: string
+  description: string
+  amount: string
+  /** Scenario 72 Part 8 — this row applies a posted supplier debit memo. Its
+   * account (Due from Suppliers) and amount are the memo's, so the row is
+   * read-only; the server decides both whatever is sent. */
+  supplierDebitMemoId?: string
+  memoNumber?: string
+  /** The memo's supplier, so a change of payee drops it. */
+  memoSupplierId?: string
+}
+
+function blankDeduction(): DeductionRow {
+  return { accountId: '', supplierId: '', description: '', amount: '' }
+}
+
+function memoDeduction(memo: SupplierDebitMemo): DeductionRow {
+  return {
+    accountId: '',
+    supplierId: '',
+    description: `Debit memo ${memo.memoNumber}`,
+    amount: String(memo.amount),
+    supplierDebitMemoId: memo.id,
+    memoNumber: memo.memoNumber,
+    memoSupplierId: memo.supplierId,
+  }
+}
+
+/** A row nobody has started filling in is not a deduction, just an empty line
+ * left on screen — it is dropped rather than rejected. */
+function isBlankDeduction(d: DeductionRow): boolean {
+  if (d.supplierDebitMemoId) return false
+  return !d.accountId && !d.description.trim() && !(Number(d.amount) > 0)
 }
 
 /** MM/DD/YYYY, the format used across this module's date inputs. */
@@ -226,6 +264,25 @@ export default function RecordPaymentForm() {
   /** The existing voucher this screen is acting on, whichever mode. */
   const voucherId = settleId ?? editId
   const [settling, setSettling] = useState<APDisbursementListItem | null>(null)
+  // Opening a payment that has already been made: the same screen it was paid
+  // on, filled in. Its invoices read PAID, so the open-invoices list does not
+  // carry them, and what each can take here is what is still open PLUS what this
+  // voucher itself paid — otherwise the voucher would be refused for exactly its
+  // own amount. Saving corrects the books (the server reverses the old entry and
+  // posts a new one).
+  const amendingPaid =
+    editing && !!settling && settling.status !== 'UNPAID' && settling.status !== 'CANCELLED'
+  const ownPaid = useMemo<Record<string, number>>(
+    () =>
+      amendingPaid && settling
+        ? Object.fromEntries(settling.invoices.map((i) => [i.billId, i.amount]))
+        : {},
+    [amendingPaid, settling]
+  )
+  const outstandingFor = useCallback(
+    (b: APBill) => outstandingOf(b) + (ownPaid[b.id] ?? 0),
+    [ownPaid]
+  )
   const [presetApplied, setPresetApplied] = useState(false)
   const [presetNotice, setPresetNotice] = useState<string | null>(null)
   // The invoices this payment is settling, once they are decided. Non-null
@@ -270,12 +327,24 @@ export default function RecordPaymentForm() {
   // payment together, the same way an expense can be split — see
   // APDisbursement.sources. One row covers the ordinary case.
   const [sources, setSources] = useState<PaymentSource[]>([blankSource()])
+  // What is held back from the supplier. The invoices are still settled in full;
+  // the cash that leaves is smaller by this, and each row is credited to the
+  // Chart of Accounts account picked for it.
+  const [deductions, setDeductions] = useState<DeductionRow[]>([])
+  // The payee's posted supplier debit memos that no voucher has applied yet —
+  // what the "Apply a debit memo" picker offers (Scenario 72 Part 8).
+  const [unappliedMemos, setUnappliedMemos] = useState<SupplierDebitMemo[]>([])
+  const [coaAccounts, setCoaAccounts] = useState<Account[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
     BankAccounts.list().then((r) => setBankAccounts(r.data ?? []))
+    getAccounts({ limit: 500 }).then((r) => {
+      const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
+      setCoaAccounts(postableAccounts(list))
+    })
   }, [])
 
   useEffect(() => {
@@ -298,21 +367,45 @@ export default function RecordPaymentForm() {
           found.sources.map((src) => ({
             method: src.method || 'check',
             bankAccountId: src.bankAccount?.id ?? '',
-            description: src.description ?? '',
             reference: src.reference ?? '',
             amount: src.amount != null ? String(src.amount) : '',
           }))
         )
       }
+      setDeductions(
+        (found.deductions ?? []).map((d) => ({
+          accountId: d.accountId,
+          // The payee is the default, so it is left blank rather than repeated.
+          supplierId: d.supplierId && d.supplierId !== found.supplierId ? d.supplierId : '',
+          description: d.description ?? '',
+          amount: String(d.amount),
+          // Kept so saving the voucher keeps applying the same memo.
+          supplierDebitMemoId: d.supplierDebitMemoId ?? undefined,
+          memoNumber: d.supplierDebitMemo?.memoNumber,
+          memoSupplierId: d.supplierDebitMemoId ? (found.supplierId ?? undefined) : undefined,
+        }))
+      )
       // Decided with the voucher too, for the same reason.
       setForm((f) => ({
         ...f,
         clearedType: found.clearedType ?? f.clearedType,
         clearedDate: found.clearedDate ? found.clearedDate.slice(0, 10) : f.clearedDate,
         notes: found.notes ?? f.notes,
+        // A paid voucher has the date it was paid on; an unpaid one has none yet.
+        paymentDate: found.paymentDate ? found.paymentDate.slice(0, 10) : f.paymentDate,
       }))
     })
   }, [voucherId])
+
+  // The memos on offer follow the payee. Whatever an earlier payee had on
+  // offer is ignored rather than cleared, so no state is set synchronously.
+  useEffect(() => {
+    if (!supplierId) return
+    SupplierDebitMemos.list({ supplierId, unapplied: 'true' }).then((r) =>
+      setUnappliedMemos(r.data?.items ?? [])
+    )
+  }, [supplierId])
+  const memosOnOffer = unappliedMemos.filter((m) => m.supplierId === supplierId)
 
   // Beat 2 — choosing the payee loads their open bills. Selection resets with
   // it: an allocation against a previous supplier's bill must never survive.
@@ -333,12 +426,19 @@ export default function RecordPaymentForm() {
     // not just its total — see displayLines().
     const res = await APBills.list({ supplierId, withDetail: 'true' })
     const open = (res.data?.items ?? []).filter(
-      (b) => PAYABLE_STATUSES.includes(b.status) && outstandingOf(b) > 0.005
+      (b) => PAYABLE_STATUSES.includes(b.status) && outstandingFor(b) > 0.005
     )
-    setBills(open)
+    // A paid voucher's own invoices are PAID, so they are fetched by id and put
+    // in front of the open ones.
+    const own: APBill[] = []
+    if (amendingPaid && settling) {
+      const fetched = await Promise.all(settling.invoices.map((i) => APBills.get(i.billId)))
+      for (const r of fetched) if (r.success && r.data) own.push(r.data)
+    }
+    setBills([...own, ...open.filter((b) => !own.some((o) => o.id === b.id))])
     if (!voucherId) setAllocations({})
     setLoadingBills(false)
-  }, [supplierId, voucherId])
+  }, [supplierId, voucherId, amendingPaid, settling, outstandingFor])
 
   useEffect(() => {
     loadBills()
@@ -353,7 +453,7 @@ export default function RecordPaymentForm() {
     const found = bills.filter((b) => presetBills.includes(b.id))
     if (found.length) {
       const next: Record<string, string> = {}
-      for (const b of found) next[b.id] = String(outstandingOf(b).toFixed(2))
+      for (const b of found) next[b.id] = String(outstandingFor(b).toFixed(2))
       setAllocations(next)
     } else {
       // Every selected invoice was settled elsewhere in the meantime. Staying
@@ -368,7 +468,7 @@ export default function RecordPaymentForm() {
       )
     }
     setPresetApplied(true)
-  }, [bills, presetBills, presetApplied])
+  }, [bills, presetBills, presetApplied, outstandingFor])
 
   // What this screen may pay. Restricted to the incoming selection until the
   // user deliberately widens it (or switches payee, below).
@@ -388,14 +488,40 @@ export default function RecordPaymentForm() {
    * Derived rather than pushed into state so an untouched row needs no effect
    * to seed it: a typed value wins, and the outstanding balance fills in for
    * every row that has not been touched. */
+  /** One invoice on the voucher: its Amount is not a number to type, it is what
+   * the payment methods below add up to — the invoice is paid with exactly what
+   * is paid from. (Settling keeps the voucher's own amounts, and several
+   * invoices share one total, so those still take an amount each.) */
+  const derivesFromSources = locked && settleId === null && visibleBills.length === 1
+  // What is being held back. Only rows that are actually filled in count; the
+  // invoice is settled by what is paid PLUS this, since a deduction settles the
+  // invoice just as cash does.
+  const deductionsTotal =
+    Math.round(
+      deductions
+        .filter((d) => !isBlankDeduction(d))
+        .reduce((sum, d) => sum + (Number(d.amount) || 0), 0) * 100
+    ) / 100
+  const amountFromSources = useMemo(() => {
+    if (!derivesFromSources) return null
+    // A lone row left blank means "all of it": the whole outstanding balance.
+    if (sources.length === 1 && sources[0].amount === '') return outstandingFor(visibleBills[0])
+    return sources.reduce((sum, src) => sum + (Number(src.amount) || 0), 0) + deductionsTotal
+  }, [derivesFromSources, sources, visibleBills, outstandingFor, deductionsTotal])
+
   const activeAllocations: Record<string, string> = useMemo(
     () =>
       locked
         ? Object.fromEntries(
-            visibleBills.map((b) => [b.id, allocations[b.id] ?? outstandingOf(b).toFixed(2)])
+            visibleBills.map((b) => [
+              b.id,
+              amountFromSources !== null
+                ? amountFromSources.toFixed(2)
+                : (allocations[b.id] ?? outstandingFor(b).toFixed(2)),
+            ])
           )
         : allocations,
-    [locked, visibleBills, allocations]
+    [locked, visibleBills, allocations, outstandingFor, amountFromSources]
   )
 
   const selectedBills = useMemo(
@@ -485,6 +611,9 @@ export default function RecordPaymentForm() {
    * Reading the invoices' own withholding instead is what made a second voucher
    * reprint the first one's ₱500. */
   const withheld = Number(whtValue) || 0
+  /** What actually leaves the bank: the invoices settled less what is held back
+   * from the supplier. This, not `total`, is what the payment methods fund. */
+  const netPayable = Math.round((total - deductionsTotal) * 100) / 100
   // A single source funds the whole payment; only a split needs typed amounts.
   const singleSource = sources.length === 1
   /** What a source funds. Blank on the only row means "all of it", so the
@@ -493,17 +622,24 @@ export default function RecordPaymentForm() {
    * called out rather than silently overridden. Blank on a split row is 0:
    * there is no sensible whole to assume once the money is divided. */
   const sourceAmount = (src: PaymentSource): number =>
-    src.amount !== '' ? Number(src.amount) || 0 : singleSource ? total : 0
+    src.amount !== '' ? Number(src.amount) || 0 : singleSource ? netPayable : 0
   const sourceAmountValue = (src: PaymentSource): string =>
-    src.amount !== '' ? src.amount : singleSource ? total.toFixed(2) : ''
+    src.amount !== '' ? src.amount : singleSource ? netPayable.toFixed(2) : ''
   const fundedTotal =
     Math.round(sources.reduce((sum, src) => sum + sourceAmount(src), 0) * 100) / 100
-  const unfunded = Math.round((total - fundedTotal) * 100) / 100
+  const unfunded = Math.round((netPayable - fundedTotal) * 100) / 100
+
+  const setDeduction = (idx: number, patch: Partial<DeductionRow>) =>
+    setDeductions((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)))
+  const accountOptions: CategorySelectOption[] = useMemo(
+    () => accountsToOptions(coaAccounts),
+    [coaAccounts]
+  )
 
   const toggle = (bill: APBill, on: boolean) => {
     setAllocations((prev) => {
       const next = { ...prev }
-      if (on) next[bill.id] = String(outstandingOf(bill).toFixed(2))
+      if (on) next[bill.id] = String(outstandingFor(bill).toFixed(2))
       else delete next[bill.id]
       return next
     })
@@ -513,7 +649,7 @@ export default function RecordPaymentForm() {
   const toggleAll = (on: boolean) => {
     if (!on) return setAllocations({})
     const next: Record<string, string> = {}
-    for (const b of visibleBills) next[b.id] = String(outstandingOf(b).toFixed(2))
+    for (const b of visibleBills) next[b.id] = String(outstandingFor(b).toFixed(2))
     setAllocations(next)
   }
 
@@ -521,9 +657,28 @@ export default function RecordPaymentForm() {
     e.preventDefault()
     setError(null)
     if (selectedIds.length === 0) return setError('Select at least one invoice to pay.')
+    // Half-filled rows are the mistake worth catching: an amount with no account
+    // would otherwise be dropped silently and the supplier paid in full.
+    const filledDeductions = deductions.filter((d) => !isBlankDeduction(d))
+    for (const [i, d] of filledDeductions.entries()) {
+      if (d.supplierDebitMemoId) continue
+      if (!d.accountId)
+        return setError(`Pick the Chart of Accounts account for deduction ${i + 1}.`)
+      if (!(Number(d.amount) > 0)) return setError(`Deduction ${i + 1} needs an amount above zero.`)
+    }
+    if (filledDeductions.length && deductionsTotal >= total - 0.005)
+      return setError(
+        `Deductions come to ${fmtMoney(deductionsTotal)}, which meets or exceeds the ${fmtMoney(total)} being settled.`
+      )
+    const deductionPayload = filledDeductions.map((d) => ({
+      accountId: d.accountId,
+      supplierId: d.supplierId || undefined,
+      description: d.description.trim() || undefined,
+      amount: Number(d.amount),
+      supplierDebitMemoId: d.supplierDebitMemoId,
+    }))
     for (const src of sources) {
-      if (src.method !== 'cash' && !src.bankAccountId)
-        return setError(`Source of Fund is required for ${src.method.replace('_', ' ')} payments.`)
+      if (!src.bankAccountId) return setError('Pick the bank or cash account this is paid from.')
     }
     // Applies however many sources there are: an untouched single row defaults
     // to the full total, so this only fires on a figure someone actually typed.
@@ -537,9 +692,9 @@ export default function RecordPaymentForm() {
     if (Math.abs(unfunded) > 0.01)
       return setError(
         unfunded > 0
-          ? `${fmtMoney(unfunded)} of the ${fmtMoney(total)} allocated is not funded yet. ` +
+          ? `${fmtMoney(unfunded)} of the ${fmtMoney(netPayable)} to be paid is not funded yet. ` +
               `Add a payment method for the rest — or, for a part payment, lower the invoice ` +
-              `Amount to ${fmtMoney(fundedTotal)}.`
+              `Amount to ${fmtMoney(fundedTotal + deductionsTotal)}.`
           : `The payment methods add up to ${fmtMoney(-unfunded)} more than the invoices being settled.`
       )
     if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
@@ -562,9 +717,10 @@ export default function RecordPaymentForm() {
     for (const r of rows) {
       if (!(r.amount > 0)) return setError('Every selected invoice needs an amount above zero.')
       const bill = bills.find((b) => b.id === r.apBillId)!
-      if (r.amount > outstandingOf(bill) + 0.01)
+      // Half a centavo, as the server: a whole one let ₱0.01 too much through.
+      if (r.amount > outstandingFor(bill) + 0.005)
         return setError(
-          `${bill.billNumber ?? 'An invoice'} only has ${fmtMoney(outstandingOf(bill))} outstanding.`
+          `${bill.billNumber ?? 'An invoice'} only has ${fmtMoney(outstandingFor(bill))} outstanding.`
         )
     }
 
@@ -575,15 +731,20 @@ export default function RecordPaymentForm() {
     if (editing) {
       const amended = await APBills.updateDisbursement(editId, {
         allocations: rows,
+        // Always sent, even empty, so removing the last deduction removes it.
+        deductions: deductionPayload,
         notes: form.notes || undefined,
         sources: sources.map((src) => ({
           method: src.method,
           bankAccountId: src.bankAccountId || undefined,
           reference: src.reference || undefined,
-          description: src.description || undefined,
           amount: sourceAmount(src),
         })),
-        voucherDate: new Date(form.paymentDate).toISOString(),
+        // A paid voucher is corrected by its payment date; an unpaid one has only
+        // the date it was raised.
+        ...(amendingPaid
+          ? { paymentDate: new Date(form.paymentDate).toISOString() }
+          : { voucherDate: new Date(form.paymentDate).toISOString() }),
         clearedType: form.clearedType,
         clearedDate:
           form.clearedType === 'LATER_DATE' && form.clearedDate
@@ -616,7 +777,6 @@ export default function RecordPaymentForm() {
           method: src.method,
           bankAccountId: src.bankAccountId || undefined,
           reference: src.reference || undefined,
-          description: src.description || undefined,
           amount: sourceAmount(src),
         })),
       })
@@ -636,7 +796,6 @@ export default function RecordPaymentForm() {
         method: src.method,
         bankAccountId: src.bankAccountId || undefined,
         reference: src.reference || undefined,
-        description: src.description || undefined,
         amount: sourceAmount(src),
       })),
       voucherDate: new Date(form.paymentDate).toISOString(),
@@ -648,6 +807,7 @@ export default function RecordPaymentForm() {
           : undefined,
       notes: form.notes || undefined,
       allocations: rows,
+      deductions: deductionPayload.length ? deductionPayload : undefined,
     })
     setSaving(false)
     if (!res.success) {
@@ -673,11 +833,43 @@ export default function RecordPaymentForm() {
       </h1>
       <p className="mb-4 text-[13px] text-gray-500">
         {editing
-          ? 'It keeps its number. Nothing has posted yet, so anything on it can still change.'
+          ? amendingPaid
+            ? 'It keeps its number. This payment has already been recorded, and everything on it can still be corrected.'
+            : 'It keeps its number. Nothing has posted yet, so anything on it can still change.'
           : settling
             ? 'The invoices were decided when this voucher was raised — add the cheque and the date.'
             : 'One cheque, one voucher — recorded together with the payment.'}
       </p>
+
+      {amendingPaid && (
+        <div
+          role="alert"
+          data-testid="paid-voucher-warning"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800"
+        >
+          <p className="font-semibold">This payment has already been recorded and posted.</p>
+          <p className="mt-0.5">
+            Saving a change reverses its journal entry and posts a corrected one, and each
+            invoice&apos;s paid amount and status follow. The voucher keeps its number.
+          </p>
+          {settling && settling.invoices.length > 0 && (
+            <p className="mt-1">
+              Invoice details (dates, SI number):{' '}
+              {settling.invoices.map((i, n) => (
+                <span key={i.billId}>
+                  {n > 0 && ', '}
+                  <Link
+                    href={`/accounting/ap-bills/${i.billId}/edit?details=1`}
+                    className="font-medium underline"
+                  >
+                    {i.billNumber ?? 'invoice'}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Beat 1 — who are we paying. Nothing else shows until this is set. */}
       <div className="max-w-md">
@@ -693,6 +885,10 @@ export default function RecordPaymentForm() {
             // ordinary browse-and-pick form.
             setConfirmedIds(null)
             setSupplierId(id ?? '')
+            // A debit memo only applies to its own supplier's bills.
+            setDeductions((prev) =>
+              prev.filter((d) => !d.supplierDebitMemoId || d.memoSupplierId === id)
+            )
           }}
           options={supplierOptions}
           placeholder="— Select a supplier —"
@@ -773,7 +969,7 @@ export default function RecordPaymentForm() {
                 <tbody className="divide-y divide-gray-100">
                   {visibleBills.map((b) => {
                     const on = b.id in activeAllocations
-                    const out = outstandingOf(b)
+                    const out = outstandingFor(b)
                     const amt = Number(activeAllocations[b.id] ?? 0)
                     const partial = on && amt > 0 && amt < out - 0.01
                     const whtPot = b.withholdingAmount ?? 0
@@ -850,13 +1046,18 @@ export default function RecordPaymentForm() {
                               step="0.01"
                               min="0"
                               aria-label={`Amount for ${b.billNumber ?? 'invoice'}`}
-                              disabled={settleId !== null || (!locked && !on)}
+                              disabled={settleId !== null || (!locked && !on) || derivesFromSources}
                               value={activeAllocations[b.id] ?? ''}
                               onChange={(e) =>
                                 setAllocations((p) => ({ ...p, [b.id]: e.target.value }))
                               }
                               className="w-32 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
                             />
+                            {derivesFromSources && (
+                              <p className="mt-0.5 text-[11px] text-gray-500">
+                                Total of the payment methods below
+                              </p>
+                            )}
                             {partial && (
                               <p className="mt-0.5 text-[11px] text-amber-600">
                                 Partial — {fmtMoney(out - amt)} will remain
@@ -1022,11 +1223,10 @@ export default function RecordPaymentForm() {
                     readOnly
                     aria-label="Voucher number (generated)"
                     title="Generated from the bank and reference number of the first payment method"
-                    value={previewVoucher(
-                      selectedBank,
-                      primarySource?.reference ?? '',
-                      form.paymentDate
-                    )}
+                    value={
+                      settling?.voucherNumber ??
+                      previewVoucher(selectedBank, primarySource?.reference ?? '', form.paymentDate)
+                    }
                     className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-500 outline-none"
                   />
                 </label>
@@ -1077,42 +1277,18 @@ export default function RecordPaymentForm() {
                   {sources.map((src, idx) => (
                     <div key={idx} className="flex flex-wrap items-end gap-2">
                       <span className="pb-2 text-[13px] text-gray-400">{idx + 1}.</span>
-                      <label className="block w-44">
-                        <span className="sr-only">Payment method {idx + 1}</span>
-                        <Select
+                      <label className="block w-64">
+                        <span className="mb-1 block text-[11px] text-gray-500">
+                          Bank and Cash Accounts *
+                        </span>
+                        <CategorySelect
                           compact
-                          value={src.method}
-                          onChange={(method) =>
-                            setSource(idx, {
-                              method,
-                              bankAccountId: method === 'cash' ? '' : src.bankAccountId,
-                            })
-                          }
-                          options={METHOD_OPTIONS}
-                        />
-                      </label>
-                      {src.method !== 'cash' && (
-                        <label className="block w-64">
-                          <span className="mb-1 block text-[11px] text-gray-500">
-                            Bank Account *
-                          </span>
-                          <CategorySelect
-                            compact
-                            aria-label={`Bank account for payment method ${idx + 1}`}
-                            noun="bank accounts"
-                            value={src.bankAccountId}
-                            onChange={(id) => setSource(idx, { bankAccountId: id ?? '' })}
-                            options={bankOptions}
-                            placeholder="— Select —"
-                          />
-                        </label>
-                      )}
-                      <label className="block w-48">
-                        <span className="mb-1 block text-[11px] text-gray-500">Description</span>
-                        <input
-                          value={src.description}
-                          onChange={(e) => setSource(idx, { description: e.target.value })}
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                          aria-label={`Bank and cash account for payment method ${idx + 1}`}
+                          noun="bank and cash accounts"
+                          value={src.bankAccountId}
+                          onChange={(id) => setSource(idx, { bankAccountId: id ?? '' })}
+                          options={bankOptions}
+                          placeholder="— Select —"
                         />
                       </label>
                       <label className="block w-44">
@@ -1157,7 +1333,7 @@ export default function RecordPaymentForm() {
                       // Seed the first row's amount as it stops being implicit.
                       ...prev.map((src, i) =>
                         i === 0 && prev.length === 1 && !src.amount
-                          ? { ...src, amount: total.toFixed(2) }
+                          ? { ...src, amount: netPayable.toFixed(2) }
                           : src
                       ),
                       blankSource(),
@@ -1176,11 +1352,130 @@ export default function RecordPaymentForm() {
                 )}
               </div>
 
+              {/* Deductions: money held back from this supplier's payment. The
+                  invoices above are still settled in full — AP is cleared for
+                  every peso — but the cash that leaves is smaller, and each
+                  amount is credited to the Chart of Accounts account picked
+                  here. Settling a voucher raised earlier shows what it already
+                  carries and does not offer to change it. */}
+              {(!settleId || deductions.length > 0) && (
+                <div className="mt-4 border-t border-gray-100 pt-4">
+                  <span className="mb-1 block text-xs font-medium text-gray-600">Deductions</span>
+                  <p className="mb-2 text-[11px] text-gray-500">
+                    Amounts held back from what this supplier is paid. Each one is credited to the
+                    account you map it to.
+                  </p>
+                  <div className="space-y-2">
+                    {deductions.map((d, idx) =>
+                      d.supplierDebitMemoId ? (
+                        <MemoDeductionRow
+                          key={d.supplierDebitMemoId}
+                          index={idx}
+                          row={d}
+                          readOnly={!!settleId}
+                          onRemove={() => setDeductions((prev) => prev.filter((_, i) => i !== idx))}
+                        />
+                      ) : (
+                        <div key={idx} className="flex flex-wrap items-end gap-2">
+                          <span className="pb-2 text-[13px] text-gray-400">{idx + 1}.</span>
+                          <label className="block w-72">
+                            <span className="mb-1 block text-[11px] text-gray-500">
+                              Chart of Accounts *
+                            </span>
+                            <CategorySelect
+                              compact
+                              aria-label={`Chart of accounts for deduction ${idx + 1}`}
+                              noun="accounts"
+                              value={d.accountId}
+                              disabled={!!settleId}
+                              onChange={(id) => setDeduction(idx, { accountId: id ?? '' })}
+                              options={accountOptions}
+                              placeholder="— Select —"
+                            />
+                          </label>
+                          <label className="block w-56">
+                            <span className="mb-1 block text-[11px] text-gray-500">Supplier</span>
+                            <CategorySelect
+                              compact
+                              aria-label={`Supplier for deduction ${idx + 1}`}
+                              noun="suppliers"
+                              value={d.supplierId || supplierId}
+                              disabled={!!settleId}
+                              onChange={(id) =>
+                                setDeduction(idx, { supplierId: id && id !== supplierId ? id : '' })
+                              }
+                              options={supplierOptions}
+                              placeholder="— Select —"
+                            />
+                          </label>
+                          <label className="block min-w-48 flex-1">
+                            <span className="mb-1 block text-[11px] text-gray-500">
+                              Description
+                            </span>
+                            <input
+                              value={d.description}
+                              disabled={!!settleId}
+                              maxLength={500}
+                              aria-label={`Description for deduction ${idx + 1}`}
+                              onChange={(e) => setDeduction(idx, { description: e.target.value })}
+                              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
+                            />
+                          </label>
+                          <label className="block w-36">
+                            <span className="mb-1 block text-[11px] text-gray-500">Amount *</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              aria-label={`Amount for deduction ${idx + 1}`}
+                              value={d.amount}
+                              disabled={!!settleId}
+                              onChange={(e) => setDeduction(idx, { amount: e.target.value })}
+                              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
+                            />
+                          </label>
+                          {!settleId && (
+                            <button
+                              type="button"
+                              aria-label={`Remove deduction ${idx + 1}`}
+                              onClick={() =>
+                                setDeductions((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                              className="mb-1.5 rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      )
+                    )}
+                  </div>
+                  {!settleId && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setDeductions((prev) => [...prev, blankDeduction()])}
+                        className="inline-flex items-center gap-1 text-[13px] font-medium text-purple-700 hover:underline"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add deduction
+                      </button>
+                      <DebitMemoPicker
+                        memos={memosOnOffer.filter(
+                          (m) => !deductions.some((d) => d.supplierDebitMemoId === m.id)
+                        )}
+                        hasSupplier={!!supplierId}
+                        onPick={(memo) => setDeductions((prev) => [...prev, memoDeduction(memo)])}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
                 <span className="text-[13px] text-gray-500">
                   {selectedIds.length} invoice{selectedIds.length === 1 ? '' : 's'} selected
                 </span>
-                {withheld > 0 ? (
+                {withheld > 0 || deductionsTotal > 0 ? (
                   <div className="text-right text-[13px]">
                     <div className="text-gray-500">
                       Total amount{' '}
@@ -1188,12 +1483,22 @@ export default function RecordPaymentForm() {
                         {fmtMoney(total + withheld)}
                       </span>
                     </div>
-                    <div className="text-gray-500">
-                      Less: withholding tax{' '}
-                      <span className="tabular-nums text-gray-800">{fmtMoney(withheld)}</span>
-                    </div>
+                    {withheld > 0 && (
+                      <div className="text-gray-500">
+                        Less: withholding tax{' '}
+                        <span className="tabular-nums text-gray-800">{fmtMoney(withheld)}</span>
+                      </div>
+                    )}
+                    {deductionsTotal > 0 && (
+                      <div className="text-gray-500">
+                        Less: deductions{' '}
+                        <span className="tabular-nums text-gray-800">
+                          {fmtMoney(deductionsTotal)}
+                        </span>
+                      </div>
+                    )}
                     <div className="mt-0.5 border-t border-gray-200 pt-0.5 text-[15px] font-semibold text-prominent-purple-900">
-                      Net amount <span className="tabular-nums">{fmtMoney(total)}</span>
+                      Net amount <span className="tabular-nums">{fmtMoney(netPayable)}</span>
                     </div>
                   </div>
                 ) : (
@@ -1225,7 +1530,7 @@ export default function RecordPaymentForm() {
           ) : (
             <PhilippinePeso className="h-4 w-4" />
           )}
-          {saving ? 'Saving…' : editing ? 'Save changes' : 'Record Payment'}
+          {saving ? 'Saving…' : editing ? 'Save changes' : 'Create Voucher'}
         </button>
         <Link
           href="/accounting/ap-bills"
@@ -1235,5 +1540,83 @@ export default function RecordPaymentForm() {
         </Link>
       </div>
     </form>
+  )
+}
+
+/** A deduction that applies a supplier debit memo (Scenario 72 Part 8). The
+ * memo posted to Due from Suppliers when it was approved; applying it here
+ * credits that account back and takes its full amount off this payment. */
+function MemoDeductionRow({
+  index,
+  row,
+  readOnly,
+  onRemove,
+}: {
+  index: number
+  row: DeductionRow
+  readOnly: boolean
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-purple-100 bg-purple-50/50 px-2.5 py-2">
+      <span className="text-[13px] text-gray-400">{index + 1}.</span>
+      <span className="font-mono text-[13px] font-medium text-purple-800">
+        {row.memoNumber ?? 'Debit memo'}
+      </span>
+      <span className="min-w-48 flex-1 text-[12px] text-gray-500">
+        Supplier debit memo · credited to Due from Suppliers
+      </span>
+      <span className="w-36 text-right text-[13px] tabular-nums text-gray-800">
+        {fmtMoney(Number(row.amount))}
+      </span>
+      {!readOnly && (
+        <button
+          type="button"
+          aria-label={`Remove debit memo ${row.memoNumber ?? index + 1}`}
+          onClick={onRemove}
+          className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** The payee's posted, unapplied supplier debit memos, one pick at a time. */
+function DebitMemoPicker({
+  memos,
+  hasSupplier,
+  onPick,
+}: {
+  memos: SupplierDebitMemo[]
+  hasSupplier: boolean
+  onPick: (memo: SupplierDebitMemo) => void
+}) {
+  if (!hasSupplier) return null
+  if (memos.length === 0) {
+    return (
+      <span className="text-[12px] text-gray-400">No unapplied debit memos for this supplier</span>
+    )
+  }
+  return (
+    <div className="w-72">
+      <CategorySelect
+        compact
+        aria-label="Apply a supplier debit memo"
+        noun="debit memos"
+        value={undefined}
+        onChange={(id) => {
+          const memo = memos.find((m) => m.id === id)
+          if (memo) onPick(memo)
+        }}
+        options={memos.map((m) => ({
+          id: m.id,
+          name: `${m.memoNumber} — ${fmtMoney(m.amount)}${m.deliveryReceipt ? ` (${m.deliveryReceipt.drNumber})` : ''}`,
+          depth: 0,
+        }))}
+        placeholder="Apply a supplier debit memo…"
+      />
+    </div>
   )
 }

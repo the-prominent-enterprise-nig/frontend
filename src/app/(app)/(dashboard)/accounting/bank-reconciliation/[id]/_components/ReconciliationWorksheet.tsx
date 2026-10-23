@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle, Pencil, Trash2, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Eye, Loader2, Pencil, Trash2 } from 'lucide-react'
+import MoneyInput from '@/src/components/ui/MoneyInput'
 import {
   BankAccounts,
   fmtMoney,
   fmtDate,
+  adjustedStatementBalance,
+  reconStatus,
   type BankReconciliation,
   type BankReconciliationLine,
   type BankReconciliationLineSourceType,
@@ -18,6 +21,10 @@ const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
   AR_PAYMENT: 'AR Collection',
   AP_PAYMENT: 'AP Check Payment',
   CLEARING_SETTLEMENT: 'Clearing Settlement',
+  FUND_TRANSFER_OUT: 'Inter-Account Transfer (out)',
+  FUND_TRANSFER_IN: 'Inter-Account Transfer (in)',
+  POS_DEPOSIT: 'POS Deposit',
+  EXPENSE_PAYMENT: 'Expense Payment',
 }
 
 // Scenario 42 — the reconciliation worksheet. Statement Balance and System
@@ -32,6 +39,11 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null)
   const [completing, setCompleting] = useState(false)
   const [editing, setEditing] = useState(false)
+  // An auto-created draft: the statement's date and closing balance, typed in to
+  // start it. The date starts as the draft's own suggested one.
+  const [draftDate, setDraftDate] = useState('')
+  const [draftBalance, setDraftBalance] = useState('')
+  const [savingDraftBalance, setSavingDraftBalance] = useState(false)
   const [editForm, setEditForm] = useState({
     statementDate: '',
     statementBalance: '',
@@ -39,10 +51,6 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   })
   const [savingEdit, setSavingEdit] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  // The Discrepancy drill-down. Opening it is what triggers the first fetch,
-  // so an untouched worksheet never pays for a ledger it isn't showing.
-  const [showLedger, setShowLedger] = useState(false)
-
   const load = useCallback(async () => {
     setLoading(true)
     const res = await BankAccounts.getReconciliationWorksheet(id)
@@ -80,7 +88,8 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
     if (!rec) return
     setEditForm({
       statementDate: String(rec.statementDate).slice(0, 10),
-      statementBalance: String(rec.statementBalance),
+      // A draft's 0 is a placeholder, not something anyone typed.
+      statementBalance: rec.awaitingStatement ? '' : String(rec.statementBalance),
       notes: rec.notes ?? '',
     })
     setEditing(true)
@@ -103,6 +112,27 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
     setEditing(false)
     // A new statement date rebuilds the worksheet server-side, so re-read the
     // whole thing rather than patching the header in place.
+    load()
+  }
+
+  const saveDraftBalance = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!rec || draftBalance === '' || draftBalance === '-') return
+    setSavingDraftBalance(true)
+    setError(null)
+    // A different date rebuilds the worksheet as of that date (ticks are kept);
+    // the same date just records the balance.
+    const res = await BankAccounts.updateReconciliation(id, {
+      statementDate: draftDate || String(rec.statementDate).slice(0, 10),
+      statementBalance: Number(draftBalance),
+    })
+    setSavingDraftBalance(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Could not save the statement balance')
+      return
+    }
+    setDraftBalance('')
+    setDraftDate('')
     load()
   }
 
@@ -159,13 +189,17 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 
   const pendingDeposits = rec.pendingDeposits ?? []
   const pendingWithdrawals = rec.pendingWithdrawals ?? []
-  const checkedDeposits = pendingDeposits.filter((l) => l.checked).reduce((s, l) => s + l.amount, 0)
-  const checkedWithdrawals = pendingWithdrawals
-    .filter((l) => l.checked)
-    .reduce((s, l) => s + l.amount, 0)
-  const adjustedBalance = rec.statementBalance + checkedDeposits - checkedWithdrawals
+  // Scenario 61 Part C — checked = cleared, unchecked = outstanding; only
+  // the outstanding items adjust the statement balance.
+  const adjustedBalance = adjustedStatementBalance(rec.statementBalance, [
+    ...pendingDeposits,
+    ...pendingWithdrawals,
+  ])
   const discrepancy = adjustedBalance - rec.systemBalance
   const isZero = Math.abs(discrepancy) < 0.01
+  // An auto-created draft has no statement balance until someone types it in.
+  const awaiting = !!rec.awaitingStatement && !rec.reconciled
+  const status = reconStatus(rec.reconciled, discrepancy, awaiting)
 
   return (
     <div className="px-6 py-8 lg:px-10 max-w-5xl mx-auto">
@@ -190,11 +224,34 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
               <CheckCircle className="w-4 h-4" />
               Reconciled
             </span>
+          ) : status === 'Draft' ? (
+            <span
+              className="px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 text-sm font-semibold border border-purple-200"
+              title="Created automatically from your books — enter the statement balance to start"
+            >
+              Draft
+            </span>
+          ) : status === 'For Review' ? (
+            <span
+              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-200"
+              title="Difference is zero — ready to be marked reconciled"
+            >
+              For Review
+            </span>
           ) : (
-            <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200">
-              Pending
+            <span
+              className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200"
+              title="Difference is not zero yet"
+            >
+              In Progress
             </span>
           )}
+          <button
+            onClick={() => router.push(`/accounting/bank-reconciliation/${id}/print`)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
+          >
+            <Eye className="w-4 h-4" /> Preview
+          </button>
           {/* Editing is open-only: a completed worksheet's lines are locked
               and its clearings are already written, so the way back from a
               wrong Complete is Delete, which un-clears them. */}
@@ -243,12 +300,11 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
               <span className="block text-xs font-medium text-gray-600 mb-1">
                 Statement Balance
               </span>
-              <input
+              <MoneyInput
                 required
-                type="number"
-                step="0.01"
+                allowNegative
                 value={editForm.statementBalance}
-                onChange={(e) => setEditForm({ ...editForm, statementBalance: e.target.value })}
+                onChange={(statementBalance) => setEditForm({ ...editForm, statementBalance })}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </label>
@@ -282,27 +338,71 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
       )}
 
       <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryTile label="Statement Balance" value={rec.statementBalance} />
+        <SummaryTile
+          label="Statement Balance"
+          value={rec.statementBalance}
+          display={awaiting ? 'Not entered yet' : undefined}
+        />
         <SummaryTile label="System Balance" value={rec.systemBalance} hint="Computed from the GL" />
-        <SummaryTile label="Adjusted Balance" value={adjustedBalance} />
+        <SummaryTile
+          label="Adjusted Balance"
+          value={adjustedBalance}
+          display={awaiting ? '—' : undefined}
+          hint="Statement + outstanding deposits − outstanding withdrawals"
+        />
         {/* The tile states the gap; clicking it shows the transactions the
             gap has to be hiding in. */}
         <SummaryTile
           label="Discrepancy"
           value={discrepancy}
-          tone={isZero ? 'good' : 'bad'}
+          display={awaiting ? '—' : undefined}
+          tone={awaiting ? undefined : isZero ? 'good' : 'bad'}
           hint="Click to see this bank's transactions"
-          onClick={() => setShowLedger(true)}
+          onClick={() => router.push(`/accounting/bank-reconciliation/${id}/transactions`)}
         />
       </div>
 
-      {showLedger && (
-        <BankLedgerModal
-          reconciliationId={id}
-          bankName={rec.bankAccount?.name ?? 'this bank'}
-          statementDate={rec.statementDate}
-          onClose={() => setShowLedger(false)}
-        />
+      {awaiting && (
+        <form
+          onSubmit={saveDraftBalance}
+          aria-label="Enter the bank statement balance"
+          className="mt-6 border-t pt-5"
+        >
+          <h2 className="text-xs font-semibold uppercase text-gray-500 mb-1">
+            Enter the bank statement balance
+          </h2>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="block w-48">
+              <span className="block text-xs font-medium text-gray-600 mb-1">Statement Date *</span>
+              <input
+                required
+                type="date"
+                value={draftDate || String(rec.statementDate).slice(0, 10)}
+                onChange={(e) => setDraftDate(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </label>
+            <label className="block w-64">
+              <span className="block text-xs font-medium text-gray-600 mb-1">
+                Statement Balance *
+              </span>
+              <MoneyInput
+                required
+                allowNegative
+                value={draftBalance}
+                onChange={setDraftBalance}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={savingDraftBalance || draftBalance === '' || draftBalance === '-'}
+              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            >
+              {savingDraftBalance ? 'Saving' : 'Save statement balance'}
+            </button>
+          </div>
+        </form>
       )}
 
       {error && (
@@ -313,14 +413,14 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 
       <LineSection
         title="Pending Deposits"
-        subtitle="AR collections and clearing settlements not yet confirmed cleared."
+        subtitle="Tick each one that appears on the bank statement (cleared). Unticked items are deposits in transit."
         lines={pendingDeposits}
         readOnly={rec.reconciled}
         onToggle={toggleLine}
       />
       <LineSection
         title="Pending Withdrawals"
-        subtitle="AP check payments not yet confirmed cleared."
+        subtitle="Tick each one that appears on the bank statement (cleared). Unticked items are outstanding checks/withdrawals."
         lines={pendingWithdrawals}
         readOnly={rec.reconciled}
         onToggle={toggleLine}
@@ -328,15 +428,29 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 
       {!rec.reconciled && (
         <div className="mt-6 flex items-center justify-end gap-3">
-          {!isZero && (
+          {awaiting ? (
             <p className="text-xs text-amber-700">
-              Check off every item that actually cleared until Discrepancy reaches ₱0.00.
+              Enter the statement balance first. Mark Reconciled unlocks once it is entered and the
+              discrepancy is ₱0.00.
             </p>
+          ) : (
+            !isZero && (
+              <p className="text-xs text-amber-700">
+                Tick every item that cleared on the statement. Mark Reconciled unlocks only at a
+                ₱0.00 discrepancy.
+              </p>
+            )
           )}
           <button
             onClick={complete}
-            disabled={completing || !isZero}
-            title={isZero ? undefined : 'Discrepancy must be zero before completing'}
+            disabled={completing || awaiting || !isZero}
+            title={
+              awaiting
+                ? 'Enter the statement balance first'
+                : isZero
+                  ? undefined
+                  : 'Discrepancy must be zero before completing'
+            }
             className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {completing ? 'Completing...' : 'Mark Reconciled'}
@@ -350,12 +464,15 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 function SummaryTile({
   label,
   value,
+  display,
   hint,
   tone,
   onClick,
 }: {
   label: string
   value: number
+  /** Shown instead of the amount when there is no real amount yet. */
+  display?: string
   hint?: string
   tone?: 'good' | 'bad'
   onClick?: () => void
@@ -365,7 +482,7 @@ function SummaryTile({
   const body = (
     <>
       <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className={`mt-1 text-lg font-semibold ${toneClass}`}>{fmtMoney(value)}</p>
+      <p className={`mt-1 text-lg font-semibold ${toneClass}`}>{display ?? fmtMoney(value)}</p>
       {hint && <p className="mt-0.5 text-[11px] text-gray-400">{hint}</p>}
     </>
   )
@@ -396,16 +513,14 @@ function SummaryTile({
  * discrepancy is just as often something that landed outside the window as
  * something inside it.
  */
-function BankLedgerModal({
+export function BankLedgerView({
   reconciliationId,
   bankName,
   statementDate,
-  onClose,
 }: {
   reconciliationId: string
   bankName: string
   statementDate: string
-  onClose: () => void
 }) {
   const [data, setData] = useState<BankLedgerWindow | null>(null)
   const [loading, setLoading] = useState(true)
@@ -450,28 +565,21 @@ function BankLedgerModal({
   }, [load])
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+    <div className="px-6 py-8 lg:px-10 max-w-6xl mx-auto">
+      <Link
+        href={`/accounting/bank-reconciliation/${reconciliationId}`}
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
-        <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Transactions — {bankName}</h2>
-            <p className="mt-0.5 text-xs text-gray-500">
-              Everything posted to this bank in the period. Statement date {fmtDate(statementDate)}.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
+        <ArrowLeft className="h-4 w-4" />
+        Back to worksheet
+      </Link>
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-5 py-4">
+          <h1 className="text-xl font-semibold text-gray-900">Transactions — {bankName}</h1>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Everything posted to this bank in the period, and whether each reconciling item has
+            cleared. Statement date {fmtDate(statementDate)}.
+          </p>
         </div>
 
         <form
@@ -525,6 +633,7 @@ function BankLedgerModal({
                   <th className="px-4 py-2 text-left">Date</th>
                   <th className="px-4 py-2 text-left">Reference</th>
                   <th className="px-4 py-2 text-left">Description</th>
+                  <th className="px-4 py-2 text-left">Status</th>
                   <th className="px-4 py-2 text-right">In</th>
                   <th className="px-4 py-2 text-right">Out</th>
                   <th className="px-4 py-2 text-right">Balance</th>
@@ -533,14 +642,14 @@ function BankLedgerModal({
               <tbody className="divide-y divide-gray-100">
                 {loading && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                       Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && data?.transactions.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                       No transactions hit this bank in that period.
                     </td>
                   </tr>
@@ -551,6 +660,21 @@ function BankLedgerModal({
                       <td className="whitespace-nowrap px-4 py-2 text-xs">{fmtDate(t.date)}</td>
                       <td className="px-4 py-2 text-xs text-gray-500">{t.reference || '—'}</td>
                       <td className="px-4 py-2 text-xs">{t.description || '—'}</td>
+                      <td className="px-4 py-2 text-xs">
+                        {t.clearingStatus === 'CLEARED' ? (
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700">
+                            Cleared
+                          </span>
+                        ) : t.clearingStatus === 'OUTSTANDING' ? (
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">
+                            Outstanding
+                          </span>
+                        ) : (
+                          <span className="text-gray-400" title="Not a reconciling item">
+                            —
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-2 text-right">{t.debit ? fmtMoney(t.debit) : '—'}</td>
                       <td className="px-4 py-2 text-right">
                         {t.credit ? fmtMoney(t.credit) : '—'}
@@ -590,7 +714,7 @@ function LineSection({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
             <tr>
-              <th className="px-3 py-2 text-left w-10"></th>
+              <th className="px-3 py-2 text-left w-16">Cleared</th>
               <th className="px-3 py-2 text-left">Date</th>
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-left">Reference</th>
@@ -625,6 +749,146 @@ function LineSection({
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The letterhead sheet captured by downloadPdf() above — plain Tailwind
+ * JSX, not an HTML string, since html2canvas-pro needs actual rendered DOM
+ * to rasterize. Format-matched against the client's own reference "Bank
+ * Reconciliation" workbook (Description/Amount table running from the
+ * statement's closing balance to an adjusted balance, a Discrepancy line,
+ * and a RECONCILED/NOT RECONCILED stamp). "NIG MARKETING CORPORATION"
+ * hardcoded as the letterhead the same way the Customer Ledger print does —
+ * there's no server-side document envelope for this view.
+ *
+ * Scenario 61 Part C — it itemizes what is still OUTSTANDING (unchecked):
+ * the statement balance plus those equals the books, exactly the client's
+ * own printed reconciliation. Cleared (checked) items are already inside the
+ * statement balance and aren't listed. The figures therefore match the
+ * worksheet's tiles above, reconciled or not.
+ */
+export function BankReconciliationSheet({ rec }: { rec: BankReconciliation }) {
+  const outstanding = (rec.lines ?? []).filter((l) => !l.checked)
+  const pendingDeposits = outstanding.filter((l) => l.direction === 'DEPOSIT')
+  const pendingWithdrawals = outstanding.filter((l) => l.direction === 'WITHDRAWAL')
+  const adjustedBalance = adjustedStatementBalance(rec.statementBalance, outstanding)
+  const discrepancy = rec.reconciled
+    ? (rec.discrepancy ?? adjustedBalance - rec.systemBalance)
+    : adjustedBalance - rec.systemBalance
+
+  const bankLabel = rec.bankAccount
+    ? `${
+        rec.bankAccount.accountNumber && rec.bankAccount.accountNumber !== 'N/A'
+          ? `${rec.bankAccount.accountNumber} - `
+          : ''
+      }${rec.bankAccount.name}`
+    : 'Bank Account'
+
+  const itemLabel = (l: BankReconciliationLine) =>
+    `${fmtDate(l.date)} — ${l.reference || SOURCE_LABELS[l.sourceType]} — ${SOURCE_LABELS[l.sourceType]}`
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-8 py-8 text-[13px] text-gray-900">
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="text-2xl font-bold uppercase text-prominent-purple-900">
+          Bank Reconciliation
+        </h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/nig-logo.png" alt="NIG Marketing" className="h-20 w-auto object-contain" />
+      </div>
+
+      <div className="mt-6 flex items-start justify-between gap-4">
+        <div>
+          <p className="font-bold text-prominent-purple-900">Date</p>
+          <p className="text-gray-700">{fmtDate(rec.statementDate)}</p>
+        </div>
+        <div className="text-right">
+          <p className="font-bold text-prominent-purple-900">NIG MARKETING CORPORATION</p>
+          <p className="text-gray-700">#32 NIG BLDG. MABINI ST.</p>
+          <p className="text-gray-700">ILOILO CITY</p>
+        </div>
+      </div>
+
+      <p className="mt-4 font-bold">{bankLabel}</p>
+
+      <table className="mt-3 w-full border-collapse text-[12.5px]">
+        <thead>
+          <tr>
+            <th className="border border-gray-300 bg-gray-100 px-2.5 py-[7px] text-left font-bold">
+              Description
+            </th>
+            <th className="w-36 border border-gray-300 bg-gray-100 px-2.5 py-[7px] text-right font-bold">
+              Amount
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="border border-gray-300 px-2.5 py-[7px]">
+              Closing balance as per bank statement
+            </td>
+            <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+              {fmtMoney(rec.statementBalance)}
+            </td>
+          </tr>
+          {pendingDeposits.map((l) => (
+            <tr key={l.id}>
+              <td className="border border-gray-300 px-2.5 py-[7px]">
+                Pending deposit — {itemLabel(l)}
+              </td>
+              <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+                {fmtMoney(l.amount)}
+              </td>
+            </tr>
+          ))}
+          {pendingWithdrawals.map((l) => (
+            <tr key={l.id}>
+              <td className="border border-gray-300 px-2.5 py-[7px]">
+                Pending withdrawal — {itemLabel(l)}
+              </td>
+              <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+                - {fmtMoney(l.amount)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 font-bold">
+            <td className="border border-gray-300 px-2.5 py-[7px]">
+              Adjusted closing balance as per bank statement
+            </td>
+            <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+              {fmtMoney(adjustedBalance)}
+            </td>
+          </tr>
+          <tr className="bg-gray-50 font-bold">
+            <td className="border border-gray-300 px-2.5 py-[7px]">
+              Closing balance as per balance sheet
+            </td>
+            <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+              {fmtMoney(rec.systemBalance)}
+            </td>
+          </tr>
+          <tr className="bg-gray-50 font-bold">
+            <td className="border border-gray-300 px-2.5 py-[7px]">Discrepancy</td>
+            <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
+              {fmtMoney(discrepancy)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div className="mt-6 flex justify-center">
+        <span
+          className={`rounded-md border-2 px-7 py-2 font-bold tracking-wide ${
+            rec.reconciled ? 'border-emerald-700 text-emerald-700' : 'border-red-700 text-red-700'
+          }`}
+        >
+          {rec.reconciled ? 'RECONCILED' : 'NOT RECONCILED'}
+        </span>
       </div>
     </div>
   )

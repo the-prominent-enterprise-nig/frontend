@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
 import {
   CalendarDays,
   List,
@@ -377,20 +378,10 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
   // refetch-on-focus) — this widget used to only refetch when a filter or
   // month changed, so a reminder someone else added wouldn't show up until
   // you touched a control.
-  useEffect(() => {
-    const interval = setInterval(loadCalendar, 30_000)
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') loadCalendar()
-    }
-    window.addEventListener('focus', loadCalendar)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('focus', loadCalendar)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, month, branchId, collectorId, person])
+  // The effect above already loads on mount and whenever a filter changes, so
+  // this only adds the poll + refetch-on-return (no immediate run). The hook
+  // always calls the latest loadCalendar, so filter changes need no re-subscribe.
+  useVisiblePolling(loadCalendar, 30_000, { immediate: false })
 
   const items: CalendarItem[] = [
     ...(data?.payments ?? []).map(

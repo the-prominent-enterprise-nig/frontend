@@ -62,14 +62,15 @@ function fmtMoney(n: number): string {
 }
 
 const TONE_CARD: Record<Tone, string> = {
-  default: 'border-zinc-100 bg-white',
-  warn: 'border-amber-200 bg-amber-50/50',
-  good: 'border-emerald-200 bg-emerald-50/50',
+  default: 'border-purple-100/70 bg-gradient-to-br from-white to-purple-50/60',
+  warn: 'border-amber-200/70 bg-gradient-to-br from-white to-amber-50',
+  good: 'border-emerald-200/70 bg-gradient-to-br from-white to-emerald-50',
 }
 const TONE_ICON: Record<Tone, string> = {
-  default: 'text-blue-600 bg-blue-50',
-  warn: 'text-amber-600 bg-amber-100',
-  good: 'text-emerald-600 bg-emerald-100',
+  default:
+    'text-white bg-gradient-to-br from-purple-600 to-purple-400 shadow-sm shadow-purple-300/60',
+  warn: 'text-white bg-gradient-to-br from-amber-500 to-orange-400 shadow-sm shadow-amber-300/60',
+  good: 'text-white bg-gradient-to-br from-emerald-500 to-teal-400 shadow-sm shadow-emerald-300/60',
 }
 
 // Top-of-dashboard KPI strip for the Business Owner view — the 4 numbers an
@@ -187,7 +188,7 @@ export default function HeroKpiStripWidget() {
     <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
       <div className="flex items-center gap-2">
         <Gauge className="h-4 w-4 shrink-0 text-zinc-400" />
-        <p className="text-sm font-semibold text-zinc-800">Overview</p>
+        <p className="text-sm font-semibold text-prominent-purple-900">Overview</p>
       </div>
       {secondaryStats && secondaryStats.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -216,7 +217,7 @@ export default function HeroKpiStripWidget() {
         {heading}
         <div className={`grid gap-3 ${isCompact ? 'grid-cols-2' : 'grid-cols-4'}`}>
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-[86px] rounded-xl bg-zinc-100 animate-pulse" />
+            <div key={i} className="h-[110px] rounded-2xl bg-zinc-100 animate-pulse" />
           ))}
         </div>
       </div>
@@ -229,19 +230,21 @@ export default function HeroKpiStripWidget() {
       <div className={`grid gap-3 ${isCompact ? 'grid-cols-2' : 'grid-cols-4'}`}>
         {kpis.map((kpi) => {
           const Icon = kpi.icon
-          const cardClass = `block rounded-xl border p-3.5 text-left transition-all duration-300 ${CARD_SHADOW_RESTING} ${CARD_SHADOW_HOVER} hover:-translate-y-0.5 ${TONE_CARD[kpi.tone]}`
+          const cardClass = `block rounded-2xl border p-4 text-left transition-all duration-300 ${CARD_SHADOW_RESTING} ${CARD_SHADOW_HOVER} hover:-translate-y-0.5 ${TONE_CARD[kpi.tone]}`
           const content = (
             <>
               <div className="flex items-center gap-2">
                 <div
-                  className={`flex h-7 w-7 items-center justify-center rounded-lg ${TONE_ICON[kpi.tone]}`}
+                  className={`flex h-8 w-8 items-center justify-center rounded-xl ${TONE_ICON[kpi.tone]}`}
                 >
                   <Icon className="h-3.5 w-3.5" />
                 </div>
-                <p className="text-[11px] font-medium text-zinc-500">{kpi.label}</p>
+                <p className="text-xs font-medium text-zinc-500">{kpi.label}</p>
               </div>
-              <p className="mt-2 text-xl font-bold text-zinc-900">{kpi.value}</p>
-              <p className="text-[11px] text-zinc-400">{kpi.sub}</p>
+              <p className="mt-3 text-2xl font-bold tracking-tight text-prominent-purple-900">
+                {kpi.value}
+              </p>
+              <p className="text-xs text-zinc-400">{kpi.sub}</p>
             </>
           )
           if (kpi.href) {

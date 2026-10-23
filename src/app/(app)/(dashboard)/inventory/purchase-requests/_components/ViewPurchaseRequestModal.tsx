@@ -3,6 +3,7 @@
 import { Ban, CheckCircle2, Pencil, Send, X } from 'lucide-react'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { NoDestinationWarning } from '../../purchase-orders/_components/NoDestinationWarning'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { StatusBadge, OutlineBtn, PrimaryBtn } from './PurchaseRequestList'
@@ -109,7 +110,7 @@ export function ViewPurchaseRequestModal({
       <div className="sticky top-0 z-40 flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] bg-white px-5 py-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
-            Purchase Request
+            Stock Request
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>{pr.code}</h2>
@@ -152,6 +153,14 @@ export function ViewPurchaseRequestModal({
           </div>
         )}
 
+        {pr.status === 'draft' && (
+          <NoDestinationWarning
+            warehouseId={pr.warehouseId}
+            deliveryInstructions={pr.deliveryInstructions}
+            saved="request"
+          />
+        )}
+
         {/* Supplier + facts */}
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1fr_1.15fr]">
           <div className="rounded-xl border border-[#e4e4e9] bg-white p-4">
@@ -180,7 +189,12 @@ export function ViewPurchaseRequestModal({
               <InfoRow label="Requested By" value={pr.branch?.name ?? 'Tenant-wide'} />
               <InfoRow
                 label="Destination"
-                value={locationLabel(pr.warehouse)}
+                // A drop-ship request has no Location, only instructions.
+                value={
+                  pr.warehouse || !pr.deliveryInstructions?.trim()
+                    ? locationLabel(pr.warehouse)
+                    : 'See delivery instructions'
+                }
                 muted={!pr.warehouse}
               />
               <InfoRow
@@ -189,8 +203,11 @@ export function ViewPurchaseRequestModal({
                 muted={!pr.expectedDeliveryDate}
               />
             </div>
-            {(pr.reason || pr.notes) && (
+            {(pr.deliveryInstructions || pr.reason || pr.notes) && (
               <div className="mt-3 space-y-2.5 border-t border-[#f1f1f4] pt-3">
+                {pr.deliveryInstructions && (
+                  <InfoRow label="Delivery Instructions" value={pr.deliveryInstructions} />
+                )}
                 {pr.reason && <InfoRow label="Reason" value={pr.reason} />}
                 {pr.notes && <InfoRow label="Notes" value={pr.notes} />}
               </div>

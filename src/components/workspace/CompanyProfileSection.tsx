@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Pencil } from 'lucide-react'
+import { Building2, CalendarDays, MapPin, Pencil, Phone, Store, UserRound } from 'lucide-react'
 import { updateBusinessProfile, type BusinessProfile } from '@/src/libs/actions/enterprise.actions'
 import { showToast } from '@/src/components/ui/toast'
 
@@ -21,11 +21,30 @@ const MONTHS = [
   'December',
 ]
 
-function ReadField({ label, value }: { label: string; value?: string | number | null }) {
+function ReadField({
+  icon: Icon,
+  label,
+  value,
+  className = '',
+}: {
+  icon: typeof Building2
+  label: string
+  value?: string | number | null
+  className?: string
+}) {
   return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm font-medium text-zinc-900">{value ?? '—'}</p>
+    <div className={`flex items-start gap-4 rounded-xl bg-zinc-50 px-4 py-4 ${className}`}>
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-prominent-purple-700 shadow-sm ring-1 ring-zinc-200">
+        <Icon className="h-[18px] w-[18px]" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
+        <p
+          className={`mt-0.5 text-sm ${value ? 'font-medium text-zinc-900' : 'italic text-zinc-400'}`}
+        >
+          {value || 'Not set'}
+        </p>
+      </div>
     </div>
   )
 }
@@ -87,14 +106,14 @@ export default function CompanyProfileSection({ profile }: { profile: BusinessPr
   }
 
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
             <Building2 className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-zinc-950">Company Profile</h2>
+            <h2 className="text-base font-semibold text-prominent-purple-900">Company Profile</h2>
             <p className="text-sm text-zinc-500">Business name, contact details, and fiscal year</p>
           </div>
         </div>
@@ -200,13 +219,23 @@ export default function CompanyProfileSection({ profile }: { profile: BusinessPr
           </div>
         </form>
       ) : (
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <ReadField label="Company Legal Name" value={profile?.companyLegalName} />
-          <ReadField label="Trading Name" value={profile?.companyTradingName} />
-          <ReadField label="Contact Person" value={profile?.contactPerson} />
-          <ReadField label="Mobile Number" value={profile?.mobileNumber} />
-          <ReadField label="Address" value={profile?.address} />
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <ReadField
+            icon={Building2}
+            label="Company Legal Name"
+            value={profile?.companyLegalName}
+          />
+          <ReadField icon={Store} label="Trading Name" value={profile?.companyTradingName} />
+          <ReadField icon={UserRound} label="Contact Person" value={profile?.contactPerson} />
+          <ReadField icon={Phone} label="Mobile Number" value={profile?.mobileNumber} />
+          <ReadField
+            icon={MapPin}
+            label="Address"
+            value={profile?.address}
+            className="sm:col-span-2"
+          />
+          <ReadField
+            icon={CalendarDays}
             label="Fiscal Year Start"
             value={profile?.fiscalYearStartMonth ? MONTHS[profile.fiscalYearStartMonth - 1] : null}
           />

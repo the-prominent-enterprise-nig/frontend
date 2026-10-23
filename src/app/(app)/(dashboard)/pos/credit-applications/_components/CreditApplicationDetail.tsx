@@ -1,12 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, FileText, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react'
 import { useCreditApplication } from '../_hooks/useCreditApplication'
 import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
+import { CreditApplicationFinancingFields } from './CreditApplicationFinancingFields'
+import { parseCoMakerRelation } from './RelatedPeopleFields'
+import { Select } from '@/src/components/ui/Select'
+import { readCheckoutHandoff, writeCheckoutHandoff } from '@/src/libs/pos/checkout-handoff'
+import { useSessions } from '../../_hooks/usePos'
+import { PhAddressText } from '@/src/components/common/PhAddressText'
+import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -28,8 +36,39 @@ import {
   type UpdateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 
+/** The slice of checkout's CartLine that "Continue to sale" reads from a
+ * stashed cart. CartLine itself is declared inside the checkout page. */
+type StashedCartLine = {
+  itemId: string
+  invoiceType?: string
+  installmentProvider?: string
+}
+
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+
+/**
+ * Walks a react-hook-form error tree and returns every leaf message with its
+ * dotted path.
+ *
+ * Nested errors are why the edit modal's Save button appeared dead: a
+ * failure on `items[0].estimatedPrice` lives two levels down, so anything
+ * that only reads top-level `.message` renders nothing and the submit is
+ * blocked with no explanation.
+ */
+function flattenFieldErrors(errors: unknown, prefix = ''): { path: string; message: string }[] {
+  if (!errors || typeof errors !== 'object') return []
+  const record = errors as Record<string, unknown>
+  const message = record.message
+  if (typeof message === 'string' && message) {
+    return [{ path: prefix || 'form', message }]
+  }
+  return Object.entries(record).flatMap(([key, value]) =>
+    key === 'ref' || key === 'type'
+      ? []
+      : flattenFieldErrors(value, prefix ? `${prefix}.${key}` : key)
+  )
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -48,10 +87,18 @@ export default function CreditApplicationDetail({
   const canCancel = hasPermission(session, CREDIT_PERMISSIONS.APPLICATION_CANCEL)
   const canStartInvestigation = hasPermission(session, CREDIT_PERMISSIONS.INVESTIGATION_START)
   const canRecordInvestigation = hasPermission(session, CREDIT_PERMISSIONS.INVESTIGATION_RECORD)
-  const canApprove = hasPermission(session, CREDIT_PERMISSIONS.APPLICATION_APPROVE)
+  // Business Owner only (2026-09-18 client decision), matching the backend
+  // gate in CreditApplicationController.decideItems(). Deliberately NOT a
+  // hasPermission() check: Branch Manager holds the wildcard 'pos:*:*',
+  // which satisfies any pos permission, so a permission check here would
+  // show Approve/Decline to them and then 403 on click.
+  const canApprove =
+    session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner')
 
   const {
     application,
+    refetch: refetchApplication,
+    isRefetching: isRefetchingApplication,
     isLoading,
     update,
     isUpdating,
@@ -79,6 +126,27 @@ export default function CreditApplicationDetail({
   const [uploadError, setUploadError] = useState<string | undefined>(undefined)
   const [isCancelOpen, setIsCancelOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const router = useRouter()
+  // Scenario 64 item 28 — the same hook checkout uses for its own session
+  // picker, so "Continue to sale" needs no new API surface. Declared up here
+  // with the other hooks: the component returns early when the application
+  // has not loaded, and a hook below that runs on some renders and not
+  // others.
+  const {
+    data: openSessionsData,
+    refetch: refetchSessions,
+    isFetching: isRefetchingSessions,
+  } = useSessions({ status: 'open' })
+  const openSessions = openSessionsData?.data ?? []
+  // ANY open till enables the button — the rule as asked: no session open, no
+  // button. Deliberately not "a session I opened myself": a branch commonly
+  // runs one till that a manager or an earlier shift opened, and checkout
+  // imposes no such restriction either, so being stricter here would block a
+  // cashier from an application they can already sell by walking to the till.
+  //
+  // The safety that actually mattered is kept below instead — a session is
+  // only NAMED in the handoff when it is this user's own.
+  const mySessions = openSessions.filter((s) => s.cashierId === session.id)
   const [editError, setEditError] = useState<string | undefined>(undefined)
 
   // Scenario 29 POS-02 — per-item decision state while status is
@@ -112,6 +180,7 @@ export default function CreditApplicationDetail({
     control: editControl,
     handleSubmit: handleEditSubmit,
     setValue: editSetValue,
+    trigger: editTrigger,
     reset: resetEditForm,
     formState: { errors: editErrors },
   } = useForm<UpdateCreditApplicationFormValues>({
@@ -123,8 +192,23 @@ export default function CreditApplicationDetail({
     resetEditForm({
       items: application.items.map((i) => ({
         itemId: i.itemId,
+        // Seeds the financing preview's fallback total so it has a figure to
+        // work with before /resolve-prices comes back.
+        estimatedPrice: i.requestedAmount != null ? Number(i.requestedAmount) : undefined,
+        // Scenario 64 item 29 — the unit already recorded, shown in the row's
+        // unit picker and sent back on save so the edit does not drop it.
+        serialNumberId: i.serialNumberId ?? undefined,
+        serialNumberLabel: i.serialNumber?.serialNumber,
+        isSerialTracked: i.item?.isSerialTracked === true,
       })),
       itemDescription: application.itemDescription ?? '',
+      // Financing is editable after intake (2026-09-18) — a mistyped down
+      // payment or the wrong term previously meant cancelling the whole
+      // application and starting again. The backend's update() already
+      // recomputes the stored snapshot whenever any of these change.
+      priceUseTypeId: application.priceUseTypeId ?? '',
+      financingTermId: application.financingTermId ?? '',
+      downPayment: application.downPayment != null ? String(application.downPayment) : '',
     })
   }, [isEditOpen, application, resetEditForm])
 
@@ -135,7 +219,16 @@ export default function CreditApplicationDetail({
 
   async function handleEditFormSubmit(data: UpdateCreditApplicationFormValues) {
     setEditError(undefined)
-    const result = await update(data)
+    const result = await update({
+      ...data,
+      // Same empty-string-select normalization the create form does: the
+      // backend's @IsUUID() rejects '', and @IsOptional() only skips
+      // undefined/null. '' on downPayment would coerce to 0 via
+      // @Type(() => Number) rather than "not given".
+      priceUseTypeId: data.priceUseTypeId || undefined,
+      financingTermId: data.financingTermId || undefined,
+      downPayment: data.downPayment || undefined,
+    })
     if (result.success) {
       setIsEditOpen(false)
     } else {
@@ -195,6 +288,146 @@ export default function CreditApplicationDetail({
   const isEditable = (
     ['draft', 'submitted', 'under_investigation', 'pending_approval'] as string[]
   ).includes(application.status)
+  // Documents outlive that window. Scenario 64 gap 6: an application can now
+  // be approved with no applicant ID on file ("ID will be to followed"), and
+  // the "Approved — ID pending" banner tells the user to attach it once the
+  // hard copy arrives — which was impossible while the upload panel was
+  // gated on isEditable, since that excludes approved. The backend never
+  // restricted attachDocument by status, so this was a UI-only block.
+  // Deliberately NOT widening isEditable itself: items, terms and notes
+  // should still freeze once a decision is made. Removing a document stays
+  // on isEditable too — chasing a missing ID is additive, and deleting
+  // evidence from a decided application is a different question.
+  const canAttachDocuments =
+    isEditable || (['approved', 'partially_approved'] as string[]).includes(application.status)
+
+  const applicant = application.applicantCustomer
+
+  // Scenario 64 item 28 — "Continue to sale". An approved application already
+  // knows the customer and the items. Without this the seller leaves it, opens
+  // checkout, finds the customer again, re-adds every item by hand, and only
+  // then picks the application out of a list — where anything short of an
+  // exact match is labelled as not matching. The cart is built FROM the
+  // application instead, so it matches by construction and the exact-match
+  // rule (what stops a fridge being sold against an approved washing machine)
+  // never has to be relaxed.
+  const canSell =
+    (['approved', 'partially_approved'] as string[]).includes(application.status) &&
+    !application.posTransactionId
+
+  // Opening a session is a real act with cash in it — a declared float, a
+  // named cashier, a terminal — so a button on an approval screen must not do
+  // it on someone's behalf (developer, 2026-09-30). Disabled with the reason
+  // on it rather than hidden: a missing button just looks broken.
+  const hasOpenSession = openSessions.length > 0
+
+  const sellableApplicationId = application.id
+  const sellableCustomerId = application.applicantCustomerId
+  const sellableItemIds = application.items
+    .filter((i) => i.status === 'approved')
+    .map((i) => i.itemId)
+
+  function continueToSale() {
+    // The handoff is ONE slot. If this application was raised from a till that
+    // already had a cart — the usual way — that cart is sitting in it, with
+    // the serials, quantities and prices the cashier already chose. Writing a
+    // bare application over it threw all of that away and rebuilt a fresh
+    // cart at the far end, which is why a serial-tracked item asked for a
+    // serial that had already been picked.
+    //
+    // Anything already stashed for THIS customer is kept and simply gains the
+    // application. A stash for someone else is not merged — that cart belongs
+    // to a different sale.
+    //
+    // Its cart lines are kept only while they still are the application's
+    // items. The items can be changed on the application after it was raised
+    // from the till, and a restored cart wins over rebuilding one at checkout
+    // — so the old cart came back with the new application, which checkout
+    // then labelled "does not match this cart" and could not sell. The test
+    // is checkout's own: the in-house installment lines are exactly the
+    // approved items. On a mismatch the lines are dropped and checkout builds
+    // the cart from the application instead.
+    const stashed = readCheckoutHandoff<StashedCartLine>()
+    const keepStashed = !!stashed && stashed.customerId === sellableCustomerId
+    const approvedItemIds = new Set(sellableItemIds)
+    const stashedInstallmentItemIds = new Set(
+      (stashed?.lines ?? [])
+        .filter((l) => l.invoiceType === 'installment' && l.installmentProvider !== 'tpf')
+        .map((l) => l.itemId)
+    )
+    const stashedCartMatches =
+      stashedInstallmentItemIds.size === approvedItemIds.size &&
+      [...approvedItemIds].every((id) => stashedInstallmentItemIds.has(id))
+
+    writeCheckoutHandoff({
+      ...(keepStashed ? stashed : {}),
+      ...(keepStashed && !stashedCartMatches ? { lines: undefined } : {}),
+      customerId: sellableCustomerId,
+      creditApplicationId: sellableApplicationId,
+      // Named only when there is exactly one session it could mean. With
+      // several open, picking one would be guessing which till the seller is
+      // standing at; checkout asks instead.
+      // This user's own, and only when there is exactly one of them. Naming
+      // someone else's would hand over a till whose drawer and attribution
+      // belong to them; naming one of several would be guessing which counter
+      // this person is standing at. Left unset, checkout asks.
+      sessionId: mySessions.length === 1 ? mySessions[0].id : undefined,
+    })
+    router.push('/pos/checkout')
+  }
+
+  // Scenario 64 item 27. The application's own related-people rows and the
+  // customer's CoMaker record are two tables, but one list to a reader —
+  // flattened here so the card does not have to know which is which.
+  //
+  // Sorted into the paper form's order rather than whichever order the rows
+  // came back in, with the co-maker last exactly as the form draws it, so
+  // the card reads like the scan it was transcribed from.
+  const RELATED_PERSON_ORDER = ['spouse', 'father', 'mother']
+  const relatedPeople: {
+    id: string
+    name: string
+    mobileNumber: string | null
+    label: string
+  }[] = [
+    ...[...(application.relatedPeople ?? [])]
+      .sort((a, b) => RELATED_PERSON_ORDER.indexOf(a.role) - RELATED_PERSON_ORDER.indexOf(b.role))
+      .map((person) => ({
+        id: person.id,
+        name: [person.firstName, person.lastName].filter(Boolean).join(' '),
+        mobileNumber: person.mobileNumber ?? null,
+        // "Spouse", "Father" — the role is the relationship for these three.
+        label: person.role.charAt(0).toUpperCase() + person.role.slice(1),
+      })),
+    ...(application.coMaker
+      ? [
+          {
+            id: application.coMaker.id,
+            name: application.coMaker.name,
+            mobileNumber: application.coMaker.contactNumber,
+            // A co-maker carries its own relationship, because unlike the
+            // other three the role does not say how they relate. Parsed, so a
+            // record from the old "Co-maker — Parent" convention reads
+            // "Co-maker · Parent" rather than naming the role twice.
+            label: `Co-maker · ${
+              parseCoMakerRelation(application.coMaker.relationship) ??
+              application.coMaker.relationship
+            }`,
+          },
+        ]
+      : []),
+  ]
+  // `paperFormConfirmed` is excluded from this check on purpose: it defaults
+  // to false on every application, so counting it would show the block
+  // everywhere. It's a flag about a form, not evidence one was transcribed.
+  const hasPaperRecord =
+    application.lcp != null ||
+    application.ppdRebate != null ||
+    !!application.firstDueDate ||
+    !!application.downPaymentCollection ||
+    application.applicantIsUnitUser != null ||
+    !!application.transcribedAt ||
+    !!application.installmentAccountId
 
   async function handleAttach() {
     if (!pendingFile) return
@@ -230,18 +463,83 @@ export default function CreditApplicationDetail({
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
-        <button
-          type="button"
-          onClick={goToList}
-          className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to applications
-        </button>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={goToList}
+            className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to applications
+          </button>
+
+          {/* Scenario 64 item 28 — a cashier sits on this page while the owner
+              approves in their own session. The page does poll every 10s, but
+              waiting out a poll (or reloading) to find out whether the answer
+              has come is not something anyone should have to do. This asks
+              now, and re-checks the open tills at the same time, so the
+              approval and the Continue to sale button appear together. */}
+          <button
+            type="button"
+            onClick={() => {
+              void refetchApplication()
+              void refetchSessions()
+            }}
+            disabled={isRefetchingApplication || isRefetchingSessions}
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${
+                isRefetchingApplication || isRefetchingSessions ? 'animate-spin' : ''
+              }`}
+            />
+            {isRefetchingApplication || isRefetchingSessions ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+
+        {/* Scenario 64 item 28 — at the top of the page so it is in view the
+            moment the approval lands, without scrolling past the documents —
+            going to the till is the only thing anyone wants next. */}
+        {canSell && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-prominent-purple-200 bg-prominent-purple-50 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-prominent-purple-900">Ready to sell</p>
+              <p className="mt-0.5 text-sm text-prominent-purple-700">
+                {hasOpenSession
+                  ? 'Opens the till with this customer, these items and this application already selected.'
+                  : 'No till is open. Open a POS session at a terminal, then Refresh — this cannot open one for you.'}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* The till is usually opened on another screen, or by someone
+                  else, while this page is already up — and the session query
+                  is cached, so nothing here notices. Rather than have the
+                  seller reload the whole application, this re-asks. */}
+              <button
+                type="button"
+                onClick={continueToSale}
+                disabled={!hasOpenSession}
+                className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-start justify-between">
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-zinc-900">{application.applicationNumber}</h1>
+            {/* Labelled, not a bare code. The number has always been
+                auto-generated and shown here, but as an unexplained heading
+                it did not read as an application number at all — the client
+                asked for one to be added (2026-09-28), not realising this
+                was it. */}
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Application No.
+            </p>
+            <div className="mt-0.5 flex items-center gap-3">
+              <h1 className="font-mono text-2xl font-bold text-zinc-900">
+                {application.applicationNumber}
+              </h1>
               <span
                 className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${CREDIT_APPLICATION_STATUS_COLORS[application.status]}`}
               >
@@ -266,16 +564,21 @@ export default function CreditApplicationDetail({
           </div>
           {isDraft && (
             <div className="flex items-center gap-2">
+              {/* No document requirement (client decision, 2026-09-28,
+                    Scenario 64 gap 6). This was disabled until at least one
+                    document was attached, which made the client's own process
+                    impossible: "ID will be to followed ... pwede ma approve
+                    maski ID not included". The ID is usually the only
+                    document they hold at intake, so the gate blocked exactly
+                    the case they asked for. The backend check was removed
+                    with it. Incompleteness is surfaced instead — an approved
+                    application with no applicant_id is badged "Approved — ID
+                    pending" here and in the queue. */}
               {canUpdate && (
                 <button
                   type="button"
                   onClick={() => submit()}
-                  disabled={isSubmitting || documents.length === 0}
-                  title={
-                    documents.length === 0
-                      ? 'Attach at least one document before submitting'
-                      : undefined
-                  }
+                  disabled={isSubmitting}
                   className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
                 >
                   {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -312,55 +615,277 @@ export default function CreditApplicationDetail({
           )}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-zinc-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Applicant</h2>
-            <dl className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Name</dt>
-                <dd className="font-medium text-zinc-900">{application.applicantCustomer.name}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Customer Code</dt>
-                <dd className="text-zinc-700">{application.applicantCustomer.customerCode}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Phone</dt>
-                <dd className="text-zinc-700">{application.applicantCustomer.phone ?? '—'}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Email</dt>
-                <dd className="text-zinc-700">{application.applicantCustomer.email ?? '—'}</dd>
-              </div>
-            </dl>
+        {/* items-start so a short card keeps its own height instead of being
+            stretched to match the tall one beside it — the Related People
+            card was drawing a half-empty box the height of the applicant's
+            whole profile. */}
+        {/* The applicant spans the row on its own. It carries eleven fields
+            against the three or four its neighbours hold, and sharing a
+            column with them stacked every one into a narrow label/value pair
+            — eleven rows deep, with the addresses wrapping across five lines
+            each. Given the width it becomes three short columns and reads at
+            a glance.
+
+            items-start so the two cards below keep their own heights instead
+            of the shorter being stretched to match the taller. */}
+        <div className="rounded-xl border border-zinc-200 bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-100 pb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-700">Applicant</h2>
+              <p className="mt-0.5 text-base font-medium text-zinc-900">{applicant.name}</p>
+            </div>
+            <span className="font-mono text-xs text-zinc-500">{applicant.customerCode}</span>
           </div>
 
+          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <dt className="text-xs text-zinc-500">Mobile</dt>
+              <dd className="mt-0.5 text-zinc-900">{applicant.phone ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Alt mobile</dt>
+              <dd className="mt-0.5 text-zinc-900">{applicant.altPhone || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Email</dt>
+              <dd className="mt-0.5 break-words text-zinc-900">{applicant.email || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Facebook / Messenger</dt>
+              <dd className="mt-0.5 break-words text-zinc-900">{applicant.facebookName || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Birthdate</dt>
+              <dd className="mt-0.5 text-zinc-900">
+                {applicant.birthday
+                  ? new Date(applicant.birthday).toLocaleDateString('en-PH', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                  : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Civil status &amp; gender</dt>
+              <dd className="mt-0.5 text-zinc-900">
+                {[applicant.civilStatus, applicant.gender].filter(Boolean).join(' · ') || '—'}
+              </dd>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-1">
+              <dt className="text-xs text-zinc-500">Employment</dt>
+              <dd className="mt-0.5 text-zinc-900">
+                {[
+                  applicant.customerType ? CUSTOMER_TYPE_LABELS[applicant.customerType] : null,
+                  applicant.companyName,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || '—'}
+              </dd>
+            </div>
+          </dl>
+
+          {/* Addresses last and full width: each is a sentence, and boxed into
+              a third of the row they wrapped over several lines apiece. */}
+          <dl className="mt-4 grid gap-x-6 gap-y-3 border-t border-zinc-100 pt-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-zinc-500">Current address</dt>
+              <dd className="mt-0.5">
+                <PhAddressText
+                  address={applicant.address}
+                  barangayCode={applicant.barangayCode}
+                  className="text-zinc-900"
+                />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">
+                Home address{' '}
+                {!applicant.homeAddress && !applicant.homeBarangayCode && (
+                  <span className="text-zinc-400">(same as current)</span>
+                )}
+              </dt>
+              <dd className="mt-0.5">
+                <PhAddressText
+                  address={applicant.homeAddress}
+                  barangayCode={applicant.homeBarangayCode}
+                  className="text-zinc-900"
+                  emptyText="—"
+                />
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          {/* Scenario 64 item 27. The co-maker is listed here rather than in
+              a card of its own: on the intake form it is a Related People
+              row, and the mockup draws it as the last row of that same
+              block, so two cards said the record held two different kinds of
+              thing when it holds one.
+
+              Listed in the paper form's order, and a role with nothing
+              recorded is simply absent. */}
           <div className="rounded-xl border border-zinc-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Co-Maker</h2>
-            {application.coMaker ? (
-              <dl className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <dt className="text-zinc-500">Name</dt>
-                  <dd className="font-medium text-zinc-900">{application.coMaker.name}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-zinc-500">Relationship</dt>
-                  <dd className="text-zinc-700">{application.coMaker.relationship}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-zinc-500">Phone</dt>
-                  <dd className="text-zinc-700">{application.coMaker.contactNumber}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-zinc-500">Email</dt>
-                  <dd className="text-zinc-700">{application.coMaker.email ?? '—'}</dd>
-                </div>
-              </dl>
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Related People or Co-maker</h2>
+            {relatedPeople.length > 0 ? (
+              <ul className="space-y-3 text-sm">
+                {relatedPeople.map((person) => (
+                  <li
+                    key={person.id}
+                    className="border-b border-zinc-100 pb-3 last:border-0 last:pb-0"
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="font-medium text-zinc-900">{person.name}</span>
+                      <span className="shrink-0 font-mono text-xs text-zinc-600">
+                        {person.mobileNumber || '—'}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-zinc-500">{person.label}</p>
+                  </li>
+                ))}
+              </ul>
             ) : (
-              <p className="text-sm text-zinc-400">No co-maker on this application.</p>
+              <p className="text-sm text-zinc-400">
+                No related people or co-maker on this application.
+              </p>
+            )}
+          </div>
+
+          {/* Scenario 64 item 27. Row numbers are shown because they are the
+              paper form's own "Reference 1/2/3" — a gap (say 1 and 3 filled,
+              2 blank) is information, not an error, so the positions are
+              rendered as stored rather than renumbered to look tidy. */}
+          <div className="rounded-xl border border-zinc-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700">Character References</h2>
+            {application.references && application.references.length > 0 ? (
+              <ul className="space-y-3 text-sm">
+                {application.references.map((ref) => (
+                  <li
+                    key={ref.id}
+                    className="border-b border-zinc-100 pb-3 last:border-0 last:pb-0"
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="font-medium text-zinc-900">
+                        <span className="mr-1.5 text-xs text-zinc-400">{ref.position}.</span>
+                        {ref.name}
+                      </span>
+                      <span className="shrink-0 font-mono text-xs text-zinc-600">
+                        {ref.mobileNumber}
+                      </span>
+                    </div>
+                    {ref.relationship && (
+                      <p className="mt-0.5 text-xs text-zinc-500">{ref.relationship}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-zinc-400">
+                No character references recorded on this application.
+              </p>
             )}
           </div>
         </div>
+
+        {/* Scenario 64 item 27 — PROPOSED PURCHASE AND PAPER RECORD. Shown
+            only when something was transcribed: these fields exist for
+            applications taken on paper, and an empty block on every other
+            application would read as missing data rather than as a form
+            nobody filled. LCP sits here rather than beside the financing
+            figures below on purpose — it is a transcribed number that feeds
+            no calculation, so putting it next to the derived totals would
+            imply it produced them. */}
+        {hasPaperRecord && (
+          <div className="rounded-xl border border-zinc-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700">
+              Paper Record
+              {application.paperFormConfirmed && (
+                <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                  Form complete and signed
+                </span>
+              )}
+            </h2>
+            <dl className="grid gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-zinc-500">LCP</dt>
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.lcp == null
+                    ? '—'
+                    : `₱${Number(application.lcp).toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                      })}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">PPD Rebate</dt>
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.ppdRebate == null
+                    ? '—'
+                    : `₱${Number(application.ppdRebate).toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                      })}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">First Due Date</dt>
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.firstDueDate
+                    ? new Date(application.firstDueDate).toLocaleDateString('en-PH', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })
+                    : '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Down Payment Collection</dt>
+                <dd className="mt-0.5 capitalize text-zinc-900">
+                  {application.downPaymentCollection ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Installment Account</dt>
+                {/* Only ever set after posting, and only for a single-term
+                    sale — see CreditApplication.installmentAccountId. */}
+                <dd className="mt-0.5 font-mono text-[13px] text-zinc-900">
+                  {application.installmentAccount?.accountNumber ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Transcribed</dt>
+                {/* The date only. transcribedById holds a raw user id, the
+                    same as createdById and approvedById, and nothing on this
+                    page can resolve any of them to a name yet — printing one
+                    raw would read as a bug rather than as an author. */}
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.transcribedAt
+                    ? new Date(application.transcribedAt).toLocaleString('en-PH', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })
+                    : '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Applicant Is Unit User</dt>
+                {/* Tri-state: a blank means the question was never asked,
+                    which is not the same answer as "No". */}
+                <dd className="mt-0.5 text-zinc-900">
+                  {application.applicantIsUnitUser == null
+                    ? 'Not asked'
+                    : application.applicantIsUnitUser
+                      ? 'Yes'
+                      : 'No'}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        )}
 
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
           <div className="mb-3 flex items-center justify-between">
@@ -434,6 +959,20 @@ export default function CreditApplicationDetail({
                 })}
               </dd>
             </div>
+            <div>
+              <dt className="text-zinc-500">Price Use</dt>
+              {/* Third home of this label, and the one the 2026-09-19
+                  rename missed: that pass fixed the picker's placeholder
+                  and its empty option, both in
+                  CreditApplicationFinancingFields, and never looked
+                  outside the control. An application submitted with no
+                  Price Use still read "Default (WIP)" here — WIP is the
+                  scheme's NAME, "default" only the note that it is
+                  preselected, which is the whole point of the rename. */}
+              <dd className="mt-0.5 text-zinc-900">
+                {application.priceUseType?.name ?? 'WIP (default)'}
+              </dd>
+            </div>
             {application.itemDescription && (
               <div className="sm:col-span-2">
                 <dt className="text-zinc-500">Notes</dt>
@@ -441,6 +980,95 @@ export default function CreditApplicationDetail({
               </div>
             )}
           </dl>
+
+          {/* Client request, 2026-09-18 — persists the same DP/monthly/
+              total-payable breakdown the intake modal previewed, so the
+              customer and whoever reviews this application later (credit
+              investigator, approver) both see the real numbers, not just
+              the raw item total. */}
+          {application.financingTerm ? (
+            <div className="mt-4 rounded-lg border border-zinc-100 bg-zinc-50 p-4">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Financing
+              </h3>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-5">
+                <div>
+                  <dt className="text-zinc-500">Term</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    {application.financingTerm.termMonths} mo.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Down Payment</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.downPayment ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Amount Financed</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.amountFinanced ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Monthly Installment</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.monthlyInstallment ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                {/* The app's own vocabulary, from InstallmentAccount: PNV is
+                    MI x term, and Total Price adds the down payment back.
+                    This application becomes one of those contracts, and it
+                    used to stop at PNV under the name "Total Payable" — so it
+                    quoted a figure smaller than the contract's own Total
+                    Price by exactly the down payment. Nothing new is
+                    computed: totalPayable IS the PNV already stored.
+                    (computeFinancing(): totalPrice = pnv + downPayment.) */}
+                <div>
+                  <dt className="text-zinc-500">PNV (monthly × term)</dt>
+                  <dd className="mt-0.5 text-zinc-900">
+                    ₱
+                    {Number(application.totalPayable ?? 0).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Total Price</dt>
+                  <dd className="mt-0.5 font-semibold text-zinc-900">
+                    ₱
+                    {(
+                      Number(application.totalPayable ?? 0) + Number(application.downPayment ?? 0)
+                    ).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : (
+            /* A term is optional at intake, so this application has no
+               schedule to show. Say so plainly rather than rendering
+               nothing — otherwise the absence reads as a loading bug, and
+               whoever reviews this next can't tell whether terms were
+               declined or simply never captured. The appliance value
+               itself is the Requested Amount above. */
+            <div className="mt-4 rounded-lg border border-dashed border-zinc-200 p-4">
+              <p className="text-sm text-zinc-500">
+                No financing term was selected for this application — only the item value above
+                applies. Down payment and monthly installment are agreed at checkout.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
@@ -478,23 +1106,22 @@ export default function CreditApplicationDetail({
             </ul>
           )}
 
-          {isEditable && canUpdate && (
+          {canAttachDocuments && canUpdate && (
             <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-zinc-100 pt-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-700">
                   Document Type
                 </label>
-                <select
-                  value={documentType}
-                  onChange={(e) => setDocumentType(e.target.value)}
-                  className={`${fieldClass} bg-white`}
-                >
-                  {CreditApplicationDocumentTypeSchema.options.map((t) => (
-                    <option key={t} value={t}>
-                      {CREDIT_APPLICATION_DOCUMENT_TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
+                <div className="w-52">
+                  <Select
+                    value={documentType}
+                    onChange={setDocumentType}
+                    options={CreditApplicationDocumentTypeSchema.options.map((t) => ({
+                      value: t,
+                      label: CREDIT_APPLICATION_DOCUMENT_TYPE_LABELS[t],
+                    }))}
+                  />
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-700">File</label>
@@ -567,13 +1194,14 @@ export default function CreditApplicationDetail({
                       name="affordabilityOutcome"
                       control={investigationControl}
                       render={({ field }) => (
-                        <select {...field} className={`${fieldClass} bg-white`}>
-                          {CreditInvestigationOutcomeSchema.options.map((o) => (
-                            <option key={o} value={o}>
-                              {CREDIT_INVESTIGATION_OUTCOME_LABELS[o]}
-                            </option>
-                          ))}
-                        </select>
+                        <Select
+                          value={field.value ?? ''}
+                          onChange={field.onChange}
+                          options={CreditInvestigationOutcomeSchema.options.map((o) => ({
+                            value: o,
+                            label: CREDIT_INVESTIGATION_OUTCOME_LABELS[o],
+                          }))}
+                        />
                       )}
                     />
                   </div>
@@ -622,16 +1250,37 @@ export default function CreditApplicationDetail({
             </div>
           )}
 
-        {application.status === 'approved' && (
-          <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-            <p className="text-sm font-medium text-green-800">Approved</p>
-            <p className="mt-1 text-sm text-green-700">
-              {application.posTransactionId
-                ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}.`
-                : 'This application has been approved and is ready to proceed.'}
-            </p>
-          </div>
-        )}
+        {/* Scenario 64 Part 6 — "pwede ma approve maski ID not included.
+            Should record as approved but incomplete, and can proceed with
+            buying the item." Approving without an ID already worked: nothing
+            gates on documents, in this component or in the backend service.
+            The only gap was that nothing said the record was incomplete, so
+            an approval missing its ID looked identical to a complete one.
+
+            Derived from the documents already loaded rather than stored, so
+            there is no migration and no new status value — and it corrects
+            itself the moment the ID is attached. Deliberately NOT a gate:
+            the sale must still proceed, which is the client's explicit ask. */}
+        {application.status === 'approved' &&
+          (isDocumentsLoading || documents.some((d) => d.documentType === 'applicant_id') ? (
+            <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+              <p className="text-sm font-medium text-green-800">Approved</p>
+              <p className="mt-1 text-sm text-green-700">
+                {application.posTransactionId
+                  ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}.`
+                  : 'This application has been approved and is ready to proceed.'}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-medium text-amber-800">Approved — ID pending</p>
+              <p className="mt-1 text-sm text-amber-700">
+                {application.posTransactionId
+                  ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}, but no applicant ID is on file yet.`
+                  : 'This application has been approved and the sale can proceed. The applicant ID is still to follow — attach it above once the hard copy arrives.'}
+              </p>
+            </div>
+          ))}
 
         {application.status === 'partially_approved' && (
           <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
@@ -647,7 +1296,7 @@ export default function CreditApplicationDetail({
 
       {isCancelOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
+          <div className="flex max-h-[90vh] w-full max-w-sm flex-col overflow-y-auto rounded-2xl bg-white shadow-xl">
             <form onSubmit={handleCancelSubmit(handleCancelFormSubmit)} noValidate>
               <div className="space-y-3 px-6 py-5">
                 <h2 className="text-lg font-semibold text-zinc-900">Cancel Application</h2>
@@ -691,7 +1340,7 @@ export default function CreditApplicationDetail({
 
       {isDecisionReasonOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
+          <div className="flex max-h-[90vh] w-full max-w-sm flex-col overflow-y-auto rounded-2xl bg-white shadow-xl">
             <div className="space-y-3 px-6 py-5">
               <h2 className="text-lg font-semibold text-zinc-900">Reason for Declined Item(s)</h2>
               <p className="text-xs text-zinc-500">
@@ -730,8 +1379,14 @@ export default function CreditApplicationDetail({
 
       {isEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+          {/* max-w-3xl to match the New Credit Application page, which
+              renders the same CreditApplicationItemFields — at max-w-lg a
+              real item label ("3E FURNITURE AMBASSADOR — The classic sofa 3
+              seater W78"XD28"XH35"") overflowed the panel sideways. Height
+              is capped too, since "+ Add another item" grows the list
+              without bound; header and footer stay pinned, body scrolls. */}
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-x-hidden rounded-2xl bg-white shadow-xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
               <h2 className="text-lg font-semibold text-zinc-900">Edit Financing Request</h2>
               <button
                 type="button"
@@ -741,8 +1396,12 @@ export default function CreditApplicationDetail({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <form onSubmit={handleEditSubmit(handleEditFormSubmit)} noValidate>
-              <div className="space-y-5 px-6 py-5">
+            <form
+              onSubmit={handleEditSubmit(handleEditFormSubmit)}
+              noValidate
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
                 <CreditApplicationItemFields
                   control={editControl}
                   setValue={editSetValue}
@@ -755,7 +1414,18 @@ export default function CreditApplicationDetail({
                       modelNumber: i.item?.modelNumber ?? null,
                     },
                   }))}
+                  // The application's own branch: that is where it is sold.
+                  unitBranchId={application.branchId}
                 />
+
+                <CreditApplicationFinancingFields
+                  control={editControl}
+                  setValue={editSetValue}
+                  trigger={editTrigger}
+                  errors={editErrors}
+                  branchId={application.branchId}
+                />
+
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
                     Notes (optional)
@@ -774,9 +1444,26 @@ export default function CreditApplicationDetail({
                     )}
                   />
                 </div>
-                {editError && <p className="text-sm text-red-600">{editError}</p>}
               </div>
-              <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+
+              {/* Pinned above the footer, outside the scroll area, and
+                  catches EVERY key — not just the few with an inline
+                  message. A validation failure on any unrendered field
+                  otherwise made Save Changes look like a dead button: the
+                  submit never fires and nothing explains why. Same
+                  silent-failure shape as the co-maker one. */}
+              {(editError || Object.keys(editErrors).length > 0) && (
+                <div className="shrink-0 border-t border-red-100 bg-red-50 px-6 py-3">
+                  {editError && <p className="text-sm text-red-700">{editError}</p>}
+                  {flattenFieldErrors(editErrors).map(({ path, message }) => (
+                    <p key={path} className="text-sm text-red-700">
+                      {path}: {message}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
                 <button
                   type="button"
                   onClick={() => setIsEditOpen(false)}

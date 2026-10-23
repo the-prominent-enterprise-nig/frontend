@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { BankAccounts, type BankAccount, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import MoneyInput from '@/src/components/ui/MoneyInput'
 
 // Scenario 42 — starts a reconciliation worksheet. Only the statement
 // balance is typed in here; the system generates everything else (System
@@ -33,6 +35,10 @@ export default function NewReconciliationForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!form.bankAccountId) {
+      setError('Please select a bank account')
+      return
+    }
     setSaving(true)
     setError(null)
     const res = await BankAccounts.createReconciliation({
@@ -70,19 +76,13 @@ export default function NewReconciliationForm() {
         className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-6"
       >
         <Field label="Bank Account *">
-          <select
-            required
+          <SearchableSelect
             value={form.bankAccountId}
-            onChange={(e) => setForm({ ...form, bankAccountId: e.target.value })}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-          >
-            <option value="">— Select —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} ({a.accountType})
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setForm({ ...form, bankAccountId: value })}
+            options={accounts.map((a) => ({ value: a.id, label: `${a.name} (${a.accountType})` }))}
+            placeholder="Search bank account…"
+            clearable
+          />
           {account && (
             <p className="mt-1 text-[12px] text-gray-500">
               Current book balance: {fmtMoney(account.currentBalance)}
@@ -101,12 +101,11 @@ export default function NewReconciliationForm() {
             />
           </Field>
           <Field label="Statement Balance *">
-            <input
+            <MoneyInput
               required
-              type="number"
-              step="0.01"
+              allowNegative
               value={form.statementBalance}
-              onChange={(e) => setForm({ ...form, statementBalance: e.target.value })}
+              onChange={(statementBalance) => setForm({ ...form, statementBalance })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>

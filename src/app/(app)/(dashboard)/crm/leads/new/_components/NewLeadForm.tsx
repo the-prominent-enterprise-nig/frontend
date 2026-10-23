@@ -4,11 +4,10 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import PhoneInput from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import { leadsApi, pipelineStagesApi } from '@/src/libs/api/crm'
 import { createLeadSchema, type CreateLeadInput } from '@/src/schema/crm/lead'
 import type { PipelineStage } from '@/src/schema/crm/types'
+import { PhoneField } from '@/src/components/ui/PhoneField'
 
 const initial: CreateLeadInput = {
   tenantId: '',
@@ -116,14 +115,10 @@ export default function NewLeadForm({ tenantId }: { tenantId: string }) {
           />
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Phone</label>
-            <PhoneInput
+            <PhoneField
               value={form.phone ?? ''}
-              defaultCountry="PH"
-              international
-              countryCallingCodeEditable={false}
-              onChange={(v) => setField('phone', v ?? '')}
-              numberInputProps={{ className: 'phone-input-field' }}
-              className="ph-phone-input mt-1"
+              onChange={(v) => setField('phone', v)}
+              className="mt-1"
             />
           </div>
         </div>

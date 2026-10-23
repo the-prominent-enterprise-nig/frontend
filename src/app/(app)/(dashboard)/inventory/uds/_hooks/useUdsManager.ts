@@ -1,6 +1,12 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import {
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
@@ -10,11 +16,8 @@ import { updateUdsStatus } from '../_actions/update-uds-status'
 import { assessUds } from '../_actions/assess-uds'
 import { setRepairProvider } from '../_actions/set-repair-provider'
 import { writeOffUds } from '../_actions/write-off-uds'
-import { dispatchToProvider } from '../_actions/dispatch-to-provider'
 import { receiveFromProvider } from '../_actions/receive-from-provider'
-import { releaseToCustomer } from '../_actions/release-to-customer'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type {
   CreateUdsFormValues,
@@ -22,11 +25,10 @@ import type {
   AssessUdsFormValues,
   SetRepairProviderFormValues,
   WriteOffUdsFormValues,
-  DispatchToProviderFormValues,
   ReceiveFromProviderFormValues,
-  ReleaseToCustomerFormValues,
   UdsStatus,
 } from '@/src/schema/inventory/uds'
+import { UDS_STATUSES } from '@/src/schema/inventory/uds'
 
 export function useUdsManager() {
   const queryClient = useQueryClient()
@@ -36,6 +38,8 @@ export function useUdsManager() {
   const [statusFilter, setStatusFilter] = useState<UdsStatus | undefined>(undefined)
   const [reasonFilter, setReasonFilter] = useState<string | undefined>(undefined)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
+  // Scenario 73 — monitoring per service center (the repair provider).
+  const [providerFilter, setProviderFilter] = useState<string | undefined>(undefined)
 
   const queryParams = useMemo(
     () => ({
@@ -44,8 +48,9 @@ export function useUdsManager() {
       status: statusFilter,
       reason: reasonFilter,
       warehouseId: warehouseFilter,
+      repairProviderId: providerFilter,
     }),
-    [page, limit, statusFilter, reasonFilter, warehouseFilter]
+    [page, limit, statusFilter, reasonFilter, warehouseFilter, providerFilter]
   )
 
   const udsQuery = useQuery({
@@ -55,15 +60,40 @@ export function useUdsManager() {
     staleTime: STALE.REALTIME,
   })
 
+  // One head count per status, so the band can show the shape of the queue
+  // without the list having to fetch every sheet. `limit: 1` makes each of
+  // these a count query in all but name — the rows come back with the page
+  // above, and only `meta.total` is read here.
+  const countParams = useMemo(
+    () => ({
+      reason: reasonFilter,
+      warehouseId: warehouseFilter,
+      repairProviderId: providerFilter,
+    }),
+    [reasonFilter, warehouseFilter, providerFilter]
+  )
+
+  const countQueries = useQueries({
+    queries: UDS_STATUSES.map((status) => ({
+      // Keyed under the list's own prefix, not a sibling of it: every
+      // mutation here invalidates ['inventory-uds'], and TanStack matches
+      // prefixes — so the band's counts refresh with the rows instead of
+      // going stale the moment a sheet is issued or advanced.
+      queryKey: ['inventory-uds', 'count', status, countParams],
+      queryFn: () => getUdsList({ ...countParams, status, page: 1, limit: 1 }),
+      staleTime: STALE.REALTIME,
+    })),
+  })
+
+  const statusCounts: Partial<Record<UdsStatus, number>> = {}
+  UDS_STATUSES.forEach((status, i) => {
+    const total = countQueries[i]?.data?.data?.meta.total
+    if (typeof total === 'number') statusCounts[status] = total
+  })
+
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
-    staleTime: STALE.LOOKUP,
-  })
-
-  const serialsQuery = useQuery({
-    queryKey: ['inventory-serials-in-stock'],
-    queryFn: () => getSerialNumbers({ status: 'in_stock', limit: 500 }),
     staleTime: STALE.LOOKUP,
   })
 
@@ -138,24 +168,6 @@ export function useUdsManager() {
     },
   })
 
-  const dispatchMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: DispatchToProviderFormValues }) =>
-      dispatchToProvider(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({
-          title: 'Sent to service centre',
-          description: result.message,
-          status: 'success',
-        })
-        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
-      } else {
-        showToast({ title: 'Failed to dispatch', description: result.message, status: 'error' })
-      }
-    },
-  })
-
   const receiveFromProviderMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: ReceiveFromProviderFormValues }) =>
       receiveFromProvider(id, data),
@@ -170,20 +182,6 @@ export function useUdsManager() {
           description: result.message,
           status: 'error',
         })
-      }
-    },
-  })
-
-  const releaseMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: ReleaseToCustomerFormValues }) =>
-      releaseToCustomer(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({ title: 'Released to customer', description: result.message, status: 'success' })
-        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
-      } else {
-        showToast({ title: 'Failed to release', description: result.message, status: 'error' })
       }
     },
   })
@@ -220,10 +218,17 @@ export function useUdsManager() {
     isLoading: udsQuery.isLoading,
     isFetching: udsQuery.isFetching,
     error: udsQuery.error,
+    refetch: udsQuery.refetch,
+    statusCounts,
 
     statusFilter,
     reasonFilter,
     warehouseFilter,
+    providerFilter,
+    setProviderFilter: (v: string | undefined) => {
+      setProviderFilter(v)
+      setPage(1)
+    },
     setStatusFilter: (v: UdsStatus | undefined) => {
       setStatusFilter(v)
       setPage(1)
@@ -240,6 +245,7 @@ export function useUdsManager() {
       setStatusFilter(undefined)
       setReasonFilter(undefined)
       setWarehouseFilter(undefined)
+      setProviderFilter(undefined)
       setPage(1)
     },
 
@@ -247,7 +253,6 @@ export function useUdsManager() {
     setPage,
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
-    serialOptions: serialsQuery.data?.data?.data ?? [],
     supplierOptions: suppliersQuery.data?.data?.data ?? [],
 
     createUds: createMutation.mutateAsync,
@@ -267,14 +272,8 @@ export function useUdsManager() {
     writeOffUds: (id: string, data: WriteOffUdsFormValues) =>
       writeOffMutation.mutateAsync({ id, data }),
     isWritingOff: writeOffMutation.isPending,
-    dispatchToProvider: (id: string, data: DispatchToProviderFormValues) =>
-      dispatchMutation.mutateAsync({ id, data }),
-    isDispatching: dispatchMutation.isPending,
     receiveFromProvider: (id: string, data: ReceiveFromProviderFormValues) =>
       receiveFromProviderMutation.mutateAsync({ id, data }),
     isReceivingFromProvider: receiveFromProviderMutation.isPending,
-    releaseToCustomer: (id: string, data: ReleaseToCustomerFormValues) =>
-      releaseMutation.mutateAsync({ id, data }),
-    isReleasing: releaseMutation.isPending,
   }
 }

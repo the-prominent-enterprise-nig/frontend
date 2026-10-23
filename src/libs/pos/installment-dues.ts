@@ -34,12 +34,21 @@ export function duePaid(line: InstallmentScheduleLineWithInvoice): number {
 
 /** Per-due equivalent of the invoice status badge, in the same vocabulary
  * DUE_STATUS_LABELS speaks. A voided/never-posted contract still reports at
- * contract level — no due of it is collectable either way. */
-export function dueStatus(line: InstallmentScheduleLineWithInvoice): string {
+ * contract level — no due of it is collectable either way.
+ *
+ * `asOfIso` defaults to real today — every existing caller (Customer 360's
+ * Upcoming Payables and plan modal) keeps calling this with one argument and
+ * is completely unaffected. Only POS Collections' own "simulate a date"
+ * override (Scenario 54) ever passes a second argument, so a hypothetical
+ * date never leaks into any other screen. */
+export function dueStatus(
+  line: InstallmentScheduleLineWithInvoice,
+  asOfIso: string = todayIso()
+): string {
   if (['DRAFT', 'CANCELLED'].includes(line.arInvoice.status)) return line.arInvoice.status
   if (line.settledAt) return 'PAID'
   if (Number(line.paidAmount) > 0) return 'PARTIAL'
-  return line.dueDate.slice(0, 10) < todayIso() ? 'OVERDUE' : 'SENT'
+  return line.dueDate.slice(0, 10) < asOfIso ? 'OVERDUE' : 'SENT'
 }
 
 /** Still collectable: the contract is posted and not voided, and this due

@@ -7,6 +7,7 @@ import { BellPlus, GitMerge, Plus, Search } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
+import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import type { Customer, CustomerAccountType } from '@/src/schema/crm/types'
 
 const ACCOUNT_TYPE_LABEL: Record<CustomerAccountType, string> = {
@@ -230,7 +231,7 @@ export default function CustomersList({
                             (c.customerType === 'employee' && c.employeeNumber ? (
                               c.employeeNumber
                             ) : (
-                              <span className="capitalize">{c.customerType}</span>
+                              <span>{CUSTOMER_TYPE_LABELS[c.customerType] ?? c.customerType}</span>
                             ))}
                         </div>
                       </div>

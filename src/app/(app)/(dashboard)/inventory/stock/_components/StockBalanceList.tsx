@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { RefreshCw, Search, AlertTriangle, Package, X } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Search, Package, X } from 'lucide-react'
 import { useStockBalance } from '../_hooks/useStockBalance'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -10,14 +11,18 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { StockBalance, StockStateFilter } from '@/src/schema/inventory/goods-receiving'
 import type { SessionUser } from '@/src/libs/guards/permission'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { AddItemButton } from '../../items/_components/AddItemButton'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
+import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
+import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // This screen follows the Purchase Orders / Receiving Reports design's own
-// IBM Plex + #5b21b6 palette (PLEX/MONO imported from procurementTokens,
-// shared across the Inventory module's operational screens) rather than the
-// app-wide Poppins brand tokens — the same choice already made for
-// procurement. The page ground stays zinc-50 so it sits on the same
+// #5b21b6 palette (PLEX/MONO imported from procurementTokens, shared across
+// the Inventory module's operational screens) — the same choice already made
+// for procurement. The page ground stays zinc-50 so it sits on the same
 // background as the rest of the dashboard shell.
 
 /** Scenario 50 — the client reads an item as brand + model ("Sharp SJML70").
@@ -37,8 +42,8 @@ function itemTitle(
 
 // Matches the label map already used on the price list screens.
 const REGION_OPTIONS = [
-  { value: 'panay', label: 'Panay' },
-  { value: 'negros', label: 'Negros' },
+  { value: 'panay', label: 'Panay Warehouse' },
+  { value: 'negros', label: 'Negros Warehouse' },
 ]
 
 // The five states the filter offers. The first four are exactly the badge the
@@ -51,7 +56,8 @@ const REGION_OPTIONS = [
 //
 // Deliberately no In Transit column: rows roll up per item across locations, so
 // a single qty there would flatten "3 in transit to Bago, 2 to Ajuy" into an
-// unattributed 5.
+// unattributed 5. Scenario 56 shows it as a second "In Transit · N" badge
+// under the row's stock state instead; the drawer breaks it down per location.
 const STOCK_STATE_OPTIONS = [
   { value: 'in_stock', label: 'In Stock' },
   { value: 'low', label: 'Low Stock' },
@@ -65,30 +71,6 @@ const CONTROL_CHROME = {
   focused: 'border-[#5b21b6] shadow-[0_0_0_3px_#f0e9fc]',
 }
 
-type StockStatus = 'out' | 'fully_reserved' | 'low' | 'in_stock'
-
-const STOCK_STATUS_META: Record<StockStatus, { label: string; badge: string; dot: string }> = {
-  out: { label: 'Out of Stock', badge: 'bg-[#fdeceb] text-[#b42318]', dot: 'bg-[#d9544c]' },
-  fully_reserved: {
-    label: 'Fully Reserved',
-    badge: 'bg-[#eaf0fb] text-[#1f4b99]',
-    dot: 'bg-[#3b74cc]',
-  },
-  low: { label: 'Low Stock', badge: 'bg-[#fdf3e7] text-[#8a4b06]', dot: 'bg-[#d18b1d]' },
-  in_stock: { label: 'In Stock', badge: 'bg-[#e7f5ef] text-[#0b6644]', dot: 'bg-[#0f7b52]' },
-}
-
-/** Out of Stock (nothing physically on hand) and Fully Reserved (stock exists
- * but every unit is already committed) used to collapse into one red badge —
- * `availableQty <= 0` was true for both, so a row with 40 on hand and 40
- * reserved read identically to a genuinely empty shelf. */
-function stockStatusOf(bal: StockBalance): StockStatus {
-  if (bal.onHandQty <= 0) return 'out'
-  if (bal.availableQty <= 0) return 'fully_reserved'
-  if (bal.reorderPoint != null && bal.availableQty < bal.reorderPoint) return 'low'
-  return 'in_stock'
-}
-
 const AVAILABLE_TEXT: Record<StockStatus, string> = {
   out: 'text-[#b42318]',
   fully_reserved: 'text-[#1f4b99]',
@@ -99,20 +81,8 @@ const AVAILABLE_TEXT: Record<StockStatus, string> = {
 /** The seven-column track the header, rows and skeletons all share — same
  * `role="table"`/CSS-grid approach as Purchase Orders, since assistive tech
  * and this module's e2e specs both lean on the explicit table semantics. */
-const GRID = 'grid grid-cols-[minmax(0,1fr)_128px_84px_68px_84px_96px_118px] gap-x-3 items-center'
-
-function StockStatusBadge({ status }: { status: StockStatus }) {
-  const meta = STOCK_STATUS_META[status]
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[5px] px-[9px] py-[3px] text-[11.5px] font-medium ${meta.badge}`}
-    >
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dot}`} />
-      {status === 'low' && <AlertTriangle className="h-3 w-3" />}
-      {meta.label}
-    </span>
-  )
-}
+const GRID =
+  'grid grid-cols-[minmax(0,1fr)_160px_84px_96px_68px_84px_96px_118px] gap-x-3 items-center'
 
 function SkeletonBar({ wide }: { wide?: boolean }) {
   return (
@@ -125,7 +95,7 @@ function SkeletonBar({ wide }: { wide?: boolean }) {
 }
 
 export default function StockBalanceList({
-  session: _session,
+  session,
   onLocationsChange,
 }: {
   session: SessionUser
@@ -141,7 +111,6 @@ export default function StockBalanceList({
     summary,
     pagination,
     isLoading,
-    isFetching,
     error,
     locations,
     region,
@@ -161,8 +130,7 @@ export default function StockBalanceList({
     locationOptions,
     locationsLoading,
     categoryOptions,
-    refetch,
-  } = useStockBalance(onLocationsChange)
+  } = useStockBalance(onLocationsChange, useSearchParams().get('search') ?? '')
 
   const activeFilterCount = [locations.length > 0, !!region, !!categoryId, !!stockStatus].filter(
     Boolean
@@ -179,6 +147,7 @@ export default function StockBalanceList({
       // The drawer is the per-location breakdown of this rolled-up row, so
       // it must break down the same locations the row was summed from.
       locations,
+      region,
     })
   }
 
@@ -197,15 +166,10 @@ export default function StockBalanceList({
               selected location.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-3 py-[9px] text-[13px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Scenario 56 — add an item without leaving Stock. */}
+            {hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE) && <AddItemButton />}
+          </div>
         </div>
 
         {/* Error */}
@@ -219,21 +183,37 @@ export default function StockBalanceList({
 
         {/* Metric band */}
         {!isLoading && (
-          <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1080px]:grid-cols-5 min-[1080px]:divide-y-0">
+          <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1280px]:grid-cols-6 min-[1080px]:divide-y-0">
             <div className="flex flex-col gap-1 px-4 py-3">
               <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
                 Items
               </span>
-              <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em]`}>
+              <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
                 {pagination.total.toLocaleString()}
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
               <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
-                On hand
+                Total
               </span>
-              <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em]`}>
+              <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
                 {(summary?.totalOnHandQty ?? 0).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1 px-4 py-3">
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+                Transferred
+              </span>
+              <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
+                {(summary?.totalInTransitQty ?? 0).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1 px-4 py-3">
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+                Sold
+              </span>
+              <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
+                {(summary?.totalSoldQty ?? 0).toLocaleString()}
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
@@ -241,7 +221,7 @@ export default function StockBalanceList({
                 Reserved
               </span>
               <span
-                className={`${MONO} text-[20px] font-semibold tracking-[-.01em] ${
+                className={`${MONO} text-[17px] font-semibold tracking-[-.01em] ${
                   (summary?.totalReservedQty ?? 0) > 0 ? 'text-[#8a4b06]' : 'text-[#17171c]'
                 }`}
               >
@@ -253,17 +233,9 @@ export default function StockBalanceList({
                 Available
               </span>
               <span
-                className={`${MONO} text-[20px] font-semibold tracking-[-.01em] text-[#0b6644]`}
+                className={`${MONO} text-[17px] font-semibold tracking-[-.01em] text-[#0b6644]`}
               >
                 {(summary?.totalAvailableQty ?? 0).toLocaleString()}
-              </span>
-            </div>
-            <div className="flex flex-col gap-1 px-4 py-3">
-              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
-                Sold
-              </span>
-              <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em]`}>
-                {(summary?.totalSoldQty ?? 0).toLocaleString()}
               </span>
             </div>
           </div>
@@ -304,7 +276,7 @@ export default function StockBalanceList({
 
           {/* Operations — the client's name for region. */}
           <SearchableSelect
-            className="w-[168px]"
+            className="w-[216px]"
             value={region ?? ''}
             onChange={(v) => setRegion((v || undefined) as 'panay' | 'negros' | undefined)}
             placeholder="All Operations"
@@ -360,20 +332,30 @@ export default function StockBalanceList({
           )}
         </div>
 
+        {/* Scenario 60 Part 4 — a serial number typed into the search above
+            matches here, independently of the item rollup below (which
+            never shows a "no results" for it, since brand/model/category
+            genuinely don't match a serial string). Works for a sold serial
+            too — this is the intuitive, one-step path the client asked for,
+            replacing "open the item, then search again inside its drawer". */}
+
         {/* Table card */}
         <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
           {/* Wide: CSS-grid table, same approach as Purchase Orders — explicit
               role="table"/"row"/"cell" since the markup isn't a <table>. */}
           {showTable && (
-            <div role="table" aria-label="Stock balance" className="hidden min-[1080px]:block">
+            <div role="table" aria-label="Stock balance" className="hidden min-[1280px]:block">
               <div
                 role="row"
-                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
               >
                 <span role="columnheader">Item</span>
                 <span role="columnheader">Category</span>
                 <span role="columnheader" className="text-right">
-                  On Hand
+                  Total
+                </span>
+                <span role="columnheader" className="text-right">
+                  Transferred
                 </span>
                 <span role="columnheader" className="text-right">
                   Sold
@@ -407,32 +389,46 @@ export default function StockBalanceList({
                     className={`cursor-pointer border-t border-[#f4f4f6] bg-white hover:bg-[#fcfcfd] ${GRID} px-4 py-[11px]`}
                   >
                     <div role="cell" className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate text-[12.5px] font-medium text-[#17171c]">
+                      <span className="break-words text-[13px] font-medium leading-snug text-[#17171c]">
                         {itemTitle(bal.item)}
                       </span>
                       {subline && (
-                        <span className="truncate text-[11px] text-[#8b8b9b]">{subline}</span>
+                        <span className="break-words text-[13px] leading-snug text-[#8b8b9b]">
+                          {subline}
+                        </span>
                       )}
                     </div>
 
-                    <span role="cell" className="truncate text-[12px] text-[#5b5b6b]">
+                    <span
+                      role="cell"
+                      className="break-words text-[14px] leading-snug text-[#5b5b6b]"
+                    >
                       {bal.item?.primaryCategory?.name ?? '—'}
                     </span>
 
                     <span
                       role="cell"
-                      className={`${MONO} text-right text-[13px] font-semibold text-[#17171c]`}
+                      className={`${MONO} text-right text-[13.5px] font-semibold text-[#17171c]`}
                     >
                       {bal.onHandQty.toLocaleString()}
                     </span>
 
-                    <span role="cell" className={`${MONO} text-right text-[12.5px] text-[#8b8b9b]`}>
+                    <span
+                      role="cell"
+                      className={`${MONO} text-right text-[13px] ${
+                        bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]'
+                      }`}
+                    >
+                      {bal.inTransitQty.toLocaleString()}
+                    </span>
+
+                    <span role="cell" className={`${MONO} text-right text-[13px] text-[#8b8b9b]`}>
                       {bal.soldQty.toLocaleString()}
                     </span>
 
                     <span
                       role="cell"
-                      className={`${MONO} text-right text-[12.5px] ${
+                      className={`${MONO} text-right text-[13px] ${
                         bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]'
                       }`}
                     >
@@ -441,13 +437,13 @@ export default function StockBalanceList({
 
                     <span
                       role="cell"
-                      className={`${MONO} text-right text-[13.5px] font-semibold ${AVAILABLE_TEXT[status]}`}
+                      className={`${MONO} text-right text-[14px] font-semibold ${AVAILABLE_TEXT[status]}`}
                     >
                       {bal.availableQty.toLocaleString()}
                     </span>
 
                     <span role="cell" className="flex justify-center">
-                      <StockStatusBadge status={status} />
+                      <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
                     </span>
                   </div>
                 )
@@ -494,7 +490,7 @@ export default function StockBalanceList({
 
           {/* Narrow: cards */}
           {showTable && (
-            <div className="flex flex-col gap-[10px] p-3 min-[1080px]:hidden">
+            <div className="flex flex-col gap-[10px] p-3 min-[1280px]:hidden">
               {balances.map((bal) => {
                 const status = stockStatusOf(bal)
                 const subline = [
@@ -512,19 +508,26 @@ export default function StockBalanceList({
                   >
                     <div className="flex items-start justify-between gap-[10px]">
                       <div className="flex min-w-0 flex-col gap-[3px]">
-                        <span className="truncate text-[13px] font-medium">
+                        <span className="break-words text-[13px] font-medium leading-snug">
                           {itemTitle(bal.item)}
                         </span>
                         {subline && (
-                          <span className="truncate text-[11.5px] text-[#8b8b9b]">{subline}</span>
+                          <span className="break-words text-[11.5px] leading-snug text-[#8b8b9b]">
+                            {subline}
+                          </span>
                         )}
                       </div>
-                      <StockStatusBadge status={status} />
+                      <StockStatusBadge status={status} inTransitQty={bal.inTransitQty} stacked />
                     </div>
 
-                    <div className="grid grid-cols-4 gap-[6px]">
+                    <div className="grid grid-cols-5 gap-[6px]">
                       {[
-                        { label: 'On hand', value: bal.onHandQty, tone: 'text-[#17171c]' },
+                        { label: 'Total', value: bal.onHandQty, tone: 'text-[#17171c]' },
+                        {
+                          label: 'Transferred',
+                          value: bal.inTransitQty,
+                          tone: bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]',
+                        },
                         { label: 'Sold', value: bal.soldQty, tone: 'text-[#8b8b9b]' },
                         {
                           label: 'Reserved',
@@ -569,11 +572,12 @@ export default function StockBalanceList({
           {isLoading && (
             <div>
               <div
-                className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1080px]:grid`}
+                className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1280px]:grid`}
               >
                 <span>Item</span>
                 <span>Category</span>
-                <span className="text-right">On Hand</span>
+                <span className="text-right">Total</span>
+                <span className="text-right">Transferred</span>
                 <span className="text-right">Sold</span>
                 <span className="text-right">Reserved</span>
                 <span className="text-right">Available</span>
@@ -582,9 +586,10 @@ export default function StockBalanceList({
               {Array.from({ length: 8 }).map((_, i) => (
                 <div
                   key={i}
-                  className={`${GRID} hidden border-t border-[#f4f4f6] px-4 py-[14px] min-[1080px]:grid`}
+                  className={`${GRID} hidden border-t border-[#f4f4f6] px-4 py-[14px] min-[1280px]:grid`}
                 >
                   <SkeletonBar wide />
+                  <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar />
@@ -593,7 +598,7 @@ export default function StockBalanceList({
                   <SkeletonBar wide />
                 </div>
               ))}
-              <div className="flex flex-col gap-[10px] p-3 min-[1080px]:hidden">
+              <div className="flex flex-col gap-[10px] p-3 min-[1280px]:hidden">
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div
                     key={i}
@@ -618,7 +623,7 @@ export default function StockBalanceList({
                 <div className="mt-1 text-[14px] font-semibold">No items match</div>
                 <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
                   {search
-                    ? `Nothing matches "${search}". Try the SKU, or clear a filter to widen the search.`
+                    ? `Nothing matches "${search}". Try the SKU, model or serial number, or clear a filter to widen the search.`
                     : 'No items fall inside these filters. Clear one to see more stock.'}
                 </div>
                 <button
@@ -634,7 +639,7 @@ export default function StockBalanceList({
                 <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]">
                   <Package className="h-4 w-4 text-[#5b21b6]" />
                 </div>
-                <div className="mt-1 text-[15px] font-semibold">No stock on record</div>
+                <div className="mt-1 text-[13.5px] font-semibold">No stock on record</div>
                 <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
                   Balances appear here once stock is received against a purchase order or entered
                   through an opening-stock adjustment.

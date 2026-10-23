@@ -1,88 +1,177 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Plus,
   ClipboardCheck,
   ChevronLeft,
   ChevronRight,
   Paperclip,
-  Truck,
   ArrowRight,
-  Clock,
-  PackageCheck,
-  CheckCircle2,
-  XCircle,
-  Wrench,
-  Ban,
+  AlertTriangle,
+  X,
 } from 'lucide-react'
+import UdsStatusBand from './UdsStatusBand'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { STATUS_CONFIG, ASSESSMENT_CONFIG, REASON_DOT, TRANSFER_STATUS_LABELS } from './udsDisplay'
 import { useUdsManager } from '../_hooks/useUdsManager'
 import CreateUdsModal from './CreateUdsModal'
+import { latestTrailLeg, outstandingTrailCount } from './DocumentTrail'
 import UpdateUdsStatusModal from './UpdateUdsStatusModal'
 import UdsDetailModal from './UdsDetailModal'
 import AssessUdsModal from './AssessUdsModal'
 import SetRepairProviderModal from './SetRepairProviderModal'
 import WriteOffUdsModal from './WriteOffUdsModal'
-import DispatchToProviderModal from './DispatchToProviderModal'
 import ReceiveFromProviderModal from './ReceiveFromProviderModal'
-import ReleaseToCustomerModal from './ReleaseToCustomerModal'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { can, type SessionUser } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
   UDS_ASSESSMENT_LABELS,
-  UDS_STATUSES,
   UDS_REASONS,
   type Uds,
-  type UdsStatus,
-  type UdsReason,
-  type UdsAssessment,
 } from '@/src/schema/inventory/uds'
 import type {
+  ManualUdsStatus,
   UpdateUdsStatusFormValues,
   AssessUdsFormValues,
-  DispatchToProviderFormValues,
   ReceiveFromProviderFormValues,
-  ReleaseToCustomerFormValues,
   SetRepairProviderFormValues,
   WriteOffUdsFormValues,
 } from '@/src/schema/inventory/uds'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
-// Icon + color per status/assessment, mirroring TransferList's own
-// STATUS_CONFIG pattern (not exported from there) for visual consistency
-// across the inventory module's list tables.
-const STATUS_CONFIG: Record<UdsStatus, { color: string; icon: React.ElementType }> = {
-  issued: { color: 'bg-blue-100 text-blue-700', icon: Clock },
-  in_transit: { color: 'bg-yellow-100 text-yellow-700', icon: Truck },
-  received: { color: 'bg-purple-100 text-purple-700', icon: PackageCheck },
-  at_provider: { color: 'bg-amber-100 text-amber-700', icon: Wrench },
-  repaired: { color: 'bg-teal-100 text-teal-700', icon: PackageCheck },
-  completed: { color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  cancelled: { color: 'bg-zinc-100 text-zinc-500', icon: XCircle },
+// Same control chrome as the Stock Returns filter row, so the two screens'
+// narrowings look and focus alike.
+const FILTER_INPUT =
+  'rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-prominent-purple-500 focus:ring-2 focus:ring-prominent-purple-100'
+
+type StepAction = {
+  label: string
+  className: string
+  run: (uds: Uds) => void
 }
 
-const ASSESSMENT_CONFIG: Record<UdsAssessment, { color: string; icon: React.ElementType }> = {
-  repairable: { color: 'bg-green-100 text-green-700', icon: Wrench },
-  unrepairable: { color: 'bg-red-100 text-red-700', icon: Ban },
-}
+/**
+ * The single next thing to do with a sheet, and — only where two paths are
+ * genuinely open — the alternative.
+ *
+ * Every action was previously rendered independently, so a sheet at `received`
+ * showed "Assess" next to "Update" and read as a choice between them when only
+ * one was the actual next step. Worse on a custodial sheet, where Update's only
+ * remaining target is a Completed the server now refuses: the button offered a
+ * transition guaranteed to fail.
+ *
+ * `handlers` is passed in rather than closed over so this stays a plain table
+ * of state -> step, readable end to end against the journey it describes.
+ */
+function buildNextStep(handlers: {
+  assess: (uds: Uds) => void
+  dispatch: (uds: Uds) => void
+  receive: (uds: Uds) => void
+  release: (uds: Uds) => void
+  writeOff: (uds: Uds) => void
+  /** Scenario 72 Part 10 — one fixed step, confirmed in a small modal. */
+  advance: (uds: Uds, target: ManualUdsStatus) => void
+  /** A hop a stock transfer carries is moved there, not here. */
+  viewTransfer: (transferNumber: string) => void
+  /** The two DR legs are hidden from anyone who cannot raise a DR. */
+  canCreateDr: boolean
+}): (uds: Uds) => { next: StepAction | null; alt: StepAction | null } {
+  const ASSESS: StepAction = {
+    label: 'Assess',
+    className: 'bg-green-50 text-green-700 hover:bg-green-100',
+    run: handlers.assess,
+  }
+  // Scenario 72 Part 7 — both of these legs now go out on a Delivery Receipt:
+  // the buttons open a new DR for this ticket instead of a modal.
+  const DISPATCH: StepAction = {
+    label: 'Create DR to Service Centre',
+    className: 'bg-amber-50 text-amber-700 hover:bg-amber-100',
+    run: handlers.dispatch,
+  }
+  const RECEIVE: StepAction = {
+    label: 'Receive Back',
+    className: 'bg-teal-50 text-teal-700 hover:bg-teal-100',
+    run: handlers.receive,
+  }
+  const RELEASE: StepAction = {
+    label: 'Create DR to Customer',
+    className: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+    run: handlers.release,
+  }
+  const dispatchStep = handlers.canCreateDr ? DISPATCH : null
+  const releaseStep = handlers.canCreateDr ? RELEASE : null
+  const WRITE_OFF: StepAction = {
+    label: 'Write Off',
+    className: 'bg-red-50 text-red-700 hover:bg-red-100',
+    run: handlers.writeOff,
+  }
+  const stepTo = (label: string, target: ManualUdsStatus): StepAction => ({
+    label,
+    className: 'bg-prominent-purple-50 text-prominent-purple-700 hover:bg-prominent-purple-100',
+    run: (uds) => handlers.advance(uds, target),
+  })
+  // Scenario 72 Part 10 — the ticket's own transfer moves it: its dispatch and
+  // receipt are the trip to main (and, repaired, the trip home).
+  const onTransfer = (transfer: Uds['linkedStockTransfer']): StepAction | null =>
+    transfer && transfer.status !== 'cancelled' && transfer.status !== 'rejected'
+      ? {
+          label: `Open ${transfer.transferNumber}`,
+          className: 'bg-sky-50 text-sky-700 hover:bg-sky-100',
+          run: () => handlers.viewTransfer(transfer.transferNumber),
+        }
+      : null
 
-const REASON_DOT: Record<UdsReason, string> = {
-  repair: 'bg-red-500',
-  maintenance: 'bg-orange-500',
-  quality_check: 'bg-yellow-500',
-  pull_out: 'bg-purple-500',
-  loan: 'bg-blue-500',
-}
+  return (uds) => {
+    const none = { next: null, alt: null }
+    if (uds.status === 'completed' || uds.status === 'cancelled') return none
 
-// Mirrors TransferList's own STATUS_CONFIG colors (not exported from there) —
-// kept minimal since this is just an inline reference badge, not the transfers
-// module's own status UI.
-const TRANSFER_STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
-  in_transit: 'In Transit',
-  received: 'Received',
-  cancelled: 'Cancelled',
+    // Scenario 73 — Home Service: the service center named at intake already
+    // serviced the unit, so it goes straight back to the customer on a DR —
+    // no trip to main, no assess, no dispatch.
+    if (uds.repairType === 'home_service' && uds.customerId && uds.status !== 'at_provider') {
+      return { next: releaseStep, alt: null }
+    }
+
+    // Maintenance, quality check, pull-out and loan never travel to main.
+    if (uds.reason !== 'repair' && uds.status === 'issued') {
+      return { next: stepTo('Complete', 'completed'), alt: null }
+    }
+
+    const outbound = onTransfer(uds.linkedStockTransfer)
+    if (uds.status === 'issued') {
+      return { next: outbound ?? stepTo('Send to Main', 'in_transit'), alt: null }
+    }
+    if (uds.status === 'in_transit') {
+      return { next: outbound ?? stepTo('Receive at Main', 'received'), alt: null }
+    }
+    if (uds.status === 'at_provider') return { next: RECEIVE, alt: null }
+
+    // Custodial sheets close only through the release, which is what issues
+    // the DR and returns the serial to `sold`. Our own repaired unit goes home
+    // on its return transfer; without one (already at its branch), Complete.
+    const close = uds.customerId
+      ? releaseStep
+      : (onTransfer(uds.returnStockTransfer ?? null) ?? stepTo('Complete', 'completed'))
+
+    if (uds.status === 'repaired') return { next: close, alt: null }
+
+    // received
+    if (uds.reason === 'repair' && !uds.assessment) return { next: ASSESS, alt: null }
+    if (uds.assessment === 'repairable') return { next: dispatchStep, alt: null }
+    if (uds.assessment === 'unrepairable') {
+      // The only genuine fork: the customer can collect the dead unit, or we
+      // scrap it. Both are valid endings, so neither can be the sole button.
+      const canWriteOff = !uds.writeOffAdjustmentId
+      if (uds.customerId) return { next: releaseStep, alt: canWriteOff ? WRITE_OFF : null }
+      return { next: canWriteOff ? WRITE_OFF : close, alt: null }
+    }
+    return { next: close, alt: null }
+  }
 }
 
 export default function UdsList({ session }: { session: SessionUser }) {
@@ -92,15 +181,17 @@ export default function UdsList({ session }: { session: SessionUser }) {
     isLoading,
     isFetching,
     error,
+    statusCounts,
     statusFilter,
     reasonFilter,
+    providerFilter,
     setStatusFilter,
     setReasonFilter,
+    setProviderFilter,
     resetFilters,
     page,
     setPage,
     warehouseOptions,
-    serialOptions,
     supplierOptions,
     createUds,
     isCreating,
@@ -108,12 +199,8 @@ export default function UdsList({ session }: { session: SessionUser }) {
     isUpdatingStatus,
     assessUds,
     isAssessing,
-    dispatchToProvider,
-    isDispatching,
     receiveFromProvider,
     isReceivingFromProvider,
-    releaseToCustomer,
-    isReleasing,
     setRepairProvider,
     isSettingRepairProvider,
     writeOffUds,
@@ -121,20 +208,49 @@ export default function UdsList({ session }: { session: SessionUser }) {
   } = useUdsManager()
 
   const [isCreateOpen, setCreateOpen] = useState(false)
-  const [selectedUds, setSelectedUds] = useState<Uds | null>(null)
+  const [selectedStep, setSelectedStep] = useState<{
+    uds: Uds
+    target: ManualUdsStatus
+  } | null>(null)
   const [viewUds, setViewUds] = useState<Uds | null>(null)
   const [assessingUds, setAssessingUds] = useState<Uds | null>(null)
   const [settingProviderUds, setSettingProviderUds] = useState<Uds | null>(null)
   const [writingOffUds, setWritingOffUds] = useState<Uds | null>(null)
-  const [dispatchingUds, setDispatchingUds] = useState<Uds | null>(null)
   const [receivingUds, setReceivingUds] = useState<Uds | null>(null)
-  const [releasingUds, setReleasingUds] = useState<Uds | null>(null)
+  const router = useRouter()
+  const canCreateDr = can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE)
 
-  const hasFilters = !!statusFilter || !!reasonFilter
+  // Built once from the setters above; the table itself is state-independent.
+  const nextStep = useMemo(
+    () =>
+      buildNextStep({
+        assess: setAssessingUds,
+        dispatch: (uds) =>
+          router.push(`/inventory/delivery-receipts/new?purpose=to_service_center&udsId=${uds.id}`),
+        receive: setReceivingUds,
+        release: (uds) => {
+          const purpose =
+            uds.status === 'repaired' || uds.repairType === 'home_service'
+              ? 'repaired_to_customer'
+              : 'unrepaired_to_customer'
+          router.push(`/inventory/delivery-receipts/new?purpose=${purpose}&udsId=${uds.id}`)
+        },
+        writeOff: setWritingOffUds,
+        advance: (uds, target) => setSelectedStep({ uds, target }),
+        viewTransfer: (number) =>
+          router.push(
+            `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(number)}`
+          ),
+        canCreateDr,
+      }),
+    [router, canCreateDr]
+  )
+
+  const hasFilters = !!statusFilter || !!reasonFilter || !!providerFilter
 
   async function handleUpdateStatus(data: UpdateUdsStatusFormValues) {
-    if (!selectedUds) return { success: false, error: 'No UDS selected', message: '' }
-    return updateStatus(selectedUds.id, data)
+    if (!selectedStep) return { success: false, error: 'No UDS selected', message: '' }
+    return updateStatus(selectedStep.uds.id, data)
   }
 
   async function handleAssess(data: AssessUdsFormValues) {
@@ -152,60 +268,44 @@ export default function UdsList({ session }: { session: SessionUser }) {
     return writeOffUds(writingOffUds.id, data)
   }
 
-  async function handleDispatch(data: DispatchToProviderFormValues) {
-    if (!dispatchingUds) return { success: false, error: 'No UDS selected', message: '' }
-    return dispatchToProvider(dispatchingUds.id, data)
-  }
-
   async function handleReceiveFromProvider(data: ReceiveFromProviderFormValues) {
     if (!receivingUds) return { success: false, error: 'No UDS selected', message: '' }
     return receiveFromProvider(receivingUds.id, data)
   }
 
-  async function handleRelease(data: ReleaseToCustomerFormValues) {
-    if (!releasingUds) return { success: false, error: 'No UDS selected', message: '' }
-    return releaseToCustomer(releasingUds.id, data)
-  }
-
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
+    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Unit Document Sheets</h1>
-            <p className="mt-1 text-sm text-zinc-500">
+        {/* Same header chrome as Stock Returns and Stock Transfers — these
+            three inventory movement screens share one surface. */}
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="flex min-w-0 flex-col gap-1">
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Unit Document Sheets</h1>
+            <p className="text-[13px] text-[#5b5b6b]">
               Track units leaving the branch for repair, pull-out, maintenance, or loan.
             </p>
           </div>
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-prominent-purple-700 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-prominent-purple-800"
-          >
-            <Plus className="h-4 w-4" />
-            Issue UDS
-          </button>
+          <div className="flex flex-wrap items-center gap-[9px]">
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-[7px] rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Issue UDS
+            </button>
+          </div>
         </div>
+
+        <UdsStatusBand counts={statusCounts} selected={statusFilter} onSelect={setStatusFilter} />
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <select
-            value={statusFilter ?? ''}
-            onChange={(e) => setStatusFilter((e.target.value as UdsStatus) || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Statuses</option>
-            {UDS_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {UDS_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-
-          <select
             value={reasonFilter ?? ''}
             onChange={(e) => setReasonFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            aria-label="Reason"
+            className={`${FILTER_INPUT} cursor-pointer`}
           >
             <option value="">All Reasons</option>
             {UDS_REASONS.map((r) => (
@@ -215,11 +315,23 @@ export default function UdsList({ session }: { session: SessionUser }) {
             ))}
           </select>
 
+          {/* Scenario 73 — the tickets one service center has, or had. */}
+          <SearchableSelect
+            value={providerFilter ?? ''}
+            onChange={(v) => setProviderFilter(v || undefined)}
+            options={supplierOptions.map((s) => ({ value: s.id, label: s.name }))}
+            placeholder="All service centers"
+            ariaLabel="Service center"
+            className="w-64"
+          />
+
           {hasFilters && (
             <button
+              type="button"
               onClick={resetFilters}
-              className="text-sm text-zinc-500 hover:text-zinc-700 underline"
+              className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
             >
+              <X className="h-4 w-4" />
               Clear filters
             </button>
           )}
@@ -261,25 +373,18 @@ export default function UdsList({ session }: { session: SessionUser }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Document
+                  <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Document</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Status</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Units / Provider</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Route</th>
+                    <th className={`hidden px-4 py-3 text-left md:table-cell ${STOCK_TABLE_HEAD}`}>
+                      Latest document
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Units / Provider
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Route
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
+                    <th className={`hidden px-4 py-3 text-left sm:table-cell ${STOCK_TABLE_HEAD}`}>
                       Issued
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Actions
-                    </th>
+                    <th className={`px-4 py-3 text-right ${STOCK_TABLE_HEAD}`}>Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
@@ -287,6 +392,10 @@ export default function UdsList({ session }: { session: SessionUser }) {
                     const statusCfg = STATUS_CONFIG[uds.status]
                     const StatusIcon = statusCfg.icon
                     const assessmentCfg = uds.assessment ? ASSESSMENT_CONFIG[uds.assessment] : null
+                    const latestLeg = latestTrailLeg(uds)
+                    const outstandingDocs = outstandingTrailCount(uds)
+                    const isClosed = uds.status === 'completed' || uds.status === 'cancelled'
+                    const { next, alt } = nextStep(uds)
                     const AssessmentIcon = assessmentCfg?.icon
 
                     return (
@@ -314,7 +423,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
                         {/* Status: lifecycle + assessment verdict stacked */}
                         <td className="px-4 py-3">
                           <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.color}`}
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.badge}`}
                           >
                             <StatusIcon className="h-3 w-3" />
                             {UDS_STATUS_LABELS[uds.status]}
@@ -337,6 +446,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
                           {(uds.repairProvider || uds.rfsFormFile) && (
                             <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-zinc-400">
                               {uds.repairProvider?.name}
+                              {uds.repairType === 'home_service' && (
+                                <span className="text-zinc-500"> · Home Service</span>
+                              )}
                               {uds.rfsFormFile && (
                                 <Paperclip
                                   className="h-3 w-3 shrink-0"
@@ -367,6 +479,28 @@ export default function UdsList({ session }: { session: SessionUser }) {
                           )}
                         </td>
 
+                        {/* How far the unit has got on paper, which is not
+                            always what its status claims — a UDS sitting at
+                            "at provider" with no dispatch DR recorded is a
+                            unit nobody can prove was handed over. */}
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          {latestLeg ? (
+                            <p className="font-mono text-xs text-zinc-700">{latestLeg.number}</p>
+                          ) : (
+                            <span className="text-xs text-zinc-400">None recorded</span>
+                          )}
+                          {/* The gap, not the leg's own name: the label only
+                              repeated what the number already said, while the
+                              question this column exists to answer is which
+                              sheets somebody has to go chase paper for. */}
+                          {outstandingDocs > 0 && (
+                            <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-700">
+                              <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                              {outstandingDocs} outstanding
+                            </p>
+                          )}
+                        </td>
+
                         <td className="px-4 py-3 text-zinc-500 hidden sm:table-cell">
                           {new Date(uds.createdAt).toLocaleDateString('en-PH', {
                             month: 'short',
@@ -377,75 +511,44 @@ export default function UdsList({ session }: { session: SessionUser }) {
 
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            {uds.reason === 'repair' &&
-                              uds.status === 'received' &&
-                              !uds.assessment && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setAssessingUds(uds)
-                                  }}
-                                  className="rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
-                                >
-                                  Assess
-                                </button>
-                              )}
-                            {uds.assessment === 'repairable' && uds.status === 'received' && (
+                            {/* One named step, not a row of every form that
+                                happens to be legal. "Assess" and "Update" side
+                                by side read as alternatives when only one of
+                                them is the next thing to do — and on a
+                                custodial sheet Update now offers only a
+                                Completed the server refuses. Cancel stays
+                                reachable as the quiet secondary. */}
+                            {next && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setDispatchingUds(uds)
+                                  next.run(uds)
                                 }}
-                                className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                                className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${next.className}`}
                               >
-                                Send to Service Centre
+                                {next.label}
                               </button>
                             )}
-                            {uds.status === 'at_provider' && (
+                            {alt && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setReceivingUds(uds)
+                                  alt.run(uds)
                                 }}
-                                className="rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100"
+                                className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${alt.className}`}
                               >
-                                Receive Back
+                                {alt.label}
                               </button>
                             )}
-                            {uds.customerId &&
-                              (uds.status === 'repaired' || uds.assessment === 'unrepairable') &&
-                              uds.status !== 'completed' &&
-                              uds.status !== 'cancelled' && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setReleasingUds(uds)
-                                  }}
-                                  className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
-                                >
-                                  Release to Customer
-                                </button>
-                              )}
-                            {uds.assessment === 'unrepairable' && !uds.writeOffAdjustmentId && (
+                            {!isClosed && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setWritingOffUds(uds)
+                                  setSelectedStep({ uds, target: 'cancelled' })
                                 }}
-                                className="rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
                               >
-                                Write Off
-                              </button>
-                            )}
-                            {uds.status !== 'completed' && uds.status !== 'cancelled' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSelectedUds(uds)
-                                }}
-                                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                              >
-                                Update
+                                Cancel
                               </button>
                             )}
                           </div>
@@ -495,18 +598,18 @@ export default function UdsList({ session }: { session: SessionUser }) {
         onSubmit={createUds}
         isSubmitting={isCreating}
         warehouseOptions={warehouseOptions}
-        serialOptions={serialOptions}
         supplierOptions={supplierOptions}
         currentUserBranchId={session.branchId}
       />
 
-      {selectedUds && (
+      {selectedStep && (
         <UpdateUdsStatusModal
-          isOpen={!!selectedUds}
-          onClose={() => setSelectedUds(null)}
+          isOpen={!!selectedStep}
+          onClose={() => setSelectedStep(null)}
           onSubmit={handleUpdateStatus}
           isSubmitting={isUpdatingStatus}
-          currentStatus={selectedUds.status}
+          target={selectedStep.target}
+          udsCode={selectedStep.uds.code}
         />
       )}
 
@@ -518,6 +621,18 @@ export default function UdsList({ session }: { session: SessionUser }) {
           setViewUds(null)
           setSettingProviderUds(u)
         }}
+        nextStep={(() => {
+          const step = viewUds ? nextStep(viewUds).next : null
+          return step && viewUds
+            ? {
+                label: step.label,
+                run: () => {
+                  setViewUds(null)
+                  step.run(viewUds)
+                },
+              }
+            : null
+        })()}
       />
 
       <AssessUdsModal
@@ -526,6 +641,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
         onClose={() => setAssessingUds(null)}
         onSubmit={handleAssess}
         isSubmitting={isAssessing}
+        supplierOptions={supplierOptions}
       />
 
       <SetRepairProviderModal
@@ -545,28 +661,12 @@ export default function UdsList({ session }: { session: SessionUser }) {
         isSubmitting={isWritingOff}
       />
 
-      <DispatchToProviderModal
-        uds={dispatchingUds}
-        isOpen={!!dispatchingUds}
-        onClose={() => setDispatchingUds(null)}
-        onSubmit={handleDispatch}
-        isSubmitting={isDispatching}
-      />
-
       <ReceiveFromProviderModal
         uds={receivingUds}
         isOpen={!!receivingUds}
         onClose={() => setReceivingUds(null)}
         onSubmit={handleReceiveFromProvider}
         isSubmitting={isReceivingFromProvider}
-      />
-
-      <ReleaseToCustomerModal
-        uds={releasingUds}
-        isOpen={!!releasingUds}
-        onClose={() => setReleasingUds(null)}
-        onSubmit={handleRelease}
-        isSubmitting={isReleasing}
       />
     </div>
   )

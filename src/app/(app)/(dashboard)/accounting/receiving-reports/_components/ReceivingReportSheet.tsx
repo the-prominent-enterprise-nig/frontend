@@ -1,6 +1,13 @@
 'use client'
 
-import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
+import {
+  receivingReportBranchLine,
+  receivingReportMetaSlots,
+  receivingReportReasonLabel,
+  receivingReportSourceName,
+  receivingReportSourceSubtitle,
+} from '@/src/libs/format/receiving-report'
+import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
 /** Print/document envelope for one goods receipt
  * (GET /reports/receiving-reports/:id/document) — the receipt plus the
@@ -22,22 +29,55 @@ export interface ReceivingReportDocument {
     receivedAt: string
     receivedByName?: string | null
     supplier?: { name?: string | null; address?: string | null } | null
-    warehouse?: { name?: string | null; branch?: { name?: string | null } | null } | null
+    warehouse?: {
+      name?: string | null
+      branch?: { name?: string | null; addressLine1?: string | null } | null
+    } | null
     purchaseOrderNumber?: string | null
     poDate?: string | null
-    driverName?: string | null
-    helperName?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
+    /** Input VAT carved out of the unit costs and the tax withheld at
+     * receiving — Decimal columns, so they can arrive as strings. */
+    vatAmount?: number | string | null
+    withheldAmount?: number | string | null
+    /** The delivery crew, printed on the sheet's "Driver/Helper" line. Either
+     * can be absent — a delivery often arrives with a driver and no helper. */
+    driverName?: string | null
+    helperName?: string | null
+    /** Set only on a receipt that came from a branch transfer rather than a
+     * supplier. Its number takes the sheet's PO slot — see
+     * receivingReportSourceRef(). */
+    reason?: string | null
+    /** The sales invoice(s) a returned unit came back from. */
+    returnedInvoices?: { number: string; date?: string | null }[] | null
+    repairType?: string | null
+    returnedBy?: { name?: string | null; customerCode?: string | null } | null
+    stockTransfer?: {
+      id?: string | null
+      transferNumber?: string | null
+      transferDate?: string | null
+      /** With no supplier to name, the party block names the branch that
+       * sent the goods. */
+      fromWarehouse?: {
+        name?: string | null
+        branch?: {
+          name?: string | null
+          isTemporary?: boolean | null
+          eventName?: string | null
+          addressLine1?: string | null
+        } | null
+      } | null
+    } | null
     lines?: {
       id: string
       quantityReceived: number | string
       unitCost?: number | string | null
       isFreebie?: boolean
       serialNumbers?: string[] | null
-      // Present when the receipt came from Receive Against PO — the order
-      // the printed PO No. is resolved from.
-      purchaseOrderLine?: { purchaseOrder?: { code?: string | null } | null } | null
+      purchaseOrderLine?: {
+        purchaseOrder?: { code?: string | null; orderDate?: string | null } | null
+      } | null
       item?: {
         name?: string | null
         modelNumber?: string | null
@@ -80,6 +120,8 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
   const rr = doc.document
   const enterprise = doc.enterprise
   const lines = rr.lines ?? []
+  const metaSlots = receivingReportMetaSlots(rr)
+  const branch = receivingReportBranchLine(rr)
 
   // The print builder's own running totals: units always, money only when
   // at least one line carries a cost (a transfer-sourced receipt has none).
@@ -95,10 +137,21 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
     }
   }
 
+  const vatAmount = Number(rr.vatAmount ?? 0)
+  const withheldAmount = Number(rr.withheldAmount ?? 0)
+  const hasTax = hasAnyCost && (vatAmount > 0 || withheldAmount > 0)
+
   return (
     <div className="bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
       <div className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-bold text-prominent-purple-900">Receiving Report</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-prominent-purple-900">Receiving Report</h1>
+          {receivingReportReasonLabel(rr) && (
+            <p className="mt-1 text-sm font-semibold uppercase tracking-wide text-gray-700">
+              {receivingReportReasonLabel(rr)}
+            </p>
+          )}
+        </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/nig-logo.png"
@@ -109,30 +162,59 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
 
       <div className="mt-6 grid gap-7 md:grid-cols-3">
         <div>
-          <p className="font-bold text-prominent-purple-900">{rr.supplier?.name ?? '—'}</p>
-          <p className="mt-1 text-gray-700">{rr.supplier?.address ?? '—'}</p>
+          {/* The supplier on a bought-in delivery, the sending branch on one
+              that came from another branch — a transfer receipt has no
+              supplier to name here. */}
+          <p className="font-bold text-prominent-purple-900">
+            {receivingReportSourceName(rr) ?? '—'}
+          </p>
+          {receivingReportSourceSubtitle(rr) && (
+            <p className="text-gray-700">{receivingReportSourceSubtitle(rr)}</p>
+          )}
+          {/* Only a supplier receipt has an address to show: a transfer has no
+              supplier, and a return's customer address is not fetched. */}
+          {rr.supplier?.address && <p className="text-gray-700">{rr.supplier.address}</p>}
+          {/* Scenario 55 (Stock-side Manual RR parity, follow-up) — omitted
+              rather than printed as "Driver/Helper: —": the standalone
+              Create RR screen no longer collects either name at all, so
+              every receipt from it would otherwise always print this empty.
+              Receive-against-PO still collects both and still prints them
+              here when present. */}
+          {receivingReportDriverHelper(rr) && (
+            <p className="mt-1 text-gray-700">Driver/Helper: {receivingReportDriverHelper(rr)}</p>
+          )}
         </div>
         <div className="text-right">
-          <MetaPair label="No." value={doc.documentNumber ?? rr.code} />
-          <MetaPair label="Date" value={docDate(rr.receivedAt)} />
-          <MetaPair label="PO No." value={receivingReportPoNumber(rr) ?? '—'} />
-          <MetaPair
-            label="Reference"
-            value={rr.deliveryReceiptNumber || rr.supplierInvoiceNumber || '—'}
-          />
+          <MetaPair label="RR No." value={doc.documentNumber ?? rr.code} />
+          <MetaPair label="RR Date" value={docDate(rr.receivedAt)} />
+          {/* Reference, then the PO or transfer and its date — or a return's
+              sales invoice. Shared with the printed RR so the two agree. */}
+          {metaSlots.map((slot) => (
+            <MetaPair
+              key={slot.label}
+              label={slot.label}
+              value={slot.isDate ? docDate(slot.value) : (slot.value ?? '—')}
+            />
+          ))}
         </div>
         <div className="md:border-l md:border-gray-300 md:pl-7">
           <p className="font-bold text-prominent-purple-900">
             {enterprise?.companyLegalName ?? '—'}
           </p>
           <p className="mt-1 whitespace-pre-line text-gray-700">{enterprise?.address || '—'}</p>
-          <p className="mt-1 text-gray-700">
-            Branch: {rr.warehouse?.branch?.name ?? rr.warehouse?.name ?? '—'}
-          </p>
         </div>
       </div>
 
-      <div className="mt-7 overflow-x-auto">
+      {/* The receiving branch and its address, on its own line above the
+          items (Scenario 69 item 7). Shared with the printed RR. */}
+      {branch && (
+        <p className="mt-6 text-gray-700">
+          <span className="font-bold text-prominent-purple-900">Branch:</span> {branch.name}
+          {branch.address && `, ${branch.address}`}
+        </p>
+      )}
+
+      <div className={branch ? 'mt-3 overflow-x-auto' : 'mt-7 overflow-x-auto'}>
         <table className="w-full border-collapse text-[12.5px]">
           <thead>
             <tr>
@@ -192,6 +274,26 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
                 {hasAnyCost ? ` — ${fmtAmount(totalAmount)}` : ''}
               </td>
             </tr>
+            {hasTax && (
+              <>
+                <tr>
+                  <td className={`${TD} text-right`}>Input VAT</td>
+                  <td className={`${TD} text-right tabular-nums`}>{fmtAmount(vatAmount)}</td>
+                </tr>
+                <tr>
+                  <td className={`${TD} text-right`}>Less: Withholding tax</td>
+                  <td className={`${TD} text-right tabular-nums`}>
+                    {withheldAmount > 0 ? `- ${fmtAmount(withheldAmount)}` : fmtAmount(0)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className={`${TD} text-right`}>Net payable</td>
+                  <td className={`${TD} text-right tabular-nums`}>
+                    {fmtAmount(totalAmount + vatAmount - withheldAmount)}
+                  </td>
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>

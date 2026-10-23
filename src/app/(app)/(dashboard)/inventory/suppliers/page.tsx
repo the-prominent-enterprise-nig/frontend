@@ -5,8 +5,8 @@ import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissio
 import SupplierDirectory from './_components/SupplierDirectory'
 
 export const metadata = {
-  title: 'Suppliers | Prominent Enterprise',
-  description: 'Manage supplier catalogue and item mappings',
+  title: 'Suppliers | NIG Central',
+  description: 'Who you buy from, the terms you buy on, and the items they carry',
 }
 
 export default async function SuppliersPage() {

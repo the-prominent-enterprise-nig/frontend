@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PriceListsPageView } from './_components'
 
 export const metadata = {
-  title: 'Price Lists | Prominent Enterprise',
+  title: 'Price Lists | NIG Central',
   description: 'Manage item price lists and pricing tiers',
 }
 
@@ -21,7 +21,7 @@ export default async function PriceListsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50">
+    <div className="min-h-screen bg-[#fbfbfc]">
       <PriceListsPageView session={session} />
     </div>
   )

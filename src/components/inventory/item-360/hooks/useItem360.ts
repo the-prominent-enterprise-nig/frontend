@@ -12,6 +12,8 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import { STALE } from '@/src/libs/query/stale-times'
 import { splitLocationTokens } from '@/src/libs/inventory/location-tokens'
 
+type Region = 'panay' | 'negros'
+
 const SERIAL_PAGE_SIZE = 200
 // Safety valve, not a real ceiling — 25 pages at 200/page is 5,000 serials
 // for one item, far past anything this catalog actually has. Without a cap
@@ -25,7 +27,8 @@ const SERIAL_PAGE_LIMIT = 25
 async function getAllSerialNumbers(
   itemId: string,
   branchIds: string[],
-  warehouseIds: string[]
+  warehouseIds: string[],
+  region?: Region
 ): Promise<ApiResponse<SerialNumberListResponse>> {
   const all: SerialNumberSummary[] = []
   for (let page = 1; page <= SERIAL_PAGE_LIMIT; page++) {
@@ -35,6 +38,7 @@ async function getAllSerialNumbers(
       limit: SERIAL_PAGE_SIZE,
       branchIds,
       warehouseIds,
+      region,
     })
     if (!res.success || !res.data) return res
     all.push(...res.data.data)
@@ -48,12 +52,17 @@ async function getAllSerialNumbers(
  * to. Scenario 50 — the drawer breaks down the same locations the row it was
  * opened from was summed from; empty means every location.
  */
-export function useItem360(itemId: string, activeTab: string, locations?: string[]) {
+export function useItem360(
+  itemId: string,
+  activeTab: string,
+  locations?: string[],
+  region?: Region
+) {
   const { branchIds, warehouseIds } = splitLocationTokens(locations)
   // Part of the cache key: the same item filtered to different branches is a
   // different answer, and sharing one entry would serve the first-opened
   // scope to every later one.
-  const scopeKey = [...branchIds, ...warehouseIds].sort().join(',')
+  const scopeKey = [...branchIds, ...warehouseIds].sort().join(',') + `|${region ?? ''}`
 
   const item = useQuery({
     queryKey: ['inventory-item-360', itemId, 'overview'],
@@ -64,7 +73,7 @@ export function useItem360(itemId: string, activeTab: string, locations?: string
 
   const stock = useQuery({
     queryKey: ['inventory-item-360', itemId, 'stock', scopeKey],
-    queryFn: () => getItemStockSummary(itemId, { branchIds, warehouseIds }),
+    queryFn: () => getItemStockSummary(itemId, { branchIds, warehouseIds, region }),
     staleTime: STALE.REALTIME,
     enabled: !!itemId && activeTab === 'stock',
   })
@@ -74,7 +83,7 @@ export function useItem360(itemId: string, activeTab: string, locations?: string
   // load alongside the stock balances rather than gated behind their own tab.
   const serials = useQuery({
     queryKey: ['inventory-item-360', itemId, 'serials', scopeKey],
-    queryFn: () => getAllSerialNumbers(itemId, branchIds, warehouseIds),
+    queryFn: () => getAllSerialNumbers(itemId, branchIds, warehouseIds, region),
     staleTime: STALE.OPERATIONAL,
     enabled: !!itemId && activeTab === 'stock',
   })

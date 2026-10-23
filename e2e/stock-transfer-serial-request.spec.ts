@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable, pickComboboxOption } from './utils'
+import {
+  gotoReady,
+  clickStable,
+  pickComboboxOption,
+  findStockedTransferSource,
+  pickTransferSource,
+} from './utils'
 
 // Scenario 06, Part 1 — a request for a serial-tracked item names the item and
 // how many units, never which physical units. The specific serials are chosen
@@ -17,29 +23,17 @@ async function openCreateModal(page: import('@playwright/test').Page) {
   )
 }
 
-async function pickWarehouses(page: import('@playwright/test').Page) {
-  // Scenario 50 — From/To are SearchableSelect comboboxes now, not native
-  // <select> elements. The destination list already excludes whatever the
-  // source is set to, so index 0 of each is a valid distinct pair.
-  await pickComboboxOption(page, 'Search source branch…')
+async function pickWarehouses(page: import('@playwright/test').Page): Promise<string> {
+  // A source that actually holds a free serial-tracked unit — index 0 / the
+  // first catalog item asked for stock the source didn't have (test DB no
+  // longer seeds every item everywhere: "Not enough stock. Available: 0").
+  const stocked = await findStockedTransferSource(page.request, { serialTracked: true })
+  await pickTransferSource(page, stocked.sourceName)
   await pickComboboxOption(page, 'Search destination branch…')
+  return stocked.sku
 }
 
-async function addSerialTrackedItem(page: import('@playwright/test').Page) {
-  // Resolve a real serial-tracked item instead of naming an SKU. This helper
-  // used to hardcode TN-REF-001, which is no longer in the seed — the third
-  // stale SKU found in this directory, after TN-FURN-SET-001 and TN-FAN-001.
-  const itemsRes = await page.request.get('/api/inventory/items', {
-    params: { limit: '100', lifecycle: 'active' },
-  })
-  const item = (
-    ((await itemsRes.json()).data ?? []) as {
-      sku: string
-      isSerialTracked: boolean
-    }[]
-  ).find((i) => i.isSerialTracked)
-  if (!item) throw new Error('no serial-tracked active item found in the catalog')
-
+async function addSerialTrackedItem(page: import('@playwright/test').Page, sku: string) {
   // Items are added from the Items card's own "Add item" search — there is no
   // per-row item picker. SearchCombobox renders a BUTTON when closed and only
   // swaps in the search <input> once opened (see its own comment), so the
@@ -52,28 +46,23 @@ async function addSerialTrackedItem(page: import('@playwright/test').Page) {
     .click()
   const addInput = page.locator('input[placeholder*="Add item"]')
   await expect(addInput).toBeVisible({ timeout: 10_000 })
-  await addInput.fill(item.sku)
+  await addInput.fill(sku)
   // Match on the SKU specifically, not the item name — a name substring can
   // surface sibling products (e.g. "Refrigerator Deodorizer").
-  const option = page.getByRole('button', { name: new RegExp(item.sku) }).first()
+  const option = page.getByRole('button', { name: new RegExp(sku) }).first()
   await expect(option).toBeVisible({ timeout: 10_000 })
   await option.click()
-  return item.sku
+  return sku
 }
 
 test.describe('Inventory — Stock Transfer serial-tracked requesting', () => {
   test('a serial-tracked line asks for a quantity, not a specific unit', async ({ page }) => {
     await openCreateModal(page)
-    await pickWarehouses(page)
-    await addSerialTrackedItem(page)
+    const sku = await pickWarehouses(page)
+    await addSerialTrackedItem(page, sku)
 
-    // The card says once — not per row — that the source decides which units
-    // leave, and no serial picker is offered anywhere in the form.
-    await expect(
-      page.getByText(
-        'Serial-tracked — the source picks which exact units leave when they dispatch.'
-      )
-    ).toBeVisible({ timeout: 10_000 })
+    // The line asks for a quantity only — no serial picker anywhere in the form.
+    await expect(page.getByText('Serial-tracked', { exact: false })).toHaveCount(0)
     await expect(page.getByTestId('serial-pick-panel')).toHaveCount(0)
     await expect(page.getByTestId('serial-pick-card')).toHaveCount(0)
 
@@ -88,8 +77,8 @@ test.describe('Inventory — Stock Transfer serial-tracked requesting', () => {
     const uniqueReason = `E2E-TRF-SERIAL-${Date.now()}`
 
     await openCreateModal(page)
-    await pickWarehouses(page)
-    await addSerialTrackedItem(page)
+    const sku = await pickWarehouses(page)
+    await addSerialTrackedItem(page, sku)
 
     await page.getByPlaceholder('e.g. Rebalancing stock for upcoming campaign').fill(uniqueReason)
 
@@ -133,8 +122,8 @@ test.describe('Inventory — Stock Transfer serial-tracked requesting', () => {
     page,
   }) => {
     await openCreateModal(page)
-    await pickWarehouses(page)
-    await addSerialTrackedItem(page)
+    const sku = await pickWarehouses(page)
+    await addSerialTrackedItem(page, sku)
 
     // One UI line, three units — the split into three single-unit lines only
     // happens at submit, so the header count is what proves the intent here.

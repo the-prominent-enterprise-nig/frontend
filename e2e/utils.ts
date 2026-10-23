@@ -79,6 +79,25 @@ export async function openCustomSelect(trigger: Locator): Promise<void> {
 }
 
 /**
+ * Picks a Price Use on a checkout cart line. The picker is a type-ahead
+ * dropdown (not a native <select>): focus it, type the name to filter, click
+ * the matching option. Retried as a unit because a click that lands before
+ * hydration opens nothing, and `index` is the line (0 = the first).
+ */
+export async function pickCartPriceUse(page: Page, label: string, index = 0): Promise<void> {
+  const input = page.getByLabel('Price Use').nth(index)
+  const exact = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+  await expect(async () => {
+    await input.click()
+    await input.fill(label)
+    await page
+      .getByTestId('searchable-select-option')
+      .filter({ hasText: exact })
+      .click({ timeout: 3_000 })
+  }).toPass({ timeout: 20_000 })
+}
+
+/**
  * Opens a custom Select by its current accessible name (its placeholder, or
  * whatever it's currently showing) and picks the named option.
  */
@@ -347,6 +366,54 @@ export async function sweepE2EStockTransfers(
  * findServiceDraftIdByTitle's docstring for why that rules out intercepting
  * the request itself.
  */
+/**
+ * Picks a price use type on the price list form. The picker is a grid of
+ * cards (one per type) rather than a dropdown, and each card's accessible
+ * name is deliberately just the type's code so a description can't make one
+ * card match another's search.
+ */
+export async function pickPriceUseType(page: Page, code: string): Promise<void> {
+  const card = page.getByRole('radio', { name: code, exact: true })
+  await expect(card).toBeVisible({ timeout: 10_000 })
+  await card.click()
+  await expect(card).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 })
+}
+
+/**
+ * Fills in whatever the price list form needs beyond name and use type, then
+ * submits it. The form is one scrolling page — branch scoping, dates,
+ * priority and supersedes all live below the identity fields — so `onExtras`
+ * runs against the same open form before the submit click.
+ *
+ * `submitLabel` is 'Create Price List' when creating and 'Save Changes' when
+ * editing.
+ */
+export async function submitPriceListForm(
+  page: Page,
+  submitLabel: 'Create Price List' | 'Save Changes',
+  onExtras?: () => Promise<void>
+): Promise<void> {
+  await expect(page.getByRole('heading', { name: 'Where it applies' })).toBeVisible({
+    timeout: 10_000,
+  })
+  if (onExtras) await onExtras()
+  const submit = page.getByRole('button', { name: submitLabel })
+  await expect(submit).toBeVisible({ timeout: 10_000 })
+  await submit.click()
+}
+
+/**
+ * The price list detail page shows one search box at a time — filtering the
+ * items already priced, or searching the catalog to add more. Switches to
+ * the Add-items side; safe to call when it is already showing.
+ */
+export async function openAddItemsPanel(page: Page): Promise<void> {
+  const search = page.getByLabel('Search items to add')
+  if (await search.isVisible().catch(() => false)) return
+  await page.getByRole('button', { name: 'Add items' }).click()
+  await expect(search).toBeVisible({ timeout: 10_000 })
+}
+
 export async function findPriceListIdByName(
   request: APIRequestContext,
   name: string
@@ -453,4 +520,101 @@ export async function pickComboboxOption(
   const label = (await option.innerText()).trim()
   await option.click()
   return label
+}
+
+/**
+ * A branch warehouse that genuinely holds transferable stock of one active
+ * item, plus that item's SKU — for specs that raise a Stock Transfer through
+ * the UI. Picking "the first source and the first item" asked for stock the
+ * source didn't have once the test database stopped seeding every item
+ * everywhere ("Not enough stock. Available: 0" at submit).
+ *
+ * `sourceName` is the label the From picker shows (the branch's name).
+ */
+export async function findStockedTransferSource(
+  request: APIRequestContext,
+  opts: { serialTracked: boolean }
+): Promise<{ sourceName: string; sku: string }> {
+  const json = async (url: string, params?: Record<string, string>) =>
+    ((await (await request.get(url, { params })).json()).data ?? []) as Record<string, unknown>[]
+
+  const items = (await json('/api/inventory/items', { limit: '500', lifecycle: 'active' })) as {
+    id: string
+    sku: string
+    isSerialTracked: boolean
+    isService?: boolean
+  }[]
+  const wanted = new Map(
+    items
+      .filter((i) => i.isSerialTracked === opts.serialTracked && !i.isService)
+      .map((i) => [i.id, i])
+  )
+  const warehouses = (await json('/api/inventory/warehouses', {
+    limit: '200',
+    status: 'active',
+  })) as { id: string; name: string; branchId: string | null; branch?: { name: string } | null }[]
+
+  for (const w of warehouses.filter((x) => x.branchId)) {
+    const sourceName = w.branch?.name ?? w.name
+    if (opts.serialTracked) {
+      const serials = (await json('/api/inventory/serial-numbers', {
+        warehouseId: w.id,
+        status: 'in_stock',
+        freeForTransfer: 'true',
+        limit: '200',
+      })) as { itemId: string }[]
+      const hit = serials.find((sn) => wanted.has(sn.itemId))
+      if (hit) return { sourceName, sku: wanted.get(hit.itemId)!.sku }
+    }
+  }
+  if (!opts.serialTracked) {
+    // Candidates from the balances list (stock somewhere at a branch), each
+    // confirmed with the same lookup the form's own availability check uses
+    // (the cross-branch stock read) — the two can disagree, and the form's
+    // is the one that decides whether Submit goes through.
+    const branchNames = new Map(
+      warehouses.filter((w) => w.branchId).map((w) => [w.id, w.branch?.name ?? w.name])
+    )
+    const balances = (await json('/api/inventory/stock/balances', { limit: '200' })) as {
+      item?: { id: string; sku: string } | null
+      warehouse?: { id: string } | null
+      availableQty: number | string
+    }[]
+    const seen = new Set<string>()
+    for (const b of balances) {
+      const itemId = b.item?.id
+      if (!itemId || seen.has(itemId) || Number(b.availableQty) <= 0) continue
+      if (!branchNames.has(b.warehouse?.id ?? '')) continue
+      seen.add(itemId)
+      const detail = await (await request.get(`/api/inventory/items/${itemId}`)).json()
+      if (detail.isSerialTracked || detail.isService) continue
+      const res = await request.get(`/api/pos/transactions/items/cross-branch-stock/${itemId}`)
+      if (!res.ok()) continue
+      const body = await res.json()
+      const rows = (Array.isArray(body) ? body : (body.data ?? [])) as {
+        warehouse: { id: string }
+        availableQty: number | string
+      }[]
+      const hit = rows.find((r) => branchNames.has(r.warehouse.id) && Number(r.availableQty) > 0)
+      if (hit) return { sourceName: branchNames.get(hit.warehouse.id)!, sku: b.item!.sku }
+    }
+  }
+  throw new Error(
+    `no branch holds a free ${opts.serialTracked ? 'serial-tracked' : 'bulk'} item in this database`
+  )
+}
+
+/** Picks the From branch by name (exact option label), not by list position. */
+export async function pickTransferSource(page: Page, sourceName: string): Promise<void> {
+  const input = page.getByPlaceholder('Search source branch…')
+  await expect(input).toBeVisible({ timeout: 10_000 })
+  await input.click()
+  await input.fill(sourceName)
+  const escaped = sourceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const option = page
+    .getByTestId('searchable-select-option')
+    .filter({ hasText: new RegExp(`^\\s*${escaped}\\s*$`) })
+    .first()
+  await expect(option).toBeVisible({ timeout: 10_000 })
+  await option.click()
 }

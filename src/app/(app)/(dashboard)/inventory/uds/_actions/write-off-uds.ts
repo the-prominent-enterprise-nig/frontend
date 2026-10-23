@@ -2,8 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
+import { udsErrorMessage } from '../_lib/uds-errors'
 import { WriteOffUdsFormSchema } from '@/src/schema/inventory/uds'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
@@ -11,7 +12,7 @@ export async function writeOffUds(
   id: string,
   input: unknown
 ): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -41,7 +42,7 @@ export async function writeOffUds(
     return {
       success: false,
       error: errStr || 'Failed to write off UDS',
-      message: msg || errStr || 'Failed to write off UDS',
+      message: udsErrorMessage(msg || errStr, 'Failed to write off UDS'),
     }
   }
 

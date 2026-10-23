@@ -3,13 +3,17 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Search, Plus, Printer, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Search, Plus, Printer, ChevronRight } from 'lucide-react'
 import { getApPaymentDocument } from '../../_actions/get-ap-payment-document'
 import { getApDisbursementDocument } from '../../_actions/get-ap-disbursement-document'
-import { printAPPaymentVoucherDocument } from '@/src/libs/print/printInventoryDocument'
+import {
+  printAPPaymentVoucherDocument,
+  printExpenseVoucherDocument,
+} from '@/src/libs/print/printInventoryDocument'
 import VoucherDocument, { type VoucherDocumentEnvelope } from '../../_components/VoucherDocument'
 import {
   APBills,
+  Expenses,
   fmtMoney,
   fmtDate,
   type APDisbursementListItem,
@@ -24,6 +28,79 @@ import {
 // voucher number against a different partial amount and none showing the
 // cheque total — the voucher had no row that actually was it. A row now
 // expands to the invoices it settled.
+//
+// Paid Expenses are in here too, as rows of their own: an expense is cash out
+// the same as a supplier cheque, so a register of what left the bank that
+// omitted them would be short. They open the expense, not a supplier voucher.
+
+/** BANK_TRANSFER -> Bank Transfer. Expenses store the method as an enum key. */
+function prettyMethod(m: string | null | undefined): string {
+  return (
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .toLowerCase()
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
+  )
+}
+
+/** What an expanded Expense row shows in place of a supplier voucher: how it
+ * was funded and which invoices it settled. The full voucher, with its account
+ * lines, is the expense itself, one link away. */
+function ExpenseSummary({
+  row,
+  onOpenInvoice,
+}: {
+  row: APDisbursementListItem
+  onOpenInvoice: (billId: string) => void
+}) {
+  return (
+    <div className="mt-2.5 rounded-lg border border-gray-200 bg-white px-5 py-4 text-[13px] text-gray-900">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-bold text-prominent-purple-900">Source of Funds</p>
+          {row.sources.map((src, i) => (
+            <p key={i} className="mt-1 text-gray-700">
+              {prettyMethod(src.method)}
+              {src.bankAccount?.name ? ` — ${src.bankAccount.name}` : ''}
+              {src.reference ? ` · ${src.reference}` : ''}
+              {row.sources.length > 1 ? ` · ${fmtMoney(src.amount)}` : ''}
+            </p>
+          ))}
+        </div>
+        <Link
+          href={`/accounting/expenses/${row.id}`}
+          className="shrink-0 text-sm font-semibold text-prominent-purple-900 hover:underline"
+        >
+          Open expense
+        </Link>
+      </div>
+      {row.notes && (
+        <p className="mt-3 text-gray-700">
+          <span className="font-bold text-prominent-purple-900">Description </span>
+          {row.notes}
+        </p>
+      )}
+      {row.invoices.length > 0 && (
+        <div className="mt-3">
+          <p className="font-bold text-prominent-purple-900">Supplier Invoices Settled</p>
+          {row.invoices.map((inv) => (
+            <button
+              key={inv.billId}
+              type="button"
+              onClick={() => onOpenInvoice(inv.billId)}
+              className="mt-1 flex w-full justify-between gap-4 rounded px-1 py-0.5 text-left text-gray-700 hover:bg-purple-50/60"
+              title="Open this invoice"
+            >
+              <span>{inv.billNumber ?? '—'}</span>
+              <span className="tabular-nums">{fmtMoney(inv.amount)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function APPaymentsList() {
   const router = useRouter()
   const [items, setItems] = useState<APDisbursementListItem[]>([])
@@ -34,7 +111,10 @@ export default function APPaymentsList() {
 
   const load = useCallback(async (searchValue?: string) => {
     setLoading(true)
-    const res = await APBills.listDisbursements(searchValue ? { search: searchValue } : undefined)
+    const res = await APBills.listDisbursements({
+      ...(searchValue ? { search: searchValue } : {}),
+      includeExpenses: true,
+    })
     // Paid only. This screen is the register of what left the bank, so a
     // voucher that has not been settled has no business in it — nothing left
     // the bank for one. Unpaid vouchers are reached from the invoices they
@@ -57,6 +137,13 @@ export default function APPaymentsList() {
   const printVoucher = async (row: APDisbursementListItem) => {
     setPrintingFor(row.id)
     try {
+      // An expense has its own voucher and its own printer.
+      if (row.kind === 'expense') {
+        const res = await Expenses.getDocument(row.id)
+        if (res.success && res.data) printExpenseVoucherDocument(res.data)
+        else alert(res.message || res.error || 'Could not build the voucher')
+        return
+      }
       const res =
         row.kind === 'disbursement'
           ? await getApDisbursementDocument(row.id)
@@ -75,7 +162,8 @@ export default function APPaymentsList() {
   const [voucherDocs, setVoucherDocs] = useState<Record<string, VoucherDocumentEnvelope>>({})
 
   const loadVoucher = async (row: APDisbursementListItem) => {
-    if (voucherDocs[row.id]) return
+    // An expense row expands to its own summary, built from the row itself.
+    if (row.kind === 'expense' || voucherDocs[row.id]) return
     // Same two shapes printVoucher() picks between, for the same reason.
     const res =
       row.kind === 'disbursement'
@@ -110,7 +198,8 @@ export default function APPaymentsList() {
         <div>
           <h2 className="text-2xl font-bold">Payments</h2>
           <p className="text-sm text-gray-500">
-            Every AP payment recorded, across all bills — the register of what left the bank.
+            Every payment recorded, supplier invoices and paid expenses alike — the register of what
+            left the bank.
           </p>
         </div>
         <div className="flex gap-2">
@@ -120,14 +209,8 @@ export default function APPaymentsList() {
             href="/accounting/ap-bills/payments/new"
             className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800"
           >
-            <Plus className="h-4 w-4" /> Record Payment
+            <Plus className="h-4 w-4" /> Create Voucher
           </Link>
-          <button
-            onClick={() => load(search || undefined)}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
           <form onSubmit={onSearch} className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
             <input
@@ -181,18 +264,26 @@ export default function APPaymentsList() {
                       <td className="whitespace-nowrap px-3 py-2">{fmtDate(row.paymentDate)}</td>
                       <td className="px-3 py-2 font-mono text-xs font-semibold text-prominent-purple-900">
                         {row.voucherNumber ?? '—'}
+                        {row.kind === 'expense' && (
+                          <span className="mt-1 block w-fit rounded-full bg-purple-50 px-2 py-0.5 font-sans text-[11px] font-medium text-purple-700">
+                            Expense
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2">{row.payee ?? '—'}</td>
                       <td className="px-3 py-2">
                         {row.sources.length > 1
                           ? `${row.sources.length} methods`
-                          : (row.bankAccount?.name ?? row.method ?? '—')}
+                          : (row.bankAccount?.name ??
+                            (row.method ? prettyMethod(row.method) : '—'))}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{row.reference ?? '—'}</td>
                       <td className="px-3 py-2 text-gray-600">
-                        {row.invoices.length === 1
-                          ? (row.invoices[0].billNumber ?? '—')
-                          : `${row.invoices.length} invoices`}
+                        {row.invoices.length === 0
+                          ? '—'
+                          : row.invoices.length === 1
+                            ? (row.invoices[0].billNumber ?? '—')
+                            : `${row.invoices.length} invoices`}
                       </td>
                       <td className="px-3 py-2 text-right font-medium tabular-nums">
                         {fmtMoney(row.amount)}
@@ -224,7 +315,14 @@ export default function APPaymentsList() {
                               invoices it settled and what funded it, which is
                               exactly what the two hand-rolled lists here used
                               to say — only in the shape the paper uses. */}
-                          {voucherDocs[row.id] ? (
+                          {row.kind === 'expense' ? (
+                            <ExpenseSummary
+                              row={row}
+                              onOpenInvoice={(billId) =>
+                                router.push(`/accounting/ap-bills/${billId}`)
+                              }
+                            />
+                          ) : voucherDocs[row.id] ? (
                             <VoucherDocument
                               envelope={voucherDocs[row.id]}
                               onOpenInvoice={(billId) =>

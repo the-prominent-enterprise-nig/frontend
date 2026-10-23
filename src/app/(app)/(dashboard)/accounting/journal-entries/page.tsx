@@ -1,10 +1,12 @@
+import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { requirePermission } from '@/src/libs/guards/require-permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { HubTabs } from '../_shared/HubTabs'
 import JournalEntriesList from './_components/JournalEntriesList'
 
 export const metadata = {
-  title: 'Journal Entries | Prominent Enterprise',
+  title: 'Journal Entries | NIG Central',
 }
 
 export default async function JournalEntriesPage() {
@@ -13,6 +15,9 @@ export default async function JournalEntriesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <Suspense fallback={null}>
+        <HubTabs hub="books" session={user} />
+      </Suspense>
       <JournalEntriesList session={user} />
     </div>
   )

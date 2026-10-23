@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, pickCartPriceUse } from './utils'
 
 // Scenario 37 — Item Payment Mode (Cash / Installment / Credit-Debit Card,
 // one dropdown, Cash default) is the single real source for the POS
@@ -74,8 +74,7 @@ async function addAnyItemToCart(page: import('@playwright/test').Page) {
 
   const cartRow = page.locator('tr', { hasText: 'Universal Remote Control' })
   await expect(cartRow).toBeVisible({ timeout: 10_000 })
-  const priceUseSelect = page.getByLabel('Price Use')
-  await priceUseSelect.selectOption({ label: 'WIP' })
+  await pickCartPriceUse(page, 'WIP')
   await expect(cartRow.getByText(/₱[\d,]+\.\d{2}/)).toBeVisible({ timeout: 10_000 })
   return cartRow
 }
@@ -85,7 +84,7 @@ async function cleanup(
   cartRow: import('@playwright/test').Locator
 ) {
   await cartRow.hover()
-  await cartRow.locator('button').last().click()
+  await cartRow.getByRole('button', { name: 'Remove item' }).click()
   await expect(page.getByText('Click an item above to add it to the cart')).toBeVisible({
     timeout: 10_000,
   })
@@ -121,12 +120,14 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const bankSelect = page.getByLabel('Bank')
     await expect(bankSelect).toBeVisible({ timeout: 10_000 })
     const optionTexts = await bankSelect.locator('option').allTextContents()
-    expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'Metrobank', 'Maya']))
+    expect(optionTexts).toEqual(
+      expect.arrayContaining(['BDO-Q', 'BPI-Araneta', 'Metrobank', 'LB-Sagay'])
+    )
 
     await cleanup(page, cartRow)
   })
 
-  test('QR sub-mode under Cash shows a Gateway dropdown with the 5 seeded gateways, and the tender section no longer duplicates it', async ({
+  test('QR sub-mode under Cash shows a Gateway dropdown with the seeded Maya and Sbank gateways, and the tender section no longer duplicates it', async ({
     page,
   }) => {
     await ensureManilaSession(page)
@@ -139,15 +140,7 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const gatewaySelect = page.getByLabel('Gateway')
     await expect(gatewaySelect).toBeVisible({ timeout: 10_000 })
     const optionTexts = await gatewaySelect.locator('option').allTextContents()
-    expect(optionTexts).toEqual(
-      expect.arrayContaining([
-        'Palawan',
-        'GCash Soundpay',
-        'ECPay',
-        'Maya QR',
-        'Security Bank (SCB) QR',
-      ])
-    )
+    expect(optionTexts).toEqual(expect.arrayContaining(['Maya', 'Sbank']))
 
     // Tender section: switch its row to QR via the row's own (always-visible)
     // method dropdown, confirm no duplicate gateway picker there — reference
@@ -163,7 +156,7 @@ test.describe('POS Checkout — Payment Method Options', () => {
     await cleanup(page, cartRow)
   })
 
-  test('marking Credit/Debit Card in Item Payment Mode shows a POS Terminal dropdown, and the tender section no longer duplicates it', async ({
+  test('marking Credit/Debit Card in Item Payment Mode shows a Card Acquirer dropdown, and the tender section no longer duplicates it', async ({
     page,
   }) => {
     await ensureManilaSession(page)
@@ -171,17 +164,28 @@ test.describe('POS Checkout — Payment Method Options', () => {
 
     await page.getByLabel('Item Payment Mode').selectOption({ label: 'Debit/Credit Card' })
 
-    const terminalSelect = page.getByLabel('POS Terminal')
-    await expect(terminalSelect).toBeVisible({ timeout: 10_000 })
-    const optionTexts = await terminalSelect.locator('option').allTextContents()
-    expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'Metrobank', 'Maya']))
+    // Scenario 64 — this was a native <select> labelled "POS Terminal". It
+    // was renamed to "Card Acquirer" (its options are the acquirers that
+    // provide the terminal and settle the money, not the terminal), and
+    // development then replaced the control itself with PillCombobox, which
+    // is searchable. Both kept: their control, our wording.
+    //
+    // PillCombobox is a role=combobox named by its aria-label, with
+    // role=option items in a popup rather than <option> children — so the
+    // options only exist once it is opened.
+    const cardAcquirerSelect = page.getByRole('combobox', { name: 'Card Acquirer' })
+    await expect(cardAcquirerSelect).toBeVisible({ timeout: 10_000 })
+    await cardAcquirerSelect.click()
+    const optionTexts = await page.getByRole('option').allTextContents()
+    expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'MBTC', 'Maya']))
+    await page.keyboard.press('Escape')
 
     await page.getByLabel('Payment method', { exact: true }).first().selectOption({ label: 'Card' })
     await page.getByPlaceholder('0.00').first().fill('100')
     await expect(
-      page.getByText('Terminal/Straight-Installment/Term set via Item Payment Mode above.')
+      page.getByText('Card Acquirer/Straight-Installment/Term set via Item Payment Mode above.')
     ).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByLabel('POS Terminal')).toHaveCount(1) // still just the one, above
+    await expect(page.getByRole('combobox', { name: 'Card Acquirer' })).toHaveCount(1) // still just the one, above
 
     await cleanup(page, cartRow)
   })
@@ -250,7 +254,9 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const cartRow = await addAnyItemToCart(page)
 
     await page.getByLabel('Item Payment Mode').selectOption({ label: 'Debit/Credit Card' })
-    await expect(page.getByLabel('POS Terminal')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('combobox', { name: 'Card Acquirer' })).toBeVisible({
+      timeout: 10_000,
+    })
 
     // No Term dropdown yet — Straight is the default, no term needed.
     await expect(page.getByLabel('Term', { exact: true })).toHaveCount(0)

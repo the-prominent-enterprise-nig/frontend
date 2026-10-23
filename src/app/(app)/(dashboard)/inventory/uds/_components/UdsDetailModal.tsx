@@ -1,7 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { X, Paperclip, Truck, Download } from 'lucide-react'
+import { X, Paperclip, Download } from 'lucide-react'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
@@ -11,17 +10,12 @@ import {
   UDS_ASSESSMENT_STYLES,
   type Uds,
 } from '@/src/schema/inventory/uds'
+import DocumentTrail from './DocumentTrail'
+import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 
 function formatCurrency(value?: number | null): string {
   if (value == null) return '—'
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value)
-}
-
-const TRANSFER_STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
-  in_transit: 'In Transit',
-  received: 'Received',
-  cancelled: 'Cancelled',
 }
 
 type Props = {
@@ -29,6 +23,11 @@ type Props = {
   isOpen: boolean
   onClose: () => void
   onEditProvider?: (uds: Uds) => void
+  /** The sheet's next step — the same one the list's action column offers,
+   *  passed in rather than re-derived so the two can never disagree. Clicking
+   *  a row is the natural way to open a UDS, and this view used to dead-end.
+   *  Null once closed, or while nothing here can move it. */
+  nextStep?: { label: string; run: () => void } | null
 }
 
 function formatDate(iso?: string | null): string {
@@ -45,13 +44,13 @@ function formatDate(iso?: string | null): string {
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-medium text-zinc-400">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{label}</p>
       <p className="mt-0.5 text-zinc-800">{value}</p>
     </div>
   )
 }
 
-export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }: Props) {
+export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, nextStep }: Props) {
   if (!isOpen || !uds) return null
 
   const canEditProvider =
@@ -61,13 +60,15 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
     !uds.assessment
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex min-h-0 flex-1 flex-col">
         {/* Header */}
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div className="flex items-center gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900">Unit Document Sheet</h2>
+              <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
+                Unit Document Sheet
+              </h2>
               <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
             </div>
             <span
@@ -90,7 +91,7 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
           </button>
         </div>
 
-        <div className="space-y-5 px-6 py-5">
+        <div className="mx-auto w-full max-w-4xl flex-1 space-y-5 overflow-y-auto px-6 py-5">
           {/* Meta */}
           <div className="grid grid-cols-2 gap-3 text-sm">
             <InfoRow
@@ -102,24 +103,27 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
             <InfoRow label="Last Updated" value={formatDate(uds.updatedAt)} />
             {uds.notes && (
               <div className="col-span-2">
-                <p className="text-xs font-medium text-zinc-400">Notes</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Notes
+                </p>
                 <p className="mt-0.5 whitespace-pre-wrap text-zinc-800">{uds.notes}</p>
               </div>
             )}
           </div>
 
           {/* Repair details */}
-          {(uds.reason === 'repair' ||
-            uds.repairProvider ||
-            uds.rfsFormFile ||
-            uds.linkedStockTransfer ||
-            uds.assessment) && (
+          {(uds.reason === 'repair' || uds.repairProvider || uds.rfsFormFile || uds.assessment) && (
             <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+              {/* The branch→main StockTransfer is deliberately not repeated
+                  here: it is a leg of the Document trail below, and a number
+                  shown twice on one screen reads as two movements. */}
               <p className="mb-3 text-sm font-medium text-zinc-700">Repair Transfer</p>
               <div className="space-y-3 text-sm">
                 {uds.reason === 'repair' && (
                   <div>
-                    <p className="text-xs font-medium text-zinc-400">Repair Provider</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      Repair Provider
+                    </p>
                     <div className="mt-0.5 flex items-center gap-2">
                       <p className="text-zinc-800">
                         {uds.repairProvider
@@ -140,7 +144,9 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
                 )}
                 {uds.assessment && (
                   <div>
-                    <p className="text-xs font-medium text-zinc-400">Assessment</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      Assessment
+                    </p>
                     <div className="mt-0.5 flex items-center gap-2">
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${UDS_ASSESSMENT_STYLES[uds.assessment]}`}
@@ -167,7 +173,9 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
                 )}
                 {uds.rfsFormFile && (
                   <div>
-                    <p className="text-xs font-medium text-zinc-400">RFS Form</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      RFS Form
+                    </p>
                     <a
                       href={`/api/files/${uds.rfsFormFile.id}/download`}
                       target="_blank"
@@ -180,23 +188,15 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
                     </a>
                   </div>
                 )}
-                {uds.linkedStockTransfer && (
-                  <div>
-                    <p className="text-xs font-medium text-zinc-400">Transfer to Main</p>
-                    <Link
-                      href="/inventory/transfers"
-                      className="mt-0.5 inline-flex items-center gap-1.5 text-prominent-purple-700 hover:underline"
-                    >
-                      <Truck className="h-3.5 w-3.5" />
-                      {uds.linkedStockTransfer.transferNumber} —{' '}
-                      {TRANSFER_STATUS_LABELS[uds.linkedStockTransfer.status] ??
-                        uds.linkedStockTransfer.status}
-                    </Link>
-                  </div>
-                )}
               </div>
             </div>
           )}
+
+          {/* The paper trail. Every number on it is free text off a document
+              someone signed, and until now all five were captured at each
+              step and then shown nowhere — the customer holds an RR this
+              screen could not display. */}
+          <DocumentTrail uds={uds} />
 
           {/* Units */}
           <div>
@@ -220,7 +220,10 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
                   {uds.lines.map((line) => (
                     <tr key={line.id}>
                       <td className="px-3 py-2 font-mono text-xs text-zinc-800">
-                        {line.serialNumber.serialNumber}
+                        <SerialLink
+                          serialId={line.serialNumber.id}
+                          serialNumber={line.serialNumber.serialNumber}
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <p className="font-medium text-zinc-900">{line.item.name}</p>
@@ -236,7 +239,7 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end border-t border-zinc-200 px-6 py-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 px-6 py-4">
           <button
             type="button"
             onClick={onClose}
@@ -244,6 +247,15 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
           >
             Close
           </button>
+          {nextStep && (
+            <button
+              type="button"
+              onClick={nextStep.run}
+              className="rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b]"
+            >
+              {nextStep.label}
+            </button>
+          )}
         </div>
       </div>
     </div>

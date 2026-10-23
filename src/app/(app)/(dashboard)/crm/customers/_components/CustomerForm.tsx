@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, Paperclip, Plus, Trash2, X } from 'lucide-react'
-import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
+import { AlertTriangle, ArrowLeft, Paperclip, X } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
+import { posCustomersApi } from '@/src/libs/api/pos-customers'
+import { showToast } from '@/src/components/ui/toast'
 import { uploadIdDocument } from '../_actions/upload-id-document'
 import {
   createCustomerSchema,
@@ -24,6 +24,9 @@ import type {
 } from '@/src/schema/crm/types'
 import CustomerExtraFields from '@/src/components/crm/CustomerExtraFields'
 import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
+import { PhoneField } from '@/src/components/ui/PhoneField'
+import { Select } from '@/src/components/ui/Select'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type FormState = {
   customerCode: string
@@ -35,6 +38,13 @@ type FormState = {
   businessCategory: string
   employeeNumber: string
   birthday: string
+  // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
+  // block. `isSelfEmployed` is a string here ('' / 'yes' / 'no') because
+  // unanswered is a third state, not false.
+  altPhone: string
+  civilStatus: string
+  gender: string
+  facebookName: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -42,6 +52,10 @@ type FormState = {
   phone: string
   address: string
   barangayCode: string
+  homeAddress: string
+  homeBarangayCode: string
+  homeSameAsCurrent: boolean
+  birthdayIncomplete: boolean
   creditLimit: string
   groupId: string
   branchId: string
@@ -55,6 +69,18 @@ type FormState = {
   consentGiven: boolean
 }
 
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'charge', label: 'Charge' },
+]
+
+const SOURCE_CHANNEL_OPTIONS = [
+  { value: 'pos_walkin', label: 'POS Walk-in' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'crm_lead', label: 'CRM Lead' },
+  { value: 'online', label: 'Online' },
+]
+
 const empty: FormState = {
   customerCode: '',
   firstName: '',
@@ -65,6 +91,10 @@ const empty: FormState = {
   businessCategory: '',
   employeeNumber: '',
   birthday: '',
+  altPhone: '',
+  civilStatus: '',
+  gender: '',
+  facebookName: '',
   taxId: '',
   isTaxExempt: false,
   taxExemptionRef: '',
@@ -72,6 +102,11 @@ const empty: FormState = {
   phone: '',
   address: '',
   barangayCode: '',
+  homeAddress: '',
+  homeBarangayCode: '',
+  // Most customers live where they are — the box starts ticked.
+  homeSameAsCurrent: true,
+  birthdayIncomplete: false,
   creditLimit: '',
   groupId: '',
   branchId: '',
@@ -86,37 +121,59 @@ const empty: FormState = {
 }
 
 /**
- * PhoneInput's own `value` prop must always be E.164 (a leading `+`) or
- * `undefined` — some existing customer records predate this component
- * (imported/seeded data entered in a local format like "(656) 929-6118")
- * and break it otherwise, logging a console error every time that record's
- * edit form mounts. Best-effort re-parses a legacy value assuming PH as the
- * default country and returns its real E.164 form when that succeeds;
- * `undefined` otherwise (PhoneInput just renders empty — the underlying
- * `form.phone` state keeps the original raw string either way, so an
- * unrelated edit-and-save never silently overwrites/loses it).
- */
-function toDisplayPhoneValue(raw: string): string | undefined {
-  if (!raw) return undefined
-  if (raw.startsWith('+')) return raw
-  try {
-    const parsed = parsePhoneNumber(raw, 'PH')
-    return parsed?.isValid() ? parsed.number : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/**
  * Shared by both /crm/customers/new and /crm/customers/[id]/edit — a single
  * `id` prop switches the few things that genuinely differ (customer code,
  * source channel, POST-vs-PATCH, dirty-tracking, the create-only duplicate
  * check) so the two flows can no longer drift apart field-by-field the way
  * the previous two hand-rolled copies did.
  */
-export default function CustomerForm({ id }: { id?: string }) {
+export default function CustomerForm({
+  id,
+  returnTo,
+  scope = 'crm',
+}: {
+  id?: string
+  /** Where to go when this form is done — on save in either mode, and on
+   * Back/Cancel. On CREATE the new customer is appended as `?customerId=`
+   * so the caller can pick them up; POS checkout's "New Customer" button
+   * relies on that to get the cashier back to the till with the customer
+   * attached. On EDIT it is simply the page the caller came from, which is
+   * how the list's Edit action returns to the list rather than to a profile
+   * the cashier never visited.
+   *
+   * Already validated as an internal path by the page via safeReturnTo() —
+   * never interpolate a raw query param into a redirect. */
+  returnTo?: string
+  /** Which module is hosting this form. Selects the API it writes through
+   * and the routes it navigates back to, so the POS copy uses
+   * pos:customers:* and returns to /pos/customers instead of stranding a
+   * cashier in a CRM route they cannot open. Both APIs reach the same
+   * Customer table through the same CustomerService — it is the permission
+   * surface that differs, not the data (2026-09-19 review request).
+   *
+   * A plain string rather than the API object itself: these pages are
+   * server components, and functions cannot cross the server/client
+   * boundary as props. Passing the object threw "Functions cannot be passed
+   * directly to Client Components". */
+  scope?: 'crm' | 'pos'
+}) {
   const isEdit = Boolean(id)
+  const api = scope === 'pos' ? posCustomersApi : customersApi
+  const basePath = scope === 'pos' ? '/pos/customers' : '/crm/customers'
   const router = useRouter()
+  // In create mode a returnTo overrides the normal "back to the list"
+  // destination, so Back/Cancel return the cashier to the till rather than
+  // stranding them in CRM.
+  // Both modules have a customer detail page to land on after a save or a
+  // cancel — CRM's full 360, POS's read-only profile — so this resolves the
+  // same way for either scope.
+  const detailHref = (customerId: string) => `${basePath}/${customerId}`
+  // returnTo wins in BOTH modes. Reaching Edit from the list and pressing
+  // Back used to land on the customer's profile — a page the cashier had
+  // not come from — because edit mode always resolved to the detail route.
+  // The caller says where it sent you from; only fall back to the profile
+  // when nobody said.
+  const cancelHref = returnTo ?? (isEdit && id ? detailHref(id) : basePath)
   const [form, setForm] = useState<FormState>(empty)
   const [initialForm, setInitialForm] = useState<FormState>(empty)
   const [loading, setLoading] = useState(isEdit)
@@ -147,7 +204,7 @@ export default function CustomerForm({ id }: { id?: string }) {
 
   useEffect(() => {
     if (!id) return
-    customersApi.get(id).then((res) => {
+    api.get(id).then((res) => {
       if (res.success && res.data) {
         const c = res.data
         // Prefer the real stored firstName/lastName (developer-requested
@@ -165,6 +222,10 @@ export default function CustomerForm({ id }: { id?: string }) {
           businessCategory: c.businessCategory ?? '',
           employeeNumber: c.employeeNumber ?? '',
           birthday: c.birthday ? c.birthday.slice(0, 10) : '',
+          altPhone: c.altPhone ?? '',
+          civilStatus: c.civilStatus ?? '',
+          gender: c.gender ?? '',
+          facebookName: c.facebookName ?? '',
           taxId: c.taxId ?? '',
           isTaxExempt: c.isTaxExempt,
           taxExemptionRef: c.taxExemptionRef ?? '',
@@ -172,6 +233,16 @@ export default function CustomerForm({ id }: { id?: string }) {
           phone: c.phone ?? '',
           address: c.address ?? '',
           barangayCode: c.barangayCode ?? '',
+          homeAddress: c.homeAddress ?? '',
+          homeBarangayCode: c.homeBarangayCode ?? '',
+          // Ticked when there is no separate home address, or the one on file
+          // is a copy of the current one. Set on both form and initialForm
+          // below, so opening the page is not itself an unsaved change.
+          homeSameAsCurrent:
+            (!c.homeAddress && !c.homeBarangayCode) ||
+            ((c.homeAddress ?? '') === (c.address ?? '') &&
+              (c.homeBarangayCode ?? '') === (c.barangayCode ?? '')),
+          birthdayIncomplete: false,
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
           groupId: c.groupId ?? '',
           branchId: c.branchId ?? '',
@@ -230,7 +301,7 @@ export default function CustomerForm({ id }: { id?: string }) {
     }
     if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
     duplicateTimer.current = setTimeout(async () => {
-      const res = await customersApi.checkDuplicate({
+      const res = await api.checkDuplicate({
         email: email || undefined,
         phone: phone || undefined,
       })
@@ -248,13 +319,26 @@ export default function CustomerForm({ id }: { id?: string }) {
     e.preventDefault()
     setServerError(null)
 
+    // A half-picked birthday composes to nothing, so saving now would store
+    // no birthday while the form showed one — the credit application then
+    // asked for it again (PR #199 review).
+    if (form.birthdayIncomplete) {
+      setServerError(
+        'The birthday is incomplete — pick the month, day and year, or clear the birthday to leave it blank.'
+      )
+      return
+    }
+
     const shared = {
       name: `${form.firstName} ${form.lastName}`.trim(),
       firstName: form.firstName,
       middleName: form.middleName || undefined,
       lastName: form.lastName,
       customerType: form.customerType,
-      companyName: form.customerType === 'business' ? form.companyName || undefined : undefined,
+      // Sent for every customer type since 2026-09-30, not business-only:
+      // the credit application mockup asks for an individual's employer, and
+      // this is the column that holds it (see the Customer type's comment).
+      companyName: form.companyName || undefined,
       businessCategory:
         form.customerType === 'business' && form.businessCategory
           ? (form.businessCategory as 'private' | 'government')
@@ -262,6 +346,12 @@ export default function CustomerForm({ id }: { id?: string }) {
       employeeNumber:
         form.customerType === 'employee' ? form.employeeNumber || undefined : undefined,
       birthday: form.birthday ? new Date(form.birthday) : undefined,
+      altPhone: form.altPhone || undefined,
+      civilStatus: form.civilStatus
+        ? (form.civilStatus as 'Single' | 'Married' | 'Widowed' | 'Separated')
+        : undefined,
+      gender: form.gender ? (form.gender as 'M' | 'F') : undefined,
+      facebookName: form.facebookName || undefined,
       taxId: form.taxId || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.taxExemptionRef || undefined,
@@ -269,12 +359,24 @@ export default function CustomerForm({ id }: { id?: string }) {
       phone: form.phone,
       address: form.address || undefined,
       barangayCode: form.barangayCode || undefined,
+      // Ticked sends '' rather than leaving the fields out: an update only
+      // touches the fields it is sent, so omitting them could never clear a
+      // home address already on file. Every reader treats '' as "same as
+      // current".
+      homeAddress: form.homeSameAsCurrent ? '' : form.homeAddress || undefined,
+      homeBarangayCode: form.homeSameAsCurrent ? '' : form.homeBarangayCode || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
       groupId: form.groupId || undefined,
       branchId: form.branchId || undefined,
       accountType: form.accountType,
       notes: form.notes || undefined,
-      coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
+      // coMakers is deliberately NOT sent. This form no longer captures them,
+      // and CustomerService.update() treats a provided array as a full
+      // replace — deleteMany + recreate — which hands every co-maker a new id
+      // and, because CreditApplication.coMakerId is an optional FK (SET NULL
+      // on delete), silently detaches the guarantor from every credit
+      // application referencing them. Verified live 2026-09-16. Omitting the
+      // key takes the service's untouched path instead.
       idType: form.idType || undefined,
       idNumber: form.idNumber || undefined,
       idDocumentFileId: form.idDocumentFileId || undefined,
@@ -297,17 +399,18 @@ export default function CustomerForm({ id }: { id?: string }) {
       if (!parsed.success) {
         const errs: Record<string, string> = {}
         parsed.error.issues.forEach((i) => {
-          errs[i.path[0] as string] = i.message
+          errs[i.path.join('.')] = i.message
         })
         setErrors(errs)
         setSubmitting(false)
         return
       }
       setErrors({})
-      const res = await customersApi.update(id, parsed.data)
+      const res = await api.update(id, parsed.data)
       setSubmitting(false)
       if (res.success) {
-        router.push(`/crm/customers/${id}`)
+        showToast({ title: 'Customer updated', status: 'success' })
+        router.push(returnTo ?? detailHref(id))
         router.refresh()
       } else {
         setServerError(res.error ?? 'Failed to update customer')
@@ -326,17 +429,36 @@ export default function CustomerForm({ id }: { id?: string }) {
       if (!parsed.success) {
         const errs: Record<string, string> = {}
         parsed.error.issues.forEach((i) => {
-          errs[i.path[0] as string] = i.message
+          errs[i.path.join('.')] = i.message
         })
         setErrors(errs)
         setSubmitting(false)
         return
       }
       setErrors({})
-      const res = await customersApi.create(parsed.data)
+      const res = await api.create(parsed.data)
       setSubmitting(false)
       if (res.success && res.data) {
-        router.push(`/crm/customers/${res.data.id}`)
+        // Confirms the save before navigating away. Matters most on the
+        // returnTo path: the caller's page just repopulates with the new
+        // customer selected, which on its own is easy to misread as
+        // "nothing happened". The Toaster is mounted in (app)/layout, so
+        // the toast outlives this route change.
+        showToast({
+          title: 'Customer saved',
+          description: res.data.name ? `${res.data.name} (${res.data.customerCode})` : undefined,
+          status: 'success',
+        })
+        if (returnTo) {
+          // Hand the new customer back to whoever sent us here (POS
+          // checkout attaches them to the open sale). name is passed so the
+          // caller can label the customer without a second fetch.
+          const sep = returnTo.includes('?') ? '&' : '?'
+          const label = encodeURIComponent(res.data.name ?? '')
+          router.push(`${returnTo}${sep}customerId=${res.data.id}&customerName=${label}`)
+        } else {
+          router.push(detailHref(res.data.id))
+        }
         router.refresh()
       } else {
         setServerError(res.error ?? 'Failed to create customer')
@@ -351,7 +473,7 @@ export default function CustomerForm({ id }: { id?: string }) {
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href={isEdit ? `/crm/customers/${id}` : '/crm/customers'}
+        href={cancelHref}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -402,9 +524,9 @@ export default function CustomerForm({ id }: { id?: string }) {
         </div>
         {errors.name && <p className="-mt-3 text-[12px] text-red-600">{errors.name}</p>}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Field
-            label="Email"
+            label="Email (optional)"
             error={errors.email}
             value={form.email}
             maxLength={255}
@@ -413,16 +535,27 @@ export default function CustomerForm({ id }: { id?: string }) {
           />
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Phone *</label>
-            <PhoneInput
-              value={toDisplayPhoneValue(form.phone ?? '')}
-              defaultCountry="PH"
-              international
-              countryCallingCodeEditable={false}
-              onChange={(v) => setField('phone', v ?? '')}
-              numberInputProps={{ className: 'phone-input-field' }}
-              className="ph-phone-input mt-1"
+            <PhoneField
+              value={form.phone ?? ''}
+              onChange={(v) => setField('phone', v)}
+              className="mt-1"
             />
             {errors.phone && <p className="mt-1 text-[12px] text-red-600">{errors.phone}</p>}
+          </div>
+          <div>
+            {/* Scenario 64 item 27 — "Alt mobile (optional)". Sits beside the
+                main number rather than in the extra fields below, because
+                the two are only ever read together, and the duplicate check
+                above deliberately still looks at `phone` alone: a shared
+                second number is not the same person. */}
+            <label className="block text-[13px] font-medium text-gray-700">
+              Alt mobile <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <PhoneField
+              value={form.altPhone ?? ''}
+              onChange={(v) => setField('altPhone', v)}
+              className="mt-1"
+            />
           </div>
         </div>
 
@@ -454,154 +587,68 @@ export default function CustomerForm({ id }: { id?: string }) {
 
         {/* Both drive the CRM customer list's filters. accountType is stored
             rather than derived from whether an installment account exists,
-            so it stays correctable by hand. */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
-            <select
-              value={form.branchId}
-              onChange={(e) => setField('branchId', e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">— None —</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+            so it stays correctable by hand.
+
+            Edit-only since 2026-09-21 (review request: "For Customer
+            Creation, can we remove these"). Neither is known at the counter
+            when someone is first being written down — Branch defaults to
+            "— None —" and Cash-or-charge to Cash, so both were just noise
+            on the create screen, and Cash-or-charge in particular implied a
+            decision the till has not made yet. They stay on Edit because
+            that is exactly where correcting them is the point; the same
+            treatment Source channel already gets below.
+
+            The submitted values are unchanged: a new customer still posts
+            branchId undefined (the "— None —" option's own value) and
+            accountType 'cash', which is what picking the defaults by hand
+            did anyway. */}
+        {isEdit && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+              {/* SearchableSelect, not Select: this tenant runs 25-odd
+                  branches, so the list is one to type into rather than
+                  scroll. Clearable, because "— None —" is a real state a
+                  customer can go back to. */}
+              <SearchableSelect
+                className="mt-1"
+                value={form.branchId}
+                onChange={(v) => setField('branchId', v)}
+                options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                placeholder="— None —"
+                clearable
+              />
+            </div>
+            <div>
+              <label className="block text-[13px] font-medium text-gray-700">Cash or charge</label>
+              <div className="mt-1">
+                <Select
+                  value={form.accountType}
+                  onChange={(v) => setField('accountType', v as CustomerAccountType)}
+                  options={ACCOUNT_TYPE_OPTIONS}
+                />
+              </div>
+            </div>
           </div>
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Cash or charge</label>
-            <select
-              value={form.accountType}
-              onChange={(e) => setField('accountType', e.target.value as CustomerAccountType)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="cash">Cash</option>
-              <option value="charge">Charge</option>
-            </select>
-          </div>
-        </div>
+        )}
 
         {isEdit && (
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Source channel</label>
-            <select
-              value={form.sourceChannel ?? 'pos_walkin'}
-              onChange={(e) => setField('sourceChannel', e.target.value as CustomerSourceChannel)}
-              className="mt-1 w-full max-w-xs rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="pos_walkin">POS Walk-in</option>
-              <option value="sales">Sales</option>
-              <option value="crm_lead">CRM Lead</option>
-              <option value="online">Online</option>
-            </select>
+            <div className="mt-1 max-w-xs">
+              <Select
+                value={form.sourceChannel ?? 'pos_walkin'}
+                onChange={(v) => setField('sourceChannel', v as CustomerSourceChannel)}
+                options={SOURCE_CHANNEL_OPTIONS}
+              />
+            </div>
           </div>
         )}
 
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="block text-[13px] font-medium text-gray-700">
-              Co-maker (guarantor)
-            </label>
-            <button
-              type="button"
-              onClick={() =>
-                setField('coMakers', [
-                  ...form.coMakers,
-                  { name: '', relationship: '', contactNumber: '', email: '' },
-                ])
-              }
-              className="flex items-center gap-1 text-[12px] font-medium text-prominent-orange-700 hover:text-prominent-orange-800"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add co-maker
-            </button>
-          </div>
-          <div className="mt-2 space-y-3">
-            {form.coMakers.map((cm, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
-              >
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Name</label>
-                  <input
-                    value={cm.name}
-                    maxLength={255}
-                    placeholder="e.g. Juan Dela Cruz"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], name: e.target.value }
-                      setField('coMakers', next)
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Relationship
-                  </label>
-                  <input
-                    value={cm.relationship}
-                    maxLength={100}
-                    placeholder="e.g. Spouse"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], relationship: e.target.value }
-                      setField('coMakers', next)
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">
-                    Contact number
-                  </label>
-                  <input
-                    value={cm.contactNumber}
-                    maxLength={50}
-                    placeholder="e.g. 0917 000 1111"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], contactNumber: e.target.value }
-                      setField('coMakers', next)
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-600">Email</label>
-                  <input
-                    value={cm.email ?? ''}
-                    maxLength={255}
-                    type="email"
-                    onChange={(e) => {
-                      const next = [...form.coMakers]
-                      next[idx] = { ...next[idx], email: e.target.value }
-                      setField('coMakers', next)
-                    }}
-                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setField(
-                      'coMakers',
-                      form.coMakers.filter((_, i) => i !== idx)
-                    )
-                  }
-                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                  aria-label="Remove co-maker"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Co-maker capture lives on the Credit Application, not here — a
+            customer profile is just the customer. The existing coMakers are
+            still hydrated and submitted unchanged above so editing a profile
+            never wipes guarantors captured elsewhere. */}
 
         <div>
           <label className="block text-[13px] font-medium text-gray-700">
@@ -610,18 +657,17 @@ export default function CustomerForm({ id }: { id?: string }) {
           <div className="mt-2 grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[12px] font-medium text-gray-600">ID Type</label>
-              <select
-                value={form.idType}
-                onChange={(e) => setField('idType', e.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
-              >
-                <option value="">Select ID type</option>
-                {ID_TYPE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+              {/* compact to match the ID Number input beside it, which is
+                  py-1.5 rather than the form's usual py-2. */}
+              <div className="mt-1">
+                <Select
+                  value={form.idType}
+                  onChange={(v) => setField('idType', v)}
+                  options={ID_TYPE_OPTIONS.map((t) => ({ value: t, label: t }))}
+                  placeholder="Select ID type"
+                  compact
+                />
+              </div>
             </div>
             <div>
               <label className="block text-[12px] font-medium text-gray-600">ID Number</label>
@@ -668,7 +714,7 @@ export default function CustomerForm({ id }: { id?: string }) {
 
         <div className="flex items-center justify-end gap-3">
           <Link
-            href={isEdit ? `/crm/customers/${id}` : '/crm/customers'}
+            href={cancelHref}
             className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
           >
             Cancel

@@ -21,6 +21,11 @@ export const INVENTORY_PERMISSIONS = {
   WAREHOUSES_CREATE: 'inventory:warehouses:create',
   WAREHOUSES_UPDATE: 'inventory:warehouses:update',
 
+  // ── Drivers (Master Data → Drivers; read uses TRANSFERS_READ) ──────────────
+  DRIVERS_CREATE: 'inventory:drivers:create',
+  DRIVERS_UPDATE: 'inventory:drivers:update',
+  DRIVERS_DELETE: 'inventory:drivers:delete',
+
   // ── Units of Measure ───────────────────────────────────────────────────────
   UOM_READ: 'inventory:uom:read',
   UOM_CREATE: 'inventory:uom:create',
@@ -34,8 +39,17 @@ export const INVENTORY_PERMISSIONS = {
   // ── Transfers ──────────────────────────────────────────────────────────────
   TRANSFERS_READ: 'inventory:transfers:read',
   TRANSFERS_CREATE: 'inventory:transfers:create',
+  // Edit an undispatched request. Separate from CREATE because editing wipes
+  // every sign-off the request had collected and re-runs approval routing —
+  // it can undo an approval decision, not just raise a new request.
+  TRANSFERS_UPDATE: 'inventory:transfers:update',
   TRANSFERS_ACCEPT: 'inventory:transfers:accept',
   TRANSFERS_REJECT: 'inventory:transfers:reject',
+  // The source branch's "we don't have that model" lever — a finer-grained
+  // alternative to rejecting the whole request outright.
+  TRANSFERS_PROPOSE_SUBSTITUTION: 'inventory:transfers:propose-substitution',
+  // The requesting branch accepting/rejecting a warehouse's substitution.
+  TRANSFERS_CONFIRM_SUBSTITUTION: 'inventory:transfers:confirm-substitution',
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
   TRANSFERS_SERIAL_OVERRIDE: 'inventory:transfers:serial-override',
   TRANSFERS_RECEIVE: 'inventory:transfers:receive',
@@ -87,7 +101,7 @@ export const INVENTORY_PERMISSIONS = {
   // permission string.
   MANUAL_RR_CREATE: 'inventory:manual-rr:create',
 
-  // ── Caravan (Scenario 08) ──────────────────────────────────────────────────
+  // ── Caravan (Scenario 08, reworked in Scenario 60) ──────────────────────────────────────────────────
   CARAVAN_READ: 'inventory:caravan:read',
   CARAVAN_MANAGE: 'inventory:caravan:manage',
 
@@ -114,6 +128,14 @@ export const INVENTORY_PERMISSIONS = {
   SUPPLIER_RETURNS_APPROVE: 'inventory:supplier-returns:approve',
   SUPPLIER_RETURNS_FINALIZE: 'inventory:supplier-returns:finalize',
   SUPPLIER_RETURNS_VOID: 'inventory:supplier-returns:void',
+
+  // Scenario 72 — outbound Delivery Receipts. The Stock Controller raises and
+  // submits; approve and void are the Branch Manager's (maker/checker).
+  DELIVERY_RECEIPTS_READ: 'inventory:delivery-receipts:read',
+  DELIVERY_RECEIPTS_CREATE: 'inventory:delivery-receipts:create',
+  DELIVERY_RECEIPTS_UPDATE: 'inventory:delivery-receipts:update',
+  DELIVERY_RECEIPTS_APPROVE: 'inventory:delivery-receipts:approve',
+  DELIVERY_RECEIPTS_VOID: 'inventory:delivery-receipts:void',
 
   // ── Costing ────────────────────────────────────────────────────────────────
   COSTING_READ: 'inventory:costing:read',
@@ -193,6 +215,9 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:warehouses:read': 'View warehouses and sub-locations',
   'inventory:warehouses:create': 'Create warehouses and sub-locations',
   'inventory:warehouses:update': 'Edit warehouses and sub-locations',
+  'inventory:drivers:create': 'Add a driver to the fleet roster',
+  'inventory:drivers:update': 'Edit a driver on the fleet roster',
+  'inventory:drivers:delete': 'Remove a driver from the fleet roster',
   'inventory:uom:read': 'View units of measure',
   'inventory:uom:create': 'Create units of measure and conversion rates',
   'inventory:uom:update': 'Edit units of measure and conversion rates',
@@ -205,10 +230,16 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Investigate and approve/reject a confirmed stock adjustment (Business Owner)',
   'inventory:transfers:read': 'View stock transfers',
   'inventory:transfers:create': 'Create stock transfer requests',
+  'inventory:transfers:update':
+    'Edit an undispatched stock transfer request (resubmits it for approval)',
   'inventory:transfers:accept':
     'Accept an incoming transfer request on behalf of the source branch',
   'inventory:transfers:reject':
     'Reject an incoming transfer request on behalf of the source branch',
+  'inventory:transfers:propose-substitution':
+    "Propose a different item/quantity on an incoming request's line, on behalf of the source branch",
+  'inventory:transfers:confirm-substitution':
+    "Accept or reject a source branch's proposed substitution, on behalf of the requesting branch",
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
   'inventory:transfers:serial-override':
     'Dispatch a transfer using a serial that fails the normal in-stock/source-warehouse check',
@@ -238,10 +269,9 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:serial:manage': 'Assign and manage serial numbers',
   'inventory:manual-rr:create':
     'Submit or approve a manual receiving report that originates a serial with no PO/transfer/count context — owner-only by default',
-  'inventory:caravan:read':
-    'View caravan consignments (stock consigned to a host branch for an event)',
+  'inventory:caravan:read': 'View caravans and the stock currently at them',
   'inventory:caravan:manage':
-    'Consign stock to a host branch for a caravan event, and return/reassign it at close',
+    'Create caravans — temporary branches set up at a host branch for an event',
   'inventory:uds:read': 'View Unit Document Sheets (repair, pull-out, loan)',
   'inventory:uds:manage': 'Issue and update Unit Document Sheets',
   'inventory:mobile-count:use': 'Perform mobile barcode stock counts',
@@ -256,6 +286,12 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:supplier-returns:finalize':
     'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
   'inventory:supplier-returns:void': 'Void a supplier debit memo',
+  'inventory:delivery-receipts:read': 'View outbound Delivery Receipts',
+  'inventory:delivery-receipts:create': 'Raise a draft Delivery Receipt and submit it for approval',
+  'inventory:delivery-receipts:update': 'Edit or delete a draft Delivery Receipt',
+  'inventory:delivery-receipts:approve':
+    'Approve or reject a submitted Delivery Receipt (Branch Manager tier)',
+  'inventory:delivery-receipts:void': 'Void a Delivery Receipt, reversing whatever it posted',
   'inventory:costing:read': 'View stock costing configuration',
   'inventory:costing:configure': 'Configure stock costing method (FIFO / LIFO / Weighted Average)',
   'inventory:price-lists:read': 'View price lists',

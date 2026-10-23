@@ -29,6 +29,8 @@ import {
   UserCheck,
   AlertTriangle,
   ExternalLink,
+  Lock,
+  Repeat,
 } from 'lucide-react'
 import {
   DispatchTransferFormSchema,
@@ -41,6 +43,9 @@ import {
   RejectTransferFormValues,
   RejectManagerTransferFormSchema,
   RejectManagerTransferFormValues,
+  ProposeSubstitutionFormSchema,
+  ProposeSubstitutionFormValues,
+  ConfirmSubstitutionFormValues,
   TransferSummary,
 } from '@/src/schema/inventory/transfers'
 import type { ApiResponse } from '@/src/libs/api/client'
@@ -48,7 +53,14 @@ import { getTransferDocument } from '../_actions/get-transfer-document'
 import { printStockTransferDocument } from '@/src/libs/print/printInventoryDocument'
 import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
-import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
+import {
+  advanceOnScan,
+  serialScanProps,
+} from '../../purchase-orders/_components/receive-po/serialScan'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
@@ -56,6 +68,31 @@ import { MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
 import { searchVehicles } from '../_actions/search-vehicles'
 import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
+import { warehouseLabel } from '@/src/schema/inventory/warehouses'
+import { LocationName } from './transferStatus'
+import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
+import { formatAge } from '@/src/libs/format/date'
+
+/** A transfer line's unit, opening its history when the line has one. */
+/** Statuses in which a serial-tracked line has no unit yet because the
+ * source hasn't dispatched — the only time "Assigned at dispatch" is true. */
+const PRE_DISPATCH_STATUSES: string[] = [
+  'pending_manager_approval',
+  'requested',
+  'pending_hq_approval',
+  'draft',
+]
+
+function LineSerial({
+  line,
+}: {
+  line: { serialNumberId?: string | null; serialNumber?: { serialNumber: string } | null }
+}): React.ReactElement {
+  const serialNumber = line.serialNumber?.serialNumber
+  if (!serialNumber) return <>—</>
+  if (!line.serialNumberId) return <>{serialNumber}</>
+  return <SerialLink serialId={line.serialNumberId} serialNumber={serialNumber} />
+}
 
 // A serial-tracked item requested with quantity > 1 arrives here as several
 // separate quantity-1 StockTransferLine rows (see CreateTransferModal's
@@ -108,6 +145,11 @@ const STATUS_CONFIG = {
     icon: AlertTriangle,
   },
   cancelled: { label: 'Cancelled', color: 'bg-[#fdeceb] text-[#b42318]', icon: XCircle },
+  pending_substitution_confirmation: {
+    label: 'Substitution Proposed',
+    color: 'bg-[#f1ebfb] text-[#3f1490]',
+    icon: Repeat,
+  },
 }
 
 // A request can be withdrawn any time before physical movement starts
@@ -118,6 +160,12 @@ const CANCELLABLE_STATUSES = new Set([
   'pending_hq_approval',
   'draft',
 ])
+
+// Deliberately the same set, and a deliberate alias rather than a second
+// literal: the backend gates update() on exactly the statuses cancel()
+// accepts, on the principle that a request you can still withdraw is one you
+// can still fix instead. If one list moves, both must.
+const EDITABLE_STATUSES = CANCELLABLE_STATUSES
 
 function formatDate(iso?: string | null) {
   if (!iso) return '—'
@@ -142,11 +190,8 @@ function formatDateOnly(iso?: string | null) {
 // Each branch has exactly one warehouse, so a transfer's fromWarehouse/
 // toWarehouse is really a branch — display the branch's own name rather than
 // the warehouse's auto-generated "{branch} Warehouse" name.
-function branchLabel(
-  wh: { name: string; branch?: { name: string } | null } | null | undefined,
-  fallback = '—'
-): string {
-  return wh?.branch?.name ?? wh?.name ?? fallback
+function branchLabel(wh: Parameters<typeof warehouseLabel>[0], fallback = '—'): string {
+  return warehouseLabel(wh, fallback)
 }
 
 // One search box per DISTINCT serial-tracked item being dispatched (not one
@@ -168,6 +213,7 @@ function ItemSerialGroup({
   itemLabel,
   fromWarehouseId,
   slotIndices,
+  pinnedSerials = [],
   canOverride,
   errors,
 }: {
@@ -177,6 +223,9 @@ function ItemSerialGroup({
   itemLabel: string
   fromWarehouseId: string | undefined
   slotIndices: number[]
+  /** Units the requester already picked (Scenario 71 item 18) — shown
+   * locked, never re-asked; the backend only re-verifies them. */
+  pinnedSerials?: string[]
   canOverride: boolean
   errors?: FieldErrors<DispatchTransferFormValues>['serialAssignments']
 }) {
@@ -197,7 +246,13 @@ function ItemSerialGroup({
   const serialsQuery = useQuery({
     queryKey: ['inventory-serials-in-stock', fromWarehouseId, itemId],
     queryFn: () =>
-      getSerialNumbers({ warehouseId: fromWarehouseId, itemId, status: 'in_stock', limit: 500 }),
+      getSerialNumbers({
+        warehouseId: fromWarehouseId,
+        itemId,
+        status: 'in_stock',
+        freeForTransfer: true,
+        limit: 500,
+      }),
     enabled: !widened && !!fromWarehouseId && !!itemId,
     staleTime: 30 * 1000,
   })
@@ -263,11 +318,30 @@ function ItemSerialGroup({
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-zinc-600">
-        {itemLabel} <span className="text-red-500">*</span>{' '}
+        {itemLabel} {slotIndices.length > 0 && <span className="text-red-500">*</span>}{' '}
         <span className="font-normal text-zinc-400">
-          ({filledIndices.length} of {slotIndices.length} assigned)
+          {slotIndices.length === 0
+            ? `(all ${pinnedSerials.length} picked by the requester)`
+            : pinnedSerials.length > 0
+              ? `(${pinnedSerials.length} picked by the requester · ${filledIndices.length} of ${slotIndices.length} left to assign)`
+              : `(${filledIndices.length} of ${slotIndices.length} assigned)`}
         </span>
       </label>
+
+      {pinnedSerials.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {pinnedSerials.map((sn) => (
+            <span
+              key={sn}
+              title="Picked by the requester — re-verified at dispatch, not chosen again"
+              className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-100 py-1 pl-2.5 pr-3 font-mono text-[13.5px] font-semibold text-[#17171c]"
+            >
+              <Lock className="h-3 w-3 text-zinc-400" aria-hidden />
+              {sn}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div>
         {firstEmptyIndex !== undefined && (
@@ -315,11 +389,23 @@ function ItemSerialGroup({
                 multiple
                 value={pickedSerialIds}
                 onChange={handleMultiSelectChange}
-                options={serialOptions.map((s) => ({ value: s.id, label: s.serialNumber }))}
+                options={serialOptions.map((s) => ({
+                  value: s.id,
+                  label: s.serialNumber,
+                  // Scenario 71 item 17 — the inbound age beside the serial
+                  // (the Serial Numbers list's "Inbound Age": since its
+                  // original RR), so the oldest unit can go out first.
+                  description: s.firstReceivedAt
+                    ? `Inbound ${formatAge(s.firstReceivedAt)}`
+                    : undefined,
+                }))}
                 loading={serialsQuery.isLoading}
                 loadingLabel="Loading serials…"
                 placeholder="Search serial number…"
                 summaryNoun="serials assigned"
+                // The dispatcher scans the unit off the shelf: a scan that
+                // names one serial is assigned as it lands, no click needed.
+                pickOnScan
               />
             )}
             {activeError && <p className="mt-1 text-xs text-red-600">{activeError}</p>}
@@ -358,7 +444,9 @@ function ItemSerialGroup({
             {filledIndices.map((i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-1.5 rounded-full bg-prominent-purple-100 py-1 pl-3 pr-1.5 text-xs font-medium text-prominent-purple-700"
+                // Scenario 71 item 20 — the serial is read off the screen and
+                // checked against a physical sticker: near-black, larger, mono.
+                className="inline-flex items-center gap-1.5 rounded-full border border-prominent-purple-200 bg-prominent-purple-50 py-1 pl-3 pr-1.5 font-mono text-[13.5px] font-semibold text-[#17171c]"
               >
                 {allAssignments[i]?.serialLabel || allAssignments[i]?.serialNumberId}
                 {allAssignments[i]?.override && (
@@ -380,6 +468,85 @@ function ItemSerialGroup({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Gap 2 fix — an unlisted item that turns out to be serial-tracked (e.g. the
+ * wrong model arrived) now captures its actual serial(s) instead of being
+ * excluded from the picker outright. One box per unit, scan-friendly;
+ * duplicates are checked across every unlisted line on this receipt, since
+ * that is the scope the backend itself rejects a repeat within.
+ */
+function UnlistedSerialInputs({
+  control,
+  setValue,
+  index,
+  isDuplicate,
+}: {
+  control: Control<ReceiveTransferFormValues>
+  setValue: UseFormSetValue<ReceiveTransferFormValues>
+  index: number
+  isDuplicate: (index: number, unitIndex: number, value: string) => boolean
+}) {
+  const serials = useWatch({ control, name: `extraLines.${index}.serialNumbers` }) ?? []
+  const slots = serials.length > 0 ? serials : ['']
+
+  function commit(next: string[]): void {
+    setValue(`extraLines.${index}.serialNumbers`, next, { shouldValidate: false })
+    setValue(`extraLines.${index}.quantity`, next.filter((s) => s.trim()).length || 0, {
+      shouldValidate: false,
+    })
+  }
+
+  return (
+    <div className="mt-1.5 space-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50 p-2">
+      {slots.map((value, unitIndex) => {
+        const duplicate = !!value.trim() && isDuplicate(index, unitIndex, value)
+        return (
+          <div key={unitIndex} className="flex items-center gap-1.5">
+            <input
+              {...serialScanProps}
+              value={value}
+              onChange={(e) => {
+                const next = slots.slice()
+                next[unitIndex] = e.target.value
+                commit(next)
+              }}
+              onKeyDown={advanceOnScan}
+              type="text"
+              autoComplete="off"
+              placeholder={`Serial ${unitIndex + 1}`}
+              className={`flex-1 rounded-md border px-2 py-1 text-xs outline-none ${
+                duplicate
+                  ? 'border-red-400 bg-red-50'
+                  : 'border-zinc-200 bg-white focus:border-prominent-purple-500'
+              }`}
+            />
+            {slots.length > 1 && (
+              <button
+                type="button"
+                onClick={() => commit(slots.filter((_, i) => i !== unitIndex))}
+                className="shrink-0 text-zinc-400 hover:text-red-600"
+                aria-label={`Remove serial ${unitIndex + 1}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {duplicate && (
+              <span className="shrink-0 text-[11px] text-red-600">Already used above</span>
+            )}
+          </div>
+        )
+      })}
+      <button
+        type="button"
+        onClick={() => commit([...slots, ''])}
+        className="text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+      >
+        + Add another unit
+      </button>
     </div>
   )
 }
@@ -604,6 +771,8 @@ type Props = {
   // warehouse may belong to a different branch than theirs.
   canAccept: boolean
   canReject: boolean
+  canProposeSubstitution: boolean
+  canConfirmSubstitution: boolean
   canDispatch: boolean
   /** Scenario 29 SN-01 — dispatch a mismatched serial past the normal
    * in-stock/source-warehouse check, with a required reason. */
@@ -621,9 +790,27 @@ type Props = {
   currentUserRegion?: string | null
   onAccept: (id: string) => Promise<ApiResponse<unknown>>
   onReject: (id: string, data: RejectTransferFormValues) => Promise<ApiResponse<unknown>>
+  onProposeSubstitution: (
+    id: string,
+    lineId: string,
+    data: ProposeSubstitutionFormValues
+  ) => Promise<ApiResponse<unknown>>
+  onConfirmSubstitution: (
+    id: string,
+    lineId: string,
+    data: ConfirmSubstitutionFormValues
+  ) => Promise<ApiResponse<unknown>>
+  isProposingSubstitution: boolean
+  isConfirmingSubstitution: boolean
   onDispatch: (id: string, data?: DispatchTransferFormValues) => Promise<ApiResponse<unknown>>
   onReceive: (id: string, data: ReceiveTransferFormValues) => Promise<ApiResponse<unknown>>
   onCancel: (id: string) => Promise<ApiResponse<unknown>>
+  // Editing reopens the request in the full transfer form rather than
+  // editing in place here — it is the same complete request shape the create
+  // screen builds, so it gets the same screen. This modal only has to close
+  // itself and say which transfer to load.
+  canEdit?: boolean
+  onEdit?: (transfer: TransferSummary) => void
   onApproveHq: (id: string) => Promise<ApiResponse<unknown>>
   onRejectHq: (id: string, data: RejectHqTransferFormValues) => Promise<ApiResponse<unknown>>
   onApproveManager: (id: string) => Promise<ApiResponse<unknown>>
@@ -649,6 +836,8 @@ export default function TransferDetailModal({
   onClose,
   canAccept,
   canReject,
+  canProposeSubstitution,
+  canConfirmSubstitution,
   canDispatch,
   canOverrideSerial,
   canReceive,
@@ -660,9 +849,15 @@ export default function TransferDetailModal({
   currentUserRegion,
   onAccept,
   onReject,
+  onProposeSubstitution,
+  onConfirmSubstitution,
+  isProposingSubstitution,
+  isConfirmingSubstitution,
   onDispatch,
   onReceive,
   onCancel,
+  canEdit = false,
+  onEdit,
   onApproveHq,
   onRejectHq,
   onApproveManager,
@@ -712,19 +907,34 @@ export default function TransferDetailModal({
   // itself watches that.
   const serialGroups = useMemo(() => {
     const order: string[] = []
-    const byItemId = new Map<string, { itemLabel: string; slotIndices: number[] }>()
-    serialAssignmentFields.forEach((f, i) => {
-      const key = f.itemId ?? ''
-      const existing = byItemId.get(key)
-      if (existing) {
-        existing.slotIndices.push(i)
-      } else {
-        byItemId.set(key, { itemLabel: f.itemLabel ?? 'Item', slotIndices: [i] })
+    const byItemId = new Map<
+      string,
+      { itemLabel: string; slotIndices: number[]; pinnedSerials: string[] }
+    >()
+    const groupFor = (key: string, label: string) => {
+      let g = byItemId.get(key)
+      if (!g) {
+        g = { itemLabel: label, slotIndices: [], pinnedSerials: [] }
+        byItemId.set(key, g)
         order.push(key)
       }
+      return g
+    }
+    // Units the requester pinned at request time (Scenario 71 item 18) sit
+    // in the same item's group, shown locked — so a part-picked line reads
+    // as "2 picked, pick 1 more" rather than asking for units again.
+    ;(transfer?.lines ?? []).forEach((line) => {
+      if (!line.item?.isSerialTracked || !line.serialNumberId) return
+      const key = line.itemId ?? line.item?.id ?? ''
+      groupFor(key, line.item?.name ?? 'Item').pinnedSerials.push(
+        line.serialNumber?.serialNumber ?? line.serialNumberId
+      )
+    })
+    serialAssignmentFields.forEach((f, i) => {
+      groupFor(f.itemId ?? '', f.itemLabel ?? 'Item').slotIndices.push(i)
     })
     return order.map((itemId) => ({ itemId, ...byItemId.get(itemId)! }))
-  }, [serialAssignmentFields])
+  }, [serialAssignmentFields, transfer?.lines])
 
   const receiveForm = useForm<ReceiveTransferFormValues>({
     resolver: zodResolver(ReceiveTransferFormSchema),
@@ -747,6 +957,23 @@ export default function TransferDetailModal({
     control: receiveForm.control,
     name: 'extraLines',
   })
+  const watchedExtraLines = useWatch({ control: receiveForm.control, name: 'extraLines' }) ?? []
+  function isDuplicateExtraSerial(lineIndex: number, unitIndex: number, value: string): boolean {
+    const needle = value.trim()
+    let seenSelf = false
+    for (let li = 0; li < watchedExtraLines.length; li++) {
+      const serials = watchedExtraLines[li]?.serialNumbers ?? []
+      for (let ui = 0; ui < serials.length; ui++) {
+        if (serials[ui]?.trim() !== needle) continue
+        if (li === lineIndex && ui === unitIndex && !seenSelf) {
+          seenSelf = true
+          continue
+        }
+        return true
+      }
+    }
+    return false
+  }
 
   const rejectHqForm = useForm<RejectHqTransferFormValues>({
     resolver: zodResolver(RejectHqTransferFormSchema),
@@ -761,6 +988,14 @@ export default function TransferDetailModal({
   const rejectManagerForm = useForm<RejectManagerTransferFormValues>({
     resolver: zodResolver(RejectManagerTransferFormSchema),
     defaultValues: { reason: '' },
+  })
+
+  // Gap: the warehouse's only lever used to be rejecting the whole request —
+  // this opens a per-line proposal form instead. null = closed.
+  const [proposingLineId, setProposingLineId] = useState<string | null>(null)
+  const proposeForm = useForm<ProposeSubstitutionFormValues>({
+    resolver: zodResolver(ProposeSubstitutionFormSchema),
+    defaultValues: { proposedItemId: '', proposedQuantity: 1, reason: '' },
   })
 
   if (!isOpen) return null
@@ -785,6 +1020,12 @@ export default function TransferDetailModal({
     canAccept && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
   const canRejectThis =
     canReject && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canProposeSubstitutionThis =
+    canProposeSubstitution &&
+    inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canConfirmSubstitutionThis =
+    canConfirmSubstitution &&
+    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
   const canDispatchThis =
     canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
   const canReceiveThis =
@@ -802,10 +1043,36 @@ export default function TransferDetailModal({
   const canCancelThis =
     CANCELLABLE_STATUSES.has(status) &&
     inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  // Two kinds of transfer are refused by the backend's update() and so are
+  // never offered here: one the UDS module auto-paired (the UDS owns which
+  // unit ships, not this form), and one whose lines are pinned to a specific
+  // serial — the POS "request this unit" flow, which also raised a purchase
+  // request against that same unit. The edit form carries no serial, so
+  // saving either would quietly describe a different request than the one
+  // the rest of the system is working from.
+  const isUdsPaired = (transfer?.linkedUds?.length ?? 0) > 0
+  const hasPinnedSerial = !!transfer?.lines?.some((line) => line.serialNumberId)
+  // Same branch direction as cancel — you correct your own request, you
+  // don't rewrite someone else's. The extra permission is what separates
+  // "withdraw it" from "change it and wipe the approvals it collected".
+  const canEditThis =
+    canEdit &&
+    EDITABLE_STATUSES.has(status) &&
+    !isUdsPaired &&
+    !hasPinnedSerial &&
+    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
-  const hasSerialLine = !!transfer?.lines?.some((line) => line.serialNumber?.serialNumber)
+  // Scenario 71 item 19 — the column shows for any serial-tracked line, not
+  // only once a serial is assigned, so a pre-dispatch transfer says which
+  // lines will carry one ("Assigned at dispatch") instead of hiding it.
+  // Only before dispatch is a missing serial "to come" — afterwards (or on a
+  // rejected/cancelled request that never left) it is simply absent.
+  const awaitingDispatch = PRE_DISPATCH_STATUSES.includes(status)
+  const hasSerialLine = !!transfer?.lines?.some(
+    (line) => line.serialNumber?.serialNumber || line.item?.isSerialTracked
+  )
   const isReceivedStatus = status === 'received' || status === 'partially_received'
   const totalUnits = (transfer?.lines ?? []).reduce((sum, l) => sum + Number(l.quantity), 0)
   const receivedUnits = (transfer?.lines ?? []).reduce(
@@ -853,8 +1120,16 @@ export default function TransferDetailModal({
   // here for one of those, even for a serial-tracked line.
   const isUdsLinked = (transfer?.linkedUds?.length ?? 0) > 0
 
+  // The modal starts from the list row, whose lines carry no `item` — so no
+  // `isSerialTracked` — until the detail query lands. openDispatchForm builds
+  // its serial slots once, from whatever it is handed at the click, so a click
+  // in that window built none: no "Assign Serial Numbers" section, and a
+  // dispatch the server then refused for missing serials. Only open the form
+  // once the lines actually say what they are.
+  const lineDetailReady = !isLoading && (transfer?.lines ?? []).every((line) => line.item)
+
   function openDispatchForm() {
-    if (!transfer) return
+    if (!transfer || !lineDetailReady) return
     // One entry per serial-tracked StockTransferLine (the backend's own
     // per-line invariant), but ItemSerialGroup below groups these by itemId
     // and shows one search box per item — so no per-line "(i of N)" label
@@ -900,8 +1175,8 @@ export default function TransferDetailModal({
             }),
           }))
         : undefined,
-      driverName: data.driverName,
-      driverPhone: data.driverPhone,
+      driverName: data.driverName?.trim() || undefined,
+      driverPhone: data.driverPhone?.trim() || undefined,
       vehiclePlate: data.vehiclePlate,
       carrierName: data.carrierName,
     })
@@ -915,10 +1190,12 @@ export default function TransferDetailModal({
     if (!transfer) return
     // Only lines not yet at their full dispatched quantity are actionable —
     // on a first receive that's every line; on a reopened partially_received
-    // transfer it's just what's still short. Default each to its full
-    // remaining amount — the common case is everything arrived; the user
-    // reduces the number or unchecks a serial only for the exceptional
-    // shortfall.
+    // transfer it's just what's still short. Serial lines start unticked
+    // (Scenario 71 item 23): ticking each unit is the receiver saying they
+    // physically saw it, so a pre-ticked box would let a delivery be
+    // confirmed unseen — "Mark all received" keeps a complete one to a
+    // click. Quantity lines still default to the full remaining amount;
+    // there is no per-unit sighting to confirm there.
     const outstanding = (transfer.lines ?? []).filter(
       (line) => Number(line.receivedQuantity ?? 0) < Number(line.quantity)
     )
@@ -943,7 +1220,9 @@ export default function TransferDetailModal({
         itemLabel:
           (line.id && labelByLineId.get(line.id)) || line.item?.name || line.itemId || undefined,
         itemId: line.itemId ?? line.item?.id ?? '',
-        quantityReceived: Number(line.quantity) - Number(line.receivedQuantity ?? 0),
+        quantityReceived: line.serialNumberId
+          ? 0
+          : Number(line.quantity) - Number(line.receivedQuantity ?? 0),
       })),
       extraLines: [],
     })
@@ -952,6 +1231,16 @@ export default function TransferDetailModal({
 
   async function handleReceiveSubmit(data: ReceiveTransferFormValues) {
     if (!transfer) return
+    // With serials unticked by default, an untouched form would post a
+    // receipt of nothing — refuse it rather than record an empty RR.
+    const receivedAny =
+      data.lines.some((l) => Number(l.quantityReceived) > 0) || (data.extraLines?.length ?? 0) > 0
+    if (!receivedAny) {
+      receiveForm.setError('root', {
+        message: 'Tick at least one unit (or enter a quantity) to record a receipt.',
+      })
+      return
+    }
     const result = await onReceive(transfer.id, {
       ...data,
       notes: data.notes || undefined,
@@ -1010,13 +1299,32 @@ export default function TransferDetailModal({
     }
   }
 
+  async function handleProposeSubmit(data: ProposeSubstitutionFormValues) {
+    if (!transfer || !proposingLineId) return
+    const result = await onProposeSubstitution(transfer.id, proposingLineId, data)
+    if (result.success) {
+      setProposingLineId(null)
+      proposeForm.reset()
+    }
+  }
+
+  async function handleConfirmDecision(lineId: string, decision: 'accept' | 'reject') {
+    if (!transfer) return
+    await onConfirmSubstitution(transfer.id, lineId, { decision })
+  }
+
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
   // Fleet roster (Vehicle model) lookup for the dispatch form — scoped to
   // the source branch a vehicle is on file for, same as the branch the
-  // dispatching stock is leaving from.
-  const dispatchFromBranchId = transfer?.fromWarehouse?.branch?.id
+  // dispatching stock is leaving from. A caravan has no fleet of its own
+  // (vehicles are registered to real branches), so stock leaving a caravan
+  // goes out on its host branch's vehicles.
+  const fromBranch = transfer?.fromWarehouse?.branch
+  const dispatchFromBranchId = fromBranch?.isTemporary
+    ? (fromBranch.hostBranch?.id ?? fromBranch.id)
+    : fromBranch?.id
   async function searchDispatchVehicles(query: string) {
     const result = await searchVehicles({ q: query, branchId: dispatchFromBranchId })
     return result.success && result.data ? result.data : []
@@ -1024,9 +1332,14 @@ export default function TransferDetailModal({
   // Picking a roster entry from either field fills both — driverName and
   // vehiclePlate are the only two fields the Vehicle model actually carries
   // (phone/license/carrier stay manual, they're not in the fleet sheet).
+  // Scenario 71 item 22 — a pick fills the plate only. The driver is no
+  // longer tied to the vehicle: the roster's driverName column is unreliable
+  // (some rows hold a model like "D-MAX"), and who drives varies per trip.
   function pickDispatchVehicle(vehicle: VehicleSummary) {
-    dispatchForm.setValue('driverName', vehicle.driverName ?? '', { shouldValidate: true })
     dispatchForm.setValue('vehiclePlate', vehicle.plateNo, { shouldValidate: true })
+  }
+  function pickDispatchDriver(vehicle: VehicleSummary) {
+    dispatchForm.setValue('driverName', vehicle.driverName ?? '', { shouldValidate: true })
   }
 
   return (
@@ -1039,7 +1352,7 @@ export default function TransferDetailModal({
     <div onClick={onClose} className="fixed inset-0 z-50 flex justify-end bg-[#17171c]/40">
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`${PLEX} flex h-full w-full max-w-[min(860px,94vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
+        className={`${PLEX} flex h-full w-full max-w-[min(1200px,96vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
       >
         {/* Header — the transfer's own reference is the title, the way the
             design has it; "Transfer Details" stays as the dialog's accessible
@@ -1093,14 +1406,18 @@ export default function TransferDetailModal({
             <div className="rounded-xl border border-[#e4e4e9] bg-white p-3">
               <div className="flex items-center gap-3 rounded-lg border border-[#eeeef1] bg-[#fbfbfc] px-4 py-3">
                 <div className="min-w-0 flex-1">
+                  {/* Scenario 56 — who asks whom: the destination requests,
+                      the source supplies. */}
                   <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
-                    From
+                    From · Supplying branch
                   </p>
-                  <p className="mt-1 truncate text-[16px] font-semibold">
-                    {branchLabel(transfer.fromWarehouse)}
-                  </p>
+                  <LocationName
+                    wh={transfer.fromWarehouse}
+                    className="mt-1 text-[16px] font-semibold"
+                    subtitleClassName="text-[12px] text-[#5b5b6b]"
+                  />
                   <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
-                    Source branch · stock deducted on dispatch
+                    Sends the stock · deducted on dispatch
                   </p>
                 </div>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ddd0f7] bg-white text-[#5b21b6]">
@@ -1108,13 +1425,15 @@ export default function TransferDetailModal({
                 </span>
                 <div className="min-w-0 flex-1 text-right">
                   <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
-                    To
+                    To · Requesting branch
                   </p>
-                  <p className="mt-1 truncate text-[16px] font-semibold">
-                    {branchLabel(transfer.toWarehouse)}
-                  </p>
+                  <LocationName
+                    wh={transfer.toWarehouse}
+                    className="mt-1 text-[16px] font-semibold"
+                    subtitleClassName="text-[12px] text-[#5b5b6b]"
+                  />
                   <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
-                    Destination · stock added on receipt
+                    Asked for the stock · added on receipt
                   </p>
                 </div>
               </div>
@@ -1128,7 +1447,14 @@ export default function TransferDetailModal({
                 label="Expected Arrival"
                 value={transfer.expectedArrival ? formatDateOnly(transfer.expectedArrival) : null}
               />
-              <Fact label="Requested By" value={transfer.requestedByName} />
+              <Fact
+                label="Approved By"
+                value={
+                  transfer.acceptedByName
+                    ? `${transfer.acceptedByName} · ${branchLabel(transfer.fromWarehouse)}`
+                    : null
+                }
+              />
               {transfer.reason && (
                 <div className="col-span-2 sm:col-span-4">
                   <Fact label="Reason" value={transfer.reason} />
@@ -1312,24 +1638,30 @@ export default function TransferDetailModal({
                             )}
                           </td>
                           {hasSerialLine && (
-                            <td className="px-3 py-2 font-mono text-xs text-zinc-500">
-                              {line.receiptCorrectedFromSerial ? (
+                            <td className="px-3 py-2 font-mono text-[13px] text-[#17171c]">
+                              {awaitingDispatch &&
+                              !line.serialNumber?.serialNumber &&
+                              line.item?.isSerialTracked ? (
+                                <span className="font-sans text-xs italic text-zinc-400">
+                                  Assigned at dispatch
+                                </span>
+                              ) : line.receiptCorrectedFromSerial ? (
                                 <span
                                   title={`Corrected at receipt — was ${line.receiptCorrectedFromSerial.serialNumber}.${line.receiptCorrectionReason ? ` ${line.receiptCorrectionReason}` : ''}`}
                                 >
                                   <span className="text-zinc-300 line-through">
                                     {line.receiptCorrectedFromSerial.serialNumber}
                                   </span>{' '}
-                                  {line.serialNumber?.serialNumber ?? '—'}
+                                  <LineSerial line={line} />
                                 </span>
                               ) : line.receiptCorrectionReason ? (
                                 <span
                                   title={`Corrected at receipt. ${line.receiptCorrectionReason}`}
                                 >
-                                  {line.serialNumber?.serialNumber ?? '—'} *
+                                  <LineSerial line={line} /> *
                                 </span>
                               ) : (
-                                (line.serialNumber?.serialNumber ?? '—')
+                                <LineSerial line={line} />
                               )}
                             </td>
                           )}
@@ -1342,6 +1674,12 @@ export default function TransferDetailModal({
                                 line.serialNumber?.status === 'lost_in_transit' ? (
                                   <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
                                     Lost in Transit
+                                  </span>
+                                ) : Number(line.receivedQuantity ?? 0) < 1 ? (
+                                  // Scenario 71 — left unticked on a partial
+                                  // receive: still on its way, not lost.
+                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                    Not received yet
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
@@ -1368,6 +1706,168 @@ export default function TransferDetailModal({
                 </div>
               </div>
             )}
+
+            {/* Substitution — the warehouse's "we don't have that" lever */}
+            {status === 'requested' &&
+              canProposeSubstitutionThis &&
+              (transfer.lines ?? [])
+                .filter((line) => line.id)
+                .map((line) => (
+                  <div key={`propose-${line.id}`}>
+                    {proposingLineId === line.id ? (
+                      <form
+                        onSubmit={proposeForm.handleSubmit(handleProposeSubmit)}
+                        className="space-y-2 rounded-xl border border-[#ddd0f7] bg-[#fcfaff] p-3"
+                      >
+                        <p className="text-[12.5px] font-semibold text-[#3f1490]">
+                          Propose a substitute for {line.item?.name ?? 'this item'}
+                        </p>
+                        <Controller
+                          name="proposedItemId"
+                          control={proposeForm.control}
+                          render={({ field }) => (
+                            <ItemSearchCombobox
+                              value={field.value}
+                              onChange={(id) => field.onChange(id)}
+                              error={proposeForm.formState.errors.proposedItemId?.message}
+                              placeholder="Search item by name or SKU…"
+                            />
+                          )}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Controller
+                            name="proposedQuantity"
+                            control={proposeForm.control}
+                            render={({ field }) => (
+                              <input
+                                type="number"
+                                min={0.01}
+                                step="any"
+                                value={Number.isNaN(field.value) ? '' : field.value}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value === '' ? NaN : Number(e.target.value)
+                                  )
+                                }
+                                placeholder="Qty"
+                                className="w-24 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              />
+                            )}
+                          />
+                          {proposeForm.formState.errors.proposedQuantity && (
+                            <span className="text-[11px] text-red-600">
+                              {proposeForm.formState.errors.proposedQuantity.message}
+                            </span>
+                          )}
+                        </div>
+                        <Controller
+                          name="reason"
+                          control={proposeForm.control}
+                          render={({ field }) => (
+                            <textarea
+                              {...field}
+                              rows={2}
+                              placeholder="Why the requested item can't be fulfilled…"
+                              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12.5px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          )}
+                        />
+                        {proposeForm.formState.errors.reason && (
+                          <span className="text-[11px] text-red-600">
+                            {proposeForm.formState.errors.reason.message}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="submit"
+                            disabled={isProposingSubstitution}
+                            className="rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
+                          >
+                            {isProposingSubstitution ? 'Proposing…' : 'Propose substitution'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProposingLineId(null)
+                              proposeForm.reset()
+                            }}
+                            className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProposingLineId(line.id ?? null)
+                          proposeForm.reset({
+                            proposedItemId: '',
+                            proposedQuantity: Number(line.quantity) || 1,
+                            reason: '',
+                          })
+                        }}
+                        className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+                      >
+                        <Repeat className="h-3 w-3" /> Propose different item for{' '}
+                        {line.item?.name ?? 'this line'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+            {status === 'pending_substitution_confirmation' &&
+              (transfer.lines ?? [])
+                .filter((line) => line.id && line.proposedItemId)
+                .map((line) => (
+                  <div
+                    key={`confirm-${line.id}`}
+                    className="space-y-2 rounded-xl border border-[#ddd0f7] bg-[#fcfaff] p-3"
+                  >
+                    <p className="text-[12.5px] font-semibold text-[#3f1490]">
+                      Substitution proposed for {line.item?.name ?? 'this line'}
+                    </p>
+                    <p className="text-[12.5px] text-[#17171c]">
+                      <span className="text-zinc-400 line-through">{line.item?.name}</span>{' '}
+                      <ArrowRight className="inline h-3 w-3" />{' '}
+                      <span className="font-medium">
+                        {line.proposedItem?.name ?? line.proposedItemId}
+                      </span>
+                      {' · Qty '}
+                      {line.proposedQuantity}
+                    </p>
+                    {line.substitutionReason && (
+                      <p className="text-[11.5px] text-zinc-500">
+                        Reason: {line.substitutionReason}
+                      </p>
+                    )}
+                    {canConfirmSubstitutionThis ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmDecision(line.id as string, 'accept')}
+                          disabled={isConfirmingSubstitution}
+                          className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          Accept substitution
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmDecision(line.id as string, 'reject')}
+                          disabled={isConfirmingSubstitution}
+                          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-[11.5px] italic text-zinc-400">
+                        Waiting on the requesting branch to confirm.
+                      </p>
+                    )}
+                  </div>
+                ))}
 
             {/* Ledger timeline */}
             <div>
@@ -1458,7 +1958,7 @@ export default function TransferDetailModal({
                   <LedgerEvent
                     icon={<Truck className="h-3.5 w-3.5" />}
                     label={`Dispatched — stock deducted from ${branchLabel(transfer.fromWarehouse, 'source')}`}
-                    timestamp={transfer.dispatchedAt ?? transfer.transferDate}
+                    timestamp={transfer.dispatchedAt}
                     color="text-blue-700 bg-blue-100"
                   />
                 )}
@@ -1466,7 +1966,7 @@ export default function TransferDetailModal({
                   <LedgerEvent
                     icon={<CheckCircle className="h-3.5 w-3.5" />}
                     label={`Received — stock added to ${branchLabel(transfer.toWarehouse, 'destination')}`}
-                    timestamp={transfer.receivedAt}
+                    timestamp={transfer.receivedDate}
                     color="text-green-700 bg-green-100"
                   />
                 )}
@@ -1474,7 +1974,7 @@ export default function TransferDetailModal({
                   <LedgerEvent
                     icon={<AlertTriangle className="h-3.5 w-3.5" />}
                     label="Partially received — see item table for shortfalls"
-                    timestamp={transfer.receivedAt}
+                    timestamp={transfer.receivedDate}
                     color="text-amber-700 bg-amber-100"
                   />
                 )}
@@ -1527,7 +2027,7 @@ export default function TransferDetailModal({
                   />
                 </div>
 
-                {serialAssignmentFields.length > 0 && (
+                {serialGroups.length > 0 && (
                   <div>
                     <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                       Assign Serial Numbers
@@ -1546,6 +2046,7 @@ export default function TransferDetailModal({
                           itemLabel={g.itemLabel}
                           fromWarehouseId={transfer?.fromWarehouse?.id}
                           slotIndices={g.slotIndices}
+                          pinnedSerials={g.pinnedSerials}
                           canOverride={canOverrideSerial}
                           errors={dispatchForm.formState.errors.serialAssignments}
                         />
@@ -1561,18 +2062,19 @@ export default function TransferDetailModal({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver Name <span className="text-red-500">*</span>
+                      Driver Name
                     </label>
                     <Controller
                       name="driverName"
                       control={dispatchForm.control}
                       render={({ field }) => (
                         <VehicleAutocompleteInput
-                          value={field.value}
+                          mode="driver"
+                          value={field.value ?? ''}
                           onChange={field.onChange}
-                          onPickVehicle={pickDispatchVehicle}
+                          onPickVehicle={pickDispatchDriver}
                           search={searchDispatchVehicles}
-                          queryKey={`dispatch-vehicle-search-${transfer?.id}`}
+                          queryKey={`dispatch-driver-search-${transfer?.id}`}
                           placeholder="e.g. Juan dela Cruz"
                           error={dispatchForm.formState.errors.driverName?.message}
                         />
@@ -1581,7 +2083,7 @@ export default function TransferDetailModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver Phone <span className="text-red-500">*</span>
+                      Driver Phone
                     </label>
                     <Controller
                       name="driverPhone"
@@ -1686,9 +2188,28 @@ export default function TransferDetailModal({
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Items Received
-                  </label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-xs font-medium text-zinc-600">
+                      Items Received
+                    </label>
+                    {receiveLineFields.some((f) => f.isSerial) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          receiveLineFields.forEach((f, i) => {
+                            if (f.isSerial) {
+                              receiveForm.setValue(`lines.${i}.quantityReceived`, 1, {
+                                shouldDirty: true,
+                              })
+                            }
+                          })
+                        }
+                        className="text-xs font-medium text-prominent-purple-600 hover:text-prominent-purple-800 hover:underline"
+                      >
+                        Mark all received
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
                     {receiveLineFields.map((lineField, idx) => (
                       <div
@@ -1781,7 +2302,15 @@ export default function TransferDetailModal({
                     </label>
                     <button
                       type="button"
-                      onClick={() => appendExtraLine({ itemId: '', quantity: 1, notes: '' })}
+                      onClick={() =>
+                        appendExtraLine({
+                          itemId: '',
+                          quantity: 1,
+                          notes: '',
+                          isSerialTracked: false,
+                          serialNumbers: undefined,
+                        })
+                      }
                       className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
                     >
                       + Add unlisted item
@@ -1789,62 +2318,98 @@ export default function TransferDetailModal({
                   </div>
                   {extraLineFields.length > 0 && (
                     <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
-                      {extraLineFields.map((extraField, idx) => (
-                        <div
-                          key={extraField.id}
-                          className="flex items-center gap-2 border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <Controller
-                              name={`extraLines.${idx}.itemId`}
-                              control={receiveForm.control}
-                              render={({ field }) => (
-                                <ItemSearchCombobox
-                                  value={field.value ?? ''}
-                                  onChange={(id) => field.onChange(id)}
-                                  error={
-                                    receiveForm.formState.errors.extraLines?.[idx]?.itemId?.message
-                                  }
+                      {extraLineFields.map((extraField, idx) => {
+                        const isSerialTracked = !!watchedExtraLines[idx]?.isSerialTracked
+                        return (
+                          <div
+                            key={extraField.id}
+                            className="border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="min-w-0 flex-1">
+                                <Controller
+                                  name={`extraLines.${idx}.itemId`}
+                                  control={receiveForm.control}
+                                  render={({ field }) => (
+                                    <ItemSearchCombobox
+                                      value={field.value ?? ''}
+                                      onChange={(id) => field.onChange(id)}
+                                      onSelect={(option) => {
+                                        const meta = option.meta as ItemSearchMeta | undefined
+                                        const tracked = !!meta?.isSerialTracked
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.isSerialTracked`,
+                                          tracked,
+                                          { shouldValidate: false }
+                                        )
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.serialNumbers`,
+                                          tracked ? [''] : undefined,
+                                          { shouldValidate: false }
+                                        )
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.quantity`,
+                                          tracked ? 0 : 1,
+                                          { shouldValidate: false }
+                                        )
+                                      }}
+                                      error={
+                                        receiveForm.formState.errors.extraLines?.[idx]?.itemId
+                                          ?.message
+                                      }
+                                      placeholder="Search item by name or SKU…"
+                                    />
+                                  )}
+                                />
+                              </div>
+                              {!isSerialTracked && (
+                                <Controller
+                                  name={`extraLines.${idx}.quantity`}
+                                  control={receiveForm.control}
+                                  render={({ field }) => (
+                                    <input
+                                      type="number"
+                                      min={0.01}
+                                      step="any"
+                                      value={Number.isNaN(field.value) ? '' : field.value}
+                                      onChange={(e) =>
+                                        field.onChange(
+                                          e.target.value === '' ? NaN : Number(e.target.value)
+                                        )
+                                      }
+                                      onBlur={() => {
+                                        if (Number.isNaN(field.value)) field.onChange(0)
+                                      }}
+                                      className="w-20 shrink-0 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                                    />
+                                  )}
                                 />
                               )}
-                            />
-                          </div>
-                          <Controller
-                            name={`extraLines.${idx}.quantity`}
-                            control={receiveForm.control}
-                            render={({ field }) => (
-                              <input
-                                type="number"
-                                min={0.01}
-                                step="any"
-                                value={Number.isNaN(field.value) ? '' : field.value}
-                                onChange={(e) =>
-                                  field.onChange(
-                                    e.target.value === '' ? NaN : Number(e.target.value)
-                                  )
-                                }
-                                onBlur={() => {
-                                  if (Number.isNaN(field.value)) field.onChange(0)
-                                }}
-                                className="w-20 shrink-0 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              <button
+                                type="button"
+                                onClick={() => removeExtraLine(idx)}
+                                className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                                aria-label="Remove unlisted item"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            {isSerialTracked && (
+                              <UnlistedSerialInputs
+                                control={receiveForm.control}
+                                setValue={receiveForm.setValue}
+                                index={idx}
+                                isDuplicate={isDuplicateExtraSerial}
                               />
                             )}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeExtraLine(idx)}
-                            className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
-                            aria-label="Remove unlisted item"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                   <p className="mt-1 text-xs text-zinc-400">
-                    Serial-tracked items can&apos;t be added here — route those through the serial
-                    numbers module.
+                    A serial-tracked pick switches to serial entry — one box per unit, scanner
+                    ready.
                   </p>
                 </div>
 
@@ -1863,6 +2428,11 @@ export default function TransferDetailModal({
                     )}
                   />
                 </div>
+                {receiveForm.formState.errors.root && (
+                  <p className="text-xs text-red-600">
+                    {receiveForm.formState.errors.root.message}
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -2087,15 +2657,26 @@ export default function TransferDetailModal({
                   {(transfer.lines ?? []).length}{' '}
                   {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
                 </p>
-                {canCancelThis && (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmCancel(true)}
-                    className="mt-0.5 text-[12.5px] font-medium text-[#b42318] hover:underline"
-                  >
-                    Cancel Transfer
-                  </button>
-                )}
+                <div className="mt-0.5 flex items-center gap-3">
+                  {canEditThis && onEdit && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(transfer)}
+                      className="text-[12.5px] font-medium text-[#5b21b6] hover:underline"
+                    >
+                      Edit Request
+                    </button>
+                  )}
+                  {canCancelThis && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmCancel(true)}
+                      className="text-[12.5px] font-medium text-[#b42318] hover:underline"
+                    >
+                      Cancel Transfer
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex gap-3">
                 {(status === 'in_transit' || isReceivedStatus) && (
@@ -2132,7 +2713,8 @@ export default function TransferDetailModal({
                   <button
                     type="button"
                     onClick={openDispatchForm}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
+                    disabled={!lineDetailReady}
+                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Truck className="h-4 w-4" />
                     Dispatch
@@ -2277,19 +2859,23 @@ function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; s
   // via an unscoped `modal.getByText(status, { exact: true })`, which a
   // second exact-text match here would turn into a Playwright strict-mode
   // violation.
+  // Each reached step shows the date it happened, like Request does. A step
+  // reached with no date on record falls back to a plain word, not a dash.
+  const dateOr = (iso: string | null | undefined, fallback: string): string =>
+    iso ? formatDateOnly(iso) : fallback
   const steps: { label: string; meta: string }[] = [
     { label: 'Request', meta: formatDateOnly(transfer.transferDate) },
     {
       label: 'Accept',
-      meta: doneAccepted ? (transfer.acceptedByName ?? 'Accepted') : 'Awaiting acceptance',
+      meta: doneAccepted ? dateOr(transfer.acceptedAt, 'Accepted') : 'Awaiting acceptance',
     },
     {
       label: 'Dispatch',
-      meta: doneDispatched ? `${totalQty} units sent` : 'Not dispatched',
+      meta: doneDispatched ? dateOr(transfer.dispatchedAt, 'Dispatched') : 'Not dispatched',
     },
     {
       label: 'Receive',
-      meta: receivedQty > 0 ? `${receivedQty} of ${totalQty} units` : 'Not received',
+      meta: receivedQty > 0 ? dateOr(transfer.receivedDate, 'Received') : 'Not received',
     },
   ]
 

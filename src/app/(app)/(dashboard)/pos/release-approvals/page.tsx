@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import ReleaseApprovalsList from './_components/ReleaseApprovalsList'
 
 export const metadata = {
-  title: 'Release Approvals | Prominent Enterprise',
+  title: 'Release Approvals | NIG Central',
 }
 
 export default async function ReleaseApprovalsPage() {

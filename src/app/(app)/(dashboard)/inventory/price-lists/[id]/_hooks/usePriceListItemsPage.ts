@@ -88,6 +88,26 @@ export function usePriceListItemsPage(priceListId: string, currentListStatus: st
     },
   })
 
+  // Editing an existing row goes through the same batch endpoint as adding
+  // one — it is an upsert, so "save these six fields for these item ids" is
+  // the same request either way. Only the toast wording differs.
+  const saveMutation = useMutation({
+    mutationFn: (items: UpsertPriceListItemFormValues[]) =>
+      batchUpsertPriceListItems(priceListId, items),
+    onSuccess: (result) => {
+      if (result.success) {
+        const data = result.data as { upserted?: number; listStatus?: unknown } | undefined
+        notifyResult('updated', data?.upserted ?? 0, data?.listStatus)
+      } else {
+        showToast({
+          title: 'Failed to save prices',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const removeOneMutation = useMutation({
     mutationFn: (itemId: string) => removePriceListItem(priceListId, itemId),
     onSuccess: (result) => {
@@ -136,6 +156,8 @@ export function usePriceListItemsPage(priceListId: string, currentListStatus: st
     error: itemsQuery.error,
     addItems: addMutation.mutateAsync,
     isAdding: addMutation.isPending,
+    saveItems: saveMutation.mutateAsync,
+    isSaving: saveMutation.isPending,
     removeItem: removeOneMutation.mutateAsync,
     removeItems: removeManyMutation.mutateAsync,
     isRemovingMany: removeManyMutation.isPending,

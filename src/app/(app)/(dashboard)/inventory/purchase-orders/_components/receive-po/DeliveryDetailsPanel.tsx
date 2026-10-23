@@ -8,8 +8,6 @@ import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-order
 import { INPUT, INPUT_BAD, PANEL } from './receiveTokens'
 import type { ReceivePoFormValues } from './receiveSchema'
 
-type WarehouseOption = { id: string; name: string }
-
 /** Shared with the checks card, which focuses this field when the receiver
  * presses Fix on the "delivery receipt number is required" blocker. */
 export const DR_FIELD_ID = 'receive-po-delivery-receipt-number'
@@ -18,7 +16,6 @@ type Props = {
   control: Control<ReceivePoFormValues>
   errors: FieldErrors<ReceivePoFormValues>
   po: PurchaseOrderSummary
-  warehouses: WarehouseOption[]
   /** Whether validation messages are live yet — they are held back until the
    * receiver has tried to move on, so an untouched form isn't red on open. */
   showErrors: boolean
@@ -33,7 +30,6 @@ export function DeliveryDetailsPanel({
   control,
   errors,
   po,
-  warehouses,
   showErrors,
   deliveryReceiptNumber,
   recap,
@@ -65,10 +61,10 @@ export function DeliveryDetailsPanel({
       </div>
 
       <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 px-4.5 pb-4 pt-3.5 sm:grid-cols-2">
-        <Field label="Destination" required>
-          {po.warehouseId ? (
-            // Locked, not merely disabled: stock always lands where it was
-            // ordered for, and the lock icon says why the box can't be typed in.
+        {po.warehouseId ? (
+          <Field label="Destination" required>
+            {/* Locked, not merely disabled: stock always lands where it was
+                ordered for, and the lock icon says why the box can't be typed in. */}
             <Tooltip label="Inherited from the purchase order" className="w-full" side="bottom">
               <div className="flex h-[38px] w-full items-center gap-2.5 rounded-lg border border-[#e4e4e9] bg-[#f7f7f8] px-3">
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#3d3d4a]">
@@ -77,27 +73,23 @@ export function DeliveryDetailsPanel({
                 <Lock className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
               </div>
             </Tooltip>
-          ) : (
-            // Fallback for a PO created before the destination warehouse became
-            // required at PO-creation time — still restricted to the real
-            // warehouses, just editable here instead of locked.
-            <Controller
-              name="warehouseId"
-              control={control}
-              render={({ field }) => (
-                <select {...field} className={INPUT}>
-                  <option value="">Select warehouse…</option>
-                  {warehouses.map((wh) => (
-                    <option key={wh.id} value={wh.id}>
-                      {wh.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            />
-          )}
-          {showErrors && errors.warehouseId && <FieldError text={errors.warehouseId.message} />}
-        </Field>
+          </Field>
+        ) : (
+          // A PO with no location (optional since Scenario 71) names its
+          // destination only in its delivery instructions — shown as-is.
+          // Receiving it is blocked for now (see the no-location blocker in
+          // ReceiveAgainstPoModal) until drop-ship booking is decided.
+          <div className="sm:col-span-2">
+            <Field label="Destination" hint="from the PO's delivery instructions">
+              <div className="flex w-full items-start gap-2.5 rounded-lg border border-[#e4e4e9] bg-[#f7f7f8] px-3 py-2.5">
+                <span className="min-w-0 flex-1 whitespace-pre-line text-[13px] text-[#3d3d4a]">
+                  {po.deliveryInstructions?.trim() || '—'}
+                </span>
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
+              </div>
+            </Field>
+          </div>
+        )}
 
         <Field label="Date received">
           <Controller
@@ -163,7 +155,7 @@ export function DeliveryDetailsPanel({
                   {...field}
                   value={field.value ?? ''}
                   type="text"
-                  placeholder="Pallet condition, driver name, anything the receiver should record…"
+                  placeholder="Pallet condition, seal numbers, anything the receiver should record…"
                   className={INPUT}
                 />
               )}

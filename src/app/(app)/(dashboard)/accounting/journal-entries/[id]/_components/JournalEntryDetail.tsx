@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { getJournalEntryById, type JournalEntry } from '@/src/libs/data/AccountingData'
+import { sourceDocumentLink } from '@/src/libs/format/sourceDocumentLink'
+import { entryJournalLabel, formatJournalType } from '@/src/libs/format/journalType'
+import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-amber-50 text-amber-700 border border-amber-200',
@@ -57,20 +60,57 @@ export default function JournalEntryDetail({ id }: { id: string }) {
   }
 
   const transactions = entry.transactions ?? []
+  const source = sourceDocumentLink({
+    sourceModule: entry.sourceModule,
+    sourceDocumentId: entry.sourceDocumentId,
+    sourceDocumentNo: entry.sourceDocumentNo,
+    code: entry.reference,
+    description: entry.description,
+  })
   // Most entries are not about items at all — a collection is cash in and a
-  // receivable down, a VAT accrual is one account against another. Showing
-  // Item/Qty/Unit Price/Subtotal on those printed four columns of dashes on
-  // every row. They appear only when at least one line actually has that
-  // detail, which today means the revenue/COGS/inventory lines a sale raises,
-  // and anything hand-keyed with a quantity.
-  const showItemColumns = transactions.some(
-    (t) => t.item != null || t.quantity != null || t.unitPrice != null
-  )
-  const totalSubtotal = transactions.reduce((s, t) => {
-    const q = t.quantity ?? 0
-    const u = t.unitPrice ?? 0
-    return s + q * u
-  }, 0)
+  // receivable down, a VAT accrual is one account against another. An Item
+  // column of dashes on every row says nothing, so it appears only when at
+  // least one line is for an item, which today means the revenue/COGS/
+  // inventory lines a sale raises. Qty, Unit Price and Subtotal are not shown
+  // at all: an entry is accounts and amounts, and those belong to the document
+  // it came from.
+  const showItemColumn = transactions.some((t) => t.item != null)
+  // A sale posts its revenue side and its stock side (Dr Cost of Sales / Cr
+  // Inventory) in one entry, and an installment sale's down payment (Dr cash
+  // or bank / Cr Accounts Receivable) is added to that same entry once it is
+  // tendered. Keep the blocks together with a gap between them — sale, then
+  // any lines booked to another journal (the down payment, a Cash Receipt),
+  // then stock; order within each block is unchanged. A collection on an
+  // installment sale carries its interest recognition (Dr Unearned Interest
+  // Income / Cr Interest Income) the same way — its own block after the cash
+  // and receivable lines, with the same gap before it.
+  type Line = (typeof transactions)[number]
+  const isStockLine = (t: Line) =>
+    t.account?.category === 'INVENTORY' || t.account?.category === 'COGS'
+  // The interest a collection recognised (or a cancelled one took back). Told
+  // by its description: the accounts also appear on the sale's own entry, where
+  // they belong with the rest of the sale.
+  const isInterestLine = (t: Line) =>
+    /^(Interest recognized on collection|Cancel interest recognized):/.test(t.description ?? '')
+  // The journal a line is booked to when it is not its entry's own.
+  const otherJournal = (t: Line) =>
+    !isStockLine(t) && t.journalType && t.journalType !== entry.journalType ? t.journalType : null
+  const otherJournals = [...new Set(transactions.map(otherJournal).filter((j): j is string => !!j))]
+  const lineGroups: { label: string | null; lines: Line[] }[] = [
+    {
+      label: null,
+      lines: transactions.filter((t) => !isStockLine(t) && !otherJournal(t) && !isInterestLine(t)),
+    },
+    {
+      label: null,
+      lines: transactions.filter((t) => !isStockLine(t) && !otherJournal(t) && isInterestLine(t)),
+    },
+    ...otherJournals.map((j) => ({
+      label: formatJournalType(j),
+      lines: transactions.filter((t) => otherJournal(t) === j),
+    })),
+    { label: null, lines: transactions.filter(isStockLine) },
+  ].filter((g) => g.lines.length > 0)
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
@@ -111,11 +151,31 @@ export default function JournalEntryDetail({ id }: { id: string }) {
           </span>
         </div>
         <div className="mt-2 grid max-w-lg grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-sm">
-          {entry.sourceDocumentNo && (
+          {(entry.sourceDocumentNo || source) && (
             <>
               <span className="text-gray-500">Source document</span>
+              {/* Scenario 62 — the last hop of a report drill-down:
+                  figure → ledger line → this entry → the document itself. */}
+              {source ? (
+                <Link
+                  href={source.href}
+                  className="text-left font-medium tabular-nums text-purple-700 hover:underline"
+                >
+                  {entry.sourceDocumentNo || `Open ${source.kind}`}
+                  <span className="ml-2 text-xs font-normal text-gray-500">{source.kind}</span>
+                </Link>
+              ) : (
+                <span className="text-left font-medium tabular-nums text-gray-800">
+                  {entry.sourceDocumentNo}
+                </span>
+              )}
+            </>
+          )}
+          {entry.voucherControlNo && (
+            <>
+              <span className="text-gray-500">Voucher Control No.</span>
               <span className="text-left font-medium tabular-nums text-gray-800">
-                {entry.sourceDocumentNo}
+                {entry.voucherControlNo}
               </span>
             </>
           )}
@@ -124,7 +184,7 @@ export default function JournalEntryDetail({ id }: { id: string }) {
             {entry.branchName ?? 'Tenant-wide'}
           </span>
           <span className="text-gray-500">Type</span>
-          <span className="text-left font-medium text-gray-800">{entry.journalType || '—'}</span>
+          <span className="text-left font-medium text-gray-800">{entryJournalLabel(entry)}</span>
           {entry.payee && (
             <>
               <span className="text-gray-500">Payee</span>
@@ -135,95 +195,76 @@ export default function JournalEntryDetail({ id }: { id: string }) {
             <>
               <span className="text-gray-500">Posted by</span>
               <span className="text-left font-medium tabular-nums text-gray-800">
-                {entry.postedBy} · {formatDate(entry.postedAt)}
+                {entry.postedByName ?? entry.postedBy} · {formatDate(entry.postedAt)}
               </span>
             </>
           )}
         </div>
       </header>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatBox label="Total Debit" value={formatMoney(entry.totalDebit)} />
-        <StatBox label="Total Credit" value={formatMoney(entry.totalCredit)} />
-        <StatBox label="Lines" value={String(transactions.length)} />
-        <StatBox
-          label="Balanced"
-          value={Math.abs((entry.totalDebit ?? 0) - (entry.totalCredit ?? 0)) < 0.01 ? 'Yes' : 'No'}
-          emphasize={Math.abs((entry.totalDebit ?? 0) - (entry.totalCredit ?? 0)) >= 0.01}
-        />
-      </div>
+      {/* Scenario 71 — a POS sale's price override / typed terms / waiver, with
+          its reason and note: why the price in these lines is what it is. */}
+      {entry.posException && <PosExceptionPanel exception={entry.posException} className="mt-6" />}
 
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction Lines</h2>
         {transactions.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-gray-400">No transaction lines.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[560px] text-sm">
               <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
                   <th className="py-2 pr-4">Account</th>
-                  {showItemColumns && <th className="py-2 pr-4">Item</th>}
+                  {showItemColumn && <th className="py-2 pr-4">Item</th>}
                   <th className="py-2 pr-4">Description</th>
-                  {showItemColumns && (
-                    <>
-                      <th className="py-2 pr-4 text-right">Qty</th>
-                      <th className="py-2 pr-4 text-right">Unit Price</th>
-                      <th className="py-2 pr-4 text-right">Subtotal</th>
-                    </>
-                  )}
                   <th className="py-2 pr-4 text-right">Debit</th>
                   <th className="py-2 text-right">Credit</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {transactions.map((t, i) => {
-                  const qty = t.quantity
-                  const unitPrice = t.unitPrice
-                  const subtotal = qty != null && unitPrice != null ? qty * unitPrice : null
-                  return (
-                    <tr key={t.id ?? i}>
-                      <td className="py-2 pr-4 text-gray-900">
-                        {t.account ? `${t.account.number} — ${t.account.name}` : t.accountId}
-                      </td>
-                      {showItemColumns && (
-                        <td className="py-2 pr-4 text-gray-600">{t.item?.name ?? '—'}</td>
-                      )}
-                      <td className="py-2 pr-4 text-gray-500">{t.description || '—'}</td>
-                      {showItemColumns && (
-                        <>
-                          <td className="py-2 pr-4 text-right tabular-nums">{qty ?? '—'}</td>
-                          <td className="py-2 pr-4 text-right tabular-nums">
-                            {unitPrice != null ? formatMoney(unitPrice) : '—'}
-                          </td>
-                          <td className="py-2 pr-4 text-right tabular-nums">
-                            {subtotal != null ? formatMoney(subtotal) : '—'}
-                          </td>
-                        </>
-                      )}
-                      <td className="py-2 pr-4 text-right font-medium tabular-nums">
-                        {t.debit ? formatMoney(t.debit) : '—'}
-                      </td>
-                      <td className="py-2 text-right font-medium tabular-nums">
-                        {t.credit ? formatMoney(t.credit) : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
+              {lineGroups.map((group, gi) => (
+                <Fragment key={gi}>
+                  {gi > 0 && (
+                    <tbody>
+                      <tr>
+                        <td
+                          colSpan={showItemColumn ? 5 : 4}
+                          className="h-10 bg-gray-100 px-3 align-middle text-[11px] font-semibold uppercase tracking-wide text-gray-500"
+                        >
+                          {group.label}
+                        </td>
+                      </tr>
+                    </tbody>
+                  )}
+                  <tbody className="divide-y divide-gray-100">
+                    {group.lines.map((t, i) => (
+                      <tr key={t.id ?? i}>
+                        <td className="py-2 pr-4 text-gray-900">
+                          {t.account ? `${t.account.number} — ${t.account.name}` : t.accountId}
+                        </td>
+                        {showItemColumn && (
+                          <td className="py-2 pr-4 text-gray-600">{t.item?.name ?? '—'}</td>
+                        )}
+                        <td className="py-2 pr-4 text-gray-500">{t.description || '—'}</td>
+                        <td className="py-2 pr-4 text-right font-medium tabular-nums">
+                          {t.debit ? formatMoney(t.debit) : '—'}
+                        </td>
+                        <td className="py-2 text-right font-medium tabular-nums">
+                          {t.credit ? formatMoney(t.credit) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Fragment>
+              ))}
               <tfoot className="border-t border-gray-300">
                 <tr>
                   <td
-                    colSpan={showItemColumns ? 5 : 2}
+                    colSpan={showItemColumn ? 3 : 2}
                     className="py-2 pr-4 text-right font-semibold text-gray-600"
                   >
                     Total
                   </td>
-                  {showItemColumns && (
-                    <td className="py-2 pr-4 text-right font-bold tabular-nums">
-                      {formatMoney(totalSubtotal)}
-                    </td>
-                  )}
                   <td className="py-2 pr-4 text-right font-bold tabular-nums">
                     {formatMoney(entry.totalDebit)}
                   </td>
@@ -236,27 +277,6 @@ export default function JournalEntryDetail({ id }: { id: string }) {
           </div>
         )}
       </section>
-    </div>
-  )
-}
-
-function StatBox({
-  label,
-  value,
-  emphasize,
-}: {
-  label: string
-  value: string
-  emphasize?: boolean
-}) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
-      <p
-        className={`mt-1 text-lg font-semibold tabular-nums ${emphasize ? 'text-red-600' : 'text-gray-900'}`}
-      >
-        {value}
-      </p>
     </div>
   )
 }

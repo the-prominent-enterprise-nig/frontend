@@ -16,6 +16,7 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import CategorySelect from '@/src/components/ui/CategorySelect'
+import { useItemStockStatus } from '../_hooks/useItemStockStatus'
 
 export default function ItemMasterList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
@@ -52,6 +53,8 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     setApprovalStatus,
     primaryCategoryId,
     setPrimaryCategoryId,
+    region,
+    setRegion,
     resetFilters,
     sortBy,
     sortOrder,
@@ -93,6 +96,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     rejectItem,
     isRejectingItem,
   } = useItemMaster()
+  const stockByItem = useItemStockStatus(items)
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isBundleCreateOpen, setIsBundleCreateOpen] = useState(false)
@@ -116,12 +120,12 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
   }
 
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
+    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
       <div className="mx-auto max-w-7xl space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Item Master</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Item Master</h1>
             <p className="mt-1 text-sm text-zinc-500">
               Create and manage product records across the system.
             </p>
@@ -178,7 +182,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or serial number…"
+              placeholder="Search by name, brand, model, category or serial number…"
               className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
             {search && (
@@ -202,6 +206,17 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               <option value="active">Active</option>
               <option value="discontinued">Discontinued</option>
               <option value="archived">Archived</option>
+            </select>
+            {/* Scenario 56 — Operations: items with units on hand there. */}
+            <select
+              value={region ?? ''}
+              onChange={(e) => setRegion((e.target.value || undefined) as typeof region)}
+              aria-label="Operations"
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            >
+              <option value="">All Operations</option>
+              <option value="panay">Panay (in stock)</option>
+              <option value="negros">Negros (in stock)</option>
             </select>
             {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
               <select
@@ -254,6 +269,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               lifecycle ||
               approvalStatus ||
               primaryCategoryId ||
+              region ||
               sortBy !== 'name' ||
               sortOrder !== 'asc') && (
               <button
@@ -297,6 +313,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           onRejectAccounting={(item) => setRejectingAccountingItem(item)}
           onApproveItem={(item) => setApprovingItem(item)}
           onRejectItem={(item) => setRejectingItem(item)}
+          stockByItem={stockByItem}
         />
 
         {/* Pagination */}
@@ -356,7 +373,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         categories={categories}
         uomOptions={uomOptions}
         brandOptions={brandOptions}
-        typeOptions={typeOptions}
       />
 
       {/* Edit Modal */}

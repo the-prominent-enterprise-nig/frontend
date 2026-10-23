@@ -14,6 +14,7 @@ import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_compo
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { NoDestinationWarning } from '../../purchase-orders/_components/NoDestinationWarning'
 
 type Props = {
   open: boolean
@@ -35,6 +36,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
     defaultValues: {
       supplierId: '',
       warehouseId: '',
+      orderDate: '',
       expectedDeliveryDate: '',
       deliveryInstructions: '',
       paymentTerms: '',
@@ -47,6 +49,10 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
     control,
     name: 'lines',
   })
+  const [destinationId, destinationInstructions] = useWatch({
+    control,
+    name: ['warehouseId', 'deliveryInstructions'],
+  })
 
   useEffect(() => {
     if (open && pr) {
@@ -58,6 +64,9 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
       reset({
         supplierId: pr.supplierId ?? '',
         warehouseId: pr.warehouseId ?? '',
+        // The PO Date the requester set, else today. en-CA formats as
+        // YYYY-MM-DD in the local timezone.
+        orderDate: new Date(pr.orderDate ?? Date.now()).toLocaleDateString('en-CA'),
         expectedDeliveryDate: pr.expectedDeliveryDate ? pr.expectedDeliveryDate.slice(0, 10) : '',
         deliveryInstructions: pr.deliveryInstructions ?? '',
         paymentTerms: pr.paymentTerms ?? '',
@@ -82,6 +91,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
       reset({
         supplierId: '',
         warehouseId: '',
+        orderDate: '',
         expectedDeliveryDate: '',
         deliveryInstructions: '',
         paymentTerms: '',
@@ -147,13 +157,31 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               )}
             </div>
 
-            {/* Location — same picker as the create form. Expected delivery
-                date isn't asked for here either; whatever the PR carried
-                rides along untouched in the form's defaults. */}
+            {/* PO Date — the PO's own date, printed as "PO Date" and carried
+                onto every RR received against it. Defaults to today. */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Location <span className="text-red-500">*</span>
-              </label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">PO Date</label>
+              <Controller
+                name="orderDate"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    type="date"
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
+            </div>
+
+            {/* Location — same picker as the create form, optional for a
+                drop-ship PO. Expected delivery date isn't asked for here
+                either; whatever the PR carried rides along untouched in the
+                form's defaults. */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Location</label>
               <Controller
                 name="warehouseId"
                 control={control}
@@ -184,7 +212,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                     {...field}
                     value={field.value ?? ''}
                     rows={2}
-                    placeholder='e.g. "Please deliver to Brgy. Igang, Pototan Covered Gym on June 19, 2026 @ Afternoon"'
+                    placeholder='e.g. "Brgy. Igang, Pototan Covered Gym on June 19, 2026 @ Afternoon"'
                     className="w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                   />
                 )}
@@ -193,6 +221,11 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                 <p className="mt-1 text-xs text-red-600">{errors.deliveryInstructions.message}</p>
               )}
             </div>
+
+            <NoDestinationWarning
+              warehouseId={destinationId}
+              deliveryInstructions={destinationInstructions}
+            />
 
             {/* Notes */}
             <div>
@@ -474,11 +507,11 @@ function ConvertPrToPoLineCard({ control, errors, index, prLine, setValue }: Lin
           )}
         </div>
 
-        {/* Description (pricing breakdown) */}
+        {/* Internal note — stored as the line's description, never printed */}
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-600">
-            Description
-            <span className="ml-1 font-normal text-zinc-400">(pricing breakdown)</span>
+            Internal note
+            <span className="ml-1 font-normal text-zinc-400">(not printed)</span>
           </label>
           <Controller
             name={`lines.${index}.description`}

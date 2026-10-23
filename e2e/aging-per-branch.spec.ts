@@ -104,7 +104,11 @@ test.describe('CRM — AR Aging per branch (Scenario 47)', () => {
     await expect(page.getByRole('columnheader', { name: 'OB', exact: true }).first()).toBeVisible()
   })
 
-  test('paginates branch sections at 10', async ({ page }) => {
+  // Pages hold whole branches, packed up to ROWS_PER_PAGE_BUDGET account rows and
+  // never more than 10 branches (aging-report/_params.ts) — the old fixed
+  // 10-branch page carried 6,000+ rows. So page 1 starts at branch 1 and ends
+  // at or before branch 10, and Next starts where the previous page stopped.
+  test('paginates branch sections (whole branches, at most 10 per page)', async ({ page }) => {
     await gotoReady(page, '/crm/installment-accounts/aging-report')
     await expect(page.getByRole('heading', { name: 'AR Aging Report' })).toBeVisible({
       timeout: 15_000,
@@ -128,11 +132,14 @@ test.describe('CRM — AR Aging per branch (Scenario 47)', () => {
       return
     }
 
-    await expect(page.getByText(/Showing 1–10 of/)).toBeVisible()
+    const firstPage = (await showing.textContent())!.match(/Showing 1–(\d+) of/)
+    expect(firstPage, 'page 1 starts at the first branch').not.toBeNull()
+    const firstPageEnd = Number(firstPage![1])
+    expect(firstPageEnd).toBeLessThanOrEqual(10)
     await expect(pager.getByRole('button', { name: 'Previous' })).toBeDisabled()
 
     await pager.getByRole('button', { name: 'Next' }).click()
-    await expect(page.getByText(/Showing 11–/)).toBeVisible()
+    await expect(page.getByText(new RegExp(`Showing ${firstPageEnd + 1}–`))).toBeVisible()
   })
 
   test('the summary matrix and grand total always cover every branch', async ({ page }) => {
@@ -159,7 +166,8 @@ test.describe('CRM — AR Aging per branch (Scenario 47)', () => {
     const pager = page.getByRole('navigation', { name: 'Table pagination' })
     if ((await pager.count()) > 0) {
       await pager.getByRole('button', { name: 'Next' }).click()
-      await expect(page.getByText(/Showing 11–/)).toBeVisible()
+      // Past page 1: the range no longer starts at 1.
+      await expect(page.getByText(/Showing (?!1–)\d+–\d+ of \d+ branch/)).toBeVisible()
       await expect(grandTotal).toHaveText(before!)
     }
   })

@@ -1,25 +1,31 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { useState, useMemo } from 'react'
-import { showToast } from '@/src/components/ui/toast'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { useState, useMemo, useEffect } from 'react'
 import { getCreditApplications } from '../_actions/get-applications'
-import { createCreditApplication } from '../_actions/create-application'
-import type {
-  CreateCreditApplicationFormValues,
-  CreditApplicationStatus,
-} from '@/src/schema/credit/applications'
+import type { CreditApplicationStatus } from '@/src/schema/credit/applications'
+
+function useDebouncedValue(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(t)
+  }, [value, delayMs])
+  return debounced
+}
 
 export function useCreditApplications() {
-  const queryClient = useQueryClient()
-
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<CreditApplicationStatus | undefined>(undefined)
+  const [search, setSearchState] = useState('')
+  // The box updates on every keystroke; only the debounced value reaches the
+  // query key, so typing a name doesn't fire a request per character.
+  const debouncedSearch = useDebouncedValue(search, 300)
 
   const queryParams = useMemo(
-    () => ({ page, limit, status: statusFilter }),
-    [page, limit, statusFilter]
+    () => ({ page, limit, status: statusFilter, search: debouncedSearch.trim() || undefined }),
+    [page, limit, statusFilter, debouncedSearch]
   )
 
   const applicationsQuery = useQuery({
@@ -34,22 +40,6 @@ export function useCreditApplications() {
     // could sit stale here indefinitely. Matches
     // ReleaseApprovalsList.tsx's own 10s poll for the same reason.
     refetchInterval: 10 * 1000,
-  })
-
-  const createMutation = useMutation({
-    mutationFn: (data: CreateCreditApplicationFormValues) => createCreditApplication(data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({
-          title: 'Credit application opened',
-          description: result.message,
-          status: 'success',
-        })
-        queryClient.invalidateQueries({ queryKey: ['credit-applications'] })
-      } else {
-        showToast({ title: 'Failed', description: result.message, status: 'error' })
-      }
-    },
   })
 
   const applications = applicationsQuery.data?.data?.data ?? []
@@ -74,10 +64,13 @@ export function useCreditApplications() {
       setPage(1)
     },
 
+    search,
+    setSearch: (v: string) => {
+      setSearchState(v)
+      setPage(1)
+    },
+
     page,
     setPage,
-
-    createApplication: createMutation.mutateAsync,
-    isCreating: createMutation.isPending,
   }
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
   Plus,
   RefreshCw,
@@ -23,6 +24,8 @@ import {
   type PeriodReopenLog,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
+import { TaxReports } from '@/src/libs/data/TaxReportsData'
+import { manilaToday } from '@/src/libs/tax/tax-reports'
 
 const STATUS_STYLES: Record<FiscalPeriodStatus, string> = {
   OPEN: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -353,6 +356,54 @@ function PeriodForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
   )
 }
 
+/**
+ * What the "Tax code exceptions reviewed" item asks to be reviewed: how many tax
+ * codes were changed or left out in the period, with a way into the report. The
+ * item itself stays a tick someone gives; this only says what is behind it.
+ */
+function TaxExceptionsNote({ period }: { period: FiscalPeriod }) {
+  const from = period.startDate.slice(0, 10)
+  const today = manilaToday()
+  // the books hold only what has happened: a period still running ends today
+  const to = period.endDate.slice(0, 10) > today ? today : period.endDate.slice(0, 10)
+  const [counts, setCounts] = useState<{ total: number; changed: number } | null>(null)
+
+  useEffect(() => {
+    if (from > to) return
+    let current = true
+    TaxReports.exceptions({ startDate: from, endDate: to }).then((r) => {
+      if (!current || !r.success || !r.data) return
+      const changed = r.data.summary.byKind.find((k) => k.kind === 'OVERRIDE')?.count ?? 0
+      setCounts({ total: r.data.totals.rows, changed })
+    })
+    return () => {
+      current = false
+    }
+  }, [from, to])
+
+  return (
+    <div className="px-2.5 pt-1 text-[11px] text-gray-600" data-testid="checklist-tax-exceptions">
+      {counts &&
+        (counts.total === 0 ? (
+          <span data-testid="checklist-tax-exceptions-count">No exceptions in this period. </span>
+        ) : (
+          <span data-testid="checklist-tax-exceptions-count">
+            {counts.total} to review: {counts.changed} changed from a default,{' '}
+            {counts.total - counts.changed} missing a code.{' '}
+          </span>
+        ))}
+      {from <= to && (
+        <Link
+          href={`/accounting/tax-reports?report=exceptions&from=${from}&to=${to}`}
+          className="font-medium text-purple-700 hover:underline"
+        >
+          Open the report
+        </Link>
+      )}
+    </div>
+  )
+}
+
 function ChecklistDialog({ period, onClose }: { period: FiscalPeriod; onClose: () => void }) {
   const [status, setStatus] = useState<ChecklistStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -405,30 +456,32 @@ function ChecklistDialog({ period, onClose }: { period: FiscalPeriod; onClose: (
                 const item = status.checklist[key]
                 const done = item?.done ?? false
                 return (
-                  <label
-                    key={key}
-                    className={`flex items-center gap-3 p-2.5 rounded-lg border ${done ? 'border-emerald-200 bg-emerald-50/60' : 'border-gray-200'} ${isHardClosed ? 'opacity-60' : 'cursor-pointer hover:bg-gray-50'}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={done}
-                      disabled={isHardClosed}
-                      onChange={(e) => toggle(key, e.target.checked)}
-                      className="w-4 h-4 accent-emerald-600"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900">
-                        {CHECKLIST_LABELS[key]}
-                      </div>
-                      {done && item?.completedAt && (
-                        <div className="text-[10px] text-gray-500">
-                          Completed {new Date(item.completedAt).toLocaleString('en-PH')} by{' '}
-                          {item.completedBy ?? '—'}
+                  <div key={key}>
+                    <label
+                      className={`flex items-center gap-3 p-2.5 rounded-lg border ${done ? 'border-emerald-200 bg-emerald-50/60' : 'border-gray-200'} ${isHardClosed ? 'opacity-60' : 'cursor-pointer hover:bg-gray-50'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={done}
+                        disabled={isHardClosed}
+                        onChange={(e) => toggle(key, e.target.checked)}
+                        className="w-4 h-4 accent-emerald-600"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900">
+                          {CHECKLIST_LABELS[key]}
                         </div>
-                      )}
-                    </div>
-                    {done && <Check className="w-4 h-4 text-emerald-600" />}
-                  </label>
+                        {done && item?.completedAt && (
+                          <div className="text-[10px] text-gray-500">
+                            Completed {new Date(item.completedAt).toLocaleString('en-PH')} by{' '}
+                            {item.completedBy ?? '—'}
+                          </div>
+                        )}
+                      </div>
+                      {done && <Check className="w-4 h-4 text-emerald-600" />}
+                    </label>
+                    {key === 'taxCodeExceptions' && <TaxExceptionsNote period={period} />}
+                  </div>
                 )
               })}
               {isHardClosed && (

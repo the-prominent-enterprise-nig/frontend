@@ -63,6 +63,16 @@ test.describe('CRM — Add Customer', () => {
 
     await gotoReady(page, '/crm/customers/new')
 
+    // Scenario 64 Part 3 — a fresh form opens on Region VI, where the
+    // business operates, instead of a blank region the cashier re-picks
+    // every time. The rest of this test then overrides it with the NCR
+    // chain below, which is the point: the default is a starting value, not
+    // a constraint.
+    await expect(page.getByPlaceholder(/Type to search region/i)).toHaveValue(
+      'Region VI (Western Visayas)',
+      { timeout: 15_000 }
+    )
+
     await fillAllStable([
       { locator: page.getByLabel('First name *'), value: firstName },
       { locator: page.getByLabel('Last name *'), value: lastName },
@@ -89,18 +99,16 @@ test.describe('CRM — Add Customer', () => {
     // whatever's typed, so it can't go through fillAllStable's exact-value
     // check and gets its own stable-fill helper instead.
     await fillPhoneStable(
-      page.locator('.phone-input-field'),
+      page.locator('.phone-input-field').first(),
       `9${uniqueSuffix.toString().slice(-9)}`
     )
 
-    // Part 3 (scenario-02): co-maker capture.
+    // Co-maker capture was removed from the customer profile form — a
+    // profile is just the customer; guarantors are captured on the Credit
+    // Application (see credit-application-intake.spec.ts). The read-only
+    // display further down still has to render co-makers added elsewhere.
     const coMakerName = `E2E Co-maker ${uniqueSuffix}`
-    await page.getByRole('button', { name: 'Add co-maker' }).click()
-    await fillAllStable([
-      { locator: page.getByPlaceholder('e.g. Juan Dela Cruz'), value: coMakerName },
-      { locator: page.getByPlaceholder('e.g. Spouse'), value: 'Spouse' },
-      { locator: page.getByPlaceholder('e.g. 0917 000 1111'), value: '09171234567' },
-    ])
+    await expect(page.getByRole('button', { name: 'Add co-maker' })).toHaveCount(0)
 
     // The submit button can be un-hydrated (dead onClick) the instant navigation
     // finishes — same hydration race fillStable/fillAllStable work around for
@@ -127,9 +135,17 @@ test.describe('CRM — Add Customer', () => {
     expect(detail.barangayCode).toBe(PH_CHAIN.barangayCode)
     await expect(page.getByText(streetAddress, { exact: false })).toBeVisible()
 
-    // Co-maker shows in the profile's read-only display.
-    await expect(page.getByText('Co-maker (Guarantor)')).toBeVisible()
-    await expect(page.getByText(`${coMakerName} — Spouse`)).toBeVisible()
+    // A co-maker attached outside the profile form (here via the API, as
+    // the Credit Application does) is still stored, but the profile no longer
+    // shows a Co-maker section (client asked for it off).
+    const addCoMakerRes = await page.request.post(`/api/crm/customers/${customerId}/co-makers`, {
+      data: { name: coMakerName, relationship: 'Spouse', contactNumber: '09171234567' },
+    })
+    expect(addCoMakerRes.ok()).toBeTruthy()
+    await page.reload()
+    await expect(page.getByRole('heading', { name: fullName })).toBeVisible()
+    await expect(page.getByText('Co-maker (Guarantor)')).toHaveCount(0)
+    await expect(page.getByText(`${coMakerName} — Spouse`)).toHaveCount(0)
 
     // Confirm it's findable by search from the customers list (also exercises
     // the search-by-name path the POS checkout customer picker relies on).

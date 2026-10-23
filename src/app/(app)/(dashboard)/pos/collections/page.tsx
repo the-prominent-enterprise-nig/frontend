@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import CollectionsScreen from './_components/CollectionsScreen'
 
 export const metadata = {
-  title: 'Collections | Prominent Enterprise',
+  title: 'Collections | NIG Central',
 }
 
 export default async function CollectionsPage() {

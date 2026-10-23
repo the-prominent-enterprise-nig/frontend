@@ -10,7 +10,7 @@ import {
   Archive,
   Pencil,
   Download,
-  Receipt,
+  Eye,
   FileText,
   Loader2,
 } from 'lucide-react'
@@ -18,6 +18,7 @@ import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-order
 import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { NoDestinationWarning } from './NoDestinationWarning'
 import {
   PLEX,
   MONO,
@@ -45,7 +46,6 @@ type Props = {
   canReceive?: boolean
   canClose?: boolean
   canEdit?: boolean
-  canViewApBill?: boolean
   onApprove?: (po: PurchaseOrderSummary) => void
   onCancel?: (po: PurchaseOrderSummary) => void
   onSend?: (po: PurchaseOrderSummary) => void
@@ -54,8 +54,8 @@ type Props = {
    * closes the purchase order itself, settling it. */
   onCloseOrder?: (po: PurchaseOrderSummary) => void
   onEdit?: (po: PurchaseOrderSummary) => void
-  onViewInvoice?: (po: PurchaseOrderSummary) => void
   onViewReceipts?: (po: PurchaseOrderSummary) => void
+  onViewPo?: (po: PurchaseOrderSummary) => void
   onDownload?: (po: PurchaseOrderSummary) => void
   isDownloading?: boolean
 }
@@ -179,15 +179,14 @@ export function PoDetailModal({
   canReceive,
   canClose,
   canEdit,
-  canViewApBill,
   onApprove,
   onCancel,
   onSend,
   onReceive,
   onCloseOrder,
   onEdit,
-  onViewInvoice,
   onViewReceipts,
+  onViewPo,
   onDownload,
   isDownloading,
 }: Props) {
@@ -348,6 +347,14 @@ export function PoDetailModal({
           </div>
         )}
 
+        {(po.status === 'draft' || po.status === 'approved') && (
+          <NoDestinationWarning
+            warehouseId={po.warehouseId}
+            deliveryInstructions={po.deliveryInstructions}
+            saved="order"
+          />
+        )}
+
         {/* Supplier + facts */}
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1fr_1.15fr]">
           <div className="rounded-xl border border-[#e4e4e9] bg-white p-4">
@@ -384,7 +391,16 @@ export function PoDetailModal({
           <div className="rounded-xl border border-[#e4e4e9] bg-white p-4">
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 min-[560px]:grid-cols-3">
               <InfoRow label="Requested By" value={po.branch?.name ?? 'Tenant-wide'} />
-              <InfoRow label="Destination" value={locationLabel(po.warehouse)} />
+              <InfoRow
+                label="Destination"
+                // A drop-ship order has no Location, only instructions.
+                value={
+                  po.warehouse || !po.deliveryInstructions?.trim()
+                    ? locationLabel(po.warehouse)
+                    : 'See delivery instructions'
+                }
+                muted={!po.warehouse}
+              />
               <InfoRow label="Order Date" value={fmtDate(po.orderDate)} />
               <InfoRow
                 label="Expected Delivery"
@@ -479,7 +495,10 @@ export function PoDetailModal({
                         </div>
                         <p className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{line.item.sku}</p>
                         {line.description && (
-                          <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">{line.description}</p>
+                          <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">
+                            <span className="mr-1 text-[#a3a3b2]">Internal:</span>
+                            {line.description}
+                          </p>
                         )}
                         {/* This wording is the one the Receiving Report, the AP
                               bill and the printed Purchase Invoice all follow —
@@ -590,19 +609,17 @@ export function PoDetailModal({
           />
         )}
 
+        <OutlineBtn
+          icon={<Eye className={icon} />}
+          label="View PO"
+          onClick={() => onViewPo?.(po)}
+        />
+
         {receipted.includes(po.status) && (
           <OutlineBtn
             icon={<FileText className={icon} />}
             label="View Receipts"
             onClick={() => onViewReceipts?.(po)}
-          />
-        )}
-
-        {canViewApBill && po.apBills.length > 0 && (
-          <OutlineBtn
-            icon={<Receipt className={icon} />}
-            label="View Invoice"
-            onClick={() => onViewInvoice?.(po)}
           />
         )}
 

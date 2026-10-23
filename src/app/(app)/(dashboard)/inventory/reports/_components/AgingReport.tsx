@@ -1,292 +1,337 @@
 'use client'
-
-import { Download, AlertTriangle, PackageX, X } from 'lucide-react'
+import ExportButton from '@/src/components/common/ExportButton'
+import TablePagination from '@/src/components/common/TablePagination'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import type { ReactElement } from 'react'
+import type { AgingFilters } from '../_hooks/useInventoryReports'
 import {
-  SERIAL_AGING_BUCKET_LABELS,
-  SerialAgingBucketSchema,
-  type AgingReportResponse,
   type AgingReportItem,
+  type AgingReportResponse,
   type SerialAgingBucket,
 } from '@/src/schema/inventory/reports'
+
+type Option = { id: string; name: string }
 
 interface Props {
   data: AgingReportResponse | null | undefined
   isLoading: boolean
   isFetching: boolean
-  bucketFilter: SerialAgingBucket | undefined
-  setBucketFilter: (v: SerialAgingBucket | undefined) => void
   page: number
   setPage: (page: number) => void
+  /** The filters the report on screen was loaded with. */
+  filters: AgingFilters
+  onFiltersChange: (filters: AgingFilters) => void
+  warehouses: Option[]
+  categoryOptions: Option[]
+  typeOptions: Option[]
 }
 
-const BUCKET_COLORS: Record<SerialAgingBucket, string> = {
-  '0_30': 'bg-green-100 text-green-700',
-  '31_60': 'bg-yellow-100 text-yellow-700',
-  '61_90': 'bg-orange-100 text-orange-700',
-  '91_180': 'bg-red-100 text-red-700',
-  '180_plus': 'bg-red-200 text-red-800',
+type CardKey = SerialAgingBucket | 'total'
+
+const CARDS: { key: CardKey; label: string; tone: string; figure: string }[] = [
+  {
+    key: '0_6',
+    label: '0-6 months',
+    tone: 'border-[#cfe9d7] bg-[#ddf1e4]',
+    figure: 'text-[#2f6b3b]',
+  },
+  {
+    key: '7_14',
+    label: '7-14 months',
+    tone: 'border-[#f1e2b0] bg-[#f8edc9]',
+    figure: 'text-[#7a5a06]',
+  },
+  {
+    key: '15_plus',
+    label: '15 months and up',
+    tone: 'border-[#f0cccc] bg-[#f8dcdc]',
+    figure: 'text-[#8f1a2a]',
+  },
+  {
+    key: 'total',
+    label: 'Total',
+    tone: 'border-[#8fbfdc] bg-[#d6eaf5]',
+    figure: 'text-[#1f4e79]',
+  },
+]
+
+/** Age-pill tone per bucket — the same colours as the cards above. */
+const PILL_TONE: Record<SerialAgingBucket, string> = {
+  '0_6': 'bg-[#ddf1e4] text-[#2f6b3b]',
+  '7_14': 'bg-[#f8edc9] text-[#7a5a06]',
+  '15_plus': 'bg-[#f8dcdc] text-[#8f1a2a]',
 }
 
-function exportToCsv(data: AgingReportResponse) {
-  const headers = [
-    'Serial Number',
-    'Item Name',
-    'SKU',
-    'Location',
-    'Received',
-    'Days Since Receipt',
-    'Unit Cost',
-    'Bucket',
-    'Slow Moving',
-    'Should Be Out',
-  ]
-  const rows = data.data.map((row) => [
-    row.serialNumber,
-    row.name,
-    row.sku,
-    row.warehouseName ?? '',
-    new Date(row.receivedAt).toLocaleDateString('en-PH'),
-    row.daysSinceReceipt,
-    row.unitCost.toFixed(2),
-    SERIAL_AGING_BUCKET_LABELS[row.bucket],
-    row.slowMoving ? 'Yes' : 'No',
-    row.shouldBeOut ? 'Yes' : 'No',
-  ])
+const COLUMNS = ['Serial', 'Model', 'Brand', 'Branch/Warehouse', 'Inbound Age', 'Store Age', 'Cost']
 
-  const csv = [headers, ...rows].map((row) => row.map((v) => `"${v}"`).join(',')).join('\n')
+const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
+const amount = new Intl.NumberFormat('en-PH', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
 
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `inventory-aging-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+function bucketFor(months: number): SerialAgingBucket {
+  if (months <= 6) return '0_6'
+  if (months <= 14) return '7_14'
+  return '15_plus'
+}
+
+function monthsLabel(months: number): string {
+  if (months < 1) return '< 1 mo'
+  return months === 1 ? '1 mo' : `${months} mos`
+}
+
+/** Only the two standalone warehouses keep the "Warehouse" suffix; other locations show bare names. */
+function locationLabel(name: string | null): string {
+  if (!name) return '—'
+  return /^(panay|negros)\b/i.test(name) ? name : name.replace(/\s+warehouse$/i, '')
+}
+
+function SummaryCards({ data }: { data: AgingReportResponse }): ReactElement {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {CARDS.map((card) => {
+        const figures = card.key === 'total' ? data.totals : data.summary[card.key]
+        return (
+          <div key={card.key} className={`rounded-xl border-2 px-5 py-4 ${card.tone}`}>
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-600">
+              {card.label}
+            </p>
+            <p className={`mt-1 text-[32px] font-bold leading-tight ${card.figure}`}>
+              {(figures?.count ?? 0).toLocaleString()}
+            </p>
+            <p className="text-[15px] text-zinc-600">{peso.format(figures?.totalValue ?? 0)}</p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function FilterField({ label, children }: { label: string; children: ReactElement }): ReactElement {
+  return (
+    <div className="flex min-w-[180px] flex-1 flex-col gap-1.5">
+      <span className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">
+        {label}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function OptionSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+}: {
+  value: string | undefined
+  onChange: (value: string | undefined) => void
+  placeholder: string
+  options: Option[]
+}): ReactElement {
+  return (
+    <SearchableSelect
+      value={value ?? ''}
+      onChange={(v) => onChange(v || undefined)}
+      placeholder={placeholder}
+      ariaLabel={placeholder}
+      clearable
+      options={options.map((o) => ({ value: o.id, label: o.name }))}
+    />
+  )
+}
+
+function FilterBar({
+  filters,
+  onFiltersChange,
+  warehouses,
+  categoryOptions,
+  typeOptions,
+  canExport,
+}: Pick<Props, 'filters' | 'onFiltersChange' | 'warehouses' | 'categoryOptions' | 'typeOptions'> & {
+  canExport: boolean
+}): ReactElement {
+  // Every change reloads the report, so the export always matches the screen.
+  const set = (patch: Partial<AgingFilters>): void => onFiltersChange({ ...filters, ...patch })
+
+  return (
+    <div className="flex flex-wrap items-end gap-4">
+      <FilterField label="As of date">
+        <input
+          type="date"
+          aria-label="As of date"
+          value={filters.asOf}
+          onChange={(e) => set({ asOf: e.target.value })}
+          className="h-10 rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-prominent-purple-600"
+        />
+      </FilterField>
+      <FilterField label="Location">
+        <OptionSelect
+          value={filters.warehouseId}
+          onChange={(warehouseId) => set({ warehouseId })}
+          placeholder="All locations"
+          options={warehouses.map((w) => ({ id: w.id, name: locationLabel(w.name) }))}
+        />
+      </FilterField>
+      <FilterField label="Category">
+        <OptionSelect
+          value={filters.categoryId}
+          onChange={(categoryId) => set({ categoryId })}
+          placeholder="All categories"
+          options={categoryOptions}
+        />
+      </FilterField>
+      <FilterField label="Classification">
+        <OptionSelect
+          value={filters.typeId}
+          onChange={(typeId) => set({ typeId })}
+          placeholder="All classifications"
+          options={typeOptions}
+        />
+      </FilterField>
+      <ExportButton
+        endpoint="/inventory/reports/aging/export"
+        params={{ ...filters }}
+        fallbackFilename="inventory-aging.xlsx"
+        disabled={!canExport}
+      />
+    </div>
+  )
+}
+
+function AgePill({ months }: { months: number | null }): ReactElement {
+  if (months === null) return <span className="text-zinc-400">—</span>
+  return (
+    <span
+      className={`inline-block whitespace-nowrap rounded-full px-3 py-0.5 text-[12.5px] ${PILL_TONE[bucketFor(months)]}`}
+    >
+      {monthsLabel(months)}
+    </span>
+  )
+}
+
+function AgingRow({ row }: { row: AgingReportItem }): ReactElement {
+  return (
+    <tr className="even:bg-zinc-100/70">
+      <td className="px-4 py-3 font-semibold text-zinc-900">{row.serialNumber}</td>
+      <td className="px-4 py-3 text-zinc-700">{row.modelNumber ?? '—'}</td>
+      <td className="px-4 py-3 text-zinc-700">{row.brandName ?? '—'}</td>
+      <td className="px-4 py-3 text-zinc-700">{locationLabel(row.warehouseName)}</td>
+      <td className="px-4 py-3 text-center">
+        <AgePill months={row.inboundMonths} />
+      </td>
+      <td className="px-4 py-3 text-center">
+        <AgePill months={row.storeMonths} />
+      </td>
+      <td className="px-4 py-3 text-right tabular-nums text-zinc-700">
+        {amount.format(row.unitCost)}
+      </td>
+    </tr>
+  )
+}
+
+function AgingTable({ data }: { data: AgingReportResponse }): ReactElement {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-[#4c1d95] text-left text-white">
+            {COLUMNS.map((c) => (
+              <th
+                key={c}
+                className={`px-4 py-3.5 font-medium ${c === 'Cost' ? 'text-right' : c.endsWith('Age') ? 'text-center' : ''}`}
+              >
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.data.map((row) => (
+            <AgingRow key={row.serialNumberId} row={row} />
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-y border-zinc-200">
+            <td colSpan={6} className="px-4 py-3 text-right font-semibold text-zinc-900">
+              Total Cost:
+            </td>
+            <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">
+              {peso.format(data.totals.totalValue)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function TableState({ isLoading }: { isLoading: boolean }): ReactElement {
+  if (isLoading) {
+    return (
+      <div>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-[48px] animate-pulse border-t border-zinc-100 bg-white" />
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 py-16 text-center">
+      <p className="text-sm font-semibold text-zinc-900">No units match</p>
+      <p className="text-sm text-zinc-500">Try different filters.</p>
+    </div>
+  )
 }
 
 export default function AgingReport({
   data,
   isLoading,
   isFetching,
-  bucketFilter,
-  setBucketFilter,
   page,
   setPage,
-}: Props) {
-  const summary = data?.summary
+  filters,
+  onFiltersChange,
+  warehouses,
+  categoryOptions,
+  typeOptions,
+}: Props): ReactElement {
   const meta = data?.meta
-  const totalPages = meta?.lastPage ?? 1
-  const totalRows = meta?.total ?? 0
   const pageSize = meta?.limit ?? 20
 
-  const slowMovingCount = summary?.['91_180']?.count ?? 0
-  const shouldBeOutCount = summary?.['180_plus']?.count ?? 0
-
   return (
-    <div className="space-y-6">
-      {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        <label htmlFor="aging-bucket-filter" className="sr-only">
-          Filter by age bucket
-        </label>
-        <select
-          id="aging-bucket-filter"
-          aria-label="Filter by age bucket"
-          value={bucketFilter ?? ''}
-          onChange={(e) =>
-            setBucketFilter((e.target.value || undefined) as SerialAgingBucket | undefined)
-          }
-          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-        >
-          <option value="">All Ages</option>
-          {SerialAgingBucketSchema.options.map((bucket) => (
-            <option key={bucket} value={bucket}>
-              {SERIAL_AGING_BUCKET_LABELS[bucket]}
-            </option>
-          ))}
-        </select>
-
-        {bucketFilter && (
-          <button
-            type="button"
-            onClick={() => setBucketFilter(undefined)}
-            className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
-          >
-            <X className="h-4 w-4" />
-            Clear
-          </button>
-        )}
+    <div className="flex flex-col gap-6 rounded-2xl border border-zinc-200 bg-white p-5 md:p-8">
+      <div>
+        <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Inventory Aging Report</h1>
+        <p className="mt-1 text-sm text-zinc-500">How long each in-stock unit has been on hand.</p>
       </div>
 
-      {/* Bucket Summary Cards — always the full picture across every bucket,
-          regardless of bucketFilter narrowing the table below. */}
-      {!isLoading && summary && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {SerialAgingBucketSchema.options.map((bucket) => (
-            <div key={bucket} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <span
-                className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${BUCKET_COLORS[bucket]}`}
-              >
-                {SERIAL_AGING_BUCKET_LABELS[bucket]}
-              </span>
-              <p className="mt-3 text-2xl font-bold text-zinc-800">{summary[bucket]?.count ?? 0}</p>
-              <p className="text-xs text-zinc-500">
-                units · ₱{(summary[bucket]?.totalValue ?? 0).toLocaleString()}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+      {data && <SummaryCards data={data} />}
 
-      {/* Alert banners */}
-      {!isLoading && (slowMovingCount > 0 || shouldBeOutCount > 0) && (
-        <div className="flex flex-wrap gap-3">
-          {slowMovingCount > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2.5">
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-              <span className="text-sm font-medium text-orange-700">
-                {slowMovingCount} slow-moving unit{slowMovingCount !== 1 ? 's' : ''} (91–180 days)
-              </span>
-            </div>
-          )}
-          {shouldBeOutCount > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5">
-              <PackageX className="h-4 w-4 text-red-500" />
-              <span className="text-sm font-medium text-red-700">
-                {shouldBeOutCount} unit{shouldBeOutCount !== 1 ? 's' : ''} should be out (180+ days)
-              </span>
-            </div>
-          )}
-        </div>
-      )}
+      <FilterBar
+        filters={filters}
+        onFiltersChange={onFiltersChange}
+        warehouses={warehouses}
+        categoryOptions={categoryOptions}
+        typeOptions={typeOptions}
+        canExport={Boolean(data?.data.length)}
+      />
 
-      {/* Export */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-zinc-500">
-          Each row is one physical in-stock serial, aged from its goods-receipt date.
-        </p>
-        {(data?.data?.length ?? 0) > 0 && (
-          <button
-            type="button"
-            onClick={() => data && exportToCsv(data)}
-            className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
+      <div className={`transition-opacity ${isFetching ? 'opacity-60' : ''}`}>
+        {data?.data.length ? <AgingTable data={data} /> : <TableState isLoading={isLoading} />}
+        {meta && meta.lastPage > 1 && (
+          <TablePagination
+            page={page}
+            pageCount={meta.lastPage}
+            onPageChange={setPage}
+            pageStart={(page - 1) * pageSize}
+            pageSize={data?.data.length ?? 0}
+            totalItems={meta.total}
+            noun="unit"
+          />
         )}
       </div>
-
-      {/* Table */}
-      <div
-        className={`overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
-      >
-        {isLoading ? (
-          <div>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-4 border-b border-zinc-100 px-6 py-4 last:border-0"
-              >
-                <div className="h-4 w-32 animate-pulse rounded bg-zinc-200" />
-                <div className="h-4 w-20 animate-pulse rounded bg-zinc-200" />
-                <div className="ml-auto h-4 w-20 animate-pulse rounded bg-zinc-200" />
-              </div>
-            ))}
-          </div>
-        ) : !data?.data?.length ? (
-          <div className="flex flex-col items-center justify-center py-16">
-            <PackageX className="mb-3 h-10 w-10 text-zinc-300" />
-            <p className="text-sm font-medium text-zinc-500">No aging inventory found</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50">
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Serial
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Item
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                    Location
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
-                    Unit Cost
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Days
-                  </th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Age
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {data.data.map((row: AgingReportItem) => (
-                  <tr key={row.serialNumberId} className="hover:bg-zinc-50">
-                    <td className="px-4 py-3 font-mono text-xs text-zinc-600">
-                      {row.serialNumber}
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-zinc-800">{row.name}</p>
-                      <p className="mt-0.5 text-xs font-mono text-zinc-400">{row.sku}</p>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-500 hidden sm:table-cell">
-                      {row.warehouseName ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-500 hidden md:table-cell">
-                      ₱{row.unitCost.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-zinc-700">
-                      {row.daysSinceReceipt}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${BUCKET_COLORS[row.bucket]}`}
-                      >
-                        {SERIAL_AGING_BUCKET_LABELS[row.bucket]}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-zinc-500">
-          <span>
-            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalRows)} of {totalRows}
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setPage(Math.max(1, page - 1))}
-              disabled={page <= 1}
-              className="rounded-lg px-2.5 py-1 hover:bg-zinc-100 disabled:opacity-40"
-            >
-              Prev
-            </button>
-            <span className="px-2 font-medium text-zinc-700">
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage(Math.min(totalPages, page + 1))}
-              disabled={page >= totalPages}
-              className="rounded-lg px-2.5 py-1 hover:bg-zinc-100 disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

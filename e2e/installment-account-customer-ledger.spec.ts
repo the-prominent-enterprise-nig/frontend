@@ -217,7 +217,9 @@ test('installment account ledger screen shows unit, financing scheme, and salesp
   const billingRows = page.getByTestId('billing-history').locator('li')
   await expect(billingRows).toHaveCount(3)
   await expect(billingRows.first()).toContainText('Payment 1 of 3')
-  await expect(billingRows.first()).toContainText('Due')
+  // A month that has not been billed yet (its date is ahead, nothing collected)
+  // says so instead of reading as a bill.
+  await expect(billingRows.first()).toContainText('Not yet billed')
   await expect(billingRows.first()).not.toContainText('paid')
 
   // Developer-requested (2026-08-19): a due date that's actually been paid

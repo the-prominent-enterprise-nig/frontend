@@ -9,6 +9,10 @@ type Params = {
   itemId?: string
   warehouseId?: string
   branchId?: string
+  // Scenario 56 — Operations + multi-select Branches.
+  branchIds?: string[]
+  warehouseIds?: string[]
+  region?: 'panay' | 'negros'
   transactionType?: string
   startDate?: string
   endDate?: string
@@ -23,6 +27,9 @@ export async function getStockLedger(params: Params = {}) {
     itemId: params.itemId,
     warehouseId: params.warehouseId,
     branchId: params.branchId,
+    branchIds: params.branchIds?.length ? params.branchIds.join(',') : undefined,
+    warehouseIds: params.warehouseIds?.length ? params.warehouseIds.join(',') : undefined,
+    region: params.region,
     transactionType: params.transactionType,
     startDate: params.startDate,
     endDate: params.endDate,

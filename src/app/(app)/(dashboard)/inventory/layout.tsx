@@ -2,8 +2,8 @@ import ModuleGuard from '@/src/components/guards/ModuleGuard'
 
 export function InventoryMetadata() {
   return {
-    title: 'Inventory - Prominent Enterprise',
-    description: 'Manage your inventory workflows with Prominent Enterprise',
+    title: 'Inventory - NIG Central',
+    description: 'Manage your inventory workflows with NIG Central',
   }
 }
 

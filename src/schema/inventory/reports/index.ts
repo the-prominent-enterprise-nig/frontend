@@ -94,45 +94,54 @@ export const TurnoverReportResponseSchema = z.object({
 export type TurnoverReportItem = z.infer<typeof TurnoverReportItemSchema>
 export type TurnoverReportResponse = z.infer<typeof TurnoverReportResponseSchema>
 
-// ── Aging Report (Scenario 29 INV-02) ───────────────────────────────────────
+// ── Aging Report ─────────────────────────────────────────────────────────────
 // Distinct from the Turnover report's own `AgingBucket` above (a coarser,
-// sales-velocity-derived heuristic, 4 buckets, hyphenated values) — this is
-// the dedicated per-serial aging report, aged from goods-receipt date,
-// 5 buckets, underscore-separated values matching the backend's own enum.
-export const SerialAgingBucketSchema = z.enum(['0_30', '31_60', '61_90', '91_180', '180_plus'])
+// sales-velocity-derived heuristic) — this is the per-serial aging report,
+// bucketed by whole months since each unit's inbound date.
+export const SerialAgingBucketSchema = z.enum(['0_6', '7_14', '15_plus'])
 export type SerialAgingBucket = z.infer<typeof SerialAgingBucketSchema>
 
 export const SERIAL_AGING_BUCKET_LABELS: Record<SerialAgingBucket, string> = {
-  '0_30': '0–30 days',
-  '31_60': '31–60 days',
-  '61_90': '61–90 days',
-  '91_180': '91–180 days',
-  '180_plus': '180+ days',
+  '0_6': '0-6 months',
+  '7_14': '7-14 months',
+  '15_plus': '15 months and up',
 }
 
 export const AgingReportItemSchema = z.object({
   serialNumberId: z.string(),
   serialNumber: z.string(),
+  brandName: z.string().nullable().optional(),
+  typeName: z.string().nullable().optional(),
+  modelNumber: z.string().nullable().optional(),
+  rrNumber: z.string().nullable().optional(),
+  origin: z.string().nullable().optional(),
   itemId: z.string(),
   sku: z.string(),
   name: z.string(),
   warehouseId: z.string().nullable(),
   warehouseName: z.string().nullable(),
   receivedAt: z.string(),
+  locationSince: z.string(),
+  importedAge: z.string().nullable().optional(),
+  noDate: z.boolean().optional(),
   daysSinceReceipt: z.number(),
+  /** Whole months since date-in; null when the unit has no real date-in. */
+  inboundMonths: z.number().nullable(),
+  /** Whole months at its current location. */
+  storeMonths: z.number(),
   unitCost: z.number(),
-  bucket: SerialAgingBucketSchema,
-  slowMoving: z.boolean(),
-  shouldBeOut: z.boolean(),
+  bucket: SerialAgingBucketSchema.nullable(),
 })
+
+const AgingFiguresSchema = z.object({ count: z.number(), totalValue: z.number() })
 
 export const AgingReportResponseSchema = z.object({
   data: z.array(AgingReportItemSchema),
-  summary: z.record(
-    SerialAgingBucketSchema,
-    z.object({ count: z.number(), totalValue: z.number() })
-  ),
+  summary: z.record(SerialAgingBucketSchema, AgingFiguresSchema),
+  /** Every matching unit — the Total card and the table's Total Cost. */
+  totals: AgingFiguresSchema,
   meta: ReportPaginationMetaSchema.optional(),
+  asOf: z.string(),
   generatedAt: z.string().optional(),
 })
 

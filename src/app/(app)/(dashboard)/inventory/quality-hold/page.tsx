@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { QualityHoldList } from './_components'
 
 export const metadata = {
-  title: 'Quality Hold | Prominent Enterprise',
+  title: 'Quality Hold | NIG Central',
   description:
     'Manage batches on quality hold — inspect, release, partially release, or reject with full traceability',
 }

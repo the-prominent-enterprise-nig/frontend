@@ -12,6 +12,9 @@ import type {
   ItemClassificationFormValues,
 } from '@/src/schema/inventory/classification'
 import { formatClassificationLabel } from '@/src/libs/format/text'
+import TablePagination from '@/src/components/common/TablePagination'
+
+const PAGE_SIZE = 20
 
 export default function TypesPageView({ session }: { session: SessionUser }) {
   const canManage = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_MANAGE_CLASSIFICATION)
@@ -19,6 +22,7 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
   const [editTarget, setEditTarget] = useState<ItemClassification | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ItemClassification | null>(null)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
 
   const {
     types,
@@ -44,6 +48,15 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
     )
   }, [types, search])
 
+  // Clamp rather than trust `page`: a refetch or a narrower search can shrink
+  // the list below the page we were on.
+  const pageCount = Math.max(1, Math.ceil(filteredTypes.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const pagedTypes = useMemo(
+    () => filteredTypes.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [filteredTypes, currentPage]
+  )
+
   function openCreate() {
     setEditTarget(null)
     setIsModalOpen(true)
@@ -66,12 +79,12 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
   }
 
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
-      <div className="mx-auto max-w-5xl space-y-6">
+    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
+      <div className="mx-auto max-w-[1560px] space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Types</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Types</h1>
             <p className="mt-1 text-sm text-zinc-500">
               Manage the item types used to classify inventory items.
             </p>
@@ -105,7 +118,10 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
           <input
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
             placeholder="Search types…"
             className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
           />
@@ -148,7 +164,7 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {filteredTypes.map((type) => (
+                  {pagedTypes.map((type) => (
                     <tr key={type.id} className="hover:bg-zinc-50">
                       <td className="px-4 py-3">
                         <p className="font-medium text-zinc-900">
@@ -182,6 +198,17 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
                   ))}
                 </tbody>
               </table>
+              <div className="px-4 pb-3">
+                <TablePagination
+                  page={currentPage}
+                  pageCount={pageCount}
+                  onPageChange={setPage}
+                  pageStart={(currentPage - 1) * PAGE_SIZE}
+                  pageSize={pagedTypes.length}
+                  totalItems={filteredTypes.length}
+                  noun="type"
+                />
+              </div>
             </div>
           )}
         </div>

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import { UpdateCreditApplicationFormSchema } from '@/src/schema/credit/applications'
 import type { CreditApplication } from '@/src/schema/credit/applications'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 
@@ -12,7 +12,7 @@ export async function updateCreditApplication(
   id: string,
   input: unknown
 ): Promise<ApiResponse<CreditApplication>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -33,7 +33,33 @@ export async function updateCreditApplication(
     }
   }
 
-  const result = await api.patch<CreditApplication>(`/credit/applications/${id}`, parsed.data)
+  const payload = {
+    ...parsed.data,
+    // Backend trusts this client-supplied price over its own Price List
+    // resolution — see credit/applications schema's items.estimatedPrice comment.
+    // Scenario 64 item 21 (client, 2026-09-28): the price must come from the
+    // Inventory price list for the chosen Price Use, "and only that".
+    // unitPrice is deliberately NOT sent. It used to carry the form's
+    // estimatedPrice, which is seeded from the flat Item.sellingPrice — and
+    // a client-supplied unitPrice makes the server skip price-list
+    // resolution entirely, so the application was priced off the wrong
+    // number AND lost its priceListItemId, which is what the curated down
+    // payment and the rate-card instalment figures hang off. estimatedPrice
+    // stays in the form for the on-screen financing preview only.
+    // Scenario 64 item 29 — the unit goes back every time, null when there is
+    // none: the items are replaced on save, and an explicit null is what tells
+    // the server "no unit" rather than "keep whatever was there".
+    items: parsed.data.items?.map(({ itemId, serialNumberId }) => ({
+      itemId,
+      serialNumberId: serialNumberId ?? null,
+    })),
+    // Form-only figures behind the down-payment check — not API fields.
+    resolvedItemTotal: undefined,
+    downPaymentFloor: undefined,
+    downPaymentFixed: undefined,
+  }
+
+  const result = await api.patch<CreditApplication>(`/credit/applications/${id}`, payload)
   if (!result.success) {
     const msg =
       typeof result.message === 'string' ? result.message : 'Failed to update credit application'

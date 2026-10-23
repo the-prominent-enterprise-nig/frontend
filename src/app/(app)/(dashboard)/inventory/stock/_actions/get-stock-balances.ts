@@ -11,6 +11,8 @@ type Params = {
   page?: number
   limit?: number
   itemId?: string
+  /** Scenario 56 — several items at once (Item Master's page of badges). */
+  itemIds?: string[]
   warehouseId?: string
   categoryId?: string
   search?: string
@@ -33,6 +35,7 @@ export async function getStockBalances(
     page: params.page,
     limit: params.limit,
     itemId: params.itemId,
+    itemIds: params.itemIds?.length ? params.itemIds.join(',') : undefined,
     warehouseId: params.warehouseId,
     categoryId: params.categoryId,
     search: params.search,

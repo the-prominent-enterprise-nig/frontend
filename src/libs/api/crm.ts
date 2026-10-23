@@ -31,6 +31,7 @@ import type {
   CustomerLedger,
   CustomerLedgerScope,
   AgingReportResponse,
+  AgingReportLeanResponse,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type {
@@ -173,11 +174,14 @@ export const customersApi = {
   // scope 'installments' narrows the ledger to financed purchases (in-house
   // plans + TPF); planId narrows further to one contract. Both omitted from
   // the query when unset so 'all' stays the plain URL.
-  getLedger: (id: string, scope: CustomerLedgerScope = 'all', planId?: string) =>
-    api.get<CustomerLedger>(
-      `/crm/customers/${id}/ledger`,
-      scope === 'all' ? undefined : { scope, ...(planId ? { planId } : {}) }
-    ),
+  /** `transactionId` narrows the ledger to one purchase — an id from the
+   * response's own `transactions`, or `txn:<posTransactionId>` for a caller
+   * (the POS receipt modal) that holds a sale but not the shape it became. */
+  getLedger: (id: string, scope: CustomerLedgerScope = 'all', transactionId?: string) =>
+    api.get<CustomerLedger>(`/crm/customers/${id}/ledger`, {
+      ...(scope === 'all' ? {} : { scope }),
+      ...(transactionId ? { transactionId } : {}),
+    }),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),
@@ -291,6 +295,9 @@ export type InstallmentAccountFilters = {
   category?: string
   classification?: string
   status?: string
+  /** Due Date range on the next due date, YYYY-MM-DD, both ends inclusive. */
+  dueFrom?: string
+  dueTo?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>
@@ -370,8 +377,23 @@ export const installmentAccountsApi = {
     ),
   updateLegalEscalation: (id: string, body: { status: LegalEscalationStatus; notes?: string }) =>
     api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/legal-escalation`, body),
-  agingReport: (filters?: { asOf?: string; branchId?: string; collectorId?: string }) =>
-    api.get<AgingReportResponse>('/crm/installment-accounts/reports/aging', filters),
+  agingReport: (filters?: {
+    asOf?: string
+    branchId?: string
+    collectorId?: string
+    supervisorName?: string
+  }) => api.get<AgingReportResponse>('/crm/installment-accounts/reports/aging', filters),
+  /**
+   * The lean shapes (see AgingReportLeanResponse). `branchId: 'unassigned'`
+   * selects the report's "no branch" group, which has no id of its own.
+   */
+  agingReportLean: (filters: {
+    view: 'summary' | 'grouped'
+    asOf?: string
+    branchId?: string
+    collectorId?: string
+    supervisorName?: string
+  }) => api.get<AgingReportLeanResponse>('/crm/installment-accounts/reports/aging', filters),
 }
 
 // ─── Accounting Customers (used to link installment accounts) ──
@@ -405,6 +427,7 @@ export const segmentsApi = {
 export type AgentFilters = {
   search?: string
   status?: string
+  branchId?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>

@@ -1,6 +1,5 @@
 // The receive screen follows the Purchase Orders / Create Purchase Order
-// design's own IBM Plex + #5b21b6 palette rather than the app-wide Poppins
-// brand tokens — see ../procurementTokens.ts. Only the strings repeated
+// design's own #5b21b6 palette — see ../procurementTokens.ts. Only the strings repeated
 // across more than one of these files live here; one-off colours stay as
 // inline Tailwind arbitrary values at their call site.
 
@@ -23,4 +22,4 @@ export const CAPTION = 'text-[10px] uppercase tracking-[.09em] text-[#a3a3b2]'
  * conflicting display rules in the same Tailwind layer, where which one wins
  * is decided by stylesheet order rather than by anything at the call site. */
 export const LINE_GRID =
-  'grid-cols-[28px_minmax(150px,1fr)_58px_116px_86px_112px_128px_40px_104px] items-center gap-x-2.5'
+  'grid-cols-[28px_minmax(150px,1fr)_58px_116px_86px_112px_128px_104px] items-center gap-x-2.5'

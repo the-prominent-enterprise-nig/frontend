@@ -1,10 +1,10 @@
-# Prominent Enterprise Design System Rules
+# NIG Central Design System Rules
 
 <!-- Review note: keep aligned with .skills/ and project conventions -->
 
 ## Project Overview
 
-Prominent Enterprise is a comprehensive ERP application built with:
+NIG Central is a comprehensive ERP application built with:
 
 - **Framework**: Next.js (App Router) v16+ with React 19+
 - **Language**: TypeScript with strict mode enabled

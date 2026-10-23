@@ -23,6 +23,10 @@ import { showToast } from '@/src/components/ui/toast'
 import { ListShell } from '../../_shared/ListShell'
 import { MemoStatusBadge, MemoTable, type MemoColumn } from '@/src/components/accounting/MemoTable'
 import { SupplierDebitMemoDetail } from '@/src/components/accounting/SupplierDebitMemoDetail'
+import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
+import type { IdmDetail } from '@/src/schema/accounting/inventory-debit-memos'
+import { getInventoryDebitMemos } from '../inventory/_actions/inventory-debit-memos'
+import { PrintMemoIconButton } from '../../../inventory/debit-memos/_components/PrintMemoIconButton'
 
 const CUSTOMER_TYPE_LABELS: Record<DebitMemoType, string> = {
   unit_replacement: 'Unit Replacement',
@@ -34,7 +38,7 @@ const CUSTOMER_TYPE_LABELS: Record<DebitMemoType, string> = {
  * genuinely differ between the two. */
 type Row = {
   id: string
-  kind: 'customer' | 'supplier'
+  kind: 'customer' | 'supplier' | 'inventory'
   memoNumber: string
   memoDate: string
   partyName: string
@@ -43,6 +47,7 @@ type Row = {
   status: string
   customer?: DebitMemo
   supplier?: SupplierDebitMemo
+  inventory?: IdmDetail
 }
 
 /**
@@ -64,6 +69,13 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
   // the DR number and the waybill — all of which live with the goods, so it
   // is raised in Inventory and only ever read here.
   const canCreateCustomer = hasPermission(session, ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_CREATE)
+  // Scenario 72 — the internal DMINV memos a Delivery Receipt drafts, which
+  // accounting edits and posts from here.
+  const canReadInventory = hasPermission(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
+  const canCreateInventory = hasPermission(
+    session,
+    ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_CREATE
+  )
 
   const [search, setSearch] = useState('')
   const [voiding, setVoiding] = useState<string | null>(null)
@@ -94,6 +106,13 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
     staleTime: 30_000,
   })
 
+  const inventoryQuery = useQuery({
+    queryKey: ['inventory-debit-memos', 'accounting', search],
+    queryFn: () => getInventoryDebitMemos({ search: search || undefined, limit: 200 }),
+    enabled: canReadInventory && !apBillId,
+    staleTime: 30_000,
+  })
+
   const rows: Row[] = useMemo(() => {
     const customer: Row[] = (customerQuery.data?.data?.items ?? []).map((m) => ({
       id: m.id,
@@ -112,15 +131,32 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
       memoNumber: m.memoNumber,
       memoDate: m.memoDate,
       partyName: m.supplier?.name ?? '—',
-      invoiceNumber: m.apBill?.billNumber ?? '—',
+      // Named once a voucher applies it (Scenario 72 Part 8); the DR it came
+      // from until then, when there is one.
+      invoiceNumber:
+        m.apBill?.billNumber ??
+        (m.deliveryReceipt ? `${m.deliveryReceipt.drNumber} · unapplied` : 'Unapplied'),
       amount: m.amount,
       status: m.status,
       supplier: m,
     }))
     // Both sides in one list, newest first — the Party column tells them
     // apart, which is the whole reason the two lists were merged.
-    return [...customer, ...supplier].sort((a, b) => b.memoDate.localeCompare(a.memoDate))
-  }, [customerQuery.data, supplierQuery.data])
+    const inventory: Row[] = (inventoryQuery.data?.data?.data ?? []).map((m) => ({
+      id: m.id,
+      kind: 'inventory' as const,
+      memoNumber: m.memoNumber,
+      memoDate: m.memoDate,
+      partyName: m.purpose ? drPurposeLabel(m.purpose) : 'Standalone',
+      invoiceNumber: m.deliveryReceipt?.drNumber ?? '—',
+      amount: m.totalDebit,
+      status: m.status,
+      inventory: m,
+    }))
+    return [...customer, ...supplier, ...inventory].sort((a, b) =>
+      b.memoDate.localeCompare(a.memoDate)
+    )
+  }, [customerQuery.data, supplierQuery.data, inventoryQuery.data])
 
   async function voidCustomerMemo(id: string) {
     if (
@@ -150,7 +186,17 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
       key: 'memoNumber',
       header: 'Memo No.',
       cellClassName: 'font-mono text-xs text-zinc-700',
-      render: (r) => r.memoNumber,
+      render: (r) =>
+        r.kind === 'inventory' ? (
+          <Link
+            href={`/accounting/debit-memos/inventory/${r.id}`}
+            className="font-medium text-prominent-purple-700 hover:underline"
+          >
+            {r.memoNumber}
+          </Link>
+        ) : (
+          r.memoNumber
+        ),
     },
     { key: 'memoDate', header: 'Issue Date', render: (r) => fmtDate(r.memoDate) },
     {
@@ -161,15 +207,17 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
           className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
             r.kind === 'customer'
               ? 'bg-sky-50 text-sky-700 ring-sky-200'
-              : 'bg-violet-50 text-violet-700 ring-violet-200'
+              : r.kind === 'supplier'
+                ? 'bg-violet-50 text-violet-700 ring-violet-200'
+                : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
           }`}
         >
-          {r.kind === 'customer' ? 'Customer' : 'Supplier'}
+          {r.kind === 'customer' ? 'Customer' : r.kind === 'supplier' ? 'Supplier' : 'Inventory'}
         </span>
       ),
     },
     { key: 'party', header: 'Name', render: (r) => r.partyName },
-    { key: 'invoice', header: 'Invoice', render: (r) => r.invoiceNumber },
+    { key: 'invoice', header: 'Invoice / DR', render: (r) => r.invoiceNumber },
     {
       key: 'amount',
       header: 'Total',
@@ -182,20 +230,32 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
 
   const isLoading =
     (customerQuery.isLoading && canReadCustomer && !apBillId) ||
-    (supplierQuery.isLoading && canReadSupplier)
+    (supplierQuery.isLoading && canReadSupplier) ||
+    (inventoryQuery.isLoading && canReadInventory && !apBillId)
 
   return (
     <ListShell
       title="Debit Memos"
-      description="Everything that raises what a customer owes us, or lowers what we owe a supplier."
+      description="Customer charges, supplier returns, and the internal memos delivery receipts draft."
       search={search}
       onSearchChange={setSearch}
       searchPlaceholder="Search memo no. or reason…"
       onRefresh={() => {
         customerQuery.refetch()
         supplierQuery.refetch()
+        inventoryQuery.refetch()
       }}
-      isFetching={customerQuery.isFetching || supplierQuery.isFetching}
+      isFetching={customerQuery.isFetching || supplierQuery.isFetching || inventoryQuery.isFetching}
+      actions={
+        canCreateInventory ? (
+          <Link
+            href="/accounting/debit-memos/inventory/new"
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+          >
+            New inventory memo
+          </Link>
+        ) : null
+      }
       onAdd={() => setRaising(true)}
       addLabel="New Debit Memo"
       canAdd={canCreateCustomer}
@@ -216,27 +276,35 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
         renderExpanded={(r) =>
           r.kind === 'customer' ? (
             <CustomerDetail memo={r.customer!} />
-          ) : (
+          ) : r.kind === 'supplier' ? (
             <SupplierDebitMemoDetail memo={r.supplier!} />
+          ) : (
+            <InventoryMemoSummary memo={r.inventory!} />
           )
         }
-        renderActions={(r) =>
-          // Supplier memos are read-only here — approve, finalize and void all
-          // belong to Inventory, where the physical return is handled.
-          r.kind === 'customer' && r.status === 'ISSUED' && canVoidCustomer ? (
-            <Tooltip label="Void debit memo">
-              <button
-                type="button"
-                onClick={() => voidCustomerMemo(r.id)}
-                disabled={voiding === r.id}
-                aria-label="Void debit memo"
-                className="rounded p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-50"
-              >
-                <Ban className="h-4 w-4" />
-              </button>
-            </Tooltip>
-          ) : null
-        }
+        renderActions={(r) => (
+          <span className="inline-flex items-center gap-1">
+            {r.kind !== 'customer' && (
+              <PrintMemoIconButton
+                kind={r.kind === 'supplier' ? 'supplier' : 'internal'}
+                id={r.id}
+              />
+            )}
+            {r.kind === 'customer' && r.status === 'ISSUED' && canVoidCustomer && (
+              <Tooltip label="Void debit memo">
+                <button
+                  type="button"
+                  onClick={() => voidCustomerMemo(r.id)}
+                  disabled={voiding === r.id}
+                  aria-label="Void debit memo"
+                  className="rounded p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Ban className="h-4 w-4" />
+                </button>
+              </Tooltip>
+            )}
+          </span>
+        )}
       />
       {/* No invoice is chosen up front — the dialog asks for it as its first
           field, so the form is visible while the choice is being made. */}
@@ -308,5 +376,42 @@ function CustomerDetail({ memo }: { memo: DebitMemo }) {
         </table>
       )}
     </>
+  )
+}
+
+/** The DMINV memo's lines at a glance; editing and posting happen on its
+ * own page, linked from the memo number. */
+function InventoryMemoSummary({ memo }: { memo: IdmDetail }) {
+  return (
+    <div className="space-y-2 text-xs">
+      <table className="w-full max-w-3xl">
+        <thead className="text-zinc-500">
+          <tr>
+            <th className="py-1 text-left font-medium">Account</th>
+            <th className="py-1 text-left font-medium">Description</th>
+            <th className="py-1 text-right font-medium">Debit</th>
+            <th className="py-1 text-right font-medium">Credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {memo.lines.map((l) => (
+            <tr key={l.id} className="border-t border-zinc-100">
+              <td className="py-1">
+                {l.account.number} — {l.account.name}
+              </td>
+              <td className="py-1 text-zinc-600">{l.description ?? '—'}</td>
+              <td className="py-1 text-right">{l.debit ? fmtMoney(l.debit) : ''}</td>
+              <td className="py-1 text-right">{l.credit ? fmtMoney(l.credit) : ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <Link
+        href={`/accounting/debit-memos/inventory/${memo.id}`}
+        className="inline-block font-medium text-prominent-purple-700 hover:underline"
+      >
+        {memo.status === 'DRAFT' ? 'Open to edit and post' : 'Open memo'}
+      </Link>
+    </div>
   )
 }

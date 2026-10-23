@@ -17,6 +17,7 @@ import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 import { PosDateTime } from '../_components/PosDate'
+import { writeCheckoutHandoff, type CheckoutHandoff } from '@/src/libs/pos/checkout-handoff'
 
 function itemCount(cartData: Record<string, unknown>): number {
   const lines = cartData?.lines
@@ -77,11 +78,12 @@ export default function ParkedSalesPage() {
       setError(res.error ?? 'Failed to resume sale')
       return
     }
-    try {
-      localStorage.setItem('pos_resumed_cart', JSON.stringify(sale.cartData))
-    } catch {
-      // localStorage full or unavailable — checkout will start with an empty cart
-    }
+    // Through the shared helper, not a raw localStorage write: checkout
+    // reads exactly one handoff record, and this page writing its own
+    // differently-shaped copy is how the customer used to get lost on
+    // resume. Returns false if storage is unavailable, in which case
+    // checkout simply starts empty.
+    writeCheckoutHandoff(sale.cartData as CheckoutHandoff)
     router.push('/pos/checkout')
   }
 

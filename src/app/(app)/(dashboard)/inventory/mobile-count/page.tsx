@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { MobileCountInterface } from './_components'
 
 export const metadata = {
-  title: 'Mobile Count | Prominent Enterprise',
+  title: 'Mobile Count | NIG Central',
   description: 'Barcode-driven mobile stock counting interface',
 }
 

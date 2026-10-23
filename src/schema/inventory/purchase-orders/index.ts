@@ -30,10 +30,21 @@ export const CreatePoLineSchema = z.object({
   isFreebie: z.boolean().optional(),
 })
 
+/** Location is optional (drop-ship), but a PO can't be sent to the supplier
+ * without a Location or Delivery instructions — the backend's send() refuses
+ * it with `po_destination_required`. Drafts may be saved without either. */
+export const DESTINATION_REQUIRED_MESSAGE =
+  'Edit the purchase order and set a Location or Delivery instructions so the supplier knows where to deliver.'
+
 export const CreatePoFormSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required'),
   branchId: z.string().optional(),
-  warehouseId: z.string().min(1, 'Location is required'),
+  // Optional: a drop-ship PO goes from the supplier straight to the
+  // customer, so it has no receiving location of ours.
+  warehouseId: z.string().optional(),
+  // The PO's own date (printed as "PO Date", and carried onto every RR
+  // received against it). Blank → the server stamps today.
+  orderDate: z.string().optional(),
   expectedDeliveryDate: z.string().optional(),
   deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),
@@ -82,7 +93,12 @@ export const ConvertPrToPoLineSchema = z.object({
 
 export const ConvertPrToPoFormSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required'),
-  warehouseId: z.string().min(1, 'Location is required'),
+  // Optional: a drop-ship PO goes from the supplier straight to the
+  // customer, so it has no receiving location of ours.
+  warehouseId: z.string().optional(),
+  // The PO's own date (printed as "PO Date", and carried onto every RR
+  // received against it). Blank → the server stamps today.
+  orderDate: z.string().optional(),
   expectedDeliveryDate: z.string().optional(),
   deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),
@@ -110,6 +126,8 @@ const PoSupplierSchema = z.object({
   // these, not typed in. Optional so an older cached PO payload still parses.
   defaultInputVat: z.enum(['pct_12', 'none']).optional().nullable(),
   defaultWithholding: z.enum(['pct_1', 'none']).optional().nullable(),
+  // Scenario 69 Part D — the EWT code the receipt is withheld at.
+  defaultWithholdingTaxCode: z.string().optional().nullable(),
 })
 
 const PoWarehouseSchema = z.object({

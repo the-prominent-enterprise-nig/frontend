@@ -36,6 +36,24 @@ export const ACCOUNTING_PERMISSIONS = {
   EXPENSE_UPDATE: 'accounting:expense:update',
   EXPENSE_DELETE: 'accounting:expense:delete',
 
+  // Employees master list (Scenario 40 Gap 1 read-only search extended
+  // into full Business-Owner-level CRUD) — the source of both the
+  // loan/expense payee picker and the "Create Customer" quick-link on its
+  // detail page.
+  EMPLOYEE_READ: 'accounting:employee:read',
+  EMPLOYEE_CREATE: 'accounting:employee:create',
+  EMPLOYEE_UPDATE: 'accounting:employee:update',
+  EMPLOYEE_DELETE: 'accounting:employee:delete',
+
+  // Scenario 52 — moved from POS. Issues against the same Employee Cash
+  // Loan Special Account ledger Accounting's Expense screen already posts
+  // to (Scenario 40).
+  EMPLOYEE_CASH_LOAN_READ: 'accounting:employee-cash-loan:read',
+  EMPLOYEE_CASH_LOAN_CREATE: 'accounting:employee-cash-loan:create',
+  // Revision 2 — Others (non-employee) loans get a direct Pay action;
+  // Employee loans still don't (recovered via payroll/Accounting instead).
+  EMPLOYEE_CASH_LOAN_PAY: 'accounting:employee-cash-loan:pay',
+
   PAYMENT_READ: 'accounting:payment:read',
   PAYMENT_CREATE: 'accounting:payment:create',
   PAYMENT_UPDATE: 'accounting:payment:update',
@@ -54,7 +72,31 @@ export const ACCOUNTING_PERMISSIONS = {
   BIR_EXPORT_READ: 'accounting:bir_export:read',
   BIR_EXPORT_GENERATE: 'accounting:bir_export:generate',
 
+  // Scenario 69 Part C — the tax code master (rates, ATCs, posting accounts).
+  // Business Owner and Accountant only; the Branch Manager has none of these.
+  TAX_CODES_READ: 'accounting:tax-codes:read',
+  TAX_CODES_CREATE: 'accounting:tax-codes:create',
+  TAX_CODES_UPDATE: 'accounting:tax-codes:update',
+  // Scenario 69 Part I — change a tax code the system filled in by default on a
+  // bill or an invoice (a reason is required). Business Owner, Accountant and
+  // Branch Manager; Employee-level roles do not hold it.
+  TAX_CODES_OVERRIDE: 'accounting:tax-codes:override',
+
   FINANCIAL_REPORT_READ: 'accounting:financial_report:read',
+
+  // Scenario 69 Part H — the VAT settlement and withholding tax remittance. The
+  // tax REPORTS ride on FINANCIAL_REPORT_READ above; these move the company's
+  // balances, so they are Business Owner and Accountant only (the Branch
+  // Manager's accounting grants are an explicit list that leaves them out).
+  TAX_CLOSING_READ: 'accounting:tax-closing:read',
+  TAX_CLOSING_CREATE: 'accounting:tax-closing:create',
+  TAX_CLOSING_REVERSE: 'accounting:tax-closing:reverse',
+
+  // Scenario 53 — same manual RR capability as
+  // INVENTORY_PERMISSIONS.MANUAL_RR_CREATE, via Accounting's own namespace.
+  // Backend's RequirePermissions is OR, so a caller needs only one of the
+  // two; check both here too (canAny) rather than only this one.
+  MANUAL_RR_CREATE: 'accounting:manual-rr:create',
 
   AP_BILLS_READ: 'accounting:ap-bills:read',
   AP_BILLS_CREATE: 'accounting:ap-bills:create',
@@ -76,6 +118,10 @@ export const ACCOUNTING_PERMISSIONS = {
   AR_INVOICES_DELETE: 'accounting:ar-invoices:delete',
   AR_INVOICES_SEND: 'accounting:ar-invoices:send',
   AR_INVOICES_PAY: 'accounting:ar-invoices:pay',
+  /** Offset a customer retention against a claim, write it off, or provide for it. */
+  RETENTION_ADJUST: 'accounting:retention:adjust',
+  // Scenario 69 Part F — classify an invoice as zero-rated or VAT-exempt.
+  AR_INVOICES_RESTRICTED_VAT: 'accounting:ar-invoices:restricted-vat',
 
   BANK_ACCOUNTS_READ: 'accounting:bank-accounts:read',
   BANK_ACCOUNTS_CREATE: 'accounting:bank-accounts:create',
@@ -85,8 +131,14 @@ export const ACCOUNTING_PERMISSIONS = {
   BANK_ACCOUNTS_ADJUST: 'accounting:bank-accounts:adjust',
   BANK_ACCOUNTS_TRANSFER: 'accounting:bank-accounts:transfer',
 
-  EMPLOYEE_APPLIANCE_LOAN_READ: 'accounting:employee-appliance-loan:read',
-  EMPLOYEE_APPLIANCE_LOAN_CREATE: 'accounting:employee-appliance-loan:create',
+  // Scenario 53 — banking the branches' cash is an Accounting job. The deposit
+  // endpoint always lived in the accounting module but was gated on
+  // pos:cash-in-transit:manage, which would have forced POS permissions onto
+  // the Accountant. These keep the Accountant accounting-only.
+  CASH_IN_TRANSIT_READ: 'accounting:cash-in-transit:read',
+  CASH_IN_TRANSIT_MANAGE: 'accounting:cash-in-transit:manage',
+  /** Scenario 61 Part 5 — clear (post) a POS deposit draft. Accounting only. */
+  CASH_IN_TRANSIT_VERIFY: 'accounting:cash-in-transit:verify',
 
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
@@ -98,6 +150,9 @@ export const ACCOUNTING_PERMISSIONS = {
   CREDIT_MEMOS_READ: 'accounting:credit-memos:read',
   CREDIT_MEMOS_CREATE: 'accounting:credit-memos:create',
   CREDIT_MEMOS_VOID: 'accounting:credit-memos:void',
+  /** Scenario 67 — issue or void an X-Deal (barter) credit memo. Deliberately
+   * not covered by Branch Manager's accounting:credit-memos:*. */
+  X_DEAL_MEMOS_ISSUE: 'accounting:x-deal-memos:issue',
 
   DEBIT_MEMOS_READ: 'accounting:debit-memos:read',
   DEBIT_MEMOS_CREATE: 'accounting:debit-memos:create',
@@ -128,10 +183,6 @@ export const ACCOUNTING_PERMISSIONS = {
   FIXED_ASSET_DEPRECIATE: 'accounting:fixedAsset:depreciate',
   FIXED_ASSET_DISPOSE: 'accounting:fixedAsset:dispose',
 
-  // Scenario 29 ACC-04 — month-end batch releasing installment financing
-  // markup from Unearned Interest Income into recognized interest income.
-  INSTALLMENT_INTEREST_RELEASE: 'accounting:installmentInterest:release',
-
   RECURRING_ENTRIES_READ: 'accounting:recurring-entries:read',
   RECURRING_ENTRIES_CREATE: 'accounting:recurring-entries:create',
   RECURRING_ENTRIES_UPDATE: 'accounting:recurring-entries:update',
@@ -144,6 +195,18 @@ export const ACCOUNTING_PERMISSIONS = {
   SUPPLIER_DEBIT_MEMOS_APPROVE: 'accounting:supplier-debit-memos:approve',
   SUPPLIER_DEBIT_MEMOS_FINALIZE: 'accounting:supplier-debit-memos:finalize',
   SUPPLIER_DEBIT_MEMOS_VOID: 'accounting:supplier-debit-memos:void',
+
+  // Scenario 72 — the internal DMINV memo a Delivery Receipt drafts.
+  INVENTORY_DEBIT_MEMOS_READ: 'accounting:inventory-debit-memos:read',
+  INVENTORY_DEBIT_MEMOS_CREATE: 'accounting:inventory-debit-memos:create',
+  INVENTORY_DEBIT_MEMOS_UPDATE: 'accounting:inventory-debit-memos:update',
+  INVENTORY_DEBIT_MEMOS_APPROVE: 'accounting:inventory-debit-memos:approve',
+  INVENTORY_DEBIT_MEMOS_VOID: 'accounting:inventory-debit-memos:void',
+
+  // Scenario 62 — Business Owner only. Checked with hasExactPermission(),
+  // never can()/hasPermission(): the Accountant's 'accounting:*' wildcard
+  // must not reach it (the backend's QueryCenterGuard enforces the same).
+  QUERY_CENTER_READ: 'accounting:query-center:read',
 
   WILDCARD: 'accounting:*',
 } as const
@@ -176,6 +239,13 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:expense:create': 'Create expenses',
   'accounting:expense:update': 'Edit expenses',
   'accounting:expense:delete': 'Delete expenses',
+  'accounting:employee:read': 'View the Employees master list and search employees',
+  'accounting:employee:create': 'Add a new employee to the master list',
+  'accounting:employee:update': 'Edit an employee record',
+  'accounting:employee:delete': 'Remove an employee from the master list',
+  'accounting:employee-cash-loan:read': 'Search employees and view employee cash-loan balances',
+  'accounting:employee-cash-loan:create': 'Issue an employee cash loan — no approval step',
+  'accounting:employee-cash-loan:pay': 'Record a payment against an Others cash loan',
   'accounting:payment:read': 'View payments',
   'accounting:payment:create': 'Create payments',
   'accounting:payment:update': 'Edit payments',
@@ -190,8 +260,18 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:customer:delete': 'Delete customers',
   'accounting:bir_export:read': 'View BIR forms and alphalist',
   'accounting:bir_export:generate': 'Generate BIR forms',
+  'accounting:tax-codes:read': 'View the tax code master (rates, ATCs, posting accounts)',
+  'accounting:tax-codes:create': 'Add tax codes and new rate versions',
+  'accounting:tax-codes:update': 'Edit tax code names, ATCs, posting accounts and flags',
+  'accounting:tax-codes:override':
+    'Change a tax code the system filled in by default on a bill or an invoice',
+  'accounting:tax-closing:read': 'View VAT settlements and withholding tax remittances',
+  'accounting:tax-closing:create': 'Post a VAT settlement or a withholding tax remittance',
+  'accounting:tax-closing:reverse': 'Reverse a posted VAT settlement or withholding tax remittance',
   'accounting:financial_report:read':
     'View financial reports (Balance Sheet, Income Statement, Trial Balance, Cash Flow)',
+  'accounting:manual-rr:create':
+    'Submit or approve a manual receiving report with no PO/transfer/count context, from Accounting',
   'accounting:ap-bills:read': 'View AP bills, match-check results, and payment documents',
   'accounting:ap-bills:create': 'Create an AP bill (vendor invoice)',
   'accounting:ap-bills:update': 'Edit a DRAFT AP bill',
@@ -211,18 +291,23 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:ar-invoices:delete': 'Delete an AR invoice',
   'accounting:ar-invoices:send': 'Send an AR invoice to the customer',
   'accounting:ar-invoices:pay': 'Record or cancel a payment against an AR invoice',
+  'accounting:retention:adjust':
+    'Offset a customer retention against a claim, write it off, or provide for it as doubtful',
+  'accounting:ar-invoices:restricted-vat':
+    'Approve an AR invoice classified as zero-rated or VAT-exempt (no output VAT)',
   'accounting:bank-accounts:read': 'View bank accounts and reconciliation history',
   'accounting:bank-accounts:create': 'Create a bank account',
   'accounting:bank-accounts:update': 'Edit a bank account',
   'accounting:bank-accounts:delete': 'Deactivate a bank account',
   'accounting:bank-accounts:reconcile': 'Create and complete a bank reconciliation',
+  'accounting:cash-in-transit:read': 'View outstanding Cash-in-Transit from Accounting',
+  'accounting:cash-in-transit:manage': 'Deposit Cash-in-Transit into a bank account',
+  'accounting:cash-in-transit:verify':
+    "Check a POS deposit draft's attachments and clear (post) it",
   'accounting:bank-accounts:adjust':
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
   'accounting:bank-accounts:transfer':
     'Transfer money between two bank/fund accounts (e.g. funding Petty Cash / the Revolving Fund)',
-  'accounting:employee-appliance-loan:read': 'View employee appliance loans',
-  'accounting:employee-appliance-loan:create':
-    'Create an employee appliance loan and record payments against it',
   'accounting:budget:read': 'View budgets + variance reports',
   'accounting:budget:create': 'Create budgets per account/dimension/period',
   'accounting:budget:update': 'Edit budgets',
@@ -231,6 +316,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:credit-memos:read': 'View credit memos',
   'accounting:credit-memos:create': 'Issue a credit memo against an open invoice',
   'accounting:credit-memos:void': 'Void a credit memo',
+  'accounting:x-deal-memos:issue':
+    "Issue or void an X-Deal credit memo, clearing a barter sale's whole balance",
   'accounting:debit-memos:read': 'View debit memos',
   'accounting:debit-memos:create': 'Issue a debit memo against an invoice',
   'accounting:debit-memos:void': 'Void a debit memo',
@@ -255,7 +342,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:fixedAsset:delete': 'Retire a fixed asset',
   'accounting:fixedAsset:depreciate': 'Run depreciation (posts JE)',
   'accounting:fixedAsset:dispose': 'Dispose a fixed asset (posts gain/loss)',
-  'accounting:installmentInterest:release': 'Run the month-end installment interest release batch',
   'accounting:recurring-entries:read': 'View recurring journal entry templates',
   'accounting:recurring-entries:create': 'Create a recurring journal entry template',
   'accounting:recurring-entries:update': 'Edit a recurring journal entry template',
@@ -269,6 +355,17 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:supplier-debit-memos:finalize':
     'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
   'accounting:supplier-debit-memos:void': 'Void a supplier debit memo',
+  'accounting:inventory-debit-memos:read': 'View inventory debit memos (DMINV)',
+  'accounting:inventory-debit-memos:create':
+    'Raise a standalone inventory debit memo (journal entry only)',
+  'accounting:inventory-debit-memos:update':
+    'Edit the accounts and amounts on a draft inventory debit memo',
+  'accounting:inventory-debit-memos:approve':
+    'Post an inventory debit memo — moves its Delivery Receipt stock and posts the journal entry',
+  'accounting:inventory-debit-memos:void':
+    'Void a posted inventory debit memo, reversing stock and GL',
+  'accounting:query-center:read':
+    'Data Query Center — browse and export raw data from every module (Business Owner only)',
   'accounting:*': 'Wildcard full accounting access',
 }
 

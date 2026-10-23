@@ -65,7 +65,6 @@ export const PriceListItemSchema = z.object({
   id: z.string(),
   itemId: z.string(),
   price: z.union([z.string(), z.number()]),
-  floorPrice: z.union([z.string(), z.number()]).optional().nullable(),
   minQty: z.union([z.string(), z.number()]).optional().nullable(),
   // Scenario 15, Part 5
   downPayment: z.union([z.string(), z.number()]).optional().nullable(),
@@ -93,7 +92,6 @@ export type PriceListItemsPage = z.infer<typeof PriceListItemsPageSchema>
 export const UpsertPriceListItemFormSchema = z.object({
   itemId: z.string().min(1, 'Select an item'),
   price: z.number().min(0, 'Price must be 0 or more'),
-  floorPrice: z.number().min(0).optional(),
   minQty: z.number().min(0).optional(),
   // Scenario 15, Part 5
   downPayment: z.number().min(0).optional(),
@@ -142,7 +140,6 @@ export const ItemPriceGuideEntrySchema = z.object({
   priceListId: z.string(),
   priceListName: z.string(),
   price: z.union([z.string(), z.number()]),
-  floorPrice: z.union([z.string(), z.number()]).optional().nullable(),
   downPayment: z.union([z.string(), z.number()]).optional().nullable(),
   minQty: z.union([z.string(), z.number()]).optional().nullable(),
   cmAmount: z.union([z.string(), z.number()]).optional().nullable(),

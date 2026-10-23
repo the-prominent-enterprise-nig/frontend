@@ -1,6 +1,12 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
-import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import {
+  receivingReportSourceName,
+  receivingReportSourceSubtitle,
+  receivingReportBranchLine,
+  receivingReportMetaSlots,
+} from '@/src/libs/format/receiving-report'
+import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -81,8 +87,6 @@ export function buildReceivingReportHtml(
   const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
-  const supplier = rr.supplier as { name?: string; address?: string } | undefined
-  const warehouse = rr.warehouse as { name?: string; branch?: { name?: string } | null } | undefined
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
 
@@ -92,11 +96,25 @@ export function buildReceivingReportHtml(
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
-  // Either the linked PO's real code or the free-text number typed on a
-  // standalone receipt — same rule, and so the same answer, as the
-  // Receiving Reports list column and the on-screen sheet.
-  const poNumber = receivingReportPoNumber(rr as Parameters<typeof receivingReportPoNumber>[0])
+  // Reference, then the source document and its date — or, on a customer
+  // return, the sales invoice it came back from. The on-screen sheet renders
+  // the same slots through this same formatter.
+  const metaSlots = receivingReportMetaSlots(rr as Parameters<typeof receivingReportMetaSlots>[0])
+  const supplierAddress = (rr.supplier as { address?: string | null } | null | undefined)?.address
+  const branch = receivingReportBranchLine(rr as Parameters<typeof receivingReportBranchLine>[0])
+  // The supplier on a bought-in delivery, the sending branch on one that came
+  // from another branch — a transfer receipt has no supplier to name.
+  const sourceName = receivingReportSourceName(
+    rr as Parameters<typeof receivingReportSourceName>[0]
+  )
+  const sourceSubtitle = receivingReportSourceSubtitle(
+    rr as Parameters<typeof receivingReportSourceSubtitle>[0]
+  )
+  // The same formatter the on-screen sheet uses, so the printout and the
+  // preview never disagree on how the crew is written.
+  const driverHelper = receivingReportDriverHelper(
+    rr as Parameters<typeof receivingReportDriverHelper>[0]
+  )
 
   let totalQty = 0
   let totalAmount = 0
@@ -132,6 +150,17 @@ export function buildReceivingReportHtml(
     })
     .join('')
 
+  // Input VAT carved out of the unit costs and tax withheld at receiving, so
+  // AP's invoice (which takes both from this receipt) can be read against it.
+  const vatAmount = Number(rr.vatAmount ?? 0)
+  const withheldAmount = Number(rr.withheldAmount ?? 0)
+  const taxRows =
+    showAmounts && (vatAmount > 0 || withheldAmount > 0)
+      ? `<tr><td class="label">Input VAT</td><td class="value">${fmtMoney(vatAmount)}</td></tr>
+        <tr><td class="label">Less: Withholding tax</td><td class="value">${withheldAmount > 0 ? '- ' : ''}${fmtMoney(withheldAmount)}</td></tr>
+        <tr><td class="label">Net payable</td><td class="value">${fmtMoney(totalAmount + vatAmount - withheldAmount)}</td></tr>`
+      : ''
+
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
@@ -140,10 +169,13 @@ export function buildReceivingReportHtml(
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    /* Against the divider, as on the on-screen sheet. */
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
+    .rr-branch { margin: 0 0 10px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     thead th { background: #f5f5f5; text-align: center; font-weight: 700; }
@@ -168,25 +200,34 @@ export function buildReceivingReportHtml(
 
     <div class="info">
       <div class="party">
-        <p class="party-name">${esc(supplier?.name) || '—'}</p>
-        <p class="party-address">${esc(supplier?.address) || '—'}</p>
+        <p class="party-name">${esc(sourceName) || '—'}</p>
+        ${sourceSubtitle ? `<p class="party-address">${esc(sourceSubtitle)}</p>` : ''}
+        ${supplierAddress ? `<p class="party-address">${esc(supplierAddress)}</p>` : ''}
+        ${driverHelper ? `<p class="party-address">Driver/Helper: ${esc(driverHelper)}</p>` : ''}
       </div>
       <div class="meta">
-        <p class="meta-label">No.</p>
+        <p class="meta-label">RR No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Date</p>
+        <p class="meta-label">RR Date</p>
         <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
-        <p class="meta-label">PO No.</p>
-        <p class="meta-value">${esc(poNumber) || '—'}</p>
-        <p class="meta-label">Reference</p>
-        <p class="meta-value">${esc(ref) || '—'}</p>
+        ${metaSlots
+          .map(
+            (slot) => `<p class="meta-label">${esc(slot.label)}</p>
+        <p class="meta-value">${slot.isDate ? fmtDate(slot.value) : esc(slot.value) || '—'}</p>`
+          )
+          .join('')}
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
-        <p class="party-address">Branch: ${esc(warehouse?.branch?.name ?? warehouse?.name) || '—'}</p>
       </div>
     </div>
+
+    ${
+      branch
+        ? `<p class="rr-branch"><strong>Branch:</strong> ${esc(branch.name)}${branch.address ? `, ${esc(branch.address)}` : ''}</p>`
+        : ''
+    }
 
     <table>
       <thead>
@@ -216,6 +257,7 @@ export function buildReceivingReportHtml(
           <td class="label">Total</td>
           <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}${showAmounts ? ` — ${fmtMoney(totalAmount)}` : ''}</td>
         </tr>
+        ${taxRows}
       </table>
     </div>
 
@@ -241,25 +283,194 @@ export function printReceivingReportDocument(
   win.document.close()
 }
 
+/** One line of a customer return, as the document endpoint emits it. */
+type CustomerReturnDocLine = {
+  item?: { sku?: string | null; name?: string | null } | null
+  quantity?: number | string
+  unitPrice?: number | string | null
+  disposition?: string | null
+  reason?: string | null
+  serialNumber?: string | null
+  replacementSerialNumber?: string | null
+}
+
+/** How each disposition reads on the customer's copy. Spelled out rather than
+ *  printed as the stored enum: "quarantine" is a warehouse word, and the
+ *  person holding this paper wants to know what happens to their unit. */
+const RETURN_OUTCOME_LABEL: Record<string, string> = {
+  restock: 'Returned to stock',
+  quarantine: 'Held for inspection',
+  repair: 'Taken in for repair',
+  exchange: 'Exchanged',
+  scrap: 'Written off',
+}
+
 /**
- * Saves the same markup printReceivingReportDocument() opens as a file the
- * browser downloads directly — for a reader who wants the receipt on disk
- * (attaching it to an email, archiving it) rather than a print dialog. It's
- * the identical HTML, so it opens showing the same paper and can still be
- * printed to PDF from there.
+ * The customer's copy of a return — the paper they walk out holding.
+ *
+ * Same typographic system as buildReceivingReportHtml() and the stock
+ * transfer (title left / logo right, three-column info row, light
+ * #ccc-bordered table, signature blocks), because this IS a receiving report:
+ * the RRC series it is numbered from is the customer-side counterpart of the
+ * supplier-side RR05, and the two are handed across the same counter. It
+ * previously printed to a shape of its own and read as though it came from a
+ * different company.
+ *
+ * What differs from the supplier RR is only what the document is about: the
+ * party is the customer rather than a supplier, each line carries why it came
+ * back and what was decided about it, and the money column states value
+ * returned rather than cost received. An exchange line names the unit that
+ * went out, since that is the half of the swap the customer cannot see on
+ * their own receipt.
  */
-export function downloadReceivingReportDocument(
-  data: unknown,
-  filename: string,
-  opts: { showAmounts?: boolean } = {}
-): void {
-  const blob = new Blob([buildReceivingReportHtml(data, opts)], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename.endsWith('.html') ? filename : `${filename}.html`
-  link.click()
-  URL.revokeObjectURL(url)
+export function buildCustomerReturnReceiptHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const ret = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+  const customer = ret.customer as { name?: string; customerCode?: string } | null | undefined
+  const warehouse = ret.warehouse as
+    | { name?: string; branch?: { name?: string } | null }
+    | undefined
+  const lines = Array.isArray(ret.lines) ? (ret.lines as CustomerReturnDocLine[]) : []
+
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtMoney = (n: number) =>
+    n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  let totalQty = 0
+  let totalValue = 0
+
+  const rows = lines
+    .map((l) => {
+      const qty = Number(l.quantity ?? 0)
+      const unitPrice = Number(l.unitPrice ?? 0)
+      totalQty += qty
+      totalValue += qty * unitPrice
+      const outcome = l.disposition ? (RETURN_OUTCOME_LABEL[l.disposition] ?? l.disposition) : '—'
+      return `<tr>
+        <td class="mono">${esc(l.item?.sku) || '—'}${
+          l.serialNumber ? `<div class="sub">${esc(l.serialNumber)}</div>` : ''
+        }</td>
+        <td>${esc(l.item?.name) || '—'}</td>
+        <td>${esc(l.reason) || '—'}</td>
+        <td>${esc(outcome)}${
+          l.replacementSerialNumber
+            ? `<div class="sub">Replaced with ${esc(l.replacementSerialNumber)}</div>`
+            : ''
+        }</td>
+        <td class="right">${qty}</td>
+        <td class="right">${fmtMoney(qty * unitPrice)}</td>
+      </tr>`
+    })
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; vertical-align: top; }
+    thead th { background: #f5f5f5; text-align: center; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    .sub { color: #555; font-size: 11px; margin-top: 3px; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; }
+    .total-wrap td { font-weight: 700; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 120px; }
+    .note { margin-top: 16px; font-size: 12px; color: #333; }
+    .note .meta-label { margin-bottom: 4px; }
+    .signatures { margin-top: 40px; display: flex; gap: 56px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .sig-name { margin: 4px 0 0; font-size: 12px; color: #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Receiving Report</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(customer?.name) || 'Walk-in customer'}</p>
+        <p class="party-address">${esc(customer?.customerCode) || 'No account'}</p>
+        <p class="party-address">Goods received from customer</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">No.</p>
+        <p class="meta-value">${esc(doc.documentNumber)}</p>
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(ret.occurredAt ?? doc.generatedAt)}</p>
+        <p class="meta-label">Return No.</p>
+        <p class="meta-value">${esc(ret.returnNumber) || '—'}</p>
+        <p class="meta-label">Against Invoice</p>
+        <p class="meta-value">${esc(ret.salesInvoiceNumber) || '—'}</p>
+        <p class="meta-label">Credit Memo</p>
+        <p class="meta-value">${esc(ret.creditMemoNumber) || '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName) || '—'}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+        <p class="party-address">Branch: ${esc(warehouse?.branch?.name ?? warehouse?.name) || '—'}</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:16%">Part No. / Serial No.</th>
+          <th>Description</th>
+          <th style="width:18%">Reason</th>
+          <th style="width:18%">Outcome</th>
+          <th class="right" style="width:8%">Qty</th>
+          <th class="right" style="width:14%">Value</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+
+    <div class="total-wrap">
+      <table>
+        <tr>
+          <td class="label">Total</td>
+          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'} — ${fmtMoney(totalValue)}</td>
+        </tr>
+      </table>
+    </div>
+
+    ${
+      ret.notes
+        ? `<div class="note"><p class="meta-label">Notes</p><p>${esc(ret.notes)}</p></div>`
+        : ''
+    }
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Received by:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Customer:</p>
+        <div class="sig-line"></div>
+        ${customer?.name ? `<p class="sig-name">${esc(customer.name)}</p>` : ''}
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
 }
 
 /** A transfer's From/To party. Every branch owns exactly one shadow
@@ -284,8 +495,26 @@ function partyName(wh: TransferParty | undefined): string {
 }
 
 function partyAddress(wh: TransferParty | undefined): string {
-  if (wh?.branch) return [wh.branch.addressLine1, wh.branch.city].filter(Boolean).join(', ')
-  return wh?.address ?? ''
+  // A branch with no street address on file falls back to the warehouse's
+  // own address rather than printing blank (Scenario 69 item 25).
+  const branchAddress = wh?.branch
+    ? [wh.branch.addressLine1, wh.branch.city].filter(Boolean).join(', ')
+    : ''
+  return branchAddress || wh?.address || ''
+}
+
+/** The receipts a transfer arrived on, oldest first. A reopened, partially
+ * received transfer issues a separate RR per receive, so there can be more
+ * than one — every one is listed (Scenario 69 item 24). */
+function transferReceipts(
+  transfer: Record<string, unknown>
+): { code: string; receivedAt: string }[] {
+  const receipts = Array.isArray(transfer.goodsReceipts)
+    ? (transfer.goodsReceipts as { code?: string; receivedAt?: string }[])
+    : []
+  return receipts
+    .filter((r): r is { code: string; receivedAt: string } => !!r.code && !!r.receivedAt)
+    .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime())
 }
 
 /**
@@ -306,14 +535,27 @@ export function buildStockTransferHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Shown for any serial-tracked line (Scenario 71 item 19), not only once a
+  // serial is assigned — a pre-dispatch sheet reads "Assigned at dispatch".
   const hasSerialLine = lines.some(
-    (l) => (l.serialNumber as Record<string, unknown> | null)?.serialNumber
+    (l) =>
+      (l.serialNumber as Record<string, unknown> | null)?.serialNumber ||
+      (l.item as { isSerialTracked?: boolean } | undefined)?.isSerialTracked
   )
+  // Only a not-yet-dispatched transfer's empty serial is "to come".
+  const awaitingDispatch = [
+    'pending_manager_approval',
+    'requested',
+    'pending_hq_approval',
+    'draft',
+  ].includes(String(transfer.status))
+  // Blank (—) until the transfer is received.
+  const receipts = transferReceipts(transfer)
 
   let totalQty = 0
   const rows = lines
     .map((l, i) => {
-      const item = l.item as { name?: string } | undefined
+      const item = l.item as { name?: string; isSerialTracked?: boolean } | undefined
       const serial = (l.serialNumber as Record<string, unknown> | null)?.serialNumber as
         | string
         | undefined
@@ -322,7 +564,7 @@ export function buildStockTransferHtml(data: unknown): string {
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(item?.name) || '—'}</td>
-        ${hasSerialLine ? `<td class="mono">${esc(serial) || '—'}</td>` : ''}
+        ${hasSerialLine ? `<td class="mono">${esc(serial) || (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')}</td>` : ''}
         <td class="right">${qty}</td>
       </tr>`
     })
@@ -341,8 +583,8 @@ export function buildStockTransferHtml(data: unknown): string {
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .info { display: flex; gap: 28px; margin-bottom: 20px; }
-    .info > div { flex: 1; }
+    .head-grid { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 28px; }
+    .info, .logistics { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; margin-bottom: 20px; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
@@ -350,7 +592,8 @@ export function buildStockTransferHtml(data: unknown): string {
     .party-dir { font-weight: 700; }
     .party .party-to { margin-top: 12px; }
     .meta-value { margin: 0 0 12px; }
-    .logistics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 28px; margin-bottom: 20px; }
+    .logistics > div:nth-child(odd) { grid-column: 1; }
+    .logistics > div:nth-child(even) { grid-column: 2 / span 2; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
@@ -373,6 +616,7 @@ export function buildStockTransferHtml(data: unknown): string {
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
+    <div class="head-grid">
     <div class="info">
       <div class="party">
         <p class="party-name"><span class="party-dir">From</span> ${esc(partyName(fromWarehouse))}</p>
@@ -381,10 +625,14 @@ export function buildStockTransferHtml(data: unknown): string {
         <p class="party-address">${esc(partyAddress(toWarehouse)) || '—'}</p>
       </div>
       <div class="meta">
-        <p class="meta-label">No.</p>
+        <p class="meta-label">Transfer No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Date</p>
+        <p class="meta-label">Transfer Date</p>
         <p class="meta-value">${fmtDate(transfer.transferDate)}</p>
+        <p class="meta-label">RR No.</p>
+        <p class="meta-value">${receipts.map((r) => esc(r.code)).join(', ') || '—'}</p>
+        <p class="meta-label">RR Date</p>
+        <p class="meta-value">${receipts.map((r) => fmtDate(r.receivedAt)).join(', ') || '—'}</p>
         ${transfer.reason ? `<p class="meta-label">Reason</p><p class="meta-value">${esc(transfer.reason)}</p>` : ''}
       </div>
       <div class="enterprise">
@@ -403,6 +651,7 @@ export function buildStockTransferHtml(data: unknown): string {
             .join('')}</div>`
         : ''
     }
+    </div>
 
     <table>
       <thead>
@@ -449,22 +698,26 @@ export function printStockTransferDocument(data: unknown): void {
  * doesn't reuse printInventoryDocument()'s generic "Enterprise" meta-grid
  * shell, since a PO needs its own two-party (supplier + enterprise) header,
  * a delivery note, and signature blocks that don't fit that shared shape.
+ *
+ * Split out into its own function purely so printPurchaseOrderDocument()
+ * doesn't have to inline this much markup — it's the only caller.
  */
-export function printPurchaseOrderDocument(
+function buildPurchaseOrderHtml(
   data: unknown,
   // Purchase order lines don't carry their received serial numbers
   // themselves (those live on the goods receipt) — pass in a
   // purchaseOrderLineId -> serials map (see get-purchase-order-receipts.ts)
   // once the PO is closed, so a fully-received PO's printout can show them.
   serialsByLineId?: Record<string, string[]>
-): void {
+): string {
   const doc = data as PrintDocumentEnvelope
   const po = doc.document as Record<string, unknown>
   const supplier = po.supplier as { name?: string; address?: string; taxId?: string } | undefined
   const lines = Array.isArray(po.lines) ? (po.lines as Record<string, unknown>[]) : []
   const enterprise = doc.enterprise
 
-  // Where the goods actually go: "Deliver to <location>" with the street
+  // Where the goods actually go, laid out like the supplier block: the
+  // location in bold (or, on a drop-ship, the instructions), the street
   // address beneath it.
   //
   // This used to print only the free-text `deliveryInstructions` note, so a
@@ -527,7 +780,6 @@ export function printPurchaseOrderDocument(
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(name)}${discountNote}</td>
-        <td>${esc(l.description) || '—'}</td>
         <td class="right">${qty}</td>
         <td class="right">${fmt(unitPrice)}</td>
         <td class="right">${fmt(lineTotal)}</td>
@@ -562,10 +814,7 @@ export function printPurchaseOrderDocument(
     })
     .join('')
 
-  const win = window.open('', '_blank', 'width=950,height=750')
-  if (!win) return
-
-  win.document.write(`<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
@@ -573,6 +822,7 @@ export function printPurchaseOrderDocument(
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
@@ -581,6 +831,7 @@ export function printPurchaseOrderDocument(
     .delivery-label { font-weight: 700; margin: 0 0 2px; }
     .delivery-address { margin: 0; color: #333; }
     .delivery-note { margin: 2px 0 0; color: #333; }
+    .delivery-label.delivery-note { margin: 0 0 2px; color: inherit; white-space: pre-line; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
@@ -631,9 +882,9 @@ export function printPurchaseOrderDocument(
     ${
       destinationName || destinationAddress || po.deliveryInstructions
         ? `<div class="delivery">
-      <p class="delivery-label">Deliver to${destinationName ? ` ${esc(destinationName)}` : ''}</p>
+      ${destinationName ? `<p class="delivery-label">${esc(destinationName)}</p>` : ''}
       ${destinationAddress ? `<p class="delivery-address">${esc(destinationAddress)}</p>` : ''}
-      ${po.deliveryInstructions ? `<p class="delivery-note">${esc(po.deliveryInstructions)}</p>` : ''}
+      ${po.deliveryInstructions ? `<p class="${destinationName ? 'delivery-note' : 'delivery-label delivery-note'}">${esc(po.deliveryInstructions)}</p>` : ''}
     </div>`
         : ''
     }
@@ -643,7 +894,6 @@ export function printPurchaseOrderDocument(
         <tr>
           <th class="num">#</th>
           <th>Item</th>
-          <th>Description</th>
           <th class="right">Qty</th>
           <th class="right">Unit price</th>
           <th class="right">Total</th>
@@ -690,7 +940,16 @@ export function printPurchaseOrderDocument(
     }
 
     <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
-  </body></html>`)
+  </body></html>`
+}
+
+export function printPurchaseOrderDocument(
+  data: unknown,
+  serialsByLineId?: Record<string, string[]>
+): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildPurchaseOrderHtml(data, serialsByLineId))
   win.document.close()
 }
 
@@ -719,7 +978,7 @@ export function printPurchaseOrderDocument(
  * misalign in the first place, and doesn't match the paper form anyway:
  *   1. Lastname / Firstname / Middle / (Sales Invoice No. + SI Date)
  *   2. Brand / Type / Model / Serial
- *   3. Agent / Unit Manager / Collector / FMI
+ *   3. Agent / Collector (two cells wide) / FMI
  *   4. LCP / Down / Amt. Financed / Inst. Diff.
  *   5. Scheme (the paper form's "WIP") / MI / Term / Branch
  *   6. PN / IC / Total Price
@@ -730,8 +989,9 @@ export function printPurchaseOrderDocument(
  * customer's own real stored name-part columns now, falling back to the
  * single merged `name` in the Lastname cell only for the rare customer
  * created before those columns existed and never re-saved since. The one
- * thing the paper form has that this still can't reproduce is "Unit
- * Manager" — no such role exists anywhere in this system, left blank.
+ * thing the paper form has that this does not carry over is "Unit
+ * Manager" — no such role exists in this system, and the client asked for
+ * it off the Customer Ledger (2026-10-11).
  */
 export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
   const { account, rows } = ledger
@@ -773,12 +1033,17 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
       </tr>`
     )
     .join('')
+  // A "Bill" row's debit is shown for legibility but never added into
+  // outstanding (see InstallmentLedgerRow.displayOnly) — the amount is
+  // already recognized via the upfront lump Sale debit, so this footer must
+  // skip it too, or it double-counts against the on-screen ledger's own Total.
+  const billableRows = rows.filter((r) => !r.displayOnly)
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
         <td colspan="4"><strong>Total</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
         <td></td>
       </tr>`
@@ -844,12 +1109,12 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
       }
       <tr>
         ${cell('Agent', account.sellingAgent?.name ?? '—')}
-        ${cell('Unit Manager', '—')}
         ${cell(
           'Collector',
           account.collector
             ? `${account.collector.stubNumber} — ${account.collector.name}`
-            : 'Unassigned'
+            : 'Unassigned',
+          2
         )}
         ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
       </tr>
@@ -949,12 +1214,17 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       </tr>`
     )
     .join('')
+  // A "Bill" row's debit is shown for legibility but never added into
+  // outstanding (see InstallmentLedgerRow.displayOnly) — the amount is
+  // already recognized via the upfront lump Sale debit, so this footer must
+  // skip it too, or it double-counts against the on-screen ledger's own Total.
+  const billableRows = rows.filter((r) => !r.displayOnly)
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
         <td colspan="4"><strong>Total</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
-        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
         <td></td>
       </tr>`
@@ -1177,7 +1447,13 @@ export function buildAgingReportHtml(report: AgingReportResponse): string {
         .map((collector) => {
           let n = 0
           const rows = collector.rows.map((r) => row(r, ++n)).join('')
-          return `<tr class="group-header"><td colspan="${columns.length}">Collector: ${esc(collector.collectorLabel)}</td></tr>${rows}${subtotalRow('Collector subtotal', collector.subtotal)}`
+          const heading = [collector.areaCode ?? collector.area, collector.collectorLabel]
+            .filter(Boolean)
+            .join(' - ')
+          const supervisor = collector.supervisorName
+            ? ` · Supervisor: ${esc(collector.supervisorName)}`
+            : ''
+          return `<tr class="group-header"><td colspan="${columns.length}">Collector: ${esc(heading)}${supervisor}</td></tr>${rows}${subtotalRow('Collector subtotal', collector.subtotal)}`
         })
         .join('')
       return `<tr class="group-header branch"><td colspan="${columns.length}">AREA: ${esc(branch.branchName)}</td></tr>${collectorSections}${subtotalRow('Branch subtotal', branch.subtotal)}`
@@ -1232,6 +1508,390 @@ export function printAgingReportDocument(report: AgingReportResponse): void {
   const win = window.open('', '_blank', 'width=1400,height=850')
   if (!win) return
   win.document.write(buildAgingReportHtml(report))
+  win.document.close()
+}
+
+/**
+ * "Print per collector" — one page per collector in the shape of the client's
+ * collector aging sheet: a CAT / Area / customer table sorted by category
+ * then area, a Grand Total row, and blank ONE ON ONE / ACTION TAKEN / PTP
+ * columns the collector fills in by hand in the field.
+ *
+ * Area is the account's own stored area (InstallmentAccount.area). The sheet's
+ * "COUNTA of Last OR Date" column is reproduced as 1/0 (has a last OR or not).
+ */
+export function buildCollectorAgingHtml(report: AgingReportResponse): string {
+  const fmt = (n: number | null) =>
+    n === null
+      ? ''
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  type Row = AgingReportResponse['branches'][number]['collectors'][number]['rows'][number]
+  const barangay = (r: Row) => (r.accountArea ?? '').trim().toUpperCase()
+  const headers = [
+    'CAT',
+    'Area',
+    'Customer Name',
+    'SI No.',
+    'Term',
+    'MI',
+    'OB',
+    'MI DUE',
+    'LCP',
+    "TOTAL PAY'T",
+    'Last OR Count',
+    'Last OR Amt',
+    'NOT MVG',
+    'NO ARS',
+    'ONE ON ONE',
+    'ACTION TAKEN',
+    'PTP DATE',
+    'PTP AMT',
+  ]
+  const numeric = new Set([4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+
+  const pages = report.branches.flatMap((branch) =>
+    branch.collectors.map((collector) => {
+      const rows = collector.categories.flatMap((cat) =>
+        [...cat.rows]
+          .sort(
+            (a, b) =>
+              barangay(a).localeCompare(barangay(b)) || a.customerName.localeCompare(b.customerName)
+          )
+          .map(
+            (r) => `<tr>
+    <td>${cat.category ?? ''}</td>
+    <td>${esc(barangay(r))}</td>
+    <td>${esc(r.customerName)}</td>
+    <td>${esc(r.siNo)}</td>
+    <td class="right">${r.term ?? ''}</td>
+    <td class="right">${fmt(r.mi)}</td>
+    <td class="right">${fmt(r.ob)}</td>
+    <td class="right">${fmt(r.miDue)}</td>
+    <td class="right">${fmt(r.lcp)}</td>
+    <td class="right">${fmt(r.totalPayt)}</td>
+    <td class="right">${r.lastOrDate ? 1 : 0}</td>
+    <td class="right">${fmt(r.lastOrAmt)}</td>
+    <td class="right">${r.notMvg}</td>
+    <td class="right">${r.noArs ?? ''}</td>
+    <td></td><td></td><td></td><td></td>
+  </tr>`
+          )
+      )
+      const s = collector.subtotal
+      const lastOrCount = collector.rows.filter((r) => r.lastOrDate).length
+      const title = [collector.areaCode ?? collector.area, collector.collectorLabel]
+        .filter(Boolean)
+        .join(' - ')
+      return `<section>
+    <div class="letterhead">
+      <h1>${esc(title)}</h1>
+      <span class="doc-label">${esc(branch.branchName)}${collector.supervisorName ? ` · Supervisor: ${esc(collector.supervisorName)}` : ''}</span>
+    </div>
+    <table class="aging">
+      <thead><tr>${headers.map((h, i) => `<th${numeric.has(i) ? ' class="right"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.join('')}
+        <tr class="subtotal"><td colspan="6">Grand Total (${s.count})</td>
+          <td class="right">${fmt(s.ob)}</td><td class="right">${fmt(s.miDue)}</td>
+          <td class="right">${fmt(s.lcp)}</td><td class="right">${fmt(s.totalPayt)}</td>
+          <td class="right">${lastOrCount}</td><td colspan="8"></td></tr>
+      </tbody>
+    </table>
+  </section>`
+    })
+  )
+
+  return `<!DOCTYPE html><html><head><title>AR Aging — Per Collector</title><style>
+    body { font-family: Arial, sans-serif; padding: 14px; color: #111; font-size: 9.5px; }
+    section { page-break-after: always; }
+    section:last-of-type { page-break-after: auto; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .letterhead h1 { font-size: 15px; margin: 0; }
+    .letterhead .doc-label { font-size: 11px; font-weight: 700; }
+    table.aging { width: 100%; border-collapse: collapse; }
+    table.aging th, table.aging td { border: 1px solid #999; padding: 3px 4px; line-height: 1.2; white-space: nowrap; height: 14px; }
+    table.aging th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 8px; }
+    td.right, th.right { text-align: right; }
+    tr.subtotal td { background: #fafafa; font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } @page { size: landscape; } }
+  </style></head><body>
+    ${pages.join('') || '<p style="text-align:center;color:#999">No active accounts.</p>'}
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printCollectorAgingDocument(report: AgingReportResponse): void {
+  const win = window.open('', '_blank', 'width=1400,height=850')
+  if (!win) return
+  win.document.write(buildCollectorAgingHtml(report))
+  win.document.close()
+}
+
+/**
+ * "Print raw data" — the flat, one-row-per-account counterpart to
+ * buildAgingReportHtml's grouped legacy form. Same row set as the export's
+ * Detail sheet (aging-report.workbook.ts), just rendered for the browser:
+ * no branch/collector banners or subtotals, so it pastes cleanly into a
+ * spreadsheet instead of reproducing the client's paper form.
+ */
+export function buildAgingRawDataHtml(report: AgingReportResponse): string {
+  const fmt = (n: number | string | null) =>
+    n === null
+      ? '—'
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmtDate = (v: string | null | undefined) =>
+    v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  // Same columns, same order as the client's RAW aging sheet. Columns this
+  // system has no data for (Operation, UNIT, BILLING, penp, MI PAY, TNA, TNAC,
+  // item, status, Serial Number, Rebate, Agent, Co Maker and the account
+  // classification columns) are kept so the sheet lines up, but print blank.
+  const columns = [
+    'CAT',
+    'Year/Month',
+    'Collector',
+    'Area',
+    'Coll_Code_IAS',
+    'Coll_Code',
+    'Coll_Code_collector',
+    'Operation',
+    'Area Supervisor',
+    'br',
+    'SI No.',
+    'SI Date',
+    'Customer Name',
+    'Address',
+    'UNIT',
+    'Type',
+    'Term',
+    'MI',
+    'FMI Date',
+    'DP',
+    'DP Bal',
+    'PNV',
+    'OB',
+    'NYD',
+    'totdue',
+    'UNCOLL',
+    'MI DUE',
+    'BILLING',
+    'pnlty',
+    'penp',
+    'current',
+    'day30',
+    'day60',
+    'day90',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'LCP %',
+    'MI PAY',
+    'TNA',
+    'TNAC',
+    'item',
+    'status',
+    'NOT MVG',
+    'Last OR Date',
+    'Last ORlastnum',
+    'Last ORAmt',
+    'OVER 30',
+    'Serial Number',
+    'Rebate',
+    'Agent',
+    'Co Maker',
+    'Months Run',
+    '',
+    'Acct Classification Official',
+    'Acct Class Arrears',
+    'Acct Class Not Moving',
+  ]
+  const rightAlignedColumns = new Set([
+    'Term',
+    'MI',
+    'DP',
+    'DP Bal',
+    'PNV',
+    'OB',
+    'NYD',
+    'totdue',
+    'UNCOLL',
+    'MI DUE',
+    'pnlty',
+    'current',
+    'day30',
+    'day60',
+    'day90',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'LCP %',
+    'NOT MVG',
+    'Last ORAmt',
+    'OVER 30',
+    'Months Run',
+  ])
+  const fmtDash = (v: string | null | undefined) =>
+    v
+      ? new Date(v)
+          .toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+          .replace(/\//g, '-')
+      : ''
+  const money = (n: number | null | undefined) =>
+    n === null || n === undefined
+      ? ''
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  // The sheet's MOS RUN / "Months Run" pair: time elapsed from the SI date to
+  // the report date, as "1 Years 9 Months 24 Days", with MOS RUN that same
+  // span rounded UP to whole months (16 Days → 1, 1y 9m 24d → 22).
+  const elapsedSince = (from: string | null | undefined, to: string) => {
+    if (!from) return { label: '', mosRun: '' as string | number }
+    const a = new Date(from)
+    const b = new Date(to)
+    let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())
+    let days = b.getDate() - a.getDate()
+    if (days < 0) {
+      months -= 1
+      days += new Date(b.getFullYear(), b.getMonth(), 0).getDate()
+    }
+    if (months < 0) return { label: '', mosRun: 0 as string | number }
+    const parts = [
+      Math.floor(months / 12) > 0 ? `${Math.floor(months / 12)} Years` : '',
+      months % 12 > 0 ? `${months % 12} Months` : '',
+      days > 0 ? `${days} Days` : '',
+    ].filter(Boolean)
+    return {
+      label: parts.join(' ') || '0 Days',
+      mosRun: (months + (days > 0 ? 1 : 0)) as string | number,
+    }
+  }
+  const yearMonth = (() => {
+    const d = new Date(report.asOf)
+    return `${d.getFullYear()}_${String(d.getMonth() + 1).padStart(2, '0')}`
+  })()
+
+  const rows = report.branches.flatMap((branch) =>
+    branch.collectors.flatMap((collector) => {
+      // collectorLabel is "Ajuy — Gallendo Edgardo"; the sheet wants the bare name.
+      const name = collector.collectorLabel.split(' — ').pop() ?? ''
+      const underscored = name.replace(/ /g, '_')
+      return collector.rows.map((r) => {
+        const elapsed = elapsedSince(r.siDate, report.asOf)
+        const bucketCol = (...b: (typeof r.bucket)[]) => (b.includes(r.bucket) ? money(r.ob) : '')
+        const cells: (string | number)[] = [
+          r.category ?? '',
+          yearMonth,
+          underscored,
+          r.accountArea ?? '',
+          collector.areaCode ?? '',
+          collector.area ?? '',
+          collector.area ? `${collector.area}_${underscored}` : underscored,
+          r.operation ?? '',
+          (collector.supervisorName ?? '').replace(/ /g, '_'),
+          r.branchCode,
+          r.siNo,
+          fmtDash(r.siDate),
+          r.customerName,
+          r.address ?? '',
+          r.sheet?.unit ?? '',
+          r.type ?? '',
+          r.term ?? '',
+          money(r.mi),
+          fmtDash(r.fmiDate),
+          money(r.dp),
+          money(r.dpBal),
+          money(r.pnv),
+          money(r.ob),
+          money(r.notYetDue),
+          money(r.totalDue),
+          money(r.uncollected),
+          money(r.miDue),
+          money(r.miDue),
+          money(r.pnlty),
+          money(r.sheet?.penp),
+          bucketCol('current'),
+          bucketCol('1_30'),
+          bucketCol('31_60'),
+          bucketCol('61_90', '90_plus'),
+          r.noArs ?? '',
+          elapsed.mosRun,
+          money(r.totalPayt),
+          money(r.totalPrice),
+          `${r.totPricePercent}%`,
+          money(r.lcp),
+          r.lcp && r.lcp > 0 ? `${Math.round((r.totalPayt / r.lcp) * 100)}%` : '',
+          money(r.sheet?.miPay),
+          r.sheet?.tna ?? '',
+          r.sheet?.tnac ?? '',
+          r.sheet?.itemGroup ?? '',
+          r.sheet?.statusLabel ?? '',
+          r.notMvg,
+          fmtDash(r.lastOrDate),
+          r.lastOrLastnum ?? '',
+          money(r.lastOrAmt),
+          r.over ?? '',
+          r.sheet?.serialNumber ?? '',
+          money(r.sheet?.rebate),
+          r.sheet?.agentName ?? '',
+          r.sheet?.coMakerName ?? '',
+          elapsed.label,
+          '',
+          r.sheet?.acctClassOfficial ?? '',
+          r.sheet?.acctClassArrears ?? '',
+          r.sheet?.acctClassNotMoving ?? '',
+        ]
+        return `<tr>${cells
+          .map(
+            (v, i) =>
+              `<td${rightAlignedColumns.has(columns[i]) ? ' class="right"' : ''}>${esc(v)}</td>`
+          )
+          .join('')}</tr>`
+      })
+    })
+  )
+
+  return `<!DOCTYPE html><html><head><title>AR Aging — Raw Data</title><style>
+    body { font-family: Arial, sans-serif; padding: 14px; color: #111; font-size: 9.5px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .letterhead h1 { font-size: 15px; margin: 0; text-decoration: underline; }
+    .letterhead .doc-label { font-size: 11px; font-weight: 700; }
+    table.aging { width: 100%; border-collapse: collapse; }
+    table.aging th, table.aging td { border: 1px solid #ccc; padding: 2px 4px; line-height: 1.2; white-space: nowrap; }
+    table.aging th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 8px; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    .grand-total { margin-top: 8px; font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } @page { size: landscape; } }
+  </style></head><body>
+    <div class="letterhead">
+      <h1>NIG Marketing Corporation</h1>
+      <span class="doc-label">AR AGING — RAW DATA — As of ${fmtDate(report.asOf)}</span>
+    </div>
+
+    <table class="aging">
+      <thead><tr>${columns.map((c) => `<th${rightAlignedColumns.has(c) ? ' class="right"' : ''}>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.join('') || `<tr><td colspan="${columns.length}" style="text-align:center;color:#999">No active accounts.</td></tr>`}</tbody>
+    </table>
+
+    <p class="grand-total">Grand Total (${report.grandTotal.count} accounts): TOTAL PAY'T ${fmt(report.grandTotal.totalPayt)} · TOTAL PRICE ${fmt(report.grandTotal.totalPrice)} · OB ${fmt(report.grandTotal.ob)}</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printAgingRawDataDocument(report: AgingReportResponse): void {
+  const win = window.open('', '_blank', 'width=1400,height=850')
+  if (!win) return
+  win.document.write(buildAgingRawDataHtml(report))
   win.document.close()
 }
 
@@ -1517,48 +2177,55 @@ export function printAPBillDocument(data: unknown): void {
 }
 
 /**
- * Scenario 43 Part C — bespoke letterhead layout for a single AP payment,
- * replacing the old renderApChequeBody() (a bare label/value list with no
- * letterhead, no Account table, no signatures) which was cheque-specific.
- * This is a proper superset — still shows the method/reference/cheque
- * number the old print did, plus the bill's own voucherNumber (raised
- * before payment, as the authorization to pay), the Gap-B Account
- * breakdown, and the Prepared/Certified/Approved-by + acknowledgment
- * signature blocks the client's own paper "Payment" form has, matching the
- * family style already established for the other bespoke prints.
+ * The AP payment voucher as a printable page.
+ *
+ * Mirrors VoucherDocument.tsx — the same blocks in the same order with the same
+ * wording — because the printed paper used to drift from the voucher on screen
+ * (an older Account / SI / Total table, a Source of Funds grid, no payee address
+ * or TIN) and read as a different, uglier document. The signature blocks and the
+ * acknowledgment are the one thing the page does not carry: they are lines for a
+ * pen, so they are printed here and nowhere else. Change one, change the other.
+ *
+ * Two envelopes reach it: a disbursement (one cheque, every invoice it settled)
+ * and a legacy per-bill payment (its own share only).
  */
 export function buildAPPaymentVoucherHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
   const p = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
-  // Two backends feed this one template and name their fields differently:
-  // the per-payment voucher sends `amount` + `effectiveExpenseAccount`, while
-  // the disbursement voucher sends `totalAmount` + `account`. Reading only the
-  // first pair left both blank on a disbursement — the account printed as "—"
-  // and the total fell back to 0, so the only figure that survived was the
-  // withholding, making a 11,718.00 voucher print as 104.63.
-  const effectiveExpenseAccount = (p.effectiveExpenseAccount ?? p.account) as {
-    name?: string
-  } | null
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+  const prettyMethod = (m: unknown) =>
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
 
-  // Two envelopes reach this same paper: a disbursement (one cheque, every
-  // invoice it settled) and a legacy per-bill payment (its own share only).
-  // The disbursement one is the multi-invoice case — without these fields it
-  // printed an em-dash account and a total built from the wrong numbers.
-  const invoices = (p.invoices ?? []) as {
-    billNumber?: string | null
+  // A disbursement sends `totalAmount` + `account`; a single payment sends
+  // `amount` + `effectiveExpenseAccount`.
+  const account = (p.effectiveExpenseAccount ?? p.account) as { name?: string } | null
+
+  // What this voucher settled, not what left the bank: withholding is settled
+  // against the invoice but never leaves it.
+  const withholding = Number(p.withholdingAmount ?? 0)
+  const amount = Number(p.amount ?? p.totalAmount ?? 0) + withholding
+  // Deductions never leave the bank either: they are held back from the supplier
+  // and credited to the account each was mapped to. Total less withholding and
+  // deductions is what was actually paid.
+  type Deduction = {
+    account?: { number?: string | null; name?: string | null } | null
+    supplier?: string | null
     description?: string | null
-    amount?: number
-  }[]
-  const amount = invoices.length
-    ? Number(p.totalAmount ?? invoices.reduce((sum, i) => sum + Number(i.amount ?? 0), 0))
-    : Number(p.amount ?? 0)
+    amount?: number | null
+  }
+  const deductions: Deduction[] = Array.isArray(p.deductions) ? (p.deductions as Deduction[]) : []
+  const deductionsTotal = Number(p.deductionsTotal ?? 0)
+  // Input VAT inside the invoices' total — informational, never taken off.
+  const vat = Number(p.vatAmount ?? 0)
+  const netPaid = amount - withholding - deductionsTotal
 
   const reference = p.chequeNumber
     ? `CK#${esc(p.chequeNumber)}`
@@ -1566,78 +2233,53 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       ? esc(p.reference)
       : '—'
 
-  // How the disbursement was funded. A cheque can be split across methods, so
-  // the backend sends one row per source; the per-payment voucher carries no
-  // `sources`, so its single method/reference stands in as one row.
-  const prettyMethod = (m: unknown) =>
-    String(m ?? '')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
-  const rawSources = Array.isArray(p.sources)
-    ? (p.sources as Record<string, unknown>[])
-    : p.method
-      ? [
+  type Inv = {
+    billNumber?: string | null
+    description?: string | null
+    amount?: number
+    // What this voucher claims of the invoice's withholding — the row prints
+    // amount + this, the invoice's own figure, so the table adds up to Total.
+    withholdingAmount?: number
+  }
+  const invoices: Inv[] =
+    Array.isArray(p.invoices) && p.invoices.length
+      ? (p.invoices as Inv[])
+      : [
           {
-            method: p.method,
-            reference: p.chequeNumber ?? p.reference,
-            // A per-payment voucher has no per-source description; its own
-            // stands in so the column isn't empty on that shape.
-            description: p.description,
+            billNumber: p.billNumber as string | null,
+            description: p.description as string | null,
+            amount,
           },
         ]
-      : []
-  // SI and description sit per-invoice on a disbursement (one cheque can
-  // settle several bills) and top-level on a per-payment voucher, which has
-  // no `invoices` at all — so the latter stands in as a single row.
-  const rawInvoices = Array.isArray(p.invoices)
-    ? (p.invoices as Record<string, unknown>[])
-    : [{ billNumber: p.billNumber, description: p.description, amount }]
-  // The SI now prints in the header block beside the voucher number, the way
-  // the Purchase Invoice does it. It comes back as a table column only when
-  // one cheque settled several invoices — there the header can say which
-  // numbers were paid, but not how much each one got.
-  const siNumbers = Array.from(new Set(rawInvoices.map((inv) => inv.billNumber).filter(Boolean)))
-  const showInvoiceSi = rawInvoices.length > 1
-  // The voucher's OWN description — what the payment form labels Description
-  // and stores as notes. The per-invoice column carries each bill's text,
-  // which is not the same thing and is usually empty; it earns its place only
-  // when one cheque settled several bills and they differ.
+  const siNumbers = Array.from(new Set(invoices.map((i) => i.billNumber).filter(Boolean)))
+  const showInvoiceSi = invoices.length > 1
+  const showInvoiceDescription = invoices.length > 1
   const voucherDescription = p.notes ? String(p.notes) : null
-  const showInvoiceDescription = rawInvoices.length > 1
-  const invoiceRows = rawInvoices
-    .map(
-      (inv) => `<tr>
-          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
-          ${showInvoiceSi ? `<td>${inv.billNumber ? esc(inv.billNumber) : '—'}</td>` : ''}
-          ${showInvoiceDescription ? `<td>${inv.description ? esc(inv.description) : '—'}</td>` : ''}
-          <td class="right">${fmt(Number(inv.amount ?? 0))}</td>
-        </tr>`
-    )
-    .join('')
 
-  // The rows carry the cash each invoice got; withholding is settled but never
-  // disbursed. Printing them as one figure made a voucher whose rows summed to
-  // 35,678.57 announce a 36,000.00 total with nothing to explain the gap — so
-  // they now reconcile top to bottom, the way the invoice's own block does.
-  const withholding = Number(p.withholdingAmount ?? 0)
-  const netPaid = amount - withholding
+  type Src = {
+    method?: unknown
+    reference?: unknown
+    description?: unknown
+    amount?: unknown
+    bankAccount?: { name?: string; accountNumber?: string } | null
+  }
+  const sources: Src[] =
+    Array.isArray(p.sources) && p.sources.length
+      ? (p.sources as Src[])
+      : p.method
+        ? [
+            {
+              method: p.method,
+              reference: p.chequeNumber ?? p.reference,
+              description: p.description,
+            },
+          ]
+        : []
+  const isSplitFunding = sources.length > 1
 
-  // A four-column table for what is, in practice, one funding source spent
-  // most of its width on dashes — a Reference repeating the header's own, and
-  // a Description nobody fills. Printed as labelled rows instead, and a row
-  // with no value simply isn't printed.
-  //
-  // The reference is never one of those rows: the voucher states it once, in
-  // the header block, and repeating it beside the method invited the reader to
-  // check two printings of the same cheque number against each other.
-  //
-  // Still a loop, because the backend can split a cheque across methods — and
-  // a source's share of the total is the one thing the header cannot already
-  // say, so that row appears only then.
-  const isSplitFunding = rawSources.length > 1
-  const sourceBlocks = rawSources
-    .map((src) => {
-      const bank = src.bankAccount as { name?: string; accountNumber?: string } | null
+  const sourceBlocks = sources
+    .map((src, i) => {
+      const bank = src.bankAccount
       const bankLabel = bank?.name
         ? bank.accountNumber
           ? `${bank.name} — ${bank.accountNumber}`
@@ -1647,45 +2289,84 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       if (bankLabel) rows.push(['Bank Account', bankLabel])
       if (src.description) rows.push(['Description', String(src.description)])
       if (isSplitFunding) rows.push(['Amount', fmt(Number(src.amount ?? 0))])
-      return `<div class="fund">${rows
+      return `<div class="src${i > 0 ? ' src-next' : ''}">${rows
         .map(
           ([label, value]) =>
-            `<div class="fund-row"><span class="fund-label">${esc(label)}</span><span class="fund-value">${esc(value)}</span></div>`
+            `<div class="kv"><span class="k">${esc(label)}</span><span>${esc(value)}</span></div>`
         )
         .join('')}</div>`
     })
     .join('')
 
+  const accountRows = invoices
+    .map(
+      (inv) => `<tr>
+          <td>${esc(account?.name || '—')}</td>
+          ${showInvoiceSi ? `<td>${esc(inv.billNumber || '—')}</td>` : ''}
+          ${showInvoiceDescription ? `<td>${esc(inv.description || '—')}</td>` : ''}
+          <td class="right">${fmt(Number(inv.amount ?? 0) + Number(inv.withholdingAmount ?? 0))}</td>
+        </tr>`
+    )
+    .join('')
+
+  // Deductions sit in the same table, under the account they come off: the
+  // invoices are settled in full and these are credited back, so they read as
+  // negatives and the table nets to Amount paid.
+  const deductionRows = deductions
+    .map((d) => {
+      const accountLabel = d.account
+        ? [d.account.number, d.account.name].filter(Boolean).join(' — ')
+        : '—'
+      // The payee is already in the header, so a supplier is named only when the
+      // deduction is taken from someone else.
+      const other = d.supplier && d.supplier !== p.payee ? d.supplier : null
+      const note = [d.description, other].filter(Boolean).join(' · ')
+      return `<tr>
+          <td>${esc(accountLabel)}${
+            !showInvoiceDescription && note
+              ? `<br><span style="font-size:11.5px;color:#666">Deduction · ${esc(note)}</span>`
+              : ''
+          }</td>
+          ${showInvoiceSi ? '<td>—</td>' : ''}
+          ${showInvoiceDescription ? `<td>${esc(note || 'Deduction')}</td>` : ''}
+          <td class="right">${fmt(-Number(d.amount ?? 0))}</td>
+        </tr>`
+    })
+    .join('')
+
+  // Total, the tax lines and Amount paid close the same table. Total is what the invoices
+  // come to; the withholding is taken off it, and so are the deductions listed
+  // above; the VAT is already inside it, so it is shown but never subtracted.
+  const footSpan = 1 + (showInvoiceSi ? 1 : 0) + (showInvoiceDescription ? 1 : 0)
+  const closingRows = `<tr class="foot"><td colspan="${footSpan}">Total</td><td class="right">${fmt(amount)}</td></tr>
+        <tr><td colspan="${footSpan}">Less: Withholding tax</td><td class="right">${fmt(withholding)}</td></tr>
+        <tr class="muted"><td colspan="${footSpan}">Input VAT (included in Total)</td><td class="right">${fmt(vat)}</td></tr>
+        <tr class="foot net"><td colspan="${footSpan}">Amount paid</td><td class="right">${fmt(netPaid)}</td></tr>`
+
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
-    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    h1 { font-size: 26px; margin: 0; }
+    body { font-family: Poppins, Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; color: #1d0f38; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .brand-logo { height: 80px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 8px; }
     .info > div { flex: 1; }
-    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
-    .party-name { font-weight: 700; margin: 0 0 4px; }
-    .party-address { margin: 0; color: #333; }
     .info .meta { text-align: right; }
-    .meta-label { font-weight: 700; margin: 0 0 2px; }
-    .meta-value { margin: 0 0 12px; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; color: #1d0f38; }
+    .party-address { margin: 4px 0 0; color: #333; white-space: pre-line; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; color: #1d0f38; }
+    .meta-value { margin: 0 0 12px; color: #333; }
+    .section-label { font-weight: 700; margin: 20px 0 6px; color: #1d0f38; }
+    .src-next { margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
+    .kv { display: flex; gap: 16px; padding: 2px 0; }
+    .kv .k { width: 128px; flex-shrink: 0; font-weight: 700; color: #1d0f38; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
-    th { background: #f5f5f5; text-align: left; font-weight: 700; }
-    td.right, th.right { text-align: right; }
-    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
-    .total-wrap table { width: auto; border: none; }
-    .total-wrap td { padding: 5px 10px; border: none; border-bottom: 1px solid #eee; }
-    .total-wrap td.label { text-align: right; }
-    .total-wrap td.value { text-align: right; min-width: 140px; }
-    .total-wrap tr.strong td { font-weight: 700; border-top: 1px solid #999; border-bottom: none; }
-    .section-label { font-weight: 700; margin: 20px 0 6px; font-size: 13px; }
-    .fund + .fund { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
-    .doc-note { display: flex; gap: 16px; margin: 20px 0 12px; }
-    .doc-note-label { width: 130px; flex-shrink: 0; font-weight: 700; }
-    .fund-row { display: flex; gap: 16px; padding: 2px 0; }
-    .fund-label { width: 130px; flex-shrink: 0; font-weight: 700; }
-    .fund-value { color: #222; }
+    th { background: #f3f4f6; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; font-variant-numeric: tabular-nums; }
+    tr.foot td { font-weight: 700; }
+    tr.net td { background: #f9fafb; }
+    tr.muted td { color: #666; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -1708,53 +2389,40 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       </div>
       <div class="meta">
         <p class="meta-label">Date</p>
-        <p class="meta-value">${fmtDate(p.paymentDate)}</p>
+        <p class="meta-value">${fmtDate(p.paymentDate ?? p.voucherDate)}</p>
         <p class="meta-label">Reference</p>
         <p class="meta-value">${reference}</p>
         <p class="meta-label">VOUCHER #</p>
         <p class="meta-value">${p.voucherNumber ? esc(p.voucherNumber) : '—'}</p>
         <p class="meta-label">Supplier Invoice</p>
-        <p class="meta-value">${siNumbers.length ? siNumbers.map(esc).join(', ') : 'Pending Supplier Invoice'}</p>
+        <p class="meta-value">${siNumbers.length ? esc(siNumbers.join(', ')) : 'Pending Supplier Invoice'}</p>
         ${p.payeeTin ? `<p class="meta-label">PAYEE'S TIN:</p><p class="meta-value">${esc(p.payeeTin)}</p>` : ''}
       </div>
       <div class="enterprise">
-        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-name">${esc(enterprise?.companyLegalName) || '—'}</p>
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
       </div>
     </div>
 
-    <!-- Where the money came from leads, and what it was spent on follows:
-         a reader checks the funding first and the account breakdown answers
-         against it. The two used to sit side by side below the table, which
-         put the answer before the question. -->
-    ${
-      sourceBlocks
-        ? `<p class="section-label">Source of Funds</p>
-    ${sourceBlocks}`
-        : ''
-    }
-
+    ${sourceBlocks ? `<p class="section-label">Source of Funds</p>${sourceBlocks}` : ''}
     ${
       voucherDescription
-        ? `<p class="doc-note"><span class="doc-note-label">Description</span><span>${esc(voucherDescription)}</span></p>`
+        ? `<div class="kv" style="margin-top:16px"><span class="k">Description</span><span>${esc(voucherDescription)}</span></div>`
         : ''
     }
 
     <p class="section-label">Account Details</p>
     <table>
       <thead>
-        <tr><th>Account</th>${showInvoiceSi ? '<th>Supplier Invoice</th>' : ''}${showInvoiceDescription ? '<th>Description</th>' : ''}<th class="right">Total</th></tr>
+        <tr>
+          <th>Account</th>
+          ${showInvoiceSi ? '<th>Supplier Invoice</th>' : ''}
+          ${showInvoiceDescription ? '<th>Description</th>' : ''}
+          <th class="right">Total</th>
+        </tr>
       </thead>
-      <tbody>${invoiceRows}</tbody>
+      <tbody>${accountRows}${deductionRows}${closingRows}</tbody>
     </table>
-
-    <div class="total-wrap">
-      <table>
-        <tr><td class="label">Amount paid</td><td class="value">${fmt(netPaid)}</td></tr>
-        ${withholding > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">${fmt(withholding)}</td></tr>` : ''}
-        <tr class="strong"><td class="label">Total</td><td class="value">${fmt(amount)}</td></tr>
-      </table>
-    </div>
 
     <div class="signatures">
       <div class="sig-block">
@@ -1802,6 +2470,11 @@ export function buildExpenseVoucherHtml(data: unknown): string {
   const e = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
 
+  // A cash advance liquidated against its receipts can net to zero or below:
+  // the paper then records change handed back, not a payment.
+  const total = Number(e.totalAmount ?? 0)
+  const isLiquidation =
+    total <= 0 && ((e.lines ?? []) as { amount?: number }[]).some((l) => Number(l.amount) < 0)
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
   // Zero-padded MM/DD/YYYY rather than the unpadded en-PH default the other
@@ -1818,12 +2491,38 @@ export function buildExpenseVoucherHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  const lines = (e.lines ?? []) as { account?: string; description?: string; total?: number }[]
+  const lines = (e.lines ?? []) as {
+    account?: string
+    description?: string
+    total?: number
+    withholdingTaxCode?: string | null
+    withholdingAtc?: string | null
+  }[]
+  // Withheld from the payee and owed to the BIR: the paper voucher shows it
+  // under the amount, with the code (and ATC, once the accountant supplies the
+  // list) it was withheld at, and the net that was actually paid out.
+  const withheld = Number(e.withholdingAmount ?? 0)
+  const withholdingCodes = [
+    ...new Set(
+      lines
+        .filter((l) => l.withholdingTaxCode)
+        .map((l) =>
+          l.withholdingAtc ? `${l.withholdingTaxCode} · ${l.withholdingAtc}` : l.withholdingTaxCode
+        )
+    ),
+  ].join(', ')
   const payments = (e.payments ?? []) as {
     paymentMethod?: string
     reference?: string | null
     amount?: number
+    bankAccount?: string | null
   }[]
+  const sourceOfFund = e.sourceOfFund as { name?: string; accountNumber?: string } | null
+  const sourceOfFundLabel = sourceOfFund?.name
+    ? sourceOfFund.accountNumber
+      ? `${sourceOfFund.name} — ${sourceOfFund.accountNumber}`
+      : sourceOfFund.name
+    : null
   const paidFor = (e.paidFor ?? []) as string[]
 
   // Every payment method's reference, so a split payment prints each
@@ -1841,6 +2540,27 @@ export function buildExpenseVoucherHtml(data: unknown): string {
       })
       .filter(Boolean)
       .join(split ? '<br />' : ', ') || '—'
+
+  // Where the money came from: one block per payment method, so a split
+  // payment lists each funding source. Mirrors the AP voucher's layout.
+  const prettyMethod = (m: unknown) =>
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
+  const sourceBlocks = payments
+    .map((p) => {
+      const rows: [string, string][] = [['Method', prettyMethod(p.paymentMethod)]]
+      const bank = sourceOfFundLabel ?? p.bankAccount
+      if (bank) rows.push(['Bank Account', bank])
+      if (split) rows.push(['Amount', fmt(Number(p.amount ?? 0))])
+      return `<div class="kv-group">${rows
+        .map(
+          ([k, v]) =>
+            `<div class="kv"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>`
+        )
+        .join('')}</div>`
+    })
+    .join('')
 
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
@@ -1861,6 +2581,15 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
     tr.total-row td { font-weight: 700; }
+    .section-label { font-weight: 700; margin: 24px 0 8px; color: #1e1b4b; }
+    .kv { display: flex; gap: 16px; padding: 2px 0; }
+    .kv .k { width: 128px; flex-shrink: 0; font-weight: 700; }
+    .kv .v { color: #374151; }
+    .kv-group + .kv-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f3f4f6; }
+    table.totals { margin: 12px 0 0 auto; width: auto; min-width: 280px; }
+    table.totals td { border: 0; border-bottom: 1px solid #f3f4f6; text-align: right; padding: 5px 10px; }
+    table.totals td:first-child { white-space: nowrap; }
+    table.totals tr.grand td { border-top: 1px solid #999; border-bottom: 0; font-weight: 700; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -1872,7 +2601,7 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>Payment</h1>
+      <h1>${isLiquidation ? 'Cash Advance Liquidation' : 'Payment'}</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
@@ -1908,6 +2637,9 @@ export function buildExpenseVoucherHtml(data: unknown): string {
           : ''
     }
 
+    ${sourceBlocks ? `<p class="section-label">Source of Funds</p>${sourceBlocks}` : ''}
+
+    <p class="section-label">Account Details</p>
     <table>
       <thead>
         <tr><th>Account</th><th>Description</th><th class="right">Total</th></tr>
@@ -1922,10 +2654,20 @@ export function buildExpenseVoucherHtml(data: unknown): string {
         </tr>`
           )
           .join('')}
-        <tr class="total-row">
-          <td colspan="2">Total</td>
-          <td class="right">${fmt(Number(e.totalAmount ?? 0))}</td>
-        </tr>
+      </tbody>
+    </table>
+    <table class="totals">
+      <tbody>
+        ${
+          isLiquidation
+            ? `<tr class="grand"><td>${total < 0 ? 'Change returned' : 'Nothing to pay or return'}</td><td>${fmt(Math.abs(total))}</td></tr>`
+            : withheld > 0
+              ? `<tr><td>Amount</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+        <tr><td>Less: withholding tax${withholdingCodes ? ` (${esc(withholdingCodes)})` : ''}</td><td>(${fmt(withheld)})</td></tr>
+        <tr class="grand"><td>Net amount paid</td><td>${fmt(Number(e.netPayable ?? Number(e.totalAmount ?? 0) - withheld))}</td></tr>`
+              : `<tr><td>Amount paid</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>
+        <tr class="grand"><td>Total</td><td>${fmt(Number(e.totalAmount ?? 0))}</td></tr>`
+        }
       </tbody>
     </table>
 
@@ -1958,6 +2700,475 @@ export function printExpenseVoucherDocument(data: unknown): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
   win.document.write(buildExpenseVoucherHtml(data))
+  win.document.close()
+}
+
+/**
+ * Employee Cash Loan voucher — same letterhead/Account-table/signatures/
+ * acknowledgment family as buildExpenseVoucherHtml (Scenario 52 revision 2:
+ * this replaced a bespoke receipt-tape-style print with no company
+ * letterhead). Adds a Disbursement line (method/bank/reference) and, below
+ * the Account table, either the EMPLOYEE amortization Schedule or the OTHER
+ * loan's Ledger (disbursement + payments, running balance) — the one thing
+ * this document type needs that a plain payment voucher doesn't.
+ */
+export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const l = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const prettyMethod = (m: unknown) =>
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
+
+  const isOther = l.borrowerType === 'OTHER'
+  const principal = Number(l.principal ?? 0)
+  const totalInterest = Number(l.totalInterest ?? 0)
+  const totalReceivable = Number(l.totalReceivable ?? 0)
+
+  const accountRows = [
+    `<tr><td>Loans to Officers and Employees</td><td>Principal</td><td class="right">${fmt(principal)}</td></tr>`,
+    ...(totalInterest > 0
+      ? [
+          `<tr><td>Unearned Interest Income</td><td>Deferred interest</td><td class="right">${fmt(totalInterest)}</td></tr>`,
+        ]
+      : []),
+  ].join('')
+
+  const payments = (l.payments ?? []) as {
+    paymentDate: string
+    amount: number
+    referenceNumber?: string | null
+  }[]
+
+  const addendumLabel = 'Ledger'
+  const addendumHead =
+    '<tr><th>Date</th><th>Description</th><th class="right">Amount</th><th class="right">Balance</th></tr>'
+  const addendumRows = isOther
+    ? (() => {
+        let running = totalReceivable
+        const rows = [
+          `<tr><td>${fmtDate(l.loanDate)}</td><td>Loan disbursed</td><td class="right">${fmt(totalReceivable)}</td><td class="right">${fmt(running)}</td></tr>`,
+        ]
+        for (const p of payments) {
+          running = Math.round((running - Number(p.amount)) * 100) / 100
+          rows.push(
+            `<tr><td>${fmtDate(p.paymentDate)}</td><td>${p.referenceNumber ? `Payment (${esc(p.referenceNumber)})` : 'Payment'}</td><td class="right">${fmt(Number(p.amount))}</td><td class="right">${fmt(running)}</td></tr>`
+          )
+        }
+        return rows.join('')
+      })()
+    : ''
+
+  return `<!DOCTYPE html><html><head><title>${esc(l.loanNumber)}</title><style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+    body { font-family: 'Poppins', Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; color: #1e1b4b; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .meta { text-align: right; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; color: #1e1b4b; }
+    .party-address { margin: 0; color: #374151; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; color: #1e1b4b; }
+    .meta-value { margin: 0 0 12px; color: #374151; }
+    .description { font-weight: 700; margin: 0 0 16px; }
+    .section-label { font-weight: 700; margin: 24px 0 8px; color: #1e1b4b; }
+    .kv { display: flex; gap: 16px; padding: 2px 0; }
+    .kv .k { width: 128px; flex-shrink: 0; font-weight: 700; color: #1e1b4b; }
+    .kv .v { color: #374151; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #d1d5db; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f3f4f6; text-align: left; font-weight: 700; color: #1e1b4b; }
+    td.right, th.right { text-align: right; }
+    .totals { margin: 12px 0 0 auto; width: 280px; }
+    .totals td { border: 0; border-bottom: 1px solid #f3f4f6; text-align: right; padding: 5px 10px; }
+    .totals tr.grand td { border-top: 1px solid #9ca3af; border-bottom: 0; font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .ack { margin-top: 48px; text-align: center; }
+    .ack-line { display: inline-block; border-bottom: 1px solid #333; width: 320px; margin: 0 4px; }
+    .ack-line.short { width: 120px; }
+    .ack-caption { margin-top: 4px; font-size: 11px; color: #666; text-align: center; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Employee Cash Loan</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(l.borrowerLabel) || '—'}</p>
+        ${isOther ? '<p class="party-address">Others (non-employee)</p>' : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(l.loanDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${l.referenceNumber ? esc(l.referenceNumber) : '—'}</p>
+        <p class="meta-label">LOAN #</p>
+        <p class="meta-value">${esc(l.loanNumber)}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${l.note ? `<p class="description">${esc(l.note)}</p>` : ''}
+
+    <p class="section-label" style="margin-top:20px">Source of Funds</p>
+    <div class="kv"><span class="k">Method</span><span class="v">${esc(prettyMethod(l.disbursementMethod))}</span></div>
+    ${l.bankAccountName ? `<div class="kv"><span class="k">Bank / Cash Account</span><span class="v">${esc(l.bankAccountName)}</span></div>` : ''}
+    ${l.referenceNumber ? `<div class="kv"><span class="k">Reference</span><span class="v">${esc(l.referenceNumber)}</span></div>` : ''}
+
+    <p class="section-label">Account Details</p>
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>${accountRows}</tbody>
+    </table>
+    <table class="totals">
+      <tbody>
+        <tr class="grand"><td>Total Amount Receivable</td><td>${fmt(totalReceivable)}</td></tr>
+      </tbody>
+    </table>
+
+    ${
+      addendumRows
+        ? `<p class="section-label">${addendumLabel}</p>
+    <table>
+      <thead>${addendumHead}</thead>
+      <tbody>${addendumRows}</tbody>
+    </table>`
+        : ''
+    }
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">${isOther ? 'Borrower' : 'Employee'} Signature:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Cashier Signature:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <p class="ack">Acknowledged receipt of loan proceeds from ${esc(enterprise?.companyLegalName)}:</p>
+    <p class="ack" style="margin-top:24px">
+      <span class="ack-line"></span>/<span class="ack-line short"></span>
+    </p>
+    <p class="ack-caption">Printed Name and Signature / Date &amp; Time</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printEmployeeCashLoanVoucherDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildEmployeeCashLoanVoucherHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 61 — the Inter-Account Transfer voucher. Same letterhead/
+ * signature family as buildExpenseVoucherHtml() above; the body is the one
+ * thing a transfer has that an expense doesn't: a From and a To account,
+ * each with its own amount leg, instead of a payee and N expense lines.
+ *
+ * The client's mark-up (2026-10-12): no From/To block up top (the table's
+ * two legs already say it), no Clearing Date (a back-end field, not paper),
+ * and no "Journal entry" footnote.
+ */
+export function buildInterAccountTransferVoucherHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const t = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  // Zero-padded MM/DD/YYYY, same as the expense voucher's paper original.
+  const fmtDate = (v: unknown) =>
+    v
+      ? new Date(v as string).toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
+      : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  type Bank = { name?: string; bankName?: string; accountNumber?: string; accountType?: string }
+  const source = (t.source ?? {}) as Bank
+  const destination = (t.destination ?? {}) as Bank
+  const amount = Number(t.amount ?? 0)
+  // Scenario 72 — a voided transfer still prints (the paper trail stays whole),
+  // stamped VOID with the reason so nobody books it by mistake.
+  // Scenario 72 Part 6 — shown only when the transfer is tagged with a branch.
+  const branch = (t.branch ?? null) as { name?: string } | null
+  const isVoid = t.status === 'VOID'
+  const bankLine = (b: Bank) =>
+    [b.bankName, b.accountNumber ? `Acct # ${b.accountNumber}` : null, b.accountType]
+      .filter(Boolean)
+      .map((v) => esc(v))
+      .join(' · ')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    .sub { color: #666; font-size: 11.5px; }
+    .void-banner { border: 2px solid #b91c1c; color: #b91c1c; padding: 8px 14px; margin: 0 0 16px; font-weight: 700; }
+    .void-banner span { display: block; font-weight: 400; margin-top: 2px; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Inter-Account Transfer${isVoid ? ' — VOID' : ''}</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(t.date)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${t.reference ? esc(t.reference) : '—'}</p>
+        <p class="meta-label">VOUCHER #</p>
+        <p class="meta-value">${esc(t.transferNumber)}</p>
+        ${
+          branch?.name
+            ? `<p class="meta-label">Branch / Location</p>
+        <p class="meta-value">${esc(branch.name)}</p>`
+            : ''
+        }
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${
+      isVoid
+        ? `<div class="void-banner">VOID — journal entry reversed${t.voidedAt ? ` on ${fmtDate(t.voidedAt)}` : ''}${t.voidReason ? `<span>Reason: ${esc(t.voidReason)}</span>` : ''}</div>`
+        : ''
+    }
+    ${t.description ? `<p class="description">${esc(t.description)}</p>` : ''}
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Debit</th><th class="right">Credit</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${esc(destination.name)}<div class="sub">${bankLine(destination)}</div></td>
+          <td>Transfer in from ${esc(source.name)}</td>
+          <td class="right">${fmt(amount)}</td>
+          <td class="right"></td>
+        </tr>
+        <tr>
+          <td>${esc(source.name)}<div class="sub">${bankLine(source)}</div></td>
+          <td>Transfer out to ${esc(destination.name)}</td>
+          <td class="right"></td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="2">Total</td>
+          <td class="right">${fmt(amount)}</td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printInterAccountTransferVoucherDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildInterAccountTransferVoucherHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 61 Part C — a Journal Voucher for any posted journal entry: the
+ * bank adjusting entry and unidentified bank credit vouchers the client asked
+ * for (each with its Voucher Control No.), and a reprint from any entry's
+ * detail page. Same letterhead/signature family as the expense and
+ * inter-account transfer vouchers above; the body is the entry's own
+ * Account / Description / Debit / Credit lines.
+ */
+export function buildJournalVoucherHtml(data: unknown, title = 'Journal Voucher'): string {
+  const doc = data as PrintDocumentEnvelope
+  const e = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) =>
+    v
+      ? new Date(v as string).toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
+      : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+  const lines = (e.lines ?? []) as {
+    account?: string | null
+    description?: string | null
+    debit?: number
+    credit?: number
+  }[]
+  const cell = (n?: number) => (n ? fmt(Number(n)) : '')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>${esc(title)}</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="meta-label">Particulars</p>
+        <p class="party-address">${esc(e.description) || '—'}</p>
+        ${e.sourceDocumentNo ? `<p class="meta-label" style="margin-top:12px">Source</p><p class="party-address">${esc(e.sourceDocumentNo)}</p>` : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(e.date)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${e.reference ? esc(e.reference) : '—'}</p>
+        <p class="meta-label">VOUCHER CONTROL NO.</p>
+        <p class="meta-value">${e.voucherControlNo ? esc(e.voucherControlNo) : '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Debit</th><th class="right">Credit</th></tr>
+      </thead>
+      <tbody>
+        ${lines
+          .map(
+            (l) => `<tr>
+          <td>${l.account ? esc(l.account) : '—'}</td>
+          <td>${l.description ? esc(l.description) : ''}</td>
+          <td class="right">${cell(l.debit)}</td>
+          <td class="right">${cell(l.credit)}</td>
+        </tr>`
+          )
+          .join('')}
+        <tr class="total-row">
+          <td colspan="2">Total</td>
+          <td class="right">${fmt(Number(e.totalDebit ?? 0))}</td>
+          <td class="right">${fmt(Number(e.totalCredit ?? 0))}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printJournalVoucherDocument(data: unknown, title?: string): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildJournalVoucherHtml(data, title))
   win.document.close()
 }
 
@@ -2014,6 +3225,7 @@ export function buildCollectionReceiptHtml(data: unknown): string {
       ? row('Withholding (2307)', fmt(Number(r.withholdingAmount)))
       : '',
     Number(r.rebateAmount ?? 0) > 0 ? row('Rebate applied', fmt(Number(r.rebateAmount))) : '',
+    Number(r.penaltyAmount ?? 0) > 0 ? row('Late Payment', fmt(Number(r.penaltyAmount))) : '',
   ].join('')
 
   const appliedTo = grouped
@@ -2092,3 +3304,11 @@ export function printCollectionReceiptDocument(data: unknown): void {
   win.document.write(buildCollectionReceiptHtml(data))
   win.document.close()
 }
+
+// Scenario 57 — Acknowledgement Receipt has no HTML print builder here.
+// AcknowledgementReceiptDetail.tsx renders the letterhead sheet directly
+// (twice — Acknowledgement Receipt and, per developer decision 2026-09-21,
+// a second "Collection Receipt"-titled copy of the same data below it) and
+// downloads each with downloadElementAsPdf() (src/libs/print/htmlToPdf.ts)
+// for a real .pdf file, rather than the window.open()+window.print() "Save
+// as PDF" pattern every other document builder in this file uses.

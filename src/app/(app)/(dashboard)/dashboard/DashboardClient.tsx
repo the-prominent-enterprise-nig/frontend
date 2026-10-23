@@ -90,26 +90,26 @@ export default function DashboardClient({
   }
 
   return (
-    <div className="min-h-full bg-zinc-50 px-4 py-5 sm:px-6">
+    <div className="min-h-full bg-gradient-to-b from-purple-50/70 via-zinc-50 to-zinc-50 px-4 py-6 sm:px-6">
       <div className="mx-auto max-w-350 space-y-4">
         {/* Top bar: greeting + edit controls */}
         <div
-          className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-gradient-to-r from-white via-white to-purple-50/60 px-4 py-4 sm:px-5 ${CARD_SHADOW_RESTING}`}
+          className={`flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-purple-100/60 bg-gradient-to-r from-white via-white to-purple-100/50 px-5 py-5 sm:px-6 ${CARD_SHADOW_RESTING}`}
         >
           <div className="flex min-w-0 items-center gap-3.5">
             <Link
               href="/settings"
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-purple-400 text-base font-bold text-white shadow-md shadow-purple-300/50 ring-2 ring-white transition-transform duration-200 hover:scale-105"
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-700 via-purple-500 to-fuchsia-400 text-lg font-bold text-white shadow-lg shadow-purple-300/50 ring-4 ring-white transition-transform duration-200 hover:scale-105"
             >
               {initialsOf(userName)}
             </Link>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-xl font-bold tracking-tight text-zinc-900">
+                <h1 className="truncate text-2xl font-bold tracking-tight text-prominent-purple-900">
                   {timeOfDayGreeting()}, {userName}
                 </h1>
                 {primaryRole && (
-                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-purple-700 ring-1 ring-purple-200">
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-gradient-to-r from-purple-600 to-purple-500 px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-sm shadow-purple-300/50">
                     <Crown className="h-3 w-3" />
                     {primaryRole}
                   </span>
@@ -139,7 +139,7 @@ export default function DashboardClient({
                 <button
                   type="button"
                   onClick={layout.resetLayout}
-                  className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 shadow-sm transition-all duration-200 hover:-translate-y-px hover:border-zinc-400 hover:shadow-md"
+                  className="flex items-center gap-1.5 rounded-full border border-purple-200 bg-white px-4 py-2 text-sm font-medium text-prominent-purple-900 shadow-sm transition-all duration-200 hover:-translate-y-px hover:border-zinc-400 hover:shadow-md"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Reset Layout
@@ -147,7 +147,7 @@ export default function DashboardClient({
                 <button
                   type="button"
                   onClick={handleDone}
-                  className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:-translate-y-px hover:bg-purple-700 hover:shadow-md hover:shadow-purple-200"
+                  className="flex items-center gap-1.5 rounded-full bg-purple-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:-translate-y-px hover:bg-purple-700 hover:shadow-md hover:shadow-purple-200"
                 >
                   <X className="h-3.5 w-3.5" />
                   Done
@@ -157,7 +157,7 @@ export default function DashboardClient({
               <button
                 type="button"
                 onClick={() => layout.setIsEditing(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 shadow-sm transition-all duration-200 hover:-translate-y-px hover:border-zinc-400 hover:shadow-md"
+                className="flex items-center gap-1.5 rounded-full border border-purple-200 bg-white px-4 py-2 text-sm font-medium text-prominent-purple-900 shadow-sm transition-all duration-200 hover:-translate-y-px hover:border-zinc-400 hover:shadow-md"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Edit Dashboard
@@ -179,7 +179,7 @@ export default function DashboardClient({
 
         {/* Grid dashboard */}
         {layout.visibleWidgets.length === 0 ? (
-          <div className="flex h-56 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-zinc-200 bg-white text-center">
+          <div className="flex h-56 flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-purple-200 bg-white text-center">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-50">
               <LayoutDashboard className="h-5 w-5 text-purple-500" />
             </div>

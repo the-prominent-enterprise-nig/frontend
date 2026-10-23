@@ -5,7 +5,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { BarcodesPageView } from './_components'
 
 export const metadata = {
-  title: 'Barcode Management | Prominent Enterprise',
+  title: 'Barcode Management | NIG Central',
   description: 'Generate and manage barcodes assigned to inventory items',
 }
 

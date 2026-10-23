@@ -12,26 +12,32 @@ import { showToast } from '@/src/components/ui/toast'
 import { getTransfers } from '../_actions/get-transfers'
 import { getTransfer } from '../_actions/get-transfer'
 import { createTransfer } from '../_actions/create-transfer'
-import { consignToBranch } from '../../serial-numbers/_actions/consign-to-branch'
-import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
+import { createCaravan } from '../_actions/create-caravan'
+import { updateCaravan } from '../_actions/update-caravan'
 import { dispatchTransfer } from '../_actions/dispatch-transfer'
 import { receiveTransfer } from '../_actions/receive-transfer'
 import { cancelTransfer } from '../_actions/cancel-transfer'
+import { updateTransfer } from '../_actions/update-transfer'
 import { approveHqTransfer } from '../_actions/approve-hq-transfer'
 import { rejectHqTransfer } from '../_actions/reject-hq-transfer'
 import { acceptTransfer } from '../_actions/accept-transfer'
 import { rejectTransfer } from '../_actions/reject-transfer'
 import { approveManagerTransfer } from '../_actions/approve-manager-transfer'
 import { rejectManagerTransfer } from '../_actions/reject-manager-transfer'
+import { proposeSubstitution } from '../_actions/propose-substitution'
+import { confirmSubstitution } from '../_actions/confirm-substitution'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getBranches } from '../_actions/get-branches'
 import type {
   CreateTransferFormValues,
+  NewCaravanFormValues,
   DispatchTransferFormValues,
   ReceiveTransferFormValues,
   RejectHqTransferFormValues,
   RejectTransferFormValues,
   RejectManagerTransferFormValues,
+  ProposeSubstitutionFormValues,
+  ConfirmSubstitutionFormValues,
   TransferStatus,
   TransferSummary,
 } from '@/src/schema/inventory/transfers'
@@ -52,14 +58,19 @@ const ALL_STATUSES: TransferStatus[] = [
   'cancelled',
 ]
 
-export function useTransferManager() {
+export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } = {}) {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<TransferStatus | undefined>(undefined)
-  const [fromWarehouseFilter, setFromWarehouseFilter] = useState<string | undefined>(undefined)
-  const [toWarehouseFilter, setToWarehouseFilter] = useState<string | undefined>(undefined)
+  // Scenario 56 — multi-select; each OR's within itself.
+  const [fromWarehouseFilter, setFromWarehouseFilter] = useState<string[]>([])
+  const [toWarehouseFilter, setToWarehouseFilter] = useState<string[]>([])
+  // Either end — a caravan heading's "View transfers" (in and out of it).
+  const [anyWarehouseFilter, setAnyWarehouseFilter] = useState<string[]>(
+    opts.initialAnyWarehouseIds ?? []
+  )
   const [search, setSearch] = useState('')
   const [selectedTransfer, setSelectedTransfer] = useState<TransferSummary | null>(null)
 
@@ -68,11 +79,12 @@ export function useTransferManager() {
       page,
       limit,
       status: statusFilter,
-      fromWarehouseId: fromWarehouseFilter,
-      toWarehouseId: toWarehouseFilter,
+      fromWarehouseIds: fromWarehouseFilter,
+      toWarehouseIds: toWarehouseFilter,
+      anyWarehouseIds: anyWarehouseFilter,
       search: search || undefined,
     }),
-    [page, limit, statusFilter, fromWarehouseFilter, toWarehouseFilter, search]
+    [page, limit, statusFilter, fromWarehouseFilter, toWarehouseFilter, anyWarehouseFilter, search]
   )
 
   const transfersQuery = useQuery({
@@ -93,6 +105,7 @@ export function useTransferManager() {
         status,
         fromWarehouseFilter,
         toWarehouseFilter,
+        anyWarehouseFilter,
         search,
       ],
       queryFn: () =>
@@ -100,8 +113,9 @@ export function useTransferManager() {
           page: 1,
           limit: 1,
           status,
-          fromWarehouseId: fromWarehouseFilter,
-          toWarehouseId: toWarehouseFilter,
+          fromWarehouseIds: fromWarehouseFilter,
+          toWarehouseIds: toWarehouseFilter,
+          anyWarehouseIds: anyWarehouseFilter,
           search: search || undefined,
         }),
       placeholderData: keepPreviousData,
@@ -169,32 +183,66 @@ export function useTransferManager() {
     },
   })
 
-  // Sending stock out for a caravan starts on this screen too, but it is not
-  // a transfer: ownership never moves, so there is no destination warehouse,
-  // no dispatch and no receipt — just the units being marked as out. It
-  // therefore goes to the consign endpoint rather than createTransfer, and
-  // invalidates the serial lists rather than the transfer ones.
-  const consignMutation = useMutation({
-    mutationFn: ({
-      serialNumberIds,
-      data,
-    }: {
-      serialNumberIds: string[]
-      data: ConsignToBranchFormValues
-    }) => consignToBranch(serialNumberIds, data),
+  // An edit is a resubmission: the backend re-runs approval routing from the
+  // start, so the status that comes back is where the request now sits, not
+  // where it was. The toast reports that rather than a flat "saved" — a
+  // requester who edited something already at 'requested' needs to know it
+  // has gone back for approval.
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CreateTransferFormValues }) =>
+      updateTransfer(id, data),
     onSuccess: (result) => {
       if (result.success) {
         showToast({
-          title: 'Units consigned',
-          description: result.message,
+          title: 'Transfer request updated',
+          description: result.data?.status
+            ? `${result.message} It is now ${result.data.status.replace(/_/g, ' ')}.`
+            : result.message,
           status: 'success',
         })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-serials-available-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
+        queryClient.invalidateQueries({
+          queryKey: ['inventory-transfer', selectedTransfer?.id],
+        })
       } else {
         showToast({
-          title: 'Failed to consign these units',
+          title: 'Failed to update transfer',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  // Scenario 60 Part 2 — a caravan created inline from New Stock Transfer.
+  // Refreshes the warehouse list so the new caravan is pickable at once,
+  // including when the transfer after it fails and the user retries.
+  const createCaravanMutation = useMutation({
+    mutationFn: (data: NewCaravanFormValues) => createCaravan(data),
+    onSuccess: (result) => {
+      if (result.success) {
+        queryClient.invalidateQueries({ queryKey: ['inventory-warehouses-lookup'] })
+      } else {
+        showToast({
+          title: 'Failed to create the caravan',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  // A caravan's details edited from Edit Request, saved before the request.
+  const updateCaravanMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: NewCaravanFormValues }) =>
+      updateCaravan(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        queryClient.invalidateQueries({ queryKey: ['inventory-warehouses-lookup'] })
+      } else {
+        showToast({
+          title: 'Failed to update the caravan',
           description: result.message,
           status: 'error',
         })
@@ -331,6 +379,75 @@ export function useTransferManager() {
     },
   })
 
+  const proposeSubstitutionMutation = useMutation({
+    mutationFn: ({
+      id,
+      lineId,
+      data,
+    }: {
+      id: string
+      lineId: string
+      data: ProposeSubstitutionFormValues
+    }) => proposeSubstitution(id, lineId, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Substitution proposed',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer) {
+          setSelectedTransfer((prev) =>
+            prev ? { ...prev, status: 'pending_substitution_confirmation' } : null
+          )
+        }
+      } else {
+        showToast({
+          title: 'Failed to propose substitution',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const confirmSubstitutionMutation = useMutation({
+    mutationFn: ({
+      id,
+      lineId,
+      data,
+    }: {
+      id: string
+      lineId: string
+      data: ConfirmSubstitutionFormValues
+    }) => confirmSubstitution(id, lineId, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Substitution resolved',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer && result.data?.status) {
+          const status = result.data.status as TransferStatus
+          setSelectedTransfer((prev) => (prev ? { ...prev, status } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to resolve substitution',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const dispatchMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data?: DispatchTransferFormValues }) =>
       dispatchTransfer(id, data),
@@ -422,12 +539,17 @@ export function useTransferManager() {
       setStatusFilter(v)
       setPage(1)
     },
-    setFromWarehouseFilter: (v: string | undefined) => {
+    setFromWarehouseFilter: (v: string[]) => {
       setFromWarehouseFilter(v)
       setPage(1)
     },
-    setToWarehouseFilter: (v: string | undefined) => {
+    setToWarehouseFilter: (v: string[]) => {
       setToWarehouseFilter(v)
+      setPage(1)
+    },
+    anyWarehouseFilter,
+    setAnyWarehouseFilter: (v: string[]) => {
+      setAnyWarehouseFilter(v)
       setPage(1)
     },
     search,
@@ -437,8 +559,9 @@ export function useTransferManager() {
     },
     resetFilters: () => {
       setStatusFilter(undefined)
-      setFromWarehouseFilter(undefined)
-      setToWarehouseFilter(undefined)
+      setFromWarehouseFilter([])
+      setToWarehouseFilter([])
+      setAnyWarehouseFilter([])
       setSearch('')
       setPage(1)
     },
@@ -461,9 +584,16 @@ export function useTransferManager() {
     createTransfer: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
 
-    consignUnits: (serialNumberIds: string[], data: ConsignToBranchFormValues) =>
-      consignMutation.mutateAsync({ serialNumberIds, data }),
-    isConsigning: consignMutation.isPending,
+    updateTransfer: (id: string, data: CreateTransferFormValues) =>
+      updateMutation.mutateAsync({ id, data }),
+    isUpdating: updateMutation.isPending,
+
+    createCaravan: (data: NewCaravanFormValues) => createCaravanMutation.mutateAsync(data),
+    isCreatingCaravan: createCaravanMutation.isPending,
+
+    updateCaravan: (id: string, data: NewCaravanFormValues) =>
+      updateCaravanMutation.mutateAsync({ id, data }),
+    isUpdatingCaravan: updateCaravanMutation.isPending,
 
     approveHqTransfer: approveHqMutation.mutateAsync,
     isApprovingHq: approveHqMutation.isPending,
@@ -485,6 +615,14 @@ export function useTransferManager() {
     rejectTransfer: (id: string, data: RejectTransferFormValues) =>
       rejectMutation.mutateAsync({ id, data }),
     isRejecting: rejectMutation.isPending,
+
+    proposeSubstitution: (id: string, lineId: string, data: ProposeSubstitutionFormValues) =>
+      proposeSubstitutionMutation.mutateAsync({ id, lineId, data }),
+    isProposingSubstitution: proposeSubstitutionMutation.isPending,
+
+    confirmSubstitution: (id: string, lineId: string, data: ConfirmSubstitutionFormValues) =>
+      confirmSubstitutionMutation.mutateAsync({ id, lineId, data }),
+    isConfirmingSubstitution: confirmSubstitutionMutation.isPending,
 
     dispatchTransfer: (id: string, data?: DispatchTransferFormValues) =>
       dispatchMutation.mutateAsync({ id, data }),

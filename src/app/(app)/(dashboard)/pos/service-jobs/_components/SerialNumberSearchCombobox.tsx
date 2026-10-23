@@ -11,6 +11,10 @@ type Props = {
   onSelectSerial?: (serialNumber: string) => void
   error?: string
   initialLabel?: string
+  placeholder?: string
+  /** Shown when the item has no unit available at all — the search is
+   * called with an empty query on open and returns every unit. */
+  noUnitsMessage?: string
 }
 
 // Estimate-time serial pick for a serial-tracked material line — same
@@ -26,6 +30,8 @@ export function SerialNumberSearchCombobox({
   onSelectSerial,
   error,
   initialLabel,
+  placeholder = 'Search serial number…',
+  noUnitsMessage = 'Type to search serial numbers…',
 }: Props) {
   return (
     <SearchCombobox
@@ -35,8 +41,8 @@ export function SerialNumberSearchCombobox({
       error={error}
       initialLabel={initialLabel}
       queryKey={`service-draft-serial-search-${itemId}`}
-      placeholder="Search serial number…"
-      typeToSearchMessage="Type to search serial numbers…"
+      placeholder={placeholder}
+      typeToSearchMessage={noUnitsMessage}
       emptyMessage="No available serial numbers"
       search={async (query) => {
         const res = await getAvailableSerialNumbers(itemId, branchId)

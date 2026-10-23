@@ -4,7 +4,7 @@ import { isAdmin } from '@/src/libs/guards/permission'
 import DepartmentsSection from './_components/DepartmentsSection'
 
 export const metadata = {
-  title: 'Departments & Divisions | Prominent Enterprise',
+  title: 'Departments & Divisions | NIG Central',
 }
 
 // Where the payroll dimensions are maintained. Without this page the

@@ -11,6 +11,15 @@ export interface PosTerminal {
   createdAt: string
   updatedAt: string
   branch?: { id: string; name: string }
+  /** Scenario 60 — set when this terminal sells at a caravan; `branchId` is then its host. */
+  caravanBranchId?: string | null
+  caravanBranch?: {
+    id: string
+    name: string
+    isTemporary?: boolean
+    eventName?: string | null
+    addressLine1?: string | null
+  } | null
 }
 
 // Cashier Terminal Access
@@ -50,6 +59,14 @@ export interface PosSession {
   declaredClosingCash?: number | null
   expectedClosingCash?: number | null
   cashVariance?: number | null
+  /**
+   * Scenario 53 Part 1 — the closing record. Null on every session closed
+   * before that migration, and on any still open, so the detail view must
+   * treat absence as "not recorded" rather than zero.
+   */
+  denominationBreakdown?: Record<string, number> | null
+  closingNotes?: string | null
+  tenderBreakdown?: Record<string, number> | null
   handedOverTo?: string | null
   status: PosSessionStatus
   createdAt: string
@@ -76,6 +93,26 @@ export interface CloseSessionInput {
   managerUserId?: string
 }
 
+/**
+ * Scenario 53 Part 3 — cash taken this shift, for the close screen's
+ * read-only panel. Sales cash only: the opening float, cash drops and petty
+ * cash are excluded, so this is what the shift rang up, not what the drawer
+ * should hold.
+ */
+export interface SessionTenderSummary {
+  sessionId: string
+  status: PosSessionStatus
+  totalCash: number
+  /**
+   * Per-tender non-cash totals, keyed by PosPaymentMethod. The client's own
+   * requirement: "the online payment (gcash, bank, etc.) should be displayed
+   * and cannot be edited".
+   */
+  nonCash: Record<string, number>
+  totalNonCash: number
+  totalTaken: number
+}
+
 export interface SessionReconciliation {
   sessionId: string
   openingCash: number
@@ -83,6 +120,26 @@ export interface SessionReconciliation {
   declaredClosingCash: number
   cashVariance: number
   paymentBreakdown: Record<string, number>
+  /**
+   * Scenario 53 Part 2 — these were always returned by the backend but never
+   * declared here, so the close screen couldn't show the sales context behind
+   * a variance even though it had it in hand.
+   */
+  totalSales: number
+  totalRefunds: number
+  netSales: number
+  transactionCount: number
+  /** Scenario 61 — SI numbers of the session's completed sales, in order. */
+  invoiceNumbers?: string[]
+  totalCashDrops: number
+  totalPettyCashIn: number
+  totalPettyCashOut: number
+  /**
+   * Scenario 53 Part 5b — installment collections taken over the counter on
+   * this session. Part of the drawer, and part of why expected cash can
+   * exceed the shift's own sales.
+   */
+  totalCollectionsCash: number
 }
 
 export interface SalesSummary {
@@ -119,6 +176,9 @@ export interface PaymentMethodOption {
   name: string
   isEnabled: boolean
   displayOrder: number
+  /** The account a payment through this option debits (e.g. Maya's own clearing
+   * account). Null = the payment method's own account. */
+  glAccountId?: string | null
 }
 
 export interface CreateCustomPaymentMethodInput {
@@ -213,13 +273,59 @@ export interface PosPayment {
   paymentMethod: PosPaymentMethod
   amount: number
   referenceNumber?: string | null
+  checkNumber?: string | null
   giftCardId?: string | null
+  /** The bank / gateway / biller the cashier picked, where the method has any. */
+  paymentMethodOption?: { name: string } | null
   createdAt: string
+}
+
+/** Scenario 71 — a sale's exception in words: the price override per line, the
+ * reason and note the cashier gave, and whether the credit application was
+ * waived or the terms typed by hand. Null/absent when the sale had none. */
+export interface PosExceptionLine {
+  itemName: string
+  quantity: number
+  /** Null when no price list covered the item. */
+  listUnitPrice: number | null
+  unitPrice: number
+  /** Discount granted, in pesos (negative when raised above list); null with no list price. */
+  difference: number | null
+}
+
+/** Scenario 71 — what a credit application override looked like when the sale
+ * posted: the application, what it covered, what was sold and the difference. */
+export interface CreditApplicationOverrideSnapshot {
+  applicationId: string
+  applicationNumber: string
+  /** The application's status then, e.g. 'approved', 'draft', 'under_investigation'. */
+  applicationStatus: string
+  applicationItems: string[]
+  soldItems: string[]
+  missing: string[]
+  extra: string[]
+}
+
+export interface PosExceptionSummary {
+  reason: string | null
+  note: string | null
+  creditApplicationWaived: boolean
+  /** The credit application was overridden, and what differed. */
+  creditOverride?: CreditApplicationOverrideSnapshot | null
+  typedTerms: boolean
+  overriddenBy: string | null
+  lines: PosExceptionLine[]
 }
 
 export interface PosTransaction {
   id: string
   transactionNumber: string
+  /** Scenario 71 — see PosExceptionSummary. */
+  exception?: PosExceptionSummary | null
+  /** Scenario 71 — what the credit check would have said (over the limit, an
+   * overdue balance), kept on an in-house installment sale because it posts
+   * without a manager seeing it. */
+  creditWarnings?: string[] | null
   sessionId: string
   transactionType: PosTransactionType
   invoiceType?: PosInvoiceType
@@ -240,6 +346,18 @@ export interface PosTransaction {
   currency: string
   fxRate?: number | null
   isTaxExempt: boolean
+  /** Scenario 69 Part F — the sale's output VAT class (VAT-OUT-12,
+   * VAT-OUT-0ZR or VAT-OUT-EXEMPT). Null on a sale from before classification
+   * existed: read it as VAT-OUT-12, or VAT-OUT-EXEMPT when isTaxExempt. */
+  outputVatCode?: string | null
+  /** The certificate / reference a zero-rated or exempt sale rests on. */
+  taxExemptionRef?: string | null
+  /** The manager who approved a zero-rated or exempt sale, and their name. */
+  outputVatApprovedBy?: string | null
+  outputVatApprovedByName?: string | null
+  /** Scenario 69 Part I — the class when it was changed from the one the sale
+   * started on, with why, who and when. Null when it was not. */
+  taxOverride?: import('@/src/libs/tax/tax-override').TaxOverrideEntry[] | null
   isOfflineSynced?: boolean
   status: PosTransactionStatus
   occurredAt: string
@@ -252,6 +370,29 @@ export interface PosTransaction {
   /** Delivery Receipt number — same once-per-transaction convention as
    * salesInvoiceNumber above. */
   deliveryReceiptNumber?: string | null
+  /** Scenario 66 — who receives the delivery; set only on a sale for delivery. */
+  deliverTo?: string | null
+  deliveryAddress?: string | null
+  deliveryBarangayCode?: string | null
+  /** Never part of totalAmount — collected on its own collection receipt. */
+  deliveryFee?: number | string | null
+  deliveryFeeReferenceNumber?: string | null
+  /** The fee's own receipt: its tender, system number, and whether a void
+   * cancelled it. Null when there is no fee. */
+  deliveryFeeCollectionReceipt?: {
+    id?: string
+    number: string | null
+    reference: string | null
+    method: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR' | null
+    amount: number
+    cancelledAt: string | null
+    /** The tender's details, as the sale's payments carry them. */
+    checkNumber?: string | null
+    bankTransferVerifiedAtRegister?: boolean
+    cardTxnMode?: PosCardTxnMode | null
+    cardInstallmentTerm?: number | null
+    paymentMethodOption?: { name: string } | null
+  } | null
   sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
@@ -260,6 +401,20 @@ export interface PosTransaction {
   tpfProviderId?: string | null
   tpfReferenceNumber?: string | null
   tpfApprovedAmount?: number | null
+  /** Scenario 60 — true when this sale is an Employee Appliance Loan (no
+   * down payment, no credit application). Server-verified against the
+   * customer's own customerType, never taken from the request alone. */
+  isEmployeeApplianceLoan?: boolean | null
+  /** HR's own approval reference for the employee appliance loan — set
+   * whenever isEmployeeApplianceLoan is true. */
+  hrApplianceLoanApplicationNumber?: string | null
+  /** Scenario 67 — true when this sale is an X-Deal (barter): inhouse
+   * installment, no down payment, no credit application; accounting clears
+   * its balance with an X-Deal credit memo. */
+  isXDeal?: boolean | null
+  /** The barter agreement / counterparty reference, set whenever isXDeal is
+   * true. */
+  xDealReference?: string | null
   /** Present on create()/findOne() — one per distinct financing term used in
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
@@ -306,6 +461,9 @@ export interface PosTransactionInvoice {
   amountPaid: number
   status: string
   source: 'charge' | 'installment'
+  /** The installment schedule this due belongs to — what the Collections
+   * deep link needs to land on it. Absent on a charge invoice. */
+  scheduleId?: string
   lineNumber: number | null
   totalLines: number | null
   termMonths: number | null
@@ -331,9 +489,14 @@ export interface CreateTransactionLineInput {
   /** PriceListItem this line resolved to under this line's own Price
    * Use — omit if unitPrice was set via a manual price override instead. */
   priceListItemId?: string
-  /** True when unitPrice was manually set by a PIN-approved manager
-   * override rather than resolved from priceListItemId. */
+  /** True when unitPrice was typed over the resolved price by whoever is at
+   * the till — no manager involved (Scenario 71). The sale then needs an
+   * exceptionReasonId and exceptionNote. */
   priceOverride?: boolean
+  /** Scenario 71 — only with priceOverride: the price-list row the line was
+   * priced from before the override. The server reads the list price off it;
+   * a list price is never sent. Omit when there was no price-list match. */
+  overriddenFromPriceListItemId?: string
   /** Per-line payment mode — lets one cart mix cash/installment lines.
    * Falls back to the transaction-level invoiceType when omitted. */
   invoiceType?: PosInvoiceType
@@ -349,6 +512,15 @@ export interface CreateTransactionLineInput {
    * installment line carries its own down payment rather than one pooled
    * across the cart. */
   downPayment?: number
+  /** Scenario 71 — the cashier typed this line's plan: manualTermMonths,
+   * manualMonthlyInstallment and firstDueDate are then required and
+   * financingTermId is not sent. The sale needs an exceptionReasonId and
+   * exceptionNote. */
+  manualPlan?: boolean
+  manualTermMonths?: number
+  manualMonthlyInstallment?: number
+  /** yyyy-mm-dd. */
+  firstDueDate?: string
 }
 
 export interface CreateTransactionInput {
@@ -365,6 +537,9 @@ export interface CreateTransactionInput {
   /** Scenario 17 Part 6 — inhouse installment invoices only, required. The
    * customer's approved, not-yet-used CreditApplication this sale fulfills. */
   creditApplicationId?: string
+  /** Scenario 72 Part 6 — the approved "sales invoice to follow" DR this sale
+   * invoices; lets it claim the units the DR holds. */
+  deliveryReceiptId?: string
   /** inhouse installment invoices only — amount collected up front. Defaults to 0. */
   downPayment?: number
   /** TPF financing company backing this sale's TPF-mode line(s) — required
@@ -382,6 +557,20 @@ export interface CreateTransactionInput {
    * required whenever that down payment is greater than 0. Separate from
    * tpfReferenceNumber (the financier's own application/reference number). */
   tpfDownPaymentReferenceNumber?: string
+  /** Scenario 60 — marks this sale as an Employee Appliance Loan: waives
+   * the down-payment 10% floor and the credit-application requirement.
+   * Only honored server-side when the customer is actually customerType
+   * 'employee' — never trusted from this flag alone. */
+  isEmployeeApplianceLoan?: boolean
+  /** HR's own approval reference for the employee appliance loan —
+   * required whenever isEmployeeApplianceLoan is true. */
+  hrApplianceLoanApplicationNumber?: string
+  /** Scenario 67 — marks this sale as an X-Deal (barter). Every line must
+   * be inhouse installment on one financing term with a ₱0 down payment,
+   * and no creditApplicationId may be sent. */
+  isXDeal?: boolean
+  /** Required whenever isXDeal is true, rejected otherwise. */
+  xDealReference?: string
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -397,8 +586,55 @@ export interface CreateTransactionInput {
   /** Delivery Receipt number — same once-per-transaction convention as
    * salesInvoiceNumber above. */
   deliveryReceiptNumber?: string
+  /** Scenario 66 — sending deliverTo marks the sale for delivery;
+   * deliveryAddress is then required. The fee (0 = free delivery) is never
+   * part of subtotal/totalAmount; when it is above 0 its tender and its own
+   * CR number are required. */
+  deliverTo?: string
+  deliveryAddress?: string
+  deliveryBarangayCode?: string
+  deliveryFee?: number
+  deliveryFeeMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+  deliveryFeeReferenceNumber?: string
+  /** The fee's tender details, each only on its own tender (a check is cash
+   * with a check number) — the same ones addPayment takes for the sale. */
+  deliveryFeeCheckNumber?: string
+  deliveryFeePaymentMethodOptionId?: string
+  deliveryFeeBankTransferVerifiedAtRegister?: boolean
+  deliveryFeeCardTxnMode?: PosCardTxnMode
+  deliveryFeeCardInstallmentTerm?: number
+  /** Scenario 68 — an X-Deal's down payment (the part paid at the register;
+   * the amount is the lines' downPayment). Rejected on any other sale. */
+  xDealDownPaymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+  xDealDownPaymentReferenceNumber?: string
+  xDealDownPaymentCheckNumber?: string
+  xDealDownPaymentMethodOptionId?: string
+  xDealDownPaymentVerifiedAtRegister?: boolean
+  /** The sale's output VAT class (Scenario 69 Part F): VAT-OUT-12 when left
+   * out, or VAT-OUT-0ZR / VAT-OUT-EXEMPT, which need taxExemptionRef and a
+   * manager's approval (managerOverride + managerUserId). */
+  outputVatCode?: string
+  /** Older shorthand for outputVatCode VAT-OUT-EXEMPT. */
   isTaxExempt?: boolean
   taxExemptionRef?: string
+  /** Scenario 69 Part I — why the class is not the one the sale started on
+   * (VAT-OUT-12, or VAT-OUT-EXEMPT for a tax-exempt customer). Required when it
+   * is not. */
+  taxOverrideReason?: string
+  /** Scenario 71 — the cashier waives the credit application on this in-house
+   * installment sale: no creditApplicationId is sent and none is consumed. The
+   * sale then needs exceptionReasonId and exceptionNote. */
+  creditApplicationWaived?: boolean
+  /** Scenario 71 — the cashier overrides the credit application: creditApplicationId
+   * names one that does not cover the cart or is not approved yet, and the sale
+   * then needs exceptionReasonId and exceptionNote. */
+  creditApplicationOverridden?: boolean
+  /** Scenario 71 — why the sale carries an exception (a price override, typed
+   * terms or a waived credit application), from the business's own reason list
+   * (GET /pos/override-reasons), with a short note. Both are required with any
+   * of them; nobody approves it at the till. */
+  exceptionReasonId?: string
+  exceptionNote?: string
   /** Set when a manager has PIN-approved an override (receiptless return,
    * discount threshold, or charge-sale credit/terms block). */
   managerOverride?: boolean
@@ -511,6 +747,24 @@ export interface PosCustomer {
   lastName?: string
   phone?: string
   email?: string
+  customerType?: 'individual' | 'business' | 'employee'
+  businessCategory?: 'private' | 'government'
+  /** Registered as exempt from VAT, with the certificate on file — checkout
+   * starts that customer's sale VAT-exempt (Scenario 69 Part F). */
+  isTaxExempt?: boolean
+  taxExemptionRef?: string | null
+}
+
+// Checkout's buyer picker — an Employee not yet linked to a Customer.
+// Picking one resolves to a real PosCustomer via createCustomerFromEmployee
+// (get-or-create), never used as the buyer directly.
+export interface PosEmployeeResult {
+  id: string
+  employeeCode: string
+  firstName: string
+  lastName: string
+  middleName?: string | null
+  branch?: { id: string; name: string } | null
 }
 
 // POS Collections — one row per customer with at least one outstanding
@@ -521,6 +775,10 @@ export interface CollectionsCustomer {
   phone: string | null
   outstandingCount: number
   outstandingAmount: number
+  /** An employee buyer — tagged on the row. */
+  isEmployee?: boolean
+  /** The part of outstandingAmount that is an Employee Appliance Loan. */
+  applianceOutstanding?: number
   // Scenario 29 ACC-05 — the collector's number: only installment lines
   // whose own due date has actually passed, unlike outstandingAmount
   // above (which counts every open line regardless of maturity).
@@ -566,6 +824,8 @@ export interface AddPaymentInput {
   amount: number
   giftCardId?: string
   referenceNumber?: string
+  /** The check's own number — cash tendered via the Check sub-mode. */
+  checkNumber?: string
   paymentMethodConfigId?: string
   /** Named sub-choice used (Scenario 37) — POS Terminal for card, bank for
    * bank_transfer, gateway for qr. */
@@ -765,6 +1025,9 @@ export interface PosConfig {
   id: string
   tenantId: string
   discountOverrideThreshold: number
+  /** Scenario 71 — how far below list (%) a price override is flagged in the
+   * end-of-day review. */
+  priceOverrideFlagPct?: number
   receiptlessReturnDays: number
   allowNegativeStock?: boolean
   defaultPricingMode?: 'inclusive' | 'exclusive'
@@ -775,12 +1038,14 @@ export interface PosConfig {
 export interface CreatePosConfigInput {
   tenantId: string
   discountOverrideThreshold: number
+  priceOverrideFlagPct?: number
   receiptlessReturnDays: number
   allowNegativeStock?: boolean
 }
 
 export interface UpdatePosConfigInput {
   discountOverrideThreshold?: number
+  priceOverrideFlagPct?: number
   receiptlessReturnDays?: number
   allowNegativeStock?: boolean
   defaultPricingMode?: 'inclusive' | 'exclusive'
@@ -965,17 +1230,25 @@ export interface TpfProvider {
   tenantId: string
   name: string
   isActive: boolean
+  /** This partner's own receivable. Null = the generic "Other Partners" one. */
+  glAccountId?: string | null
+  /** Credited when a sale this partner already settled is returned. */
+  payableAccountId?: string | null
   createdAt: string
   updatedAt: string
 }
 
 export interface CreateTpfProviderInput {
   name: string
+  glAccountId?: string
+  payableAccountId?: string
 }
 
 export interface UpdateTpfProviderInput {
   name?: string
   isActive?: boolean
+  glAccountId?: string | null
+  payableAccountId?: string | null
 }
 
 export interface InstallmentPreviewLine {
@@ -989,12 +1262,27 @@ export interface InstallmentPreview {
   totalPayable: number
   monthlyInstallment: number
   lines: InstallmentPreviewLine[]
+  /** Prompt-payment discount from the curated rate card
+   *  (`PriceListItemTerm.ppd`). Only present when a curated term was found
+   *  for this SKU and term — the generic factor-rate path has no PPD to
+   *  quote, so `undefined` means "no rate card said", not "zero". */
+  ppd?: number
 }
 
 export interface ComputeInstallmentPreviewInput {
   totalAmount: number
   downPayment?: number
-  financingTermId: string
+  /** Omit for a plan the cashier typed (Scenario 71) — send manualTermMonths,
+   * manualMonthlyInstallment and firstDueDate instead. */
+  financingTermId?: string
+  manualTermMonths?: number
+  manualMonthlyInstallment?: number
+  /** yyyy-mm-dd — the typed plan's first installment date (FMI). */
+  firstDueDate?: string
+  /** When given, a curated PriceListItemTerm (the real rate card) for this
+   * SKU + term wins over the generic factorRate calculation, if one exists
+   * — see FinancingTermsService.preview(). */
+  priceListItemId?: string
 }
 
 export interface InstallmentScheduleLineWithInvoice {
@@ -1020,6 +1308,9 @@ export interface InstallmentScheduleLineWithInvoice {
     totalAmount: number
     amountPaid: number
     status: string
+    /** Employee Appliance Loan — settled by payroll deduction, so Collections
+     * shows it but never offers to collect it. */
+    isEmployeeApplianceLoan?: boolean | null
     /** Non-cancelled payments only — used to warn "already collected today"
      * before the Collect modal is even opened. */
     payments: { paymentDate: string; amount: number }[]
@@ -1035,7 +1326,18 @@ export interface InstallmentSchedule {
   monthlyInstallment: number
   totalPayable: number
   createdAt: string
-  posTransaction?: { transactionNumber: string; occurredAt: string }
+  /** The sale this plan came from. Present on every POS-originated schedule;
+   * it is what a caller holding only the plan can narrow a customer ledger
+   * by (`txn:<id>`). */
+  posTransactionId?: string | null
+  posTransaction?: {
+    transactionNumber: string
+    /** NIG's own Sales Invoice No. — the document the customer holds, and
+     * what every Ref on this plan's ledger prints. Null only for a sale
+     * booked before it became required at checkout. */
+    salesInvoiceNumber: string | null
+    occurredAt: string
+  }
   financingTerm?: { termMonths: number; factorRate: number }
   lines: InstallmentScheduleLineWithInvoice[]
   // Scenario 23 Gap 2 — plural since Gap 5's term-grouping means a schedule
@@ -1191,6 +1493,13 @@ export interface PosReleaseFormCartSnapshot {
   financingTermId?: string
   downPayment?: number
   creditApplicationId?: string
+  /** Scenario 67 — the snapshot is the submitted cart, X-Deal flags included. */
+  isXDeal?: boolean
+  xDealReference?: string | null
+  /** Scenario 68 — the part of an X-Deal paid at the counter, recorded on
+   * approval; the amount itself is the lines' downPayment. */
+  xDealDownPaymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+  xDealDownPaymentReferenceNumber?: string
 }
 
 export interface PosReleaseFormRequest {
@@ -1336,4 +1645,87 @@ export function isRefundPendingApproval(
     (data as PosRefundPendingApproval)?.status === 'pending_approval' &&
     'returnRefundRequestId' in data
   )
+}
+
+// ─── Override Review (Scenario 71 Part 4) ─────────────────────────────────────
+
+export type OverrideFlag =
+  | 'over_threshold'
+  | 'no_list_price'
+  | 'typed_terms'
+  | 'dp_waived'
+  | 'credit_waived'
+  | 'credit_overridden'
+  | 'credit_warning'
+
+/** 'voided' is read-time only: the sale was voided after the entry was made. */
+export type OverrideEntryStatus = 'pending' | 'approved' | 'rejected' | 'voided'
+
+export type OverridePlanKind = 'cash' | 'installment_term' | 'installment_typed' | 'tpf'
+
+export interface OverrideReviewEntry {
+  id: string
+  branchId: string
+  branchName: string | null
+  transactionId: string
+  transactionNumber: string
+  salesInvoiceNumber: string | null
+  occurredAt: string
+  item: { id: string; name: string; sku: string | null }
+  quantity: number
+  sellerName: string | null
+  cashierName: string | null
+  listUnitPrice: number | null
+  unitPrice: number
+  /** Discount granted against list, in pesos; null with no list price. */
+  difference: number | null
+  belowListPct: number | null
+  planKind: OverridePlanKind
+  downPayment: number | null
+  termMonths: number | null
+  monthlyInstallment: number | null
+  firstDueDate: string | null
+  reason: { id: string; name: string } | null
+  note: string | null
+  flags: OverrideFlag[]
+  creditWarnings: string[]
+  /** The credit application override and what differed, when there was one. */
+  creditOverride: CreditApplicationOverrideSnapshot | null
+  status: OverrideEntryStatus
+  decidedByName: string | null
+  decidedAt: string | null
+  decisionNote: string | null
+  /** The day is signed off — decisions can no longer change. */
+  locked: boolean
+}
+
+export interface OverrideReviewSignOff {
+  branchId: string
+  branchName: string | null
+  signedAt: string
+  signedByName: string | null
+  entryCount: number
+  approvedCount: number
+  rejectedCount: number
+  totalDifference: number
+}
+
+export interface OverrideReviewDay {
+  date: string
+  branchId: string | null
+  /** The business's "flag when further below list than this" %, for the flag chip. */
+  flagThresholdPct: number
+  signOffs: OverrideReviewSignOff[]
+  /** Other days that still have entries waiting for a decision. */
+  pendingDays: Array<{ date: string; count: number }>
+  kpis: {
+    entries: number
+    pending: number
+    totalDifference: number
+    averageBelowListPct: number | null
+    flagged: number
+    dpWaived: number
+    rejected: number
+  }
+  entries: OverrideReviewEntry[]
 }
