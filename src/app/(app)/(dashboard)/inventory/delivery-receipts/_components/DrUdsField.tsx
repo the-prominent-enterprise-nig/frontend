@@ -3,7 +3,9 @@
 /* Scenario 72 Part 7 — the repair ticket a repair-purpose DR moves. The DR
  * replaces the UDS's own "Send to Service Centre" / "Release to Customer"
  * steps, so the unit, the warehouse and the recipient all come from the
- * sheet; the backend derives them again on save, this only shows them. */
+ * sheet; the backend derives them again on save, this only shows them.
+ * Optional: without a ticket the DR names its own units and recipient (one
+ * to the service center then opens its ticket on approval). */
 
 import { useEffect } from 'react'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
@@ -54,13 +56,25 @@ export function DrUdsField({ error }: { error?: string }): React.JSX.Element {
     const party = toProvider ? uds.repairProvider : uds.customer
     setValue('udsId', uds.id, opts)
     setValue('udsLabel', uds.code, opts)
+    setValue('udsFixesParty', !!party, opts)
     if (uds.warehouseId) setValue('warehouseId', uds.warehouseId, opts)
     setValue('lines', udsLines(uds), opts)
-    setValue('supplierId', toProvider ? (party?.id ?? '') : '', opts)
-    setValue('supplierLabel', toProvider ? (party?.name ?? '') : '', opts)
-    setValue('customerId', toProvider ? '' : (party?.id ?? ''), opts)
-    setValue('customerLabel', toProvider ? '' : (party?.name ?? ''), opts)
-    setValue('deliveredTo', party?.name ?? '', opts)
+    // A ticket not yet bound to a provider leaves the DR's own pick alone.
+    if (!party) return
+    setValue('supplierId', toProvider ? party.id : '', opts)
+    setValue('supplierLabel', toProvider ? party.name : '', opts)
+    setValue('customerId', toProvider ? '' : party.id, opts)
+    setValue('customerLabel', toProvider ? '' : party.name, opts)
+    setValue('deliveredTo', party.name, opts)
+  }
+
+  /** Back to a ticketless DR: its units were the ticket's, so they go too. */
+  function clear(): void {
+    const opts = { shouldDirty: true, shouldValidate: false }
+    setValue('udsId', '', opts)
+    setValue('udsLabel', '', opts)
+    setValue('udsFixesParty', false, opts)
+    setValue('lines', [], opts)
   }
 
   // Arriving from the UDS list (?udsId=) presets the id only; fill the rest
@@ -77,7 +91,7 @@ export function DrUdsField({ error }: { error?: string }): React.JSX.Element {
     options.unshift({ value: udsId, label: udsLabel || 'Selected ticket' })
   }
   return (
-    <Field label="Repair ticket (UDS)" required error={error}>
+    <Field label="Repair ticket (UDS)" error={error}>
       <Controller
         control={control}
         name="udsId"
@@ -85,6 +99,10 @@ export function DrUdsField({ error }: { error?: string }): React.JSX.Element {
           <SearchableSelect
             value={field.value}
             onChange={(value) => {
+              if (!value) {
+                clear()
+                return
+              }
               const row = rows.find((r) => r.id === value)
               if (row) apply(row)
             }}
@@ -92,10 +110,11 @@ export function DrUdsField({ error }: { error?: string }): React.JSX.Element {
             loading={eligible.isLoading}
             placeholder={
               !eligible.isLoading && rows.length === 0
-                ? 'No repair tickets are ready for this step'
-                : 'Select repair ticket…'
+                ? 'None ready — fill in the units below instead'
+                : 'Optional — select repair ticket…'
             }
             chrome={CONTROL_CHROME}
+            clearable
           />
         )}
       />

@@ -16,7 +16,7 @@ const DR_ERROR_MESSAGES: Record<string, string> = {
   serial_required: 'Pick the serial number for every serialized unit.',
   serial_not_applicable: 'Only serialized items take a serial number.',
   serial_not_available:
-    'One of the serials is no longer on the shelf at this warehouse — it may have been sold or moved.',
+    'One of the serials is no longer available here — it may have been sold, moved or sent out.',
   duplicate_serial: 'The same serial is on this DR twice.',
   reason_required: 'Say why this stock is leaving.',
   lines_required: 'Add at least one item.',
@@ -41,11 +41,14 @@ const DR_ERROR_MESSAGES: Record<string, string> = {
     'Only a unit assessed as repairable can go to the service center.',
   uds_already_dispatched: 'That unit is already with the service center.',
   uds_must_be_received_before_dispatch:
-    'The unit has to be received at main before it is sent out.',
+    'That repair ticket is not at a step where the unit can be sent out.',
   uds_is_still_with_a_repair_provider_receive_it_back_first:
     'The unit is still with the service center — receive it back first.',
   uds_already_closed: 'That repair ticket is already closed.',
   uds_not_ready_to_return_to_the_customer: 'That unit is not ready to go back to the customer.',
+  uds_is_not_a_repair_ticket: 'That ticket is not a repair ticket.',
+  repair_lines_need_serials:
+    'Every unit going to the service center needs its serial — the repair ticket tracks units by serial.',
   repair_delivery_receipt_cannot_void:
     'A repair DR cannot be voided — its repair ticket has already moved.',
 }
@@ -55,6 +58,9 @@ export function drErrorMessage(raw: string | undefined, fallback: string): strin
   const key = raw.trim()
   if (key.startsWith('uds_already_on_delivery_receipt:')) {
     return `That repair ticket is already on ${key.split(':')[1]}.`
+  }
+  if (key.startsWith('uds_unit_is_on_transfer:')) {
+    return `That unit is already on its way to main on ${key.split(':')[1]}.`
   }
   if (key.startsWith('serial_on_open_delivery_receipt:')) {
     return `One of the serials is already on ${key.split(':')[1]}, which is waiting for approval.`
