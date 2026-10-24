@@ -15,6 +15,7 @@ import {
   BarChart3,
   BellRing,
   BookOpen,
+  ChevronDown,
   ChevronLeft,
   ChevronUp,
   ClipboardList,
@@ -74,6 +75,21 @@ type NavItem = {
   href: string
   icon: LucideIcon
   requiredPermission?: string | string[]
+  /**
+   * For an item with no single requiredPermission that still needs some
+   * gate — e.g. POS PIN, deliberately ungated on any specific pos:x:y
+   * permission so hiding one narrow permission from a POS role doesn't
+   * also remove their only way to set up their own PIN (see that item's
+   * own comment). requiredPermission can't express "any permission in this
+   * module" — a required 'pos:*' only matches a literal pos:* grant, not a
+   * narrow pos:application:view — so this checks hasModuleAccess instead,
+   * the same "any access to this module" test the top-level module list
+   * itself uses. Without it, filterItem's `if (!requiredPermission) return
+   * true` showed this item to every signed-in user regardless of module
+   * access, including one with none at all — the link stayed visible, only
+   * the /pos/pin route itself caught it with a 403.
+   */
+  requiresModuleAccess?: string
   /** Must hold this exact permission row — wildcards don't count. */
   exactPermission?: string
   badge?: { text: string; variant: 'count' | 'new'; color?: string }
@@ -83,6 +99,9 @@ type NavItem = {
     icon: LucideIcon
     requiredPermission?: string | string[]
   }>
+  /** Renders as an expand/collapse header instead of a link. The items it
+   *  controls are ordinary entries placed directly after it. */
+  collapsible?: { open: boolean; onToggle: () => void }
   section?: string
   activeWhen?: string[]
   usePrefix?: boolean
@@ -130,10 +149,15 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
     href: hub.entryHref,
     icon,
     // A tab with no permission requirement (Special Accounts) keeps the item
-    // visible to everyone, as that tab's own sidebar item was.
+    // visible to anyone with accounting access, as that tab's own sidebar
+    // item was — requiresModuleAccess, so it still disappears for someone
+    // with no accounting access at all.
     requiredPermission: hub.tabs.some((tab) => tab.permissions.length === 0)
       ? undefined
       : hub.tabs.flatMap((tab) => tab.permissions),
+    requiresModuleAccess: hub.tabs.some((tab) => tab.permissions.length === 0)
+      ? 'accounting'
+      : undefined,
     activePrefixes: hub.tabs.map((tab) => tab.href),
   }
 }
@@ -449,10 +473,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // Every POS role needs their own PIN (checkout PIN entry, manager
         // approvals) — kept separate from the Settings item above so hiding
         // that one from Cashier doesn't also remove their only way to reach
-        // this.
+        // this. requiresModuleAccess (not requiredPermission) so it still
+        // shows for any POS role regardless of which specific pos:x:y
+        // permissions they hold — it only needs to disappear for someone
+        // with no POS access at all.
         label: 'POS PIN',
         href: '/pos/pin',
         icon: Key,
+        requiresModuleAccess: 'pos',
       },
     ],
     bottom: [],
@@ -749,6 +777,54 @@ function AdminSettingsDropdownItem({
   )
 }
 
+/**
+ * Expand/collapse header for an inline group. Deliberately not the
+ * subItems flyout: that one opens *upward* (`bottom-full`), which reads fine
+ * for a row sitting at the bottom of the sidebar but not for one near the top,
+ * where it covers the nav above it. This expands in place instead.
+ */
+function CollapsibleGroupHeader({
+  item,
+  collapsed,
+  isMobile = false,
+}: {
+  item: NavItem
+  collapsed: boolean
+  isMobile?: boolean
+}) {
+  const open = item.collapsible?.open ?? false
+  return (
+    <button
+      type="button"
+      onClick={item.collapsible?.onToggle}
+      aria-expanded={open}
+      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 transition-all duration-150 ${
+        collapsed ? 'justify-center' : ''
+      } ${isMobile ? 'hover:bg-gray-100' : 'hover:bg-gray-100/20'}`}
+    >
+      <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
+        <item.icon className={`h-4 w-4 ${isMobile ? 'text-gray-700' : 'text-white'}`} />
+      </span>
+      {!collapsed && (
+        <>
+          <span
+            className={`flex-1 text-left text-[13px] font-medium ${
+              isMobile ? 'text-gray-800' : 'text-white'
+            }`}
+          >
+            {item.label}
+          </span>
+          <ChevronDown
+            className={`h-3.5 w-3.5 transition-transform duration-150 ${
+              open ? '' : '-rotate-90'
+            } ${isMobile ? 'text-gray-400' : 'text-white/50'}`}
+          />
+        </>
+      )}
+    </button>
+  )
+}
+
 function NavItems({
   items,
   pathname,
@@ -789,7 +865,9 @@ function NavItems({
               {item.section}
             </p>
           )}
-          {item.subItems ? (
+          {item.collapsible ? (
+            <CollapsibleGroupHeader item={item} collapsed={collapsed} isMobile={isMobile} />
+          ) : item.subItems ? (
             <AdminSettingsDropdownItem
               item={item}
               pathname={pathname}
@@ -814,20 +892,48 @@ function NavItems({
 
 const DASHBOARD_ITEM: NavItem = { label: 'Dashboard', href: '/dashboard', icon: House }
 
-const MY_WORKSPACE_ITEMS: NavItem[] = []
+// isAdmin() in src/libs/guards/permission.ts — the gate every /settings page
+// actually runs — is roles:manage OR permissions:manage, plus a Business Owner
+// name bypass that hasPermission reproduces on its own. Naming it here lets
+// each entry below declare exactly what its own page checks, so the nav can
+// never offer a link that redirects on arrival, nor hide one that would work.
+const ADMIN_TIER = ['admin:roles:manage', 'admin:permissions:manage']
 
-const OWNER_WORKSPACE_ITEMS: NavItem[] = [
+// Confirmed intended, not an oversight (#168 review, 2026-09-14): both of these
+// are in access-levels.ts's PRESET_EXCLUDED_PERMISSIONS, so the Admin module's
+// "Manage / Edit" button never grants either — that IS the fix from #168 (a role
+// built via that button could otherwise mint a new role and grant it *:*). One
+// consequence: a role assembled purely from module-level presets, with Admin set
+// to Manage / Edit, sees Users below and nothing else here — Branches,
+// Departments, Business Policies and Payment Methods all require full isAdmin
+// and stay reachable only via Full Access on Admin, or by picking
+// admin:roles:manage / admin:permissions:manage individually under Advanced
+// permissions. Sharper module-level access needs the per-resource tier (#169)
+// or a narrower page guard on those four routes — neither is this file's job.
+
+// Every settings entry, for every role. Visibility comes from the permissions
+// declared on each item (applied by filterItem below), not from a role name.
+//
+// This replaced a three-way split on role name: Business Owner got all of
+// these, Branch Manager got its own one-item list, and everyone else got
+// MY_WORKSPACE_ITEMS — an empty array. So any role not literally *named*
+// "Business Owner" or "Branch Manager" had no settings nav at all, however it
+// was granted. A custom role holding admin:users:read could open
+// /settings/users and use it, but nothing in the app linked there.
+const WORKSPACE_ITEMS: NavItem[] = [
   {
     section: 'My Workspace',
     label: 'Users',
     href: '/settings/users',
     icon: UsersRound,
+    requiredPermission: [...ADMIN_TIER, 'admin:users:read'],
   },
   {
     section: 'My Workspace',
     label: 'Pending Invites',
     href: '/settings/pending-invites',
     icon: UserPlus,
+    requiredPermission: [...ADMIN_TIER, 'admin:users:read'],
   },
   {
     // Business-Owner-level master list — also the source of the
@@ -840,31 +946,49 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_READ,
     usePrefix: true,
   },
-  { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
-  { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
+  {
+    section: 'My Workspace',
+    label: 'Roles & Access',
+    href: '/settings/roles',
+    icon: ShieldCheck,
+    requiredPermission: ADMIN_TIER,
+  },
+  {
+    section: 'My Workspace',
+    label: 'Branches',
+    href: '/settings/branches',
+    icon: Warehouse,
+    requiredPermission: ADMIN_TIER,
+  },
   {
     section: 'My Workspace',
     label: 'Departments',
     href: '/settings/departments',
     icon: Network,
+    requiredPermission: ADMIN_TIER,
   },
   {
     section: 'My Workspace',
     label: 'Business Policies',
     href: '/settings/business-policies',
     icon: ScrollText,
+    requiredPermission: ADMIN_TIER,
   },
   {
     section: 'My Workspace',
     label: 'Payment Methods',
     href: '/settings/payment-methods',
     icon: Wallet,
+    requiredPermission: ADMIN_TIER,
   },
   {
     section: 'My Workspace',
     label: 'Audit Logs',
     href: '/settings/audit-logs',
     icon: ClipboardList,
+    // Not ADMIN_TIER: the page itself admits isAdmin, but the audit-log API
+    // behind it requires admin:audit-logs:read and nothing else, so an
+    // admin-tier role without that row would land on a page that can't load.
     requiredPermission: 'admin:audit-logs:read',
   },
 ]
@@ -954,6 +1078,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const [collapsed, setCollapsed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [pendingInviteCount, setPendingInviteCount] = useState(0)
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
 
   const segment = pathname.split('/').filter(Boolean)[0] ?? 'dashboard'
 
@@ -961,8 +1086,6 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
 
   const isOwner =
     session?.primaryRole === 'Business Owner' || session?.roles.includes('Business Owner') || false
-
-  const isBranchManager = session?.primaryRole === 'Branch Manager'
 
   // Refresh-on-navigation, not live — re-fetched whenever the route
   // changes rather than polled, matching how the rest of this app's nav
@@ -997,48 +1120,30 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   })
   const overridePendingCount = overridePending?.count ?? 0
 
-  const ownerWorkspaceItems: NavItem[] = isOwner
-    ? OWNER_WORKSPACE_ITEMS.map((item) =>
-        item.href === '/settings/pending-invites' && pendingInviteCount > 0
-          ? {
-              ...item,
-              badge: { text: String(pendingInviteCount), variant: 'count', color: 'bg-red-500' },
-            }
-          : item
-      )
-    : OWNER_WORKSPACE_ITEMS
+  const workspaceItems: NavItem[] = WORKSPACE_ITEMS.map((item) =>
+    item.href === '/settings/pending-invites' && pendingInviteCount > 0
+      ? {
+          ...item,
+          badge: { text: String(pendingInviteCount), variant: 'count', color: 'bg-red-500' },
+        }
+      : item
+  )
 
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
-  const moduleWithWorkspace = resolvedSegment !== 'Business Owner'
 
-  const bmWorkspaceItems = branchManagerWorkspaceItems(session?.branchId)
-
-  let mainItems: NavItem[]
-  if (isOwner) {
-    if (resolvedSegment === 'Business Owner') {
-      mainItems = ownerWorkspaceItems
-    } else {
-      const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
-      const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
-      const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
-      mainItems = [...labeledModuleItems, ...ownerWorkspaceItems]
-    }
-  } else if (isBranchManager) {
-    if (resolvedSegment === 'Business Owner') {
-      mainItems = bmWorkspaceItems
-    } else {
-      const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
-      const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
-      const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
-      mainItems = [...labeledModuleItems, ...bmWorkspaceItems]
-    }
-  } else if (moduleWithWorkspace) {
-    const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
-    const labeledModuleItems = config.main.map((item) => ({ ...item, section: moduleLabel }))
-    mainItems = [...labeledModuleItems, ...MY_WORKSPACE_ITEMS]
-  } else {
-    mainItems = config.main
-  }
+  // "My Branch" mirrors what /settings/branches/[id] itself admits:
+  // isAdmin(session), or primaryRole === 'Branch Manager' viewing their own
+  // branch. The role check is not laziness — that page is still role-gated, and
+  // the nav must not claim access the page will refuse.
+  //
+  // The branchId alone is NOT a sufficient test: session.branchId is derived
+  // from the EMPLOYEE record (users.service.ts: user.employee?.branchId), so
+  // every branch-assigned user has one — cashiers and stock controllers
+  // included. Gating on it alone handed them a My Workspace block whose only
+  // link redirected to /403.
+  const bmWorkspaceItems =
+    session?.primaryRole === 'Branch Manager' ? branchManagerWorkspaceItems(session?.branchId) : []
+  const allWorkspaceItems = [...workspaceItems, ...bmWorkspaceItems]
 
   const hasAnyPermission = (required?: string | string[]) => {
     if (!required) return true
@@ -1048,11 +1153,57 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
 
   // A parent with sub-items shows only while at least one child is visible.
   const filterItem = (item: NavItem) => {
+    if (item.requiresModuleAccess && !hasModuleAccess(session, item.requiresModuleAccess)) {
+      return false
+    }
     if (item.exactPermission) return hasExactPermission(session, item.exactPermission)
     return (
       hasAnyPermission(item.requiredPermission) &&
       (!item.subItems || item.subItems.some((sub) => hasAnyPermission(sub.requiredPermission)))
     )
+  }
+
+  // One path for every role now: the settings block is whatever
+  // allWorkspaceItems survives filterItem, appended to the current module's
+  // own items. The 'Business Owner' segment is the settings-only view, with no
+  // module items of its own, which is why it short-circuits.
+  const visibleWorkspaceItems = allWorkspaceItems.filter(filterItem)
+
+  let mainItems: NavItem[]
+  if (resolvedSegment === 'Business Owner') {
+    mainItems = visibleWorkspaceItems
+  } else {
+    const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
+    const labeledModuleItems = config.main
+      .filter((item) => item.section !== 'My Workspace')
+      .map((item) => ({ ...item, section: moduleLabel }))
+
+    // Inside a module the settings block collapses to one header row that
+    // expands in place, below the module's own items. Collapsed by default,
+    // but forced open whenever one of its own pages is the current route, so
+    // the sidebar never hides where you actually are.
+    const workspaceHasActiveRoute = visibleWorkspaceItems.some(
+      (item) => pathname === item.href || pathname.startsWith(item.href + '/')
+    )
+    const workspaceExpanded = workspaceOpen || workspaceHasActiveRoute
+
+    const workspaceGroup: NavItem[] = visibleWorkspaceItems.length
+      ? [
+          {
+            section: 'My Workspace',
+            label: 'My Workspace',
+            href: '/settings',
+            icon: Settings,
+            collapsible: {
+              open: workspaceExpanded,
+              onToggle: () => setWorkspaceOpen((value) => !value),
+            },
+          },
+          ...(workspaceExpanded ? visibleWorkspaceItems : []),
+        ]
+      : []
+
+    mainItems = [...labeledModuleItems, ...workspaceGroup]
   }
 
   const withBadge = (item: NavItem): NavItem =>
