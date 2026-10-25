@@ -259,6 +259,7 @@ export interface AgentCommission {
   createdAt: string
   posTransaction: {
     transactionNumber: string
+    salesInvoiceNumber?: string | null
     totalAmount: number
     occurredAt: string
   }

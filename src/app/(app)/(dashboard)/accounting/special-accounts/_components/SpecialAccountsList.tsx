@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, RefreshCw, Search } from 'lucide-react'
+import { Plus, RefreshCw, Search, Upload } from 'lucide-react'
 import {
   Expenses,
   fmtMoney,
@@ -73,6 +73,12 @@ export default function SpecialAccountsList() {
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
+          <Link
+            href="/accounting/special-accounts/opening-balances"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-purple-700 hover:bg-purple-50"
+          >
+            <Upload className="h-4 w-4" /> Load advance balances
+          </Link>
           <button
             onClick={() => setCreating(true)}
             className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800"

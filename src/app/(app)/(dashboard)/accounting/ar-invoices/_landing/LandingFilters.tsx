@@ -40,7 +40,7 @@ export function LandingFilters({ q }: { q?: string }): React.JSX.Element {
       <CustomerSearchBox />
       <div className="min-w-64 flex-1">
         <label className="mb-1 block text-xs font-semibold text-gray-600">
-          Invoice # or Transaction #
+          Invoice # or SI / DR #
         </label>
         <div className="relative">
           <Search

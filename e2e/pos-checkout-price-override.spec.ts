@@ -374,7 +374,6 @@ test.describe('POS Checkout — price override without a manager (Scenario 71 Pa
 
     await fillStable(page.getByLabel('Sales Invoice No.'), `SI-PO71-F05-${Date.now()}`)
     await fillStable(page.getByPlaceholder('0.00').first(), '100000')
-    await fillStable(page.getByPlaceholder('CR Number'), `CR-PO71-F05-${Date.now()}`)
 
     // Not clickStable — this submits a real sale.
     await page.getByRole('button', { name: /Confirm Sale/ }).click()

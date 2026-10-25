@@ -30,6 +30,7 @@ import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
 import { deliveryFeeReceiptTenderLabel, qrTenderLabel } from '../checkout/_utils/delivery'
 import { outputVatLabel } from '@/src/libs/tax/output-vat'
 import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -331,10 +332,6 @@ export function TransactionDetail({
                 )}
                 {tx.isXDeal && tx.xDealReference && (
                   <Row label="X-Deal Reference" value={tx.xDealReference} />
-                )}
-                {/* Only when it isn't already the heading above. */}
-                {tx.salesInvoiceNumber && (
-                  <Row label="Transaction No." value={tx.transactionNumber} muted />
                 )}
                 <div className="border-t border-gray-200 pt-2">
                   <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
@@ -665,7 +662,7 @@ function RefundModal({
       const itemNameSummary =
         transaction.lines && transaction.lines.length === 1
           ? transaction.lines[0].itemName
-          : `${transaction.transactionNumber} (${transaction.lines?.length ?? 0} items)`
+          : `${saleDocNo(transaction)} (${transaction.lines?.length ?? 0} items)`
 
       usePosPendingRefundStore.getState().add({
         returnRefundRequestId,
@@ -678,7 +675,7 @@ function RefundModal({
 
       showToast({
         title: 'Refund submitted',
-        description: `${transaction.transactionNumber} — pending manager approval before funds are released.`,
+        description: `${saleDocNo(transaction)} — pending manager approval before funds are released.`,
         status: 'info',
       })
       setSubmitting(false)
@@ -705,7 +702,7 @@ function RefundModal({
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">Refund Transaction</h2>
-              <p className="font-mono text-xs text-gray-500">{transaction.transactionNumber}</p>
+              <p className="font-mono text-xs text-gray-500">{saleDocNo(transaction)}</p>
             </div>
           </div>
 

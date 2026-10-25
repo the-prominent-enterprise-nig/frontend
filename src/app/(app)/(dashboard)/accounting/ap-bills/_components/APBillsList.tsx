@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Search, Inbox, PhilippinePeso, Pencil, Trash2, Printer } from 'lucide-react'
+import { Plus, Search, Inbox, PhilippinePeso, Pencil, Trash2, Printer, Upload } from 'lucide-react'
 import {
   APBills,
   type APBill,
@@ -309,6 +309,12 @@ export default function APBillsList() {
           {/* No Create Voucher here — the client asked for it off the header.
               A voucher starts from ticked invoices (the action bar below), a
               row's menu, or the Payments page. */}
+          <Link
+            href="/accounting/ap-bills/opening-balances"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-purple-700 rounded-lg hover:bg-purple-50"
+          >
+            <Upload className="w-4 h-4" /> Load beginning balances
+          </Link>
           <Link
             href="/accounting/ap-bills/new"
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"

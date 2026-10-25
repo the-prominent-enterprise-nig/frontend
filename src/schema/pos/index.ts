@@ -1388,6 +1388,7 @@ export interface PosVoidRequest {
   reviewedAt?: string | null
   transaction?: {
     transactionNumber: string
+    salesInvoiceNumber?: string | null
     totalAmount: number
     occurredAt: string
   }
@@ -1521,7 +1522,7 @@ export interface PosReleaseFormRequest {
   /** Only populated once approved — mirrors the same transaction number
    * shown in this request's resolution notification title (see
    * ReleaseFormRequestsService.notifyResolved on the backend). */
-  createdTransaction?: { transactionNumber: string } | null
+  createdTransaction?: { transactionNumber: string; salesInvoiceNumber?: string | null } | null
   cartSnapshot: PosReleaseFormCartSnapshot
   requestedBy?: {
     name: string | null
@@ -1616,6 +1617,7 @@ export interface PosReturnRefundRequest {
   /** Present for void requests (transaction-based, not cart-snapshot based). */
   transaction?: {
     transactionNumber: string
+    salesInvoiceNumber?: string | null
     totalAmount: number
     occurredAt: string
   } | null

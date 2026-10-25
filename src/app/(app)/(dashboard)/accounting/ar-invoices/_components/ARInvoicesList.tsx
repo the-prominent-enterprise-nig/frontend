@@ -42,6 +42,7 @@ import Field from '../../_shared/Field'
 import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import DebitMemoDialog from '../../_shared/DebitMemoDialog'
 import { CustomerSearchBox } from './CustomerSearchBox'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 const INVOICE_STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -230,7 +231,7 @@ export default function ARInvoicesList({
         {!dedicatedCustomer && <CustomerSearchBox />}
         <div className="min-w-64 flex-1">
           <label className="mb-1 block text-xs font-semibold text-gray-600">
-            Invoice # or Transaction #
+            Invoice # or SI / DR #
           </label>
           <div className="relative">
             <Search
@@ -415,11 +416,11 @@ function InvoiceRow({
         </span>
         {i.posTransaction && (
           <Link
-            href={`/pos/transactions?search=${encodeURIComponent(i.posTransaction.transactionNumber)}`}
+            href={`/pos/transactions?search=${encodeURIComponent(saleDocNo(i.posTransaction))}`}
             onClick={(e) => e.stopPropagation()}
             className="block truncate text-[10px] text-gray-400 hover:text-purple-700 hover:underline"
           >
-            Sale: {i.posTransaction.transactionNumber}
+            Sale: {saleDocNo(i.posTransaction)}
           </Link>
         )}
       </td>
