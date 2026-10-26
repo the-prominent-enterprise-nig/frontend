@@ -2,6 +2,7 @@
 
 import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
 import { getTransactions } from '../../_actions/pos-actions'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 type Props = {
   value: string
@@ -35,7 +36,7 @@ export function TransactionSearchCombobox({ value, onChange, error, initialLabel
         // directly throws, since it's a string at runtime despite the type).
         return (res.data ?? []).slice(0, 20).map((t) => ({
           id: t.id,
-          primary: t.transactionNumber,
+          primary: saleDocNo(t),
           secondary: `₱${Number(t.totalAmount).toFixed(2)} — ${new Date(t.occurredAt).toLocaleDateString()}`,
         }))
       }}

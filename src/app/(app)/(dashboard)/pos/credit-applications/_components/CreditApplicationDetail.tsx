@@ -35,6 +35,7 @@ import {
   type RecordCreditInvestigationFormValues,
   type UpdateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 /** The slice of checkout's CartLine that "Continue to sale" reads from a
  * stashed cart. CartLine itself is declared inside the checkout page. */
@@ -554,14 +555,13 @@ export default function CreditApplicationDetail({
                 <span
                   title={
                     application.posTransaction
-                      ? `Used for sale ${application.posTransaction.transactionNumber}`
+                      ? `Used for sale ${saleDocNo(application.posTransaction)}`
                       : undefined
                   }
                   className="inline-flex rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-white"
                 >
                   Used
-                  {application.posTransaction &&
-                    ` · Sale #${application.posTransaction.transactionNumber}`}
+                  {application.posTransaction && ` · Sale ${saleDocNo(application.posTransaction)}`}
                 </span>
               )}
             </div>
@@ -1283,7 +1283,7 @@ export default function CreditApplicationDetail({
               <p className="text-sm font-medium text-green-800">Approved</p>
               <p className="mt-1 text-sm text-green-700">
                 {application.posTransactionId
-                  ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}.`
+                  ? `This application has already been used for sale ${application.posTransaction ? saleDocNo(application.posTransaction) : application.posTransactionId}.`
                   : 'This application has been approved and is ready to proceed.'}
               </p>
             </div>
@@ -1292,7 +1292,7 @@ export default function CreditApplicationDetail({
               <p className="text-sm font-medium text-amber-800">Approved — ID pending</p>
               <p className="mt-1 text-sm text-amber-700">
                 {application.posTransactionId
-                  ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}, but no applicant ID is on file yet.`
+                  ? `This application has already been used for sale ${application.posTransaction ? saleDocNo(application.posTransaction) : application.posTransactionId}, but no applicant ID is on file yet.`
                   : 'This application has been approved and the sale can proceed. The applicant ID is still to follow — attach it above once the hard copy arrives.'}
               </p>
             </div>
@@ -1303,7 +1303,7 @@ export default function CreditApplicationDetail({
             <p className="text-sm font-medium text-orange-800">Partially Approved</p>
             <p className="mt-1 text-sm text-orange-700">
               {application.posTransactionId
-                ? `Some items were approved and some were declined. This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}.`
+                ? `Some items were approved and some were declined. This application has already been used for sale ${application.posTransaction ? saleDocNo(application.posTransaction) : application.posTransactionId}.`
                 : "Some items were approved and some were declined — see each item's status above. Checkout will only accept the approved items."}
             </p>
           </div>

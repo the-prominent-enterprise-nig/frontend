@@ -170,6 +170,7 @@ export const NullReferenceLedgerRowSchema = z.object({
 export const MissingPosMovementSchema = z.object({
   transactionId: z.string(),
   transactionNumber: z.string(),
+  salesInvoiceNumber: z.string().nullable().optional(),
   transactionType: z.string(),
   occurredAt: z.string(),
 })

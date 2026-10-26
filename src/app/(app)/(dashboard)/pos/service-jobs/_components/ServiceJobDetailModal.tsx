@@ -6,6 +6,7 @@ import type { ServiceDraft, RecordActualsFormValues } from '@/src/schema/pos/ser
 import { SERVICE_CATEGORY_LABELS, type ServiceCategory } from '@/src/schema/pos/service-drafts'
 import { SERVICE_DRAFT_STATUS_STYLES } from './status-styles'
 import { customerDisplayName } from './service-draft-utils'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 const LINE_SOURCE_LABELS: Record<string, string> = {
   warehouse: 'Warehouse',
@@ -148,7 +149,7 @@ export function ServiceJobDetailModal({
                       Linked Sale
                     </p>
                     <p className="mt-0.5 font-mono text-zinc-800">
-                      {draft.posTransaction.transactionNumber}
+                      {saleDocNo(draft.posTransaction)}
                     </p>
                   </div>
                 )}

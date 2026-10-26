@@ -263,9 +263,10 @@ async function readyCashSale(page: Page, customerName: string, salesInvoiceNumbe
 
 async function fillPayment(page: Page, cr: string, amount = '100000'): Promise<void> {
   await fillStable(page.getByLabel('Amount received'), amount)
-  // The label is the payment method's own reference label ("CR Number" by
-  // default), so match its start rather than one exact spelling.
-  await fillStable(page.getByRole('textbox', { name: /^CR Number/ }), cr)
+  // A CR Number exists only on a sale with a down payment, so a plain cash
+  // sale has none to fill; the cr argument is for the sales that do.
+  const crBox = page.getByRole('textbox', { name: /^CR Number/ })
+  if (await crBox.count()) await fillStable(crBox, cr)
 }
 
 /** Scenario 68 — a cart whose sale collects nothing at the register: a fully
@@ -380,7 +381,7 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await expect(feeCr(page)).toBeVisible()
   })
 
-  test("DT-F06 (Scenario 70): the order down the panel is Delivery, then the Total, then the sale's Amount received and CR, then Confirm", async ({
+  test("DT-F06 (Scenario 70): the order down the panel is Delivery, then the Total, then the sale's Amount received, then Confirm (a plain cash sale has no CR)", async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'DTF06', withAddress)
@@ -393,20 +394,27 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     const deliveryY = await y(section(page))
     const totalY = await y(page.getByTestId('checkout-grand-total'))
     const amountReceivedY = (await page.getByLabel('Amount received').boundingBox())!.y
-    const crY = (await page.getByRole('textbox', { name: /^CR Number/ }).boundingBox())!.y
-    const confirmY = (await confirm(page).boundingBox())!.y
+    await expect(page.getByRole('textbox', { name: /^CR Number/ })).toHaveCount(0)
+    // Until the payment is typed the button reads "Underpaid by ₱…".
+    const confirmY = (await page
+      .getByRole('button', { name: /Confirm Sale|Underpaid by/ })
+      .boundingBox())!.y
     expect(summaryY).toBeLessThan(deliveryY)
     expect(deliveryY).toBeLessThan(totalY)
     expect(totalY).toBeLessThan(amountReceivedY)
-    expect(amountReceivedY).toBeLessThan(crY)
-    expect(crY).toBeLessThan(confirmY)
+    expect(amountReceivedY).toBeLessThan(confirmY)
     // A sale has no "Total Tendered" row; it keeps only the Change, which comes
     // after the payment fields it belongs to.
     await fillPayment(page, `CR-DTF06-${Date.now()}`, '10000')
     await expect(page.getByText('Total Tendered')).toHaveCount(0)
+    // Measured again: typing the amount moves the page.
+    const amountReceivedNowY = (await page.getByLabel('Amount received').boundingBox())!.y
+    const confirmNowY = (await page
+      .getByRole('button', { name: /Confirm Sale|Underpaid by/ })
+      .boundingBox())!.y
     const changeY = (await page.getByText('Change', { exact: true }).boundingBox())!.y
-    expect(changeY).toBeGreaterThan(crY)
-    expect(changeY).toBeLessThan(confirmY)
+    expect(changeY).toBeGreaterThan(amountReceivedNowY)
+    expect(changeY).toBeLessThan(confirmNowY)
   })
 
   test('DT-F07 (Scenario 70): Copy beside the Total puts the plain amount on the clipboard — no peso sign, no commas — and it pastes into Amount received', async ({
@@ -566,7 +574,14 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await toggle(page).check()
     await fillStable(feeInput(page), '150')
     await fillStable(feeCr(page), ` ${cr.toLowerCase()} `)
-    await fillPayment(page, cr)
+    // A plain cash sale has no payment CR. A GCash payment's own reference is
+    // the number the fee's CR must still differ from.
+    await page
+      .getByTestId('cash-sub-mode-toggle')
+      .getByRole('button', { name: 'GCash', exact: true })
+      .click()
+    await fillStable(page.getByLabel('Amount received'), '100000')
+    await fillStable(page.getByLabel('GCash reference'), cr)
 
     await confirm(page).click()
     await expect(

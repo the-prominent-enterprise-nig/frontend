@@ -124,7 +124,7 @@ function CollectorTable({
         <table className="w-full min-w-[1180px] text-xs">
           <thead>
             <tr className="border-b border-gray-200 text-left text-[11px] uppercase text-gray-500">
-              <th className={TH}>Account</th>
+              <th className={TH}>SI / DR No.</th>
               <th className={TH}>Customer</th>
               <th className={TH}>Source</th>
               <th className={TH}>Aging</th>

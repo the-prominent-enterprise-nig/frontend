@@ -3301,6 +3301,7 @@ export async function clearCashInTransit(
 export interface MissingCogsSale {
   transactionId: string
   transactionNumber: string
+  salesInvoiceNumber?: string | null
   occurredAt: string
   /** `zero_cost` — the item has no costed stock to average, so the cost came
    *  back as ₱0 and there was nothing to post. `no_cost_resolved` — the cost

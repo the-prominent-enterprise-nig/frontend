@@ -230,7 +230,14 @@ export const DrDetailSchema = z.object({
   /** Return to supplier only (Scenario 72 Part 8) — drafted with the DR. */
   supplierDebitMemo: DebitMemoRefSchema,
   /** Scenario 72 Part 6 — the POS sale that invoiced a sales invoice to follow. */
-  posTransaction: z.object({ id: z.string(), transactionNumber: z.string() }).nullable().optional(),
+  posTransaction: z
+    .object({
+      id: z.string(),
+      transactionNumber: z.string(),
+      salesInvoiceNumber: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   /** Scenario 72 Part 7 — the repair ticket a repair-purpose DR moved. */
   udsId: z.string().nullable().optional(),
   uds: z
