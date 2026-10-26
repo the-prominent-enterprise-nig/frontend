@@ -8,7 +8,12 @@ import { agentsApi } from '@/src/libs/api/crm'
 import type { Agent } from '@/src/schema/crm/types'
 import type { CreateAgentInput } from '@/src/schema/crm/agent'
 import { getBranches } from '../_actions/get-branches'
-import { AgentFormFields, agentFormState, type AgentFormState } from './AgentFormFields'
+import {
+  AgentFormFields,
+  agentFormState,
+  agentPayload,
+  type AgentFormState,
+} from './AgentFormFields'
 
 // The API pages agents 20 at a time (AgentService.findAll's default). The
 // whole roster is 150+ since the client's list was imported, so the list has
@@ -61,7 +66,7 @@ export default function AgentsList({ canCreate }: Props) {
 
   // Edit and Remove live on the agent's own page; the list only adds.
   const handleCreate = async (data: AgentFormState) => {
-    const res = await agentsApi.create(data as CreateAgentInput)
+    const res = await agentsApi.create(agentPayload(data) as unknown as CreateAgentInput)
     if (!res.success) {
       toast.error(res.message || res.error || 'Could not save agent')
       return

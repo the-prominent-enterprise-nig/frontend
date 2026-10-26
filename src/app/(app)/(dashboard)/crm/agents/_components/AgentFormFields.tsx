@@ -22,6 +22,21 @@ export function agentFormState(agent?: Agent | null): AgentFormState {
   }
 }
 
+/** What the form sends. A blank Phone or Email goes as null, not '': the API
+ * validates email with @IsOptional() @IsEmail(), and @IsOptional only skips
+ * null/undefined — so '' was refused with a 400, and every agent without an
+ * email (the whole imported roster) could not be saved. null also clears a
+ * value the user emptied. */
+export function agentPayload(form: AgentFormState) {
+  const blankToNull = (v?: string | null) => (v && v.trim() ? v.trim() : null)
+  return {
+    ...form,
+    name: form.name?.trim(),
+    phone: blankToNull(form.phone),
+    email: blankToNull(form.email),
+  }
+}
+
 /** The agent fields, shared by the list's Add Agent dialog and the agent
  * page's inline Edit so the two can't drift apart. */
 export function AgentFormFields({

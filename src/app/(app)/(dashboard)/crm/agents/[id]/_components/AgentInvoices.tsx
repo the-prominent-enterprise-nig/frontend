@@ -18,6 +18,7 @@ import { getBranches } from '../../_actions/get-branches'
 import {
   AgentFormFields,
   agentFormState,
+  agentPayload,
   type AgentFormState,
 } from '../../_components/AgentFormFields'
 
@@ -133,7 +134,7 @@ export default function AgentInvoices({
     e.preventDefault()
     if (!editForm) return
     setSaving(true)
-    const res = await agentsApi.update(id, editForm as UpdateAgentInput)
+    const res = await agentsApi.update(id, agentPayload(editForm) as unknown as UpdateAgentInput)
     setSaving(false)
     if (!res.success) {
       toast.error(res.message || res.error || 'Could not save agent')
