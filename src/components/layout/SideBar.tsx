@@ -3,8 +3,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { createPortal } from 'react-dom'
 import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
 import { hasExactPermission, hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
@@ -19,37 +17,30 @@ import {
   ChevronLeft,
   ChevronUp,
   ClipboardList,
-  ClipboardCheck,
-  ClipboardX,
   Coins,
   Contact,
-  CreditCard,
   FileBarChart,
   Database,
   FilePlus,
   HandCoins,
   House,
   IdCard,
-  Key,
   Landmark,
   Layers,
-  Monitor,
   MoreHorizontal,
   Package,
-  PackageCheck,
   Receipt,
-  ReceiptText,
   PhilippinePeso,
   ScrollText,
   Settings,
   ShieldCheck,
+  ShoppingBag,
   ShoppingCart,
   Tag,
   Undo2,
   Users,
   UsersRound,
   UserPlus,
-  Banknote,
   Wallet,
   Warehouse,
   Network,
@@ -62,6 +53,7 @@ import {
   BOOKS_HUB,
   CASH_BANKING_HUB,
   EXPENSES_HUB,
+  HUBS,
   PAYABLES_HUB,
   RECEIVABLES_HUB,
   type Hub,
@@ -69,6 +61,20 @@ import {
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import {
+  APPROVALS_REVIEWS_HUB,
+  CASH_COLLECTIONS_HUB,
+  OPERATIONS_ADMIN_HUB,
+  POS_HUBS,
+  PRICING_PROMOTION_HUB,
+  REPORTS_HUB,
+  SALES_COUNTER_HUB,
+  posHubHrefs,
+  posTabPermissions,
+  type PosHub,
+} from '@/src/app/(app)/(dashboard)/pos/_shared/pos-hubs'
+import SidebarSearch, { type SearchEntry } from './SidebarSearch'
+import { usePosOverridePendingCount } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePosOverridePendingCount'
 
 type NavItem = {
   label: string
@@ -107,6 +113,13 @@ type NavItem = {
   usePrefix?: boolean
   /** Lit on any path equal to, or under, one of these — a hub whose tabs are separate routes. */
   activePrefixes?: string[]
+  /**
+   * Kept even though its href repeats a row already shown — the module row.
+   * POS's Operations links to /pos like the "Point of Sale" module row does, and
+   * is the only way the sale-flow tabs (Overview, Checkout, …) get a row of
+   * their own.
+   */
+  keepBesideModuleRow?: boolean
 }
 
 type NavGroup = {
@@ -162,6 +175,28 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
   }
 }
 
+/**
+ * One sidebar item for a POS hub (pos/_shared/pos-hubs.ts), the way hubNavItem is
+ * for Accounting. Visible when the user can open any of its tabs — or holds the
+ * hub's own `permission`, where its tabs are ungated or its entry route is a real
+ * page — and lit on the hub's routes.
+ */
+function posHubNavItem(hub: PosHub, label: string, icon: LucideIcon): NavItem {
+  const ungated = !hub.permission && hub.tabs.some((tab) => posTabPermissions(tab).length === 0)
+  const permissions = ungated
+    ? []
+    : (hub.permission ?? hub.tabs.flatMap((tab) => posTabPermissions(tab)))
+  const hrefs = posHubHrefs(hub)
+  return {
+    label,
+    href: hub.entryHref,
+    icon,
+    requiredPermission: permissions.length ? permissions : undefined,
+    requiresModuleAccess: permissions.length ? undefined : 'pos',
+    ...(hub.activeMatch === 'exact' ? { activeWhen: hrefs } : { activePrefixes: hrefs }),
+  }
+}
+
 const navItemsBySegment: Record<string, NavConfig> = {
   'Business Owner': {
     main: [],
@@ -204,12 +239,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Layers,
         requiredPermission: [
           INVENTORY_PERMISSIONS.WAREHOUSES_READ,
-          INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
           INVENTORY_PERMISSIONS.COSTING_READ,
           INVENTORY_PERMISSIONS.COSTING_CONFIGURE,
           INVENTORY_PERMISSIONS.WILDCARD,
-          INVENTORY_PERMISSIONS.TRANSFERS_READ,
-          PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
         ],
       },
       {
@@ -286,14 +318,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
   },
   pos: {
     main: [
+      // Overview, Checkout, Reservations, Transactions, Parked Sales — the sale
+      // flow. Lit on those five routes only, unlike the module row above it,
+      // which is lit on every /pos page. ShoppingBag, not the module row's cart.
       {
-        label: 'Operations',
-        href: '/pos',
-        icon: ShoppingCart,
-        requiredPermission: 'pos:transactions:read',
-        activeWhen: ['/pos', '/pos/checkout', '/pos/transactions'],
+        ...posHubNavItem(SALES_COUNTER_HUB, 'Sales Counter', ShoppingBag),
+        keepBesideModuleRow: true,
       },
       {
+        // Not a sale, so not a Sales Counter tab (client decision, against the
+        // revision doc) — brands, models, prices and stock for the branch's
+        // sellable items. Gated like the page. Exact match: Price List Upload
+        // lives under /pos/catalog/price-lists and has its own group.
         label: 'Product Catalog',
         href: '/pos/catalog',
         icon: BookOpen,
@@ -301,187 +337,38 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/catalog'],
       },
       {
-        label: 'Management',
-        href: '/pos/sessions',
-        icon: Monitor,
-        requiredPermission: 'pos:sessions:read',
-        // '/pos/terminals' moved under Settings (/pos/settings/terminals,
-        // already covered by that item's own activeWhen) — Management no
-        // longer has anything to do with Terminals.
-        activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
-      },
-      {
         // POS's own customers screen, over the same Customer records CRM
         // lists — same table, same CustomerService, different permission
         // (2026-09-19 review request). It exists so a cashier can create
         // and correct customer profiles for a sale or a credit application
-        // while holding no crm:* permission at all.
+        // while holding no crm:* permission at all. Kept in POS (client
+        // decision, against the revision doc): checkout's "New Customer" and a
+        // credit application's "+ New customer" both go through its create form.
         label: 'Customers',
         href: '/pos/customers',
         icon: Users,
         requiredPermission: 'pos:customers:read',
         activeWhen: ['/pos/customers'],
       },
-      {
-        label: 'Collections',
-        href: '/pos/collections',
-        icon: Coins,
-        requiredPermission: 'pos:collections:manage',
-      },
-      {
-        // Scenario 57 — money received with no customer/invoice behind it
-        // (a walk-in payment, a refund). Its own sidebar item rather than
-        // buttons on the Collections page (developer decision, 2026-09-21),
-        // same permission as Collections since it's the same "money
-        // received at the counter" capability.
-        label: 'New Receipts',
-        href: '/pos/collections/acknowledgement',
-        icon: ReceiptText,
-        requiredPermission: 'pos:collections:manage',
-        usePrefix: true,
-      },
-      {
-        // Scenario 47 — sidebar gate matches the page's own guard
-        // (POS_PERMISSIONS.REPORTS_READ). Deliberately not
-        // 'pos:transactions:read': these reports expose unit cost and
-        // margin, so a Cashier must not even see the link.
-        label: 'Sales Reports',
-        href: '/pos/reports',
-        icon: BarChart3,
-        requiredPermission: 'pos:reports:read',
-      },
-      {
-        label: 'Credit Applications',
-        href: '/pos/credit-applications',
-        icon: CreditCard,
-        // pos:application:view — credit was folded into the pos module
-        // (Scenario 22, 2026-08-08). A Credit Investigator holds only this
-        // narrow slice of pos:* (no sessions/transactions/etc.), and still
-        // needs their own way into this page (see filterItem below, which
-        // checks each item's own requiredPermission independently).
-        requiredPermission: 'pos:application:view',
-        // Has a real [id] detail route (unlike its sibling items here,
-        // which are all single-page-with-modals) — without this, viewing
-        // an application's detail page wouldn't highlight this as active.
-        usePrefix: true,
-      },
-      {
-        // Scenario 53 — the client's own end-of-day document. Its own
-        // permission, so the cashier who closes the shift can print and sign
-        // it without the Branch-Manager-tier sales reports coming with it.
-        // Clipboard, not Wallet — it is a sheet to fill and sign, and the
-        // wallet belongs to the cash balance below it.
-        label: 'Daily Collection',
-        href: '/pos/daily-collection',
-        icon: ClipboardList,
-        requiredPermission: POS_PERMISSIONS.DAILY_COLLECTION_READ,
-      },
-      {
-        // Scenario 53 — POS speaks in Undeposited Funds now; Accounting keeps
-        // the Cash-in-Transit name for the GL account it reconciles against.
-        label: 'Undeposited Funds',
-        href: '/pos/undeposited-funds',
-        icon: Banknote,
-        requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,
-      },
-      {
-        label: 'Void Requests',
-        href: '/pos/void-requests',
-        icon: ShieldCheck,
-        requiredPermission: 'pos:transactions:read',
-      },
-      {
-        // Sidebar gate must match the page's own guard
-        // (POS_PERMISSIONS.TRANSACTIONS_OVERRIDE / getPending's backend
-        // check) — Cashier holds pos:sessions:read but not this, so the
-        // old 'pos:sessions:read' gate let them see the link and then get
-        // redirected/403'd once inside. Business Owner and Branch Manager
-        // both hold pos:transaction:override and keep access.
-        label: 'Cancellations',
-        href: '/pos/cancellation-requests',
-        icon: ClipboardX,
-        requiredPermission: 'pos:transaction:override',
-      },
-      {
-        // Scenario 71 Part 4 — the end-of-day look at every price override,
-        // typed term and waiver. Same gate as the other manager approvals; the
-        // pending-entry badge is attached in SideBar below.
-        label: 'Override Review',
-        href: '/pos/override-review',
-        icon: ClipboardCheck,
-        requiredPermission: POS_PERMISSIONS.TRANSACTIONS_OVERRIDE,
-      },
-      {
-        label: 'Release Approvals',
-        href: '/pos/release-approvals',
-        icon: PackageCheck,
-        // Cashiers can view (not approve) their own submitted requests here —
-        // matches the page's own guard (POS_PERMISSIONS.TRANSACTIONS_READ).
-        requiredPermission: 'pos:transactions:read',
-      },
-      {
-        label: 'Refund Approvals',
-        href: '/pos/return-refund-approvals',
-        icon: Undo2,
-        requiredPermission: 'pos:transaction:override',
-      },
-      {
-        label: 'Service Jobs',
-        href: '/pos/service-jobs',
-        icon: Wrench,
-        requiredPermission: 'pos:service-drafts:read',
-      },
-      {
-        label: 'Promotions',
-        href: '/pos/promo-codes',
-        icon: Tag,
-        requiredPermission: 'pos:promo-codes:read',
-        activeWhen: ['/pos/promo-codes', '/pos/gift-cards', '/pos/loyalty'],
-      },
-      {
-        label: 'Branch Pricing',
-        href: '/pos/branch-pricing',
-        icon: HandCoins,
-        requiredPermission: 'pos:branch-pricing:read',
-      },
-      {
-        label: 'Settings',
-        href: '/pos/settings',
-        icon: Key,
-        // The layout's actual guard (canManagePosSettings) is role-based —
-        // Business Owner or Branch Manager only — not permission-based, and
-        // Cashier holds pos:config:manage too (module-wildcard-minus-
-        // transaction:override grant), so gating on that let Cashier see
-        // the link and then get redirected to /403 once inside.
-        // pos:transaction:override is the one pos permission Cashier is
-        // deliberately denied, so it's the closest match to "Business
-        // Owner / Branch Manager only" the sidebar's permission model has.
-        requiredPermission: 'pos:transaction:override',
-        // Exact-match list, not a prefix check (see isActive below) — every
-        // /pos/settings/* sub-route needs its own explicit entry.
-        activeWhen: [
-          '/pos/settings',
-          '/pos/settings/general',
-          '/pos/settings/payment-methods',
-          '/pos/settings/terminals',
-          '/pos/settings/receipt-branding',
-          '/pos/settings/financing-terms',
-          '/pos/settings/customer-display',
-        ],
-      },
-      {
-        // Every POS role needs their own PIN (checkout PIN entry, manager
-        // approvals) — kept separate from the Settings item above so hiding
-        // that one from Cashier doesn't also remove their only way to reach
-        // this. requiresModuleAccess (not requiredPermission) so it still
-        // shows for any POS role regardless of which specific pos:x:y
-        // permissions they hold — it only needs to disappear for someone
-        // with no POS access at all.
-        label: 'POS PIN',
-        href: '/pos/pin',
-        icon: Key,
-        requiresModuleAccess: 'pos',
-      },
+      // Promotions (Promo Codes | Gift Cards | Loyalty) and Price Maker. Entry
+      // route: /pos/pricing-promotion.
+      posHubNavItem(PRICING_PROMOTION_HUB, 'Pricing & Promotion', Tag),
+      // Management (Sessions | Cash Drawer), New Receipts, Credit Applications,
+      // Collections, Collected Funds History. Each tab keeps its own permission; the
+      // item shows when any one is held. Entry route: /pos/cash-collections.
+      posHubNavItem(CASH_COLLECTIONS_HUB, 'Cash & Collections', Wallet),
+      // The manager queues. Each tab is gated like its page, so Cashier (read,
+      // not override) gets Unit Release Approvals and Void Requests only. The
+      // pending-override badge is attached in SideBar below (withBadge). Entry
+      // route: /pos/approvals.
+      posHubNavItem(APPROVALS_REVIEWS_HUB, 'Approvals & Reviews', ShieldCheck),
+      // Sales Reports (Branch-Manager tier) and Daily Collection (the cashier's
+      // end-of-day sheet). Entry route: /pos/reporting.
+      posHubNavItem(REPORTS_HUB, 'Reports', BarChart3),
+      // Service Jobs, Price List Upload, POS PIN, Settings. The row shows for
+      // any POS role (POS PIN needs no permission); each tab is gated on its
+      // own. Entry route: /pos/admin.
+      posHubNavItem(OPERATIONS_ADMIN_HUB, 'Operations & Admin', Wrench),
     ],
     bottom: [],
   },
@@ -855,7 +742,7 @@ function NavItems({
   return (
     <>
       {decorated.map(({ item, showSection }) => (
-        <div key={item.href}>
+        <div key={`${item.href}|${item.label}`}>
           {showSection && (
             <p
               className={`px-2 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-wider ${
@@ -1013,6 +900,109 @@ const MODULE_SECTION_LABELS: Record<string, string> = {
   crm: 'CRM',
 }
 
+/**
+ * Every page the sidebar search can take the signed-in user to: the pages of
+ * each module they have access to, the tabs inside its hubs, and their
+ * settings pages. Built from the same navigation the sidebar draws and filtered
+ * by the same rules, so a page only the menu hides from this user is never
+ * offered — search is a shortcut through the menu, not around it.
+ */
+function buildSearchEntries(args: {
+  session: SessionUser | null
+  filterItem: (item: NavItem) => boolean
+  hasAnyPermission: (required?: string | string[]) => boolean
+  workspaceItems: NavItem[]
+  /** Owner-only POS tabs (Settings, ...) show only for those who configure POS. */
+  canConfigurePos: boolean
+}): SearchEntry[] {
+  const { session, filterItem, hasAnyPermission, workspaceItems, canConfigurePos } = args
+  const entries: SearchEntry[] = []
+  const seen = new Set<string>()
+  const add = (entry: SearchEntry) => {
+    const key = `${entry.href}|${entry.label}`
+    if (seen.has(key)) return
+    seen.add(key)
+    entries.push(entry)
+  }
+
+  add({
+    label: DASHBOARD_ITEM.label,
+    href: DASHBOARD_ITEM.href,
+    icon: DASHBOARD_ITEM.icon,
+    path: [],
+  })
+
+  for (const [segment, config] of Object.entries(navItemsBySegment)) {
+    if (segment === 'Business Owner' || !hasModuleAccess(session, segment)) continue
+    const moduleLabel = MODULE_SECTION_LABELS[segment] ?? segment
+
+    const appModule = MODULES.find((m) => m.key === segment)
+    if (appModule) {
+      add({
+        label: appModule.label,
+        href: appModule.href,
+        icon: MODULE_ICON_MAP[appModule.icon] ?? Package,
+        path: [],
+      })
+    }
+
+    const items = [
+      ...config.main,
+      ...(config.groups ?? []).flatMap((g) => g.items),
+      ...config.bottom,
+    ]
+    for (const item of items) {
+      if (item.collapsible || !filterItem(item)) continue
+      add({ label: item.label, href: item.href, icon: item.icon, path: [moduleLabel] })
+      for (const sub of item.subItems ?? []) {
+        if (!hasAnyPermission(sub.requiredPermission)) continue
+        add({ label: sub.label, href: sub.href, icon: sub.icon, path: [moduleLabel, item.label] })
+      }
+    }
+
+    // The tabs inside a hub are pages of their own the menu only reaches
+    // through the hub's one row.
+    const hubs: ReadonlyArray<{
+      entryHref: string
+      tabs: ReadonlyArray<{
+        label: string
+        href: string
+        permissions: string[]
+        icon?: LucideIcon
+        configOnly?: boolean
+        /** A tab that fronts a second row (POS Management) — the pages are what is searchable. */
+        subTabs?: ReadonlyArray<{
+          label: string
+          href: string
+          permissions: string[]
+          icon?: LucideIcon
+        }>
+      }>
+    }> = segment === 'accounting' ? Object.values(HUBS) : segment === 'pos' ? POS_HUBS : []
+    for (const hub of hubs) {
+      const parent = items.find((item) => item.href === hub.entryHref)
+      if (!parent || !filterItem(parent)) continue
+      for (const tab of hub.tabs) {
+        if (tab.configOnly && !canConfigurePos) continue
+        for (const page of tab.subTabs ?? [tab]) {
+          if (page.permissions.length > 0 && !hasAnyPermission(page.permissions)) continue
+          add({
+            label: page.label,
+            href: page.href,
+            icon: page.icon ?? parent.icon,
+            path: [moduleLabel, parent.label],
+          })
+        }
+      }
+    }
+  }
+
+  for (const item of workspaceItems) {
+    add({ label: item.label, href: item.href, icon: item.icon, path: ['My Workspace'] })
+  }
+  return entries
+}
+
 function resolvePrimarySidebarSegment(session: SessionUser | null): string {
   switch (session?.primaryRole) {
     case 'Business Owner':
@@ -1097,28 +1087,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     })
   }, [isOwner, pathname])
 
-  // The Override Review badge. It follows the branch switcher — the review page
-  // is filtered by it, so a count across every branch beside a page showing one
-  // branch's entries disagreed — and shares its query key with the page, so
-  // approving or rejecting there updates it at once. Only fetched for someone who
-  // can open the review, and only inside POS where the item shows.
+  // The pending Override Review count, shown on the Approvals item (and on the
+  // Override Review tab inside it). Only fetched for someone who can open the
+  // review, and only inside POS where the item shows.
   const canReviewOverrides = hasPermission(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
-  const posBranchId = usePosBranchContext((s) => s.branchId)
-  const { data: overridePending } = useQuery({
-    queryKey: ['pos-override-pending-count', posBranchId],
-    // A plain request through the API proxy, not a server action: server actions
-    // run one at a time and a newer one cancels an older, so a count refreshing in
-    // the background could knock out a save the user had just made on the page.
-    queryFn: async () => {
-      const qs = posBranchId ? `?branchId=${encodeURIComponent(posBranchId)}` : ''
-      const res = await fetch(`/api/pos/override-review/pending-count${qs}`, { cache: 'no-store' })
-      if (!res.ok) throw new Error('Could not load the pending override count')
-      return (await res.json()) as { count: number }
-    },
-    enabled: canReviewOverrides && segment === 'pos',
-    staleTime: 15_000,
-  })
-  const overridePendingCount = overridePending?.count ?? 0
+  const overridePendingCount = usePosOverridePendingCount(canReviewOverrides && segment === 'pos')
 
   const workspaceItems: NavItem[] = WORKSPACE_ITEMS.map((item) =>
     item.href === '/settings/pending-invites' && pendingInviteCount > 0
@@ -1207,7 +1180,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   }
 
   const withBadge = (item: NavItem): NavItem =>
-    item.href === '/pos/override-review' && overridePendingCount > 0
+    item.href === APPROVALS_REVIEWS_HUB.entryHref && overridePendingCount > 0
       ? {
           ...item,
           badge: { text: String(overridePendingCount), variant: 'count', color: 'bg-orange-500' },
@@ -1235,6 +1208,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
 
   // Always prepend Dashboard item so it's visible on every route
   // Deduplicate by href — moduleNavItems and config.main can both contain the same module root href
+  // (unless the item opts out with keepBesideModuleRow)
   const rawMain = [
     DASHBOARD_ITEM,
     ...moduleNavItems,
@@ -1242,12 +1216,29 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   ]
   const seen = new Set<string>()
   const main = rawMain.filter((item) => {
-    if (seen.has(item.href)) return false
+    if (!item.keepBesideModuleRow && seen.has(item.href)) return false
     seen.add(item.href)
     return true
   })
   const finalBottom = config.bottom.filter(filterItem)
   const allItems = [...main, ...finalBottom]
+  // Dashboard is always first in `main`; the search sits right under it.
+  const dashboardItems = main.slice(0, 1)
+  const scrollingItems = main.slice(1)
+
+  // Same rule PosNav applies to the owner-only POS tabs (canManagePosSettings).
+  const canConfigurePos =
+    ADMIN_TIER.some((p) => hasPermission(session, p)) ||
+    [session?.primaryRole ?? '', ...(session?.roles ?? [])].some(
+      (r) => r === 'Branch Manager' || r === 'pos-manager'
+    )
+  const searchEntries = buildSearchEntries({
+    session,
+    filterItem,
+    hasAnyPermission,
+    workspaceItems: visibleWorkspaceItems,
+    canConfigurePos,
+  })
 
   return (
     <>
@@ -1269,8 +1260,20 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
         </button>
 
         <nav className="flex flex-1 flex-col gap-1 min-h-0">
-          <div className="flex-1 overflow-y-auto flex flex-col gap-1 py-5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:transparent">
-            <NavItems items={main} pathname={pathname} collapsed={collapsed} />
+          {/* Dashboard, then search, then the rest. Both sit outside the scrolling
+              list so the search results can open over the page. */}
+          <div className="shrink-0 pt-4">
+            <NavItems items={dashboardItems} pathname={pathname} collapsed={collapsed} />
+          </div>
+          <div className="shrink-0">
+            <SidebarSearch
+              entries={searchEntries}
+              collapsed={collapsed}
+              onExpand={() => setCollapsed(false)}
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto flex flex-col gap-1 pb-5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:transparent">
+            <NavItems items={scrollingItems} pathname={pathname} collapsed={collapsed} />
           </div>
           {finalBottom.length > 0 && (
             <div className="shrink-0 pt-1 border-t border-white/10">
@@ -1285,7 +1288,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
         {allItems.slice(0, 4).map((item) => {
           const isActive = pathname === item.href
           return (
-            <Link key={item.href} href={item.href} className="flex flex-col items-center gap-0.5">
+            <Link
+              key={`${item.href}|${item.label}`}
+              href={item.href}
+              className="flex flex-col items-center gap-0.5"
+            >
               <span
                 className={`flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all ${
                   isActive ? 'bg-prominent-orange-200/30' : 'bg-white/10'

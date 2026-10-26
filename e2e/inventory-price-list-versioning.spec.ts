@@ -14,7 +14,7 @@ test.describe('Inventory — Price Use Type Selector', () => {
   test('Price Use Type picker marks the picked card and its "New use type" tile opens the nested modal', async ({
     page,
   }) => {
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await clickStable(
       page.getByRole('button', { name: 'New price list' }),
       page.getByRole('heading', { name: 'New price list' })

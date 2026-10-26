@@ -38,7 +38,12 @@ export type PurchaseRequestActions = {
  * open-requests section on the Purchase Orders list. Also opens the detail
  * view for a `?pr=<id>` deep link. With no session every action is off.
  */
-export function usePurchaseRequestActions(session: SessionUser | null): PurchaseRequestActions {
+export function usePurchaseRequestActions(
+  session: SessionUser | null,
+  /** Where to go once a submit or Convert to PO makes a PO; navigates to the
+   * orders view when left out. */
+  onConverted?: () => void
+): PurchaseRequestActions {
   const can = {
     create: hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CREATE),
     edit: hasPermission(session, PROCUREMENT_PERMISSIONS.PR_UPDATE),
@@ -46,8 +51,8 @@ export function usePurchaseRequestActions(session: SessionUser | null): Purchase
     convert: hasPermission(session, PROCUREMENT_PERMISSIONS.PO_CREATE),
   }
   const { updatePR, isUpdating, submitPR, isSubmitting, cancelPR, isCancelling } =
-    usePurchaseRequests({ list: false })
-  const { convertFromPr, isConverting } = usePurchaseOrders()
+    usePurchaseRequests({ list: false, onConverted })
+  const { convertFromPr, isConverting } = usePurchaseOrders({ onConverted })
 
   const [editingPr, setEditingPr] = useState<Pr | null>(null)
   const [submittingPr, setSubmittingPr] = useState<Pr | null>(null)

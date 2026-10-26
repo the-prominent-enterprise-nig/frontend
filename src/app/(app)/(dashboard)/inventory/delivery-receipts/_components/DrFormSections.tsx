@@ -9,8 +9,11 @@ import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   DR_PURPOSE_CONFIG,
   DR_PURPOSE_GROUPS,
+  GIVEAWAY_RECIPIENT_LABELS,
+  memoNumberPlaceholder,
 } from '@/src/libs/inventory/delivery-receipt-purposes'
 import {
+  DR_GIVEAWAY_RECIPIENTS,
   RAFFLE_OCCASIONS,
   isRepairPurpose,
   isTicketedRepair,
@@ -43,6 +46,11 @@ const OCCASION_OPTIONS = [
   { value: 'Other', label: 'Other (specify)' },
 ]
 
+const RECIPIENT_OPTIONS = DR_GIVEAWAY_RECIPIENTS.map((r) => ({
+  value: r,
+  label: GIVEAWAY_RECIPIENT_LABELS[r],
+}))
+
 /** A repair ticket belongs to one leg, so changing purpose drops it — and
  * the lines it brought. */
 function clearUdsOnPurposeChange(
@@ -62,7 +70,7 @@ export function DrPurposeSection(): React.JSX.Element {
   return (
     <Section
       title="Purpose"
-      description="Decides how stock and accounts are affected when this DR is approved."
+      description="Decides how stock and accounts are affected when this DR is submitted or approved."
     >
       <Field label="Purpose of delivery" required>
         <Controller
@@ -94,7 +102,33 @@ export function DrPurposeSection(): React.JSX.Element {
       </div>
       {isRepairPurpose(purpose) && <DrUdsField error={formState.errors.udsId?.message} />}
       {config.requiresOccasion && <OccasionField error={formState.errors.occasion?.message} />}
+      {config.requiresRecipient && (
+        <RecipientField error={formState.errors.giveawayRecipient?.message} />
+      )}
     </Section>
+  )
+}
+
+function RecipientField({ error }: { error?: string }): React.JSX.Element {
+  const { control } = useFormContext<DrFormValues>()
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Field label="Given to" required error={error}>
+        <Controller
+          control={control}
+          name="giveawayRecipient"
+          render={({ field }) => (
+            <SearchableSelect
+              value={field.value}
+              onChange={(value) => field.onChange(value)}
+              options={RECIPIENT_OPTIONS}
+              placeholder="Select recipient…"
+              chrome={CONTROL_CHROME}
+            />
+          )}
+        />
+      </Field>
+    </div>
   )
 }
 
@@ -160,7 +194,7 @@ export function DrIssueSection({
         </Field>
         {config.withDebitMemo && (
           <Field label="Debit memo no.">
-            <div className={READONLY}>{memoNumber ?? 'Assigned on approval'}</div>
+            <div className={READONLY}>{memoNumber ?? memoNumberPlaceholder(purpose)}</div>
           </Field>
         )}
       </div>

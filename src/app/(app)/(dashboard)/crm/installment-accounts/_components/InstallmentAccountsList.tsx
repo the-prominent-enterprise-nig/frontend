@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, Wallet, Calculator, FileClock } from 'lucide-react'
+import { Plus, Search, Wallet, FileClock } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
-import PriceCheckModal from '@/src/components/crm/PriceCheckModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
@@ -94,7 +93,6 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
   const [dueTo, setDueTo] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [priceCheckOpen, setPriceCheckOpen] = useState(false)
 
   useEffect(() => {
     getBranches().then((res) => {
@@ -141,13 +139,6 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <button
-            onClick={() => setPriceCheckOpen(true)}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
-          >
-            <Calculator className="h-4 w-4" />
-            Price checker
-          </button>
           <Link
             href="/crm/installment-accounts/aging-report"
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
@@ -392,8 +383,6 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
           </div>
         </>
       )}
-
-      {priceCheckOpen && <PriceCheckModal onClose={() => setPriceCheckOpen(false)} />}
     </div>
   )
 }

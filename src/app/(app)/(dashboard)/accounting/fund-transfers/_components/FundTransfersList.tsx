@@ -78,7 +78,7 @@ export default function FundTransfersList({
   const total = items.reduce((s, t) => (t.status === 'VOID' ? s : s + t.amount), 0)
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="w-full p-4 md:p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-2xl font-bold">Inter-Account Transfers</h2>

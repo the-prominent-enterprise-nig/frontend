@@ -38,6 +38,7 @@ export default async function InstallmentAccountDetailPage({
         CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_MANAGE_LEGAL_ESCALATION
       )}
       canScheduleReminder={can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
+      canViewCommission={can(session, CRM_PERMISSIONS.AGENTS_READ)}
       currentUserId={session.id}
       tenantId={session.enterpriseOwnerId ?? session.id}
     />

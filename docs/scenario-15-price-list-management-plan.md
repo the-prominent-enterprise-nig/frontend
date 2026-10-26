@@ -85,6 +85,7 @@ Ordered by risk/value.
 
 - **`BranchPricing`** (`schema.prisma` ~line 2343 — branch+item price, optional `effectiveFrom`/`To`) appears unused by any service/controller — likely a prior, abandoned attempt at exactly this feature's branch-scoping half. Flag for a developer decision: resurrect its pattern for Closing Gap 1, or delete it outright rather than building parallel branch-pricing logic from scratch.
   - **Corrected 2026-08-10, re-verified via direct code search: this claim is stale.** `branch-pricing.controller.ts`/`.service.ts` are real, registered in `pos.module.ts`, consumed by `catalog.service.ts`, seeded, and covered by `test/pos-branch-scoping-sweep.e2e-spec.ts` — plus a full frontend page at `pos/branch-pricing`. It's a live, separate POS-side per-branch price-override feature that predates this scenario's `PriceList` module, not dead code. Do not delete it or resurrect its pattern for anything here.
+  - **Removed 2026-10-26.** Chloe decided the per-branch override is not needed: price lists (Price Use) set what a sale is charged, and the override only fed the catalog's reference price and tax/VAT-mode defaults. Code, page, permissions (`pos:branch-pricing:*`) and seed rows are gone; the `branch_pricing` table is kept, unused, until staging/prod are confirmed empty and a migration drops it (see the comment on `model BranchPricing` in `schema.prisma`). The "do not delete" note above applied to Scenario 15's own work.
 
 ## Implementation Log — 2026-08-10
 

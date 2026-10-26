@@ -1,4 +1,4 @@
-import type { DrPurpose } from '@/src/schema/inventory/delivery-receipts'
+import type { DrGiveawayRecipient, DrPurpose } from '@/src/schema/inventory/delivery-receipts'
 
 // Scenario 72 — one place that says what each Delivery Receipt purpose does.
 // The form (labels, which fields show and which are required, the info box),
@@ -9,14 +9,19 @@ export type DrCounterparty = 'customer' | 'supplier' | 'none'
 
 export type DrPurposeConfig = {
   label: string
-  /** "With debit memo" (approval drafts a DMINV memo) or "without". */
+  /** "With debit memo" (the DR carries a DMINV memo) or "without". */
   withDebitMemo: boolean
-  /** The purple box under the dropdown: what approval will do. */
+  /** Submitting posts the memo — no Branch Manager approval, no accounting
+   * step (client, 2026-10-26). Otherwise submit waits for approval. */
+  postsOnSubmit?: boolean
+  /** The purple box under the dropdown: what submit or approval will do. */
   effect: string
   /** Who the stock goes to, which decides the picker shown. */
   counterparty: DrCounterparty
   requiresDepartment?: boolean
   requiresOccasion?: boolean
+  /** Giveaways: customers, or partners and suppliers. */
+  requiresRecipient?: boolean
   /** Shown but not yet submittable — kept for a purpose whose approval path
    * lands later (the backend refuses to submit it until then). None today. */
   comingLater?: boolean
@@ -24,44 +29,57 @@ export type DrPurposeConfig = {
 
 const MEMO_TAIL = 'No sales invoice is created. A debit memo is generated with the journal entry.'
 
+/** What submitting a memo purpose does, ending on the account it debits. */
+const postsTo = (account: string): string =>
+  `When submitted, the debit memo posts automatically, with no approval or accounting step: the stock moves out of the issuing branch and its cost goes to ${account}. ${MEMO_TAIL}`
+
 export const DR_PURPOSE_CONFIG: Record<DrPurpose, DrPurposeConfig> = {
   office_use: {
     label: 'Office use',
     withDebitMemo: true,
-    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Office equipment, furniture and fixtures. ${MEMO_TAIL}`,
+    postsOnSubmit: true,
+    effect: postsTo('Office equipment, furniture and fixtures'),
     counterparty: 'none',
     requiresDepartment: true,
   },
   raffle_prize: {
     label: 'Raffle prize',
     withDebitMemo: true,
-    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Employee benefits and wellness. ${MEMO_TAIL}`,
+    postsOnSubmit: true,
+    effect: postsTo('Company events and employee engagement'),
     counterparty: 'none',
     requiresOccasion: true,
   },
   giveaway: {
     label: 'Giveaways',
     withDebitMemo: true,
-    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Advertising and promotion. ${MEMO_TAIL}`,
+    postsOnSubmit: true,
+    effect: postsTo(
+      'Advertising and promotion (to customers) or Representation and entertainment (to partners and suppliers)'
+    ),
     counterparty: 'none',
+    requiresRecipient: true,
   },
   donation: {
     label: 'Donation',
     withDebitMemo: true,
-    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Donations and charitable contributions. ${MEMO_TAIL}`,
+    postsOnSubmit: true,
+    effect: postsTo('Donations and charitable contributions'),
     counterparty: 'none',
   },
   redeemed_unit: {
     label: 'Redeemed unit',
     withDebitMemo: true,
-    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Marketing and sales support. ${MEMO_TAIL}`,
+    postsOnSubmit: true,
+    effect: postsTo('Marketing and sales support'),
     counterparty: 'customer',
   },
   return_to_supplier: {
     label: 'Return units to supplier',
     withDebitMemo: true,
+    postsOnSubmit: true,
     effect:
-      'A supplier debit memo is drafted with this DR and follows it while it is a draft. When the Branch Manager approves, the memo posts automatically — the stock moves out and what the supplier owes back is recorded. Accounting applies it to an invoice later.',
+      'A supplier debit memo is drafted with this DR and follows it while it is a draft. When submitted, the memo posts automatically, with no approval step: the stock moves out and what the supplier owes back is recorded. Accounting applies it to an invoice later.',
     counterparty: 'supplier',
   },
   to_service_center: {
@@ -92,6 +110,13 @@ export const DR_PURPOSE_CONFIG: Record<DrPurpose, DrPurposeConfig> = {
       'When approved, the units are held for this customer and nothing is posted. Use Proceed to POS to ring up the sale; the sale moves the stock and creates the invoice.',
     counterparty: 'customer',
   },
+  others: {
+    label: 'Others',
+    withDebitMemo: true,
+    effect:
+      'Needs the Branch Manager’s approval. When approved, the stock moves out of the issuing branch and a debit memo goes to Accounting, who choose the account and post the journal entry. Say what it is for in the reason.',
+    counterparty: 'none',
+  },
 }
 
 /** Dropdown order, grouped the way the client wrote the list. */
@@ -105,6 +130,7 @@ export const DR_PURPOSE_GROUPS: { label: string; purposes: DrPurpose[] }[] = [
       'donation',
       'redeemed_unit',
       'return_to_supplier',
+      'others',
     ],
   },
   {
@@ -120,4 +146,14 @@ export const DR_PURPOSE_GROUPS: { label: string; purposes: DrPurpose[] }[] = [
 
 export function drPurposeLabel(purpose: DrPurpose): string {
   return DR_PURPOSE_CONFIG[purpose].label
+}
+
+/** The memo number's placeholder until the memo exists. */
+export function memoNumberPlaceholder(purpose: DrPurpose): string {
+  return DR_PURPOSE_CONFIG[purpose].postsOnSubmit ? 'Assigned on submit' : 'Assigned on approval'
+}
+
+export const GIVEAWAY_RECIPIENT_LABELS: Record<DrGiveawayRecipient, string> = {
+  customer: 'Customers',
+  partner: 'Partners / suppliers',
 }

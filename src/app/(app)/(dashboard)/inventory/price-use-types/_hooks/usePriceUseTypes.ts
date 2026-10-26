@@ -6,7 +6,7 @@ import { getPriceUseTypes } from '../_actions/get-price-use-types'
 import { createPriceUseType } from '../_actions/create-price-use-type'
 import { updatePriceUseType } from '../_actions/update-price-use-type'
 import { deletePriceUseType } from '../_actions/delete-price-use-type'
-import { humanizePriceListError } from '../../price-lists/_lib/humanize-error'
+import { humanizePriceListError } from '@/src/app/(app)/(dashboard)/pos/catalog/price-lists/_lib/humanize-error'
 import type { PriceUseTypeFormValues } from '@/src/schema/inventory/price-use-types'
 
 export function usePriceUseTypes() {

@@ -16,7 +16,6 @@ import {
   Truck,
   ShieldAlert,
   ChevronRight,
-  Tag,
   ClipboardCheck,
   PieChart,
   LayoutGrid,
@@ -551,7 +550,7 @@ export default function InventoryPage() {
             <h2 className="text-base font-semibold text-gray-900">Module Navigation</h2>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
               {(
                 [
                   { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
@@ -568,7 +567,6 @@ export default function InventoryPage() {
                   },
                   { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
                   { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
-                  { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
                 ] as const
               ).map(({ label, href, icon: Icon }, i) => (
                 <Link
