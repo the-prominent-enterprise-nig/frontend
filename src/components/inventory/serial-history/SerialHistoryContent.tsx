@@ -51,16 +51,26 @@ const TYPE_COLORS: Record<SerialMovementType, string> = {
   uds: 'bg-[#fdf3e7] text-[#8a4b06]',
 }
 
-function formatDate(iso: string): string {
+// A date-only value is midnight UTC; reading it in UTC keeps its calendar
+// day wherever the browser is.
+function formatDate(iso: string, dateOnly = false): string {
   return new Date(iso).toLocaleDateString('en-PH', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    ...(dateOnly && { timeZone: 'UTC' }),
   })
 }
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+}
+
+/** "Oct 14, 2026 · 3:42 PM" — or just the date when the movement only has a
+ * date (transfers, adjustments, memos), rather than a made-up 8:00 AM. */
+function formatWhen(entry: { occurredAt: string; dateOnly?: boolean }): string {
+  if (entry.dateOnly) return formatDate(entry.occurredAt, true)
+  return `${formatDate(entry.occurredAt)} · ${formatTime(entry.occurredAt)}`
 }
 
 /** "Where is it now", in one line — the question the panel is opened for. */
@@ -164,9 +174,7 @@ function TimelineEntry({ entry, isLast }: { entry: SerialMovementEntry; isLast: 
       <div className="min-w-0 flex-1 pt-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           <p className="text-[13.5px] font-semibold text-[#17171c]">{entry.label}</p>
-          <p className="text-[11.5px] text-[#8b8b9b]">
-            {formatDate(entry.occurredAt)} · {formatTime(entry.occurredAt)}
-          </p>
+          <p className="text-[11.5px] text-[#8b8b9b]">{formatWhen(entry)}</p>
         </div>
         <p className="mt-0.5 text-[13px] text-[#5b5b6b]">{entry.description}</p>
         {(entry.referenceCode || entry.invoiceNumber) && (

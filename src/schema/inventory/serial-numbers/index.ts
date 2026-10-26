@@ -295,6 +295,8 @@ export const SerialMovementEntrySchema = z.object({
   id: z.string(),
   type: SerialMovementTypeSchema,
   occurredAt: z.string(),
+  // A business date with no time of day (transfers, adjustments, memos).
+  dateOnly: z.boolean().optional(),
   label: z.string(),
   description: z.string(),
   referenceCode: z.string().nullable(),
