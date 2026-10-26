@@ -3153,6 +3153,10 @@ export interface CashInTransitSessionRow {
   sessionId: string
   branchId: string | null
   branchName: string | null
+  /** The caravan whose register this is; its cash posts under the host
+   * (`branchId`) but is deposited on its own. Null for a branch's own counter. */
+  caravanBranchId?: string | null
+  caravanName?: string | null
   terminalCode: string | null
   cashierName: string | null
   closedAt: string
@@ -3175,6 +3179,8 @@ export interface CashInTransitSessionRow {
    * accounting as its own row. `amount` is then only what is still free to
    * deposit. Absent on an older API. */
   pendingDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
+  /** The posted deposits that banked part of it, latest first. */
+  bankedDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
 }
 
 /** A session already banked — Scenario 61's Undeposited Funds table lists
@@ -3183,6 +3189,10 @@ export interface CashInTransitHistoryRow {
   sessionId: string
   branchId: string | null
   branchName: string | null
+  /** The caravan whose register this is; its cash posts under the host
+   * (`branchId`) but is deposited on its own. Null for a branch's own counter. */
+  caravanBranchId?: string | null
+  caravanName?: string | null
   terminalCode: string | null
   cashierName: string | null
   closedAt: string
