@@ -189,8 +189,8 @@ function EmptyState({
       {!filtered && (
         <p className="mt-1 max-w-lg text-xs leading-relaxed text-[#5b5b6b]">
           Raise one when a unit leaves for office use, a raffle, a giveaway or a donation. Saving a
-          draft does not touch stock; a Branch Manager approves it, then accounting posts the debit
-          memo.
+          draft does not touch stock; when a Branch Manager approves it, its debit memo posts
+          automatically.
         </p>
       )}
       {!filtered && canCreate && (
