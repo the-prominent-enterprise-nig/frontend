@@ -52,8 +52,12 @@ export type OpenPurchaseRequestsState = {
  * action is off. Render `actions.modals` whichever filter is showing, so the
  * `?pr=<id>` detail view a PO's Source links to still opens.
  */
-export function useOpenPurchaseRequests(session: SessionUser | null): OpenPurchaseRequestsState {
-  const actions = usePurchaseRequestActions(session)
+export function useOpenPurchaseRequests(
+  session: SessionUser | null,
+  /** The list's own switch back to its orders — see usePurchaseRequestActions. */
+  onConverted?: () => void
+): OpenPurchaseRequestsState {
+  const actions = usePurchaseRequestActions(session, onConverted)
   const drafts = useQuery(openRequestsQuery('draft', !!session))
   const submitted = useQuery(openRequestsQuery('submitted', !!session))
   const pages = [drafts.data?.data, submitted.data?.data]

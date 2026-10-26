@@ -270,10 +270,11 @@ export const CASH_COLLECTIONS_HUB: PosHub = {
       permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE],
     },
     {
-      // Scenario 53 — POS speaks in Undeposited Funds now; Accounting keeps the
-      // Cash-in-Transit name for the GL account it reconciles against.
+      // Collected Funds History (client, 2026-10-26), formerly Undeposited
+      // Funds; the route, id and permissions keep their old names. Accounting
+      // keeps the Cash-in-Transit name for the GL account it reconciles against.
       id: 'undeposited-funds',
-      label: 'Undeposited Funds',
+      label: 'Collected Funds History',
       href: '/pos/undeposited-funds',
       icon: Banknote,
       permissions: [POS_PERMISSIONS.CASH_IN_TRANSIT_READ],

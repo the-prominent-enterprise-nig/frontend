@@ -290,16 +290,26 @@ function subtitle(memo: IdmDetail | null): string {
   return 'Standalone memo — posts its journal entry only.'
 }
 
+/** An "Others" DR's units left on its approval; its memo waits for
+ * accounting to add the debit line and post the entry. */
+function stockAlreadyOut(memo: IdmDetail): boolean {
+  return memo.deliveryReceipt?.purpose === 'others' && memo.deliveryReceipt.status === 'posted'
+}
+
 function statusLine(memo: IdmDetail | null): string {
   if (!memo) return 'The memo number is assigned when you save.'
   if (memo.status === 'POSTED') return `Posted ${fmtDrDate(memo.postedAt)}.`
   if (memo.status === 'VOID') return `Voided ${fmtDrDate(memo.voidedAt)}.`
+  if (stockAlreadyOut(memo)) {
+    return 'Draft — the stock has already left. Add the debit line for the account it charges, then post.'
+  }
   return memo.deliveryReceipt
     ? 'Draft — the stock has not moved. Posting moves it and posts the entry together.'
     : 'Draft — nothing has posted yet.'
 }
 
 function postMessage(memo: IdmDetail): string {
+  if (stockAlreadyOut(memo)) return 'This journal entry posts. The units already left on approval.'
   if (memo.deliveryReceipt) {
     return `The units on ${memo.deliveryReceipt.drNumber} leave ${memo.deliveryReceipt.warehouse.name} and this journal entry posts — together, or not at all.`
   }

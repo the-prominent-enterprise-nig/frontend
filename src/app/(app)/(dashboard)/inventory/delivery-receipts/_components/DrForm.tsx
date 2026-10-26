@@ -2,7 +2,7 @@
 
 /* Scenario 72 — New / edit Delivery Receipt, laid out as the client's
  * mockup: Purpose, Issue details, Reference and approval, Items,
- * Attachments, then Save draft / Submit for approval — inside the same
+ * Attachments, then Save draft / Submit — inside the same
  * full-screen header / body / action-bar shell as the Debit Memo form. Saving a draft touches no
  * stock; the DR number is taken on the first save. Print preview arrives with
  * the printables (Part 5). */
@@ -25,6 +25,7 @@ import { submitDeliveryReceipt } from '../_actions/submit-delivery-receipt'
 import { deleteDeliveryReceipt } from '../_actions/delete-delivery-receipt'
 import { getDeliveryReceiptPrint } from '../_actions/get-delivery-receipt-document'
 import { printDeliveryReceipt } from '@/src/libs/print/printDeliveryReceipt'
+import { DR_PURPOSE_CONFIG } from '@/src/libs/inventory/delivery-receipt-purposes'
 import { emptyDrForm } from '../_lib/dr-form-values'
 import { fmtPeso } from '../_lib/dr-format'
 import { DrIssueSection, DrPurposeSection, DrReferenceSection } from './DrFormSections'
@@ -128,7 +129,7 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
       if (!draft) await deleteDeliveryReceipt(id)
       return
     }
-    showToast({ title: 'Submitted for approval', status: 'success' })
+    showToast({ title: res.message ?? 'Submitted', status: 'success' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
     router.push(`/inventory/delivery-receipts/${id}`)
     router.refresh()
@@ -159,7 +160,7 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
         headerAside={<EstimatedCost />}
         status={
           draft
-            ? `Draft ${draft.drNumber} — nothing moves until it is submitted and approved.`
+            ? `Draft ${draft.drNumber} — nothing moves until it is submitted.`
             : 'Nothing is saved until you click Save draft, which takes the DR number.'
         }
         actions={
@@ -215,6 +216,7 @@ function FormActions({
   onCancel: () => void
 }): React.JSX.Element {
   const spinner = <Loader2 className="h-4 w-4 animate-spin" />
+  const purpose = useWatch<DrFormValues, 'purpose'>({ name: 'purpose' })
   return (
     <>
       <button type="button" onClick={onCancel} className={BTN_GHOST}>
@@ -234,7 +236,7 @@ function FormActions({
       )}
       <button type="button" onClick={onSubmit} disabled={!!busy} className={BTN_PRIMARY}>
         {busy === 'submit' && spinner}
-        Submit for approval
+        {DR_PURPOSE_CONFIG[purpose].postsOnSubmit ? 'Submit & post' : 'Submit for approval'}
       </button>
     </>
   )

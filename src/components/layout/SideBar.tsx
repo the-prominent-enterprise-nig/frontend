@@ -354,7 +354,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
       // route: /pos/pricing-promotion.
       posHubNavItem(PRICING_PROMOTION_HUB, 'Pricing & Promotion', Tag),
       // Management (Sessions | Cash Drawer), New Receipts, Credit Applications,
-      // Collections, Undeposited Funds. Each tab keeps its own permission; the
+      // Collections, Collected Funds History. Each tab keeps its own permission; the
       // item shows when any one is held. Entry route: /pos/cash-collections.
       posHubNavItem(CASH_COLLECTIONS_HUB, 'Cash & Collections', Wallet),
       // The manager queues. Each tab is gated like its page, so Cashier (read,

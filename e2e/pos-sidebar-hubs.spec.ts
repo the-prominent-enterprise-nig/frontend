@@ -9,7 +9,7 @@ import { gotoReady, loginAs } from './utils'
 //   Customers            (own row — kept in POS on purpose)
 //   Pricing & Promotion  Promotions → second row: Promo Codes | Gift Cards | Loyalty
 //   Cash & Collections   Management → second row: Sessions | Cash Drawer,
-//                        New Receipts | Credit Applications | Collections | Undeposited Funds
+//                        New Receipts | Credit Applications | Collections | Collected Funds History
 //   Approvals & Reviews  Override Review | Unit Release Approvals | Refund Approvals |
 //                        Void Requests | Cancellations
 //   Reports              Sales Reports | Daily Collection
@@ -174,7 +174,7 @@ test.describe('POS sidebar — Business Owner', () => {
       'New Receipts',
       'Credit Applications',
       'Collections',
-      'Undeposited Funds',
+      'Collected Funds History',
     ])
     await expect(subStrip(page).getByRole('link')).toHaveText(['Sessions', 'Cash Drawer'])
     await expect(page.getByTestId('pos-branch-switcher')).toBeVisible()
@@ -186,7 +186,7 @@ test.describe('POS sidebar — Business Owner', () => {
     )
 
     // A page with no second row drops it.
-    await clickTab(page, 'Undeposited Funds', '/pos/undeposited-funds')
+    await clickTab(page, 'Collected Funds History', '/pos/undeposited-funds')
     await expect(subStrip(page)).toHaveCount(0)
     await expect(page.getByTestId('pos-branch-switcher')).toHaveCount(0)
 

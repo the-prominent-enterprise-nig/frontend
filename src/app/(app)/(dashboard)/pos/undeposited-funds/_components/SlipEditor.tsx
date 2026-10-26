@@ -216,7 +216,9 @@ export function earliestDate(slips: Slip[]): string {
   return slips.map((s) => s.depositDate).sort()[0]
 }
 
-export const slipAmount = (slip: Slip): number => Number(slip.amount) || 0
+/** The typed amount, read the way it is written on a slip: "17,425.00"
+ * counts, where Number() alone would make it nothing. */
+export const slipAmount = (slip: Slip): number => Number(slip.amount.replace(/,/g, '')) || 0
 
 /** Why the slips cannot be saved yet, or null when they can. */
 export function slipsProblem(slips: Slip[]): string | null {

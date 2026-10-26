@@ -17,7 +17,16 @@ import type {
 } from '@/src/schema/inventory/purchase-requests'
 
 /** `list: false` skips the list query — for callers that only need the mutations. */
-export function usePurchaseRequests({ list = true }: { list?: boolean } = {}) {
+export function usePurchaseRequests({
+  list = true,
+  onConverted,
+}: {
+  list?: boolean
+  /** Called instead of navigating when a submit auto-converts the PR — for
+   * a list that shows requests and orders on one screen, where a URL change
+   * would not move it off its Requests view. */
+  onConverted?: () => void
+} = {}) {
   const queryClient = useQueryClient()
   const router = useRouter()
   const pathname = usePathname()
@@ -112,7 +121,8 @@ export function usePurchaseRequests({ list = true }: { list?: boolean } = {}) {
         // where it actually lives now instead of leaving the submitter
         // looking at a list it just vanished from.
         if (result.data?.convertedToPo) {
-          router.replace(procurementHref(pathname, 'orders'))
+          if (onConverted) onConverted()
+          else router.replace(procurementHref(pathname, 'orders'))
         }
       } else {
         showToast({

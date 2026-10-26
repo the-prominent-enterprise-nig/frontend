@@ -171,7 +171,7 @@ export const CASH_BANKING_HUB: Hub = {
     {
       // Route and permissions keep the old cash-in-transit name (Scenario 61).
       id: 'undeposited-funds',
-      label: 'Undeposited Funds',
+      label: 'Collected Funds History',
       href: '/accounting/cash-in-transit',
       permissions: [ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ],
     },
