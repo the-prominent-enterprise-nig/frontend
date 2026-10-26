@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Plus, Search, RefreshCw, Pencil, Trash2, X, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
-import type { Agent, AgentInvoice, AgentSaleType } from '@/src/schema/crm/types'
+import type { Agent } from '@/src/schema/crm/types'
 import type { CreateAgentInput } from '@/src/schema/crm/agent'
 import { getBranches } from '../_actions/get-branches'
 
@@ -25,7 +25,6 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Agent | null>(null)
-  const [invoicesTarget, setInvoicesTarget] = useState<Agent | null>(null)
 
   const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name
 
@@ -171,7 +170,14 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                 ) : (
                   agents.map((a) => (
                     <tr key={a.id} className="hover:bg-zinc-50">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.name}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        <Link
+                          href={`/crm/agents/${a.id}`}
+                          className="hover:text-purple-700 hover:underline"
+                        >
+                          {a.name}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3 text-sm text-zinc-700">{a.phone || '-'}</td>
                       <td className="px-4 py-3 text-sm text-zinc-700">{a.email || '-'}</td>
                       <td className="px-4 py-3 text-sm text-zinc-700">
@@ -195,13 +201,13 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => setInvoicesTarget(a)}
+                          <Link
+                            href={`/crm/agents/${a.id}`}
                             className="p-1.5 text-zinc-500 hover:bg-zinc-100 rounded"
                             title="View invoices"
                           >
                             <FileText className="w-4 h-4" />
-                          </button>
+                          </Link>
                           {canUpdate && (
                             <button
                               onClick={() => {
@@ -244,10 +250,6 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
           }}
           onSave={handleSave}
         />
-      )}
-
-      {invoicesTarget && (
-        <AgentInvoicesDialog agent={invoicesTarget} onClose={() => setInvoicesTarget(null)} />
       )}
     </div>
   )
@@ -368,178 +370,6 @@ function AgentFormDialog({
             </button>
           </div>
         </form>
-      </div>
-    </div>
-  )
-}
-
-function fmtMoney(n: number): string {
-  return `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function fmtDate(d: string): string {
-  return new Date(d).toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
-
-const SALE_TYPE_LABEL: Record<AgentSaleType, string> = {
-  installment: 'Installment',
-  tpf: 'TPF',
-  cash: 'Cash',
-  charge: 'Charge',
-  mixed: 'Mixed',
-}
-
-// Scenario 78 — every invoice the agent sold, with its commission and the
-// Commissions - Sales voucher that released it. Replaces the Scenario-01
-// commission-only list: that one was driven by AgentCommission, so an agent
-// with no rate set (the whole imported roster) showed nothing, and it named
-// the POS number rather than the SI.
-function AgentInvoicesDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
-  const [invoices, setInvoices] = useState<AgentInvoice[] | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const res = await agentsApi.invoices(agent.id)
-      if (cancelled) return
-      if (res.success && res.data) {
-        setInvoices(res.data)
-      } else {
-        toast.error(res.message || res.error || 'Could not load invoices')
-        setInvoices([])
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [agent.id])
-
-  const rows = invoices ?? []
-  const totalCommission = rows.reduce((sum, r) => sum + (r.commission ?? 0), 0)
-  // A draft voucher already holds the sale but hasn't paid anything out yet.
-  const totalReleased = rows.reduce(
-    (sum, r) => sum + (r.released && !r.released.isDraft ? r.released.amount : 0),
-    0
-  )
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-5xl w-full max-h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Invoices — {agent.name}</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              {agent.commissionRate != null
-                ? `${(agent.commissionRate * 100).toFixed(2)}% rate`
-                : 'No commission rate configured'}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-800">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="overflow-auto flex-1">
-          {invoices === null ? (
-            <div className="p-8 text-center text-sm text-zinc-400">Loading...</div>
-          ) : rows.length === 0 ? (
-            <div className="p-8 text-center text-sm text-zinc-400">No invoices sold yet.</div>
-          ) : (
-            <table className="w-full">
-              <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0">
-                <tr>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Date
-                  </th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    SI No.
-                  </th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Customer
-                  </th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Type
-                  </th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Amount
-                  </th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Commission
-                  </th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Released
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {rows.map((r) => (
-                  <tr key={r.id}>
-                    <td className="px-4 py-2 text-xs text-zinc-500 whitespace-nowrap">
-                      {fmtDate(r.date)}
-                    </td>
-                    <td className="px-4 py-2 text-sm whitespace-nowrap">
-                      <span className="font-medium text-zinc-800">
-                        {r.salesInvoiceNumber ?? '-'}
-                      </span>
-                      <span className="block text-xs text-zinc-400">{r.transactionNumber}</span>
-                    </td>
-                    <td className="px-4 py-2 text-sm text-zinc-700">{r.customerName ?? '-'}</td>
-                    <td className="px-4 py-2 text-sm text-zinc-700">{SALE_TYPE_LABEL[r.type]}</td>
-                    <td className="px-4 py-2 text-sm text-right text-zinc-700 whitespace-nowrap">
-                      {fmtMoney(r.totalAmount)}
-                    </td>
-                    <td className="px-4 py-2 text-sm text-right font-semibold text-emerald-700 whitespace-nowrap">
-                      {r.commission != null ? fmtMoney(r.commission) : '-'}
-                    </td>
-                    <td className="px-4 py-2 text-sm whitespace-nowrap">
-                      {r.released ? (
-                        <>
-                          <Link
-                            href={`/accounting/expenses/${r.released.expenseId}`}
-                            className="font-medium text-purple-700 hover:underline"
-                          >
-                            {r.released.voucherNumber}
-                          </Link>
-                          {r.released.isDraft && (
-                            <span className="ml-1.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-                              Draft
-                            </span>
-                          )}
-                          <span className="block text-xs text-zinc-500">
-                            {fmtMoney(r.released.amount)} · {fmtDate(r.released.date)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-xs text-zinc-400">Not released</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {rows.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-3 border-t border-zinc-200 bg-zinc-50">
-            <span className="text-sm font-medium text-zinc-600">
-              {rows.length} invoice{rows.length === 1 ? '' : 's'}
-            </span>
-            <div className="flex gap-6 text-sm">
-              <span className="text-zinc-600">
-                Commission:{' '}
-                <span className="font-bold text-zinc-900">{fmtMoney(totalCommission)}</span>
-              </span>
-              <span className="text-zinc-600">
-                Released: <span className="font-bold text-zinc-900">{fmtMoney(totalReleased)}</span>
-              </span>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
