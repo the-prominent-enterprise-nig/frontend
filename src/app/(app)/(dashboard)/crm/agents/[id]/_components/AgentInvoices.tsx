@@ -2,11 +2,19 @@
 
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
 import type { Agent, AgentInvoice, AgentSaleType } from '@/src/schema/crm/types'
+import type { UpdateAgentInput } from '@/src/schema/crm/agent'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { getBranches } from '../../_actions/get-branches'
+import {
+  AgentFormFields,
+  agentFormState,
+  type AgentFormState,
+} from '../../_components/AgentFormFields'
 
 function fmtMoney(n: number): string {
   return `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -33,12 +41,31 @@ const SALE_TYPE_LABEL: Record<AgentSaleType, string> = {
 // commission-only dialog: that one was driven by AgentCommission, so an agent
 // with no rate set (the whole imported roster) showed nothing, and it named
 // the POS number rather than the SI. A page rather than a dialog so the list
-// has room to grow and can be linked to.
-export default function AgentInvoices({ id }: { id: string }) {
+// has room to grow and can be linked to. The agent's Edit and Remove live
+// here too, so the list stays a plain click-through.
+export default function AgentInvoices({
+  id,
+  canUpdate,
+  canDelete,
+}: {
+  id: string
+  canUpdate: boolean
+  canDelete: boolean
+}) {
+  const router = useRouter()
   const [agent, setAgent] = useState<Agent | null>(null)
-  const [branchName, setBranchName] = useState<string | null>(null)
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [invoices, setInvoices] = useState<AgentInvoice[] | null>(null)
   const [notFound, setNotFound] = useState(false)
+  // Inline edit — the header turns into the agent form in place.
+  const [editForm, setEditForm] = useState<AgentFormState | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removing, setRemoving] = useState(false)
+
+  const branchName = agent?.branchId
+    ? (branches.find((b) => b.id === agent.branchId)?.name ?? null)
+    : null
 
   useEffect(() => {
     let cancelled = false
@@ -54,10 +81,7 @@ export default function AgentInvoices({ id }: { id: string }) {
         return
       }
       setAgent(agentRes.data)
-      const branchId = agentRes.data.branchId
-      if (branchId && branchesRes.success && branchesRes.data) {
-        setBranchName(branchesRes.data.data.find((b) => b.id === branchId)?.name ?? null)
-      }
+      if (branchesRes.success && branchesRes.data) setBranches(branchesRes.data.data)
       if (invoicesRes.success && invoicesRes.data) {
         setInvoices(invoicesRes.data)
       } else {
@@ -78,6 +102,33 @@ export default function AgentInvoices({ id }: { id: string }) {
     0
   )
 
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editForm) return
+    setSaving(true)
+    const res = await agentsApi.update(id, editForm as UpdateAgentInput)
+    setSaving(false)
+    if (!res.success) {
+      toast.error(res.message || res.error || 'Could not save agent')
+      return
+    }
+    toast.success('Agent updated')
+    setAgent((prev) => (res.data ? res.data : prev ? { ...prev, ...editForm } : prev) as Agent)
+    setEditForm(null)
+  }
+
+  const handleRemove = async () => {
+    setRemoving(true)
+    const res = await agentsApi.remove(id)
+    setRemoving(false)
+    if (!res.success) {
+      toast.error(res.message || res.error || 'Could not remove agent')
+      return
+    }
+    toast.success('Agent removed')
+    router.push('/crm/agents')
+  }
+
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
       <Link
@@ -94,20 +145,80 @@ export default function AgentInvoices({ id }: { id: string }) {
         </div>
       ) : (
         <>
-          <div className="mb-6">
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
-              {agent?.name ?? 'Loading...'}
-            </h2>
-            {agent && (
-              <p className="mt-1 text-sm text-gray-500">
-                {branchName ?? 'All branches'} ·{' '}
-                {agent.commissionRate != null
-                  ? `${(agent.commissionRate * 100).toFixed(2)}% rate`
-                  : 'No commission rate configured'}{' '}
-                · <span className="capitalize">{agent.status}</span>
+          {agent && editForm ? (
+            <form
+              onSubmit={handleSave}
+              className="mb-6 rounded-lg border border-zinc-200 bg-white p-6 shadow-sm"
+            >
+              <h2 className="mb-4 text-lg font-semibold text-gray-900">Edit Agent</h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <AgentFormFields form={editForm} onChange={setEditForm} branches={branches} />
+              </div>
+              <p className="mt-3 text-xs text-zinc-500">
+                A new commission rate applies to sales from now on — commissions already recorded
+                keep the rate they were earned at.
               </p>
-            )}
-          </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditForm(null)}
+                  disabled={saving}
+                  className="px-4 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 rounded-lg bg-purple-700 text-white text-sm font-medium hover:bg-purple-800 disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
+                  {agent?.name ?? 'Loading...'}
+                </h2>
+                {agent && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    {branchName ?? 'All branches'} ·{' '}
+                    {agent.commissionRate != null
+                      ? `${(agent.commissionRate * 100).toFixed(2)}% rate`
+                      : 'No commission rate configured'}{' '}
+                    · <span className="capitalize">{agent.status}</span>
+                    {(agent.phone || agent.email) && (
+                      <span className="block mt-0.5">
+                        {[agent.phone, agent.email].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+              {agent && (canUpdate || canDelete) && (
+                <div className="flex gap-2">
+                  {canUpdate && (
+                    <button
+                      onClick={() => setEditForm(agentFormState(agent))}
+                      className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50"
+                    >
+                      <Pencil className="h-4 w-4" /> Edit
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={() => setConfirmRemove(true)}
+                      className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" /> Remove
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Stat label="Invoices" value={invoices === null ? '-' : String(rows.length)} />
@@ -201,6 +312,25 @@ export default function AgentInvoices({ id }: { id: string }) {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmRemove}
+        title="Remove agent"
+        message={
+          <>
+            <p>
+              Remove <strong>{agent?.name}</strong>? They will no longer show in the POS Selling
+              Agent picker.
+            </p>
+            <p className="mt-2">Their past invoices and commissions are kept.</p>
+          </>
+        }
+        confirmLabel="Remove"
+        destructive
+        loading={removing}
+        onConfirm={handleRemove}
+        onCancel={() => setConfirmRemove(false)}
+      />
     </div>
   )
 }

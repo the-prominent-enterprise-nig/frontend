@@ -12,5 +12,11 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
   if (!can(session, CRM_PERMISSIONS.AGENTS_READ)) redirect('/403')
 
   const { id } = await params
-  return <AgentInvoices id={id} />
+  return (
+    <AgentInvoices
+      id={id}
+      canUpdate={can(session, CRM_PERMISSIONS.AGENTS_UPDATE)}
+      canDelete={can(session, CRM_PERMISSIONS.AGENTS_DELETE)}
+    />
+  )
 }

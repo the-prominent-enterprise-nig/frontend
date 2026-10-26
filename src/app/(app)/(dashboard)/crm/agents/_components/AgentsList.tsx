@@ -2,22 +2,19 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
+import { Plus, Search, RefreshCw, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
 import type { Agent } from '@/src/schema/crm/types'
 import type { CreateAgentInput } from '@/src/schema/crm/agent'
 import { getBranches } from '../_actions/get-branches'
-
-const FIELD_LIMITS = { name: 255, phone: 50, email: 255 } as const
+import { AgentFormFields, agentFormState, type AgentFormState } from './AgentFormFields'
 
 interface Props {
   canCreate: boolean
-  canUpdate: boolean
-  canDelete: boolean
 }
 
-export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
+export default function AgentsList({ canCreate }: Props) {
   const router = useRouter()
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(false)
@@ -25,7 +22,6 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
   const [branchFilter, setBranchFilter] = useState('')
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<Agent | null>(null)
 
   const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name
 
@@ -46,28 +42,15 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
     load()
   }, [load])
 
-  const handleSave = async (data: Partial<CreateAgentInput>) => {
-    const res = editing
-      ? await agentsApi.update(editing.id, data)
-      : await agentsApi.create(data as CreateAgentInput)
+  // Edit and Remove live on the agent's own page; the list only adds.
+  const handleCreate = async (data: AgentFormState) => {
+    const res = await agentsApi.create(data as CreateAgentInput)
     if (!res.success) {
       toast.error(res.message || res.error || 'Could not save agent')
       return
     }
-    toast.success(editing ? 'Agent updated' : 'Agent added')
+    toast.success('Agent added')
     setDialogOpen(false)
-    setEditing(null)
-    load()
-  }
-
-  const handleRemove = async (a: Agent) => {
-    if (!confirm(`Remove agent "${a.name}"?`)) return
-    const res = await agentsApi.remove(a.id)
-    if (!res.success) {
-      toast.error(res.message || res.error || 'Could not remove agent')
-      return
-    }
-    toast.success('Agent removed')
     load()
   }
 
@@ -91,10 +74,7 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
             </button>
             {canCreate && (
               <button
-                onClick={() => {
-                  setEditing(null)
-                  setDialogOpen(true)
-                }}
+                onClick={() => setDialogOpen(true)}
                 className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800"
               >
                 <Plus className="h-4 w-4" /> Add Agent
@@ -150,21 +130,18 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                     Commission
                   </th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Actions
-                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
                       Loading...
                     </td>
                   </tr>
                 ) : agents.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
                       No sales agents yet
                     </td>
                   </tr>
@@ -197,35 +174,6 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                       <td className="px-4 py-3 text-sm text-zinc-700">
                         {a.commissionRate != null ? `${(a.commissionRate * 100).toFixed(2)}%` : '-'}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          {canUpdate && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setEditing(a)
-                                setDialogOpen(true)
-                              }}
-                              className="p-1.5 text-purple-700 hover:bg-purple-50 rounded"
-                              title="Edit agent"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                          )}
-                          {canDelete && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleRemove(a)
-                              }}
-                              className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                              title="Remove agent"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
                     </tr>
                   ))
                 )}
@@ -236,41 +184,27 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
       </div>
 
       {dialogOpen && (
-        <AgentFormDialog
-          agent={editing}
+        <AddAgentDialog
           branches={branches}
-          onClose={() => {
-            setDialogOpen(false)
-            setEditing(null)
-          }}
-          onSave={handleSave}
+          onClose={() => setDialogOpen(false)}
+          onSave={handleCreate}
         />
       )}
     </div>
   )
 }
 
-function AgentFormDialog({
-  agent,
+function AddAgentDialog({
   branches,
   onClose,
   onSave,
 }: {
-  agent: Agent | null
   branches: { id: string; name: string }[]
   onClose: () => void
-  onSave: (data: Partial<CreateAgentInput>) => Promise<void> | void
+  onSave: (data: AgentFormState) => Promise<void> | void
 }) {
-  const [form, setForm] = useState<Partial<CreateAgentInput>>({
-    name: agent?.name ?? '',
-    phone: agent?.phone ?? '',
-    email: agent?.email ?? '',
-    commissionRate: agent?.commissionRate ?? null,
-    branchId: agent?.branchId ?? null,
-  })
+  const [form, setForm] = useState<AgentFormState>(() => agentFormState())
   const [saving, setSaving] = useState(false)
-  const set = <K extends keyof CreateAgentInput>(k: K, v: CreateAgentInput[K]) =>
-    setForm((p) => ({ ...p, [k]: v }))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -286,68 +220,13 @@ function AgentFormDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-          <h3 className="text-lg font-semibold text-gray-900">
-            {agent ? 'Edit Agent' : 'Add Agent'}
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900">Add Agent</h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-800">
             <X className="w-5 h-5" />
           </button>
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
-          <Field label="Name *">
-            <input
-              required
-              maxLength={FIELD_LIMITS.name}
-              value={form.name ?? ''}
-              onChange={(e) => set('name', e.target.value)}
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-            />
-          </Field>
-          <Field label="Phone">
-            <input
-              maxLength={FIELD_LIMITS.phone}
-              value={form.phone ?? ''}
-              onChange={(e) => set('phone', e.target.value)}
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-            />
-          </Field>
-          <Field label="Email">
-            <input
-              type="email"
-              maxLength={FIELD_LIMITS.email}
-              value={form.email ?? ''}
-              onChange={(e) => set('email', e.target.value)}
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-            />
-          </Field>
-          <Field label="Branch">
-            <select
-              value={form.branchId ?? ''}
-              onChange={(e) => set('branchId', e.target.value || null)}
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-            >
-              <option value="">All branches (tenant-wide)</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Commission Rate (%)">
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step="0.01"
-              placeholder="e.g. 5 for 5%. Leave blank for no commission."
-              value={form.commissionRate != null ? form.commissionRate * 100 : ''}
-              onChange={(e) =>
-                set('commissionRate', e.target.value === '' ? null : Number(e.target.value) / 100)
-              }
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-            />
-          </Field>
+          <AgentFormFields form={form} onChange={setForm} branches={branches} />
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -367,14 +246,5 @@ function AgentFormDialog({
         </form>
       </div>
     </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block text-xs font-medium text-zinc-600 mb-1">{label}</span>
-      {children}
-    </label>
   )
 }
