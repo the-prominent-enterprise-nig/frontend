@@ -1,8 +1,8 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import Link from 'next/link'
-import { Plus, Search, RefreshCw, Pencil, Trash2, X, FileText } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Plus, Search, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
 import type { Agent } from '@/src/schema/crm/types'
@@ -18,6 +18,7 @@ interface Props {
 }
 
 export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
+  const router = useRouter()
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -169,15 +170,12 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                   </tr>
                 ) : (
                   agents.map((a) => (
-                    <tr key={a.id} className="hover:bg-zinc-50">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        <Link
-                          href={`/crm/agents/${a.id}`}
-                          className="hover:text-purple-700 hover:underline"
-                        >
-                          {a.name}
-                        </Link>
-                      </td>
+                    <tr
+                      key={a.id}
+                      onClick={() => router.push(`/crm/agents/${a.id}`)}
+                      className="cursor-pointer transition-colors hover:bg-zinc-50"
+                    >
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.name}</td>
                       <td className="px-4 py-3 text-sm text-zinc-700">{a.phone || '-'}</td>
                       <td className="px-4 py-3 text-sm text-zinc-700">{a.email || '-'}</td>
                       <td className="px-4 py-3 text-sm text-zinc-700">
@@ -201,16 +199,10 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
-                          <Link
-                            href={`/crm/agents/${a.id}`}
-                            className="p-1.5 text-zinc-500 hover:bg-zinc-100 rounded"
-                            title="View invoices"
-                          >
-                            <FileText className="w-4 h-4" />
-                          </Link>
                           {canUpdate && (
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation()
                                 setEditing(a)
                                 setDialogOpen(true)
                               }}
@@ -222,7 +214,10 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                           )}
                           {canDelete && (
                             <button
-                              onClick={() => handleRemove(a)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRemove(a)
+                              }}
                               className="p-1.5 text-red-600 hover:bg-red-50 rounded"
                               title="Remove agent"
                             >
