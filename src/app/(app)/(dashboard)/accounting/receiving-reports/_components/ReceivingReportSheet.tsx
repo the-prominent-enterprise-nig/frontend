@@ -230,6 +230,18 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
               <th rowSpan={2} className={`${TH} w-[10%]`}>
                 Qty
               </th>
+              {/* Only when the receipt carries costs — a transfer-sourced one
+                  has none, so its sheet stays quantities only. */}
+              {hasAnyCost && (
+                <>
+                  <th rowSpan={2} className={`${TH} w-[12%]`}>
+                    Unit cost
+                  </th>
+                  <th rowSpan={2} className={`${TH} w-[14%]`}>
+                    Amount
+                  </th>
+                </>
+              )}
             </tr>
             <tr>
               <th className={TH}>Brand</th>
@@ -238,17 +250,29 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
             </tr>
           </thead>
           <tbody>
-            {lines.map((l) => (
-              <tr key={l.id}>
-                <td className={`${TD} font-mono`}>{(l.serialNumbers ?? []).join(', ')}</td>
-                <td className={TD}>{l.item?.brand?.name ?? ''}</td>
-                <td className={TD}>{l.item?.primaryCategory?.name ?? ''}</td>
-                <td className={TD}>{l.item?.modelNumber || l.item?.name || ''}</td>
-                <td className={`${TD} text-right tabular-nums`}>
-                  {Number(l.quantityReceived ?? 0)}
-                </td>
-              </tr>
-            ))}
+            {lines.map((l) => {
+              const qty = Number(l.quantityReceived ?? 0)
+              const unitCost = l.unitCost != null ? Number(l.unitCost) : null
+              return (
+                <tr key={l.id}>
+                  <td className={`${TD} font-mono`}>{(l.serialNumbers ?? []).join(', ')}</td>
+                  <td className={TD}>{l.item?.brand?.name ?? ''}</td>
+                  <td className={TD}>{l.item?.primaryCategory?.name ?? ''}</td>
+                  <td className={TD}>{l.item?.modelNumber || l.item?.name || ''}</td>
+                  <td className={`${TD} text-right tabular-nums`}>{qty}</td>
+                  {hasAnyCost && (
+                    <>
+                      <td className={`${TD} text-right tabular-nums`}>
+                        {unitCost != null ? fmtAmount(unitCost) : '—'}
+                      </td>
+                      <td className={`${TD} text-right tabular-nums`}>
+                        {unitCost != null ? fmtAmount(qty * unitCost) : '—'}
+                      </td>
+                    </>
+                  )}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

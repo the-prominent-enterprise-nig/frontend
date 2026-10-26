@@ -84,11 +84,14 @@ export function buildReceivingReportHtml(
   data: unknown,
   opts: { showAmounts?: boolean } = {}
 ): string {
-  const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
+  // Costs reach the document only for whoever may see them — the Business
+  // Owner on the inventory copy, Accounting on its own — so the amounts
+  // print whenever it carries them, quantities only otherwise.
+  const { showAmounts = lines.some((l) => l.unitCost != null) } = opts
 
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
   const fmtMoney = (n: number) =>
