@@ -218,9 +218,7 @@ export function receivingReportSourceName(report: ReceivingReportSource): string
   if (from.branch?.isTemporary && from.branch.name) {
     return caravanLabel({ name: from.branch.name, eventName: from.branch.eventName })
   }
-  // The units' origin is the warehouse that sent them ("Panay Warehouse"),
-  // not its branch, whose name need not say where the stock was (NIG #5).
-  return from.name?.trim() || from.branch?.name?.trim() || null
+  return from.branch?.name?.trim() || from.name?.trim() || null
 }
 
 /** The line under the source name — a caravan's event, when the name above
