@@ -38,12 +38,14 @@ import type {
   HandoverSessionInput,
   SessionReconciliation,
   SessionTenderSummary,
+  SessionCollection,
 } from '@/src/schema/pos'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import SessionSummaryCard, { type CashRow } from './_components/SessionSummaryCard'
+import { methodLabel, tenderLabel } from './_components/tender-label'
 import { terminalPlaceId, terminalPlaceName } from '@/src/libs/format/locationLabel'
 
 function formatCurrency(n: number) {
@@ -122,7 +124,9 @@ export default function SessionsPage() {
     const closed = modal.type === 'close' ? modal.session : null
     if (closed) {
       setModal({ type: 'none' })
-      goToCollectionReport(closed, 'collection')
+      // The report files the session on its last sale's day, which is not
+      // always the day the drawer opened (an overnight shift).
+      goToCollectionReport(closed, 'collection', res.data?.lastSaleAt)
       return
     }
 
@@ -148,8 +152,12 @@ export default function SessionsPage() {
    * counted and signed (where closing hands over), 'sales' for the browsing
    * entry point the row's own button has always used.
    */
-  function goToCollectionReport(target: PosSession, view: 'collection' | 'sales') {
-    const date = isoDateOf(target.openedAt)
+  function goToCollectionReport(
+    target: PosSession,
+    view: 'collection' | 'sales',
+    lastSaleAt?: string | null
+  ) {
+    const date = isoDateOf(lastSaleAt ?? target.openedAt)
     // A caravan's register files the caravan's own sheet, so it is read off
     // the terminal's place, not `terminal.branch` (the host).
     const placeId = terminalPlaceId(target.terminal)
@@ -603,29 +611,6 @@ function OpenSessionModal({
 // count had nowhere to put the ₱3 or the ₱0.50. Mirrors the denomination
 // block on the client's own Daily Collection Report form, which lists
 // 1000/500/200/100/50/20 and then a single lump COINS line.
-/** Human label for a PosPaymentMethod key, e.g. bank_transfer -> Bank Transfer. */
-function methodLabel(method: string): string {
-  if (method === 'qr') return 'QR / Online'
-  if (method === 'tpf') return 'TPF'
-  return method
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
-}
-
-/**
- * Label for a tender key, which the backend emits either as a bare method
- * ('qr') or as method + the provider the cashier picked at checkout
- * ('qr::Maya', 'card::BDO'). A shift is settled per provider, so the provider
- * is the part that matters here — 'QR / Online — Maya' is checkable against a
- * Maya settlement report, a lumped 'QR / Online' is not. Bare keys still
- * render as before, which keeps sessions closed before this shipped readable.
- */
-function tenderLabel(key: string): string {
-  const [method, ...rest] = key.split('::')
-  const provider = rest.join('::').trim()
-  return provider ? `${methodLabel(method)} — ${provider}` : methodLabel(method)
-}
 
 /** The desktop row template, shared by the list header and every row so the
  *  two can never drift apart. Below lg each row becomes a card instead.
@@ -1159,6 +1144,9 @@ function CloseSessionModal({
   const [reasonNote, setReasonNote] = useState('')
   const [reasonTouched, setReasonTouched] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  // The cashier confirms the drawer really holds nothing — a count of ₱0 is
+  // a count, and must not leave the session impossible to close.
+  const [drawerEmpty, setDrawerEmpty] = useState(false)
 
   // Manager approval, revealed only once the backend rejects a variance —
   // same search+PIN shape as HandoverModal below.
@@ -1220,12 +1208,16 @@ function CloseSessionModal({
   const noteTotal = DENOMINATIONS.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0)
   const total = noteTotal + coinsAmount
   const pieceCount = DENOMINATIONS.reduce((sum, d) => sum + (counts[d] ?? 0), 0)
-  const hasCount = pieceCount > 0 || coinsAmount > 0
 
   // Display only — the backend recomputes both sides on close and is the
   // authority on the posted variance. Expected comes from its own helper, so
   // the two agree by construction rather than by luck.
   const expected = Number(reconciliation?.expectedClosingCash ?? 0)
+  // No float and no cash taken — a non-cash-only (or empty) shift has
+  // nothing to count, so it reconciles at ₱0 as it stands.
+  const nothingExpected = !!reconciliation && Math.abs(expected) < 0.005
+  const hasCount = pieceCount > 0 || coinsAmount > 0 || drawerEmpty || nothingExpected
+  const countedNothing = hasCount && total === 0
   const variance = total - expected
   const isOff = hasCount && Math.abs(variance) >= 0.01
   const reasonMissing = isOff && !reason
@@ -1299,8 +1291,12 @@ function CloseSessionModal({
     onSubmit({
       declaredClosingCash: total,
       notes: composedNotes || undefined,
+      // An empty drawer is still a count: {} records "counted nothing", where
+      // leaving it out would read as "never counted".
       denominationBreakdown:
-        Object.keys(denominationBreakdown).length > 0 ? denominationBreakdown : undefined,
+        Object.keys(denominationBreakdown).length > 0 || countedNothing
+          ? denominationBreakdown
+          : undefined,
       // Sent on the FIRST submit, not after a rejection — a privileged closer
       // never sees the manager-approval block at all, because the backend
       // never has cause to reject them for a missing override.
@@ -1341,7 +1337,7 @@ function CloseSessionModal({
     {
       key: 'collections',
       label: 'Counter collections',
-      note: 'installment dues paid in cash at the counter',
+      note: 'monthly installments (MI) paid in cash at the counter',
       amount: Number(reconciliation?.totalCollectionsCash ?? 0),
     },
     {
@@ -1386,7 +1382,17 @@ function CloseSessionModal({
   // settled per provider, so 'QR / Online — Maya' is checkable against a Maya
   // settlement report where a lumped 'QR / Online' is not. Collapsed by
   // default — this panel is context, not the task.
-  const nonCashGroups = Object.entries(tenderSummary?.nonCash ?? {})
+  // TPF rides along as its own group (TPF — Tonik, TPF — Skyro): the
+  // financier pays it later, so it is not in the drawer either.
+  const tpfTenders = Object.fromEntries(
+    Object.entries(tenderSummary?.tpf ?? {}).map(([provider, amount]) => [
+      `tpf::${provider}`,
+      amount,
+    ])
+  )
+  const nonCashTotal =
+    Number(tenderSummary?.totalNonCash ?? 0) + Number(tenderSummary?.totalTpf ?? 0)
+  const nonCashGroups = Object.entries({ ...(tenderSummary?.nonCash ?? {}), ...tpfTenders })
     .filter(([, amount]) => Number(amount) !== 0)
     .reduce<{ method: string; label: string; total: number; providers: [string, number][] }[]>(
       (groups, [key, amount]) => {
@@ -1418,19 +1424,23 @@ function CloseSessionModal({
 
   const verdictTitle = !hasCount
     ? 'Do the cash count to reconcile'
-    : !isOff
-      ? 'Drawer balances'
-      : variance > 0
-        ? `Over by ₱${peso(variance)}`
-        : `Short by ₱${peso(-variance)}`
+    : countedNothing && nothingExpected
+      ? 'No cash to count'
+      : !isOff
+        ? 'Drawer balances'
+        : variance > 0
+          ? `Over by ₱${peso(variance)}`
+          : `Short by ₱${peso(-variance)}`
 
   const verdictBody = !hasCount
     ? `The drawer should hold ₱${peso(expected)} — the float plus what the shift took in, less what was paid out.`
-    : !isOff
-      ? `Counted cash matches the ₱${peso(expected)} expected.`
-      : variance > 0
-        ? 'There is more cash than the shift accounts for. Check for a sale rung on the wrong tender, or float added mid-shift without a drawer event.'
-        : `Cash is missing against the ₱${peso(expected)} expected. Recount first, then check for a payout that was never recorded.`
+    : countedNothing && nothingExpected
+      ? 'No float and no cash taken this shift, so the drawer should be empty. Close the session as it is.'
+      : !isOff
+        ? `Counted cash matches the ₱${peso(expected)} expected.`
+        : variance > 0
+          ? 'There is more cash than the shift accounts for. Check for a sale rung on the wrong tender, or float added mid-shift without a drawer event.'
+          : `Cash is missing against the ₱${peso(expected)} expected. Recount first, then check for a payout that was never recorded.`
 
   const blocked = isLoading || !hasCount || reasonMissing || (needsOverride && !verified)
 
@@ -1481,7 +1491,7 @@ function CloseSessionModal({
       {/* Body — two columns so the expected figure and the running count stay
           on screen together. Stacks below lg, where they cannot. */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto grid w-full max-w-[1500px] items-start gap-3.5 px-4 py-4 lg:grid-cols-[minmax(0,.82fr)_minmax(0,1.18fr)] lg:px-5">
+        <div className="mx-auto grid w-full max-w-[1500px] items-start gap-3.5 px-4 py-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,.9fr)] lg:px-5">
           {/* ── Left: what should be in the drawer ─────────────────────── */}
           <div className="flex min-w-0 flex-col gap-3">
             <SessionSummaryCard
@@ -1490,6 +1500,7 @@ function CloseSessionModal({
               netSales={Number(reconciliation?.netSales ?? 0)}
               totalRefunds={Number(reconciliation?.totalRefunds ?? 0)}
               invoiceNumbers={reconciliation?.invoiceNumbers ?? []}
+              transactions={reconciliation?.transactions ?? []}
               cashRows={cashRows}
             />
 
@@ -1502,7 +1513,7 @@ function CloseSessionModal({
                   Also taken this shift
                 </span>
                 <span className="text-[12.5px] tabular-nums text-[#3d3d4a]">
-                  {figuresLoading ? '—' : `₱${peso(Number(tenderSummary?.totalNonCash ?? 0))}`}
+                  {figuresLoading ? '—' : `₱${peso(nonCashTotal)}`}
                 </span>
               </div>
               {figuresLoading ? (
@@ -1562,6 +1573,12 @@ function CloseSessionModal({
               )}
             </div>
 
+            <SessionCollectionsPanel
+              loading={figuresLoading}
+              collections={tenderSummary?.collections ?? []}
+              total={Number(tenderSummary?.totalCollections ?? 0)}
+            />
+
             <div className="flex flex-col gap-1.5">
               <label htmlFor="shift-notes" className="text-[12px] font-medium text-[#3d3d4a]">
                 Shift notes <span className="font-normal text-[#5b5b6b]">optional</span>
@@ -1587,12 +1604,24 @@ function CloseSessionModal({
                     Pieces per denomination. Tab moves down the list.
                   </span>
                 </div>
-                {hasCount && (
+                {pieceCount === 0 && coinsAmount === 0 && !nothingExpected && (
+                  <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] text-[#3d3d4a]">
+                    <input
+                      type="checkbox"
+                      checked={drawerEmpty}
+                      onChange={(e) => setDrawerEmpty(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-[#d3d3db] text-[#5b21b6] focus:ring-[#5b21b6]"
+                    />
+                    No cash in drawer
+                  </label>
+                )}
+                {(pieceCount > 0 || coinsAmount > 0) && (
                   <button
                     type="button"
                     onClick={() => {
                       setCounts(Object.fromEntries(DENOMINATIONS.map((d) => [d, 0])))
                       setCoins('')
+                      setDrawerEmpty(false)
                       setReason('')
                       setReasonNote('')
                       setReasonTouched(false)
@@ -1612,7 +1641,7 @@ function CloseSessionModal({
                 {DENOMINATIONS.map((d, i) => (
                   <div
                     key={d}
-                    className={`grid grid-cols-[62px_minmax(0,1fr)_96px] items-center gap-2.5 px-4 py-2.5 ${
+                    className={`grid grid-cols-[56px_minmax(0,1fr)_84px] items-center gap-2.5 px-4 py-2.5 ${
                       i > 1 ? 'border-t border-[#f4f4f6]' : ''
                     } ${i % 2 === 0 ? 'border-r border-[#f4f4f6]' : ''}`}
                   >
@@ -1641,7 +1670,7 @@ function CloseSessionModal({
                 {/* Coins takes the tenth cell, squaring off the 2x5 grid. A
                     peso amount rather than a count — matches the single lump
                     COINS line on the client's Daily Collection Report form. */}
-                <div className="grid grid-cols-[62px_minmax(0,1fr)_96px] items-center gap-2.5 border-t border-[#f4f4f6] px-4 py-2.5">
+                <div className="grid grid-cols-[56px_minmax(0,1fr)_84px] items-center gap-2.5 border-t border-[#f4f4f6] px-4 py-2.5">
                   <span className="text-[12px] font-medium text-[#3d3d4a]">Coins</span>
                   <input
                     type="number"
@@ -1862,11 +1891,13 @@ function CloseSessionModal({
           <span className={`text-[11.5px] ${reasonMissing ? 'text-[#b42318]' : 'text-[#5b5b6b]'}`}>
             {!hasCount
               ? `Expected ₱${peso(expected)}`
-              : reasonMissing
-                ? 'Pick a reason for the difference'
-                : isOff
-                  ? 'Closes with a flagged variance'
-                  : 'Counted cash matches'}
+              : countedNothing && nothingExpected
+                ? 'No cash to count'
+                : reasonMissing
+                  ? 'Pick a reason for the difference'
+                  : isOff
+                    ? 'Closes with a flagged variance'
+                    : 'Counted cash matches'}
           </span>
           <span className="text-[13px] font-semibold">
             {!hasCount ? 'Nothing counted yet' : `₱${peso(total)} counted of ₱${peso(expected)}`}
@@ -1891,6 +1922,67 @@ function CloseSessionModal({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Every collection taken over the counter on this shift, on whatever tender —
+ * MIs (FMI on the first due) and delivery fees. Down payments are not here:
+ * they are tenders on the sale, already under "Also taken this shift". The
+ * cash ones are in the drawer build-up already; the rest appear nowhere else
+ * on this screen. One line per CR so the cashier can tick them off against
+ * the receipts they wrote.
+ */
+function SessionCollectionsPanel({
+  loading,
+  collections,
+  total,
+}: {
+  loading: boolean
+  collections: SessionCollection[]
+  total: number
+}): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] bg-white px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#5b5b6b]">
+          Collections this shift
+        </span>
+        <span className="text-[12.5px] tabular-nums text-[#3d3d4a]">
+          {loading ? '—' : `₱${peso(total)}`}
+        </span>
+      </div>
+      {loading ? (
+        <Skeleton className="h-4 w-40" />
+      ) : collections.length === 0 ? (
+        <p className="text-[11.5px] text-[#5b5b6b]">No collections this shift.</p>
+      ) : (
+        <div className="flex flex-col">
+          {collections.map((c, i) => (
+            <div
+              key={c.id}
+              className={`grid grid-cols-[minmax(0,1fr)_auto_96px] items-baseline gap-2.5 py-1.5 ${
+                i ? 'border-t border-[#f4f4f6]' : ''
+              }`}
+            >
+              <span className="min-w-0 truncate text-[12.5px] leading-[1.4]">
+                <span className="mr-1.5 rounded bg-[#f1ebfb] px-1.5 py-0.5 text-[10.5px] font-medium text-[#5b21b6]">
+                  {c.kind}
+                </span>
+                <span className="tabular-nums">{c.number ?? 'No CR #'}</span>
+              </span>
+              <span className="whitespace-nowrap text-[11px] text-[#5b5b6b]">
+                {tenderLabel(c.tenderKey)}
+                {c.isCash ? ' · in drawer' : ''}
+              </span>
+              <span className="text-right text-[12.5px] font-medium tabular-nums">
+                {peso(c.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
