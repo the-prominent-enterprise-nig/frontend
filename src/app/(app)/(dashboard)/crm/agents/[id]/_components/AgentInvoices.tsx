@@ -62,6 +62,29 @@ export default function AgentInvoices({
   const [saving, setSaving] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [removing, setRemoving] = useState(false)
+  // Where the user was heading when an unsaved edit stopped them.
+  const [leaveTo, setLeaveTo] = useState<string | null>(null)
+
+  const isDirty = !!agent && !!editForm && !sameAgentForm(editForm, agentFormState(agent))
+
+  // A refresh or closed tab can't be caught in-app, so the browser asks.
+  useEffect(() => {
+    if (!isDirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [isDirty])
+
+  /** onClick for links off this page — holds the navigation while the Edit
+   * form has unsaved changes and asks first. */
+  const guardLeave = (href: string) => (e: React.MouseEvent) => {
+    if (!isDirty) return
+    e.preventDefault()
+    setLeaveTo(href)
+  }
 
   const branchName = agent?.branchId
     ? (branches.find((b) => b.id === agent.branchId)?.name ?? null)
@@ -133,6 +156,7 @@ export default function AgentInvoices({
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
       <Link
         href="/crm/agents"
+        onClick={guardLeave('/crm/agents')}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -286,6 +310,7 @@ export default function AgentInvoices({
                             <>
                               <Link
                                 href={`/accounting/expenses/${r.released.expenseId}`}
+                                onClick={guardLeave(`/accounting/expenses/${r.released.expenseId}`)}
                                 className="font-medium text-purple-700 hover:underline"
                               >
                                 {r.released.voucherNumber}
@@ -331,8 +356,41 @@ export default function AgentInvoices({
         onConfirm={handleRemove}
         onCancel={() => setConfirmRemove(false)}
       />
+
+      <ConfirmDialog
+        open={leaveTo !== null}
+        title="Discard changes?"
+        message={
+          <p>
+            You have unsaved changes to <strong>{agent?.name}</strong>. Leave this page without
+            saving them?
+          </p>
+        }
+        confirmLabel="Discard and leave"
+        cancelLabel="Keep editing"
+        destructive
+        onConfirm={() => {
+          const to = leaveTo
+          setLeaveTo(null)
+          setEditForm(null)
+          if (to) router.push(to)
+        }}
+        onCancel={() => setLeaveTo(null)}
+      />
     </div>
   )
+}
+
+/** Whether the Edit form still holds exactly the agent's saved values. */
+function sameAgentForm(a: AgentFormState, b: AgentFormState): boolean {
+  const norm = (f: AgentFormState) => ({
+    name: (f.name ?? '').trim(),
+    phone: (f.phone ?? '').trim(),
+    email: (f.email ?? '').trim(),
+    branchId: f.branchId ?? null,
+    commissionRate: f.commissionRate ?? null,
+  })
+  return JSON.stringify(norm(a)) === JSON.stringify(norm(b))
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
