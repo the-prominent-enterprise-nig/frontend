@@ -8,7 +8,12 @@ import { Hash, X, Truck, Search, ArrowRightLeft } from 'lucide-react'
 import { useSerialNumbers, type StockClassification } from '../_hooks/useSerialNumbers'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { hasPrivilegedRole, type SessionUser } from '@/src/libs/guards/permission'
+import {
+  isCaravanBranch,
+  warehouseLabel,
+  type WarehouseSummary,
+} from '@/src/schema/inventory/warehouses'
 import {
   SERIAL_STATUS_LABELS,
   SERIAL_STATUS_COLORS,
@@ -21,7 +26,7 @@ import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import ConsignToCaravanModal from './ConsignToCaravanModal'
 import { useSerialSelection, isTransferable } from '../_hooks/useSerialSelection'
 import { useConsignToCaravan } from '../_hooks/useConsignToCaravan'
-import CaravanItemTable from './CaravanItemTable'
+import CaravanItemTable, { type CaravanActions } from './CaravanItemTable'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import { useCaravanAlerts } from '@/src/components/inventory/caravan/useCaravanAlerts'
 import CopySerialButton from './CopySerialButton'
@@ -124,6 +129,26 @@ function caravanMatches(
   )
 }
 
+/** Real branches a caravan can be hosted at — only the user's own when
+ * they are branch-scoped (the backend enforces the same). */
+function hostBranchChoices(
+  warehouses: WarehouseSummary[],
+  ownBranchId: string | null | undefined
+): { value: string; label: string }[] {
+  const seen = new Set<string>()
+  return warehouses
+    .filter((wh) => !!wh.branchId && !isCaravanBranch(wh.branch))
+    .filter((wh) => !ownBranchId || wh.branchId === ownBranchId)
+    .filter((wh) => !seen.has(wh.branchId as string) && !!seen.add(wh.branchId as string))
+    .map((wh) => ({ value: wh.branchId as string, label: warehouseLabel(wh) }))
+}
+
+/** Running caravans first, then ended ones, closed ones last. */
+function caravanStage(c: { ended: boolean; closedAt?: string | null }): number {
+  if (c.closedAt) return 2
+  return c.ended ? 1 : 0
+}
+
 function formatCost(amount: number): string {
   return amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -192,8 +217,8 @@ export default function SerialNumberList({
     caravanHostOptions,
     caravanReady,
     caravanGroups,
-    isGroupOpen,
-    toggleGroup,
+    pickedCaravanKey,
+    pickCaravan,
     groupSerials,
   } = useSerialNumbers({ initialCaravanId })
 
@@ -212,22 +237,32 @@ export default function SerialNumberList({
   // The Locator has no Caravan view; the stockbook keeps its own.
   const caravanView = !isLocator && caravanViewState
 
-  // Running caravans with nothing on hand have no item rows, but still get a
-  // heading (and their Close action) after the stocked ones, on the last page.
-  const { alerts: caravanAlerts } = useCaravanAlerts(undefined, caravanView)
+  // Caravans with nothing on hand — running, ended or already closed — have
+  // no item rows, but still get a heading (and their actions) after the
+  // stocked ones, on the last page. Closed ones stay listed as closed.
+  const { alerts: caravanAlerts } = useCaravanAlerts(undefined, caravanView, true)
   // While searching, only those whose name or location matches.
   const emptyCaravans =
     caravanView && page >= pagination.totalPages
-      ? caravanAlerts.filter(
-          (a) =>
-            !a.ended &&
-            (!search || caravanMatches(a, search)) &&
-            a.unitsHeld === 0 &&
-            (!caravanId || a.id === caravanId) &&
-            (!caravanHostIds.length || caravanHostIds.includes(a.hostBranch?.id ?? '')) &&
-            !caravanGroups.some((g) => g.caravan?.id === a.id)
-        )
+      ? caravanAlerts
+          .filter(
+            (a) =>
+              (!search || caravanMatches(a, search)) &&
+              a.unitsHeld === 0 &&
+              (!caravanId || a.id === caravanId) &&
+              (!caravanHostIds.length || caravanHostIds.includes(a.hostBranch?.id ?? '')) &&
+              !caravanGroups.some((g) => g.caravan?.id === a.id)
+          )
+          .sort((a, b) => caravanStage(a) - caravanStage(b))
       : []
+  // Head office (no branch of its own) or the Business Owner closes caravans;
+  // the host branch can still edit its own.
+  const caravanActions: CaravanActions = {
+    canEdit: canManageCaravan,
+    canClose: canManageCaravan && (hasPrivilegedRole(session) || !session.branchId),
+    hostBranchOptions: hostBranchChoices(warehouseOptions, session.branchId),
+    hostLocked: !!session.branchId,
+  }
 
   // Locator: the unit shown is the row picked, or the one an exact serial search
   // matches. Derived here rather than set in an effect.
@@ -556,9 +591,9 @@ export default function SerialNumberList({
                   groups={caravanGroups}
                   emptyCaravans={emptyCaravans}
                   canTransfer={canTransfer}
-                  canClose={canManageCaravan}
-                  isGroupOpen={isGroupOpen}
-                  onToggleGroup={toggleGroup}
+                  caravanActions={caravanActions}
+                  pickedKey={pickedCaravanKey}
+                  onPick={pickCaravan}
                   groupSerials={groupSerials}
                   emptyLabel={
                     caravanId

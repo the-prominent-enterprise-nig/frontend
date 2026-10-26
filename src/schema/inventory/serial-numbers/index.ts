@@ -245,6 +245,15 @@ export function caravanGroupKey(serial: {
   return `${serial.item?.id ?? ''}|${serial.currentWarehouse?.id ?? ''}`
 }
 
+/** Which caravan a rollup row belongs to — its caravan, or failing that its
+ * warehouse. The Caravan tab lists and picks caravans by this key. */
+export function caravanKeyOf(group: {
+  caravan?: { id: string } | null
+  warehouseId?: string | null
+}): string {
+  return group.caravan?.id ?? group.warehouseId ?? ''
+}
+
 export const CaravanItemGroupListResponseSchema = z
   .object({
     data: z.array(CaravanItemGroupSchema),

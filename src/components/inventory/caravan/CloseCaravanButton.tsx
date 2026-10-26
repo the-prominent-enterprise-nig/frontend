@@ -4,12 +4,13 @@ import { useState } from 'react'
 import { CircleStop } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
+import Tooltip from '@/src/components/ui/Tooltip'
 import { showToast } from '@/src/components/ui/toast'
 import { closeCaravan } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/close-caravan'
-import { isCaravanEnded, type WarehouseBranch } from '@/src/schema/inventory/warehouses'
+import type { WarehouseBranch } from '@/src/schema/inventory/warehouses'
 
-// Everything that shows a caravan's running/ended state.
-const REFRESHED_QUERIES = [
+// Everything that shows a caravan's details or running/ended state.
+export const CARAVAN_QUERIES = [
   'caravan-alerts',
   'inventory-warehouses-lookup',
   'inventory-caravan-item-groups',
@@ -28,12 +29,8 @@ function useCloseCaravan(onDone: () => void): {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
         return
       }
-      showToast({
-        title: 'Caravan closed',
-        description: 'Transfer out any units still there.',
-        status: 'success',
-      })
-      REFRESHED_QUERIES.forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }))
+      showToast({ title: 'Caravan closed', status: 'success' })
+      CARAVAN_QUERIES.forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }))
       onDone()
     },
   })
@@ -41,32 +38,49 @@ function useCloseCaravan(onDone: () => void): {
 }
 
 /**
- * The host branch ends a running caravan by hand instead of waiting for its
- * end date. Renders nothing for a caravan that has already ended.
+ * Head office closes a caravan once everything in it has been transferred
+ * out — before or after its end date. The caller decides who sees it (head
+ * office only); it stays disabled while units remain. Renders nothing for a
+ * caravan that is already closed.
  */
 export default function CloseCaravanButton({
   caravan,
+  unitsLeft,
 }: {
   caravan: WarehouseBranch | null | undefined
+  // Units still at the caravan or on their way out of it.
+  unitsLeft: number
 }): React.ReactElement | null {
   const [confirming, setConfirming] = useState(false)
   const { close, isClosing } = useCloseCaravan(() => setConfirming(false))
-  if (!caravan?.isTemporary || isCaravanEnded(caravan)) return null
+  if (!caravan?.isTemporary || caravan.closedAt) return null
 
+  const blocked = unitsLeft > 0
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-[#f3c9c5] bg-white px-2.5 py-1 text-[12px] font-medium text-[#b42318] hover:bg-[#fdeceb]"
+      <Tooltip
+        label={
+          blocked
+            ? `Transfer out all ${unitsLeft.toLocaleString()} remaining unit${unitsLeft === 1 ? '' : 's'} first`
+            : 'Close this caravan for good'
+        }
+        side="bottom"
+        align="end"
       >
-        <CircleStop className="h-3.5 w-3.5" />
-        Close caravan
-      </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          disabled={blocked}
+          aria-label="Close caravan"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#f3c9c5] bg-white text-[#b42318] hover:bg-[#fdeceb] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
+        >
+          <CircleStop className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
       <ConfirmDialog
         open={confirming}
         title="Close this caravan?"
-        message={`${caravan.eventName ?? caravan.name} ends now. No new stock can be sent to it and its units can't be sold — transfer out whatever is still there. This can't be undone.`}
+        message={`${caravan.eventName ?? caravan.name} is closed for good — no stock can be sent to it and nothing can be sold there. It stays listed as closed. This can't be undone.`}
         confirmLabel="Close caravan"
         destructive
         loading={isClosing}
