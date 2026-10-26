@@ -27,7 +27,8 @@ export interface Slip {
    * petty cash or special fund, another bank. Empty when it empties an account. */
   clearsBankAccountId: string
   note: string
-  /** This bank's own deposit slip number — each bank issues its own. */
+  /** This bank's own deposit slip number — each bank issues its own, and a
+   * deposit cannot be recorded without it. */
   reference: string
   /** The day this slip was banked, `YYYY-MM-DD`. Slips on different days post
    * separate journal entries. */
@@ -243,7 +244,7 @@ export function toLineInputs(slips: Slip[]): PosDepositLineInput[] {
     clearsAccountId: clearsAccountOf(s),
     clearsBankAccountId: s.clearsBankAccountId || undefined,
     note: s.note || undefined,
-    reference: s.reference.trim() || undefined,
+    reference: s.reference.trim(),
     depositDate: s.depositDate,
   }))
 }

@@ -77,7 +77,7 @@ export function PaperRecordFields({ control, errors }: Props) {
         </div>
         <div className="min-w-0">
           <label className="mb-1 block text-xs font-medium text-zinc-600">
-            PPD rebate (₱) {REQUIRED}
+            PPD rebate (₱) <span className="text-zinc-400">(optional)</span>
           </label>
           <Controller
             name="ppdRebate"
@@ -97,7 +97,7 @@ export function PaperRecordFields({ control, errors }: Props) {
         </div>
         <div className="min-w-0">
           <label className="mb-1 block text-xs font-medium text-zinc-600">
-            First due date {REQUIRED}
+            FMI date {REQUIRED}
           </label>
           <Controller
             name="firstDueDate"

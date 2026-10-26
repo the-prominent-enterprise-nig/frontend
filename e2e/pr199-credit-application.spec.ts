@@ -27,7 +27,7 @@ import {
 //   5. "Calculation are currently wrong" — the rate card's monthly is worked
 //      out from the card's OWN down payment, so where the card prices the
 //      item for the chosen term that down payment is fixed; elsewhere the
-//      minimum is development's 10%.
+//      starting figure is 10% and any amount above 0 is accepted (2026-10-20).
 //   6. "changing the item in a credit application breaks the submit" — the
 //      serial picked at the till rode along with a different item.
 //
@@ -49,7 +49,7 @@ const FAN = 'STF3238'
 const downPayment = (page: Page) => input(page, /^Down Payment\s*\*?$/)
 const lcp = (page: Page) => input(page, /^LCP/)
 const ppd = (page: Page) => input(page, /^PPD rebate/)
-const firstDue = (page: Page) => input(page, /^First due date/)
+const firstDue = (page: Page) => input(page, /^FMI date/)
 
 /** A row of the live breakdown, e.g. "Total price₱17,915.00". */
 const breakdown = (page: Page, label: string) =>
@@ -156,7 +156,7 @@ test.describe('PR #199 — credit application', () => {
     customerIds.push(applicant.id)
     await openNewApplication(page, applicant.name)
 
-    // ── No price-list down payment: development's 10% minimum, editable.
+    // ── No price-list down payment: starts at 10%, editable, never 0.
     await pickItem(page, FAN)
     await expect(priceUse(page)).toContainText('WIP', { timeout: 15_000 })
     await pickOption(term(page), page, '3 months')
@@ -172,14 +172,15 @@ test.describe('PR #199 — credit application', () => {
     await expect(ppd(page)).toHaveValue('')
     await expect(firstDue(page)).toHaveValue(localDatePlusOneMonth())
 
+    // Below the old 10% minimum is fine now — only 0 is refused.
     await downPayment(page).fill((fanTotal * 0.1 - 5).toFixed(2))
-    await expect(page.getByText(/Down payment must be at least .*10%/)).toBeVisible({
+    await expect(page.getByText(/Down payment must be/)).toHaveCount(0, { timeout: 10_000 })
+    await downPayment(page).fill('0')
+    await expect(page.getByText('Down payment must be more than 0')).toBeVisible({
       timeout: 10_000,
     })
     await downPayment(page).fill((fanTotal * 0.2).toFixed(2))
-    await expect(page.getByText(/Down payment must be at least/)).toHaveCount(0, {
-      timeout: 10_000,
-    })
+    await expect(page.getByText(/Down payment must be/)).toHaveCount(0, { timeout: 10_000 })
 
     // ── Chloe's item, same row: the card fixes the down payment.
     await pickItem(page, SHARP)
@@ -214,11 +215,11 @@ test.describe('PR #199 — credit application', () => {
 
     // ── ZI at 6 months: the card has no 6-month row, so the factor rate
     // applies — the card's down payment is pre-filled but only a starting
-    // point, the minimum is 10%, and there is no PPD to quote.
+    // point, any amount above 0 is accepted, and there is no PPD to quote.
     await pickOption(priceUse(page), page, 'ZI')
     await expect(downPayment(page)).toHaveValue('3510.00', { timeout: 15_000 })
     await expect(downPayment(page)).toBeEditable()
-    await expect(downPayment(page)).toHaveAttribute('placeholder', 'Min. ₱1,599.00')
+    await expect(downPayment(page)).toHaveAttribute('placeholder', 'Any amount above 0')
     await expect(ppd(page)).toHaveValue('', { timeout: 15_000 })
 
     // ── ZI at 12 months: on the card again.

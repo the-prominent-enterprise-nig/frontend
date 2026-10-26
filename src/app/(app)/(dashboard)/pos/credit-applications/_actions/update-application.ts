@@ -53,9 +53,18 @@ export async function updateCreditApplication(
       itemId,
       serialNumberId: serialNumberId ?? null,
     })),
+    // The edit form's two paper-record boxes arrive as text. A blank PPD
+    // rebate means none (null clears it, since the box is optional); a blank
+    // FMI date leaves the recorded one alone — an application always has one.
+    ppdRebate:
+      parsed.data.ppdRebate === undefined
+        ? undefined
+        : parsed.data.ppdRebate === ''
+          ? null
+          : Number(parsed.data.ppdRebate),
+    firstDueDate: parsed.data.firstDueDate || undefined,
     // Form-only figures behind the down-payment check — not API fields.
     resolvedItemTotal: undefined,
-    downPaymentFloor: undefined,
     downPaymentFixed: undefined,
   }
 

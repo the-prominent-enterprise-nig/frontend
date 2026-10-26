@@ -1,4 +1,5 @@
 import { type Permission, type Role } from '@/src/schema/settings/list'
+import { MODULES } from '@/src/libs/guards/modules'
 
 export type AccessLevel = 'none' | 'view' | 'manage' | 'full' | 'mixed'
 
@@ -24,21 +25,49 @@ export const ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
   mixed: 'Mixed Access',
 }
 
+/**
+ * Compact form for tight spaces — a resource row's own level buttons (two-up
+ * inside an expanded module, roughly a quarter of half the modal's width) and
+ * the roles list's per-module badges (up to 4 per row, "Accounting: Manage /
+ * Edit" repeated four times reads as a wall of text). The full label stays
+ * available as a title/tooltip wherever this is used.
+ */
+export const SHORT_ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
+  none: 'None',
+  view: 'View',
+  manage: 'Edit',
+  full: 'Full',
+  mixed: 'Mixed',
+}
+
 // Scenario 22 Part 9 follow-up: no separate 'procurement' entry — Purchase
 // Requests/Orders/Suppliers/Quotas permissions were folded into the
 // 'inventory' module (they already lived under the Inventory nav section;
 // the RBAC module just hadn't caught up). Their capabilities now report
 // under Inventory's own "N of N" count and Full/Mixed/View badge below.
-export const ACCESS_MODULES: AccessModule[] = [
-  { key: 'accounting', label: 'Accounting', permissionModules: ['accounting'] },
-  { key: 'inventory', label: 'Inventory', permissionModules: ['inventory'] },
-  { key: 'pos', label: 'Point of Sale', permissionModules: ['pos'] },
-  { key: 'crm', label: 'CRM', permissionModules: ['crm'] },
-  { key: 'admin', label: 'Admin', permissionModules: ['admin'] },
-  { key: 'queue', label: 'Queue', permissionModules: ['queue'] },
-  { key: 'sales', label: 'Sales', permissionModules: ['sales'] },
-  { key: 'files', label: 'Files', permissionModules: ['files'] },
-]
+// #171 review (2026-09-15): this used to be a hand-maintained array that
+// drifted from reality twice over — 'queue' listed with zero permissions
+// ever seeded, 'workspace' holding 3 real permissions but never listed,
+// 'admin'/'files'/'sales' present despite not being real app sections.
+// Reviewer's ask: "keep this list to the real modules only... tie this
+// list to the real module list, so it stops drifting apart again."
+//
+// Derived directly from MODULES (src/libs/guards/modules.ts) — the actual
+// sidebar/nav module list — instead of hand-maintained, so it cannot drift
+// from it again: HR and Procurement are commented out there as not yet
+// built, and so are absent here automatically, with no second place to
+// remember to update.
+//
+// This intentionally makes admin/files/workspace permissions ungrantable
+// via a quick-preset button — they are not real modules. They remain
+// individually grantable, unchanged from before any of this preset work
+// existed: see getAllPermissionGroups below, which Advanced permissions
+// now uses instead of this list, so nothing becomes unreachable.
+export const ACCESS_MODULES: AccessModule[] = MODULES.map((appModule) => ({
+  key: appModule.key,
+  label: appModule.label,
+  permissionModules: [appModule.key],
+}))
 
 const READ_ACTIONS = new Set([
   'read',
@@ -69,14 +98,99 @@ const EDIT_ACTIONS = new Set([
   'log',
   'request',
   'generate',
+  // Requesting a reservation cancellation is an operational step, not the
+  // destructive `cancel-approve` that follows it. Named explicitly because it
+  // used to qualify only by accident, through the substring match below.
+  'cancel-request',
 ])
 
 function permissionKey(permission: Permission): string {
   return `${permission.module}:${permission.resource}:${permission.action}`
 }
 
+/**
+ * Permissions the View Only and Manage / Edit presets never hand out, even when
+ * the action name qualifies. They stay fully grantable — an admin just has to
+ * tick them deliberately under Advanced permissions instead of picking them up
+ * as an invisible side effect of a module-wide button.
+ *
+ * Two groups:
+ *   - Enterprise-wide financial infrastructure and sensitive cost data. seed.ts
+ *     already withholds this cluster from Branch Manager by hand ("deliberately
+ *     excluded, not an oversight"); the presets were handing it to anyone set to
+ *     Manage / Edit on Accounting regardless.
+ *   - RBAC self-administration. `admin:roles:create` plus `admin:roles:update`
+ *     let a role mint a new role and grant it anything, so Manage / Edit on
+ *     Admin was a one-hop path to full access. Granting user administration
+ *     must not imply granting permission administration.
+ *
+ * Full Access still includes all of these: that button says what it does.
+ */
+export const PRESET_EXCLUDED_PERMISSIONS = new Set([
+  'accounting:fiscal:create',
+  'accounting:fiscal:update',
+  'accounting:fiscal:close',
+  'accounting:fiscal:reopen',
+  'accounting:fiscal:delete',
+  'accounting:generalLedger:create',
+  'accounting:generalLedger:update',
+  'accounting:generalLedger:delete',
+  'accounting:account:create',
+  'accounting:account:update',
+  'accounting:account:delete',
+  'accounting:bir_export:generate',
+  // Tax setup (Scenario 69) is the same enterprise-wide infrastructure as the
+  // chart of accounts and fiscal periods above. seed.ts gives Branch Manager
+  // only tax-codes:override — departing from a defaulted code — never the
+  // setup or the period close itself.
+  'accounting:tax-codes:create',
+  'accounting:tax-codes:update',
+  'accounting:tax-closing:create',
+
+  // Data Query Center (Scenario 62): Business Owner only. seed.ts grants it to
+  // no other role, and both QueryCenterGuard and the sidebar require this exact
+  // row so no wildcard reaches it. As a plain `read` it would otherwise ride
+  // along with View Only on Accounting.
+  'accounting:query-center:read',
+
+  // inventory:receive:cost-view: redundant with the exact action-name match above
+  // for the one thing this list was built to prevent — actionMatches("cost-view",
+  // ...) is false against every READ_ACTIONS/EDIT_ACTIONS entry, so View Only and
+  // Manage / Edit never select it regardless of whether it's listed here.
+  // Kept anyway because isPresetExcluded also drives the "Sensitive" badge in
+  // AdvancedPermissionsSection, and that badge is correct information — this
+  // permission genuinely is restricted (see
+  // its own description in seed.ts) — even though the mechanism keeping it out of
+  // the module buttons is "never classified as read or edit" rather than "matched,
+  // then withheld" like every other entry in this list. #168 review (2026-09-14).
+  'inventory:receive:cost-view',
+
+  'admin:roles:create',
+  'admin:roles:update',
+  'admin:roles:delete',
+  'admin:roles:manage',
+  'admin:permissions:create',
+  'admin:permissions:update',
+  'admin:permissions:delete',
+  'admin:permissions:manage',
+])
+
+export function isPresetExcluded(permission: Permission): boolean {
+  return PRESET_EXCLUDED_PERMISSIONS.has(permissionKey(permission))
+}
+
+/**
+ * Exact membership only. This used to substring-match as well, which quietly
+ * mis-tiered any action whose name happened to contain a shorter one:
+ * `cost-view` counted as a read, leaking `inventory:receive:cost-view`
+ * ("restricted to Business Owner/Accountant" per seed.ts) into every View Only
+ * grant, and `reopen` counted as an edit, leaking `accounting:fiscal:reopen`
+ * into every Manage / Edit grant. Action names are a closed set defined in
+ * seed.ts — anything genuinely operational belongs in the sets above by name,
+ * not by an accident of spelling.
+ */
 function actionMatches(action: string, actions: Set<string>): boolean {
-  return actions.has(action) || Array.from(actions).some((item) => action.includes(item))
+  return actions.has(action)
 }
 
 export function getModulePermissions(
@@ -158,6 +272,21 @@ export function getAccessLevelForPermissions(
 ): AccessLevel {
   if (selectedPermissions.length === 0) return 'none'
 
+  // A grant that is exactly what a preset produces IS that preset. Without
+  // this, withholding sensitive permissions from View Only / Manage / Edit (see
+  // PRESET_EXCLUDED_PERMISSIONS) leaves the withheld resources sitting at a
+  // different level from the rest of their module — so clicking "Manage / Edit"
+  // would immediately render as "Mixed Access". True under the resource
+  // heuristic below, but useless as feedback on a button just pressed.
+  const selectedIds = new Set(selectedPermissions.map((permission) => permission.id))
+  for (const level of SETTABLE_ACCESS_LEVELS) {
+    const presetIds = getPermissionsForLevel(availableModulePermissions, level).map(
+      (permission) => permission.id
+    )
+    if (presetIds.length !== selectedIds.size) continue
+    if (presetIds.every((id) => selectedIds.has(id))) return level
+  }
+
   const availableByResource = groupByResource(availableModulePermissions)
   const selectedByResource = groupByResource(selectedPermissions)
 
@@ -170,7 +299,33 @@ export function getAccessLevelForPermissions(
     )
   )
   if (levels.size > 1) return 'mixed'
-  return levels.values().next().value ?? 'none'
+  const uniformLevel = levels.values().next().value ?? 'none'
+
+  // "Full" is a stronger claim than the others: not "whatever this role
+  // touches, it's at this level" but "everything in this module, no
+  // exceptions". A resource sitting at zero permissions is rightly ignored
+  // above — a role legitimately scoped to 2 of 20 resources in a module
+  // isn't "Mixed" just because the other 18 were never granted — but it
+  // does contradict Full specifically. #169 review (2026-09-16): narrowing
+  // one resource of a Full module to None (dissolving the module:*:*
+  // wildcard per applyResourceLevel above) left every *other* resource
+  // individually at full, so the "resources that have something agree"
+  // check above found only one level and called it Full — while the
+  // narrowed resource sat at zero the whole time.
+  //
+  // Skipped entirely when the wildcard itself is held: holding module:*:*
+  // is exactly one row in `selected`, so none of the module's real
+  // resources appear in selectedByResource at all — that's the normal,
+  // unmodified "Full via wildcard" case, not the dissolved-and-partial one
+  // this check exists to catch, and it would wrongly downgrade it too.
+  if (uniformLevel === 'full' && !selectedByResource.has('*')) {
+    const everyRealResourceGranted = Array.from(availableByResource.keys())
+      .filter((resource) => resource !== '*')
+      .every((resource) => selectedByResource.has(resource))
+    if (!everyRealResourceGranted) return 'mixed'
+  }
+
+  return uniformLevel
 }
 
 /**
@@ -210,21 +365,296 @@ export function getAccessLevelForRole(
   )
 }
 
+/**
+ * What one preset grants for a set of permissions — a whole module, or just
+ * one resource of it (applyResourceLevel passes a single resource). Split out of
+ * getSelectedPermissionIdsForLevel so getAccessLevelForPermissions can
+ * recognise its own output and report the preset back by name.
+ */
+export function getPermissionsForLevel(
+  modulePermissions: Permission[],
+  level: Exclude<AccessLevel, 'mixed'>
+): Permission[] {
+  if (level === 'none') return []
+  if (level === 'full') return modulePermissions
+
+  const predicate = level === 'view' ? isReadPermission : isManagePermission
+  return modulePermissions.filter(
+    (permission) => predicate(permission) && !isPresetExcluded(permission)
+  )
+}
+
 export function getSelectedPermissionIdsForLevel(
   availablePermissions: Permission[],
   moduleConfig: AccessModule,
   level: Exclude<AccessLevel, 'mixed'>
 ): string[] {
   const modulePermissions = getModulePermissions(availablePermissions, moduleConfig)
-
-  if (level === 'none') return []
-  if (level === 'view')
-    return modulePermissions.filter(isReadPermission).map((permission) => permission.id)
-  if (level === 'manage')
-    return modulePermissions.filter(isManagePermission).map((permission) => permission.id)
-  return modulePermissions.map((permission) => permission.id)
+  return getPermissionsForLevel(modulePermissions, level).map((permission) => permission.id)
 }
 
 export function formatPermission(permission: Permission): string {
   return permission.description || permissionKey(permission)
+}
+
+/** One resource inside a module, with the level the current selection puts it at. */
+export type ResourceRow = {
+  resource: string
+  /** Every permission that exists for this resource. */
+  permissions: Permission[]
+  /** The subset currently granted. */
+  selectedPermissions: Permission[]
+  level: Exclude<AccessLevel, 'mixed'>
+  /** Wildcard-expanded count, for the "n of m" caption. */
+  effectiveCount: number
+  /** Which of the four level buttons actually do anything here. */
+  availability: LevelAvailability[]
+}
+
+/**
+ * The per-resource breakdown of a module, already levelled.
+ *
+ * getResourceLevel has always computed these — it is how "Mixed" is detected —
+ * but the result was collapsed into a single badge and thrown away. Surfacing
+ * the rows is what lets the editor offer a control per resource, so a role can
+ * be given read on one resource of a module without read on the other 29.
+ */
+export function getResourceRows(
+  modulePermissions: Permission[],
+  selectedIds: Set<string>
+): ResourceRow[] {
+  return Array.from(groupByResource(modulePermissions).entries())
+    .map(([resource, permissions]) => {
+      const selectedPermissions = permissions.filter((permission) => selectedIds.has(permission.id))
+      return {
+        resource,
+        permissions,
+        selectedPermissions,
+        level: getResourceLevel(selectedPermissions, permissions),
+        effectiveCount: countEffectivePermissions(permissions, selectedPermissions),
+        availability: getResourceLevelAvailability(permissions),
+      }
+    })
+    .sort((a, b) => {
+      // The module-wide wildcard row ('*') is not a real resource — park it last.
+      if ((a.resource === '*') !== (b.resource === '*')) return a.resource === '*' ? 1 : -1
+      return formatResourceLabel(a.resource).localeCompare(formatResourceLabel(b.resource))
+    })
+}
+
+/**
+ * Resource slugs arrive in two shapes from seed.ts — kebab (`ap-bills`) and
+ * camel (`journalEntry`) — so both are normalised before title-casing.
+ */
+export function formatResourceLabel(resource: string): string {
+  if (resource === '*') return 'All capabilities (wildcard)'
+  return resource
+    .replace(/[-_]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+}
+
+/**
+ * Swap one resource to `level`, leaving the rest of the module untouched.
+ * Returns a new Set so callers can hand it straight to setState.
+ *
+ * Modules carry a `module:*:*` row that the backend's matchesPermission expands
+ * to everything in that module. Holding it makes a per-resource setting a lie:
+ * set the module to Full Access (which includes the wildcard) and then knock
+ * one resource down to None, and the row reads None while the wildcard quietly
+ * keeps granting all of it. Verified against the real matcher — customers
+ * showed None while read/create/update/delete/merge were all still allowed.
+ *
+ * So narrowing any resource while the wildcard is held has to dissolve it: drop
+ * the wildcard row and grant the module’s resources explicitly instead. Same
+ * access, minus the shortcut that cannot express an exception. Setting a
+ * resource to Full is the one case that leaves it alone, since nothing is being
+ * taken away.
+ */
+export function applyResourceLevel(
+  selected: Set<string>,
+  modulePermissions: Permission[],
+  resourcePermissions: Permission[],
+  level: Exclude<AccessLevel, 'mixed'>
+): Set<string> {
+  const next = new Set(selected)
+
+  const targetsWildcardRow = resourcePermissions.some((permission) => permission.resource === '*')
+  const heldWildcards = modulePermissions.filter(
+    (permission) => permission.resource === '*' && next.has(permission.id)
+  )
+
+  if (heldWildcards.length > 0 && !targetsWildcardRow && level !== 'full') {
+    for (const wildcard of heldWildcards) next.delete(wildcard.id)
+    // The wildcard covered every resource in the module, so everything it was
+    // standing in for has to be granted for real before the exception is cut.
+    for (const permission of modulePermissions) {
+      if (permission.resource !== '*') next.add(permission.id)
+    }
+  }
+
+  for (const permission of resourcePermissions) next.delete(permission.id)
+  for (const permission of getPermissionsForLevel(resourcePermissions, level))
+    next.add(permission.id)
+
+  return collapseToWildcardIfComplete(next, modulePermissions)
+}
+
+/**
+ * Mirror image of the dissolve above: once every real resource in the
+ * module is individually back at 100%, the exception that forced the
+ * dissolve no longer exists — there's nothing left for the wildcard to
+ * silently override — so it's safe to swap the individual rows back out
+ * for the single module:*:* row.
+ *
+ * Without this, "Full Access" can mean two different things that read
+ * identically today and only diverge later: the wildcard (keeps up
+ * automatically when the module gains a new permission) or a frozen list of
+ * what existed the moment it was dissolved (does not). #169 review
+ * (2026-09-16) — narrowing one resource and then setting it straight back to
+ * Full used to leave the module on the frozen list forever, with no way
+ * back to the wildcard short of Advanced permissions.
+ */
+function collapseToWildcardIfComplete(
+  selected: Set<string>,
+  modulePermissions: Permission[]
+): Set<string> {
+  const wildcard = modulePermissions.find((permission) => permission.resource === '*')
+  if (!wildcard || selected.has(wildcard.id)) return selected
+
+  const realPermissions = modulePermissions.filter((permission) => permission.resource !== '*')
+  const everyResourceGranted = realPermissions.every((permission) => selected.has(permission.id))
+  if (!everyResourceGranted) return selected
+
+  const next = new Set(selected)
+  for (const permission of realPermissions) next.delete(permission.id)
+  next.add(wildcard.id)
+  return next
+}
+
+/** Whether one level button does anything for a given resource, and why not. */
+export type LevelAvailability = {
+  level: Exclude<AccessLevel, 'mixed'>
+  enabled: boolean
+  /** Present only when disabled — shown as the button tooltip. */
+  reason?: string
+  /**
+   * What clicking this button actually grants, in the permission catalog's
+   * own words — the button tooltip when enabled, same as `reason` is when
+   * disabled. Sourced from formatPermission, not a hand-written summary, so
+   * it can't drift from what the backend actually enforces.
+   */
+  grants: string[]
+}
+
+/**
+ * A level is a dead button when it grants exactly what the level below it
+ * already grants, so clicking it changes nothing and the control appears
+ * broken — the button will not even light up, because the row reads its level
+ * back from the permissions that actually landed.
+ *
+ * This is the common case, not an edge one: 69 of 120 resource rows in a
+ * seeded database have at least one. Four levels assume every resource has
+ * read, write and destructive actions, and most do not — inventory:reports is
+ * read-only, so Manage and Full mean nothing there; pos:sessions has no
+ * destructive action, so Full means nothing.
+ *
+ * Two distinct reasons, which want different wording: the resource genuinely
+ * has no actions at that tier, or it has them but PRESET_EXCLUDED_PERMISSIONS
+ * withholds them (accounting:fiscal, admin:roles). The second is recoverable —
+ * Full Access or Advanced permissions still grant them — so the message says
+ * so rather than implying the capability does not exist.
+ */
+export function getResourceLevelAvailability(
+  resourcePermissions: Permission[]
+): LevelAvailability[] {
+  const idsFor = (level: Exclude<AccessLevel, 'mixed'>) =>
+    getPermissionsForLevel(resourcePermissions, level)
+      .map((permission) => permission.id)
+      .sort()
+      .join('|')
+
+  const candidatesFor = (level: Exclude<AccessLevel, 'mixed'>) => {
+    if (level === 'full') return resourcePermissions
+    if (level === 'manage') return resourcePermissions.filter(isManagePermission)
+    if (level === 'view') return resourcePermissions.filter(isReadPermission)
+    return []
+  }
+
+  const grantsFor = (level: Exclude<AccessLevel, 'mixed'>) =>
+    getPermissionsForLevel(resourcePermissions, level).map((permission) =>
+      formatPermission(permission)
+    )
+
+  return SETTABLE_ACCESS_LEVELS.map((level, index) => {
+    if (index === 0) return { level, enabled: true, grants: grantsFor(level) }
+
+    const previous = SETTABLE_ACCESS_LEVELS[index - 1]
+    if (idsFor(level) !== idsFor(previous))
+      return { level, enabled: true, grants: grantsFor(level) }
+
+    const withheld = candidatesFor(level).filter(isPresetExcluded)
+    if (withheld.length > 0) {
+      const actions = Array.from(new Set(withheld.map((permission) => permission.action)))
+      return {
+        level,
+        enabled: false,
+        reason:
+          `Same as ${ACCESS_LEVEL_LABELS[previous]} here — ` +
+          `${actions.join(', ')} are sensitive and never granted by these buttons. ` +
+          'Use Full Access, or tick them under Advanced permissions.',
+        grants: grantsFor(level),
+      }
+    }
+
+    return {
+      level,
+      enabled: false,
+      reason: `Same as ${ACCESS_LEVEL_LABELS[previous]} — this resource has no further actions.`,
+      grants: grantsFor(level),
+    }
+  })
+}
+
+/**
+ * Label for a module key that may or may not be one of the real, navigable
+ * modules in MODULES. Real modules use their own curated label ('pos' ->
+ * "Point of Sale", not "Pos"); anything else — admin, files, or
+ * whatever the permission catalog grows next — falls back to title-casing
+ * the raw key, same treatment formatResourceLabel gives a resource name.
+ */
+export function formatModuleLabel(moduleKey: string): string {
+  const real = MODULES.find((appModule) => appModule.key === moduleKey)
+  if (real) return real.label
+  return moduleKey
+    .replace(/[-_]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+}
+
+/**
+ * Every permission that exists, grouped by its own module field — not
+ * filtered through ACCESS_MODULES. That list is now the four real, curated
+ * modules only (#171 review), so admin/files permissions have no
+ * quick-preset button — correct, they are not real modules — but they are
+ * still real, grantable permissions. This is what Advanced permissions
+ * renders instead of ACCESS_MODULES, so nothing a role could be granted
+ * before becomes unreachable through the UI. Sourced from the permission
+ * catalog itself, so a module added to the backend later shows up here on
+ * its own — nothing to remember to update in this file either.
+ */
+export function getAllPermissionGroups(permissions: Permission[]): AccessModule[] {
+  const byModule = new Map<string, Permission[]>()
+  for (const permission of permissions) {
+    const group = byModule.get(permission.module) ?? []
+    group.push(permission)
+    byModule.set(permission.module, group)
+  }
+  return Array.from(byModule.keys())
+    .sort((a, b) => formatModuleLabel(a).localeCompare(formatModuleLabel(b)))
+    .map((moduleKey) => ({
+      key: moduleKey,
+      label: formatModuleLabel(moduleKey),
+      permissionModules: [moduleKey],
+    }))
 }

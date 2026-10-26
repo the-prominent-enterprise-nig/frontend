@@ -1283,6 +1283,11 @@ export interface ComputeInstallmentPreviewInput {
    * SKU + term wins over the generic factorRate calculation, if one exists
    * — see FinancingTermsService.preview(). */
   priceListItemId?: string
+  /** A multi-item bundle: every item's price-list row. When all of them have
+   * a rate-card row for the term, the preview is the sum of their monthly
+   * installments and PPD rebates; if any one does not, the whole bundle falls
+   * back to the generic calculation. Ignored when priceListItemId is sent. */
+  priceListItemIds?: string[]
 }
 
 export interface InstallmentScheduleLineWithInvoice {

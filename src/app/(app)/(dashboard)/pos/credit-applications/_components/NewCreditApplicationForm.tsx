@@ -273,6 +273,11 @@ export default function NewCreditApplicationForm({
         // the customer record holds]; only a genuine change is sent, so an
         // application raised without touching the block issues no PATCH at
         // all.
+        //
+        // The ADDRESS is deliberately not in this list (client, 2026-10-15):
+        // an address changed on an application is recorded on the
+        // application alone and never reaches the customer's record. It goes
+        // up with the application itself (create-application.ts).
         const profileDiff: [keyof typeof profilePatch, string, string][] = [
           ['phone', data.applicantPhone || '', applicant.phone ?? ''],
           ['email', data.applicantEmail || '', applicant.email ?? ''],
@@ -290,8 +295,6 @@ export default function NewCreditApplicationForm({
           ['facebookName', data.applicantFacebookName || '', applicant.facebookName ?? ''],
           ['companyName', data.applicantEmployer || '', applicant.companyName ?? ''],
           ['customerType', data.applicantCustomerType || '', applicant.customerType ?? ''],
-          ['address', data.applicantAddress || '', applicant.address ?? ''],
-          ['barangayCode', data.applicantBarangayCode || '', applicant.barangayCode ?? ''],
         ]
         const profilePatch: Record<string, unknown> = {}
         for (const [key, next, current] of profileDiff) {
@@ -474,11 +477,10 @@ export default function NewCreditApplicationForm({
         // '' would otherwise coerce to 0 via the DTO's @Type(() => Number),
         // not "no down payment given".
         downPayment: data.downPayment || undefined,
-        // Form-only: it exists so the schema can check the down-payment
-        // floor against the resolved total. The DTO whitelist would drop it
+        // Form-only: it exists so the schema can check the down payment
+        // against the resolved total. The DTO whitelist would drop it
         // anyway, but sending a field the API never declares is noise.
         resolvedItemTotal: undefined,
-        downPaymentFloor: undefined,
         downPaymentFixed: undefined,
       })
       if (!result.success) {

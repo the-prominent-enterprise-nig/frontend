@@ -75,21 +75,6 @@ function isToday(dateIso: string): boolean {
   return dateIso.slice(0, 10) === todayIso()
 }
 
-// A collection is recognized on the day the cash physically came in, so the
-// recorded Payment date is never allowed past real today — not even when the
-// Scenario 54 date override is simulating a future "today". Which due the
-// money settles is tracked separately (ARPayment.installmentScheduleLineId),
-// so paying dues ahead never needs a future date; and a receipt dated forward
-// would drop straight out of the daily collection report, which windows
-// strictly on CollectionReceipt.paymentDate for one calendar day. Backdating
-// is still allowed (entering a prior day's collection) — only the forward
-// direction is clamped.
-function clampToToday(dateIso: string): string {
-  const today = todayIso()
-  const day = dateIso.slice(0, 10)
-  return day > today ? today : day
-}
-
 // Used to show an informational (non-blocking) note when the chosen payment
 // date already has a payment recorded — the backend only actually rejects
 // this once the due is fully settled (isFullyPaid, handled separately).
@@ -472,11 +457,11 @@ export default function CollectionsScreen() {
   const customers = customersQuery.data?.success ? (customersQuery.data.data ?? []) : []
   const schedules = schedulesQuery.data?.success ? (schedulesQuery.data.data ?? []) : []
   // Scenario 54 — the simulated "now" this screen reads dues against: the
-  // override while one's active, real today otherwise. This dates the due
-  // Status/Rebate PREVIEW only. It does NOT date the collection: PaymentPanel
-  // seeds its Payment date from this clamped to real today and caps the field
-  // there, because cash is recognized when it's received and a forward-dated
-  // receipt is invisible to the daily collection report.
+  // override while one's active, real today otherwise. PaymentPanel seeds its
+  // Payment date from this, so Status/Rebate/Penalty are assessed — and the
+  // collection recorded — as of the simulated date, the only way a late
+  // penalty can really be charged against a due that isn't late yet. With no
+  // override this is real today and the Payment date field is capped there.
   const effectivePaymentDateIso = overrideDateIso ?? todayIso()
   // Only `ppd` is carried here — NOT a precomputed suggestedRebate/
   // penaltyEligible. PaymentPanel's own Payment date field is freely
@@ -873,10 +858,9 @@ function PaymentPanel({
    * had one set — used only until the session's own branch resolves below. */
   defaultBranchId?: string
   /** Scenario 54 — the screen's simulated "now": its active date override, or
-   * real today with none active. Drives the Status/Rebate/Penalty PREVIEW for
-   * the selected dues only. The Payment date field seeds from this clamped to
-   * real today (clampToToday) and is capped there, so an override that
-   * simulates the future can never forward-date the recorded collection. */
+   * real today with none active. Seeds the Payment date, which drives the
+   * Status/Rebate/Penalty figures and the date the collection is recorded on.
+   * Without an override the field is capped at real today. */
   initialPaymentDateIso: string
   onClearSelection: () => void
   /** Async: resolves only once the parent's post-payment refetch has
@@ -892,9 +876,9 @@ function PaymentPanel({
     // checkbox-driven per due.
     amount: '',
     withholdingAmount: '0',
-    // Clamped: a future date override drives the rebate/penalty PREVIEW only,
-    // never the date the money is recorded on (see clampToToday).
-    paymentDate: clampToToday(initialPaymentDateIso),
+    // The date override, when one is active — so the penalty/rebate the
+    // backend assesses for this date are the ones previewed below.
+    paymentDate: initialPaymentDateIso.slice(0, 10),
     paymentMethodConfigId: '',
     paymentTile: '' as DeliveryFeeTender | '',
     paymentMethodOptionId: '',
@@ -1075,13 +1059,20 @@ function PaymentPanel({
   const totalApplied =
     (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0) + rebateTotal
   const wouldOverpay = totalApplied > outstandingTotal + 0.01
-  // Only backdating is reachable now — the field is capped at real today, so
-  // "not today" can only mean a prior day.
-  const isBackdated = !isToday(form.paymentDate)
-  // The override is simulating a future "today": the dues preview is computed
-  // against it, but the collection itself records on real today. Say so,
-  // rather than letting the two quietly disagree.
-  const previewDateIsFuture = initialPaymentDateIso.slice(0, 10) > todayIso()
+  // Without an override the field is capped at real today, so "not today"
+  // there can only mean a prior day; an override can also push it forward.
+  const isBackdated = form.paymentDate.slice(0, 10) < todayIso()
+  // The override is simulating a future "today", so this collection would be
+  // recorded for a date that hasn't happened. A receipt dated forward is
+  // invisible to the daily collection report (it windows on
+  // CollectionReceipt.paymentDate) — say so, rather than letting it surprise.
+  const isForwardDated = form.paymentDate.slice(0, 10) > todayIso()
+  // The Payment date field's ceiling: real today, unless an override is
+  // simulating a later day.
+  const maxPaymentDate =
+    initialPaymentDateIso.slice(0, 10) > todayIso()
+      ? initialPaymentDateIso.slice(0, 10)
+      : todayIso()
   // Informational only, not blocking — the backend only rejects a repeat
   // same-date payment once the invoice is already fully paid (isFullyPaid,
   // handled separately above). A due that's still open can be topped up
@@ -1324,13 +1315,12 @@ function PaymentPanel({
               that&apos;s intentional (e.g. entering a collection from a prior day).
             </div>
           )}
-          {previewDateIsFuture && (
+          {isForwardDated && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              The date override is simulating {fmtDate(initialPaymentDateIso)}, so the Status and
-              Rebate figures above are previewed as of that date. The collection itself records on{' '}
-              {fmtDate(todayIso())} — rebate and penalty are recalculated against that date on
-              submit.
+              The date override is simulating {fmtDate(form.paymentDate)}, so this payment will be
+              recorded for that date, not today, and its Status, Rebate and Penalty are assessed as
+              of it. It will not appear on today&apos;s daily collection report.
             </div>
           )}
 
@@ -1491,12 +1481,13 @@ function PaymentPanel({
               <input
                 required
                 type="date"
-                // Hard-capped at real today, override or not. Cash is
-                // recognized on the day it was received; a forward-dated
-                // receipt would be invisible to the daily collection report
-                // (it windows on CollectionReceipt.paymentDate), which is
-                // exactly how advance payments went missing from it.
-                max={todayIso()}
+                // Capped at real today — cash is recognized on the day it
+                // was received, and a forward-dated receipt would be
+                // invisible to the daily collection report (it windows on
+                // CollectionReceipt.paymentDate). The one exception is an
+                // active date override, which lifts the cap to the date it
+                // is simulating so a late penalty can be exercised.
+                max={maxPaymentDate}
                 value={form.paymentDate}
                 onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
                 className={fieldClass}
