@@ -259,6 +259,10 @@ export interface AgentInvoice {
   date: string
   salesInvoiceNumber: string | null
   transactionNumber: string
+  /** Who the sale is credited to — what the customer ledger's commissions
+   * history shows (Scenario 78 Part 3). */
+  agentId: string | null
+  agentName: string | null
   customerName: string | null
   type: AgentSaleType
   /** Pre-VAT, pre-discount — what the commission is computed on. */

@@ -182,6 +182,9 @@ export const customersApi = {
       ...(scope === 'all' ? {} : { scope }),
       ...(transactionId ? { transactionId } : {}),
     }),
+  /** Scenario 78 Part 3 — the customer's agent-credited sales with their
+   * commission and the vouchers that released it (Commissions - Sales / SMI). */
+  commissions: (id: string) => api.get<AgentInvoice[]>(`/crm/customers/${id}/commissions`),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),

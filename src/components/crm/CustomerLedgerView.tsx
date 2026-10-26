@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { InstallmentLedgerBody } from '@/src/components/crm/InstallmentLedgerView'
+import CustomerCommissionHistory from '@/src/components/crm/CustomerCommissionHistory'
 import {
   buildCustomerLedgerHtml,
   buildUnifiedCustomerLedgerHtml,
@@ -514,6 +515,10 @@ export default function CustomerLedgerView({
             </section>
           </>
         )}
+
+        {/* Scenario 78 Part 3 — the customer's commissions history. Renders
+            nothing when there is none. */}
+        <CustomerCommissionHistory customerId={customerId} linkAgents={showAccountLink} />
       </div>
     </div>
   )
