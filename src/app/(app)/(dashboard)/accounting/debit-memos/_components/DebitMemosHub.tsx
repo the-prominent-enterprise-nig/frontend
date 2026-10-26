@@ -70,12 +70,8 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
   // is raised in Inventory and only ever read here.
   const canCreateCustomer = hasPermission(session, ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_CREATE)
   // Scenario 72 — the internal DMINV memos a Delivery Receipt drafts, which
-  // accounting edits and posts from here.
+  // accounting edits and posts from here. None is raised here (client).
   const canReadInventory = hasPermission(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
-  const canCreateInventory = hasPermission(
-    session,
-    ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_CREATE
-  )
 
   const [search, setSearch] = useState('')
   const [voiding, setVoiding] = useState<string | null>(null)
@@ -246,16 +242,6 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
         inventoryQuery.refetch()
       }}
       isFetching={customerQuery.isFetching || supplierQuery.isFetching || inventoryQuery.isFetching}
-      actions={
-        canCreateInventory ? (
-          <Link
-            href="/accounting/debit-memos/inventory/new"
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            New inventory memo
-          </Link>
-        ) : null
-      }
       onAdd={() => setRaising(true)}
       addLabel="New Debit Memo"
       canAdd={canCreateCustomer}

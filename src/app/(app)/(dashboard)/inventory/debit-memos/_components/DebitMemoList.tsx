@@ -1,7 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import Link from 'next/link'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import {
   Ban,
   Check,
@@ -9,7 +8,6 @@ import {
   ChevronRight,
   PackageX,
   Pencil,
-  Plus,
   Printer,
   Search,
 } from 'lucide-react'
@@ -217,7 +215,8 @@ function MemoRowActions({
  * Every debit memo in one list (Scenario 72): supplier returns, raised and
  * approved here, and the internal DMINV memos delivery receipts draft, read
  * here and posted by accounting. Two documents underneath, told apart by a
- * Type filter and chip, behind one "New debit memo" button.
+ * Type filter and chip. Nothing is raised here (client): every memo comes
+ * from its delivery receipt — a return to supplier, or an approved DR.
  */
 export default function DebitMemoList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_CREATE)
@@ -242,10 +241,6 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
   const [type, setType] = useState<MemoTypeFilter>('all')
   const [requestedPage, setRequestedPage] = useState(1)
   const canOpenMemo = hasPermission(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
-  const canCreateInternal = hasPermission(
-    session,
-    ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_CREATE
-  )
   const internal = useInternalMemos(filters, type)
 
   const rows: MemoRow[] = useMemo(() => {
@@ -285,11 +280,6 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
   // than two: what is being confirmed is entirely a function of the memo and
   // the verb, so a single <ConfirmDialog/> reads them off `pending`.
   const [pending, setPending] = useState<PendingAction | null>(null)
-
-  function openNew() {
-    setEditing(null)
-    setFormOpen(true)
-  }
 
   function openEdit(memo: SupplierDebitMemo) {
     setEditing(memo)
@@ -348,15 +338,8 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                 opposite way and the two names can't tell them apart. */}
             <p className="mt-1 text-sm text-[#5b5b6b]">
               Supplier returns going <strong>back out</strong> to a supplier, and the internal memos
-              approved delivery receipts draft for accounting.
+              approved delivery receipts post.
             </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <NewMemoMenu
-              canSupplier={canCreate}
-              canInternal={canCreateInternal}
-              onSupplier={openNew}
-            />
           </div>
         </div>
 
@@ -449,21 +432,10 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
               <PackageX className="mb-3 h-10 w-10 text-[#c9c9d3]" />
               <p className="text-sm font-medium text-[#3d3d4a]">No debit memos yet</p>
               <p className="mt-1 max-w-lg text-xs leading-relaxed text-[#5b5b6b]">
-                Raise one when defective or wrongly shipped stock goes back to a supplier, or
-                approve a &quot;Return units to supplier&quot; delivery receipt. The memo takes the
-                units out of your branch; accounting then applies it to one of that supplier&apos;s
-                invoices.
+                Memos come from delivery receipts: a &quot;Return units to supplier&quot; DR drafts
+                a supplier memo, and an approved DR with a debit memo drafts an internal one for
+                accounting.
               </p>
-              {canCreate && (
-                <button
-                  type="button"
-                  onClick={openNew}
-                  className="mt-4 flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-sm font-medium text-white hover:bg-[#4a189b]"
-                >
-                  <Plus className="h-4 w-4" />
-                  New debit memo
-                </button>
-              )}
             </div>
           ) : isFilteredEmpty ? (
             <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
@@ -731,88 +703,6 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
           refetch()
         }}
       />
-    </div>
-  )
-}
-
-/**
- * One "New debit memo" for both kinds. With only one kind allowed it is a
- * plain button; with both it asks which. An internal memo is raised on its
- * own page in Accounting (journal entry only — a DR's memo comes from the DR).
- */
-function NewMemoMenu({
-  canSupplier,
-  canInternal,
-  onSupplier,
-}: {
-  canSupplier: boolean
-  canInternal: boolean
-  onSupplier: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [open])
-  if (!canSupplier && !canInternal) return null
-  const buttonClass =
-    'flex items-center gap-2 rounded-lg bg-[#5b21b6] px-3 py-2 text-sm font-medium text-white hover:bg-[#4a189b] sm:px-4'
-  const label = (
-    <>
-      <Plus className="h-4 w-4" />
-      <span className="hidden sm:inline">New debit memo</span>
-      <span className="sm:hidden">New</span>
-    </>
-  )
-  if (!canInternal) {
-    return (
-      <button type="button" onClick={onSupplier} className={buttonClass}>
-        {label}
-      </button>
-    )
-  }
-  const item = 'block w-full px-3 py-2 text-left text-sm hover:bg-[#f6f6f8]'
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className={buttonClass}
-      >
-        {label}
-        <ChevronDown className="h-4 w-4" />
-      </button>
-      {open && (
-        <div className="absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-lg border border-[#e4e4e9] bg-white py-1 shadow-lg">
-          {canSupplier && (
-            <button
-              type="button"
-              className={item}
-              onClick={() => {
-                setOpen(false)
-                onSupplier()
-              }}
-            >
-              <span className="font-medium text-[#17171c]">Supplier return</span>
-              <span className="block text-[11.5px] text-[#8b8b9b]">
-                Stock going back to a supplier
-              </span>
-            </button>
-          )}
-          <Link href="/accounting/debit-memos/inventory/new" className={item}>
-            <span className="font-medium text-[#17171c]">Internal (DMINV)</span>
-            <span className="block text-[11.5px] text-[#8b8b9b]">
-              A journal entry only — no stock moves
-            </span>
-          </Link>
-        </div>
-      )}
     </div>
   )
 }

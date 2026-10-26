@@ -13,6 +13,7 @@ import {
 import {
   RAFFLE_OCCASIONS,
   isRepairPurpose,
+  isTicketedRepair,
   type DrCustomerLookup,
   type DrFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
@@ -42,19 +43,20 @@ const OCCASION_OPTIONS = [
   { value: 'Other', label: 'Other (specify)' },
 ]
 
-/** A repair ticket belongs to one leg, so changing purpose drops it — and,
- * when the old purpose was a repair one, the lines it brought. */
+/** A repair ticket belongs to one leg, so changing purpose drops it — and
+ * the lines it brought. */
 function clearUdsOnPurposeChange(
   setValue: UseFormSetValue<DrFormValues>,
-  from: DrFormValues['purpose']
+  hadTicket: boolean
 ): void {
   setValue('udsId', '', { shouldDirty: true })
   setValue('udsLabel', '')
-  if (isRepairPurpose(from)) setValue('lines', [], { shouldDirty: true })
+  setValue('udsFixesParty', false)
+  if (hadTicket) setValue('lines', [], { shouldDirty: true })
 }
 
 export function DrPurposeSection(): React.JSX.Element {
-  const { control, formState, setValue } = useFormContext<DrFormValues>()
+  const { control, formState, setValue, getValues } = useFormContext<DrFormValues>()
   const purpose = useWatch({ control, name: 'purpose' })
   const config = DR_PURPOSE_CONFIG[purpose]
   return (
@@ -71,7 +73,7 @@ export function DrPurposeSection(): React.JSX.Element {
               value={field.value}
               onChange={(value) => {
                 if (!value || value === field.value) return
-                clearUdsOnPurposeChange(setValue, field.value)
+                clearUdsOnPurposeChange(setValue, !!getValues('udsId'))
                 field.onChange(value)
               }}
               options={PURPOSE_OPTIONS}
@@ -192,9 +194,9 @@ function WarehouseField({
   onChange: (warehouseId: string) => void
 }): React.JSX.Element {
   const { control } = useFormContext<DrFormValues>()
-  // A repair DR leaves from wherever its ticket's unit is.
-  const purpose = useWatch({ control, name: 'purpose' })
-  const locked = isRepairPurpose(purpose)
+  // A ticketed repair DR leaves from wherever its ticket's unit is.
+  const [purpose, udsId] = useWatch({ control, name: ['purpose', 'udsId'] })
+  const locked = isTicketedRepair({ purpose, udsId })
   // Branch-scoped server-side: a branch user only gets their own branch.
   const warehouses = useQuery({
     queryKey: ['dr-issuing-warehouses'],
@@ -267,14 +269,17 @@ function DepartmentField({
  * fills the recipient fields below; they stay editable. */
 function CounterpartyField(): React.JSX.Element | null {
   const { control, setValue, formState } = useFormContext<DrFormValues>()
-  const [purpose, customerLabel, supplierLabel] = useWatch({
+  const [purpose, customerLabel, supplierLabel, udsId, udsFixesParty] = useWatch({
     control,
-    name: ['purpose', 'customerLabel', 'supplierLabel'],
+    name: ['purpose', 'customerLabel', 'supplierLabel', 'udsId', 'udsFixesParty'],
   })
   const kind = DR_PURPOSE_CONFIG[purpose].counterparty
-  const required = purpose === 'sales_invoice_to_follow' || purpose === 'return_to_supplier'
+  const required =
+    purpose === 'sales_invoice_to_follow' ||
+    purpose === 'return_to_supplier' ||
+    (isRepairPurpose(purpose) && !udsFixesParty)
   if (kind === 'none') return null
-  if (isRepairPurpose(purpose)) {
+  if (isRepairPurpose(purpose) && udsId && udsFixesParty) {
     // Whoever the ticket names — the provider it goes to, or its customer.
     return (
       <Field className={WIDE} label={kind === 'supplier' ? 'Repair provider' : 'Customer'}>
@@ -321,7 +326,7 @@ function CounterpartyField(): React.JSX.Element | null {
   return (
     <Field
       className={WIDE}
-      label="Supplier"
+      label={purpose === 'to_service_center' ? 'Repair provider' : 'Supplier'}
       required={required}
       error={formState.errors.supplierId?.message}
     >

@@ -11,7 +11,8 @@ import {
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import {
-  isRepairPurpose,
+  isCustomerUnitPurpose,
+  isTicketedRepair,
   type DrFormValues,
   type DrLineFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
@@ -29,16 +30,21 @@ export const EMPTY_LINE: DrLineFormValues = {
   costTyped: false,
 }
 
+/** Mirrors the backend's rule for a ticketless hand-back's units. */
+const CUSTOMER_UNIT_STATUSES = ['sold', 'in_repair', 'defective', 'returned', 'in_stock']
+
 const GRID =
   'grid grid-cols-1 gap-2 md:grid-cols-[minmax(180px,1.4fr)_minmax(90px,.8fr)_minmax(150px,1fr)_88px_110px_32px] md:items-start'
 
 export function DrItemsSection(): React.JSX.Element {
   const { control, formState } = useFormContext<DrFormValues>()
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
-  const warehouseId = useWatch({ control, name: 'warehouseId' })
-  const purpose = useWatch({ control, name: 'purpose' })
+  const [warehouseId, purpose, udsId] = useWatch({
+    control,
+    name: ['warehouseId', 'purpose', 'udsId'],
+  })
   const linesError = formState.errors.lines?.root?.message ?? formState.errors.lines?.message
-  if (isRepairPurpose(purpose)) return <DrRepairItems />
+  if (isTicketedRepair({ purpose, udsId })) return <DrRepairItems />
   return (
     <Section
       title="Items"
@@ -95,7 +101,8 @@ export function DrItemsSection(): React.JSX.Element {
   )
 }
 
-/** A repair DR moves the ticket's units, as they are — nothing to pick. */
+/** A ticketed repair DR moves the ticket's units, as they are — nothing to
+ * pick. */
 function DrRepairItems(): React.JSX.Element {
   const { control } = useFormContext<DrFormValues>()
   const lines = useWatch({ control, name: 'lines' })
@@ -105,7 +112,7 @@ function DrRepairItems(): React.JSX.Element {
       description="The units on the repair ticket. They cannot be changed here."
     >
       {lines.length === 0 ? (
-        <p className="text-[12.5px] text-[#8b8b9b]">Pick the repair ticket to see its units.</p>
+        <p className="text-[12.5px] text-[#8b8b9b]">Loading the ticket&apos;s units…</p>
       ) : (
         <div className="divide-y divide-[#eeeef1] rounded-lg border border-[#eeeef1]">
           {lines.map((l) => (
@@ -268,7 +275,8 @@ function UnitCostCell({ index }: { index: number }): React.JSX.Element {
 
 /** The units themselves, from what is on the issuing warehouse's shelf,
  * minus the units already picked on this DR's other lines. Several at once,
- * as many as the line's quantity. */
+ * as many as the line's quantity. A ticketless hand-back to a customer picks
+ * the customer's own unit instead — sold to them, or in for repair. */
 function SerialCell({
   index,
   warehouseId,
@@ -277,12 +285,15 @@ function SerialCell({
   warehouseId: string
 }): React.JSX.Element {
   const { control, setValue, formState } = useFormContext<DrFormValues>()
-  const lines = useWatch({ control, name: 'lines' })
+  const [lines, purpose] = useWatch({ control, name: ['lines', 'purpose'] })
   const line = lines[index]
+  const customerUnit = isCustomerUnitPurpose(purpose)
   const serials = useQuery({
-    queryKey: ['dr-serials-in-stock', warehouseId, line.itemId],
+    queryKey: ['dr-serials', customerUnit ? 'customer' : warehouseId, line.itemId],
     queryFn: () =>
-      getSerialNumbers({ warehouseId, itemId: line.itemId, status: 'in_stock', limit: 500 }),
+      customerUnit
+        ? getSerialNumbers({ itemId: line.itemId, limit: 500 })
+        : getSerialNumbers({ warehouseId, itemId: line.itemId, status: 'in_stock', limit: 500 }),
     enabled: line.isSerialTracked && !!warehouseId && !!line.itemId,
     staleTime: 30_000,
   })
@@ -294,6 +305,7 @@ function SerialCell({
   )
   const onShelf = (serials.data?.data?.data ?? [])
     .filter((s) => !pickedElsewhere.has(s.id))
+    .filter((s) => !customerUnit || CUSTOMER_UNIT_STATUSES.includes(s.status))
     .map((s) => ({ value: s.id, label: s.serialNumber }))
   // A picked unit stays listed even if the shelf query no longer returns it.
   const shelfIds = new Set(onShelf.map((o) => o.value))

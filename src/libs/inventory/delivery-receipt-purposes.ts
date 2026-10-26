@@ -28,61 +28,61 @@ export const DR_PURPOSE_CONFIG: Record<DrPurpose, DrPurposeConfig> = {
   office_use: {
     label: 'Office use',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Office equipment, furniture and fixtures. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Office equipment, furniture and fixtures. ${MEMO_TAIL}`,
     counterparty: 'none',
     requiresDepartment: true,
   },
   raffle_prize: {
     label: 'Raffle prize',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Employee benefits and wellness. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Employee benefits and wellness. ${MEMO_TAIL}`,
     counterparty: 'none',
     requiresOccasion: true,
   },
   giveaway: {
     label: 'Giveaways',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Advertising and promotion. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Advertising and promotion. ${MEMO_TAIL}`,
     counterparty: 'none',
   },
   donation: {
     label: 'Donation',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Donations and charitable contributions. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Donations and charitable contributions. ${MEMO_TAIL}`,
     counterparty: 'none',
   },
   redeemed_unit: {
     label: 'Redeemed unit',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Marketing and sales support. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Marketing and sales support. ${MEMO_TAIL}`,
     counterparty: 'customer',
   },
   return_to_supplier: {
     label: 'Return units to supplier',
     withDebitMemo: true,
     effect:
-      'A supplier debit memo is drafted with this DR and follows it while it is a draft. Once the Branch Manager approves, accounting posts the memo — the stock moves out and what the supplier owes back is recorded — and applies it to an invoice later.',
+      'A supplier debit memo is drafted with this DR and follows it while it is a draft. When the Branch Manager approves, the memo posts automatically — the stock moves out and what the supplier owes back is recorded. Accounting applies it to an invoice later.',
     counterparty: 'supplier',
   },
   to_service_center: {
     label: 'For repair to service center',
     withDebitMemo: false,
     effect:
-      'Pick the repair ticket (UDS) — its unit and repair provider fill in. When approved, the unit goes to the provider on this DR and stays on the books. No debit memo and no journal entry.',
+      'Pick a repair ticket (UDS), or leave it blank and pick the unit and provider — approval opens the ticket for you. The unit goes to the provider and stays on the books.',
     counterparty: 'supplier',
   },
   repaired_to_customer: {
     label: 'Repaired unit to customer',
     withDebitMemo: false,
     effect:
-      'Pick the repair ticket (UDS) — its unit and customer fill in. When approved, the repaired unit is released back to its customer on this DR, which closes the ticket. No debit memo.',
+      'Pick the repair ticket (UDS) if there is one — its unit and customer fill in, and approval releases the repaired unit back to its customer and closes the ticket. Without a ticket, pick the customer and their unit; the DR records the hand-over and moves no stock. No debit memo.',
     counterparty: 'customer',
   },
   unrepaired_to_customer: {
     label: 'Unrepaired unit to customer',
     withDebitMemo: false,
     effect:
-      'Pick the repair ticket (UDS) — its unit and customer fill in. When approved, the unrepaired unit is returned to its customer on this DR, which closes the ticket. No debit memo.',
+      'Pick the repair ticket (UDS) if there is one — its unit and customer fill in, and approval returns the unrepaired unit to its customer and closes the ticket. Without a ticket, pick the customer and their unit; the DR records the hand-over and moves no stock. No debit memo.',
     counterparty: 'customer',
   },
   sales_invoice_to_follow: {

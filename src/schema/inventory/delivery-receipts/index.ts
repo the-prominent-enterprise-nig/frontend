@@ -27,7 +27,8 @@ export const DR_STATUSES = [
 ] as const
 
 /** Scenario 72 Part 7 — purposes that move a repair ticket (UDS), not shelf
- * stock: the lines, warehouse and recipient come from the sheet. */
+ * stock: with a ticket, the lines, warehouse and recipient come from the
+ * sheet. The ticket is optional — without one the DR names its own. */
 export const DR_REPAIR_PURPOSES = [
   'to_service_center',
   'repaired_to_customer',
@@ -41,6 +42,16 @@ export type DrStatus = z.infer<typeof DrStatusSchema>
 
 export function isRepairPurpose(purpose: DrPurpose): boolean {
   return (DR_REPAIR_PURPOSES as readonly DrPurpose[]).includes(purpose)
+}
+
+/** A repair DR whose lines, warehouse and recipient come from its ticket. */
+export function isTicketedRepair(v: Pick<DrFormValues, 'purpose' | 'udsId'>): boolean {
+  return isRepairPurpose(v.purpose) && !!v.udsId
+}
+
+/** A ticketless hand-back names the customer's own unit, not shelf stock. */
+export function isCustomerUnitPurpose(purpose: DrPurpose): boolean {
+  return purpose === 'repaired_to_customer' || purpose === 'unrepaired_to_customer'
 }
 
 /** The raffle occasions the client named, plus a free-text escape. */
@@ -91,9 +102,12 @@ export const DrFormSchema = z.object({
   issueDate: z.string().min(1, 'Issue date is required'),
   warehouseId: z.string().min(1, 'Pick the issuing branch / warehouse'),
   departmentId: z.string(),
-  /** Repair purposes only — the UDS whose units this DR moves. */
+  /** Repair purposes only, optional — the UDS whose units this DR moves. */
   udsId: z.string(),
   udsLabel: z.string(),
+  /** The picked ticket names the recipient (its customer, or its provider
+   * once it has one), so the picker is read-only. */
+  udsFixesParty: z.boolean(),
   customerId: z.string(),
   customerLabel: z.string(),
   supplierId: z.string(),
@@ -116,9 +130,7 @@ export const DrSubmitSchema = DrFormSchema.superRefine((v, ctx) => {
   const issue = (path: string, message: string): void =>
     ctx.addIssue({ code: 'custom', path: [path], message })
   if (!v.reason.trim()) issue('reason', 'Say why this stock is leaving')
-  if (isRepairPurpose(v.purpose)) {
-    if (!v.udsId) issue('udsId', 'Pick the repair ticket (UDS)')
-  } else if (v.lines.length === 0) issue('lines', 'Add at least one item')
+  if (!isTicketedRepair(v) && v.lines.length === 0) issue('lines', 'Add at least one item')
   v.lines.forEach((line, i) => {
     if (line.isSerialTracked && line.serials.length === 0) {
       ctx.addIssue({
@@ -136,6 +148,12 @@ export const DrSubmitSchema = DrFormSchema.superRefine((v, ctx) => {
     issue('customerId', 'Pick the customer from CRM')
   }
   if (v.purpose === 'return_to_supplier' && !v.supplierId) issue('supplierId', 'Pick the supplier')
+  if (v.purpose === 'to_service_center' && !v.supplierId) {
+    issue('supplierId', 'Pick the repair provider')
+  }
+  if (isCustomerUnitPurpose(v.purpose) && !v.udsId && !v.customerId) {
+    issue('customerId', 'Pick the customer from CRM')
+  }
 })
 
 /** The raffle occasion as stored: a named one, or the typed "Other". */
@@ -215,7 +233,15 @@ export const DrDetailSchema = z.object({
   posTransaction: z.object({ id: z.string(), transactionNumber: z.string() }).nullable().optional(),
   /** Scenario 72 Part 7 — the repair ticket a repair-purpose DR moved. */
   udsId: z.string().nullable().optional(),
-  uds: z.object({ id: z.string(), code: z.string(), status: z.string() }).nullable().optional(),
+  uds: z
+    .object({
+      id: z.string(),
+      code: z.string(),
+      status: z.string(),
+      repairProviderId: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   lines: z.array(DrLineSchema),
 })
 export type DrDetail = z.infer<typeof DrDetailSchema>
