@@ -1355,12 +1355,12 @@ export default function TransferDetailModal({
         className={`${PLEX} flex h-full w-full max-w-[min(1200px,96vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
       >
         {/* Header — the transfer's own reference is the title, the way the
-            design has it; "Transfer Details" stays as the dialog's accessible
+            design has it; "Request Details" stays as the dialog's accessible
             name (and the anchor e2e opens the drawer on). */}
         <div className="border-b border-[#e4e4e9] px-6 pb-3 pt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="sr-only">Transfer Details</h2>
+              <h2 className="sr-only">Request Details</h2>
               <div className="flex items-center gap-2.5">
                 <p className={`${MONO} truncate text-[19px] font-semibold tracking-[-0.02em]`}>
                   {transfer?.transferNumber ??

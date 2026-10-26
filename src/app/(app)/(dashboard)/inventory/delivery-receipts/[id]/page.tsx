@@ -40,8 +40,9 @@ export default async function Page({
     can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE)
   const canVoid =
     (dr.status === 'approved' || dr.status === 'posted') &&
-    // A repair DR has already moved its ticket; there is no undoing that.
-    !isRepairPurpose(dr.purpose) &&
+    // A repair DR has already moved its ticket; there is no undoing that. A
+    // ticketless hand-back to a customer moved nothing, so it can go.
+    !(isRepairPurpose(dr.purpose) && dr.udsId) &&
     can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_VOID)
   // A return to supplier's memo is a supplier debit memo, which lives on the
   // Inventory → Debit Memos list rather than a page of its own.

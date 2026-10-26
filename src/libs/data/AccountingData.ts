@@ -136,6 +136,8 @@ export interface JournalEntry {
   /** Scenario 71 — for a POS sale's entry, the sale's price override / typed terms /
    * waiver with its reason and note (only on the single-entry GET). */
   posException?: PosExceptionSummary | null
+  /** The POS deposit a bank entry was posted for (only on the single-entry GET). */
+  posDepositId?: string | null
   createdBy?: string | null
   transactions: Transaction[]
   totalDebit?: number

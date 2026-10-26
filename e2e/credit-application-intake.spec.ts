@@ -26,7 +26,7 @@ import { gotoReady, loginAs, clickStable, fillPhoneStable, openCustomSelect } fr
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
 const CASHIER_EMAIL = 'technova.b1.cashier@test.com'
 // On the WIP price list with no down payment of its own, so the form's
-// 10% minimum applies and is pre-filled.
+// down payment starts at 10%, pre-filled.
 const ITEM_QUERY = 'STF3238'
 
 const fieldBox = (scope: Page | Locator, label: RegExp) =>

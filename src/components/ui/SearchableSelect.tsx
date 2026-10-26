@@ -24,6 +24,9 @@ export type SearchableSelectOption = {
   /** Options sharing a group sit under one small heading. Pass them already
    * ordered by group — a heading is drawn wherever the group changes. */
   group?: string
+  /** Listed one step in, under the option above it — a sub-account under
+   * its parent. */
+  indent?: boolean
   /** Secondary text beside the label. Display only — never type-filtered,
    * so adding it can't change what any picker matches. */
   description?: React.ReactNode
@@ -496,7 +499,7 @@ export default function SearchableSelect(props: Props) {
                 aria-checked={multiple ? isSelected(opt.value) : undefined}
                 onMouseDown={(e) => multiple && e.preventDefault()}
                 onClick={() => toggle(opt.value)}
-                className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
+                className={`flex w-full items-center justify-between gap-2 ${opt.indent ? 'pl-7 pr-3' : 'px-3'} py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
                   isSelected(opt.value)
                     ? 'bg-prominent-purple-50 text-prominent-purple-700'
                     : 'text-gray-800'

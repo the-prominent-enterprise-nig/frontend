@@ -20,10 +20,15 @@ export interface Slip {
    * start blank so accounting itemises the banks rather than accepting a
    * figure the system worked out (Scenario 70 G12). */
   amount: string
-  /** A processor's clearing account; empty means the branch's own cash. */
+  /** A processor's clearing account (1-01-041 to 1-01-048). Empty when the
+   * slip names a 1-01-010 fund instead. */
   clearsAccountId: string
+  /** A 1-01-010 sub-ledger fund the slip empties instead — Cash on Hand, a
+   * petty cash or special fund, another bank. Empty when it empties an account. */
+  clearsBankAccountId: string
   note: string
-  /** This bank's own deposit slip number — each bank issues its own. */
+  /** This bank's own deposit slip number — each bank issues its own, and a
+   * deposit cannot be recorded without it. */
   reference: string
   /** The day this slip was banked, `YYYY-MM-DD`. Slips on different days post
    * separate journal entries. */
@@ -37,7 +42,7 @@ export function joinReferences(refs: (string | undefined)[]): string | undefined
   return unique.length ? unique.join(', ').slice(0, 100) : undefined
 }
 
-type Option = { value: string; label: string }
+type Option = { value: string; label: string; group?: string; indent?: boolean }
 
 /** One slip: the bank it went to, the amount on it, the account it empties,
  * that bank's own slip number and the day it was banked. A cheque from a New Receipt is entered the
@@ -46,7 +51,7 @@ function SlipRow({
   slip,
   label,
   bankOptions,
-  clearingOptions,
+  clearsOptions,
   onChange,
   onRemove,
   removeDisabled = false,
@@ -55,7 +60,8 @@ function SlipRow({
   /** Names the row for screen readers and the remove tooltip. */
   label: string
   bankOptions: Option[]
-  clearingOptions: Option[]
+  /** Everything a slip can empty, grouped by its GL account. */
+  clearsOptions: Option[]
   onChange: (patch: Partial<Slip>) => void
   onRemove: () => void
   removeDisabled?: boolean
@@ -79,18 +85,19 @@ function SlipRow({
         className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right font-mono text-sm tabular-nums"
       />
       <SearchableSelect
-        value={slip.clearsAccountId}
-        // Cleared back to the branch's cash rather than to nothing.
-        onChange={(value) => onChange({ clearsAccountId: value || BRANCH_CASH })}
-        options={[{ value: BRANCH_CASH, label: BRANCH_CASH_LABEL }, ...clearingOptions]}
-        placeholder={BRANCH_CASH_LABEL}
+        value={clearsValue(slip)}
+        onChange={(value) => onChange(clearsPatch(value))}
+        options={clearsOptions}
+        placeholder="Deposit from…"
+        ariaLabel={`${label} deposit from`}
         portal
       />
       <input
         value={slip.reference}
         onChange={(e) => onChange({ reference: e.target.value })}
-        placeholder="Reference number"
+        placeholder="Reference number *"
         aria-label={`${label} reference`}
+        required
         maxLength={100}
         className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
       />
@@ -117,20 +124,47 @@ function SlipRow({
   )
 }
 
-/** The branch's own cash — 1-01-010, what POS_CASH maps to. A value of its
- * own so the dropdown shows it as chosen (an empty value reads as nothing
- * picked); sent as no clearsAccountId, which is what the deposit's cash
- * figure counts. */
-const BRANCH_CASH = 'branch-cash'
-const BRANCH_CASH_LABEL = '1-01-010 — Cash and Cash Equivalents'
+/** The two headers a slip's Deposit from is picked under. Headers only —
+ * a slip names one of their sub-ledger funds or accounts, never the header. */
+const CASH_GROUP_LABEL = '1-01-010 Cash and Cash Equivalents'
+const CLEARING_GROUP_LABEL = '1-01-040 Payment Gateway and Collection Clearing Funds'
 
-/** The processor's clearing account a slip empties, or undefined for the
- * branch's own cash. */
-export function clearsAccountOf(slip: Slip): string | undefined {
-  return slip.clearsAccountId && slip.clearsAccountId !== BRANCH_CASH
-    ? slip.clearsAccountId
-    : undefined
+/** A sub-ledger fund's dropdown value, kept apart from GL account ids. */
+const FUND_PREFIX = 'fund:'
+
+/** The slip's pick in the Deposit from dropdown. */
+function clearsValue(slip: Slip): string {
+  return slip.clearsBankAccountId ? FUND_PREFIX + slip.clearsBankAccountId : slip.clearsAccountId
 }
+
+/** A Deposit from pick, back in the slip's fields. */
+function clearsPatch(value: string): Pick<Slip, 'clearsAccountId' | 'clearsBankAccountId'> {
+  return value.startsWith(FUND_PREFIX)
+    ? { clearsAccountId: '', clearsBankAccountId: value.slice(FUND_PREFIX.length) }
+    : { clearsAccountId: value, clearsBankAccountId: '' }
+}
+
+/** The funds kept in 1-01-010's sub-ledger — every bank and cash fund posts
+ * to 1-01-010, told apart by a tag — under its header. */
+function fundOptions(accounts: BankAccount[], excludeId: string): Option[] {
+  return accounts
+    .filter((a) => a.isActive && a.id !== excludeId)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((a) => ({
+      value: FUND_PREFIX + a.id,
+      label: a.name,
+      group: CASH_GROUP_LABEL,
+      indent: true,
+    }))
+}
+
+/** The processor's clearing account a slip empties, if it names one. */
+export function clearsAccountOf(slip: Slip): string | undefined {
+  return slip.clearsAccountId || undefined
+}
+
+/** True when the slip banks the branch's own cash, from a 1-01-010 fund. */
+export const isBranchCashSlip = (slip: Slip): boolean => !!slip.clearsBankAccountId
 
 /** The client's chart groups every processor's holding account under one
  * header (prisma/data/chart-of-accounts.csv): GCash, Maya, Card/POS, ECPay,
@@ -139,8 +173,9 @@ const CLEARING_GROUP = '1-01-040'
 /** Narrows the account search to the group's own number range. */
 const CLEARING_GROUP_PREFIX = '1-01-04'
 
-/** CLEARING_GROUP and the accounts filed under it (the client's chart, rows
- * 5–13), as dropdown options — nothing another chart left behind. */
+/** The accounts filed under CLEARING_GROUP (the client's chart, rows 6–13),
+ * as dropdown options — nothing another chart left behind, and not the
+ * non-postable header itself. */
 function clearingAccountOptions(data: unknown): Option[] {
   // `/accounts` answers with a bare array, not the paginated shape its type
   // claims, and includes each account's parent.
@@ -148,9 +183,14 @@ function clearingAccountOptions(data: unknown): Option[] {
     Array.isArray(data) ? data : ((data as { items?: unknown[] } | undefined)?.items ?? [])
   ) as (Account & { parentAccount?: { number?: string } | null })[]
   return accounts
-    .filter((a) => a.number === CLEARING_GROUP || a.parentAccount?.number === CLEARING_GROUP)
+    .filter((a) => a.parentAccount?.number === CLEARING_GROUP)
     .sort((a, b) => (a.number ?? '').localeCompare(b.number ?? ''))
-    .map((a) => ({ value: a.id, label: a.number ? `${a.number} — ${a.name}` : a.name }))
+    .map((a) => ({
+      value: a.id,
+      label: a.number ? `${a.number} — ${a.name}` : a.name,
+      group: CLEARING_GROUP_LABEL,
+      indent: true,
+    }))
 }
 
 /** Centavos, so a tally of typed amounts cannot drift into 0.004 differences. */
@@ -163,7 +203,8 @@ export function emptySlip(): Slip {
   return {
     bankAccountId: '',
     amount: '',
-    clearsAccountId: BRANCH_CASH,
+    clearsAccountId: '',
+    clearsBankAccountId: '',
     note: '',
     reference: '',
     depositDate: new Date().toLocaleDateString('en-CA'),
@@ -179,9 +220,19 @@ export const slipAmount = (slip: Slip): number => Number(slip.amount) || 0
 
 /** Why the slips cannot be saved yet, or null when they can. */
 export function slipsProblem(slips: Slip[]): string | null {
-  const incomplete = slips.some((s) => !s.bankAccountId || slipAmount(s) <= 0 || !s.depositDate)
-  return incomplete
-    ? 'Every slip needs a bank account, an amount and a date — remove any empty slip.'
+  const incomplete = slips.some(
+    (s) =>
+      !s.bankAccountId ||
+      slipAmount(s) <= 0 ||
+      !s.depositDate ||
+      !s.reference.trim() ||
+      (!s.clearsAccountId && !s.clearsBankAccountId)
+  )
+  if (incomplete) {
+    return 'Every slip needs a bank account, an amount, a Deposit from account, a reference number and a date — remove any empty slip.'
+  }
+  return slips.some((s) => s.clearsBankAccountId && s.clearsBankAccountId === s.bankAccountId)
+    ? "A slip can't be deposited from the same account it is banked to."
     : null
 }
 
@@ -191,8 +242,9 @@ export function toLineInputs(slips: Slip[]): PosDepositLineInput[] {
     bankAccountId: s.bankAccountId,
     amount: slipAmount(s),
     clearsAccountId: clearsAccountOf(s),
+    clearsBankAccountId: s.clearsBankAccountId || undefined,
     note: s.note || undefined,
-    reference: s.reference.trim() || undefined,
+    reference: s.reference.trim(),
     depositDate: s.depositDate,
   }))
 }
@@ -203,7 +255,10 @@ export function slipsFromLines(lines: PosDepositLine[], depositDate: string): Sl
   return lines.map((l) => ({
     bankAccountId: l.bankAccount.id,
     amount: String(Number(l.amount)),
-    clearsAccountId: l.clearsAccount?.id ?? BRANCH_CASH,
+    // A slip recorded against 1-01-010 itself, before only its funds could
+    // be picked, opens with Deposit from blank for accounting to choose.
+    clearsAccountId: l.clearsAccount?.id ?? '',
+    clearsBankAccountId: l.clearsBankAccount?.id ?? '',
     note: l.note ?? '',
     reference: l.reference ?? '',
     depositDate: (l.depositDate ?? depositDate).slice(0, 10),
@@ -225,9 +280,9 @@ export function SlipEditor({
   onChange: (slips: Slip[]) => void
   accounts: BankAccount[]
 }): React.JSX.Element {
-  // The chart, for the "clears" column: a slip either empties the branch's
-  // own cash or one of the accounts the client's chart files under 1-01-040
-  // Payment Gateway and Collection Clearing Funds.
+  // The chart, for the Deposit from column: a slip empties the branch's own
+  // cash, a fund in 1-01-010's sub-ledger, or one of the accounts the client's
+  // chart files under 1-01-040 Payment Gateway and Collection Clearing Funds.
   const chart = useQuery({
     queryKey: ['deposit-clearing-accounts'],
     queryFn: () => getAccounts({ search: CLEARING_GROUP_PREFIX }),
@@ -260,7 +315,7 @@ export function SlipEditor({
             slip={slip}
             label={`slip ${i + 1}`}
             bankOptions={bankOptions}
-            clearingOptions={clearingOptions}
+            clearsOptions={[...fundOptions(accounts, slip.bankAccountId), ...clearingOptions]}
             onChange={(patch) => setSlip(i, patch)}
             onRemove={() => onChange(slips.filter((_, n) => n !== i))}
             removeDisabled={slips.length === 1}

@@ -9,6 +9,7 @@ import type { DrDetail } from '@/src/schema/inventory/delivery-receipts'
 import { DR_STATUS_META, drStatusLabel, fmtDrDate, fmtPeso } from '../_lib/dr-format'
 import { BTN_GHOST, DrShell, HeaderFigure, NumberChip, Section } from './drFormUi'
 import { DrPrintButton } from './DrPrintButton'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 const BACK_HREF = '/inventory/stock-transaction?tab=delivery-receipts'
 
@@ -107,7 +108,7 @@ export default function DrDetailView({
           <Pair label="Approved" value={dr.approvedAt ? fmtDrDate(dr.approvedAt) : null} />
           {dr.uds && <Pair label="Repair ticket (UDS)" value={dr.uds.code} mono />}
           {dr.posTransaction && (
-            <Pair label="Invoiced as" value={dr.posTransaction.transactionNumber} mono />
+            <Pair label="Invoiced as" value={saleDocNo(dr.posTransaction)} mono />
           )}
         </dl>
       </Section>
@@ -140,7 +141,7 @@ function statusLine(dr: DrDetail): string {
       return 'Waiting for the Branch Manager. Nothing has moved yet.'
     case 'approved':
       return DR_PURPOSE_CONFIG[dr.purpose].withDebitMemo
-        ? 'Approved — accounting posts the debit memo, which moves the stock.'
+        ? 'Approved — the debit memo posts with the approval.'
         : 'Approved.'
     case 'posted':
       return 'Posted — the stock has left the issuing branch.'

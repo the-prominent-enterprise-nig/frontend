@@ -13,6 +13,7 @@ import { approvePurchaseOrder } from '../_actions/approve-purchase-order'
 import { sendPurchaseOrder } from '../_actions/send-purchase-order'
 import { cancelPurchaseOrder } from '../_actions/cancel-purchase-order'
 import { closePurchaseOrder } from '../_actions/close-purchase-order'
+import { procurementHref } from '../_lib/procurementHref'
 import type {
   ConvertPrToPoFormValues,
   CreatePoFormValues,
@@ -116,7 +117,7 @@ export function usePurchaseOrders() {
         // Same reasoning as the auto-convert-on-approve path in
         // usePurchaseRequests.ts — the source PR just left the default
         // (non-'converted') list, follow the new PO to where it landed.
-        router.replace('/inventory/purchase-orders?tab=orders')
+        router.replace(procurementHref(pathname, 'orders'))
       } else {
         showToast({
           title: 'Failed to create purchase order',

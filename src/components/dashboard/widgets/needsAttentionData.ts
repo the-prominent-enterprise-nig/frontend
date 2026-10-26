@@ -19,6 +19,7 @@ import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
 import { getDeliveryReceipts } from '@/src/app/(app)/(dashboard)/inventory/delivery-receipts/_actions/get-delivery-receipts'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import { arInvoicesKey } from './dashboardQueryKeys'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 export type AttentionItem = {
   id: string
@@ -81,7 +82,7 @@ export async function getNeedsAttentionItems(
         id: `cogs-${sale.transactionId}`,
         icon: Calculator,
         iconStyle: 'text-red-500 bg-red-50',
-        label: `Missing COGS — ${sale.transactionNumber}`,
+        label: `Missing COGS — ${saleDocNo(sale)}`,
         sub: 'Completed sale has no inventory posting',
         timestamp: sale.occurredAt,
         tier: 1,
@@ -135,7 +136,7 @@ export async function getNeedsAttentionItems(
       id: `void-${r.id}`,
       icon: XCircle,
       iconStyle: 'text-amber-500 bg-amber-50',
-      label: `Void Request — ${r.transaction?.transactionNumber ?? 'Transaction'}`,
+      label: `Void Request — ${r.transaction ? saleDocNo(r.transaction) : 'Transaction'}`,
       sub: `${r.session?.terminal?.branch?.name ?? '—'} · ${fmtMoney(r.transaction?.totalAmount ?? 0)}`,
       timestamp: r.createdAt,
       tier: 2 as const,

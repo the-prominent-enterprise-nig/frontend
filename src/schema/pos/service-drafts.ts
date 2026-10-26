@@ -207,6 +207,7 @@ export type ServiceDraftServiceType = z.infer<typeof ServiceDraftServiceTypeSche
 export const ServiceDraftPosTransactionSchema = z.object({
   id: z.string(),
   transactionNumber: z.string(),
+  salesInvoiceNumber: z.string().nullable().optional(),
   status: z.string(),
 })
 

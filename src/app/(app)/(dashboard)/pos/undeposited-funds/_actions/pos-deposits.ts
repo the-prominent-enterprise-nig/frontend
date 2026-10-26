@@ -35,6 +35,9 @@ export interface PosDeposit {
   createdAt: string
   clearedAt: string | null
   journalEntryId: string | null
+  /** Set once matched to a bank statement; a reconciled deposit can't be
+   * corrected until that is undone. */
+  reconciledAt?: string | null
   sessions: PosDepositSession[]
   /** Scenario 70 G8 — the slips accounting itemised; empty on a deposit
    * recorded before slips existed. */
@@ -62,6 +65,8 @@ export interface PosDepositLine {
   bankAccount: { id: string; name: string; accountNumber: string | null }
   /** Null for the branch's own cash (1-01-010). */
   clearsAccount: { id: string; number: string | null; name: string } | null
+  /** A 1-01-010 sub-ledger fund the slip emptied instead of an account. */
+  clearsBankAccount: { id: string; name: string } | null
 }
 
 /** Scenario 70 G8 — one slip: a bank, an amount, and what it empties. */
@@ -70,9 +75,11 @@ export interface PosDepositLineInput {
   amount: number
   /** A processor's clearing account; omitted for the branch's own cash. */
   clearsAccountId?: string
+  /** A 1-01-010 sub-ledger fund — Cash on Hand, a petty cash fund, a bank. */
+  clearsBankAccountId?: string
   note?: string
-  /** This bank's own deposit slip / reference number. */
-  reference?: string
+  /** This bank's own deposit slip / reference number. Required. */
+  reference: string
   /** The day this slip was banked — slips on different days post separate
    * journal entries. */
   depositDate?: string
@@ -161,6 +168,19 @@ export async function updatePosDeposit(
   lines: PosDepositLineInput[]
 ): Promise<ApiResponse<PosDeposit>> {
   const result = await api.patch<PosDeposit>(`/pos-deposits/${id}`, { lines })
+  if (result.success) revalidate()
+  return result
+}
+
+/** Corrects a posted deposit against the bank's slip: its entries are
+ * reversed and the corrected slips posted, with the reason kept in the audit
+ * log. */
+export async function correctPosDeposit(
+  id: string,
+  lines: PosDepositLineInput[],
+  reason: string
+): Promise<ApiResponse<PosDeposit>> {
+  const result = await api.post<PosDeposit>(`/pos-deposits/${id}/correct`, { lines, reason })
   if (result.success) revalidate()
   return result
 }

@@ -357,7 +357,7 @@ export default function PosOverviewPage() {
                 <thead className="border-b border-gray-200 bg-gray-50">
                   <tr>
                     <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                      Transaction #
+                      SI / DR #
                     </th>
                     <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                       Type

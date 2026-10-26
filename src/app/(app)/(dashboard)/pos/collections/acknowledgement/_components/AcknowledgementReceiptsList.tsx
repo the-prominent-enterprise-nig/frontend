@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Download, Eye, Loader2, Pencil, Plus, RefreshCw } from 'lucide-react'
+import { Download, Eye, Loader2, Pencil, Plus, Upload } from 'lucide-react'
 import {
   AcknowledgementReceipts,
   fmtMoney,
@@ -41,15 +41,16 @@ export default function AcknowledgementReceiptsList() {
         <div>
           <h2 className="text-2xl font-bold text-prominent-purple-900">New Receipts</h2>
           <p className="text-sm text-gray-500">
-            Money received with no customer or invoice behind it.
+            Money received outside the regular sales flow — walk-in payments, and customer
+            settlements recorded one at a time or imported from a file.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={load}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
+            onClick={() => router.push('/pos/collections/acknowledgement/import')}
+            className="flex items-center gap-2 rounded-lg border border-purple-700 px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            <Upload className="w-4 h-4" /> Import receipts
           </button>
           <button
             onClick={() => router.push('/pos/collections/acknowledgement/new')}

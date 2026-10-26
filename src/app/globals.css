@@ -124,6 +124,18 @@
 
   html {
     @apply font-sans;
+    /* The app is designed to be read at 90% of the browser default: every
+       Tailwind size (text, spacing, icons, widths) is in rem, so scaling the
+       root scales the whole UI like a 90% browser zoom — without everyone
+       having to zoom out by hand, and without the 100vh quirks of CSS `zoom`.
+       Printed documents go back to the full size below. */
+    font-size: 90%;
+  }
+
+  @media print {
+    html {
+      font-size: 100%;
+    }
   }
 
   /* Tailwind v4 dropped Preflight's `cursor: pointer` on buttons, so every

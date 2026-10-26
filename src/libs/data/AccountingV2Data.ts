@@ -1,5 +1,15 @@
 import { api } from '@/src/libs/api/client'
 import type { TaxOverrideEntry } from '@/src/libs/tax/tax-override'
+import {
+  commitAcknowledgementReceiptImport,
+  previewAcknowledgementReceiptImport,
+} from '@/src/libs/data/acknowledgement-import-actions'
+import { humanizeAcknowledgementImportError } from '@/src/libs/data/acknowledgement-import-errors'
+import type {
+  AcknowledgementImportPreview,
+  AcknowledgementImportResult,
+  AcknowledgementImportRowInput,
+} from '@/src/schema/pos/acknowledgement-import'
 
 // ============ Fixed Assets v2 (ACC-21) ============
 export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION'
@@ -900,8 +910,9 @@ export interface AcknowledgementReceipt {
    * the detail page. Null on records saved before this field existed. */
   receiptType: 'COLLECTION' | 'ACKNOWLEDGEMENT' | null
   method: PaymentMethod | null
-  /** SAME_DATE | LATER_DATE — whether the payment clears the bank on
-   * paymentDate itself or on a later date. Informational only. */
+  /** SAME_DATE | LATER_DATE | PAST_DATE — whether the payment clears the
+   * bank on paymentDate itself, on a later date, or already cleared on an
+   * earlier date (receipts imported after the fact). Informational only. */
   clearedType: string | null
   clearedDate: string | null
   /** Which of the tenant's own bank/cash accounts this landed in — matches
@@ -914,6 +925,22 @@ export interface AcknowledgementReceipt {
   collectorId: string | null
   collector?: { id: string; name: string; stubNumber: string } | null
   journalEntryId: string | null
+  /** Settlement receipts — the customer and sales invoice this money is
+   * for. The invoice number is a reference only: it does not change the
+   * invoice's balance. All null on a plain receipt. */
+  customerId?: string | null
+  customer?: { id: string; name: string; customerCode: string } | null
+  invoiceNo?: string | null
+  arInvoiceId?: string | null
+  /** The gross AR amount; `amount` above is then the Net that reached the
+   * bank (gross − subsidy − withholding). Null on a plain receipt. */
+  grossAmount?: number | null
+  subsidyAmount?: number | null
+  subsidyAccountId?: string | null
+  subsidyAccount?: { id: string; name: string; number: string | null } | null
+  withholdingAmount?: number | null
+  withholdingAccountId?: string | null
+  withholdingAccount?: { id: string; name: string; number: string | null } | null
   createdAt: string
   /** Letterhead info for the printed document — only present on get(id), not list(). */
   enterprise?: { companyLegalName?: string | null; address?: string | null } | null
@@ -933,6 +960,16 @@ export interface CreateAcknowledgementReceiptInput {
   notes?: string
   branchId?: string
   collectorId?: string
+  customerId?: string
+  invoiceNo?: string
+  arInvoiceId?: string
+  /** Settlement receipt: gross AR amount. `amount` is then the Net (gross −
+   * subsidy − withholding), which the backend recomputes. */
+  grossAmount?: number
+  subsidyAmount?: number
+  subsidyAccountId?: string
+  withholdingAmount?: number
+  withholdingAccountId?: string
 }
 /** Everything is editable (developer decision, 2026-09-27). Changing amount
  * and/or accountId requires correctionReason — the backend posts a new
@@ -962,10 +999,54 @@ export const AcknowledgementReceipts = {
     api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
   get: (id: string) =>
     api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
+  /** The form's "+ Add as new customer" — a name is all a settlement needs, so
+   * this skips the phone and email the CRM form insists on, and needs no CRM
+   * permission. An existing customer of the same name is returned as-is. */
+  createCustomer: (body: { name: string; phone?: string }) =>
+    api.post<{ id: string; name: string; customerCode: string }>(
+      '/accounting/acknowledgement-receipts/customers',
+      body
+    ),
   create: (body: CreateAcknowledgementReceiptInput) =>
     api.post<AcknowledgementReceipt>('/accounting/acknowledgement-receipts', body),
   update: (id: string, body: UpdateAcknowledgementReceiptInput) =>
     api.patch<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`, body),
+  /** Bulk upload, step 1 — reads the CSV and reports what each row would do.
+   * Writes nothing. Multipart, so it goes through a server action rather than
+   * the JSON api client. */
+  importPreview: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return previewAcknowledgementReceiptImport(body)
+  },
+  /** Bulk upload, step 2 — posts every row (all or none). `acceptNetMismatch`
+   * lets rows whose uploaded Net differs from the calculated one post with the
+   * calculated Net. */
+  importCommit: (file: File, acceptNetMismatch: boolean) => {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('acceptNetMismatch', String(acceptNetMismatch))
+    return commitAcknowledgementReceiptImport(body)
+  },
+  /** The review screen's re-check — the same preview as `importPreview`, but
+   * for rows the user has edited on screen instead of a file. Plain JSON, so
+   * it goes through the normal api client. Writes nothing; 500 rows at most. */
+  importPreviewRows: async (rows: AcknowledgementImportRowInput[]) => {
+    const res = await api.post<AcknowledgementImportPreview>(
+      '/accounting/acknowledgement-receipts/import/rows/preview',
+      { rows }
+    )
+    return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
+  },
+  /** The real import for edited rows — all or none, same errors as the file
+   * commit. */
+  importCommitRows: async (rows: AcknowledgementImportRowInput[], acceptNetMismatch: boolean) => {
+    const res = await api.post<AcknowledgementImportResult>(
+      '/accounting/acknowledgement-receipts/import/rows',
+      { rows, acceptNetMismatch }
+    )
+    return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
+  },
 }
 
 // ============ Credit Memos ============
@@ -1056,6 +1137,7 @@ export interface XDealCandidate {
 export interface XDealPreview {
   posTransactionId: string
   transactionNumber: string
+  salesInvoiceNumber?: string | null
   invoiceNumber: string
   xDealReference: string | null
   outstanding: number

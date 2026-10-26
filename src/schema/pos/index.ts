@@ -1283,6 +1283,11 @@ export interface ComputeInstallmentPreviewInput {
    * SKU + term wins over the generic factorRate calculation, if one exists
    * — see FinancingTermsService.preview(). */
   priceListItemId?: string
+  /** A multi-item bundle: every item's price-list row. When all of them have
+   * a rate-card row for the term, the preview is the sum of their monthly
+   * installments and PPD rebates; if any one does not, the whole bundle falls
+   * back to the generic calculation. Ignored when priceListItemId is sent. */
+  priceListItemIds?: string[]
 }
 
 export interface InstallmentScheduleLineWithInvoice {
@@ -1383,6 +1388,7 @@ export interface PosVoidRequest {
   reviewedAt?: string | null
   transaction?: {
     transactionNumber: string
+    salesInvoiceNumber?: string | null
     totalAmount: number
     occurredAt: string
   }
@@ -1516,7 +1522,7 @@ export interface PosReleaseFormRequest {
   /** Only populated once approved — mirrors the same transaction number
    * shown in this request's resolution notification title (see
    * ReleaseFormRequestsService.notifyResolved on the backend). */
-  createdTransaction?: { transactionNumber: string } | null
+  createdTransaction?: { transactionNumber: string; salesInvoiceNumber?: string | null } | null
   cartSnapshot: PosReleaseFormCartSnapshot
   requestedBy?: {
     name: string | null
@@ -1611,6 +1617,7 @@ export interface PosReturnRefundRequest {
   /** Present for void requests (transaction-based, not cart-snapshot based). */
   transaction?: {
     transactionNumber: string
+    salesInvoiceNumber?: string | null
     totalAmount: number
     occurredAt: string
   } | null

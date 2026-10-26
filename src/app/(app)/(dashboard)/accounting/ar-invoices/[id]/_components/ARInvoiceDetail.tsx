@@ -19,6 +19,7 @@ import CollectionReceiptSheet, {
   type CollectionReceiptDocument,
 } from '../../_components/CollectionReceiptSheet'
 import RetentionPanel from './RetentionPanel'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 // Mirrors ARInvoicesList's own INVOICE_STATUS_BADGE — kept local rather
 // than imported from there so this page doesn't pull in that file's much
@@ -253,10 +254,10 @@ export default function ARInvoiceDetail({
           <span>
             Source sale{' '}
             <Link
-              href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
+              href={`/pos/transactions?search=${encodeURIComponent(saleDocNo(invoice.posTransaction))}`}
               className="text-purple-600 hover:underline"
             >
-              {invoice.posTransaction.transactionNumber}
+              {saleDocNo(invoice.posTransaction)}
             </Link>
           </span>
         )}

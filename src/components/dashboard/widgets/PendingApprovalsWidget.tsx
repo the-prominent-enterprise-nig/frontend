@@ -9,6 +9,7 @@ import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_a
 import { getDeliveryReceipts } from '@/src/app/(app)/(dashboard)/inventory/delivery-receipts/_actions/get-delivery-receipts'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 type ApprovalItem = {
   id: string
@@ -88,7 +89,7 @@ export default function PendingApprovalsWidget() {
           id: `void-${r.id}`,
           icon: XCircle,
           iconStyle: 'text-red-500 bg-red-50',
-          label: `Void Request — ${r.transaction?.transactionNumber ?? 'Transaction'}`,
+          label: `Void Request — ${r.transaction ? saleDocNo(r.transaction) : 'Transaction'}`,
           sub: `${r.session?.terminal?.branch?.name ?? '—'} · ${fmtMoney(r.transaction?.totalAmount ?? 0)}`,
           createdAt: r.createdAt,
           badge: 'Void',

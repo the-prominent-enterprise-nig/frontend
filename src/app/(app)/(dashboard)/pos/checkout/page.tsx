@@ -116,21 +116,37 @@ import type { CreditApplicationOverrideSnapshot } from '@/src/schema/pos'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import TypedPlanPanel from './_components/TypedPlanPanel'
 import { toCents, dateInputFromToday, coveringMonthly, typedPlanProblem } from './_utils/typed-plan'
+import { applicationFmiNote } from './_utils/application-fmi'
+import { fixedDownPaymentTotal, splitDownPayment, type DpRow } from './_utils/down-payment-groups'
 import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
+import TenderPanel from './_components/TenderPanel'
+import PaymentAmountFields, { ReferenceField } from './_components/PaymentAmountFields'
 import { PillCombobox, PillSelect } from './_components/PillInputs'
 import {
   EMPTY_DELIVERY,
   deliveryFeeOptions,
   deliveryFeeTenderLabel,
   deliveryPayload,
+  DELIVERY_FEE_TENDER_LABELS,
   deliveryProblem,
   parseDeliveryFee,
   qrTenderLabel,
   resolveDeliveryAddress,
   type CustomerAddress,
+  type DeliveryFeeTender,
   type DeliveryState,
 } from './_utils/delivery'
+import {
+  availableTenders,
+  mixedPaymentIssues,
+  nextTender,
+  rowForTender,
+  tenderLabel,
+  withChangeTakenFromCash,
+  type PaymentIssueField,
+  type PaymentRow,
+} from './_utils/mixed-payment'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import {
@@ -287,21 +303,6 @@ interface CartLine {
   firstDueDateInput?: string
 }
 
-interface PaymentRow {
-  method: PosPaymentMethod
-  amount: number
-  referenceNumber: string
-  // populated for custom / configured methods
-  configId?: string
-  refFieldLabel?: string
-  refRequired?: boolean
-  refRegex?: string
-  // Scenario 37 — bank for bank_transfer, gateway for qr. Card's terminal
-  // choice comes from the transaction-scoped cardTerminalOptionId state
-  // instead (set via Item Payment Mode), not stored per-row.
-  paymentMethodOptionId?: string
-}
-
 // ─── Typed installment plans (Scenario 71) ────────────────────────────────────
 
 /** The line without any typed-plan state. */
@@ -413,6 +414,87 @@ const SHOW_CREDIT_OVERRIDE = false
  * figure with a "Change amount" link read as fixed, and cashiers did not find
  * out they could edit it. Prefilled with what the sale will use; when the rate
  * card fixes the amount for the chosen term it is a figure, not a field. */
+/** Installment rows that pay ONE down payment together: in-house rows on the
+ * same financing term, or every TPF row. See _utils/down-payment-groups. */
+type DpBucket = {
+  key: string
+  /** "12 months" or "TPF" — what the group has in common. */
+  label: string
+  /** The cart rows (display groups) in it, in cart order; the first hosts the box. */
+  groups: CartLine[][]
+  rows: DpRow[]
+  /** What the group pays now, in all. */
+  total: number
+  /** What all of its items cost — the most a down payment can be. */
+  max: number
+  /** The part the rate card fixes. */
+  fixedTotal: number
+}
+
+/** The single down payment box for a bucket of rows. Typing shares the figure
+ * across the rows at once; the text is kept locally while the field has focus
+ * so a half-typed "12." is not reformatted under the cashier's fingers. */
+function CombinedDownPaymentField({
+  bucket,
+  onCommit,
+}: {
+  bucket: DpBucket
+  onCommit: (total: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const allFixed = bucket.rows.every((r) => r.fixedPerLine != null)
+  const typed = draft != null ? parseFloat(draft) : NaN
+
+  let error: string | undefined
+  if (draft != null) {
+    if (!Number.isFinite(typed) || typed <= 0) {
+      error = 'A down payment is required — it can be small, but not 0.'
+    } else {
+      const split = splitDownPayment(bucket.rows, typed)
+      if (!split.ok) {
+        error =
+          split.reason === 'too_large'
+            ? `Can’t be more than the ${fmt(bucket.max)} these items cost.`
+            : bucket.fixedTotal > 0
+              ? `Must be more than the ${fmt(bucket.fixedTotal)} the rate card sets for part of this.`
+              : 'A down payment is required — it can be small, but not 0.'
+      }
+    }
+  } else if (bucket.total <= 0) {
+    error = 'A down payment is required — it can be small, but not 0.'
+  }
+
+  return (
+    <div data-testid="combined-down-payment">
+      <DownPaymentField
+        badge={allFixed ? 'Rate card' : `Combined · ${bucket.groups.length} items`}
+        value={draft ?? bucket.total.toFixed(2)}
+        fixedDisplay={allFixed ? fmt(bucket.total) : undefined}
+        error={error}
+        onChange={(v) => {
+          setDraft(v)
+          const n = parseFloat(v)
+          if (Number.isFinite(n) && n > 0) onCommit(n)
+        }}
+        onBlur={(v) => {
+          setDraft(null)
+          const n = parseFloat(v)
+          // Whole pesos, rounded up — the same tidying a single row gets.
+          if (Number.isFinite(n) && n > 0) onCommit(Math.ceil(n))
+        }}
+      />
+      <p className="mt-1 text-xs text-prominent-purple-500">
+        One down payment for these {bucket.groups.length} items on {bucket.label}
+        {allFixed
+          ? ' — set by the rate card.'
+          : bucket.fixedTotal > 0
+            ? `, shared out by price after the ${fmt(bucket.fixedTotal)} the rate card sets.`
+            : ', shared out by price.'}
+      </p>
+    </div>
+  )
+}
+
 function DownPaymentField({
   badge,
   value,
@@ -812,6 +894,13 @@ export default function CheckoutPage() {
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
+  // Mixed payment — set when Confirm is pressed with the payments incomplete,
+  // so the list of what's missing (and the red fields) only appears then and
+  // then shrinks live as each gap is filled.
+  const [showPaymentIssues, setShowPaymentIssues] = useState(false)
+  // The Total the payments were last measured against, to say so when it moves.
+  const [totalChangedFrom, setTotalChangedFrom] = useState<number | null>(null)
+  const lastTenderTargetRef = useRef(0)
   // Scenario 37 — card details captured once via the Payment Mode toggle
   // (transaction-scoped, see hasCreditCardLine), then carried into whatever
   // Card payment row gets added below.
@@ -930,6 +1019,10 @@ export default function CheckoutPage() {
       // agreed — and possibly keying different ones.
       financingTermId?: string | null
       downPayment?: number | null
+      /** The FMI date on the application — the first installment's due date
+       *  for a rate-card plan sold on it (the server decides; see
+       *  applicationFmiNote). */
+      firstDueDate?: string | null
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
@@ -1878,6 +1971,111 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, financingTerms, downPaymentFree])
 
+  // One down payment for several items. The server already makes in-house
+  // lines on the same term ONE schedule with ONE down payment, and every TPF
+  // line ONE down payment; the till now asks for it that way too. A bucket is
+  // two or more rows that pay together — a lone row keeps its own box, and a
+  // plan typed at the till (its own panel), an X-Deal and an Employee
+  // Appliance Loan (their own down payment rules) stay out of it.
+  const dpBucketKeyOf = (group: CartLine[]): string | null => {
+    const l = group[0]
+    if (downPaymentFree || l.invoiceType !== 'installment' || l.manualPlan) return null
+    if (l.installmentProvider === 'tpf') return 'tpf'
+    return l.financingTermId ? `inhouse:${l.financingTermId}` : null
+  }
+  const dpBuckets = (() => {
+    const byKey = new Map<string, CartLine[][]>()
+    for (const group of displayGroups) {
+      const key = dpBucketKeyOf(group)
+      if (key) byKey.set(key, [...(byKey.get(key) ?? []), group])
+    }
+    const out = new Map<string, DpBucket>()
+    for (const [key, groups] of byKey) {
+      if (groups.length < 2) continue
+      const rows: DpRow[] = groups.map((g) => ({
+        lineIds: g.map((x) => x.lineId),
+        amount: g.reduce(
+          (sum, x) =>
+            sum + effectiveUnitPrice(x, activeTaxRate, inclusivePricing, isTaxExempt) * x.quantity,
+          0
+        ),
+        fixedPerLine: key === 'tpf' ? null : lineCardDownPayment(g[0]),
+      }))
+      const months = financingTerms.find((t) => t.id === groups[0][0].financingTermId)?.termMonths
+      out.set(key, {
+        key,
+        label: key === 'tpf' ? 'TPF installment' : `${months ?? '?'} months`,
+        groups,
+        rows,
+        total:
+          Math.round(groups.flat().reduce((sum, x) => sum + lineDownPayment(x), 0) * 100) / 100,
+        max: rows.reduce((sum, r) => sum + r.amount, 0),
+        fixedTotal: fixedDownPaymentTotal(rows),
+      })
+    }
+    return out
+  })()
+  const dpBucketFor = (group: CartLine[]): DpBucket | undefined => {
+    const key = dpBucketKeyOf(group)
+    return key ? dpBuckets.get(key) : undefined
+  }
+  /** Shares a typed total across a bucket's open rows. A figure that cannot be
+   * shared (more than the items cost, nothing left after the rate card's rows)
+   * changes nothing — the box says why. */
+  function setBucketDownPayment(bucket: DpBucket, total: number) {
+    const split = splitDownPayment(bucket.rows, total)
+    if (!split.ok) return
+    setCart((prev) =>
+      prev.map((l) =>
+        split.byLine.has(l.lineId)
+          ? {
+              ...l,
+              downPaymentInput: split.byLine.get(l.lineId)!.toFixed(2),
+              // An explicit entry — no later Price Use change may recompute it.
+              downPaymentAutoForPriceListItemId: undefined,
+            }
+          : l
+      )
+    )
+  }
+  /** The down payment slot of a row that is part of a bucket: the first row
+   * hosts the one box, the others show their share. */
+  function renderBucketDownPayment(group: CartLine[]) {
+    const bucket = dpBucketFor(group)!
+    if (bucket.groups[0][0].lineId === group[0].lineId) {
+      return (
+        <CombinedDownPaymentField
+          key={bucket.key}
+          bucket={bucket}
+          onCommit={(total) => setBucketDownPayment(bucket, total)}
+        />
+      )
+    }
+    const share = Math.round(group.reduce((sum, x) => sum + lineDownPayment(x), 0) * 100) / 100
+    const fixed = bucket.key !== 'tpf' && lineCardDownPayment(group[0]) != null
+    return (
+      <div
+        data-testid="down-payment-share"
+        className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[13px] font-semibold text-prominent-purple-700">Down payment</span>
+          <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+            {fixed ? 'Rate card' : 'Share'}
+          </span>
+        </div>
+        <div className="mt-1 pl-4">
+          <span className="text-[15px] font-bold text-prominent-purple-800">{fmt(share)}</span>
+        </div>
+        <p className="mt-1 text-xs text-prominent-purple-500">
+          {fixed
+            ? 'Set by the rate card, and part of the combined down payment above.'
+            : 'Part of the combined down payment above.'}
+        </p>
+      </div>
+    )
+  }
+
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
   // Installment is the only value that routes to the separate financing
@@ -1992,6 +2190,67 @@ export default function CheckoutPage() {
   const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
   const change = totalPaid > tenderTarget ? Math.round((totalPaid - tenderTarget) * 100) / 100 : 0
 
+  // ─── Mixed payment ──────────────────────────────────────────────────────────
+  // One sale can be tendered with several methods. Not on an X-Deal or a
+  // pure-TPF cart: their down payment is recorded inside the create request,
+  // under the one method Item Payment Mode describes.
+  const mixedPaymentAllowed =
+    saleMode === 'sale' && !isOffline && !xDealActive && !isPureTpfCart && tenderTarget > 0
+  const mixedPaymentActive = saleMode === 'sale' && payments.length > 1
+  // The first row follows Item Payment Mode: a Check there is not cash on hand.
+  const firstRowIsCheck = hasCashLine && cashSubMode === 'check'
+  const tenderChoices = availableTenders(enabledPaymentMethods)
+  const firstRowTender: DeliveryFeeTender = (() => {
+    const m = payments[0]?.method ?? preferredPaymentMethodKey() ?? 'cash'
+    if (m === 'card') return 'card'
+    if (m === 'bank_transfer') return 'bank_transfer'
+    if (m === 'qr') return cashSubMode === 'gcash' || cashSubMode === 'billers' ? cashSubMode : 'qr'
+    return firstRowIsCheck ? 'check' : 'cash_on_hand'
+  })()
+  // ─── CR Number / reference ────────────────────────────────────────────────
+  // A CR Number exists only where there is a down payment (installment / TPF):
+  // ONE for the whole transaction, held on the first payment row and stamped on
+  // every payment. A sale without one shows no CR at all; its QR/GCash/Billers,
+  // card and bank-transfer payments each ask for their own reference number.
+  const saleCr = (payments[0]?.referenceNumber ?? '').trim()
+  const rowShowsReference = (p: PaymentRow) =>
+    !saleHasDownPayment &&
+    (REF_METHODS.includes(p.method) || p.refRequired === true || !!p.refFieldLabel)
+  const effectiveReference = (p: PaymentRow) =>
+    saleHasDownPayment ? saleCr : rowShowsReference(p) ? p.referenceNumber.trim() : ''
+  const referenceLabelFor = (p: PaymentRow, i: number) =>
+    p.refFieldLabel ??
+    `${DELIVERY_FEE_TENDER_LABELS[p.tender ?? (i === 0 ? firstRowTender : 'cash_on_hand')]} reference`
+  const paymentIssues = mixedPaymentActive
+    ? mixedPaymentIssues({
+        payments,
+        tenderTarget,
+        balance,
+        transactionCr: saleHasDownPayment,
+        reference: (p, i) => ({
+          shown: rowShowsReference(p),
+          required: crIsRequired(p),
+          label: referenceLabelFor(p, i),
+        }),
+        firstRowIsCheck,
+        firstRowCheckNumber: checkNumber,
+        firstRowMissingTerm:
+          payments[0]?.method === 'card' &&
+          !payments[0].tender &&
+          cardTxnMode === 'installment' &&
+          !cardInstallmentTerm,
+        fmt,
+      })
+    : []
+  const shownPaymentIssues = showPaymentIssues ? paymentIssues : []
+  const crInvalid = shownPaymentIssues.some((i) => i.row === null && i.field === 'reference')
+  const invalidFieldsOfRow = (row: number): ReadonlySet<PaymentIssueField> =>
+    new Set(
+      shownPaymentIssues
+        .filter((i) => i.row === row && i.field !== 'balance')
+        .map((i) => i.field as PaymentIssueField)
+    )
+
   // Reserve mode has no tax/promo concept — SkuReservationsService values a
   // reservation as a flat item.sellingPrice × quantity, so the deposit cap
   // and "remaining at fulfilment" figure must track that instead of the
@@ -2099,13 +2358,16 @@ export default function CheckoutPage() {
       let changed = false
       const next = prev.map((p, i) => {
         if (paymentMethodEditOpen[i]) return p
+        // A row added with "Add another payment method" owns its method.
+        if (p.tender) return p
         if (p.method === preferredKey && p.configId === cfg?.id) return p
         changed = true
         return {
           ...p,
           method: preferredKey,
           configId: cfg?.id,
-          referenceNumber: '',
+          // A down-payment sale's one CR is not tied to the method.
+          referenceNumber: saleHasDownPayment ? p.referenceNumber : '',
           refFieldLabel: cfg?.referenceFieldLabel ?? undefined,
           refRequired: cfg?.referenceIsRequired,
           refRegex: cfg?.referenceFieldRegex ?? undefined,
@@ -2115,6 +2377,33 @@ export default function CheckoutPage() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasCreditCardLine, hasCashLine, cashSubMode, configuredMethods, paymentMethodEditOpen])
+
+  // Mixed payment — the extra rows go when the cart no longer allows them
+  // (an X-Deal or a pure-TPF cart takes its down payment under one method).
+  useEffect(() => {
+    if (mixedPaymentAllowed || !payments.some((p) => p.tender)) return
+    setPayments((prev) => prev.filter((p) => !p.tender))
+  }, [mixedPaymentAllowed, payments])
+
+  // Back on a single payment (or the list of gaps is all filled): nothing left
+  // to show.
+  useEffect(() => {
+    if (!mixedPaymentActive) setShowPaymentIssues(false)
+  }, [mixedPaymentActive])
+
+  // Several payments are already entered and the Total moves under them (a
+  // line added, a discount): the amounts are left alone, the cashier is told.
+  useEffect(() => {
+    const previous = lastTenderTargetRef.current
+    lastTenderTargetRef.current = tenderTarget
+    if (mixedPaymentActive && previous > 0 && Math.abs(previous - tenderTarget) > 0.009) {
+      setTotalChangedFrom(previous)
+    }
+    if (!mixedPaymentActive) setTotalChangedFrom(null)
+  }, [tenderTarget, mixedPaymentActive])
+  useEffect(() => {
+    if (balance <= 0.009) setTotalChangedFrom(null)
+  }, [balance])
 
   // ─── Installment financing (per-line) ──────────────────────────────────────
 
@@ -2282,6 +2571,7 @@ export default function CheckoutPage() {
               })),
               financingTermId: a.financingTermId ?? null,
               downPayment: a.downPayment != null ? Number(a.downPayment) : null,
+              firstDueDate: a.firstDueDate ?? null,
             }
           })
           .filter((a) => a.items.length > 0)
@@ -3430,10 +3720,6 @@ export default function CheckoutPage() {
     // with "down payment must be at least the floor % of its sale amount".
     const lineAmount = (l: CartLine) =>
       effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-    // Whole centavos, rounded UP, so a fractional 10% can't land a hair
-    // under the floor.
-    const lineFloor = (l: CartLine) =>
-      Math.ceil(lineAmount(l) * DOWN_PAYMENT_FLOOR_RATE * 100) / 100
     const approvedDp = application.downPayment ?? null
     // A line the rate card prices for the application's term takes exactly
     // its card down payment — fixed, see lineCardDownPayment(). The rest of
@@ -3464,13 +3750,13 @@ export default function CheckoutPage() {
           ? sharedDp - allocated
           : Math.round(sharedDp * (lineAmount(l) / total) * 100) / 100
         allocated += rawShare
-        // The approved down payment is a MINIMUM for the application as a
-        // whole, not a per-line cap. A line whose share falls under its own
-        // floor is raised to it — collecting a little more up front always
-        // completes, collecting less cannot. This is also what absorbs the
-        // quantity gap: an application carries no quantity, so ringing two
-        // units doubles the line while the approved figure covered one.
-        const share = Math.max(rawShare, lineFloor(l))
+        // The approved down payment is shared out as approved. There is no
+        // 10% floor to raise a share to any more (2026-10-20: an application
+        // may be approved below it, and the till takes it as approved) — only
+        // "never 0", so a share that rounds away still collects a centavo.
+        // The cashier can always take more: a figure already typed is never
+        // reduced (below).
+        const share = Math.max(rawShare, 0.01)
         dpByLine.set(l.lineId, share.toFixed(2))
       })
     }
@@ -3481,9 +3767,14 @@ export default function CheckoutPage() {
         if (!lines.some((x) => x.lineId === l.lineId)) return l
         // Never reduce a figure the cashier has already entered — they may
         // have agreed a larger down payment at the counter, and silently
-        // replacing it with the apportioned share both loses that and can
-        // drop the line under its floor.
-        const typed = parseFloat(l.downPaymentInput ?? '') || 0
+        // replacing it with the apportioned share loses that. Only a figure
+        // they TYPED counts: the 10% a term pre-fills is the system's own
+        // starting value (it carries the auto-fill marker), and keeping it
+        // over a smaller approved figure would put the line back at 10%.
+        const typed =
+          l.downPaymentAutoForPriceListItemId !== undefined
+            ? 0
+            : parseFloat(l.downPaymentInput ?? '') || 0
         const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
         // A card line's figure is exact, typed or not.
         const downPaymentInput = cardDpByLine.has(l.lineId)
@@ -3885,10 +4176,14 @@ export default function CheckoutPage() {
       | 'card'
       | 'bank_transfer'
       | 'qr'
-    const reference = payments
-      .filter((p) => p.amount > 0 && p.referenceNumber.trim())
-      .map((p) => p.referenceNumber.trim())
-      .join(', ')
+    const reference = Array.from(
+      new Set(
+        payments
+          .filter((p) => p.amount > 0)
+          .map(effectiveReference)
+          .filter(Boolean)
+      )
+    ).join(', ')
     return {
       xDealDownPaymentMethod: method,
       xDealDownPaymentReferenceNumber: reference || undefined,
@@ -3949,6 +4244,64 @@ export default function CheckoutPage() {
     const preferredKey = preferredPaymentMethodKey()
     const defaultMethod = isOffline ? 'cash' : (preferredKey ?? enabledPaymentMethods[0] ?? 'cash')
     setPayments((prev) => [...prev, { method: defaultMethod, amount: 0, referenceNumber: '' }])
+  }
+
+  // Mixed payment — a new row opens on the next sensible method with what is
+  // still unpaid already in it (nothing, if nothing has been entered yet).
+  function addAnotherPayment() {
+    const tender = nextTender(tenderChoices, [
+      firstRowTender,
+      ...payments.flatMap((p) => (p.tender ? [p.tender] : [])),
+    ])
+    const newIndex = payments.length
+    setPayments((prev) => [
+      ...prev,
+      rowForTender(tender, configuredMethods, totalPaid > 0.009 ? balance : 0),
+    ])
+    // The new payment opens under the last one, down with the amounts: take
+    // the cashier to it, whichever of the two buttons they pressed.
+    window.setTimeout(() => {
+      document
+        .querySelector(`[data-testid="payment-unit-${newIndex}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 60)
+  }
+
+  // Offered under the payment method (where the method is chosen) and again
+  // under the amount fields, while something is still unpaid.
+  const addAnotherPaymentButton = (testId: string) =>
+    mixedPaymentAllowed && payments.length > 0 && balance > 0.009 ? (
+      <button
+        type="button"
+        onClick={addAnotherPayment}
+        data-testid={testId}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-300 py-3 text-sm text-gray-700 transition-colors hover:border-purple-500 hover:bg-purple-50 hover:text-purple-600 active:scale-[0.98]"
+      >
+        <Plus size={14} /> Add another payment method
+      </button>
+    ) : null
+
+  // Takes the cashier to the first gap Confirm found, and into its field.
+  function scrollToPaymentIssue(issue: { row: number | null; field: string }) {
+    const target =
+      issue.row === null
+        ? document.querySelector(
+            issue.field === 'reference'
+              ? '[data-testid="sale-cr-number"]'
+              : '[data-testid="payment-summary"]'
+          )
+        : (document.querySelector(`[data-testid="payment-${issue.field}-${issue.row}"]`) ??
+          document.querySelector(`[data-testid="payment-row-${issue.row}"]`))
+    if (!(target instanceof HTMLElement)) return
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    if (target instanceof HTMLInputElement) target.focus({ preventScroll: true })
+  }
+
+  // A new method starts its details over, keeping only the amount.
+  function changeRowTender(idx: number, tender: DeliveryFeeTender) {
+    setPayments((prev) =>
+      prev.map((p, i) => (i === idx ? rowForTender(tender, configuredMethods, p.amount) : p))
+    )
   }
 
   function updatePayment(idx: number, patch: Partial<PaymentRow>) {
@@ -4134,7 +4487,7 @@ export default function CheckoutPage() {
       const problem = deliveryProblem(
         delivery,
         deliveryCustomerAddress,
-        payments.filter((p) => p.amount > 0).map((p) => p.referenceNumber)
+        payments.filter((p) => p.amount > 0).map(effectiveReference)
       )
       if (problem) {
         setError(problem)
@@ -4288,6 +4641,14 @@ export default function CheckoutPage() {
         setError('Add at least one payment method.')
         return
       }
+      // Mixed payment — list everything that's missing at once, mark the
+      // fields, and take the cashier to the first one. Nothing is sent.
+      if (mixedPaymentActive && paymentIssues.length > 0) {
+        setError('')
+        setShowPaymentIssues(true)
+        scrollToPaymentIssue(paymentIssues[0])
+        return
+      }
       if (balance > 0.009) {
         setError(`Underpaid by ${fmt(balance)}.`)
         return
@@ -4296,15 +4657,27 @@ export default function CheckoutPage() {
         setError('Only cash payments are accepted while offline.')
         return
       }
-      // CR Number (collection receipt) is optional on a plain sale — see
-      // crIsRequired for where it still isn't. Reserve mode only asks for a
+      // A sale has a CR Number only with a down payment: one for the whole
+      // transaction. Without one, QR/GCash/Billers, card and bank transfer each
+      // need their own reference number. Reserve mode only asks for a
       // reference on REF_METHODS.
-      const missingRef = payments.find(
-        (p) =>
-          p.amount > 0 &&
-          !p.referenceNumber.trim() &&
-          (saleMode === 'sale' ? crIsRequired(p) : REF_METHODS.includes(p.method))
-      )
+      const missingRefIndex =
+        saleMode === 'sale'
+          ? saleHasDownPayment
+            ? saleCr
+              ? -1
+              : 0
+            : payments.findIndex(
+                (p) =>
+                  p.amount > 0 &&
+                  rowShowsReference(p) &&
+                  crIsRequired(p) &&
+                  !p.referenceNumber.trim()
+              )
+          : payments.findIndex(
+              (p) => p.amount > 0 && !p.referenceNumber.trim() && REF_METHODS.includes(p.method)
+            )
+      const missingRef = missingRefIndex >= 0 ? payments[missingRefIndex] : undefined
       if (
         hasCashLine &&
         cashSubMode === 'check' &&
@@ -4315,10 +4688,19 @@ export default function CheckoutPage() {
         return
       }
       if (missingRef) {
-        setError(`CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
+        setError(
+          saleMode !== 'sale'
+            ? `CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`
+            : saleHasDownPayment
+              ? 'CR Number is required for the down payment.'
+              : `${referenceLabelFor(missingRef, missingRefIndex)} is required.`
+        )
         return
       }
-      const cardPaymentPending = payments.some((p) => p.method === 'card' && p.amount > 0)
+      // A mixed row's card carries its own Straight / Installment and Term.
+      const cardPaymentPending = payments.some(
+        (p) => !p.tender && p.method === 'card' && p.amount > 0
+      )
       if (cardPaymentPending && cardTxnMode === 'installment' && !cardInstallmentTerm) {
         setError('Select a Term for the card installment payment (Payment Mode).')
         return
@@ -4437,10 +4819,14 @@ export default function CheckoutPage() {
           // missingRef check above), joined in the rare split-tender case.
           tpfDownPaymentReferenceNumber:
             isPureTpfCart && tpfDownPaymentsTotal > 0
-              ? payments
-                  .filter((p) => p.amount > 0 && p.referenceNumber.trim())
-                  .map((p) => p.referenceNumber.trim())
-                  .join(', ') || undefined
+              ? Array.from(
+                  new Set(
+                    payments
+                      .filter((p) => p.amount > 0)
+                      .map(effectiveReference)
+                      .filter(Boolean)
+                  )
+                ).join(', ') || undefined
               : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
@@ -4643,7 +5029,13 @@ export default function CheckoutPage() {
         // left over goes to the down payment below — same rows can straddle
         // both if the cashier tendered it all in one go. (A delivery fee is
         // never in this pool: it has its own receipt, recorded at create.)
-        const rows = payments.filter((p) => p.amount > 0)
+        const tendered = payments.filter((p) => p.amount > 0)
+        // Mixed payment — the change comes off the cash rows, so a GCash, card
+        // or transfer row is recorded for what actually went through it.
+        const rows =
+          mixedPaymentActive && change > 0.009
+            ? withChangeTakenFromCash(tendered, change, firstRowIsCheck)
+            : tendered
         const consumed: number[] = rows.map(() => 0)
         const payRowPortion = async (
           row: PaymentRow,
@@ -4653,17 +5045,21 @@ export default function CheckoutPage() {
           const payRes = await addPayment(txId, {
             paymentMethod: row.method,
             amount,
-            referenceNumber: row.referenceNumber || undefined,
-            checkNumber:
-              row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+            referenceNumber: effectiveReference(row) || undefined,
+            checkNumber: row.tender
+              ? row.tender === 'check'
+                ? row.checkNumber?.trim() || undefined
+                : undefined
+              : row.method === 'cash' && hasCashLine && cashSubMode === 'check'
                 ? checkNumber.trim() || undefined
                 : undefined,
             paymentMethodConfigId: row.configId,
             // Scenario 37 — card's terminal/txn-mode/term, and bank_transfer/qr's
             // bank/gateway, all come from the Payment Method toggle's
             // transaction-scoped state now, not this row.
-            paymentMethodOptionId:
-              row.method === 'card'
+            paymentMethodOptionId: row.tender
+              ? row.paymentMethodOptionId
+              : row.method === 'card'
                 ? cardTerminalOptionId
                 : row.method === 'bank_transfer' || row.method === 'qr'
                   ? cashPaymentOptionId
@@ -4672,10 +5068,16 @@ export default function CheckoutPage() {
                         .find((m) => m.key === 'cash')
                         ?.options.find((o) => o.isEnabled && o.name === 'Check')?.id
                     : row.paymentMethodOptionId,
-            cardTxnMode: row.method === 'card' ? cardTxnMode : undefined,
-            cardInstallmentTerm: row.method === 'card' ? cardInstallmentTerm : undefined,
+            cardTxnMode:
+              row.method === 'card' ? (row.tender ? row.cardTxnMode : cardTxnMode) : undefined,
+            cardInstallmentTerm:
+              row.method === 'card' ? (row.tender ? row.cardTerm : cardInstallmentTerm) : undefined,
             bankTransferVerifiedAtRegister:
-              row.method === 'bank_transfer' ? bankTransferVerifiedAtRegister : undefined,
+              row.method === 'bank_transfer'
+                ? row.tender
+                  ? row.bankVerified
+                  : bankTransferVerifiedAtRegister
+                : undefined,
             installmentScheduleId,
           })
           if (!payRes.success) {
@@ -4884,6 +5286,7 @@ export default function CheckoutPage() {
     setPromoResult(null)
     setPromoError('')
     setPayments([])
+    setShowPaymentIssues(false)
     setError('')
     setSuccess(null)
     setPendingApproval(null)
@@ -5073,7 +5476,13 @@ export default function CheckoutPage() {
         fmt={fmt}
         customerDisplayName={customerDisplayName}
         cart={cart}
-        payments={payments}
+        // A down-payment sale's one CR is shown once; otherwise each payment's
+        // own reference number (only where its method asked for one).
+        payments={payments.map((p) => ({
+          ...p,
+          referenceNumber: saleHasDownPayment ? '' : effectiveReference(p),
+        }))}
+        crNumber={saleHasDownPayment ? saleCr : ''}
         qrOptionName={
           configuredMethods
             .find((m) => m.key === 'qr')
@@ -5139,6 +5548,198 @@ export default function CheckoutPage() {
   const activeSession = openSessions.find((s) => s.id === sessionId)
 
   // ─── Main layout ───────────────────────────────────────────────────────────
+
+  // The first payment's method — Cash's pills and follow-ups, or the card
+  // acquirer — drawn once and placed in one of two spots: up in Payment Mode
+  // while there is a single payment (as it has always been), and inside
+  // Payment 1's own block once there are several, so every block reads the same.
+  const firstPaymentMethodPanels = (
+    <>
+      {hasCashLine && (
+        <div
+          data-testid="cash-sub-mode-toggle"
+          className="rounded-lg border border-purple-100 p-2.5"
+        >
+          <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
+          <div className="flex gap-1.5">
+            {(paymentMode === 'installment'
+              ? (['cash_on_hand', 'check', 'bank_transfer', 'gcash', 'billers', 'qr'] as const)
+              : ([
+                  'cash_on_hand',
+                  'check',
+                  'bank_transfer',
+                  'gcash',
+                  'billers',
+                  'qr',
+                  'card',
+                ] as const)
+            ).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  setCashSubMode(mode)
+                  setCashPaymentOptionId(undefined)
+                  if (mode !== 'bank_transfer') setBankTransferVerifiedAtRegister(false)
+                }}
+                className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                  cashSubMode === mode
+                    ? 'bg-purple-200 text-purple-700'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                {mode === 'cash_on_hand'
+                  ? 'Cash on Hand'
+                  : mode === 'check'
+                    ? 'Check'
+                    : mode === 'bank_transfer'
+                      ? 'Bank Transfer'
+                      : mode === 'card'
+                        ? 'Debit/Credit Card'
+                        : mode === 'gcash'
+                          ? 'GCash'
+                          : mode === 'billers'
+                            ? 'Billers'
+                            : 'QR'}
+              </button>
+            ))}
+          </div>
+          {cashSubMode !== 'cash_on_hand' &&
+            cashSubMode !== 'check' &&
+            cashSubMode !== 'card' &&
+            (() => {
+              const config = configuredMethods.find(
+                (m) =>
+                  m.key ===
+                  (cashSubMode === 'gcash' || cashSubMode === 'billers' ? 'qr' : cashSubMode)
+              )
+              const options =
+                config?.options.filter((o) => {
+                  if (!o.isEnabled) return false
+                  const inGcash = GCASH_OPTION_NAMES.includes(o.name)
+                  const inBillers = BILLER_OPTION_NAMES.includes(o.name)
+                  if (cashSubMode === 'gcash') return inGcash
+                  if (cashSubMode === 'billers') return inBillers
+                  if (cashSubMode === 'qr') return !inGcash && !inBillers
+                  return true
+                }) ?? []
+              if (options.length === 0) return null
+              const label =
+                cashSubMode === 'bank_transfer'
+                  ? 'Bank'
+                  : cashSubMode === 'billers'
+                    ? 'Biller'
+                    : 'Gateway'
+              return (
+                <PillCombobox
+                  ariaLabel={label}
+                  wrapperClassName="mt-1.5"
+                  placeholder={`Select ${label.toLowerCase()}…`}
+                  options={options.map((o) => ({ value: o.id, label: o.name }))}
+                  value={cashPaymentOptionId}
+                  onChange={setCashPaymentOptionId}
+                />
+              )
+            })()}
+          {cashSubMode === 'check' && (
+            <input
+              aria-label="Check Number"
+              className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+              placeholder="Check Number (required)"
+              value={checkNumber}
+              onChange={(e) => setCheckNumber(e.target.value)}
+            />
+          )}
+          {cashSubMode === 'bank_transfer' && (
+            <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
+              <input
+                type="checkbox"
+                checked={bankTransferVerifiedAtRegister}
+                onChange={(e) => setBankTransferVerifiedAtRegister(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-gray-300"
+              />
+              Verified at register — the credit already landed, post straight to Cash in Bank
+            </label>
+          )}
+        </div>
+      )}
+      {hasCreditCardLine && (
+        <div
+          data-testid="card-txn-mode-toggle"
+          className="rounded-lg border border-purple-100 p-2.5"
+        >
+          {/* "Card Acquirer", not "POS Terminal" (2026-09-24):
+                        these options — BDO/BPI/Metrobank/Maya — are the
+                        institutions that provide the terminal and settle the
+                        money, not the terminal itself. "Acquirer" rather
+                        than "bank" deliberately: Maya is a non-bank acquirer,
+                        so any bank-flavoured label is wrong for it. Not to be
+                        confused with the ISSUING bank (the customer's own
+                        card) or the network (Visa/Mastercard) — neither is
+                        what's picked here. bank_transfer keeps its own plain
+                        "Bank" label; both can be on screen at once. */}
+          <p className="mb-1.5 text-xs font-medium text-gray-800">Select Card Acquirer</p>
+          {(() => {
+            const cardConfig = configuredMethods.find((m) => m.key === 'card')
+            const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
+            return (
+              <>
+                {terminalOptions.length > 0 && (
+                  <PillCombobox
+                    ariaLabel="Card Acquirer"
+                    wrapperClassName="mb-1.5"
+                    placeholder="Select card acquirer…"
+                    options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
+                    value={cardTerminalOptionId}
+                    onChange={setCardTerminalOptionId}
+                  />
+                )}
+                <div className="flex gap-1.5">
+                  {(['straight', 'installment'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setCardTxnMode(mode)
+                        if (mode === 'straight') setCardInstallmentTerm(undefined)
+                      }}
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                        cardTxnMode === mode
+                          ? mode === 'installment'
+                            ? 'bg-prominent-purple-100 text-prominent-purple-700'
+                            : 'bg-purple-200 text-purple-700'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
+                      {mode === 'straight' ? 'Straight' : 'Installment'}
+                    </button>
+                  ))}
+                </div>
+                {cardTxnMode === 'installment' && (
+                  <PillSelect
+                    aria-label="Term"
+                    filled={!!cardInstallmentTerm}
+                    wrapperClassName="mt-1.5"
+                    value={cardInstallmentTerm ?? ''}
+                    onChange={(e) =>
+                      setCardInstallmentTerm(e.target.value ? Number(e.target.value) : undefined)
+                    }
+                  >
+                    <option value="">Select Term (required)</option>
+                    {[3, 6, 9, 12, 18, 24].map((m) => (
+                      <option key={m} value={m}>
+                        {m} months
+                      </option>
+                    ))}
+                  </PillSelect>
+                )}
+              </>
+            )
+          })()}
+        </div>
+      )}
+    </>
+  )
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-zinc-50">
@@ -6619,6 +7220,26 @@ export default function CheckoutPage() {
                               compact
                             />
                           )}
+                          {/* When the first installment will fall due. Only for
+                            a rate-card plan: a plan typed here has its own date. */}
+                          {creditApplicationId &&
+                            inhouseInstallmentCartLines.some((l) => !l.manualPlan) &&
+                            (() => {
+                              const note = applicationFmiNote(
+                                approvedCreditApplications.find((a) => a.id === creditApplicationId)
+                                  ?.firstDueDate
+                              )
+                              return note ? (
+                                <p
+                                  data-testid="application-fmi-note"
+                                  className={`mt-1.5 text-xs ${
+                                    note.warn ? 'text-amber-700' : 'text-prominent-purple-600'
+                                  }`}
+                                >
+                                  {note.text}
+                                </p>
+                              ) : null
+                            })()}
                           {/* Three states, because they need different things
                             from the cashier:
 
@@ -7034,6 +7655,8 @@ export default function CheckoutPage() {
                                     {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
                                   </p>
                                 </>
+                              ) : dpBucketFor(group) ? (
+                                renderBucketDownPayment(group)
                               ) : (
                                 <DownPaymentField
                                   badge={
@@ -7175,6 +7798,8 @@ export default function CheckoutPage() {
                                     {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
                                   </p>
                                 </>
+                              ) : dpBucketFor(group) ? (
+                                renderBucketDownPayment(group)
                               ) : (
                                 <DownPaymentField
                                   badge={
@@ -7298,201 +7923,6 @@ export default function CheckoutPage() {
                     )}
                   </div>
                 )}
-                {hasCashLine && (
-                  <div
-                    data-testid="cash-sub-mode-toggle"
-                    className="rounded-lg border border-purple-100 p-2.5"
-                  >
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
-                    <div className="flex gap-1.5">
-                      {(paymentMode === 'installment'
-                        ? ([
-                            'cash_on_hand',
-                            'check',
-                            'bank_transfer',
-                            'gcash',
-                            'billers',
-                            'qr',
-                          ] as const)
-                        : ([
-                            'cash_on_hand',
-                            'check',
-                            'bank_transfer',
-                            'gcash',
-                            'billers',
-                            'qr',
-                            'card',
-                          ] as const)
-                      ).map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => {
-                            setCashSubMode(mode)
-                            setCashPaymentOptionId(undefined)
-                            if (mode !== 'bank_transfer') setBankTransferVerifiedAtRegister(false)
-                          }}
-                          className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
-                            cashSubMode === mode
-                              ? 'bg-purple-200 text-purple-700'
-                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}
-                        >
-                          {mode === 'cash_on_hand'
-                            ? 'Cash on Hand'
-                            : mode === 'check'
-                              ? 'Check'
-                              : mode === 'bank_transfer'
-                                ? 'Bank Transfer'
-                                : mode === 'card'
-                                  ? 'Debit/Credit Card'
-                                  : mode === 'gcash'
-                                    ? 'GCash'
-                                    : mode === 'billers'
-                                      ? 'Billers'
-                                      : 'QR'}
-                        </button>
-                      ))}
-                    </div>
-                    {cashSubMode !== 'cash_on_hand' &&
-                      cashSubMode !== 'check' &&
-                      cashSubMode !== 'card' &&
-                      (() => {
-                        const config = configuredMethods.find(
-                          (m) =>
-                            m.key ===
-                            (cashSubMode === 'gcash' || cashSubMode === 'billers'
-                              ? 'qr'
-                              : cashSubMode)
-                        )
-                        const options =
-                          config?.options.filter((o) => {
-                            if (!o.isEnabled) return false
-                            const inGcash = GCASH_OPTION_NAMES.includes(o.name)
-                            const inBillers = BILLER_OPTION_NAMES.includes(o.name)
-                            if (cashSubMode === 'gcash') return inGcash
-                            if (cashSubMode === 'billers') return inBillers
-                            if (cashSubMode === 'qr') return !inGcash && !inBillers
-                            return true
-                          }) ?? []
-                        if (options.length === 0) return null
-                        const label =
-                          cashSubMode === 'bank_transfer'
-                            ? 'Bank'
-                            : cashSubMode === 'billers'
-                              ? 'Biller'
-                              : 'Gateway'
-                        return (
-                          <PillCombobox
-                            ariaLabel={label}
-                            wrapperClassName="mt-1.5"
-                            placeholder={`Select ${label.toLowerCase()}…`}
-                            options={options.map((o) => ({ value: o.id, label: o.name }))}
-                            value={cashPaymentOptionId}
-                            onChange={setCashPaymentOptionId}
-                          />
-                        )
-                      })()}
-                    {cashSubMode === 'check' && (
-                      <input
-                        aria-label="Check Number"
-                        className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                        placeholder="Check Number (required)"
-                        value={checkNumber}
-                        onChange={(e) => setCheckNumber(e.target.value)}
-                      />
-                    )}
-                    {cashSubMode === 'bank_transfer' && (
-                      <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={bankTransferVerifiedAtRegister}
-                          onChange={(e) => setBankTransferVerifiedAtRegister(e.target.checked)}
-                          className="h-3.5 w-3.5 rounded border-gray-300"
-                        />
-                        Verified at register — the credit already landed, post straight to Cash in
-                        Bank
-                      </label>
-                    )}
-                  </div>
-                )}
-                {hasCreditCardLine && (
-                  <div
-                    data-testid="card-txn-mode-toggle"
-                    className="rounded-lg border border-purple-100 p-2.5"
-                  >
-                    {/* "Card Acquirer", not "POS Terminal" (2026-09-24):
-                        these options — BDO/BPI/Metrobank/Maya — are the
-                        institutions that provide the terminal and settle the
-                        money, not the terminal itself. "Acquirer" rather
-                        than "bank" deliberately: Maya is a non-bank acquirer,
-                        so any bank-flavoured label is wrong for it. Not to be
-                        confused with the ISSUING bank (the customer's own
-                        card) or the network (Visa/Mastercard) — neither is
-                        what's picked here. bank_transfer keeps its own plain
-                        "Bank" label; both can be on screen at once. */}
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select Card Acquirer</p>
-                    {(() => {
-                      const cardConfig = configuredMethods.find((m) => m.key === 'card')
-                      const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
-                      return (
-                        <>
-                          {terminalOptions.length > 0 && (
-                            <PillCombobox
-                              ariaLabel="Card Acquirer"
-                              wrapperClassName="mb-1.5"
-                              placeholder="Select card acquirer…"
-                              options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
-                              value={cardTerminalOptionId}
-                              onChange={setCardTerminalOptionId}
-                            />
-                          )}
-                          <div className="flex gap-1.5">
-                            {(['straight', 'installment'] as const).map((mode) => (
-                              <button
-                                key={mode}
-                                type="button"
-                                onClick={() => {
-                                  setCardTxnMode(mode)
-                                  if (mode === 'straight') setCardInstallmentTerm(undefined)
-                                }}
-                                className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
-                                  cardTxnMode === mode
-                                    ? mode === 'installment'
-                                      ? 'bg-prominent-purple-100 text-prominent-purple-700'
-                                      : 'bg-purple-200 text-purple-700'
-                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                }`}
-                              >
-                                {mode === 'straight' ? 'Straight' : 'Installment'}
-                              </button>
-                            ))}
-                          </div>
-                          {cardTxnMode === 'installment' && (
-                            <PillSelect
-                              aria-label="Term"
-                              filled={!!cardInstallmentTerm}
-                              wrapperClassName="mt-1.5"
-                              value={cardInstallmentTerm ?? ''}
-                              onChange={(e) =>
-                                setCardInstallmentTerm(
-                                  e.target.value ? Number(e.target.value) : undefined
-                                )
-                              }
-                            >
-                              <option value="">Select Term (required)</option>
-                              {[3, 6, 9, 12, 18, 24].map((m) => (
-                                <option key={m} value={m}>
-                                  {m} months
-                                </option>
-                              ))}
-                            </PillSelect>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -7583,39 +8013,73 @@ export default function CheckoutPage() {
               >
                 <Plus size={14} /> Add deposit (optional)
               </button>
-            ) : payments.length === 0 ? null : (
+            ) : payments.length === 0 ? null : saleMode === 'sale' ? (
+              /* Every payment is one block — its method panel, then the Amount
+                 received (and its own reference where its method asks for one)
+                 right under it — whether there is one payment or several, so
+                 nothing moves when another is added. */
+              <div
+                className="space-y-5"
+                data-testid={mixedPaymentActive ? 'mixed-payments' : 'single-payment'}
+              >
+                {payments.map((p, i) => (
+                  <div
+                    key={i}
+                    data-testid={`payment-unit-${i}`}
+                    className={`space-y-2 ${i > 0 ? 'border-t border-dashed border-purple-200 pt-5' : ''}`}
+                  >
+                    {!p.tender && (
+                      <>
+                        {(mixedPaymentAllowed || mixedPaymentActive) && (
+                          <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+                            Payment 1
+                          </p>
+                        )}
+                        {firstPaymentMethodPanels}
+                      </>
+                    )}
+                    {p.tender && (
+                      <TenderPanel
+                        index={i}
+                        row={p}
+                        tenders={tenderChoices}
+                        configuredMethods={configuredMethods}
+                        invalid={invalidFieldsOfRow(i)}
+                        onChange={(patch) => updatePayment(i, patch)}
+                        onTenderChange={(tender) => changeRowTender(i, tender)}
+                        onRemove={() => removePaymentRow(i)}
+                      />
+                    )}
+                    <PaymentAmountFields
+                      index={i}
+                      row={p}
+                      numbered={mixedPaymentActive}
+                      reference={
+                        rowShowsReference(p)
+                          ? { label: referenceLabelFor(p, i), required: crIsRequired(p) }
+                          : null
+                      }
+                      invalid={invalidFieldsOfRow(i)}
+                      onChange={(patch) => updatePayment(i, patch)}
+                    />
+                  </div>
+                ))}
+                {/* A down payment: ONE CR Number for the whole transaction. */}
+                {saleHasDownPayment && (
+                  <ReferenceField
+                    label="CR Number"
+                    required
+                    value={payments[0]?.referenceNumber ?? ''}
+                    invalid={crInvalid}
+                    onChange={(v) => updatePayment(0, { referenceNumber: v })}
+                    testId="sale-cr-number"
+                    ariaLabel="CR Number"
+                  />
+                )}
+              </div>
+            ) : (
               <div className="space-y-2">
                 {payments.map((p, i) => {
-                  if (saleMode === 'sale') {
-                    // Method is fully decided by Item Payment Mode above (Cash's
-                    // own sub-choice, or Credit/Debit Card) — no separate method
-                    // picker or split-tender here, just how much was received.
-                    return (
-                      <div key={i} className="space-y-1">
-                        <label className="block text-[13px] text-gray-700">Amount received</label>
-                        {/* Scenario 70 — large and written from the left, with the
-                            peso sign in front, like the Delivery fee field. */}
-                        <div className="relative">
-                          <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-base font-semibold text-gray-500">
-                            ₱
-                          </span>
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            aria-label="Amount received"
-                            className="w-full rounded-lg border-2 border-purple-200 bg-white py-3 pl-9 pr-3 text-base font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:text-sm placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                            placeholder="0.00"
-                            value={p.amount === 0 ? '' : p.amount}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value)
-                              updatePayment(i, { amount: isNaN(val) ? 0 : val })
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  }
                   return (
                     <div key={i} className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -7712,35 +8176,18 @@ export default function CheckoutPage() {
                   )
                 })}
 
-                {/* Reference number / CR Number — a plain cash-mode sale
-                    needs neither, unless this sale also has an inhouse
-                    installment/down-payment component, or is a pure-TPF
-                    cart's own down payment (mirrors the down payment section
-                    below), in which case its cash-lines payment gets a CR
-                    Number too. card/bank/e-wallet/etc. (REF_METHODS) still
-                    always need their own reference, installment or not —
-                    same as reserve mode. */}
-                {payments.some(
-                  (p) => saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
-                ) && (
+                {/* Reserve mode's deposit: a reference on REF_METHODS or where the
+                    method's own config labels one. */}
+                {payments.some((p) => REF_METHODS.includes(p.method) || p.refFieldLabel) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
-                      const needsRef =
-                        saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
+                      const needsRef = REF_METHODS.includes(p.method) || p.refFieldLabel
                       const label =
                         p.refFieldLabel ??
-                        (saleMode === 'sale'
-                          ? 'CR Number'
-                          : PAYMENT_LABELS[p.method]
-                            ? `${PAYMENT_LABELS[p.method]} reference`
-                            : 'Reference')
-                      // Same predicate as the submit-time check: a sale only
-                      // requires it where crIsRequired says so; reserve mode
-                      // keeps the REF_METHODS / config rule.
-                      const isRequired =
-                        saleMode === 'sale'
-                          ? crIsRequired(p)
-                          : (p.refRequired ?? REF_METHODS.includes(p.method))
+                        (PAYMENT_LABELS[p.method]
+                          ? `${PAYMENT_LABELS[p.method]} reference`
+                          : 'Reference')
+                      const isRequired = p.refRequired ?? REF_METHODS.includes(p.method)
                       return needsRef ? (
                         <div key={i}>
                           <label className="mb-1 block text-xs font-medium text-gray-800">
@@ -7770,6 +8217,41 @@ export default function CheckoutPage() {
                       : `Redeeming ~${loyaltyPointsNeeded} pts · Balance: ${loyaltyAccount.currentPoints} pts`}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Mixed payment — one more method while something is still unpaid,
+                then the running figures once there are several. */}
+            <div className="mt-4 empty:hidden">
+              {addAnotherPaymentButton('add-another-payment')}
+            </div>
+            {mixedPaymentActive && (
+              <div
+                className="mt-4 space-y-1.5 border-t border-purple-200 pt-4 text-sm"
+                data-testid="payment-summary"
+              >
+                {totalChangedFrom !== null && (
+                  <p className="text-xs text-amber-700" data-testid="payment-total-changed">
+                    The total changed from {fmt(totalChangedFrom)} to {fmt(tenderTarget)} — check
+                    the amounts above.
+                  </p>
+                )}
+                <div className="flex justify-between text-gray-700">
+                  <span>Paid so far</span>
+                  <span className="font-mono font-medium" data-testid="payment-paid-so-far">
+                    {fmt(totalPaid)}
+                  </span>
+                </div>
+                <div
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 font-bold ${
+                    balance > 0.009 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'
+                  }`}
+                >
+                  <span>Remaining</span>
+                  <span className="font-mono" data-testid="payment-remaining">
+                    {fmt(balance)}
+                  </span>
+                </div>
               </div>
             )}
 
@@ -7813,6 +8295,20 @@ export default function CheckoutPage() {
 
           {/* Confirm */}
           <div className="border-t border-purple-200 p-5">
+            {shownPaymentIssues.length > 0 && (
+              <div
+                role="alert"
+                data-testid="payment-issues"
+                className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"
+              >
+                <p className="font-semibold">You&apos;re missing:</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  {shownPaymentIssues.map((issue, i) => (
+                    <li key={i}>{issue.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {error && (
               <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
                 <p>{error}</p>
@@ -8663,6 +9159,7 @@ function SuccessScreen({
   customerDisplayName,
   cart,
   payments,
+  crNumber,
   qrOptionName,
   promoDiscount,
   activeTaxRate,
@@ -8705,6 +9202,8 @@ function SuccessScreen({
   customerDisplayName: (c: PosCustomer) => string
   cart: CartLine[]
   payments: PaymentRow[]
+  /** A down-payment sale's one CR Number ('' when the sale has none). */
+  crNumber: string
   /** The GCash / Biller / gateway the cashier picked for a QR payment, so the
    * receipt names it rather than printing a bare "QR". */
   qrOptionName?: string
@@ -8930,12 +9429,12 @@ function SuccessScreen({
               <span>Date</span>
               <span>{receiptDate}</span>
             </div>
-            {/* The sale's document number leads — the Sales Invoice No., or the
+            {/* The sale's document number — the Sales Invoice No., or the
                 Delivery Receipt No. when the sale was covered by a DR; it's
                 what the customer and BIR actually go by. A DR sale stores its
                 number as the invoice number too, so this is one row either
-                way. Transaction No. sits last, dimmed: it's an internal
-                system reference, only useful for lookups. */}
+                way. The internal POS Transaction No. only shows when there is
+                no SI/DR to show (a refund). */}
             {(success.deliveryReceiptNumber || success.salesInvoiceNumber) && (
               <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
                 <span className="shrink-0">
@@ -8946,12 +9445,14 @@ function SuccessScreen({
                 </span>
               </div>
             )}
-            <div className="flex items-start justify-between gap-2 text-[11px] text-gray-400">
-              <span className="shrink-0">Transaction No.</span>
-              <span className="break-all text-right font-mono text-[10px]">
-                {success.transactionNumber}
-              </span>
-            </div>
+            {!(success.deliveryReceiptNumber || success.salesInvoiceNumber) && (
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-400">
+                <span className="shrink-0">Transaction No.</span>
+                <span className="break-all text-right font-mono text-[10px]">
+                  {success.transactionNumber}
+                </span>
+              </div>
+            )}
             {/* Installment terms bill one invoice per due date, all created
                 at sale time — only the first (the plan's reference number)
                 belongs on the receipt, not every future month's. */}
@@ -9070,19 +9571,27 @@ function SuccessScreen({
                 <div key={i} className="text-[11px] text-gray-500">
                   <div className="flex justify-between">
                     <span>
-                      {p.method === 'qr'
-                        ? qrTenderLabel(qrOptionName)
-                        : (PAYMENT_LABELS[p.method] ?? p.method)}
+                      {p.tender
+                        ? tenderLabel(p.tender, p.optionName)
+                        : p.method === 'qr'
+                          ? qrTenderLabel(qrOptionName)
+                          : (PAYMENT_LABELS[p.method] ?? p.method)}
                     </span>
                     <span>{fmt(p.amount)}</span>
                   </div>
                   {p.referenceNumber && (
                     <div className="text-right text-[10px] text-gray-400">
-                      CR# {p.referenceNumber}
+                      Ref# {p.referenceNumber}
                     </div>
                   )}
                 </div>
               ))}
+            {crNumber && (
+              <div className="flex justify-between text-[11px] text-gray-500">
+                <span>CR#</span>
+                <span>{crNumber}</span>
+              </div>
+            )}
             {promoDiscount > 0 && (
               <div className="flex justify-between text-[11px] text-green-600">
                 <span>Discount</span>
