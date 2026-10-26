@@ -32,10 +32,28 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  * doesn't hide the rest of the form, it just populates the Invoice dropdown
  * and defaults Cash Received to the picked invoice's outstanding balance.
  * Same `recordPayment` call and fields the existing per-invoice
- * PaymentDialog uses. */
-export default function NewReceiptForm() {
+ * PaymentDialog uses.
+ *
+ * Scenario 79 — `initialCustomer`/`initialInvoiceId` arrive pre-filled from
+ * a CRM Installment Account's "Record payment"; both stay changeable.
+ * `returnTo` is where a save lands instead of the AR Invoices list. */
+export default function NewReceiptForm({
+  initialCustomer = null,
+  initialInvoiceId = null,
+  returnTo = null,
+}: {
+  initialCustomer?: { id: string; name: string } | null
+  initialInvoiceId?: string | null
+  returnTo?: string | null
+}) {
   const router = useRouter()
-  const [customer, setCustomer] = useState<ARInvoiceCustomerResult | null>(null)
+  const doneHref = returnTo ?? '/accounting/ar-invoices'
+  const [customer, setCustomer] = useState<ARInvoiceCustomerResult | null>(
+    initialCustomer ? { ...initialCustomer, phone: null, customerCode: '' } : null
+  )
+  // Picked once the pre-filled customer's open invoices arrive — only if it
+  // is still open, so a paid-off one leaves the dropdown on "— Select —".
+  const [pendingInvoiceId, setPendingInvoiceId] = useState(initialInvoiceId)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
   const [searchingCustomers, setSearchingCustomers] = useState(false)
@@ -100,8 +118,12 @@ export default function NewReceiptForm() {
       )
       setInvoices(open)
       setLoadingInvoices(false)
+      if (pendingInvoiceId) {
+        if (open.some((i) => i.id === pendingInvoiceId)) setInvoiceId(pendingInvoiceId)
+        setPendingInvoiceId(null)
+      }
     })
-  }, [customer])
+  }, [customer]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Picking (or changing) the invoice defaults Cash Received to what's
   // actually outstanding on it — the rest of the form stays as typed.
@@ -142,7 +164,7 @@ export default function NewReceiptForm() {
       setOverpaymentResult(res.data.overpayment)
       return
     }
-    router.push('/accounting/ar-invoices')
+    router.push(doneHref)
   }
 
   if (overpaymentResult) {
@@ -164,7 +186,7 @@ export default function NewReceiptForm() {
             A manager can cancel this specific payment from the payment history view if needed.
           </p>
           <button
-            onClick={() => router.push('/accounting/ar-invoices')}
+            onClick={() => router.push(doneHref)}
             className="mt-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
           >
             Got it
@@ -177,11 +199,11 @@ export default function NewReceiptForm() {
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href="/accounting/ar-invoices"
+        href={doneHref}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to AR Invoices
+        {returnTo ? 'Back' : 'Back to AR Invoices'}
       </Link>
 
       <h1 className="text-2xl font-semibold text-prominent-purple-900">New Receipt</h1>

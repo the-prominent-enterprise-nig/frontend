@@ -20,7 +20,6 @@ import {
 } from 'lucide-react'
 import { installmentAccountsApi, remindersApi } from '@/src/libs/api/crm'
 import EarlyPayoffModal from '@/src/components/crm/EarlyPayoffModal'
-import RecordPaymentModal from '@/src/components/crm/RecordPaymentModal'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import CompleteReminderModal from '@/src/components/crm/CompleteReminderModal'
 import type {
@@ -101,7 +100,8 @@ export default function InstallmentAccountDetail({
   id,
   canEdit,
   canEarlyPayoff,
-  canRecordPayment,
+  canCollectAtPos,
+  canRecordReceipt,
   canApproveGraduation,
   canApproveDamEscalation,
   canManageLegalEscalation,
@@ -112,7 +112,10 @@ export default function InstallmentAccountDetail({
   id: string
   canEdit: boolean
   canEarlyPayoff: boolean
-  canRecordPayment: boolean
+  /** Record payment for a POS-sale plan — it opens POS Collections. */
+  canCollectAtPos: boolean
+  /** Record payment for an imported/hand-entered account — it opens AR New Receipt. */
+  canRecordReceipt: boolean
   canApproveGraduation: boolean
   canApproveDamEscalation: boolean
   canManageLegalEscalation: boolean
@@ -124,7 +127,6 @@ export default function InstallmentAccountDetail({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [payoffOpen, setPayoffOpen] = useState(false)
-  const [paymentOpen, setPaymentOpen] = useState(false)
   const [payoffQuote, setPayoffQuote] = useState<number | null>(null)
   // EarlyPayoffModal seeds its form state from `suggestedAmount` only on
   // mount (it stays mounted, just returns null while closed) — bumping this
@@ -308,7 +310,29 @@ export default function InstallmentAccountDetail({
   }
 
   const canSettle = canEarlyPayoff && account.status === 'active'
-  const canPay = canRecordPayment && account.status === 'active'
+  // Scenario 79 — Record payment goes where the payment is posted (receipt,
+  // GL, dues), not the old CRM-only modal that only moved this account's
+  // stored figures. POS Collections only lists POS-sale plans, so an
+  // imported/hand-entered account (one AR invoice, no schedule) goes to AR
+  // New Receipt with that invoice picked instead.
+  const paymentHref = account.installmentScheduleId
+    ? `/pos/collections?${new URLSearchParams({
+        customerId: account.customerId,
+        customerName: account.customer.name,
+        scheduleId: account.installmentScheduleId,
+      })}`
+    : account.arInvoiceId
+      ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
+          customerId: account.customerId,
+          customerName: account.customer.name,
+          invoiceId: account.arInvoiceId,
+          returnTo: `/crm/installment-accounts/${id}`,
+        })}`
+      : null
+  const canPay =
+    account.status === 'active' &&
+    !!paymentHref &&
+    (account.installmentScheduleId ? canCollectAtPos : canRecordReceipt)
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
@@ -336,14 +360,14 @@ export default function InstallmentAccountDetail({
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {canPay && (
-            <button
-              onClick={() => setPaymentOpen(true)}
+          {canPay && paymentHref && (
+            <Link
+              href={paymentHref}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
             >
               <Coins className="h-4 w-4" />
               Record payment
-            </button>
+            </Link>
           )}
           {canSettle && (
             <button
@@ -838,23 +862,6 @@ export default function InstallmentAccountDetail({
         }}
         accountId={id}
         suggestedAmount={payoffQuote ?? Number(account.currentBalance)}
-      />
-
-      <RecordPaymentModal
-        open={paymentOpen}
-        onClose={() => setPaymentOpen(false)}
-        onRecorded={() => {
-          reload()
-          // Scenario 20 (NAMIDRe): a recorded payment auto-closes any open
-          // reminder on this account server-side — refresh the list so
-          // that shows up without a manual page reload.
-          loadReminders()
-        }}
-        accountId={id}
-        suggestedAmount={Number(account.monthlyInstallment)}
-        suggestedRebate={Number(account.ppd)}
-        monthlyInstallment={Number(account.monthlyInstallment)}
-        partialPaymentOnNextDue={Number(account.partialPaymentOnNextDue)}
       />
 
       {rejectingRequestId && (
