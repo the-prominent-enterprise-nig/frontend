@@ -73,7 +73,7 @@ function OpenTransferRow({
   const number = transfer.transferNumber ?? '—'
   return (
     <Link
-      href={`/inventory/transfers?transfer=${encodeURIComponent(number)}`}
+      href={`/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(number)}`}
       className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-[#e4e4e9] bg-[#fbfbfc] px-3 py-2 text-[12px] hover:border-[#d3d3db]"
     >
       <span className={`${MONO} font-semibold text-[#17171c]`}>{number}</span>

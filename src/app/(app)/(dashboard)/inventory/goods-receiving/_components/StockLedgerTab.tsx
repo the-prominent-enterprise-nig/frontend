@@ -84,7 +84,7 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
       {entry.stockTransferNumber && (
         <>
           <Link
-            href="/inventory/transfers"
+            href={`/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(entry.stockTransferNumber)}`}
             className={`${MONO} truncate text-[13.5px] text-[#3d3d4a] hover:text-[#5b21b6] hover:underline`}
             title="Stock transfer"
           >

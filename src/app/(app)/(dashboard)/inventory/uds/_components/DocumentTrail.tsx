@@ -118,7 +118,9 @@ export function udsDocumentTrail(uds: Uds): TrailHop[] {
             label: 'Stock transfer',
             number: uds.linkedStockTransfer?.transferNumber ?? null,
             at: null,
-            href: uds.linkedStockTransfer ? '/inventory/transfers' : undefined,
+            href: uds.linkedStockTransfer
+              ? `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(uds.linkedStockTransfer.transferNumber)}`
+              : undefined,
             dueFrom: 'in_transit',
           },
         ]
