@@ -28,6 +28,8 @@ const DR_ERROR_MESSAGES: Record<string, string> = {
     'This DR is no longer waiting for approval — someone already decided it.',
   delivery_receipt_cannot_void:
     'Only an approved or posted DR can be voided — delete a draft, or reject a pending one.',
+  debit_memo_zero_amount:
+    'Nothing to post — these items have no cost on file. Type a unit cost on the DR lines, then approve again.',
   insufficient_stock: 'Not enough stock is left at the issuing branch for one of the items.',
   purpose_not_available_yet:
     'This purpose can be saved as a draft but not submitted yet — its approval step is still being built.',

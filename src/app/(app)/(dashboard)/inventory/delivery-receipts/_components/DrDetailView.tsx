@@ -140,7 +140,7 @@ function statusLine(dr: DrDetail): string {
       return 'Waiting for the Branch Manager. Nothing has moved yet.'
     case 'approved':
       return DR_PURPOSE_CONFIG[dr.purpose].withDebitMemo
-        ? 'Approved — accounting posts the debit memo, which moves the stock.'
+        ? 'Approved — the debit memo posts with the approval.'
         : 'Approved.'
     case 'posted':
       return 'Posted — the stock has left the issuing branch.'

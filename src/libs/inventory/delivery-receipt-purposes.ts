@@ -28,40 +28,40 @@ export const DR_PURPOSE_CONFIG: Record<DrPurpose, DrPurposeConfig> = {
   office_use: {
     label: 'Office use',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Office equipment, furniture and fixtures. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Office equipment, furniture and fixtures. ${MEMO_TAIL}`,
     counterparty: 'none',
     requiresDepartment: true,
   },
   raffle_prize: {
     label: 'Raffle prize',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Employee benefits and wellness. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Employee benefits and wellness. ${MEMO_TAIL}`,
     counterparty: 'none',
     requiresOccasion: true,
   },
   giveaway: {
     label: 'Giveaways',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Advertising and promotion. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Advertising and promotion. ${MEMO_TAIL}`,
     counterparty: 'none',
   },
   donation: {
     label: 'Donation',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Donations and charitable contributions. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Donations and charitable contributions. ${MEMO_TAIL}`,
     counterparty: 'none',
   },
   redeemed_unit: {
     label: 'Redeemed unit',
     withDebitMemo: true,
-    effect: `When approved, accounting posts the debit memo: the stock moves out of the issuing branch and its cost goes to Marketing and sales support. ${MEMO_TAIL}`,
+    effect: `When approved, the debit memo posts automatically: the stock moves out of the issuing branch and its cost goes to Marketing and sales support. ${MEMO_TAIL}`,
     counterparty: 'customer',
   },
   return_to_supplier: {
     label: 'Return units to supplier',
     withDebitMemo: true,
     effect:
-      'A supplier debit memo is drafted with this DR and follows it while it is a draft. Once the Branch Manager approves, accounting posts the memo — the stock moves out and what the supplier owes back is recorded — and applies it to an invoice later.',
+      'A supplier debit memo is drafted with this DR and follows it while it is a draft. When the Branch Manager approves, the memo posts automatically — the stock moves out and what the supplier owes back is recorded. Accounting applies it to an invoice later.',
     counterparty: 'supplier',
   },
   to_service_center: {

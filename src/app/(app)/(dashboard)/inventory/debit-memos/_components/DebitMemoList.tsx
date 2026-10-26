@@ -338,7 +338,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                 opposite way and the two names can't tell them apart. */}
             <p className="mt-1 text-sm text-[#5b5b6b]">
               Supplier returns going <strong>back out</strong> to a supplier, and the internal memos
-              approved delivery receipts draft for accounting.
+              approved delivery receipts post.
             </p>
           </div>
         </div>
