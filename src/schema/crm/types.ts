@@ -266,14 +266,19 @@ export interface AgentInvoice {
   totalAmount: number
   commission: number | null
   /** The live Commissions - Sales voucher paying this sale's commission. */
-  released: {
-    expenseId: string
-    voucherNumber: string
-    date: string
-    amount: number
-    /** Still a draft — the sale is taken but not yet paid out. */
-    isDraft: boolean
-  } | null
+  released: AgentInvoiceRelease | null
+  /** The live Commissions - SMI voucher paid on this sale (Scenario 78 Part 2) —
+   * released separately from the commission. */
+  smiReleased: AgentInvoiceRelease | null
+}
+
+export interface AgentInvoiceRelease {
+  expenseId: string
+  voucherNumber: string
+  date: string
+  amount: number
+  /** Still a draft — the sale is taken but not yet paid out. */
+  isDraft: boolean
 }
 
 export interface Interaction {
