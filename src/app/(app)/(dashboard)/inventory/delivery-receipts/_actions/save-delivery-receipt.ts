@@ -33,6 +33,7 @@ function toBody(v: DrFormValues): Record<string, unknown> {
   return {
     purpose: v.purpose,
     purposeDetail: v.purpose === 'raffle_prize' ? blank(occasionOf(v)) : undefined,
+    giveawayRecipient: v.purpose === 'giveaway' ? v.giveawayRecipient || undefined : undefined,
     issueDate: v.issueDate,
     warehouseId: v.warehouseId,
     departmentId: blank(v.departmentId),

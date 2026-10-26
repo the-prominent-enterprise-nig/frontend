@@ -4,7 +4,11 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import AttachmentsPanel from '@/src/components/common/AttachmentsPanel'
 import { MONO } from '@/src/libs/design/plex'
-import { DR_PURPOSE_CONFIG } from '@/src/libs/inventory/delivery-receipt-purposes'
+import {
+  DR_PURPOSE_CONFIG,
+  GIVEAWAY_RECIPIENT_LABELS,
+  memoNumberPlaceholder,
+} from '@/src/libs/inventory/delivery-receipt-purposes'
 import type { DrDetail } from '@/src/schema/inventory/delivery-receipts'
 import { DR_STATUS_META, drStatusLabel, fmtDrDate, fmtPeso } from '../_lib/dr-format'
 import { BTN_GHOST, DrShell, HeaderFigure, NumberChip, Section } from './drFormUi'
@@ -64,6 +68,12 @@ export default function DrDetailView({
           {dr.purposeDetail && (
             <span className="font-normal text-[#5b5b6b]"> — {dr.purposeDetail}</span>
           )}
+          {dr.giveawayRecipient && (
+            <span className="font-normal text-[#5b5b6b]">
+              {' '}
+              — to {GIVEAWAY_RECIPIENT_LABELS[dr.giveawayRecipient].toLowerCase()}
+            </span>
+          )}
         </p>
         <div className="rounded-lg bg-[#f1ebfb] px-3.5 py-3 text-[12.5px] leading-relaxed text-[#3f1490]">
           {config.effect}
@@ -81,7 +91,7 @@ export default function DrDetailView({
                     {memo.memoNumber}
                   </Link>
                 ) : (
-                  (memo?.memoNumber ?? 'Assigned on approval')
+                  (memo?.memoNumber ?? memoNumberPlaceholder(dr.purpose))
                 )}
               </dd>
             </div>
@@ -143,7 +153,9 @@ function statusLine(dr: DrDetail): string {
         ? 'Approved — the debit memo posts with the approval.'
         : 'Approved.'
     case 'posted':
-      return 'Posted — the stock has left the issuing branch.'
+      return dr.debitMemo?.status === 'DRAFT'
+        ? 'Posted — the stock has left. The debit memo is waiting for Accounting to post it.'
+        : 'Posted — the stock has left the issuing branch.'
     case 'invoiced':
       return 'Invoiced at POS.'
     case 'rejected':

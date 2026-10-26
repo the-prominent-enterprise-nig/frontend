@@ -14,7 +14,11 @@ export const DR_PURPOSES = [
   'repaired_to_customer',
   'unrepaired_to_customer',
   'sales_invoice_to_follow',
+  'others',
 ] as const
+
+/** Giveaways only — who the units go to decides the account its memo debits. */
+export const DR_GIVEAWAY_RECIPIENTS = ['customer', 'partner'] as const
 
 export const DR_STATUSES = [
   'draft',
@@ -37,6 +41,8 @@ export const DR_REPAIR_PURPOSES = [
 
 export const DrPurposeSchema = z.enum(DR_PURPOSES)
 export const DrStatusSchema = z.enum(DR_STATUSES)
+export const DrGiveawayRecipientSchema = z.enum(DR_GIVEAWAY_RECIPIENTS)
+export type DrGiveawayRecipient = z.infer<typeof DrGiveawayRecipientSchema>
 export type DrPurpose = z.infer<typeof DrPurposeSchema>
 export type DrStatus = z.infer<typeof DrStatusSchema>
 
@@ -99,6 +105,8 @@ export const DrFormSchema = z.object({
   purpose: DrPurposeSchema,
   occasion: z.string(),
   occasionOther: z.string().max(150),
+  /** Giveaways only; '' until picked. */
+  giveawayRecipient: z.union([DrGiveawayRecipientSchema, z.literal('')]),
   issueDate: z.string().min(1, 'Issue date is required'),
   warehouseId: z.string().min(1, 'Pick the issuing branch / warehouse'),
   departmentId: z.string(),
@@ -144,6 +152,9 @@ export const DrSubmitSchema = DrFormSchema.superRefine((v, ctx) => {
     issue('departmentId', 'Which department will use it?')
   }
   if (v.purpose === 'raffle_prize' && !occasionOf(v)) issue('occasion', 'Pick the occasion')
+  if (v.purpose === 'giveaway' && !v.giveawayRecipient) {
+    issue('giveawayRecipient', 'Who is it given to?')
+  }
   if (v.purpose === 'sales_invoice_to_follow' && !v.customerId) {
     issue('customerId', 'Pick the customer from CRM')
   }
@@ -199,6 +210,7 @@ export const DrDetailSchema = z.object({
   drNumber: z.string(),
   purpose: DrPurposeSchema,
   purposeDetail: z.string().nullable(),
+  giveawayRecipient: DrGiveawayRecipientSchema.nullable().optional(),
   status: DrStatusSchema,
   issueDate: z.string(),
   warehouseId: z.string(),
