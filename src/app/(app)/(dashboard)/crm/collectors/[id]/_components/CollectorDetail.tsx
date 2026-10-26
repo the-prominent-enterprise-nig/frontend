@@ -158,6 +158,9 @@ export default function CollectorDetail({
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-1">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Summary</h2>
           <dl className="space-y-2 text-[13px]">
+            <Row label="Area code" value={collector.areaCode || '—'} />
+            <Row label="Area" value={collector.area || '—'} />
+            <Row label="Supervisor" value={collector.supervisorName || '—'} />
             <Row label="Assigned accounts" value={String(collector.installmentAccounts.length)} />
             <Row label="Total remitted" value={peso(totalRemitted)} />
             <Row

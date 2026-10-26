@@ -91,7 +91,7 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search collector code or name…"
+            placeholder="Search collector code, name, or area…"
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-prominent-orange-400 focus:outline-none"
           />
         </div>
@@ -153,7 +153,9 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                       <StatusBadge status={c.status} />
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
-                      {c.stubNumber} · {branchName(c.branchId) ?? 'Unassigned branch'}
+                      {c.stubNumber}
+                      {c.areaCode ? ` · ${c.areaCode}` : ''} ·{' '}
+                      {branchName(c.branchId) ?? 'Unassigned branch'}
                     </div>
                   </div>
                 </Link>
@@ -169,6 +171,9 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                   <tr>
                     <th className="px-4 py-3">Collector code</th>
                     <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Area code</th>
+                    <th className="px-4 py-3">Area</th>
+                    <th className="px-4 py-3">Supervisor</th>
                     <th className="px-4 py-3">Branch</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Created</th>
@@ -183,6 +188,15 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                     >
                       <td className="px-4 py-3 font-medium text-gray-900">{c.stubNumber}</td>
                       <td className="px-4 py-3">{c.name}</td>
+                      <td className="px-4 py-3 text-[13px] text-gray-600">
+                        {c.areaCode || <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-gray-600">
+                        {c.area || <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-gray-600">
+                        {c.supervisorName || <span className="text-gray-400">—</span>}
+                      </td>
                       <td className="px-4 py-3 text-[13px] text-gray-600">
                         {branchName(c.branchId) ?? <span className="text-gray-400">—</span>}
                       </td>

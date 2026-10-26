@@ -17,6 +17,10 @@ export const createCollectorSchema = z.object({
     .transform((v) => v || undefined)
     .optional(),
   status: CollectorStatusEnum.optional(),
+  // Sent as typed — a blank one clears the stored value server-side.
+  area: z.string().max(255, 'Area is too long').optional(),
+  areaCode: z.string().max(50, 'Area code is too long').optional(),
+  supervisorName: z.string().max(255, 'Supervisor is too long').optional(),
   areaBarangayCodes: z.array(z.string().max(20)).optional(),
 })
 
