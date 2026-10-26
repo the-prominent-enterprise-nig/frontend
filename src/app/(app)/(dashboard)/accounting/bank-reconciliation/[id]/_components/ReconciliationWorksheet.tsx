@@ -202,7 +202,7 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   const status = reconStatus(rec.reconciled, discrepancy, awaiting)
 
   return (
-    <div className="px-6 py-8 lg:px-10 max-w-5xl mx-auto">
+    <div className="w-full px-4 py-6 md:px-6 lg:px-10">
       <Link
         href="/accounting/bank-reconciliation"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
@@ -565,7 +565,7 @@ export function BankLedgerView({
   }, [load])
 
   return (
-    <div className="px-6 py-8 lg:px-10 max-w-6xl mx-auto">
+    <div className="w-full px-4 py-6 md:px-6 lg:px-10">
       <Link
         href={`/accounting/bank-reconciliation/${reconciliationId}`}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"

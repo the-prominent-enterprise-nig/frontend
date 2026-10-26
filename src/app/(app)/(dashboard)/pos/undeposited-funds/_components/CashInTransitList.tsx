@@ -300,8 +300,8 @@ function exportLedgerCsv(groups: BranchGroup[]): void {
     'Status',
     'Bank',
     'Deposit Date',
-    'Deposited',
     'Collected',
+    'Deposited',
     'Balance',
   ]
   const dataRows = groups.flatMap((group) => {
@@ -315,8 +315,8 @@ function exportLedgerCsv(groups: BranchGroup[]): void {
         statusText(r),
         r.bankName ?? '',
         r.depositDate ? fmtDate(r.depositDate) : '',
-        depositedOf(r),
         collectedOf(r),
+        depositedOf(r),
         balance,
       ]),
       ...ledger.receipts.map(({ receipt: r, balance }) => [
@@ -327,8 +327,8 @@ function exportLedgerCsv(groups: BranchGroup[]): void {
         STATUS_TEXT.to_deposit,
         '',
         '',
-        Number(r.depositedAmount ?? 0),
         receiptCollected(r),
+        Number(r.depositedAmount ?? 0),
         balance,
       ]),
     ]
@@ -711,8 +711,8 @@ function useSingleBranchSelection(rows: LedgerRow[]): Selection {
   }
 }
 
-/** Head Office and the owner choose a branch, or all of them; each option
- * shows what that branch still has to bank. */
+/** Head Office and the owner choose a branch, or all of them — by name only;
+ * the table's Balance says what each still has to bank. */
 function BranchPicker({
   value,
   onChange,
@@ -729,7 +729,7 @@ function BranchPicker({
     { value: '', label: 'All branches' },
     ...(branches.data?.data ?? []).map((b) => ({
       value: b.branchId,
-      label: `${b.branchName} — ${fmtMoney(b.totalAmount)} · ${b.sessionCount} session${b.sessionCount === 1 ? '' : 's'}`,
+      label: b.branchName,
     })),
   ]
   return (
@@ -840,7 +840,7 @@ function LedgerTable({
   empty: string
 }): React.JSX.Element {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const columns = canManage ? 9 : 8
+  const columns = canManage ? 8 : 7
   const toggleCollapsed = (id: string): void =>
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -849,20 +849,24 @@ function LedgerTable({
       return next
     })
   return (
-    <div className="scroll-fade-x overflow-x-auto rounded-lg border border-gray-200 bg-white">
+    // No horizontal scroll: the page is full width, so the columns fit and
+    // cells wrap on a narrow screen instead.
+    <div className="rounded-lg border border-gray-200 bg-white">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 text-xs uppercase text-gray-600">
           <tr>
             {canManage && <th className="w-10 px-3 py-2" />}
-            <th className="px-3 py-2 text-left">Terminal</th>
-            <th className="px-3 py-2 text-left">Cashier</th>
+            <th className="px-3 py-2 text-left">Session</th>
             <th className="px-3 py-2 text-left">Closed</th>
             <th className="px-3 py-2 text-left">Deposit date</th>
             <th className="px-3 py-2 text-left">Status</th>
-            <th className="px-3 py-2 text-right">Deposited</th>
             <th className="px-3 py-2 text-right">Collected</th>
+            <th className="px-3 py-2 text-right">Deposited</th>
             <th className="px-3 py-2 text-right">
-              <Tooltip label="What the branch still has undeposited, oldest session first">
+              <Tooltip
+                label="What the branch still has undeposited, oldest session first"
+                align="end"
+              >
                 <span>Balance</span>
               </Tooltip>
             </th>
@@ -960,13 +964,13 @@ function BranchRows({
           </div>
         </td>
         <td className="px-3 py-2 text-right font-semibold tabular-nums">
-          <MoneyOrDash amount={group.rows.reduce((sum, r) => sum + depositedOf(r), 0)} />
-        </td>
-        <td className="px-3 py-2 text-right font-semibold tabular-nums">
           {fmtMoney(
             group.rows.reduce((sum, r) => sum + collectedOf(r), 0) +
               group.receipts.reduce((sum, r) => sum + receiptCollected(r), 0)
           )}
+        </td>
+        <td className="px-3 py-2 text-right font-semibold tabular-nums">
+          <MoneyOrDash amount={group.rows.reduce((sum, r) => sum + depositedOf(r), 0)} />
         </td>
         <td className="px-3 py-2 text-right font-semibold tabular-nums">
           {fmtMoney(ledger.balance)}
@@ -991,6 +995,23 @@ function BranchRows({
   )
 }
 
+/** The terminal (or New Receipt number) over the cashier (or payer) — one
+ * column for both, so the table fits the page without scrolling. */
+function SessionCell({
+  title,
+  detail,
+}: {
+  title: string
+  detail?: string | null
+}): React.JSX.Element {
+  return (
+    <>
+      <div>{title}</div>
+      {detail && <div className="text-xs text-gray-500">{detail}</div>}
+    </>
+  )
+}
+
 /** An unbanked New Receipt the branch has no To-deposit session for. Not
  * tickable: recording the branch's deposit takes it in automatically. */
 function ReceiptRow({
@@ -1006,8 +1027,9 @@ function ReceiptRow({
   return (
     <tr>
       {canManage && <td className="px-3 py-2" />}
-      <td className="px-3 py-2">{receipt.number ?? 'New Receipt'}</td>
-      <td className="px-3 py-2">{receipt.payerName}</td>
+      <td className="px-3 py-2">
+        <SessionCell title={receipt.number ?? 'New Receipt'} detail={receipt.payerName} />
+      </td>
       <td className="px-3 py-2 text-xs">{fmtDate(receipt.paymentDate)}</td>
       <td className="px-3 py-2 text-xs text-gray-400">—</td>
       <td className="px-3 py-2">
@@ -1017,10 +1039,10 @@ function ReceiptRow({
           <span className="text-xs text-gray-500">Undeposited · New Receipt</span>
         )}
       </td>
+      <td className="px-3 py-2 text-right">{fmtMoney(receiptCollected(receipt))}</td>
       <td className="px-3 py-2 text-right">
         <MoneyOrDash amount={Number(receipt.depositedAmount ?? 0)} />
       </td>
-      <td className="px-3 py-2 text-right">{fmtMoney(receiptCollected(receipt))}</td>
       <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(balance)}</td>
     </tr>
   )
@@ -1064,19 +1086,20 @@ function SessionRow({
           )}
         </td>
       )}
-      <td className="px-3 py-2">{row.terminalCode ?? '—'}</td>
-      <td className="px-3 py-2">{row.cashierName ?? '—'}</td>
+      <td className="px-3 py-2">
+        <SessionCell title={row.terminalCode ?? '—'} detail={row.cashierName} />
+      </td>
       <td className="px-3 py-2 text-xs">{fmtDate(row.closedAt)}</td>
-      <td className="whitespace-nowrap px-3 py-2 text-xs">
+      <td className="px-3 py-2 text-xs">
         {row.depositDate ? fmtDate(row.depositDate) : <span className="text-gray-400">—</span>}
       </td>
       <td className="px-3 py-2">
         <StatusCell row={row} canManage={canManage} onOpenDeposit={onOpenDeposit} />
       </td>
+      <td className="px-3 py-2 text-right">{fmtMoney(collectedOf(row))}</td>
       <td className="px-3 py-2 text-right tabular-nums">
         <MoneyOrDash amount={depositedOf(row)} />
       </td>
-      <td className="px-3 py-2 text-right">{fmtMoney(collectedOf(row))}</td>
       <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(balance)}</td>
     </tr>
   )
@@ -1111,8 +1134,8 @@ function StatusCell({
           Deposited
         </span>
         {canManage && row.hasProof === false && (
-          <Tooltip label="No deposit slip attached yet. Open the deposit to attach it.">
-            <span className="whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+          <Tooltip label="No deposit slip attached yet. Open the deposit to attach it." align="end">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
               No slip
             </span>
           </Tooltip>
@@ -1137,10 +1160,10 @@ function PartialChip({
   onOpen?: () => void
 }): React.JSX.Element {
   const chip =
-    'whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800'
+    'rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800'
   const left = `${fmtMoney(banked)} already deposited — the Balance shows what is left`
   return (
-    <Tooltip label={onOpen ? `${left}. Click to open that deposit.` : left}>
+    <Tooltip label={onOpen ? `${left}. Click to open that deposit.` : left} align="end">
       {onOpen ? (
         <button
           type="button"
