@@ -377,9 +377,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: POS_PERMISSIONS.DAILY_COLLECTION_READ,
       },
       {
-        // Scenario 53 — POS speaks in Undeposited Funds now; Accounting keeps
-        // the Cash-in-Transit name for the GL account it reconciles against.
-        label: 'Undeposited Funds',
+        // Collected Funds History (client, 2026-10-26), formerly Undeposited
+        // Funds; the route and permissions keep their old names.
+        label: 'Collected Funds History',
         href: '/pos/undeposited-funds',
         icon: Banknote,
         requiredPermission: POS_PERMISSIONS.CASH_IN_TRANSIT_READ,

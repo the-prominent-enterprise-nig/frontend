@@ -538,7 +538,14 @@ export default function SerialNumberList({
         {/* Table card */}
         {(!caravanView || caravanReady) && (
           <>
-            <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
+            {/* Caravan view draws its own card per caravan. */}
+            <div
+              className={
+                caravanView && !isLoading
+                  ? ''
+                  : 'overflow-hidden rounded-xl border border-[#e4e4e9] bg-white'
+              }
+            >
               {isLoading ? (
                 <div>
                   {Array.from({ length: 6 }).map((_, i) => (

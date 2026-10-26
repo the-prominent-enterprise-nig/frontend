@@ -9,9 +9,12 @@ import {
   ArrowUpFromLine,
   ArrowRightLeft,
   CalendarClock,
+  CalendarDays,
   ChevronRight,
+  MapPin,
   Package,
   Send,
+  Truck,
 } from 'lucide-react'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { MONO } from '../../purchase-orders/_components/procurementTokens'
@@ -43,11 +46,11 @@ type GroupSerials = { serials: SerialNumberSummary[]; isLoading: boolean }
 
 type Props = {
   groups: CaravanItemGroup[]
-  // Running caravans with nothing on hand — a heading with no item rows.
+  // Running caravans with nothing on hand — a card with no item rows.
   emptyCaravans: (WarehouseBranch & { warehouseId: string | null })[]
   // inventory:transfers:create — the "Transfer out" action opens a transfer.
   canTransfer: boolean
-  // inventory:caravan:manage — each caravan heading carries its Close action.
+  // inventory:caravan:manage — each caravan card carries its Close action.
   canClose: boolean
   isGroupOpen: (key: string) => boolean
   onToggleGroup: (key: string) => void
@@ -55,7 +58,7 @@ type Props = {
   emptyLabel: string
 }
 
-const COLUMN_COUNT = 1
+const COLUMN_LABEL = `${MONO} text-[10px] font-normal uppercase tracking-[.09em] text-[#8b8b9b]`
 
 function itemLabel(item: CaravanItemGroup['item']): string {
   if (!item) return 'Unknown item'
@@ -63,19 +66,19 @@ function itemLabel(item: CaravanItemGroup['item']): string {
   return parts.length > 0 ? parts.join(' ') : item.name
 }
 
-function caravanDateRange(branch: WarehouseBranch | null | undefined): string {
-  if (!branch?.startDate || !branch.endDate) return '—'
+function caravanDateRange(branch: WarehouseBranch | null | undefined): string | null {
+  if (!branch?.startDate || !branch.endDate) return null
   return `${formatShortDate(branch.startDate)} – ${formatShortDate(branch.endDate)}`
 }
 
 // Ended needs action now; the last few days are a heads-up.
 function countdownTone(branch: WarehouseBranch | null | undefined): string {
-  if (isCaravanEnded(branch)) return 'text-[#b42318]'
+  if (isCaravanEnded(branch)) return 'bg-[#fdeceb] text-[#b42318]'
   const days = caravanDaysLeft(branch?.endDate)
-  return days !== null && days <= 3 ? 'text-[#8a4b06]' : 'text-[#3f1490]'
+  return days !== null && days <= 3 ? 'bg-[#fef4e6] text-[#8a4b06]' : 'bg-[#f1ebfb] text-[#3f1490]'
 }
 
-/** "3 days left" / "Ended 2 days ago" — replaces the old countdown cards. */
+/** "3 days left" / "Ended 2 days ago" as a pill beside the caravan's name. */
 function CaravanCountdown({
   branch,
 }: {
@@ -84,12 +87,12 @@ function CaravanCountdown({
   if (!branch?.endDate) return null
   const Icon = isCaravanEnded(branch) ? AlertTriangle : CalendarClock
   return (
-    <div
-      className={`mt-0.5 inline-flex items-center gap-1 text-[12px] font-medium ${countdownTone(branch)}`}
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium ${countdownTone(branch)}`}
     >
       <Icon className="h-3.5 w-3.5" />
       {caravanCountdown(branch.endDate, branch.closedAt)}
-    </div>
+    </span>
   )
 }
 
@@ -101,7 +104,7 @@ type CaravanBlock = {
 }
 
 /** Rows arrive with each caravan's items together (the backend sorts them
- * so); fold consecutive rows of one caravan under one heading. */
+ * so); fold consecutive rows of one caravan into one card. */
 function byCaravan(groups: CaravanItemGroup[]): CaravanBlock[] {
   const blocks: CaravanBlock[] = []
   for (const group of groups) {
@@ -141,17 +144,31 @@ function ReceiptLink({ receipt }: { receipt: Receipt }): React.ReactElement {
   )
 }
 
-/** The heading's delivery line: "RR-… · ST TRF-… · in Oct 13", per receipt. */
-function CaravanReceipts({ receipts }: { receipts: Receipt[] }): React.ReactElement | null {
+/** One delivery into the caravan: "RR-… · ST TRF-… · Oct 13". */
+function DeliveryChip({ receipt }: { receipt: Receipt }): React.ReactElement {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-1.5 rounded-md border border-[#ececf1] bg-white px-2 py-1 text-[11.5px] text-[#5b5b6b]">
+      <ReceiptLink receipt={receipt} />
+      {receipt.transferNumber && (
+        <span className={`${MONO} text-[#8b8b9b]`}>ST {receipt.transferNumber}</span>
+      )}
+      {receipt.receivedAt && (
+        <span className="text-[#8b8b9b]">in {formatShortDate(receipt.receivedAt)}</span>
+      )}
+    </span>
+  )
+}
+
+function CaravanDeliveries({ receipts }: { receipts: Receipt[] }): React.ReactElement | null {
   if (receipts.length === 0) return null
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-[#8b8b9b]">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className={`${COLUMN_LABEL} inline-flex items-center gap-1`}>
+        <Truck className="h-3.5 w-3.5" />
+        {receipts.length === 1 ? 'Delivery' : `Deliveries (${receipts.length})`}
+      </span>
       {receipts.map((r) => (
-        <span key={r.id}>
-          <ReceiptLink receipt={r} />
-          {r.transferNumber && <span className={MONO}> · ST {r.transferNumber}</span>}
-          {r.receivedAt && <> · in {formatShortDate(r.receivedAt)}</>}
-        </span>
+        <DeliveryChip key={r.id} receipt={r} />
       ))}
     </div>
   )
@@ -161,12 +178,6 @@ function onHandOf(group: CaravanItemGroup): number {
   return (group.statusCounts?.in_stock ?? 0) + (group.statusCounts?.held ?? 0)
 }
 
-/**
- * Scenario 60 — one caravan's heading over its items: which caravan (event,
- * where it is set up, when), the host branch whose books and POS it belongs
- * to, and what is on hand there. An ended caravan is flagged, since whatever
- * is still in it has to be transferred out.
- */
 const HEADER_LINK =
   'inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1 text-[12px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb]'
 
@@ -227,52 +238,91 @@ function CaravanTransferLinks({
   )
 }
 
-function CaravanHeaderRow({
+/** Where and when: host branch, then the caravan's run. */
+function CaravanWhereWhen({ caravan }: { caravan: WarehouseBranch | null }): React.ReactElement {
+  const dates = caravanDateRange(caravan)
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#5b5b6b]">
+      {caravan?.hostBranch && (
+        <span className="inline-flex items-center gap-1">
+          <MapPin className="h-3.5 w-3.5 text-[#8b8b9b]" />
+          Host branch: <span className="font-medium text-[#17171c]">{caravan.hostBranch.name}</span>
+        </span>
+      )}
+      {dates && (
+        <span className="inline-flex items-center gap-1">
+          <CalendarDays className="h-3.5 w-3.5 text-[#8b8b9b]" />
+          {dates}
+        </span>
+      )}
+    </div>
+  )
+}
+
+type HeaderProps = { block: CaravanBlock; canClose: boolean; canTransfer: boolean }
+
+/**
+ * Scenario 60 — one caravan's card header: which caravan (event, where it is
+ * set up, when), the host branch whose books and POS it belongs to, and its
+ * actions.
+ */
+function CaravanHeader({ block, canClose, canTransfer }: HeaderProps): React.ReactElement {
+  const { caravan } = block
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5 pb-3 pt-4">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-[15px] font-semibold text-[#17171c]">
+            {caravan ? caravanLabelWithPlace(caravan) : 'Unknown caravan'}
+          </h3>
+          <CaravanCountdown branch={caravan} />
+        </div>
+        <CaravanWhereWhen caravan={caravan} />
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <CaravanTransferLinks
+          caravan={caravan}
+          warehouseId={block.warehouseId}
+          canTransfer={canTransfer}
+        />
+        {canClose && <CloseCaravanButton caravan={caravan} />}
+      </div>
+    </div>
+  )
+}
+
+/** An ended caravan with stock still in it — say plainly what to do. */
+function EndedNotice({ onHand }: { onHand: number }): React.ReactElement {
+  return (
+    <div className="mx-5 mb-3 flex items-center gap-2 rounded-lg border border-[#f3c9c5] bg-[#fdf4f3] px-3 py-2 text-[12px] text-[#b42318]">
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+      This caravan has ended — transfer out the {onHand.toLocaleString()}{' '}
+      {onHand === 1 ? 'unit' : 'units'} still on hand.
+    </div>
+  )
+}
+
+/** On hand as the headline number, then the status breakdown and deliveries. */
+function CaravanSummary({
   block,
-  canClose,
-  canTransfer,
+  onHand,
 }: {
   block: CaravanBlock
-  canClose: boolean
-  canTransfer: boolean
+  onHand: number
 }): React.ReactElement {
-  const { caravan } = block
-  const onHand = block.groups.reduce((n, g) => n + onHandOf(g), 0)
   return (
-    <tr className="border-t-2 border-[#e4e4e9] bg-[#f8f6fc]">
-      <td colSpan={COLUMN_COUNT} className="px-4 py-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
-          <div className="min-w-0">
-            <div className="text-[13.5px] font-semibold text-[#17171c]">
-              {caravan ? caravanLabelWithPlace(caravan) : 'Unknown caravan'}
-              {caravan?.hostBranch && (
-                <span className="font-normal text-[#5b5b6b]"> at {caravan.hostBranch.name}</span>
-              )}
-            </div>
-            <div className="text-[12px] text-[#8b8b9b]">
-              {caravanDateRange(caravan)}
-              {' · '}
-              {onHand.toLocaleString()} on hand
-            </div>
-            <CaravanReceipts receipts={blockReceipts(block)} />
-            <CaravanCountdown branch={caravan} />
-            {block.groups.length > 0 && (
-              <div className="mt-1.5">
-                <StatusBadges counts={blockStatusCounts(block)} />
-              </div>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <CaravanTransferLinks
-              caravan={caravan}
-              warehouseId={block.warehouseId}
-              canTransfer={canTransfer}
-            />
-            {canClose && <CloseCaravanButton caravan={caravan} />}
-          </div>
-        </div>
-      </td>
-    </tr>
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-y border-[#eeeef1] bg-[#faf9fc] px-5 py-2.5">
+      <div className="flex items-baseline gap-1.5">
+        <span className={`${MONO} text-[18px] font-semibold text-[#17171c]`}>
+          {onHand.toLocaleString()}
+        </span>
+        <span className="text-[12px] text-[#5b5b6b]">on hand</span>
+      </div>
+      {block.groups.length > 0 && <StatusBadges counts={blockStatusCounts(block)} />}
+      <div className="min-w-0 lg:ml-auto">
+        <CaravanDeliveries receipts={blockReceipts(block)} />
+      </div>
+    </div>
   )
 }
 
@@ -286,7 +336,7 @@ function orderedStatusCounts(
     .filter(([, count]) => count > 0)
 }
 
-/** Every item's status counts at one caravan, added up — for its heading. */
+/** Every item's status counts at one caravan, added up — for its summary. */
 function blockStatusCounts(block: CaravanBlock): Record<string, number> {
   const totals: Record<string, number> = {}
   block.groups.forEach((g) =>
@@ -317,6 +367,44 @@ function StatusBadges({
   )
 }
 
+function GroupReceipts({ receipts }: { receipts: Receipt[] }): React.ReactElement {
+  if (receipts.length === 0) return <span className="text-[#c9c9d3]">—</span>
+  return (
+    <span className="text-[12px]">
+      {receipts.map((r, i) => (
+        <Fragment key={r.id}>
+          {i > 0 && ', '}
+          <ReceiptLink receipt={r} />
+        </Fragment>
+      ))}
+    </span>
+  )
+}
+
+function ItemCell({
+  group,
+  isExpanded,
+}: {
+  group: CaravanItemGroup
+  isExpanded: boolean
+}): React.ReactElement {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <ChevronRight
+        className={`h-4 w-4 shrink-0 text-[#8b8b9b] transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+      />
+      <div className="flex min-w-0 flex-col">
+        <span className="truncate text-[13px] font-medium text-[#17171c]">
+          {itemLabel(group.item)}
+        </span>
+        {group.item?.sku && (
+          <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>{group.item.sku}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function GroupRow({
   group,
   isExpanded,
@@ -326,56 +414,35 @@ function GroupRow({
   group: CaravanItemGroup
   isExpanded: boolean
   onToggle: () => void
-  // The caravan's heading lists its receipts; a row names its own only when
+  // The caravan's summary lists its deliveries; rows name their own only when
   // the caravan was stocked more than once, to say which delivery it was.
   showReceipt: boolean
 }): React.ReactElement {
   // Sold units keep the caravan as their warehouse, so the group's raw
   // quantity counts history too — only these are actually there.
   const onHand = onHandOf(group)
-
   return (
     <tr
       onClick={onToggle}
-      className={`cursor-pointer hover:bg-[#fcfcfd] ${isExpanded ? 'bg-[#f8f4fd]' : ''}`}
+      className={`cursor-pointer hover:bg-[#fcfbfe] ${isExpanded ? 'bg-[#f8f4fd]' : ''}`}
     >
-      <td className="px-4 py-[11px]">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <ChevronRight
-              className={`h-3.5 w-3.5 shrink-0 text-[#8b8b9b] transition-transform ${
-                isExpanded ? 'rotate-90' : ''
-              }`}
-            />
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-[12.5px] font-medium text-[#17171c]">
-                {itemLabel(group.item)}
-              </span>
-              {group.item?.sku && (
-                <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>{group.item.sku}</span>
-              )}
-              {showReceipt && group.receipts.length > 0 && (
-                <span className="text-[11px] text-[#8b8b9b]">
-                  From{' '}
-                  {group.receipts.map((r, i) => (
-                    <Fragment key={r.id}>
-                      {i > 0 && ', '}
-                      <ReceiptLink receipt={r} />
-                    </Fragment>
-                  ))}
-                </span>
-              )}
-            </div>
-          </div>
-          {/* This item's own share of the heading's totals. */}
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={`${MONO} text-[12.5px] text-[#5b5b6b]`}>
-              <span className="font-semibold text-[#17171c]">{onHand.toLocaleString()}</span> on
-              hand
-            </span>
-            <StatusBadges counts={group.statusCounts} />
-          </div>
-        </div>
+      <td className="py-3 pl-5 pr-4">
+        <ItemCell group={group} isExpanded={isExpanded} />
+      </td>
+      {showReceipt && (
+        <td className="hidden px-4 py-3 md:table-cell">
+          <GroupReceipts receipts={group.receipts} />
+        </td>
+      )}
+      <td className="px-4 py-3 text-right">
+        <span
+          className={`${MONO} text-[14px] font-semibold ${onHand > 0 ? 'text-[#17171c]' : 'text-[#c9c9d3]'}`}
+        >
+          {onHand.toLocaleString()}
+        </span>
+      </td>
+      <td className="py-3 pl-4 pr-5">
+        <StatusBadges counts={group.statusCounts} />
       </td>
     </tr>
   )
@@ -393,7 +460,7 @@ function StatusPill({ status }: { status: SerialStatus }): React.ReactElement {
 }
 
 /** One unit inside an opened item row — receipt and date live on the
- * caravan's heading. */
+ * caravan's summary. */
 function UnitRow({ serial }: { serial: SerialNumberSummary }): React.ReactElement {
   const type = displayClassificationLabel(serial.item?.type?.name)
   return (
@@ -403,7 +470,7 @@ function UnitRow({ serial }: { serial: SerialNumberSummary }): React.ReactElemen
           <SerialLink
             serialId={serial.id}
             serialNumber={serial.serialNumber}
-            className={`${MONO} text-[13.5px] font-semibold text-[#17171c]`}
+            className={`${MONO} text-[13px] font-semibold text-[#17171c]`}
           />
           <CopySerialButton serialNumber={serial.serialNumber} />
         </div>
@@ -416,24 +483,32 @@ function UnitRow({ serial }: { serial: SerialNumberSummary }): React.ReactElemen
   )
 }
 
-function OpenedUnits({ serials, isLoading }: GroupSerials): React.ReactElement {
+function UnitsSkeleton(): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-2 py-1">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="h-3.5 w-48 animate-pulse rounded bg-[#eeeef1]" />
+      ))}
+    </div>
+  )
+}
+
+function OpenedUnits({
+  serials,
+  isLoading,
+  colSpan,
+}: GroupSerials & { colSpan: number }): React.ReactElement {
   return (
     <tr className="bg-[#fbfbfc]">
-      <td colSpan={COLUMN_COUNT} className="py-2 pl-10 pr-4">
+      <td colSpan={colSpan} className="py-2 pl-[46px] pr-5">
         {isLoading ? (
-          <div className="flex flex-col gap-2 py-1">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-3.5 w-48 animate-pulse rounded bg-[#eeeef1]" />
-            ))}
-          </div>
+          <UnitsSkeleton />
         ) : serials.length === 0 ? (
           <p className="py-1 text-[12px] text-[#8b8b9b]">No units to show for this item.</p>
         ) : (
-          <table className="w-full max-w-[520px]">
+          <table className="w-full max-w-[560px]">
             <thead>
-              <tr
-                className={`${MONO} text-left text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
-              >
+              <tr className={`${COLUMN_LABEL} text-left`}>
                 <th className="py-1.5 pr-4 font-normal">Serial #</th>
                 <th className="py-1.5 text-right font-normal">Status</th>
               </tr>
@@ -450,22 +525,102 @@ function OpenedUnits({ serials, isLoading }: GroupSerials): React.ReactElement {
   )
 }
 
-// Scenario 60 — the Caravan tab: each caravan's heading with a row per item
-// beneath it, each opening onto its units. Quantities come from the backend rollup, so they count every
-// unit rather than the page on screen.
-export default function CaravanItemTable({
-  groups,
-  emptyCaravans,
-  canTransfer,
-  canClose,
+function ItemTableHead({ showReceipt }: { showReceipt: boolean }): React.ReactElement {
+  return (
+    <thead>
+      <tr className={`${COLUMN_LABEL} text-left`}>
+        <th className="py-2 pl-5 pr-4 font-normal">Item</th>
+        {showReceipt && (
+          <th className="hidden px-4 py-2 font-normal md:table-cell">Received via</th>
+        )}
+        <th className="w-[96px] px-4 py-2 text-right font-normal">On hand</th>
+        <th className="w-[1%] whitespace-nowrap py-2 pl-4 pr-5 font-normal">Status</th>
+      </tr>
+    </thead>
+  )
+}
+
+type ItemsProps = Pick<Props, 'isGroupOpen' | 'onToggleGroup' | 'groupSerials'> & {
+  block: CaravanBlock
+}
+
+function CaravanItems({
+  block,
   isGroupOpen,
   onToggleGroup,
   groupSerials,
+}: ItemsProps): React.ReactElement {
+  const showReceipt = blockReceipts(block).length > 1
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <ItemTableHead showReceipt={showReceipt} />
+        <tbody className="divide-y divide-[#f4f4f6] border-t border-[#f4f4f6]">
+          {block.groups.map((group) => (
+            <Fragment key={group.key}>
+              <GroupRow
+                group={group}
+                isExpanded={isGroupOpen(group.key)}
+                onToggle={() => onToggleGroup(group.key)}
+                showReceipt={showReceipt}
+              />
+              {isGroupOpen(group.key) && (
+                <OpenedUnits {...groupSerials(group.key)} colSpan={showReceipt ? 4 : 3} />
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+type CardProps = Omit<Props, 'groups' | 'emptyCaravans' | 'emptyLabel'> & { block: CaravanBlock }
+
+/** One caravan: header, ended notice, summary strip, then its items. */
+function CaravanCard({ block, canClose, canTransfer, ...items }: CardProps): React.ReactElement {
+  const onHand = block.groups.reduce((n, g) => n + onHandOf(g), 0)
+  return (
+    <section className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
+      <CaravanHeader block={block} canClose={canClose} canTransfer={canTransfer} />
+      {isCaravanEnded(block.caravan) && onHand > 0 && <EndedNotice onHand={onHand} />}
+      <CaravanSummary block={block} onHand={onHand} />
+      {block.groups.length > 0 ? (
+        <CaravanItems block={block} {...items} />
+      ) : (
+        <p className="px-5 py-4 text-[12.5px] text-[#8b8b9b]">
+          Nothing on hand at this caravan yet.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function allBlocks(
+  groups: CaravanItemGroup[],
+  emptyCaravans: Props['emptyCaravans']
+): CaravanBlock[] {
+  const empty = emptyCaravans.map((caravan) => ({
+    key: caravan.id,
+    caravan,
+    warehouseId: caravan.warehouseId,
+    groups: [],
+  }))
+  return [...byCaravan(groups), ...empty]
+}
+
+// Scenario 60 — the Caravan tab: a card per caravan with a row per item
+// beneath it, each opening onto its units. Quantities come from the backend
+// rollup, so they count every unit rather than the page on screen.
+export default function CaravanItemTable({
+  groups,
+  emptyCaravans,
   emptyLabel,
+  ...cardProps
 }: Props): React.ReactElement {
   if (groups.length === 0 && emptyCaravans.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
+      <div className="flex flex-col items-center gap-2 rounded-xl border border-[#e4e4e9] bg-white px-6 py-11 text-center">
         <Package className="h-[30px] w-[30px] text-[#c9c9d3]" />
         <div className="mt-1 text-[14px] font-semibold">{emptyLabel}</div>
       </div>
@@ -473,41 +628,10 @@ export default function CaravanItemTable({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <tbody className="divide-y divide-[#f4f4f6]">
-          {byCaravan(groups).map((block) => (
-            <Fragment key={block.key}>
-              <CaravanHeaderRow block={block} canClose={canClose} canTransfer={canTransfer} />
-              {block.groups.map((group) => (
-                <Fragment key={group.key}>
-                  <GroupRow
-                    group={group}
-                    isExpanded={isGroupOpen(group.key)}
-                    onToggle={() => onToggleGroup(group.key)}
-                    showReceipt={blockReceipts(block).length > 1}
-                  />
-                  {isGroupOpen(group.key) && <OpenedUnits {...groupSerials(group.key)} />}
-                </Fragment>
-              ))}
-            </Fragment>
-          ))}
-          {emptyCaravans.map((caravan) => (
-            <Fragment key={caravan.id}>
-              <CaravanHeaderRow
-                block={{ key: caravan.id, caravan, warehouseId: caravan.warehouseId, groups: [] }}
-                canClose={canClose}
-                canTransfer={canTransfer}
-              />
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="px-4 py-3 text-[12.5px] text-[#8b8b9b]">
-                  Nothing on hand at this caravan yet.
-                </td>
-              </tr>
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-4">
+      {allBlocks(groups, emptyCaravans).map((block) => (
+        <CaravanCard key={block.key} block={block} {...cardProps} />
+      ))}
     </div>
   )
 }

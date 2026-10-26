@@ -99,6 +99,9 @@ interface LedgerRow {
   bankedDepositId: string | null
   bankName: string | null
   depositDate: string | null
+  /** A Deposited row's deposit has its slip attached. Null when there is no
+   * deposit record to attach one to, or the row is not deposited. */
+  hasProof: boolean | null
 }
 
 /** The group a session is listed and deposited under: its caravan, when its
@@ -159,6 +162,7 @@ function fromOutstanding(r: CashInTransitSessionRow): LedgerRow[] {
             // part of it went in. Empty while nothing is banked yet.
             bankName: r.bankedDeposits?.[0]?.bankName ?? null,
             depositDate: r.bankedDeposits?.[0]?.depositDate ?? null,
+            hasProof: null,
           },
         ]
       : []
@@ -175,6 +179,7 @@ function fromOutstanding(r: CashInTransitSessionRow): LedgerRow[] {
         bankedDepositId: null,
         bankName: p.bankName,
         depositDate: p.depositDate,
+        hasProof: null,
       })
     ),
   ]
@@ -197,10 +202,12 @@ function fromReceiptsDraft(d: PosDeposit): LedgerRow {
     bankedDepositId: null,
     bankName: d.bankAccount.name,
     depositDate: d.depositDate,
+    hasProof: null,
   }
 }
 
 function fromDeposited(r: CashInTransitHistoryRow): LedgerRow {
+  const collected = amounts(r.amount, r.clearingAmount, r.newReceiptsAmount)
   return {
     key: `${r.sessionId}:deposited`,
     sessionId: r.sessionId,
@@ -208,13 +215,16 @@ function fromDeposited(r: CashInTransitHistoryRow): LedgerRow {
     terminalCode: r.terminalCode,
     cashierName: r.cashierName,
     closedAt: r.closedAt,
-    ...amounts(r.amount, r.clearingAmount, r.newReceiptsAmount),
-    deposited: 0,
+    ...collected,
+    // What the bank slips cleared of it — the collected amount for a session
+    // banked before deposits kept shares, or on an older API.
+    deposited: r.depositedAmount ?? collected.amount,
     status: 'deposited',
     depositId: r.posDepositId,
     bankedDepositId: null,
     bankName: r.depositedTo,
     depositDate: r.depositDate ?? r.citClearedAt,
+    hasProof: r.posDepositId ? (r.hasProof ?? null) : null,
   }
 }
 
@@ -225,11 +235,49 @@ function statusText(r: LedgerRow): string {
   return isPartial(r) ? 'Partially deposited' : STATUS_TEXT[r.status]
 }
 
-/** What a row has already banked: a Deposited session in full, and what
- * earlier deposits took of one still To deposit. A draft has posted nothing. */
+/** What a row has already banked: what the slips cleared of a Deposited
+ * session, and what earlier deposits took of one still To deposit. A draft
+ * has posted nothing. */
 function depositedOf(r: LedgerRow): number {
-  if (r.status === 'deposited') return r.amount
-  return r.status === 'to_deposit' ? r.deposited : 0
+  return r.status === 'awaiting' ? 0 : r.deposited
+}
+
+/** What the row's session collected. A To-deposit row's amount is only what
+ * is left, so what earlier deposits took is added back. */
+function collectedOf(r: LedgerRow): number {
+  return r.status === 'to_deposit' ? round2(r.amount + r.deposited) : r.amount
+}
+
+/** A New Receipt's whole amount: its `amount` is what is left of it. */
+function receiptCollected(r: AcknowledgementReceipt): number {
+  return round2(Number(r.amount ?? 0) + Number(r.depositedAmount ?? 0))
+}
+
+/** What a row adds to the balance: collected less deposited. Over, it is a
+ * negative. */
+function undepositedOf(r: LedgerRow): number {
+  return round2(collectedOf(r) - depositedOf(r))
+}
+
+/** A branch's rows oldest first, each with the branch's undeposited balance
+ * after it. New Receipts with no session to ride on come last: still owed. */
+function withRunningBalance(group: BranchGroup): {
+  rows: { row: LedgerRow; balance: number }[]
+  receipts: { receipt: AcknowledgementReceipt; balance: number }[]
+  balance: number
+} {
+  let balance = 0
+  const rows: { row: LedgerRow; balance: number }[] = []
+  for (const row of [...group.rows].sort((a, b) => a.closedAt.localeCompare(b.closedAt))) {
+    balance = round2(balance + undepositedOf(row))
+    rows.push({ row, balance })
+  }
+  const receipts: { receipt: AcknowledgementReceipt; balance: number }[] = []
+  for (const receipt of group.receipts) {
+    balance = round2(balance + Number(receipt.amount ?? 0))
+    receipts.push({ receipt, balance })
+  }
+  return { rows, receipts, balance }
 }
 
 /** A money cell that reads "—" for nothing, so the eye finds the real figures. */
@@ -238,12 +286,12 @@ function MoneyOrDash({ amount }: { amount: number }): React.JSX.Element {
 }
 
 const STATUS_TEXT: Record<LedgerStatus, string> = {
-  to_deposit: 'To deposit',
+  to_deposit: 'Undeposited',
   awaiting: 'Awaiting clearing',
   deposited: 'Deposited',
 }
 
-function exportLedgerCsv(rows: LedgerRow[]): void {
+function exportLedgerCsv(groups: BranchGroup[]): void {
   const headers = [
     'Branch',
     'Terminal',
@@ -252,26 +300,45 @@ function exportLedgerCsv(rows: LedgerRow[]): void {
     'Status',
     'Bank',
     'Deposit Date',
+    'Collected',
     'Deposited',
-    'Amount',
+    'Balance',
   ]
-  const dataRows = rows.map((r) => [
-    r.branchName,
-    r.terminalCode ?? '',
-    r.cashierName ?? '',
-    fmtDate(r.closedAt),
-    statusText(r),
-    r.bankName ?? '',
-    r.depositDate ? fmtDate(r.depositDate) : '',
-    depositedOf(r),
-    r.amount,
-  ])
+  const dataRows = groups.flatMap((group) => {
+    const ledger = withRunningBalance(group)
+    return [
+      ...ledger.rows.map(({ row: r, balance }) => [
+        r.branchName,
+        r.terminalCode ?? '',
+        r.cashierName ?? '',
+        fmtDate(r.closedAt),
+        statusText(r),
+        r.bankName ?? '',
+        r.depositDate ? fmtDate(r.depositDate) : '',
+        collectedOf(r),
+        depositedOf(r),
+        balance,
+      ]),
+      ...ledger.receipts.map(({ receipt: r, balance }) => [
+        group.branchName,
+        r.number ?? 'New Receipt',
+        r.payerName ?? '',
+        fmtDate(r.paymentDate),
+        STATUS_TEXT.to_deposit,
+        '',
+        '',
+        receiptCollected(r),
+        Number(r.depositedAmount ?? 0),
+        balance,
+      ]),
+    ]
+  })
   const csv = [headers, ...dataRows].map((row) => row.map((v) => `"${v}"`).join(',')).join('\n')
   const blob = new Blob([csv], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `undeposited-funds-${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = `collected-funds-history-${new Date().toISOString().slice(0, 10)}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -384,7 +451,7 @@ export function CashInTransitList({
   // "Undeposited Funds" — the client's own word, and the BALANCE column on
   // their Daily Collection Report. The route, permissions and legacy GL
   // account keep the cash-in-transit name.
-  title = 'Undeposited Funds',
+  title = 'Collected Funds History',
 }: {
   canManage: boolean
   /** Scenario 61 Part 5 — may clear (post) a deposit draft: accounting only. */
@@ -412,6 +479,7 @@ export function CashInTransitList({
     filter === 'to_deposit' || filter === 'all'
       ? unbanked.filter((r) => receiptMatches(r, search))
       : []
+  const groups = groupByBranch(shown, shownReceipts)
   const selection = useSingleBranchSelection(ledger.rows)
   // The sessions being deposited, and their branch — which is all there is
   // for a deposit of New Receipts alone.
@@ -446,7 +514,8 @@ export function CashInTransitList({
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    // Full width: nine columns, a branch header row each, and a Balance.
+    <div className="w-full p-4 md:p-6">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-prominent-purple-900">{title}</h2>
@@ -465,8 +534,8 @@ export function CashInTransitList({
             />
           )}
           <button
-            onClick={() => exportLedgerCsv(shown)}
-            disabled={shown.length === 0}
+            onClick={() => exportLedgerCsv(groups)}
+            disabled={groups.length === 0}
             className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download className="w-4 h-4" /> Export to Excel
@@ -500,7 +569,7 @@ export function CashInTransitList({
       />
 
       <LedgerTable
-        groups={groupByBranch(shown, shownReceipts)}
+        groups={groups}
         loading={ledger.loading}
         canManage={canManage}
         selection={selection}
@@ -642,8 +711,8 @@ function useSingleBranchSelection(rows: LedgerRow[]): Selection {
   }
 }
 
-/** Head Office and the owner choose a branch, or all of them; each option
- * shows what that branch still has to bank. */
+/** Head Office and the owner choose a branch, or all of them — by name only;
+ * the table's Balance says what each still has to bank. */
 function BranchPicker({
   value,
   onChange,
@@ -660,7 +729,7 @@ function BranchPicker({
     { value: '', label: 'All branches' },
     ...(branches.data?.data ?? []).map((b) => ({
       value: b.branchId,
-      label: `${b.branchName} — ${fmtMoney(b.totalAmount)} · ${b.sessionCount} session${b.sessionCount === 1 ? '' : 's'}`,
+      label: b.branchName,
     })),
   ]
   return (
@@ -687,7 +756,7 @@ function Toolbar(props: {
 }): React.JSX.Element {
   const chips: [StatusFilter, string][] = [
     ['all', 'All'],
-    ['to_deposit', `To deposit (${props.counts.to_deposit})`],
+    ['to_deposit', `${STATUS_TEXT.to_deposit} (${props.counts.to_deposit})`],
     ['deposited', 'Deposited'],
   ]
   // One height for the tabs, the dates and the search, so the row lines up.
@@ -780,18 +849,27 @@ function LedgerTable({
       return next
     })
   return (
-    <div className="scroll-fade-x overflow-x-auto rounded-lg border border-gray-200 bg-white">
+    // No horizontal scroll: the page is full width, so the columns fit and
+    // cells wrap on a narrow screen instead.
+    <div className="rounded-lg border border-gray-200 bg-white">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 text-xs uppercase text-gray-600">
           <tr>
             {canManage && <th className="w-10 px-3 py-2" />}
-            <th className="px-3 py-2 text-left">Terminal</th>
-            <th className="px-3 py-2 text-left">Cashier</th>
+            <th className="px-3 py-2 text-left">Session</th>
             <th className="px-3 py-2 text-left">Closed</th>
             <th className="px-3 py-2 text-left">Deposit date</th>
             <th className="px-3 py-2 text-left">Status</th>
+            <th className="px-3 py-2 text-right">Collected</th>
             <th className="px-3 py-2 text-right">Deposited</th>
-            <th className="px-3 py-2 text-right">Amount</th>
+            <th className="px-3 py-2 text-right">
+              <Tooltip
+                label="What the branch still has undeposited, oldest session first"
+                align="end"
+              >
+                <span>Balance</span>
+              </Tooltip>
+            </th>
           </tr>
         </thead>
         {loading || groups.length === 0 ? (
@@ -847,6 +925,7 @@ function BranchRows({
   // left unbanked — are deposited on their own.
   const receiptsAlone = canManage && selectable.length === 0 && group.receipts.length > 0
   const allPicked = selectable.length > 0 && selectable.every((r) => selection.has(r.sessionId))
+  const ledger = withRunningBalance(group)
   const Chevron = open ? ChevronDown : ChevronRight
   return (
     <tbody className="divide-y divide-gray-100 border-t border-gray-200">
@@ -863,7 +942,7 @@ function BranchRows({
             )}
           </td>
         )}
-        <td colSpan={columns - (canManage ? 3 : 2)} className="px-3 py-2">
+        <td colSpan={columns - (canManage ? 4 : 3)} className="px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <button onClick={onToggleOpen} className="flex items-center gap-2 text-left">
               <Chevron className="h-4 w-4 text-gray-400" />
@@ -885,23 +964,51 @@ function BranchRows({
           </div>
         </td>
         <td className="px-3 py-2 text-right font-semibold tabular-nums">
+          {fmtMoney(
+            group.rows.reduce((sum, r) => sum + collectedOf(r), 0) +
+              group.receipts.reduce((sum, r) => sum + receiptCollected(r), 0)
+          )}
+        </td>
+        <td className="px-3 py-2 text-right font-semibold tabular-nums">
           <MoneyOrDash amount={group.rows.reduce((sum, r) => sum + depositedOf(r), 0)} />
         </td>
-        <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmtMoney(group.total)}</td>
+        <td className="px-3 py-2 text-right font-semibold tabular-nums">
+          {fmtMoney(ledger.balance)}
+        </td>
       </tr>
       {open &&
-        group.rows.map((r) => (
+        ledger.rows.map(({ row, balance }) => (
           <SessionRow
-            key={r.key}
-            row={r}
+            key={row.key}
+            row={row}
+            balance={balance}
             canManage={canManage}
             selection={selection}
             onOpenDeposit={onOpenDeposit}
           />
         ))}
       {open &&
-        group.receipts.map((r) => <ReceiptRow key={r.id} receipt={r} canManage={canManage} />)}
+        ledger.receipts.map(({ receipt, balance }) => (
+          <ReceiptRow key={receipt.id} receipt={receipt} balance={balance} canManage={canManage} />
+        ))}
     </tbody>
+  )
+}
+
+/** The terminal (or New Receipt number) over the cashier (or payer) — one
+ * column for both, so the table fits the page without scrolling. */
+function SessionCell({
+  title,
+  detail,
+}: {
+  title: string
+  detail?: string | null
+}): React.JSX.Element {
+  return (
+    <>
+      <div>{title}</div>
+      {detail && <div className="text-xs text-gray-500">{detail}</div>}
+    </>
   )
 }
 
@@ -909,29 +1016,34 @@ function BranchRows({
  * tickable: recording the branch's deposit takes it in automatically. */
 function ReceiptRow({
   receipt,
+  balance,
   canManage,
 }: {
   receipt: AcknowledgementReceipt
+  /** The branch's undeposited balance after this row. */
+  balance: number
   canManage: boolean
 }): React.JSX.Element {
   return (
     <tr>
       {canManage && <td className="px-3 py-2" />}
-      <td className="px-3 py-2">{receipt.number ?? 'New Receipt'}</td>
-      <td className="px-3 py-2">{receipt.payerName}</td>
+      <td className="px-3 py-2">
+        <SessionCell title={receipt.number ?? 'New Receipt'} detail={receipt.payerName} />
+      </td>
       <td className="px-3 py-2 text-xs">{fmtDate(receipt.paymentDate)}</td>
       <td className="px-3 py-2 text-xs text-gray-400">—</td>
       <td className="px-3 py-2">
         {Number(receipt.depositedAmount ?? 0) > 0 ? (
           <PartialChip banked={Number(receipt.depositedAmount)} />
         ) : (
-          <span className="text-xs text-gray-500">To deposit · New Receipt</span>
+          <span className="text-xs text-gray-500">Undeposited · New Receipt</span>
         )}
       </td>
+      <td className="px-3 py-2 text-right">{fmtMoney(receiptCollected(receipt))}</td>
       <td className="px-3 py-2 text-right">
         <MoneyOrDash amount={Number(receipt.depositedAmount ?? 0)} />
       </td>
-      <td className="px-3 py-2 text-right">{fmtMoney(Number(receipt.amount ?? 0))}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(balance)}</td>
     </tr>
   )
 }
@@ -941,11 +1053,14 @@ function ReceiptRow({
  * row for whoever cannot tick it, from its chip for whoever can. */
 function SessionRow({
   row,
+  balance,
   canManage,
   selection,
   onOpenDeposit,
 }: {
   row: LedgerRow
+  /** The branch's undeposited balance after this row. */
+  balance: number
   canManage: boolean
   selection: Selection
   onOpenDeposit: (id: string) => void
@@ -971,19 +1086,21 @@ function SessionRow({
           )}
         </td>
       )}
-      <td className="px-3 py-2">{row.terminalCode ?? '—'}</td>
-      <td className="px-3 py-2">{row.cashierName ?? '—'}</td>
+      <td className="px-3 py-2">
+        <SessionCell title={row.terminalCode ?? '—'} detail={row.cashierName} />
+      </td>
       <td className="px-3 py-2 text-xs">{fmtDate(row.closedAt)}</td>
-      <td className="whitespace-nowrap px-3 py-2 text-xs">
+      <td className="px-3 py-2 text-xs">
         {row.depositDate ? fmtDate(row.depositDate) : <span className="text-gray-400">—</span>}
       </td>
       <td className="px-3 py-2">
-        <StatusCell row={row} onOpenDeposit={onOpenDeposit} />
+        <StatusCell row={row} canManage={canManage} onOpenDeposit={onOpenDeposit} />
       </td>
+      <td className="px-3 py-2 text-right">{fmtMoney(collectedOf(row))}</td>
       <td className="px-3 py-2 text-right tabular-nums">
         <MoneyOrDash amount={depositedOf(row)} />
       </td>
-      <td className="px-3 py-2 text-right">{fmtMoney(row.amount)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(balance)}</td>
     </tr>
   )
 }
@@ -993,9 +1110,12 @@ function SessionRow({
  * one is only the first slip's. */
 function StatusCell({
   row,
+  canManage,
   onOpenDeposit,
 }: {
   row: LedgerRow
+  /** The cashier, who attaches a deposit's slip — shown which still lack one. */
+  canManage: boolean
   onOpenDeposit: (id: string) => void
 }): React.JSX.Element {
   // Still To deposit (it filters and ticks as one), but a short deposit
@@ -1005,12 +1125,21 @@ function StatusCell({
     return <PartialChip banked={row.deposited} onOpen={id ? () => onOpenDeposit(id) : undefined} />
   }
   if (row.status === 'to_deposit') {
-    return <span className="text-xs text-gray-500">To deposit</span>
+    return <span className="text-xs text-gray-500">{STATUS_TEXT.to_deposit}</span>
   }
   if (row.status === 'deposited') {
     return (
-      <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-800">
-        Deposited
+      <span className="inline-flex flex-wrap items-center gap-1">
+        <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-800">
+          Deposited
+        </span>
+        {canManage && row.hasProof === false && (
+          <Tooltip label="No deposit slip attached yet. Open the deposit to attach it." align="end">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+              No slip
+            </span>
+          </Tooltip>
+        )}
       </span>
     )
   }
@@ -1031,10 +1160,10 @@ function PartialChip({
   onOpen?: () => void
 }): React.JSX.Element {
   const chip =
-    'whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800'
-  const left = `${fmtMoney(banked)} already deposited — the amount shown is what is left`
+    'rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800'
+  const left = `${fmtMoney(banked)} already deposited — the Balance shows what is left`
   return (
-    <Tooltip label={onOpen ? `${left}. Click to open that deposit.` : left}>
+    <Tooltip label={onOpen ? `${left}. Click to open that deposit.` : left} align="end">
       {onOpen ? (
         <button
           type="button"
@@ -1137,23 +1266,21 @@ function DepositForm({
   const newReceipts = useUnbankedReceipts(branchId)
   const receipts = newReceipts.data?.data ?? []
 
-  const receiptsTotal = receipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
-  /** What the branch's own cash and cheques come to. */
-  const outstanding = round2(sessions.reduce((sum, s) => sum + s.cash, 0) + receiptsTotal)
-  const cashSlips = round2(
-    slips.filter(isBranchCashSlip).reduce((sum, s) => sum + slipAmount(s), 0)
-  )
-  const difference = round2(outstanding - cashSlips)
+  const owed = owedTotals(sessions, receipts)
+  const entered = slipTotals(slips)
+  const difference = round2(owed.cash - entered.cash)
   // Why Record deposit is disabled, so the button never just sits greyed out.
   const blockedReason =
     sessions.length === 0 && receipts.length === 0
       ? 'Select at least one session to deposit.'
-      : slipsProblem(slips)
+      : (slipsProblem(slips) ?? clearingOverProblem(owed, entered))
   // Not a block: the amounts are accounting's own itemisation. Said on hover
   // so an over or short is a choice, not a typo nobody saw.
   const cashNote =
     Math.abs(difference) >= 0.005
-      ? `The 1-01-010 slips come to ${fmtMoney(cashSlips)} against ${fmtMoney(outstanding)} collected — ${fmtMoney(Math.abs(difference))} ${difference > 0 ? 'short' : 'over'}.`
+      ? difference > 0
+        ? `Cash & cheques: ${fmtMoney(difference)} left — entered ${fmtMoney(entered.cash)} of ${fmtMoney(owed.cash)}.`
+        : `Cash & cheques: over by ${fmtMoney(-difference)} — entered ${fmtMoney(entered.cash)} of ${fmtMoney(owed.cash)}.`
       : null
 
   // Posts at once: every slip carries the bank's own reference number, so the
@@ -1215,6 +1342,10 @@ function DepositForm({
 
             <SlipEditor slips={slips} onChange={setSlips} accounts={accounts} />
 
+            {(sessions.length > 0 || receipts.length > 0) && (
+              <DepositTally owed={owed} entered={entered} slips={slips} accounts={accounts} />
+            )}
+
             <AttachmentsPanel
               entityType={POS_DEPOSIT_ENTITY}
               title="Proof of deposit"
@@ -1262,10 +1393,52 @@ function DepositForm({
   )
 }
 
+/** What a deposit has to bank, by where the money sits: the branch's own cash
+ * and cheques (sessions and New Receipts), and card and e-wallet money in the
+ * processors' clearing accounts. */
+interface DepositOwedTotals {
+  cash: number
+  clearing: number
+}
+
+function owedTotals(sessions: LedgerRow[], receipts: AcknowledgementReceipt[]): DepositOwedTotals {
+  return {
+    cash: round2(
+      sessions.reduce((sum, s) => sum + s.cash, 0) +
+        receipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
+    ),
+    clearing: round2(sessions.reduce((sum, s) => sum + s.clearing, 0)),
+  }
+}
+
 /**
- * Which sessions and New Receipts are being banked — named, not totalled. The
- * client's "Note to Warp" points here: no worked-out figure, so accounting
- * itemises each bank and its amount on the slips instead (Scenario 70 G12).
+ * A block, unlike a short: slips emptying the clearing accounts of more than
+ * these sessions put there are almost always drawer cash given the wrong
+ * Deposit from. Posted, it overdraws the processor's clearing account and
+ * leaves the cash owed, for accounting to correct.
+ */
+function clearingOverProblem(owed: DepositOwedTotals, entered: DepositOwedTotals): string | null {
+  const over = round2(entered.clearing - owed.clearing)
+  if (over < 0.005) return null
+  return owed.clearing < 0.005
+    ? `These sessions have no card or e-wallet money, but ${fmtMoney(entered.clearing)} is set to Deposit from a 1-01-040 clearing account. Cash goes under 1-01-010.`
+    : `1-01-040 clearing slips are over by ${fmtMoney(over)} — these sessions only have ${fmtMoney(owed.clearing)} in card and e-wallet. Is a cash slip set to the wrong Deposit from?`
+}
+
+/** The slips' amounts against the same two pools. A slip not yet told what
+ * it empties counts in neither. */
+function slipTotals(slips: Slip[]): DepositOwedTotals {
+  const sum = (picked: Slip[]): number => round2(picked.reduce((t, s) => t + slipAmount(s), 0))
+  return {
+    cash: sum(slips.filter(isBranchCashSlip)),
+    clearing: sum(slips.filter((s) => !!s.clearsAccountId)),
+  }
+}
+
+/**
+ * Which sessions and New Receipts are being banked, and what each one comes
+ * to. The slips' amounts still start blank (Scenario 70 G12) — accounting
+ * itemises each bank — but against a figure they can see.
  */
 function DepositSessions({
   sessions,
@@ -1278,6 +1451,9 @@ function DepositSessions({
 }): React.JSX.Element | null {
   if (sessions.length === 0 && receipts.length === 0) return null
   const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
+  const owed = owedTotals(sessions, receipts)
+  // One line's amount would only repeat the total below it.
+  const itemised = sessions.length + receipts.length > 1
   return (
     <div className="rounded-lg border border-gray-200">
       <div className="border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900">
@@ -1286,17 +1462,139 @@ function DepositSessions({
       </div>
       <ul className="max-h-40 divide-y divide-gray-100 overflow-y-auto text-sm">
         {sessions.map((s) => (
-          <li key={s.sessionId} className="truncate px-3 py-1.5 text-gray-700">
-            {s.terminalCode ?? 'Terminal'} · {s.cashierName ?? 'Cashier'} · closed{' '}
-            {fmtDate(s.closedAt)}
-          </li>
+          <OwedLine
+            key={s.sessionId}
+            label={`${s.terminalCode ?? 'Terminal'} · ${s.cashierName ?? 'Cashier'} · closed ${fmtDate(s.closedAt)}`}
+            amount={itemised ? s.cash + s.clearing : undefined}
+          />
         ))}
         {receipts.map((r) => (
-          <li key={r.id} className="truncate px-3 py-1.5 text-gray-700">
-            {r.number ?? 'New Receipt'} · {r.payerName}
-          </li>
+          <OwedLine
+            key={r.id}
+            label={`${r.number ?? 'New Receipt'} · ${r.payerName}`}
+            amount={itemised ? Number(r.amount ?? 0) : undefined}
+          />
         ))}
       </ul>
+      {/* The cash / card split is the tally's, under the slips. */}
+      <div className="flex justify-end border-t border-gray-200 px-3 py-2 text-sm">
+        <span className="font-medium text-gray-900">
+          To deposit <strong className="tabular-nums">{fmtMoney(owed.cash + owed.clearing)}</strong>
+        </span>
+      </div>
     </div>
+  )
+}
+
+function OwedLine({ label, amount }: { label: string; amount?: number }): React.JSX.Element {
+  return (
+    <li className="flex items-center justify-between gap-3 px-3 py-1.5 text-gray-700">
+      <span className="truncate">{label}</span>
+      {amount !== undefined && <span className="shrink-0 tabular-nums">{fmtMoney(amount)}</span>}
+    </li>
+  )
+}
+
+interface TallyLine {
+  /** Named as the slip's Deposit from dropdown groups it. */
+  label: string
+  due: number
+  entered: number
+  slips: Slip[]
+  /** Over is a block here, not a warning — see clearingOverProblem. */
+  overBlocks?: boolean
+}
+
+/** The slips so far against what is to deposit, a line per Deposit from group
+ * — live, with the slips counted on each, so it is plain which slip went
+ * where. A tally, not a block: the amounts are accounting's own itemisation. */
+function DepositTally({
+  owed,
+  entered,
+  slips,
+  accounts,
+}: {
+  owed: DepositOwedTotals
+  entered: DepositOwedTotals
+  slips: Slip[]
+  accounts: BankAccount[]
+}): React.JSX.Element {
+  const lines: TallyLine[] = [
+    {
+      label: '1-01-010 Cash and Cash Equivalents',
+      due: owed.cash,
+      entered: entered.cash,
+      slips: slips.filter(isBranchCashSlip),
+    },
+  ]
+  if (owed.clearing > 0.005 || entered.clearing > 0.005) {
+    lines.push({
+      label: '1-01-040 Clearing Funds',
+      due: owed.clearing,
+      entered: entered.clearing,
+      slips: slips.filter((s) => !!s.clearsAccountId),
+      overBlocks: true,
+    })
+  }
+  return (
+    <div className="divide-y divide-gray-100 rounded-lg border border-gray-200 text-sm">
+      {lines.map((line) => (
+        <div key={line.label} className="px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-medium text-gray-800">{line.label}</span>
+            <span className="flex items-center gap-3 tabular-nums">
+              <span className="text-gray-500">
+                {fmtMoney(line.entered)} / {fmtMoney(line.due)}
+              </span>
+              <DifferenceChip
+                difference={round2(line.due - line.entered)}
+                overBlocks={line.overBlocks}
+              />
+            </span>
+          </div>
+          <SlipNames slips={line.slips} accounts={accounts} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** The slips counted on a tally line, by bank and amount. */
+function SlipNames({
+  slips,
+  accounts,
+}: {
+  slips: Slip[]
+  accounts: BankAccount[]
+}): React.JSX.Element {
+  const counted = slips.filter((s) => slipAmount(s) > 0)
+  const bankName = (id: string): string => accounts.find((a) => a.id === id)?.name ?? 'No bank'
+  return (
+    <p className="mt-0.5 text-xs text-gray-500">
+      {counted.length
+        ? counted.map((s) => `${bankName(s.bankAccountId)} ${fmtMoney(slipAmount(s))}`).join(' · ')
+        : 'No slips yet'}
+    </p>
+  )
+}
+
+function DifferenceChip({
+  difference,
+  overBlocks = false,
+}: {
+  difference: number
+  overBlocks?: boolean
+}): React.JSX.Element {
+  if (Math.abs(difference) < 0.005) {
+    // This line only — "Complete" read as the whole deposit being done.
+    return <span className="font-medium text-green-700">Matches</span>
+  }
+  const tone = overBlocks && difference < 0 ? 'text-red-700' : 'text-amber-700'
+  return (
+    <span className={`font-medium ${tone}`}>
+      {difference > 0
+        ? `${fmtMoney(difference)} left`
+        : `Over by ${fmtMoney(Math.abs(difference))}`}
+    </span>
   )
 }

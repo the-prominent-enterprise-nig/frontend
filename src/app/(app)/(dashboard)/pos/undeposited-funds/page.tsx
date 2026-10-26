@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { CashInTransitList } from './_components/CashInTransitList'
 
-export const metadata = { title: 'Undeposited Funds | NIG Central' }
+export const metadata = { title: 'Collected Funds History | NIG Central' }
 
 export default async function CashInTransitPage() {
   const session = await getSessionOrNull()
@@ -33,7 +33,7 @@ export default async function CashInTransitPage() {
 
   return (
     <CashInTransitList
-      title="Undeposited Funds"
+      title="Collected Funds History"
       canManage={canManage}
       canVerify={canVerify}
       canCorrect={canCorrect}

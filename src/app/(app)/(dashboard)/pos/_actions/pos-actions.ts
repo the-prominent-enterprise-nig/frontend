@@ -3208,6 +3208,13 @@ export interface CashInTransitHistoryRow {
   depositDate: string | null
   /** The deposit record behind it; null for an old direct deposit. */
   posDepositId: string | null
+  /** What the deposit's slips banked of it — with, on one session per
+   * deposit, what the deposit banked beyond its sessions (New Receipts, an
+   * over deposit). Null for a session banked before deposits kept shares;
+   * absent on an older API. */
+  depositedAmount?: number | null
+  /** Whether its deposit has a slip or other proof attached yet. */
+  hasProof?: boolean
 }
 
 export async function getCashInTransitHistory(filters?: {
@@ -3236,11 +3243,11 @@ export async function getCashInTransitReport(filters?: {
       filters as Record<string, string>
     )
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to fetch Undeposited Funds report' }
+      return { success: false, error: result.error || 'Failed to fetch collected funds history' }
     }
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to fetch Undeposited Funds report' }
+    return { success: false, error: 'Failed to fetch collected funds history' }
   }
 }
 
@@ -3259,11 +3266,14 @@ export async function getCashInTransitSummary(): Promise<
       '/pos/sessions/cash-in-transit/summary'
     )
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to fetch Undeposited Funds summary' }
+      return {
+        success: false,
+        error: result.error || 'Failed to fetch the collected funds summary',
+      }
     }
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to fetch Undeposited Funds summary' }
+    return { success: false, error: 'Failed to fetch the collected funds summary' }
   }
 }
 
@@ -3289,12 +3299,12 @@ export async function clearCashInTransit(
       input
     )
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to deposit Undeposited Funds' }
+      return { success: false, error: result.error || 'Failed to record the deposit' }
     }
     revalidateTag(TAGS.cashInTransit, 'max')
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to deposit Undeposited Funds' }
+    return { success: false, error: 'Failed to record the deposit' }
   }
 }
 
