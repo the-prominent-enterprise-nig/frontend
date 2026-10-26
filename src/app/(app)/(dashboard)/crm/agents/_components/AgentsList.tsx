@@ -10,6 +10,11 @@ import type { CreateAgentInput } from '@/src/schema/crm/agent'
 import { getBranches } from '../_actions/get-branches'
 import { AgentFormFields, agentFormState, type AgentFormState } from './AgentFormFields'
 
+// The API pages agents 20 at a time (AgentService.findAll's default). The
+// whole roster is 150+ since the client's list was imported, so the list has
+// to page rather than show the first 20 and stop.
+const PAGE_SIZE = 20
+
 interface Props {
   canCreate: boolean
 }
@@ -20,6 +25,9 @@ export default function AgentsList({ canCreate }: Props) {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [lastPage, setLastPage] = useState(1)
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -33,10 +41,19 @@ export default function AgentsList({ canCreate }: Props) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await agentsApi.list({ search, branchId: branchFilter || undefined })
-    if (res.success && res.data) setAgents(res.data.data)
+    const res = await agentsApi.list({
+      search,
+      branchId: branchFilter || undefined,
+      page,
+      limit: PAGE_SIZE,
+    })
+    if (res.success && res.data) {
+      setAgents(res.data.data)
+      setTotal(res.data.meta.total)
+      setLastPage(Math.max(1, res.data.meta.lastPage))
+    }
     setLoading(false)
-  }, [search, branchFilter])
+  }, [search, branchFilter, page])
 
   useEffect(() => {
     load()
@@ -88,14 +105,20 @@ export default function AgentsList({ canCreate }: Props) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setPage(1)
+              }}
               placeholder="Search agents..."
               className="w-full pl-10 pr-4 py-2 rounded-lg border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
           <select
             value={branchFilter}
-            onChange={(e) => setBranchFilter(e.target.value)}
+            onChange={(e) => {
+              setBranchFilter(e.target.value)
+              setPage(1)
+            }}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
           >
             <option value="">All branches</option>
@@ -180,6 +203,36 @@ export default function AgentsList({ canCreate }: Props) {
               </tbody>
             </table>
           </div>
+
+          {total > 0 && (
+            <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+              <p className="text-xs text-zinc-500">
+                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}{' '}
+                {total === 1 ? 'agent' : 'agents'}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1 || loading}
+                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="text-xs text-zinc-500">
+                  {page} / {lastPage}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
+                  disabled={page >= lastPage || loading}
+                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
