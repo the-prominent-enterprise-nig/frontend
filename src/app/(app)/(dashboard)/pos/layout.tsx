@@ -2,6 +2,7 @@ import ModuleGuard from '@/src/components/guards/ModuleGuard'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { canManagePosSettings } from '@/src/libs/guards/permission'
 import { PosTopBar } from './_components/PosTopBar'
+import { visiblePosTabHrefs } from './_shared/pos-hubs'
 
 export const metadata = {
   title: 'Point of Sale - NIG Central',
@@ -16,7 +17,11 @@ export default async function PosLayout({ children }: { children: React.ReactNod
   return (
     <ModuleGuard module="pos">
       <div className="flex h-full flex-col">
-        <PosTopBar canConfigurePos={canConfigurePos} userId={userId} />
+        <PosTopBar
+          canConfigurePos={canConfigurePos}
+          userId={userId}
+          visibleTabHrefs={visiblePosTabHrefs(session)}
+        />
         <div className="flex-1 overflow-auto">{children}</div>
       </div>
     </ModuleGuard>

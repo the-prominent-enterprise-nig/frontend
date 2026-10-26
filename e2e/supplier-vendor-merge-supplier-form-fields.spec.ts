@@ -19,7 +19,7 @@ import { gotoReady } from './utils'
 // Payable Account, Default Expense Account.
 test.describe('Inventory — Suppliers form merged fields', () => {
   test('creates a supplier with the merged-in fields and shows them on edit', async ({ page }) => {
-    await gotoReady(page, '/inventory/suppliers')
+    await gotoReady(page, '/accounting/suppliers')
 
     await page.getByRole('button', { name: 'New Supplier' }).click()
     await expect(page.getByRole('heading', { name: 'New Supplier' })).toBeVisible({

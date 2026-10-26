@@ -1159,43 +1159,6 @@ export interface CrossBranchStockEntry {
 }
 export type CrossBranchStockResult = CrossBranchStockEntry[]
 
-// Branch Pricing
-export interface BranchPricing {
-  id: string
-  branchId: string
-  itemId: string
-  price: number
-  taxRate?: number | null
-  pricingMode?: 'inclusive' | 'exclusive' | null
-  effectiveFrom?: string | null
-  effectiveTo?: string | null
-  notes?: string | null
-  createdAt: string
-  updatedAt: string
-  branch?: { id: string; name: string }
-  item?: { id: string; name: string } | null
-}
-
-export interface CreateBranchPricingInput {
-  branchId: string
-  itemId: string
-  price: number
-  taxRate?: number
-  pricingMode?: 'inclusive' | 'exclusive'
-  effectiveFrom?: string
-  effectiveTo?: string
-  notes?: string
-}
-
-export interface UpdateBranchPricingInput {
-  price?: number
-  taxRate?: number
-  pricingMode?: 'inclusive' | 'exclusive'
-  effectiveFrom?: string
-  effectiveTo?: string
-  notes?: string
-}
-
 // Financing Terms (Phase 3 — Installment Financing)
 export interface FinancingTerm {
   id: string

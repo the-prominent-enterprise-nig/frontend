@@ -144,8 +144,8 @@ export function ReturnedUnitsPanel({
       {isRepo && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
           <span className="text-[11.5px] text-[#8b8b9b]">
-            Repo cost = list price − payments received (monthly + down payment) + agent commission
-            (none if Office) — the value each unit re-enters stock at.
+            Repo cost = list price − payments received (monthly + down payment) + the sales
+            commission encoded in Expenses for the sale — the value each unit re-enters stock at.
           </span>
           {canViewCost && (
             <span className="text-[11.5px] text-[#3d3d4a]">{fmtPeso(totalCost)} total</span>

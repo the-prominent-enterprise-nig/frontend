@@ -17,22 +17,23 @@ test.describe('POS — opening balance', () => {
   })
 })
 
-test.describe('POS — release approvals reachable from the checkout tab bar', () => {
-  test('Release Approvals is a tab alongside Checkout, and still has its own page', async ({
+test.describe('POS — unit release approvals reachable from the Approvals & Reviews tab bar', () => {
+  test('Unit Release Approvals is a tab beside Void Requests, and still has its own page', async ({
     page,
   }) => {
-    await gotoReady(page, '/pos/checkout')
-    // Scoped to PosNav: the sidebar already carries its own Release Approvals
-    // link, so an unscoped role lookup matches two elements.
+    await gotoReady(page, '/pos/release-approvals')
+    // Unit Release Approvals (was Release Approvals) lives in the Approvals &
+    // Reviews group (its sidebar item and this tab strip), not the Sales Counter
+    // strip beside Checkout.
     const tabBar = page.getByLabel('POS section tabs')
-    const tab = tabBar.getByRole('link', { name: 'Release Approvals' })
-    await expect(tab).toBeVisible()
+    await expect(tabBar.getByRole('link', { name: 'Unit Release Approvals' })).toBeVisible()
 
-    await tab.click()
-    await expect(page).toHaveURL(/\/pos\/release-approvals$/)
     // The standalone page is kept, and the tab bar stays visible on it so the
-    // cashier can get straight back to Checkout.
-    await expect(tabBar.getByRole('link', { name: 'Checkout' })).toBeVisible()
+    // cashier can get straight to the other approval queues.
+    const voidTab = tabBar.getByRole('link', { name: 'Void Requests' })
+    await expect(voidTab).toBeVisible()
+    await voidTab.click()
+    await expect(page).toHaveURL(/\/pos\/void-requests$/)
   })
 })
 

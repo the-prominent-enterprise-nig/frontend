@@ -419,6 +419,20 @@ export interface ResolveWithholdingVarianceInput {
   notes?: string
 }
 
+/**
+ * One payment of a collection taken with several methods. The CR number is not
+ * here: the collection has one (`reference`), shared by every tender's receipt.
+ */
+export interface ArTenderInput {
+  method: PaymentMethod
+  amount: number
+  paymentMethodConfigId?: string
+  paymentMethodOptionId?: string
+  /** The bank's own transaction reference — a BANK_TRANSFER tender only. */
+  bankReferenceNumber?: string
+  bankAccountId?: string
+}
+
 export interface RecordArPaymentInput {
   amount: number
   paymentDate: string
@@ -447,6 +461,9 @@ export interface RecordArPaymentInput {
    * field collections and Accounting-side entries.
    */
   posSessionId?: string
+  /** The collection taken with SEVERAL methods (two or more); their amounts
+   * add up to the collection's amount. Omit for a single method. */
+  tenders?: ArTenderInput[]
 }
 
 export interface ARInvoiceSerialGoodsReceipt {
@@ -615,6 +632,9 @@ export interface BulkRecordArPaymentInput {
    * field collections and Accounting-side entries.
    */
   posSessionId?: string
+  /** The collection taken with SEVERAL methods (two or more); their amounts
+   * add up to the collection's amount. Omit for a single method. */
+  tenders?: ArTenderInput[]
 }
 
 export interface BulkRecordPaymentResult {

@@ -4,20 +4,31 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, Loader2 } from 'lucide-react'
-import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
+
+/** One suggestion in the dropdown: what is shown (and what a pick fills in),
+ * plus an optional second line. Deliberately not a vehicle or a driver — the
+ * same input serves the Plate field and the Driver Name field, which come from
+ * different lists. */
+export type AutocompleteOption = {
+  id: string
+  label: string
+  sublabel?: string | null
+}
 
 type Props = {
   value: string
   onChange: (value: string) => void
-  /** Fired when the user picks a roster entry. The caller takes only the
-   * field this input is for — picking a driver never fills the plate, nor
-   * the reverse (Scenario 71 item 22). */
-  onPickVehicle: (vehicle: VehicleSummary) => void
-  /** What the dropdown lists: plate numbers (default), or the roster's
-   * distinct driver names. */
-  mode?: 'plate' | 'driver'
-  search: (query: string) => Promise<VehicleSummary[]>
+  /** Fired when the user picks a suggestion. The caller takes only the field
+   * this input is for — picking a driver never fills the plate, nor the
+   * reverse (Scenario 71 item 22). */
+  onPick: (option: AutocompleteOption) => void
+  search: (query: string) => Promise<AutocompleteOption[]>
   queryKey: string
+  /** What the list holds, for the empty messages: "vehicles" (default) or
+   * "drivers". */
+  noun?: string
+  /** Shows each label in the plate typeface. */
+  mono?: boolean
   placeholder?: string
   error?: string
   disabled?: boolean
@@ -26,21 +37,22 @@ type Props = {
 /**
  * Unlike SearchCombobox (which only ever commits a picked option's id),
  * driverName/vehiclePlate are free-text per-transfer fields — the client's
- * fleet roster (Vehicle model) doesn't cover every ad hoc carrier, so
+ * fleet roster (drivers and vehicles) doesn't cover every ad hoc carrier, so
  * typing something not on the roster must still just work. This is a plain
- * text input with a debounced dropdown of matching roster vehicles;
- * picking one autofills via onPickVehicle instead of locking the field.
+ * text input with a debounced dropdown of matching roster entries; picking
+ * one autofills via onPick instead of locking the field.
  */
 export function VehicleAutocompleteInput({
   value,
   onChange,
-  onPickVehicle,
+  onPick,
   search,
   queryKey,
+  noun = 'vehicles',
+  mono = false,
   placeholder,
   error,
   disabled,
-  mode = 'plate',
 }: Props) {
   const [open, setOpen] = useState(false)
   const [debouncedQuery, setDebouncedQuery] = useState(value)
@@ -90,10 +102,10 @@ export function VehicleAutocompleteInput({
     staleTime: 30_000,
   })
 
-  const options = mode === 'driver' ? distinctDrivers(data ?? [], value) : (data ?? [])
+  const options = data ?? []
 
-  function handlePick(vehicle: VehicleSummary) {
-    onPickVehicle(vehicle)
+  function handlePick(option: AutocompleteOption) {
+    onPick(option)
     setOpen(false)
   }
 
@@ -135,31 +147,21 @@ export function VehicleAutocompleteInput({
               </div>
             ) : options.length === 0 ? (
               <p className="px-3 py-3 text-sm text-zinc-400">
-                {value.trim()
-                  ? `No matching ${mode === 'driver' ? 'drivers' : 'vehicles'} for "${value.trim()}"`
-                  : mode === 'driver'
-                    ? 'No drivers on file'
-                    : 'No vehicles on file'}
+                {value.trim() ? `No matching ${noun} for "${value.trim()}"` : `No ${noun} on file`}
               </p>
             ) : (
-              options.map((vehicle) => (
+              options.map((option) => (
                 <button
-                  key={vehicle.id}
+                  key={option.id}
                   type="button"
-                  onClick={() => handlePick(vehicle)}
+                  onClick={() => handlePick(option)}
                   className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm text-zinc-800 transition-colors hover:bg-zinc-50"
                 >
-                  {mode === 'driver' ? (
-                    <span className="w-full truncate font-medium">{vehicle.driverName}</span>
-                  ) : (
-                    <>
-                      <span className="w-full truncate font-mono font-medium">
-                        {vehicle.plateNo}
-                      </span>
-                      {vehicle.tag && (
-                        <span className="w-full truncate text-xs text-zinc-400">{vehicle.tag}</span>
-                      )}
-                    </>
+                  <span className={`w-full truncate font-medium ${mono ? 'font-mono' : ''}`}>
+                    {option.label}
+                  </span>
+                  {option.sublabel && (
+                    <span className="w-full truncate text-xs text-zinc-400">{option.sublabel}</span>
                   )}
                 </button>
               ))
@@ -169,20 +171,4 @@ export function VehicleAutocompleteInput({
         )}
     </div>
   )
-}
-
-/** One entry per driver name. The search also matches plates, so a typed
- * query is re-applied to the name itself — a driver list shouldn't offer
- * someone whose plate happened to match. */
-function distinctDrivers(vehicles: VehicleSummary[], query: string): VehicleSummary[] {
-  const q = query.trim().toLowerCase()
-  const seen = new Set<string>()
-  return vehicles.filter((v) => {
-    const name = v.driverName?.trim()
-    if (!name || (q && !name.toLowerCase().includes(q))) return false
-    const key = name.toLowerCase()
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
 }

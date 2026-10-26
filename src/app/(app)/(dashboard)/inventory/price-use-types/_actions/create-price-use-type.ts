@@ -37,7 +37,7 @@ export async function createPriceUseType(input: unknown): Promise<ApiResponse<un
   }
 
   revalidatePath('/inventory/price-use-types')
-  revalidatePath('/inventory/price-lists')
+  revalidatePath('/pos/catalog/price-lists')
 
   return { success: true, data: result.data, message: 'Price use type created' }
 }
