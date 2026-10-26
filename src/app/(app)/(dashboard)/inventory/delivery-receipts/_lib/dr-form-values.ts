@@ -17,6 +17,7 @@ export function emptyDrForm(): DrFormValues {
     purpose: 'office_use',
     occasion: '',
     occasionOther: '',
+    giveawayRecipient: '',
     issueDate: todayIso(),
     warehouseId: '',
     departmentId: '',
@@ -53,6 +54,7 @@ export function drToFormValues(dr: DrDetail): DrFormValues {
   return {
     purpose: dr.purpose,
     ...occasionFields(dr.purposeDetail),
+    giveawayRecipient: dr.giveawayRecipient ?? '',
     issueDate: day(dr.issueDate),
     warehouseId: dr.warehouseId,
     departmentId: dr.departmentId ?? '',
