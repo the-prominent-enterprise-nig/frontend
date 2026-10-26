@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 import type {
   Agent,
   AgentInvoice,
@@ -273,7 +274,7 @@ export default function AgentInvoices({
                         Date
                       </th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                        SI No.
+                        SI / DR No.
                       </th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                         Customer
@@ -302,10 +303,9 @@ export default function AgentInvoices({
                           {fmtDate(r.date)}
                         </td>
                         <td className="px-4 py-3 text-sm whitespace-nowrap">
-                          <span className="font-medium text-zinc-800">
-                            {r.salesInvoiceNumber ?? '-'}
-                          </span>
-                          <span className="block text-xs text-zinc-400">{r.transactionNumber}</span>
+                          {/* The SI/DR the customer holds on paper — never the internal
+                              POS-… number, which shows only for a sale with none. */}
+                          <span className="font-medium text-zinc-800">{saleDocNo(r)}</span>
                         </td>
                         <td className="px-4 py-3 text-sm text-zinc-700">{r.customerName ?? '-'}</td>
                         <td className="px-4 py-3 text-sm text-zinc-700">
