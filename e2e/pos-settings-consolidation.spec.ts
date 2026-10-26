@@ -55,36 +55,38 @@ test.describe('POS Settings — consolidated shell (Part 1)', () => {
     }
   })
 
-  test('PosNav has no Configuration group and Terminals moves out of Management (Part 3)', async ({
+  test('Settings is a tab of Operations & Admin over its own rail, and Terminals is not in Management (Part 3)', async ({
     page,
   }) => {
     const posNav = page.getByRole('navigation', { name: 'POS section tabs' })
+    const subNav = page.getByRole('navigation', { name: 'POS sub tabs' })
 
-    // /pos/settings/* has its own left-rail tabs (PosSettingsTabs) and the
-    // Sidebar already highlights "Configuration" as active — a PosNav tab
-    // bar with a single, unswitchable item had no purpose, so these routes
-    // intentionally match no PosNav group at all (same as any other
-    // standalone page): no bar renders, not even an empty one.
+    // /pos/settings/* has its own left-rail tabs (PosSettingsTabs). Since the
+    // sidebar regroup it also sits in the Operations & Admin strip (Service
+    // Jobs | Price List Upload | POS PIN | Settings) rather than being a bare
+    // page — the strip above, the rail below.
     for (const path of [
       '/pos/settings/general',
       '/pos/settings/financing-terms',
       '/pos/settings/terminals',
     ]) {
       await gotoReady(page, path)
-      await expect(posNav).toHaveCount(0)
+      await expect(posNav.getByRole('link', { name: 'Settings' })).toBeVisible()
+      await expect(page.getByRole('navigation', { name: 'POS settings tabs' })).toBeVisible()
     }
 
-    // Management now only has Sessions + Cash Drawer — Terminals is gone.
+    // Management (Sessions + Cash Drawer) is a tab of Cash & Collections with a
+    // second row — Terminals is not among them.
     await gotoReady(page, '/pos/sessions')
-    await expect(posNav.getByRole('link', { name: 'Sessions' })).toBeVisible()
-    await expect(posNav.getByRole('link', { name: 'Cash Drawer' })).toBeVisible()
+    await expect(posNav.getByRole('link', { name: 'Management' })).toBeVisible()
+    await expect(subNav.getByRole('link', { name: 'Sessions' })).toBeVisible()
+    await expect(subNav.getByRole('link', { name: 'Cash Drawer' })).toBeVisible()
     await expect(posNav.getByRole('link', { name: 'Terminals' })).toHaveCount(0)
+    await expect(subNav.getByRole('link', { name: 'Terminals' })).toHaveCount(0)
 
-    // /pos/pin is also a standalone page — PosNav renders nothing there
-    // either, reachable only via the Sidebar's own separate "POS PIN"
-    // item.
+    // /pos/pin is the POS PIN tab of the same strip.
     await gotoReady(page, '/pos/pin')
-    await expect(posNav).toHaveCount(0)
+    await expect(posNav.getByRole('link', { name: 'POS PIN' })).toBeVisible()
   })
 
   test('GL Mapping is gone — no page, no nav entry, and Payment Methods explains the fallback', async ({

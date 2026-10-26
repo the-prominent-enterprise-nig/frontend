@@ -1,7 +1,7 @@
 'use server'
 
 import { api, ApiResponse } from '@/src/libs/api/client'
-import { VehicleListResponseSchema, type VehicleSummary } from '@/src/schema/inventory/vehicles'
+import { VehicleSearchResponseSchema, type VehicleSummary } from '@/src/schema/inventory/vehicles'
 
 type Params = {
   q?: string
@@ -22,7 +22,7 @@ export async function searchVehicles(params: Params = {}): Promise<ApiResponse<V
     }
   }
 
-  const validated = VehicleListResponseSchema.safeParse(result.data)
+  const validated = VehicleSearchResponseSchema.safeParse(result.data)
   if (!validated.success) {
     return { success: true, data: result.data }
   }

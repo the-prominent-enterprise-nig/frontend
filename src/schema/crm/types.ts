@@ -411,6 +411,10 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   // Scenario 32 item 3 — the selling agent (manager/salesperson on the
   // paper card) this account was sold under. Same POS-only scoping.
   sellingAgent?: { id: string; name: string } | null
+  // The commission on this sale — what accounting encoded in Expenses
+  // (Commissions - Sales, recorded entries only). Zero until it is encoded.
+  // Shown only to users who can read agents.
+  salesCommission?: number | string
   // Scenario 32 item 4 — running totals, same for both POS-originated and
   // hand-entered accounts (unlike items 1/2/3/5 above, which are POS-only).
   totalPayments: number | string

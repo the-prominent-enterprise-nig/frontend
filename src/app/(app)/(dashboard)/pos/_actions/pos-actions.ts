@@ -46,9 +46,6 @@ import type {
   UpdatePosConfigInput,
   CashDrawerEvent,
   CreateCashDrawerEventInput,
-  BranchPricing,
-  CreateBranchPricingInput,
-  UpdateBranchPricingInput,
   FinancingTerm,
   CreateFinancingTermInput,
   UpdateFinancingTermInput,
@@ -107,7 +104,6 @@ const TAGS = {
   loyalty: (customerId: string) => `pos-loyalty-${customerId}`,
   loyaltyProgram: 'pos-loyalty-program',
   cashDrawer: (sessionId: string) => `pos-cash-drawer-${sessionId}`,
-  branchPricing: 'pos-branch-pricing',
   financingTerms: 'pos-financing-terms',
   tpfProviders: 'pos-tpf-providers',
   parkedSales: 'pos-parked-sales',
@@ -958,71 +954,6 @@ export async function createCashDrawerEvent(
   }
 }
 
-// â”€â”€â”€ Branch Pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-export async function getBranchPricing(
-  branchId?: string,
-  itemId?: string
-): Promise<ApiResponse<BranchPricing[]>> {
-  try {
-    const result = await api.get<BranchPricing[]>(
-      '/pos/branch-pricing',
-      { branchId, itemId } as Record<string, string>,
-      { tags: [TAGS.branchPricing] }
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to fetch branch pricing' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to fetch branch pricing' }
-  }
-}
-
-export async function createBranchPricing(
-  input: CreateBranchPricingInput
-): Promise<ApiResponse<BranchPricing>> {
-  try {
-    const result = await api.post<BranchPricing>('/pos/branch-pricing', input)
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to create branch pricing' }
-    }
-    revalidateTag(TAGS.branchPricing, 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to create branch pricing' }
-  }
-}
-
-export async function updateBranchPricing(
-  id: string,
-  input: UpdateBranchPricingInput
-): Promise<ApiResponse<BranchPricing>> {
-  try {
-    const result = await api.patch<BranchPricing>(`/pos/branch-pricing/${id}`, input)
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to update branch pricing' }
-    }
-    revalidateTag(TAGS.branchPricing, 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to update branch pricing' }
-  }
-}
-
-export async function deleteBranchPricing(id: string): Promise<ApiResponse<void>> {
-  try {
-    const result = await api.delete(`/pos/branch-pricing/${id}`)
-    if (!result.success) {
-      return { success: false, error: result.error || 'Failed to delete branch pricing' }
-    }
-    revalidateTag(TAGS.branchPricing, 'max')
-    return { success: true }
-  } catch {
-    return { success: false, error: 'Failed to delete branch pricing' }
-  }
-}
-
 // ─── Financing Terms (Phase 3 — Installment Financing) ────────────────────────
 
 export async function getFinancingTerms(): Promise<ApiResponse<FinancingTerm[]>> {
@@ -1447,25 +1378,6 @@ export async function createLoyaltyAccount(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to create loyalty account' }
-  }
-}
-
-export async function getBranchPricingByItem(
-  itemId: string,
-  branchId?: string
-): Promise<ApiResponse<BranchPricing[]>> {
-  try {
-    const result = await api.get<BranchPricing[]>(
-      `/pos/branch-pricing/item/${itemId}`,
-      branchId ? { branchId } : undefined,
-      { tags: [TAGS.branchPricing] }
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to fetch branch pricing for item' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to fetch branch pricing for item' }
   }
 }
 

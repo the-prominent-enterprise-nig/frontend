@@ -187,7 +187,7 @@ export default function APPaymentsList() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6">
       <Link
         href="/accounting/ap-bills"
         className="mb-3 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"

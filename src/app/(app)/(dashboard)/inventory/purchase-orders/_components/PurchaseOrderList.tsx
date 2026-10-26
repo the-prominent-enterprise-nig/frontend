@@ -34,7 +34,7 @@ import {
   type PurchaseOrderSummary,
 } from '@/src/schema/inventory/purchase-orders'
 import { getSuppliers } from '../_actions/get-suppliers'
-import { getBranches } from '../../price-lists/_actions/get-branches'
+import { getBranches } from '@/src/app/(app)/(dashboard)/pos/catalog/price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
 import { downloadReactNodeAsPdf } from '@/src/libs/print/htmlToPdf'
