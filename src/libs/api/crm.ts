@@ -20,7 +20,7 @@ import type {
   CategoryGraduationRequest,
   DamEscalationRequest,
   LegalEscalationStatus,
-  AgentCommission,
+  AgentInvoice,
   DuplicateCheckResult,
   DuplicatePair,
   CollectionsCalendarResponse,
@@ -441,7 +441,7 @@ export const agentsApi = {
   create: (body: CreateAgentInput) => api.post<Agent>('/crm/agents', body),
   update: (id: string, body: UpdateAgentInput) => api.patch<Agent>(`/crm/agents/${id}`, body),
   remove: (id: string) => api.delete(`/crm/agents/${id}`),
-  commissions: (id: string) => api.get<AgentCommission[]>(`/crm/agents/${id}/commissions`),
+  invoices: (id: string) => api.get<AgentInvoice[]>(`/crm/agents/${id}/invoices`),
 }
 
 // ─── Collection Incentives ──────────────────────────────────

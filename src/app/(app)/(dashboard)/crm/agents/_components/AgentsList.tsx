@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, RefreshCw, Pencil, Trash2, X, Wallet } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Search, RefreshCw, Pencil, Trash2, X, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
-import type { Agent, AgentCommission } from '@/src/schema/crm/types'
+import type { Agent, AgentInvoice, AgentSaleType } from '@/src/schema/crm/types'
 import type { CreateAgentInput } from '@/src/schema/crm/agent'
 import { getBranches } from '../_actions/get-branches'
 
@@ -24,7 +25,7 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Agent | null>(null)
-  const [commissionsTarget, setCommissionsTarget] = useState<Agent | null>(null)
+  const [invoicesTarget, setInvoicesTarget] = useState<Agent | null>(null)
 
   const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name
 
@@ -195,11 +196,11 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <button
-                            onClick={() => setCommissionsTarget(a)}
+                            onClick={() => setInvoicesTarget(a)}
                             className="p-1.5 text-zinc-500 hover:bg-zinc-100 rounded"
-                            title="View commissions"
+                            title="View invoices"
                           >
-                            <Wallet className="w-4 h-4" />
+                            <FileText className="w-4 h-4" />
                           </button>
                           {canUpdate && (
                             <button
@@ -245,11 +246,8 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
         />
       )}
 
-      {commissionsTarget && (
-        <AgentCommissionsDialog
-          agent={commissionsTarget}
-          onClose={() => setCommissionsTarget(null)}
-        />
+      {invoicesTarget && (
+        <AgentInvoicesDialog agent={invoicesTarget} onClose={() => setInvoicesTarget(null)} />
       )}
     </div>
   )
@@ -379,23 +377,40 @@ function fmtMoney(n: number): string {
   return `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-// Scenario-01 gap closure (Part 3): read-only commission ledger — the
-// backend has fired and recorded these correctly on every completed sale
-// all along (AgentCommission, one row per sale), but had no frontend
-// consumer at all beyond a raw JSON endpoint.
-function AgentCommissionsDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
-  const [commissions, setCommissions] = useState<AgentCommission[] | null>(null)
+function fmtDate(d: string): string {
+  return new Date(d).toLocaleDateString('en-PH', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+const SALE_TYPE_LABEL: Record<AgentSaleType, string> = {
+  installment: 'Installment',
+  tpf: 'TPF',
+  cash: 'Cash',
+  charge: 'Charge',
+  mixed: 'Mixed',
+}
+
+// Scenario 78 — every invoice the agent sold, with its commission and the
+// Commissions - Sales voucher that released it. Replaces the Scenario-01
+// commission-only list: that one was driven by AgentCommission, so an agent
+// with no rate set (the whole imported roster) showed nothing, and it named
+// the POS number rather than the SI.
+function AgentInvoicesDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
+  const [invoices, setInvoices] = useState<AgentInvoice[] | null>(null)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const res = await agentsApi.commissions(agent.id)
+      const res = await agentsApi.invoices(agent.id)
       if (cancelled) return
       if (res.success && res.data) {
-        setCommissions(res.data)
+        setInvoices(res.data)
       } else {
-        toast.error(res.message || res.error || 'Could not load commissions')
-        setCommissions([])
+        toast.error(res.message || res.error || 'Could not load invoices')
+        setInvoices([])
       }
     })()
     return () => {
@@ -403,17 +418,20 @@ function AgentCommissionsDialog({ agent, onClose }: { agent: Agent; onClose: () 
     }
   }, [agent.id])
 
-  // Number() — AgentCommission.commissionAmount is a Prisma Decimal(15,2)
-  // and arrives as a string, so a bare + concatenates instead of adding
-  // (same bug as Customer360's upcoming-payables total).
-  const total = (commissions ?? []).reduce((sum, c) => sum + Number(c.commissionAmount), 0)
+  const rows = invoices ?? []
+  const totalCommission = rows.reduce((sum, r) => sum + (r.commission ?? 0), 0)
+  // A draft voucher already holds the sale but hasn't paid anything out yet.
+  const totalReleased = rows.reduce(
+    (sum, r) => sum + (r.released && !r.released.isDraft ? r.released.amount : 0),
+    0
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-xl max-w-5xl w-full max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Commissions — {agent.name}</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Invoices — {agent.name}</h3>
             <p className="text-xs text-zinc-500 mt-0.5">
               {agent.commissionRate != null
                 ? `${(agent.commissionRate * 100).toFixed(2)}% rate`
@@ -425,13 +443,11 @@ function AgentCommissionsDialog({ agent, onClose }: { agent: Agent; onClose: () 
           </button>
         </div>
 
-        <div className="overflow-y-auto flex-1">
-          {commissions === null ? (
+        <div className="overflow-auto flex-1">
+          {invoices === null ? (
             <div className="p-8 text-center text-sm text-zinc-400">Loading...</div>
-          ) : commissions.length === 0 ? (
-            <div className="p-8 text-center text-sm text-zinc-400">
-              No commissions recorded yet.
-            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-8 text-center text-sm text-zinc-400">No invoices sold yet.</div>
           ) : (
             <table className="w-full">
               <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0">
@@ -440,40 +456,66 @@ function AgentCommissionsDialog({ agent, onClose }: { agent: Agent; onClose: () 
                     Date
                   </th>
                   <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Sale
+                    SI No.
+                  </th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
+                    Customer
+                  </th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
+                    Type
                   </th>
                   <th className="text-right px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Sale Amount
-                  </th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
-                    Rate
+                    Amount
                   </th>
                   <th className="text-right px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
                     Commission
                   </th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
+                    Released
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {commissions.map((c) => (
-                  <tr key={c.id}>
-                    <td className="px-4 py-2 text-xs text-zinc-500">
-                      {new Date(c.posTransaction.occurredAt).toLocaleDateString('en-PH', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="px-4 py-2 text-xs text-zinc-500 whitespace-nowrap">
+                      {fmtDate(r.date)}
                     </td>
-                    <td className="px-4 py-2 text-sm font-medium text-zinc-800">
-                      {c.posTransaction.transactionNumber}
+                    <td className="px-4 py-2 text-sm whitespace-nowrap">
+                      <span className="font-medium text-zinc-800">
+                        {r.salesInvoiceNumber ?? '-'}
+                      </span>
+                      <span className="block text-xs text-zinc-400">{r.transactionNumber}</span>
                     </td>
-                    <td className="px-4 py-2 text-sm text-right text-zinc-700">
-                      {fmtMoney(c.posTransaction.totalAmount)}
+                    <td className="px-4 py-2 text-sm text-zinc-700">{r.customerName ?? '-'}</td>
+                    <td className="px-4 py-2 text-sm text-zinc-700">{SALE_TYPE_LABEL[r.type]}</td>
+                    <td className="px-4 py-2 text-sm text-right text-zinc-700 whitespace-nowrap">
+                      {fmtMoney(r.totalAmount)}
                     </td>
-                    <td className="px-4 py-2 text-sm text-right text-zinc-500">
-                      {(c.rate * 100).toFixed(2)}%
+                    <td className="px-4 py-2 text-sm text-right font-semibold text-emerald-700 whitespace-nowrap">
+                      {r.commission != null ? fmtMoney(r.commission) : '-'}
                     </td>
-                    <td className="px-4 py-2 text-sm text-right font-semibold text-emerald-700">
-                      {fmtMoney(c.commissionAmount)}
+                    <td className="px-4 py-2 text-sm whitespace-nowrap">
+                      {r.released ? (
+                        <>
+                          <Link
+                            href={`/accounting/expenses/${r.released.expenseId}`}
+                            className="font-medium text-purple-700 hover:underline"
+                          >
+                            {r.released.voucherNumber}
+                          </Link>
+                          {r.released.isDraft && (
+                            <span className="ml-1.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                              Draft
+                            </span>
+                          )}
+                          <span className="block text-xs text-zinc-500">
+                            {fmtMoney(r.released.amount)} · {fmtDate(r.released.date)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-zinc-400">Not released</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -482,12 +524,20 @@ function AgentCommissionsDialog({ agent, onClose }: { agent: Agent; onClose: () 
           )}
         </div>
 
-        {commissions !== null && commissions.length > 0 && (
-          <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-200 bg-zinc-50">
+        {rows.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-3 border-t border-zinc-200 bg-zinc-50">
             <span className="text-sm font-medium text-zinc-600">
-              {commissions.length} sale{commissions.length === 1 ? '' : 's'}
+              {rows.length} invoice{rows.length === 1 ? '' : 's'}
             </span>
-            <span className="text-sm font-bold text-zinc-900">Total: {fmtMoney(total)}</span>
+            <div className="flex gap-6 text-sm">
+              <span className="text-zinc-600">
+                Commission:{' '}
+                <span className="font-bold text-zinc-900">{fmtMoney(totalCommission)}</span>
+              </span>
+              <span className="text-zinc-600">
+                Released: <span className="font-bold text-zinc-900">{fmtMoney(totalReleased)}</span>
+              </span>
+            </div>
           </div>
         )}
       </div>

@@ -249,19 +249,31 @@ export interface Agent {
   updatedAt: string
 }
 
-export interface AgentCommission {
+export type AgentSaleType = 'installment' | 'tpf' | 'cash' | 'charge' | 'mixed'
+
+/** One completed sale an agent is the selling agent on — GET
+ * /crm/agents/:id/invoices. Listed whether or not a commission accrued on it
+ * (`commission` is null when the agent had no rate at the time). */
+export interface AgentInvoice {
   id: string
-  agentId: string
-  posTransactionId: string
-  baseAmount: number
-  rate: number
-  commissionAmount: number
-  createdAt: string
-  posTransaction: {
-    transactionNumber: string
-    totalAmount: number
-    occurredAt: string
-  }
+  date: string
+  salesInvoiceNumber: string | null
+  transactionNumber: string
+  customerName: string | null
+  type: AgentSaleType
+  /** Pre-VAT, pre-discount — what the commission is computed on. */
+  subtotal: number
+  totalAmount: number
+  commission: number | null
+  /** The live Commissions - Sales voucher paying this sale's commission. */
+  released: {
+    expenseId: string
+    voucherNumber: string
+    date: string
+    amount: number
+    /** Still a draft — the sale is taken but not yet paid out. */
+    isDraft: boolean
+  } | null
 }
 
 export interface Interaction {
