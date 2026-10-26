@@ -316,8 +316,16 @@ export default function AgentInvoices({
                         <td className="px-4 py-3 text-sm text-right font-semibold text-emerald-700 whitespace-nowrap">
                           {r.commission != null ? fmtMoney(r.commission) : '-'}
                         </td>
-                        <ReleaseCell release={r.released} guardLeave={guardLeave} />
-                        <ReleaseCell release={r.smiReleased} guardLeave={guardLeave} />
+                        <ReleaseCell
+                          release={r.released}
+                          emptyLabel="Commission not released"
+                          guardLeave={guardLeave}
+                        />
+                        <ReleaseCell
+                          release={r.smiReleased}
+                          emptyLabel="SMI not released"
+                          guardLeave={guardLeave}
+                        />
                       </tr>
                     ))}
                   </tbody>
@@ -387,15 +395,19 @@ function sameAgentForm(a: AgentFormState, b: AgentFormState): boolean {
  * expense, with a Draft badge while it is still a draft. */
 function ReleaseCell({
   release,
+  emptyLabel,
   guardLeave,
 }: {
   release: AgentInvoiceRelease | null
+  /** What an unreleased cell says — names which release it is, so the
+   * commission and SMI columns don't read the same. */
+  emptyLabel: string
   guardLeave: (href: string) => (e: React.MouseEvent) => void
 }) {
   if (!release) {
     return (
       <td className="px-4 py-3 text-sm whitespace-nowrap">
-        <span className="text-xs text-zinc-400">Not released</span>
+        <span className="text-xs text-zinc-400">{emptyLabel}</span>
       </td>
     )
   }
