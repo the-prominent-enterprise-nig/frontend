@@ -19,7 +19,8 @@ import AssignRoleModal from './AssignRoleModal'
 import AssignBranchModal from './AssignBranchModal'
 import EditUserModal from './EditUserModal'
 import UserDetailDrawer from './UserDetailDrawer'
-import { type User, type Role } from '@/src/schema/settings/list'
+import { type User, type Role, type Permission } from '@/src/schema/settings/list'
+import { type AccessMap } from './module-map'
 import { setUserStatus } from '@/src/app/(app)/(dashboard)/settings/_actions/set-user-status'
 import { adminResetUserPassword } from '@/src/libs/auth/actions/admin-reset-password'
 import { showToast } from '@/src/components/ui/toast'
@@ -37,6 +38,8 @@ type UsersSectionProps = {
   currentBranchId?: string
   branches?: Branch[]
   availableRoles?: Role[]
+  availablePermissions?: Permission[]
+  accessMap?: AccessMap
   currentUserId?: string
   canAddUser?: boolean
 }
@@ -49,6 +52,8 @@ export default function UsersSection({
   currentBranchId = '',
   branches = [],
   availableRoles = [],
+  availablePermissions = [],
+  accessMap,
   currentUserId,
   canAddUser = false,
 }: UsersSectionProps) {
@@ -475,6 +480,8 @@ export default function UsersSection({
         onClose={() => setIsCreateOpen(false)}
         onSuccess={handleSuccess}
         availableRoles={availableRoles}
+        availablePermissions={availablePermissions}
+        accessMap={accessMap}
       />
 
       {assignTarget && (

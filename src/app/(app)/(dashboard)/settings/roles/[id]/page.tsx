@@ -1,7 +1,7 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { isAdmin } from '@/src/libs/guards/permission'
 import { redirect, notFound } from 'next/navigation'
-import { getRole, getPermissions } from '../../_actions'
+import { getRole, getPermissions, getAccessMap } from '../../_actions'
 import RoleAccessClient from './_components/RoleAccessClient'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -19,7 +19,11 @@ export default async function RoleAccessPage({ params }: { params: Promise<{ id:
   if (!session) redirect('/login')
   if (!isAdmin(session)) redirect('/403')
 
-  const [roleResult, permissionsResult] = await Promise.all([getRole(id), getPermissions()])
+  const [roleResult, permissionsResult, accessMap] = await Promise.all([
+    getRole(id),
+    getPermissions(),
+    getAccessMap(),
+  ])
 
   if (!roleResult.success || !roleResult.data) notFound()
 
@@ -30,5 +34,11 @@ export default async function RoleAccessPage({ params }: { params: Promise<{ id:
         : permissionsResult.data.data
       : []
 
-  return <RoleAccessClient role={roleResult.data} availablePermissions={permissions} />
+  return (
+    <RoleAccessClient
+      role={roleResult.data}
+      availablePermissions={permissions}
+      accessMap={accessMap}
+    />
+  )
 }

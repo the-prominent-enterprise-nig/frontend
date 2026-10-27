@@ -172,6 +172,15 @@ export function getAccounts(params?: ListParams) {
   })
 }
 
+/** The chart of accounts for a picker: the accounts alone, no balances or
+ * transactions. Open to Expenses and Recurring Expenses, which may not read
+ * the full chart (GET /accounts carries every posted transaction). */
+export function getAccountOptions() {
+  return api.get<Account[]>('/accounts/options', undefined, {
+    tags: ['accounting-accounts'],
+  })
+}
+
 export function getAccountById(id: string) {
   return api.get<Account>(`/accounts/${id}`, undefined, {
     tags: ['accounting-accounts', `accounting-account-${id}`],

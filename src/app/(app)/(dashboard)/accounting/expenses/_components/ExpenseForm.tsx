@@ -26,7 +26,7 @@ import {
   vehicleLabel,
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import CustomerPicker from '@/src/components/crm/CustomerPicker'
 import { customersApi } from '@/src/libs/api/crm'
 import EmployeePicker from '@/src/components/accounting/EmployeePicker'
@@ -364,7 +364,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   const [mappings, setMappings] = useState<AccountMapping[]>([])
 
   useEffect(() => {
-    getAccounts({ limit: 500 }).then((r) => {
+    getAccountOptions().then((r) => {
       const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
       // Not expenses only. A payroll run credits assets and liabilities as
       // well as debiting expense — the client's own disbursement sheet

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { type Permission, type Role } from '@/src/schema/settings/list'
 import { assignPermissions, reactivateRole } from '@/src/app/(app)/(dashboard)/settings/_actions'
 import ModuleAccessList from '@/src/components/settings/ModuleAccessList'
+import { type AccessMap } from '@/src/components/settings/module-map'
 import AdvancedPermissionsSection from '@/src/components/settings/AdvancedPermissionsSection'
 import UnsavedChangesModal from '@/src/components/settings/UnsavedChangesModal'
 import { showToast } from '@/src/components/ui/toast'
@@ -23,9 +24,14 @@ const FOUNDER_ROLE_NAME = 'Business Owner'
 type RoleAccessClientProps = {
   role: Role
   availablePermissions: Permission[]
+  accessMap: AccessMap
 }
 
-export default function RoleAccessClient({ role, availablePermissions }: RoleAccessClientProps) {
+export default function RoleAccessClient({
+  role,
+  availablePermissions,
+  accessMap,
+}: RoleAccessClientProps) {
   const router = useRouter()
   const isFounderRole = role.name === FOUNDER_ROLE_NAME
 
@@ -240,6 +246,7 @@ export default function RoleAccessClient({ role, availablePermissions }: RoleAcc
               selected={selected}
               onChange={setSelected}
               moduleOrder={moduleOrder}
+              accessMap={accessMap}
             />
           </section>
 

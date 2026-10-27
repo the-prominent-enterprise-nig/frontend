@@ -1,7 +1,7 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { isAdmin } from '@/src/libs/guards/permission'
 import { redirect } from 'next/navigation'
-import { getPermissions } from '../../_actions'
+import { getPermissions, getAccessMap } from '../../_actions'
 import CreateRoleClient from './_components/CreateRoleClient'
 
 export const metadata = {
@@ -13,7 +13,7 @@ export default async function CreateRolePage() {
   if (!session) redirect('/login')
   if (!isAdmin(session)) redirect('/403')
 
-  const permissionsResult = await getPermissions()
+  const [permissionsResult, accessMap] = await Promise.all([getPermissions(), getAccessMap()])
   const permissions =
     permissionsResult.success && permissionsResult.data
       ? Array.isArray(permissionsResult.data)
@@ -21,5 +21,5 @@ export default async function CreateRolePage() {
         : permissionsResult.data.data
       : []
 
-  return <CreateRoleClient availablePermissions={permissions} />
+  return <CreateRoleClient availablePermissions={permissions} accessMap={accessMap} />
 }

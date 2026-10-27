@@ -1,5 +1,6 @@
 export { getUsers } from './get-users'
 export { getPermissions } from './get-permissions'
+export { getAccessMap } from './get-access-map'
 export { getRoles } from './get-roles'
 export { getRole } from './get-role'
 export { createUser } from './create-user'
