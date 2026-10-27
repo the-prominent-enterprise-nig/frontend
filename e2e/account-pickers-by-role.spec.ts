@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs } from './utils'
+import { clickStable, gotoReady, loginAs } from './utils'
 
 // Scenario 74 review: roles without the full chart of accounts (GET /accounts
 // carries every posted transaction) pick accounts from GET /accounts/options.
@@ -38,12 +38,28 @@ const SCREENS: Screen[] = [
     open: visit('/accounting/expenses/new'),
   },
   {
+    role: 'Payables Clerk',
+    email: 'technova.al-payables-clerk@test.com',
+    name: 'AP payment methods',
+    open: visit('/accounting/ap-payment-methods'),
+  },
+  {
+    role: 'Sales Support',
+    email: 'technova.al-sales-support@test.com',
+    name: 'Account Mapping (opened by POS configuration)',
+    open: visit('/accounting/account-mapping'),
+  },
+  {
     role: 'Liquidation Clerk',
     email: 'technova.al-liquidation-clerk@test.com',
     name: 'New Special Account',
     open: async (page) => {
       await gotoReady(page, '/accounting/special-accounts')
-      await page.getByRole('button', { name: /New Special Account/ }).click()
+      // Retried until the dialog opens: a click before hydration does nothing.
+      await clickStable(
+        page.getByRole('button', { name: /New Special Account/ }),
+        page.getByRole('heading', { name: 'New Special Account' })
+      )
     },
   },
 ]

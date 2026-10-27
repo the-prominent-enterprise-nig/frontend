@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Save, RefreshCw, Sparkles } from 'lucide-react'
 import { AccountMappings, COASeed, type AccountMapping } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account, type AccountType } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account, type AccountType } from '@/src/libs/data/AccountingData'
 
 /**
  * Mapping keys that cleanly represent one transaction's debit + credit side
@@ -81,7 +81,7 @@ export default function AccountMappingPanel() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [m, a] = await Promise.all([AccountMappings.list(), getAccounts({ limit: 500 })])
+    const [m, a] = await Promise.all([AccountMappings.list(), getAccountOptions()])
     setMappings(m.data ?? [])
     const d = a.data as any
     setAccounts(d?.items ?? d ?? [])
