@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { customersApi, remindersApi, interactionsApi, segmentsApi } from '@/src/libs/api/crm'
 import CollectionsCalendar from '../collections-calendar/_components/CollectionsCalendar'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -258,7 +259,7 @@ export default function CrmDashboard() {
 
     const settled = await Promise.allSettled([
       customersApi.list({ limit: 1 }), // 0 — only meta.total is read; see below
-      remindersApi.list({ limit: 200 }), // 1
+      REMINDERS_ENABLED ? remindersApi.list({ limit: 200 }) : Promise.resolve(null), // 1
       interactionsApi.list({ limit: 100 }), // 2
       segmentsApi.list(), // 3 — CustomerSegment[]
       customersApi.sourceSummary(), // 4 — real counts, not capped like list()
@@ -432,7 +433,9 @@ export default function CrmDashboard() {
               {(
                 [
                   { label: 'Customers', href: '/crm/customers', icon: Contact },
-                  { label: 'Reminders', href: '/crm/reminders', icon: BellRing },
+                  ...(REMINDERS_ENABLED
+                    ? [{ label: 'Reminders', href: '/crm/reminders', icon: BellRing }]
+                    : []),
                   { label: 'Segments', href: '/crm/segments', icon: Layers },
                   { label: 'Settings', href: '/crm/settings', icon: Activity },
                 ] as const
@@ -468,7 +471,9 @@ export default function CrmDashboard() {
             <Activity className="h-4 w-4 text-orange-500" />
             <h2 className="text-base font-semibold text-gray-900">Customers &amp; Activity</h2>
           </div>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div
+            className={`grid grid-cols-2 gap-4 ${REMINDERS_ENABLED ? 'lg:grid-cols-4' : 'lg:grid-cols-2'}`}
+          >
             <KpiCard
               label="Total Customers"
               value={loading ? '—' : fmtNum(s.totalCustomers)}
@@ -487,26 +492,30 @@ export default function CrmDashboard() {
               href="/crm/customers"
               loading={loading}
             />
-            <KpiCard
-              label="Overdue Reminders"
-              value={loading ? '—' : fmtNum(s.overdueReminders)}
-              sub="Past due date"
-              icon={AlertTriangle}
-              iconBg="bg-red-500"
-              href="/crm/reminders"
-              loading={loading}
-              urgent={s.overdueReminders > 0}
-            />
-            <KpiCard
-              label="Due Today"
-              value={loading ? '—' : fmtNum(s.dueTodayCount)}
-              sub="Pending reminders today"
-              icon={BellRing}
-              iconBg="bg-amber-500"
-              href="/crm/reminders"
-              loading={loading}
-              urgent={s.dueTodayCount > 0}
-            />
+            {REMINDERS_ENABLED && (
+              <>
+                <KpiCard
+                  label="Overdue Reminders"
+                  value={loading ? '—' : fmtNum(s.overdueReminders)}
+                  sub="Past due date"
+                  icon={AlertTriangle}
+                  iconBg="bg-red-500"
+                  href="/crm/reminders"
+                  loading={loading}
+                  urgent={s.overdueReminders > 0}
+                />
+                <KpiCard
+                  label="Due Today"
+                  value={loading ? '—' : fmtNum(s.dueTodayCount)}
+                  sub="Pending reminders today"
+                  icon={BellRing}
+                  iconBg="bg-amber-500"
+                  href="/crm/reminders"
+                  loading={loading}
+                  urgent={s.dueTodayCount > 0}
+                />
+              </>
+            )}
           </div>
         </div>
 
@@ -519,114 +528,120 @@ export default function CrmDashboard() {
             <ShieldAlert className="h-4 w-4 text-red-500" />
             <h2 className="text-base font-semibold text-gray-900">Alerts &amp; Risk Signals</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                  Overdue Reminders
-                </h3>
-                <Link href="/crm/reminders" className="text-xs text-red-600 hover:underline">
-                  {loading ? '…' : s.overdueReminders} total
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(3)].map((_, i) => (
-                    <Sk key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : s.overdueRemindersList.length === 0 ? (
-                <EmptyState message="No overdue reminders" />
-              ) : (
-                <div className="space-y-2">
-                  {s.overdueRemindersList.map((r: any, i: number) => {
-                    const target = reminderTarget(r)
-                    return (
-                      <div
-                        key={r.id ?? i}
-                        className="rounded-lg border border-red-100 bg-red-50 p-2.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span
-                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${reminderStatusCls(r.status)}`}
+          <div
+            className={`grid grid-cols-1 gap-4 ${REMINDERS_ENABLED ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}
+          >
+            {REMINDERS_ENABLED && (
+              <>
+                <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                      Overdue Reminders
+                    </h3>
+                    <Link href="/crm/reminders" className="text-xs text-red-600 hover:underline">
+                      {loading ? '…' : s.overdueReminders} total
+                    </Link>
+                  </div>
+                  {loading ? (
+                    <div className="space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <Sk key={i} className="h-12 w-full" />
+                      ))}
+                    </div>
+                  ) : s.overdueRemindersList.length === 0 ? (
+                    <EmptyState message="No overdue reminders" />
+                  ) : (
+                    <div className="space-y-2">
+                      {s.overdueRemindersList.map((r: any, i: number) => {
+                        const target = reminderTarget(r)
+                        return (
+                          <div
+                            key={r.id ?? i}
+                            className="rounded-lg border border-red-100 bg-red-50 p-2.5"
                           >
-                            {fmtStatus(r.reminderType ?? r.status)}
-                          </span>
-                          <span className="text-[10px] text-red-600 font-medium">
-                            Due {fmtDateShort(r.dueAt)}
-                          </span>
-                        </div>
-                        {target && (
-                          <Link
-                            href={target.href}
-                            className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
-                          >
-                            {target.label}
-                          </Link>
-                        )}
-                        {r.note && (
-                          <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
-                        )}
-                      </div>
-                    )
-                  })}
+                            <div className="flex items-center justify-between gap-2">
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${reminderStatusCls(r.status)}`}
+                              >
+                                {fmtStatus(r.reminderType ?? r.status)}
+                              </span>
+                              <span className="text-[10px] text-red-600 font-medium">
+                                Due {fmtDateShort(r.dueAt)}
+                              </span>
+                            </div>
+                            {target && (
+                              <Link
+                                href={target.href}
+                                className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
+                              >
+                                {target.label}
+                              </Link>
+                            )}
+                            {r.note && (
+                              <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <div className="rounded-xl border border-amber-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Upcoming Reminders
-                </h3>
-                <Link href="/crm/reminders" className="text-xs text-amber-600 hover:underline">
-                  {loading ? '…' : s.pendingReminders} pending
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(3)].map((_, i) => (
-                    <Sk key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : s.pendingRemindersList.length === 0 ? (
-                <EmptyState message="No upcoming reminders" />
-              ) : (
-                <div className="space-y-2">
-                  {s.pendingRemindersList.map((r: any, i: number) => {
-                    const target = reminderTarget(r)
-                    return (
-                      <div
-                        key={r.id ?? i}
-                        className="rounded-lg border border-amber-100 bg-amber-50 p-2.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full capitalize">
-                            {r.reminderType ?? 'reminder'}
-                          </span>
-                          <span className="text-[10px] text-amber-700 font-medium">
-                            {fmtDateTime(r.dueAt)}
-                          </span>
-                        </div>
-                        {target && (
-                          <Link
-                            href={target.href}
-                            className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
+                <div className="rounded-xl border border-amber-100 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      Upcoming Reminders
+                    </h3>
+                    <Link href="/crm/reminders" className="text-xs text-amber-600 hover:underline">
+                      {loading ? '…' : s.pendingReminders} pending
+                    </Link>
+                  </div>
+                  {loading ? (
+                    <div className="space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <Sk key={i} className="h-12 w-full" />
+                      ))}
+                    </div>
+                  ) : s.pendingRemindersList.length === 0 ? (
+                    <EmptyState message="No upcoming reminders" />
+                  ) : (
+                    <div className="space-y-2">
+                      {s.pendingRemindersList.map((r: any, i: number) => {
+                        const target = reminderTarget(r)
+                        return (
+                          <div
+                            key={r.id ?? i}
+                            className="rounded-lg border border-amber-100 bg-amber-50 p-2.5"
                           >
-                            {target.label}
-                          </Link>
-                        )}
-                        {r.note && (
-                          <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
-                        )}
-                      </div>
-                    )
-                  })}
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full capitalize">
+                                {r.reminderType ?? 'reminder'}
+                              </span>
+                              <span className="text-[10px] text-amber-700 font-medium">
+                                {fmtDateTime(r.dueAt)}
+                              </span>
+                            </div>
+                            {target && (
+                              <Link
+                                href={target.href}
+                                className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
+                              >
+                                {target.label}
+                              </Link>
+                            )}
+                            {r.note && (
+                              <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
 
             <div className="rounded-xl border border-violet-100 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3">
@@ -681,13 +696,17 @@ export default function CrmDashboard() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
             {(
               [
-                {
-                  label: 'Pending Reminders',
-                  val: s.pendingReminders,
-                  href: '/crm/reminders',
-                  accent: 'text-amber-700',
-                  bg: 'bg-amber-50 border-amber-100',
-                },
+                ...(REMINDERS_ENABLED
+                  ? [
+                      {
+                        label: 'Pending Reminders',
+                        val: s.pendingReminders,
+                        href: '/crm/reminders',
+                        accent: 'text-amber-700',
+                        bg: 'bg-amber-50 border-amber-100',
+                      },
+                    ]
+                  : []),
                 {
                   label: 'Segments',
                   val: s.totalSegments,

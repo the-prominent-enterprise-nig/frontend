@@ -3,6 +3,7 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import Customer360 from '../../../crm/customers/[id]/_components/Customer360'
 
@@ -43,7 +44,7 @@ export default async function PosCustomerPage({ params }: { params: Promise<{ id
       // goes to /pos/customers/:id/edit.
       canEdit={can(session, POS_PERMISSIONS.CUSTOMERS_UPDATE)}
       canDelete={can(session, CRM_PERMISSIONS.CUSTOMERS_DELETE)}
-      canScheduleReminder={can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
+      canScheduleReminder={REMINDERS_ENABLED && can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
       canApplyForCredit={can(session, CREDIT_PERMISSIONS.APPLICATION_CREATE)}
       currentUserId={session.id}
       tenantId={session.enterpriseOwnerId ?? session.id}

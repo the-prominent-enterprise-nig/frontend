@@ -8,6 +8,7 @@ import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_act
 import { hasExactPermission, hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import {
   ArrowLeftRight,
   BarChart3,
@@ -398,18 +399,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Wallet,
         requiredPermission: CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_READ,
       },
-      {
-        label: 'Collection Incentives',
-        href: '/crm/collection-incentives',
-        icon: Coins,
-        requiredPermission: CRM_PERMISSIONS.INCENTIVES_READ,
-      },
-      {
-        label: 'Reminders',
-        href: '/crm/reminders',
-        icon: BellRing,
-        requiredPermission: CRM_PERMISSIONS.REMINDERS_READ,
-      },
+      // Collection Incentives is hidden from the nav. Its route still loads:
+      // /crm/collection-incentives.
+      ...(REMINDERS_ENABLED
+        ? [
+            {
+              label: 'Reminders',
+              href: '/crm/reminders',
+              icon: BellRing,
+              requiredPermission: CRM_PERMISSIONS.REMINDERS_READ,
+            },
+          ]
+        : []),
       {
         label: 'Segments',
         href: '/crm/segments',

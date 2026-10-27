@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { clickStable, fillStable, gotoReady } from './utils'
+import { REMINDERS_ENABLED } from '../src/libs/features'
 
 // Scenario 29 follow-up — the standalone /crm/reminders page split into
 // "Overdue"/"Upcoming" sections using the same broken `isOverdue ||
@@ -28,6 +29,8 @@ function toDatetimeLocal(d: Date): string {
 }
 
 test.describe('CRM Reminders Page — Overdue Section', () => {
+  test.skip(!REMINDERS_ENABLED, 'Reminders are hidden for now (src/libs/features.ts)')
+
   let createdCustomerId: string | undefined
 
   test.afterEach(async ({ request }) => {
