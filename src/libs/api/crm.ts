@@ -299,7 +299,11 @@ export type InstallmentAccountFilters = {
   dueFrom?: string
   dueTo?: string
   page?: number
+  /** At most 20 — the API rejects more. */
   limit?: number
+  /** 'dueDate' sorts by the Due Date the list shows; accounts with none come last. */
+  sortBy?: 'createdAt' | 'dueDate'
+  sortOrder?: 'asc' | 'desc'
 } & Record<string, string | number | boolean | undefined>
 
 export const installmentAccountsApi = {
