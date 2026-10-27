@@ -1,5 +1,7 @@
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { canAny, type SessionUser } from '@/src/libs/guards/permission'
 
 /**
@@ -39,6 +41,8 @@ export type HubTabId =
   | 'recurring-expenses'
   | 'special-accounts'
   | 'employee-cash-loans'
+  | 'drivers'
+  | 'vehicles'
   | 'bank-accounts'
   | 'undeposited-funds'
   | 'inter-account-transfer'
@@ -46,6 +50,7 @@ export type HubTabId =
   | 'ap-invoices'
   | 'ap-payments'
   | 'receiving-reports'
+  | 'suppliers'
 
 export const BOOKS_HUB: Hub = {
   entryHref: '/accounting/books',
@@ -128,6 +133,25 @@ export const EXPENSES_HUB: Hub = {
       href: '/accounting/employee-cash-loans',
       permissions: [ACCOUNTING_PERMISSIONS.EMPLOYEE_CASH_LOAN_READ],
     },
+    {
+      // The people on the fleet roster — name, contact number, branch. Not tied
+      // to a vehicle. Moved over from Inventory's Master Data; the permissions
+      // did not move with it — the API still gates drivers on inventory:*, and
+      // the list reads on inventory:transfers:read.
+      id: 'drivers',
+      label: 'Drivers',
+      href: '/accounting/drivers',
+      permissions: [INVENTORY_PERMISSIONS.TRANSFERS_READ],
+    },
+    {
+      // The roster by plate, and each vehicle's recorded Fuel / Repair expenses
+      // (read-only). Either permission shows it: an accountant reads vehicles
+      // here through expense:read without holding transfers:read.
+      id: 'vehicles',
+      label: 'Vehicles',
+      href: '/accounting/vehicles',
+      permissions: [INVENTORY_PERMISSIONS.TRANSFERS_READ, ACCOUNTING_PERMISSIONS.EXPENSE_READ],
+    },
   ],
 }
 
@@ -143,7 +167,7 @@ export const CASH_BANKING_HUB: Hub = {
     {
       // Route and permissions keep the old cash-in-transit name (Scenario 61).
       id: 'undeposited-funds',
-      label: 'Undeposited Funds',
+      label: 'Collected Funds History',
       href: '/accounting/cash-in-transit',
       permissions: [ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ],
     },
@@ -187,6 +211,14 @@ export const PAYABLES_HUB: Hub = {
       label: 'Receiving Reports',
       href: '/accounting/receiving-reports',
       permissions: [ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ],
+    },
+    {
+      // Moved over from Inventory's Master Data, the way Customers sits beside
+      // AR Invoices. Supplier permissions stayed inventory:suppliers:*.
+      id: 'suppliers',
+      label: 'Suppliers',
+      href: '/accounting/suppliers',
+      permissions: [PROCUREMENT_PERMISSIONS.SUPPLIERS_READ],
     },
   ],
 }

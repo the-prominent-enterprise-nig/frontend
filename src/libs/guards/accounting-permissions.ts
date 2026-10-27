@@ -149,6 +149,8 @@ export const ACCOUNTING_PERMISSIONS = {
   CASH_IN_TRANSIT_MANAGE: 'accounting:cash-in-transit:manage',
   /** Scenario 61 Part 5 — clear (post) a POS deposit draft. Accounting only. */
   CASH_IN_TRANSIT_VERIFY: 'accounting:cash-in-transit:verify',
+  /** Correct a posted deposit the cashier mistyped, against the bank's slip. */
+  CASH_IN_TRANSIT_CORRECT: 'accounting:cash-in-transit:correct',
 
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
@@ -321,6 +323,7 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:cash-in-transit:manage': 'Deposit Cash-in-Transit into a bank account',
   'accounting:cash-in-transit:verify':
     "Check a POS deposit draft's attachments and clear (post) it",
+  'accounting:cash-in-transit:correct': "Correct a posted POS deposit against the bank's slip",
   'accounting:bank-accounts:adjust':
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
   'accounting:bank-accounts:transfer':

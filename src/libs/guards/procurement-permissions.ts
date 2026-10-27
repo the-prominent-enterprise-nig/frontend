@@ -1,8 +1,9 @@
 // Scenario 22 Part 9 follow-up: Procurement was folded into the Inventory
 // permission module — these permission strings are now `inventory:*`, not
 // `procurement:*` (the underlying routes/pages this file gates already
-// live under Inventory, e.g. /inventory/purchase-orders, /inventory/suppliers
-// — the permission module just hadn't caught up until now). Kept as its
+// live under Inventory, e.g. /inventory/purchase-orders — the permission module
+// just hadn't caught up until now; /accounting/suppliers has since moved to
+// Accounting but still gates on these strings). Kept as its
 // own named export (not merged into inventory-permissions.ts) since PR/PO/
 // Suppliers/Quotas are still a distinct feature area worth naming clearly,
 // even though they're no longer a distinct RBAC module.

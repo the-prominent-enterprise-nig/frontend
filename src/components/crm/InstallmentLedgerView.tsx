@@ -3,8 +3,11 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, ArrowUpRight, Printer } from 'lucide-react'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
 import { installmentAccountsApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
 import type { InstallmentLedger } from '@/src/schema/crm/types'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
@@ -100,6 +103,11 @@ export function InstallmentLedgerBody({
   accountId: string
   showAccountLink?: boolean
 }) {
+  // What an agent earns is agent data — the same permission that guards the
+  // agents list (and its commission rate) guards it here, and on the printout.
+  const { data: me } = useMe()
+  const canViewCommission = !!me && hasPermission(me, CRM_PERMISSIONS.AGENTS_READ)
+
   // Scenario 67 — a closed X-Deal was settled by its memo, not by payments;
   // the memo is the ledger's own credit row, so its number comes from there.
   const xDealMemoRef =
@@ -130,7 +138,9 @@ export function InstallmentLedgerBody({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => printCustomerLedgerDocument(ledger)}
+            onClick={() =>
+              printCustomerLedgerDocument(ledger, { showCommission: canViewCommission })
+            }
             className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <Printer className="h-3.5 w-3.5" /> Print
@@ -188,6 +198,16 @@ export function InstallmentLedgerBody({
         <InfoTable
           fields={[
             { label: 'Agent', value: ledger.account.sellingAgent?.name ?? '—' },
+            ...(canViewCommission
+              ? [
+                  {
+                    label: 'Sales Commission',
+                    value: Number(ledger.account.salesCommission ?? 0)
+                      ? fmtMoney(ledger.account.salesCommission ?? 0)
+                      : '—',
+                  },
+                ]
+              : []),
             {
               label: 'Collector',
               value: ledger.account.collector

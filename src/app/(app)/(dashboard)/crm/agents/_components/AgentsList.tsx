@@ -7,6 +7,7 @@ import { agentsApi } from '@/src/libs/api/crm'
 import type { Agent, AgentCommission } from '@/src/schema/crm/types'
 import type { CreateAgentInput } from '@/src/schema/crm/agent'
 import { getBranches } from '../_actions/get-branches'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 const FIELD_LIMITS = { name: 255, phone: 50, email: 255 } as const
 
@@ -464,7 +465,7 @@ function AgentCommissionsDialog({ agent, onClose }: { agent: Agent; onClose: () 
                       })}
                     </td>
                     <td className="px-4 py-2 text-sm font-medium text-zinc-800">
-                      {c.posTransaction.transactionNumber}
+                      {saleDocNo(c.posTransaction)}
                     </td>
                     <td className="px-4 py-2 text-sm text-right text-zinc-700">
                       {fmtMoney(c.posTransaction.totalAmount)}

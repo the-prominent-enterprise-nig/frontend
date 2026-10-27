@@ -50,7 +50,7 @@ import {
   type SupplierVatStatus,
 } from '@/src/libs/tax/input-vat'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
-import { getSupplier } from '@/src/app/(app)/(dashboard)/inventory/suppliers/_actions/get-supplier'
+import { getSupplier } from '@/src/app/(app)/(dashboard)/accounting/suppliers/_actions/get-supplier'
 
 // Scenario 41 — same treatment Scenario 40 gave Expenses (developer
 // feedback, 2026-08-31): this used to be a modal, now its own full page,

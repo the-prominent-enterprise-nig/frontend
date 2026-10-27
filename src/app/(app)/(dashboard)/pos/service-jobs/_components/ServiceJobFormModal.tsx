@@ -22,6 +22,7 @@ import { BranchSearchCombobox } from '@/src/app/(app)/(dashboard)/inventory/purc
 import { Select } from '@/src/components/ui/Select'
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
 import { customerDisplayName } from './service-draft-utils'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 const SERVICE_CATEGORY_OPTIONS = Object.entries(SERVICE_CATEGORY_LABELS).map(([value, label]) => ({
   value,
@@ -414,7 +415,9 @@ export function ServiceJobFormModal({
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       error={errors.posTransactionId?.message}
-                      initialLabel={draft?.posTransaction?.transactionNumber}
+                      initialLabel={
+                        draft?.posTransaction ? saleDocNo(draft.posTransaction) : undefined
+                      }
                     />
                   )}
                 />

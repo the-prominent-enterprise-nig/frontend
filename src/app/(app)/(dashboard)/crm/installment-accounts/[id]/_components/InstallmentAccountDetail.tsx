@@ -106,6 +106,7 @@ export default function InstallmentAccountDetail({
   canApproveDamEscalation,
   canManageLegalEscalation,
   canScheduleReminder,
+  canViewCommission,
   currentUserId,
   tenantId,
 }: {
@@ -117,6 +118,9 @@ export default function InstallmentAccountDetail({
   canApproveDamEscalation: boolean
   canManageLegalEscalation: boolean
   canScheduleReminder: boolean
+  /** What the selling agent earns on this sale — agent data, so shown only to
+   * users who can read agents. */
+  canViewCommission: boolean
   currentUserId: string
   tenantId: string
 }) {
@@ -382,6 +386,14 @@ export default function InstallmentAccountDetail({
             }
           />
           <Row label="Salesperson" value={account.sellingAgent?.name ?? '—'} />
+          {canViewCommission && (
+            <Row
+              label="Sales commission"
+              value={
+                Number(account.salesCommission ?? 0) ? peso(account.salesCommission ?? 0) : '—'
+              }
+            />
+          )}
         </dl>
       </section>
 

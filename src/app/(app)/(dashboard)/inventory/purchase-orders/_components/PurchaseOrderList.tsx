@@ -34,7 +34,7 @@ import {
   type PurchaseOrderSummary,
 } from '@/src/schema/inventory/purchase-orders'
 import { getSuppliers } from '../_actions/get-suppliers'
-import { getBranches } from '../../price-lists/_actions/get-branches'
+import { getBranches } from '@/src/app/(app)/(dashboard)/pos/catalog/price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
 import { downloadReactNodeAsPdf } from '@/src/libs/print/htmlToPdf'
@@ -381,9 +381,15 @@ export function PurchaseOrderList({
 
   const [overdueOnly, setOverdueOnly] = useState(false)
   const requestsSession = session && can(session, PROCUREMENT_PERMISSIONS.PR_READ) ? session : null
-  const requests = useOpenPurchaseRequests(requestsSession)
   /** The "Requests" pill — swaps the orders table for open purchase requests. */
   const [showRequests, setShowRequests] = useState(false)
+  // A request submitted (or converted) from the Requests filter is a PO now:
+  // show it in All, where its next steps are, rather than the Requests list
+  // it just left. A URL change can't do it — this view is local state.
+  const requests = useOpenPurchaseRequests(requestsSession, () => {
+    setShowRequests(false)
+    setStatusFilter(undefined)
+  })
   const [searchFocus, setSearchFocus] = useState(false)
   /** Guards the row's own Download button against a second click while its
    * document is still being fetched. */

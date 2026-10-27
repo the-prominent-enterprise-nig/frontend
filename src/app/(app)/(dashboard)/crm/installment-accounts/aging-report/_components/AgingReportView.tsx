@@ -305,7 +305,7 @@ export default function AgingReportView() {
                     <table className="w-full min-w-[1180px] text-xs">
                       <thead>
                         <tr className="border-b border-gray-200 text-left text-[11px] uppercase text-gray-500">
-                          <th className="px-1.5 py-1.5 whitespace-nowrap">Account</th>
+                          <th className="px-1.5 py-1.5 whitespace-nowrap">SI / DR No.</th>
                           <th className="px-1.5 py-1.5 whitespace-nowrap">Customer</th>
                           <th className="px-1.5 py-1.5 whitespace-nowrap">Source</th>
                           <th className="px-1.5 py-1.5 whitespace-nowrap">Aging</th>

@@ -120,7 +120,7 @@ export function PosBranchSwitcher() {
     : 'All Branches'
 
   return (
-    <div ref={containerRef} className="relative shrink-0">
+    <div ref={containerRef} data-testid="pos-branch-switcher" className="relative shrink-0">
       <button
         type="button"
         role="combobox"

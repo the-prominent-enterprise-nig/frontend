@@ -62,7 +62,6 @@ import type {
   CreateCollectionIncentiveInput,
   RejectCollectionIncentiveInput,
 } from '@/src/schema/crm/collection-incentive'
-import type { PriceCheckInput, PriceCheckResult } from '@/src/schema/crm/installment-account'
 
 // ─── Pipeline Stages ────────────────────────────────────────
 
@@ -475,13 +474,6 @@ export const collectionIncentivesApi = {
       created: CollectionIncentive[]
       skipped: { collectorId: string; reason: string }[]
     }>('/crm/collection-incentives/generate-monthly', body),
-}
-
-// ─── Installment Price Checker ──────────────────────────────
-
-export const priceCheckApi = {
-  check: (params: PriceCheckInput) =>
-    api.get<PriceCheckResult>('/crm/installment-accounts/price-check', params),
 }
 
 // ─── Collections Calendar ───────────────────────────────────

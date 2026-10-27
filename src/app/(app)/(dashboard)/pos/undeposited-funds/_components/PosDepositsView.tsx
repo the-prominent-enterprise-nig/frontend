@@ -16,6 +16,7 @@ import {
 import {
   cancelPosDeposit,
   clearPosDeposit,
+  correctPosDeposit,
   updatePosDeposit,
   getPosDeposit,
   getPosDepositSummary,
@@ -80,6 +81,7 @@ export function DepositDetailLoader({
   accounts,
   canManage,
   canVerify,
+  canCorrect,
   onClose,
   onChanged,
 }: {
@@ -88,6 +90,8 @@ export function DepositDetailLoader({
   accounts: BankAccount[]
   canManage: boolean
   canVerify: boolean
+  /** May correct a posted deposit — accounting. */
+  canCorrect: boolean
   onClose: () => void
   onChanged: () => void
 }): React.JSX.Element {
@@ -110,6 +114,7 @@ export function DepositDetailLoader({
       accounts={accounts}
       canManage={canManage}
       canVerify={canVerify}
+      canCorrect={canCorrect}
       onClose={onClose}
       onChanged={onChanged}
     />
@@ -129,6 +134,7 @@ export function DepositDetail({
   accounts,
   canManage,
   canVerify,
+  canCorrect,
   onClose,
   onChanged,
 }: {
@@ -136,6 +142,7 @@ export function DepositDetail({
   accounts: BankAccount[]
   canManage: boolean
   canVerify: boolean
+  canCorrect: boolean
   onClose: () => void
   onChanged: () => void
 }): React.JSX.Element {
@@ -146,9 +153,13 @@ export function DepositDetail({
     queryFn: () => FileAttachments.listForEntity(POS_DEPOSIT_ENTITY, deposit.id),
   })
   const attachmentCount = attachments.data?.data?.length ?? 0
-  // Slips can be corrected while the deposit is a draft, by whoever can
-  // record or clear one — the fix for a mistyped amount before it posts.
-  const canEditSlips = isDraft && (canManage || canVerify) && !!deposit.lines?.length
+  // A draft's slips are edited by whoever can record or clear one. A posted
+  // deposit is corrected by accounting, against the bank's slip, until it is
+  // reconciled: its entries are reversed and the corrected slips posted.
+  const correcting = deposit.status === 'cleared'
+  const canEditSlips =
+    !!deposit.lines?.length &&
+    (isDraft ? canManage || canVerify : correcting && canCorrect && !deposit.reconciledAt)
   const [editing, setEditing] = useState(false)
 
   return (
@@ -188,6 +199,7 @@ export function DepositDetail({
             <SlipEdit
               deposit={deposit}
               accounts={accounts}
+              correcting={correcting}
               onCancel={() => setEditing(false)}
               onSaved={() => {
                 setEditing(false)
@@ -198,6 +210,7 @@ export function DepositDetail({
             <SlipList
               deposit={deposit}
               onEdit={canEditSlips ? () => setEditing(true) : undefined}
+              editLabel={correcting ? 'Correct deposit' : 'Edit slips'}
             />
           )}
           <AttachmentsPanel
@@ -205,7 +218,10 @@ export function DepositDetail({
             entityId={deposit.id}
             title="Proof of deposit"
             description="Deposit slip, check images, transfer screenshots."
-            readOnly={!isDraft || !canManage}
+            // The cashier attaches the slip whenever they have it — before or
+            // after the deposit posts — but files on a posted one stay put.
+            readOnly={!canManage || deposit.status === 'cancelled'}
+            canRemove={isDraft}
             onChanged={onChanged}
           />
         </div>
@@ -250,10 +266,12 @@ function SessionList({ deposit }: { deposit: PosDeposit }): React.JSX.Element {
 function SlipList({
   deposit,
   onEdit,
+  editLabel = 'Edit slips',
 }: {
   deposit: PosDeposit
   /** Present while the slips can still be corrected. */
   onEdit?: () => void
+  editLabel?: string
 }): React.JSX.Element | null {
   const lines = deposit.lines ?? []
   if (lines.length === 0) return null
@@ -268,7 +286,7 @@ function SlipList({
               className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
               <Pencil className="h-3.5 w-3.5" />
-              Edit slips
+              {editLabel}
             </button>
           </Tooltip>
         </div>
@@ -290,9 +308,11 @@ function SlipList({
                 <td className="px-3 py-2">{l.bankAccount.name}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(Number(l.amount))}</td>
                 <td className="px-3 py-2">
-                  {l.clearsAccount
-                    ? `${l.clearsAccount.number ?? ''} ${l.clearsAccount.name}`.trim()
-                    : '1-01-010 Cash and Cash Equivalents'}
+                  {l.clearsBankAccount
+                    ? `1-01-010 · ${l.clearsBankAccount.name}`
+                    : l.clearsAccount
+                      ? `${l.clearsAccount.number ?? ''} ${l.clearsAccount.name}`.trim()
+                      : '1-01-010 Cash and Cash Equivalents'}
                 </td>
                 <td className="px-3 py-2 text-gray-600">{l.reference ?? '—'}</td>
                 <td className="whitespace-nowrap px-3 py-2">
@@ -307,38 +327,55 @@ function SlipList({
   )
 }
 
-/** The draft's slips, editable — saved as a whole, replacing the old ones.
+/** The deposit's slips, editable — saved as a whole, replacing the old ones.
  * The new total is shown beside the old one so a corrected amount is seen
- * before it is saved. */
+ * before it is saved. A posted deposit's correction also asks why, and
+ * reposts it. */
 function SlipEdit({
   deposit,
   accounts,
+  correcting,
   onCancel,
   onSaved,
 }: {
   deposit: PosDeposit
   accounts: BankAccount[]
+  correcting: boolean
   onCancel: () => void
   onSaved: () => void
 }): React.JSX.Element {
+  const [reason, setReason] = useState('')
   const [slips, setSlips] = useState<Slip[]>(() =>
     slipsFromLines(deposit.lines ?? [], deposit.depositDate)
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const total = round2(slips.reduce((sum, s) => sum + slipAmount(s), 0))
-  const problem = slipsProblem(slips)
+  const problem =
+    slipsProblem(slips) ??
+    (correcting && !reason.trim() ? 'Say why the deposit is being corrected.' : null)
 
   const save = async (): Promise<void> => {
     setSaving(true)
     setError(null)
-    const res = await updatePosDeposit(deposit.id, toLineInputs(slips))
+    const lines = toLineInputs(slips)
+    const res = correcting
+      ? await correctPosDeposit(deposit.id, lines, reason.trim())
+      : await updatePosDeposit(deposit.id, lines)
     setSaving(false)
     if (!res.success) {
       setError(res.error || res.message || 'Failed to save the slips')
       return
     }
-    showToast({ title: 'Slips updated', status: 'success' })
+    showToast(
+      correcting
+        ? {
+            title: 'Deposit corrected',
+            description: 'The old entries were reversed and the corrected slips posted.',
+            status: 'success',
+          }
+        : { title: 'Slips updated', status: 'success' }
+    )
     onSaved()
   }
 
@@ -351,6 +388,19 @@ function SlipEdit({
           <span className="text-gray-500"> · was {fmtMoney(Number(deposit.amount))}</span>
         )}
       </p>
+      {correcting && (
+        <label className="block text-sm">
+          <span className="font-medium text-gray-700">Reason for correction *</span>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={500}
+            rows={2}
+            placeholder="e.g. Slip shows ₱12,500, not ₱15,200"
+            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+          />
+        </label>
+      )}
       {(error || problem) && (
         <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
           {error || problem}
@@ -372,7 +422,7 @@ function SlipEdit({
           className="inline-flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
         >
           {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-          Save slips
+          {correcting ? 'Correct and repost' : 'Save slips'}
         </button>
       </div>
     </div>
@@ -477,7 +527,7 @@ function DraftActions({
             confirm === 'clear' ? (
               <ClearSummary deposit={deposit} />
             ) : (
-              <p>Its sessions go back to Undeposited Funds and can be put in another deposit.</p>
+              <p>Its sessions go back to Undeposited and can be put in another deposit.</p>
             )
           }
           confirmLabel={confirm === 'clear' ? 'Clear & post' : 'Cancel draft'}

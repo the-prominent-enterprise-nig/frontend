@@ -14,6 +14,7 @@ import {
   SERIAL_STATUS_COLORS,
   SERIAL_STATUS_DOT_COLORS,
   SERIAL_STATUS_FILTER_GROUPS,
+  type SerialNumberSummary,
   type SerialStatus,
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
@@ -30,7 +31,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatAge, formatShortDate } from '@/src/libs/format/date'
-import { originLabel } from '@/src/libs/format/serial-provenance'
+import { originLabel, originRef, soldDestination } from '@/src/libs/format/serial-provenance'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { LocationFilters } from '@/src/components/inventory/LocationFilters'
@@ -537,7 +538,14 @@ export default function SerialNumberList({
         {/* Table card */}
         {(!caravanView || caravanReady) && (
           <>
-            <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
+            {/* Caravan view draws its own card per caravan. */}
+            <div
+              className={
+                caravanView && !isLoading
+                  ? ''
+                  : 'overflow-hidden rounded-xl border border-[#e4e4e9] bg-white'
+              }
+            >
               {isLoading ? (
                 <div>
                   {Array.from({ length: 6 }).map((_, i) => (
@@ -718,8 +726,7 @@ export default function SerialNumberList({
                                 {originLabel(serial)}
                               </div>
                               <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
-                                {serial.goodsReceiptLine?.goodsReceipt?.stockTransfer
-                                  ?.transferNumber ?? '—'}
+                                {originRef(serial) ?? '—'}
                               </div>
                               <div className="text-[12.5px] text-[#8b8b9b]">
                                 {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
@@ -728,15 +735,7 @@ export default function SerialNumberList({
                               </div>
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#5b5b6b] hidden md:table-cell">
-                              <div className="font-medium text-[#17171c]">
-                                {locationLabel(serial.currentWarehouse ?? serial.warehouse)}
-                              </div>
-                              <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
-                                {serial.openTransfer?.transferNumber ?? '—'}
-                              </div>
-                              <div className="text-[12.5px] text-[#8b8b9b]">
-                                {serial.locationSince ? formatShortDate(serial.locationSince) : '—'}
-                              </div>
+                              <DestinationCell serial={serial} />
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#5b5b6b] hidden md:table-cell">
                               {serial.firstReceivedAt ? formatAge(serial.firstReceivedAt) : '—'}
@@ -861,5 +860,23 @@ export default function SerialNumberList({
         currentUserBranchId={session.branchId}
       />
     </div>
+  )
+}
+
+/** A sold unit's destination is its buyer and the sale; any other unit's is
+ * where it is stored, and the transfer already claiming it (NIG #10). */
+function DestinationCell({ serial }: { serial: SerialNumberSummary }): React.JSX.Element {
+  const sold = soldDestination(serial)
+  const date = sold ? sold.date : serial.locationSince
+  return (
+    <>
+      <div className="font-medium text-[#17171c]">
+        {sold ? sold.name : locationLabel(serial.currentWarehouse ?? serial.warehouse)}
+      </div>
+      <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
+        {(sold ? sold.ref : serial.openTransfer?.transferNumber) ?? '—'}
+      </div>
+      <div className="text-[12.5px] text-[#8b8b9b]">{date ? formatShortDate(date) : '—'}</div>
+    </>
   )
 }

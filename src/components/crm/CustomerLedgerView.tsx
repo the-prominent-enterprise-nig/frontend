@@ -4,8 +4,11 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { InstallmentLedgerBody } from '@/src/components/crm/InstallmentLedgerView'
 import {
   buildCustomerLedgerHtml,
@@ -61,6 +64,10 @@ export default function CustomerLedgerView({
   // narrowing it to one purchase at a time.
   const router = useRouter()
   const searchParams = useSearchParams()
+  // The printed paper-form ledger carries the agent's commission only for
+  // users who can read agents (see InstallmentLedgerBody for the screen).
+  const { data: me } = useMe()
+  const canViewCommission = !!me && hasPermission(me, CRM_PERMISSIONS.AGENTS_READ)
   const scope: CustomerLedgerScope = 'all'
   // Which single purchase to narrow to, kept in the URL so a narrowed ledger
   // stays linkable/bookmarkable and survives a refresh. `txn:<id>` is also
@@ -202,7 +209,9 @@ export default function CustomerLedgerView({
     if (singlePlan?.kind === 'inhouse') {
       try {
         const res = await installmentAccountsApi.getLedger(singlePlan.id.slice('acct:'.length))
-        if (res.success && res.data) html = buildCustomerLedgerHtml(res.data)
+        if (res.success && res.data) {
+          html = buildCustomerLedgerHtml(res.data, { showCommission: canViewCommission })
+        }
       } catch {
         // Fall through to the unified layout below.
       }

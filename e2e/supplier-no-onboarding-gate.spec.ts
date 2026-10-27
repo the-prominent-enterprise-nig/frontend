@@ -29,7 +29,7 @@ test.describe('Suppliers — no onboarding gate', () => {
   })
 
   test('a new supplier is usable straight away', async ({ page }) => {
-    await gotoReady(page, '/inventory/master-data?tab=suppliers')
+    await gotoReady(page, '/accounting/suppliers')
     await expect(page.getByRole('button', { name: /Needs attention/ })).toHaveCount(0, {
       timeout: 20_000,
     })
