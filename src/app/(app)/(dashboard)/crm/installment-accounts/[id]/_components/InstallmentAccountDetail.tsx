@@ -73,7 +73,7 @@ const INVOICE_STATUS_COLORS: Record<string, string> = {
 }
 const INVOICE_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
-  SENT: 'Due',
+  SENT: 'To pay',
   PARTIAL: 'Partially paid',
   PAID: 'Paid',
   OVERDUE: 'Overdue',

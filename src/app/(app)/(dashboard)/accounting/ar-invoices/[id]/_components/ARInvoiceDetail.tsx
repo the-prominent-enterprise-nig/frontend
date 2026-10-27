@@ -48,10 +48,11 @@ function dueStatus(d: ARInvoiceDue, isNext: boolean): { label: string; className
   dueDay.setHours(0, 0, 0, 0)
   if (dueDay.getTime() < startOfToday.getTime())
     return { label: 'Overdue', className: 'bg-red-50 text-red-700' }
-  // "Due" is the one being collected NEXT, not merely one whose date has
+  // "To pay" is the one being collected NEXT, not merely one whose date has
   // arrived — collections settle oldest-first, so exactly one open due is
   // ever the live one. Everything behind it is simply Upcoming.
-  if (isNext) return { label: 'Due', className: 'bg-prominent-purple-50 text-prominent-purple-700' }
+  if (isNext)
+    return { label: 'To pay', className: 'bg-prominent-purple-50 text-prominent-purple-700' }
   return { label: 'Upcoming', className: 'bg-gray-100 text-gray-600' }
 }
 
