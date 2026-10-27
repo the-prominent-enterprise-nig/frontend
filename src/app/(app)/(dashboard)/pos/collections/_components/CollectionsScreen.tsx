@@ -36,6 +36,7 @@ import {
   collectionIssues,
   newCollectionPaymentRow,
   resolveCollectionPayment,
+  TILE_OPTION_LABEL,
   type CollectionIssueField,
   type CollectionPaymentRow,
   type CollectionsPaymentOption,
@@ -222,9 +223,24 @@ const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
     "The penalty is more than what's actually assessed — 5% of the part of a due being paid, and only for a due at least 15 days past its due date.",
 }
 
+// The server names the missing field as "Source of Fund (bankAccountId)" —
+// say it as the bank account it is.
+const BANK_ACCOUNT_REQUIRED = /^Source of Fund \(bankAccountId\) is required for (\w+) payments\.?$/
+const BANK_ACCOUNT_METHOD_NAMES: Record<string, string> = {
+  CHECK: 'check',
+  BANK_TRANSFER: 'bank transfer',
+  CARD: 'card',
+  QR: 'QR',
+}
+
 function paymentErrorMessage(res: { message?: string; error?: string }): string {
   const raw = res.message || res.error
   if (!raw) return 'Failed to collect payment'
+  const bankAccountMethod = BANK_ACCOUNT_REQUIRED.exec(raw)?.[1]
+  if (bankAccountMethod) {
+    const name = BANK_ACCOUNT_METHOD_NAMES[bankAccountMethod] ?? bankAccountMethod.toLowerCase()
+    return `Bank account is required for ${name} payments.`
+  }
   return PAYMENT_ERROR_MESSAGES[raw] ?? raw
 }
 
@@ -1129,6 +1145,10 @@ function PaymentPanel({
       amount: r.amount,
       method: r.method,
       bankReferenceNumber: payments[i].bankReferenceNumber,
+      option:
+        r.options.length > 0 && TILE_OPTION_LABEL[r.tile]
+          ? { label: TILE_OPTION_LABEL[r.tile]!, chosen: !!r.optionId }
+          : null,
     })),
     cr: form.reference,
   })
