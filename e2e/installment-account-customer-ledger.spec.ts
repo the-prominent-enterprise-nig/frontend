@@ -34,9 +34,9 @@ test.afterEach(async ({ page }) => {
 // Scenario 32 item 2 — the same screen now shows the financing scheme
 // (priceUseType) the sale was made under. Scenario 32 item 3 — the same
 // screen now shows the selling agent ("Salesperson") the sale was made
-// under. Scenario 32 item 4 — the same screen now shows running totals
-// (Total billing/Total payments/Total rebates), and using the existing
-// "Record payment" button updates Total payments/Total rebates live.
+// under. Scenario 32 item 4 — running totals (Total billing/Total payments/
+// Total rebates) no longer show on this screen; using the existing "Record
+// payment" button still moves Total payments, read here off the account.
 // Scenario 32 item 5 — the same screen now shows a Billing history list
 // (one row per due-date invoice), moved here from Customer360's schedule-
 // detail modal. Backend resolution correctness for all five is covered by
@@ -197,12 +197,14 @@ test('installment account ledger screen shows unit, financing scheme, and salesp
   await expect(page.getByText('Salesperson', { exact: true })).toBeVisible()
   await expect(page.getByText(agentName, { exact: true })).toBeVisible()
 
-  await expect(page.getByText('Running totals', { exact: true })).toBeVisible()
-  await expect(page.locator('dt', { hasText: 'Total billing' })).toBeVisible()
-  const totalPaymentsValue = page
-    .locator('dt', { hasText: 'Total payments' })
-    .locator('xpath=following-sibling::dd[1]')
-  await expect(totalPaymentsValue).toHaveText('₱0.00')
+  // The running totals are no longer on this screen; the account itself still
+  // carries them.
+  const totalPaymentsOf = async () =>
+    Number(
+      (await (await page.request.get(`/api/crm/installment-accounts/${accountId}`)).json())
+        .totalPayments
+    )
+  expect(await totalPaymentsOf()).toBe(0)
 
   await page.getByRole('button', { name: 'Record payment' }).click()
   await fillStable(page.locator('#payment-amount'), '50')
@@ -211,7 +213,7 @@ test('installment account ledger screen shows unit, financing scheme, and salesp
   await expect(page.getByText(/Payment recorded/)).toBeVisible({ timeout: 10_000 })
   await page.getByRole('button', { name: 'Done' }).click()
 
-  await expect(totalPaymentsValue).toHaveText('₱50.00')
+  await expect.poll(totalPaymentsOf).toBe(50)
 
   await expect(page.getByText('Billing history', { exact: true })).toBeVisible()
   const billingRows = page.getByTestId('billing-history').locator('li')

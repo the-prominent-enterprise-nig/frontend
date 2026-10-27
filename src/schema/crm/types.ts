@@ -435,6 +435,24 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   // (Commissions - Sales, recorded entries only). Zero until it is encoded.
   // Shown only to users who can read agents.
   salesCommission?: number | string
+  // The sale's receipt: when it was rung up, by whom, and how it was paid
+  // for at the register. Null for hand-entered/imported accounts (POS-only).
+  saleReceipt?: {
+    occurredAt: string
+    cashier: string | null
+    // The SI or DR the customer holds; null when neither was entered.
+    documentNumber: string | null
+    // The delivery fee's own CR; null when the sale had no fee.
+    deliveryFeeReferenceNumber: string | null
+    tenders: {
+      id: string
+      method: string
+      option: string | null
+      amount: number
+      // The cashier's CR booklet number for this tender.
+      referenceNumber: string | null
+    }[]
+  } | null
   // Scenario 32 item 4 — running totals, same for both POS-originated and
   // hand-entered accounts (unlike items 1/2/3/5 above, which are POS-only).
   totalPayments: number | string
