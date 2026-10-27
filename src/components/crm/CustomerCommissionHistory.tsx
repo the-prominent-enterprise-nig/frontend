@@ -20,9 +20,13 @@ import type { AgentInvoice, AgentInvoiceRelease } from '@/src/schema/crm/types'
  */
 export default function CustomerCommissionHistory({
   customerId,
+  transactionId,
   linkAgents = true,
 }: {
   customerId: string
+  /** The ledger's purchase key when it is narrowed to one purchase — the
+   * history then shows that sale's commission only. */
+  transactionId?: string
   /** False under POS — a cashier can't open the CRM agent page. */
   linkAgents?: boolean
 }) {
@@ -31,13 +35,13 @@ export default function CustomerCommissionHistory({
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const res = await customersApi.commissions(customerId)
+      const res = await customersApi.commissions(customerId, transactionId)
       if (!cancelled) setRows(res.success && res.data ? res.data : [])
     })()
     return () => {
       cancelled = true
     }
-  }, [customerId])
+  }, [customerId, transactionId])
 
   if (!rows || rows.length === 0) return null
 

@@ -527,7 +527,11 @@ export default function CustomerLedgerView({
 
         {/* Scenario 78 Part 3 — the customer's commissions history. Renders
             nothing when there is none. */}
-        <CustomerCommissionHistory customerId={customerId} linkAgents={showAccountLink} />
+        <CustomerCommissionHistory
+          customerId={customerId}
+          transactionId={transactionId || undefined}
+          linkAgents={showAccountLink}
+        />
       </div>
     </div>
   )
