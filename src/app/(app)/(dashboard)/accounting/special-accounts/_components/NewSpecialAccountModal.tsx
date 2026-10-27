@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { Expenses, EmployeesApi, type EmployeeLite } from '@/src/libs/data/AccountingV2Data'
 import {
-  getAccounts,
+  getAccountOptions,
   getCustomers,
   type Account,
   type Customer,
@@ -48,7 +48,7 @@ export default function NewSpecialAccountModal({
     // Only accounts that keep a subsidiary ledger can carry a named balance,
     // and the server rejects the rest — so offering the whole chart here
     // would only invite an error.
-    getAccounts({ limit: 500 }).then((r) => {
+    getAccountOptions().then((r) => {
       // /accounts answers with a bare array, not the paginated envelope its
       // return type promises — same unwrap the Expense form does.
       const list = ((r.data as { items?: Account[] })?.items ??

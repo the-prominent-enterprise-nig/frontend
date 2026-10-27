@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import Tooltip from '@/src/components/ui/Tooltip'
-import { getAccounts } from '@/src/libs/data/AccountingData'
+import { getAccountOptions } from '@/src/libs/data/AccountingData'
 import type { IdmFormValues } from '@/src/schema/accounting/inventory-debit-memos'
 import {
   FieldError,
@@ -25,7 +25,7 @@ const GRID =
 function useAccountOptions(): CategorySelectOption[] {
   const query = useQuery({
     queryKey: ['coa-all-accounts'],
-    queryFn: () => getAccounts({ limit: 1000 }),
+    queryFn: () => getAccountOptions(),
     staleTime: 5 * 60_000,
   })
   return useMemo(() => {

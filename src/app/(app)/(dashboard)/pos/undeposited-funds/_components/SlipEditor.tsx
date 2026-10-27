@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { type BankAccount } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import type { PosDepositLine, PosDepositLineInput } from '../_actions/pos-deposits'
@@ -287,7 +287,7 @@ export function SlipEditor({
   // chart files under 1-01-040 Payment Gateway and Collection Clearing Funds.
   const chart = useQuery({
     queryKey: ['deposit-clearing-accounts'],
-    queryFn: () => getAccounts({ search: CLEARING_GROUP_PREFIX }),
+    queryFn: () => getAccountOptions({ search: CLEARING_GROUP_PREFIX }),
     staleTime: 5 * 60_000,
   })
   const clearingOptions = clearingAccountOptions(chart.data?.data)

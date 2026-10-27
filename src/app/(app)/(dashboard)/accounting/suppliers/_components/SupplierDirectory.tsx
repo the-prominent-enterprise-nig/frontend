@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, RefreshCw } from 'lucide-react'
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
-import { getAccounts } from '@/src/libs/data/AccountingData'
+import { getAccountOptions } from '@/src/libs/data/AccountingData'
 import { createSupplier } from '../_actions/create-supplier'
 import { updateSupplier } from '../_actions/update-supplier'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -76,7 +76,7 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
   // defaultExpenseAccountId, on the form and read back on the Profile tab.
   const accountsQuery = useQuery({
     queryKey: ['accounting-accounts-lookup'],
-    queryFn: () => getAccounts({ limit: 500 }),
+    queryFn: () => getAccountOptions(),
     staleTime: 5 * 60 * 1000,
   })
 

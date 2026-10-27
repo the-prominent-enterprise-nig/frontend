@@ -15,7 +15,7 @@ import {
 } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { getAttributes } from '../../attributes/_actions/get-attributes'
 import { getItemAttributes } from '../_actions/get-item-attributes'
 import type { AttributeDefinition } from '@/src/schema/inventory/attributes'
@@ -78,7 +78,7 @@ export default function EditItemModal({
   // when the modal opens — same pattern as CreateItemModal.
   useEffect(() => {
     if (!isOpen) return
-    getAccounts({ limit: 500 }).then((res) => {
+    getAccountOptions().then((res) => {
       const data = res.data as any
       setAccounts((data?.items ?? data ?? []) as Account[])
     })

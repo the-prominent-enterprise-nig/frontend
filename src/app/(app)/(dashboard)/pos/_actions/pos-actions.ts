@@ -2287,7 +2287,8 @@ export async function bulkUpdateAccountMappings(
 
 export async function getGLAccounts(): Promise<ApiResponse<GLAccount[]>> {
   try {
-    const result = await api.get<GLAccount[]>('/accounts', undefined, {
+    // The picker list: accounts without balances or transactions.
+    const result = await api.get<GLAccount[]>('/accounts/options', undefined, {
       tags: ['gl-accounts'],
     })
     if (!result.success || !result.data) {
