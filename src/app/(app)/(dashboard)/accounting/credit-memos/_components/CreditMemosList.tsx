@@ -7,6 +7,7 @@ import { Ban, Handshake } from 'lucide-react'
 import {
   CreditMemos,
   XDealMemos,
+  EarlySettlementMemos,
   type CreditMemo,
   type CreditMemoType,
   fmtMoney,
@@ -15,6 +16,7 @@ import {
 import Tooltip from '@/src/components/ui/Tooltip'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import { showToast } from '@/src/components/ui/toast'
@@ -27,6 +29,7 @@ const TYPE_LABELS: Record<CreditMemoType, string> = {
   billing_adjustment: 'Billing Adjustment',
   goodwill: 'Goodwill',
   x_deal: 'X-Deal',
+  early_settlement: 'Early Settlement',
 }
 
 /**
@@ -38,6 +41,9 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
   // Scenario 67 — its own permission: Branch Manager can issue and void
   // ordinary credit memos but not X-Deal ones.
   const canXDeal = hasPermission(session, ACCOUNTING_PERMISSIONS.X_DEAL_MEMOS_ISSUE)
+  // Scenario 79 — an early settlement memo is voided on the permission that
+  // settles, not credit-memos:void (its void reopens the account).
+  const canSettle = hasPermission(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_EARLY_PAYOFF)
   const [search, setSearch] = useState('')
   const [voiding, setVoiding] = useState<string | null>(null)
   const [confirmingVoid, setConfirmingVoid] = useState<CreditMemo | null>(null)
@@ -51,10 +57,14 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
   const memos = query.data?.data?.items ?? []
 
   async function voidMemo(memo: CreditMemo) {
-    const isXDeal = memo.type === 'x_deal'
     const id = memo.id
     setVoiding(id)
-    const res = isXDeal ? await XDealMemos.void(id) : await CreditMemos.void(id)
+    const res =
+      memo.type === 'x_deal'
+        ? await XDealMemos.void(id)
+        : memo.type === 'early_settlement'
+          ? await EarlySettlementMemos.void(id)
+          : await CreditMemos.void(id)
     setVoiding(null)
     setConfirmingVoid(null)
     if (!res.success) {
@@ -100,6 +110,8 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
       render: (m) =>
         m.type === 'x_deal' ? (
           <span className="text-xs text-amber-700">X-Deal offset</span>
+        ) : m.type === 'early_settlement' ? (
+          <span className="text-xs text-amber-700">Settle early</span>
         ) : m.sourceReturnRequestId ? (
           <span className="text-xs text-amber-700" title={m.sourceReturnRequestId}>
             Auto — POS return
@@ -189,8 +201,14 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
           </>
         )}
         renderActions={(memo) =>
-          // An X-Deal memo is only voidable by whoever can issue one.
-          memo.status === 'ISSUED' && (memo.type !== 'x_deal' || canXDeal) ? (
+          // An X-Deal memo is only voidable by whoever can issue one; an early
+          // settlement memo by whoever can settle.
+          memo.status === 'ISSUED' &&
+          (memo.type === 'x_deal'
+            ? canXDeal
+            : memo.type === 'early_settlement'
+              ? canSettle
+              : true) ? (
             <Tooltip label="Void credit memo">
               <button
                 type="button"
@@ -219,10 +237,23 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
         title={
           confirmingVoid?.type === 'x_deal'
             ? `Void X-Deal memo ${confirmingVoid.memoNumber}?`
-            : `Void credit memo ${confirmingVoid?.memoNumber ?? ''}?`
+            : confirmingVoid?.type === 'early_settlement'
+              ? `Void early settlement ${confirmingVoid.memoNumber}?`
+              : `Void credit memo ${confirmingVoid?.memoNumber ?? ''}?`
         }
         message={
-          confirmingVoid?.type === 'x_deal' ? (
+          confirmingVoid?.type === 'early_settlement' ? (
+            <>
+              <p>
+                This reverses its journal entry and reopens the installment account with the
+                interest it forgave owed again.
+              </p>
+              <p>
+                The payoff payment stays recorded — cancel its receipt separately if the customer
+                didn&apos;t actually pay.
+              </p>
+            </>
+          ) : confirmingVoid?.type === 'x_deal' ? (
             <>
               <p>
                 This reverses its journal entry and reopens the installment account with its

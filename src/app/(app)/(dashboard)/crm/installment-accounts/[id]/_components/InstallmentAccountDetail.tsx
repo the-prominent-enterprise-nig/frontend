@@ -127,19 +127,14 @@ export default function InstallmentAccountDetail({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [payoffOpen, setPayoffOpen] = useState(false)
-  const [payoffQuote, setPayoffQuote] = useState<number | null>(null)
-  // EarlyPayoffModal seeds its form state from `suggestedAmount` only on
-  // mount (it stays mounted, just returns null while closed) — bumping this
-  // key forces a fresh mount each time so the just-fetched quote actually
-  // makes it into the pre-filled amount instead of the stale first value.
+  // EarlyPayoffModal keeps its form state while mounted (it just returns
+  // null while closed) — bumping this key gives each opening a fresh form
+  // and a fresh quote.
   const [payoffModalKey, setPayoffModalKey] = useState(0)
 
-  async function openPayoffModal() {
-    // Pre-fill with the real early-closure quote (ID/Terms x MosRun + LCP -
-    // Total Paid) instead of the full remaining balance — falls back to the
-    // balance only if the quote call fails, so the modal still opens.
-    const res = await installmentAccountsApi.getEarlyPayoffQuote(id)
-    setPayoffQuote(res.success ? (res.data?.payoffAmount ?? null) : null)
+  function openPayoffModal() {
+    // Scenario 79 — the modal fetches the quote itself, as of the payment
+    // date it shows (MOS RUN depends on it).
     setPayoffModalKey((k) => k + 1)
     setPayoffOpen(true)
   }
@@ -371,7 +366,7 @@ export default function InstallmentAccountDetail({
           )}
           {canSettle && (
             <button
-              onClick={() => void openPayoffModal()}
+              onClick={openPayoffModal}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 sm:flex-none"
             >
               <Banknote className="h-4 w-4" />
@@ -861,7 +856,6 @@ export default function InstallmentAccountDetail({
           loadReminders()
         }}
         accountId={id}
-        suggestedAmount={payoffQuote ?? Number(account.currentBalance)}
       />
 
       {rejectingRequestId && (

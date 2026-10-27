@@ -55,11 +55,21 @@ export const updateInstallmentAccountSchema = createInstallmentAccountSchema.par
 
 export type UpdateInstallmentAccountInput = z.infer<typeof updateInstallmentAccountSchema>
 
-export const earlyPayoffSchema = z.object({
-  payoffAmount: z.coerce.number().min(0.01, 'Payoff amount must be greater than 0'),
-  paidAt: z.string().min(1, 'Payoff date is required'),
-  orNumber: z.string().max(50).optional().or(z.literal('')),
-})
+// Scenario 79 — the payoff is the quote (not typed); the rest is the
+// receipt it's collected on, same fields as AR New Receipt.
+export const earlyPayoffSchema = z
+  .object({
+    payoffAmount: z.number().min(0),
+    paidAt: z.string().min(1, 'Payment date is required'),
+    orNumber: z.string().trim().min(1, 'OR / CR number is required').max(50),
+    method: z.enum(['CASH', 'CARD', 'CHECK', 'BANK_TRANSFER', 'QR']),
+    bankAccountId: z.string().optional(),
+    notes: z.string().max(500).optional(),
+  })
+  .refine((v) => v.method === 'CASH' || !!v.bankAccountId, {
+    path: ['bankAccountId'],
+    message: 'Deposited To is required for non-cash payments',
+  })
 
 export type EarlyPayoffInput = z.infer<typeof earlyPayoffSchema>
 

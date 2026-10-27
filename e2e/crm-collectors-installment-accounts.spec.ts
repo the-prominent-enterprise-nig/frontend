@@ -754,7 +754,14 @@ test.describe('CRM — Installment Accounts', () => {
     expect(del.ok()).toBeTruthy()
   })
 
-  test('settles an active account early via the Settle early action', async ({ page }) => {
+  // Scenario 79 — Settle Early now collects the payoff on a receipt and books
+  // the forgiven interest against the account's AR invoice. A hand-entered
+  // account with no invoice linked has no receivable to post either against,
+  // so the modal explains that and won't settle (it used to just flip the
+  // status to early_closed with nothing posted).
+  test('Settle early explains a hand-entered account with no AR invoice cannot be settled', async ({
+    page,
+  }) => {
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -781,24 +788,15 @@ test.describe('CRM — Installment Accounts', () => {
       page.getByRole('button', { name: 'Settle early' }),
       page.getByRole('heading', { name: 'Settle account early' })
     )
-    await submitStable(
-      () =>
-        fillAllStable([
-          { locator: page.getByLabel('Payoff amount (₱) *'), value: '20000' },
-          { locator: page.getByLabel('Paid at *'), value: '2026-08-01' },
-        ]),
-      () => page.getByRole('button', { name: 'Settle account' }).click(),
-      () =>
-        expect(page.getByRole('heading', { name: 'Settle account early' })).toHaveCount(0, {
-          timeout: 8_000,
-        })
-    )
+    await expect(page.getByText('This account has no AR invoice to settle against.')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByRole('button', { name: /^Settle for / })).toBeDisabled()
 
-    await expect(page.getByText('early closed')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('₱0.00').first()).toBeVisible()
-    // Settled accounts can no longer be paid or re-settled
-    await expect(page.getByRole('button', { name: 'Settle early' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Record payment' })).toHaveCount(0)
+    // Nothing was settled: still active, still offered.
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.getByText('early closed')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Settle early' })).toBeVisible()
 
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
