@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, ChevronDown, Download, Loader2 } from 'lucide-react'
 import {
   ARInvoices,
@@ -134,6 +135,7 @@ export default function ARInvoiceDetail({
   /** May offset, write off or provide for it (needs approval). */
   canAdjustRetention?: boolean
 }) {
+  const router = useRouter()
   const [doc, setDoc] = useState<ARInvoiceDocument | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -561,8 +563,31 @@ export default function ARInvoiceDetail({
               <tbody className="divide-y divide-gray-100">
                 {detail.dues.map((d) => {
                   const status = dueStatus(d, d.lineNumber === nextDueLineNumber)
+                  // The due being collected next opens on the Collections
+                  // screen (same deep link as the POS transaction detail) so
+                  // it can be paid from here. The whole row is the target; the
+                  // badge stays a real link for keyboard and middle-click.
+                  const collectHref =
+                    status.label === 'To pay' && invoice.customerId
+                      ? `/pos/collections?${new URLSearchParams({
+                          customerId: invoice.customerId,
+                          customerName: invoice.customer?.name ?? '',
+                          ...(detail.scheduleId ? { scheduleId: detail.scheduleId } : {}),
+                        }).toString()}`
+                      : null
                   return (
-                    <tr key={d.lineNumber}>
+                    <tr
+                      key={d.lineNumber}
+                      onClick={
+                        collectHref
+                          ? (e) => {
+                              if ((e.target as HTMLElement).closest('a')) return
+                              router.push(collectHref)
+                            }
+                          : undefined
+                      }
+                      className={collectHref ? 'cursor-pointer hover:bg-gray-50' : undefined}
+                    >
                       <td className="py-2 pr-4 tabular-nums text-gray-500">#{d.lineNumber}</td>
                       <td className="py-2 pr-4 text-gray-900">{fmtDate(d.dueDate)}</td>
                       <td className="py-2 pr-4 text-right tabular-nums text-gray-900">
@@ -572,11 +597,20 @@ export default function ARInvoiceDetail({
                         {Number(d.paidAmount) > 0 ? fmtMoney(Number(d.paidAmount)) : '—'}
                       </td>
                       <td className="py-2">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.className}`}
-                        >
-                          {status.label}
-                        </span>
+                        {collectHref ? (
+                          <Link
+                            href={collectHref}
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium hover:underline ${status.className}`}
+                          >
+                            {status.label}
+                          </Link>
+                        ) : (
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.className}`}
+                          >
+                            {status.label}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )

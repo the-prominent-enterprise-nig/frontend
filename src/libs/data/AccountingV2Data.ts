@@ -500,6 +500,9 @@ export interface ARInvoiceDue {
 }
 
 export interface ARInvoiceInstallmentDetail {
+  /** The InstallmentSchedule behind this receivable — what the Collections
+   * deep link keys on to land on the plan's next open due. */
+  scheduleId?: string
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
