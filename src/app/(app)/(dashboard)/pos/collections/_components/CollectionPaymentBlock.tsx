@@ -94,7 +94,7 @@ export default function CollectionPaymentBlock({
         {resolved.options.length > 0 && optionLabel && (
           <PillCombobox
             ariaLabel={numbered ? `Payment ${n} ${optionLabel}` : optionLabel}
-            wrapperClassName="mt-1.5"
+            wrapperClassName={`mt-1.5 ${invalid.has('option') ? '[&_input]:border-red-400' : ''}`}
             placeholder={`Select ${optionLabel.toLowerCase()}…`}
             options={resolved.options.map((o) => ({ value: o.id, label: o.name }))}
             value={resolved.optionId}

@@ -182,8 +182,13 @@ export const customersApi = {
       ...(transactionId ? { transactionId } : {}),
     }),
   /** Scenario 78 Part 3 — the customer's agent-credited sales with their
-   * commission and the vouchers that released it (Commissions - Sales / SMI). */
-  commissions: (id: string) => api.get<AgentInvoice[]>(`/crm/customers/${id}/commissions`),
+   * commission and the Commissions - Sales voucher that released it. With the
+   * ledger's `transactionId`, only that one purchase's. */
+  commissions: (id: string, transactionId?: string) =>
+    api.get<AgentInvoice[]>(
+      `/crm/customers/${id}/commissions`,
+      transactionId ? { transactionId } : undefined
+    ),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),

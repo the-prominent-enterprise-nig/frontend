@@ -30,15 +30,18 @@ import { useMe } from '@/src/hooks/useMe'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import CollectionPaymentBlock from './CollectionPaymentBlock'
 import { nextTender } from '../../checkout/_utils/mixed-payment'
+import CopyAmountButton from '../../checkout/_components/CopyAmountButton'
 import {
   availableTiles,
   collectionIssues,
   newCollectionPaymentRow,
   resolveCollectionPayment,
+  TILE_OPTION_LABEL,
   type CollectionIssueField,
   type CollectionPaymentRow,
   type CollectionsPaymentOption,
 } from '../_utils/collection-tenders'
+import { allocateCash, penaltyOn, tendersToPrincipal } from '../_utils/collection-allocation'
 import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/data/AccountingV2Data'
 import type {
   PosCustomer,
@@ -220,9 +223,24 @@ const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
     "The penalty is more than what's actually assessed — 5% of the part of a due being paid, and only for a due at least 15 days past its due date.",
 }
 
+// The server names the missing field as "Source of Fund (bankAccountId)" —
+// say it as the bank account it is.
+const BANK_ACCOUNT_REQUIRED = /^Source of Fund \(bankAccountId\) is required for (\w+) payments\.?$/
+const BANK_ACCOUNT_METHOD_NAMES: Record<string, string> = {
+  CHECK: 'check',
+  BANK_TRANSFER: 'bank transfer',
+  CARD: 'card',
+  QR: 'QR',
+}
+
 function paymentErrorMessage(res: { message?: string; error?: string }): string {
   const raw = res.message || res.error
   if (!raw) return 'Failed to collect payment'
+  const bankAccountMethod = BANK_ACCOUNT_REQUIRED.exec(raw)?.[1]
+  if (bankAccountMethod) {
+    const name = BANK_ACCOUNT_METHOD_NAMES[bankAccountMethod] ?? bankAccountMethod.toLowerCase()
+    return `Bank account is required for ${name} payments.`
+  }
   return PAYMENT_ERROR_MESSAGES[raw] ?? raw
 }
 
@@ -263,28 +281,22 @@ function dueSuggestions(
   }
 }
 
-// Late-payment penalty rate and grace period — mirrors penalty-waiver.util.ts
-// in the backend, which enforces them.
-const PENALTY_RATE = 0.05
+// Late-payment grace period — mirrors penalty-waiver.util.ts in the backend,
+// which enforces it. The 5% rate lives with penaltyOn in collection-allocation.
 const PENALTY_GRACE_DAYS = 15
 
-/** The penalty on `applied` pesos settled against a late due. A due paid in two
- * halves carries 5% on each half — 5% of the whole once both are in. */
-function penaltyOn(applied: number): number {
-  return Math.round(Math.max(applied, 0) * PENALTY_RATE * 100) / 100
-}
-
-// Splits a bulk payment's typed Total across the selected dues (given in due
-// order): settle one due in full — its amount capped at what it still needs
-// after its own (checkbox-resolved) rebate — before any leftover flows to
-// the next due. Whatever's left once every due is fully covered lands on the
-// last due as an overpayment (matching the backend's own per-line
-// overpayment check), rather than being silently dropped. Rebate is no longer
-// sliced from a combined pool here — each due's amount is already known
-// directly from its own checkbox state, resolved by the caller. The penalty is
-// derived HERE, from what lands on each due: 5% of the part of a late due this
-// payment settles (amount + its rebate + any tax withheld, never more than
-// what the due still needs), so a due paid in two payments is charged on each.
+// Splits what the cashier took (the typed Total — CASH, late penalty included)
+// across the selected dues, given in due order: one due is settled in full,
+// penalty and all, before any leftover flows to the next, and whatever is left
+// once every due is covered lands on the last due as an overpayment (matching
+// the backend's own per-line overpayment check). Each line comes back as what
+// the server records — `amount` settling the due and `penaltyAmount` on top of
+// it, never the penalty folded into `amount`, or it would land on the next due
+// as principal while also being booked as income. Rebate is not sliced from a
+// pool here — each due's is already known from its own checkbox. The penalty is
+// 5% of the part of a late due the payment settles (amount + its rebate + any
+// tax withheld, never more than what the due still needs), so a due paid in two
+// payments is charged on each. See collection-allocation.ts.
 function allocateBulkPayment(
   lines: {
     line: InstallmentScheduleLineWithInvoice
@@ -292,25 +304,14 @@ function allocateBulkPayment(
     /** The due is 15+ days late and its penalty checkbox is on. */
     penaltyApplies: boolean
   }[],
-  totalAmount: number,
+  totalCash: number,
   withholding = 0
-): {
-  line: InstallmentScheduleLineWithInvoice
-  amount: number
-  rebateAmount: number
-  penaltyAmount: number
-}[] {
-  let remainingAmount = Math.max(totalAmount, 0)
-  return lines.map(({ line, rebateAmount, penaltyApplies }, i) => {
-    const outstanding = dueOutstanding(line)
-    const neededAmount = Math.max(Math.round((outstanding - rebateAmount) * 100) / 100, 0)
-    const isLast = i === lines.length - 1
-    const amount =
-      Math.round((isLast ? remainingAmount : Math.min(remainingAmount, neededAmount)) * 100) / 100
-    remainingAmount = Math.max(Math.round((remainingAmount - amount) * 100) / 100, 0)
-    const settled = Math.min(outstanding, amount + rebateAmount + withholding)
-    return { line, rebateAmount, penaltyAmount: penaltyApplies ? penaltyOn(settled) : 0, amount }
-  })
+) {
+  return allocateCash(
+    lines.map((l) => ({ ...l, outstanding: dueOutstanding(l.line) })),
+    totalCash,
+    withholding
+  )
 }
 
 function CollectionsCustomerRow({
@@ -1055,11 +1056,6 @@ function PaymentPanel({
     0
   )
 
-  // Penalty deliberately excluded — it never touches AR, it's extra cash on
-  // top of what's actually owed, so it plays no part in "does this settle
-  // the due" math.
-  const totalApplied = typedAmount + (Number(form.withholdingAmount) || 0) + rebateTotal
-  const wouldOverpay = totalApplied > outstandingTotal + 0.01
   // Without an override the field is capped at real today, so "not today"
   // there can only mean a prior day; an override can also push it forward.
   const isBackdated = form.paymentDate.slice(0, 10) < todayIso()
@@ -1091,10 +1087,26 @@ function PaymentPanel({
   // amount. The submit payload only ever sees a typed amount (the field is
   // required), so what is shown is what is recorded.
   const typedWithholding = single ? Number(form.withholdingAmount) || 0 : 0
+  // The typed amount is CASH — what was handed over, late penalty included,
+  // which is the "Total with penalty" figure above — so a full payment is the
+  // dues' balance plus their penalty.
   const previewAmount = !anyAmountTyped
-    ? Math.max(Math.round((outstandingSum - rebateTotal - typedWithholding) * 100) / 100, 0)
+    ? Math.max(
+        Math.round((outstandingSum - rebateTotal - typedWithholding + fullPenaltyTotal) * 100) /
+          100,
+        0
+      )
     : typedAmount
   const bulkAllocated = allocateBulkPayment(resolvedLines, previewAmount, typedWithholding)
+  // What the cash comes to once the penalty is taken out of it: the part that
+  // settles the dues and the part that is penalty income. Only the first ever
+  // touches AR, so only it plays any part in "does this settle the due" math.
+  const typedPrincipal = anyAmountTyped ? bulkAllocated.reduce((sum, p) => sum + p.amount, 0) : 0
+  const typedPenalty = anyAmountTyped
+    ? Math.round(bulkAllocated.reduce((sum, p) => sum + p.penaltyAmount, 0) * 100) / 100
+    : 0
+  const totalApplied = typedPrincipal + (Number(form.withholdingAmount) || 0) + rebateTotal
+  const wouldOverpay = totalApplied > outstandingTotal + 0.01
 
   /**
    * Scenario 53 Part 5b — the open session whose drawer this cash lands in,
@@ -1133,6 +1145,10 @@ function PaymentPanel({
       amount: r.amount,
       method: r.method,
       bankReferenceNumber: payments[i].bankReferenceNumber,
+      option:
+        r.options.length > 0 && TILE_OPTION_LABEL[r.tile]
+          ? { label: TILE_OPTION_LABEL[r.tile]!, chosen: !!r.optionId }
+          : null,
     })),
     cr: form.reference,
   })
@@ -1144,10 +1160,18 @@ function PaymentPanel({
   // The first payment describes the collection as a single method always did;
   // several are sent as `tenders` on top of it.
   const firstPayment = resolvedPayments[0]
+  // The tenders go to the server in principal terms (what settles the dues),
+  // like `amount` — each tender's cash less its share of the penalty.
+  const tenderPrincipals = several
+    ? tendersToPrincipal(
+        resolvedPayments.map((r) => r.amount),
+        bulkAllocated
+      )
+    : []
   const tendersPayload = several
     ? resolvedPayments.map((r, i) => ({
         method: r.method,
-        amount: r.amount,
+        amount: tenderPrincipals[i],
         paymentMethodConfigId: r.option?.configId,
         paymentMethodOptionId: r.optionId,
         bankReferenceNumber: payments[i].bankReferenceNumber || undefined,
@@ -1157,7 +1181,7 @@ function PaymentPanel({
   // The next payment opens on a method none uses yet, with what is still
   // unpaid of the dues already in it (nothing once they are covered).
   const dueTarget = Math.max(
-    Math.round((outstandingTotal - rebateTotal - typedWithholding) * 100) / 100,
+    Math.round((outstandingTotal - rebateTotal - typedWithholding + fullPenaltyTotal) * 100) / 100,
     0
   )
   function addAnotherPayment() {
@@ -1193,7 +1217,7 @@ function PaymentPanel({
 
     if (single) {
       const res = await ARInvoices.recordPayment(single.line.arInvoice.id, {
-        amount: typedAmount,
+        amount: bulkAllocated[0]?.amount ?? typedAmount,
         paymentDate: form.paymentDate,
         withholdingAmount: Number(form.withholdingAmount || 0),
         rebateAmount: resolvedLines[0]?.rebateAmount ?? 0,
@@ -1327,8 +1351,11 @@ function PaymentPanel({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+    // Beside the list the whole card is capped to the visible area (page
+    // scroller height less the sticky offset and a matching bottom gap), so the
+    // form scrolls inside it while the header and the Pay button stay put.
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm lg:flex lg:max-h-[calc(100vh-9rem)] lg:flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-prominent-purple-50">
             <Banknote className="h-5 w-5 text-prominent-purple-700" />
@@ -1354,8 +1381,8 @@ function PaymentPanel({
         </button>
       </div>
 
-      <form onSubmit={onSubmit} noValidate>
-        <div className="max-h-[calc(100vh-12rem)] space-y-4 overflow-y-auto px-6 py-5">
+      <form onSubmit={onSubmit} noValidate className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+        <div className="max-h-[calc(100vh-12rem)] space-y-4 overflow-y-auto px-6 py-5 lg:max-h-none lg:min-h-0 lg:flex-1">
           {single && isFullyPaid && (
             <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-[12px] text-red-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1516,10 +1543,18 @@ function PaymentPanel({
             >
               {fullPenaltyTotal > 0 ? 'Total with penalty' : 'Total'}
             </span>
-            <span
-              className={`text-[13px] font-semibold ${fullPenaltyTotal > 0 ? 'text-red-800' : 'text-zinc-900'}`}
-            >
-              {fmtMoney(outstandingSum - rebateTotal + fullPenaltyTotal)}
+            {/* Copies the plain number, so it pastes straight into Amount
+                received — the same Copy the checkout Total has. */}
+            <span className="flex items-center gap-3">
+              <CopyAmountButton
+                amount={outstandingSum - rebateTotal + fullPenaltyTotal}
+                testId="collection-total-copy"
+              />
+              <span
+                className={`text-[13px] font-semibold ${fullPenaltyTotal > 0 ? 'text-red-800' : 'text-zinc-900'}`}
+              >
+                {fmtMoney(outstandingSum - rebateTotal + fullPenaltyTotal)}
+              </span>
             </span>
           </div>
 
@@ -1614,6 +1649,16 @@ function PaymentPanel({
             </div>
           )}
 
+          {/* The amount received is cash, penalty included — say how it splits,
+              so what settles the dues and what is penalty income is never a
+              guess. */}
+          {typedPenalty > 0 && (
+            <p className="text-[12px] text-zinc-600" data-testid="collection-penalty-split">
+              Of the {fmtMoney(typedAmount)} received, {fmtMoney(typedPenalty)} is the late penalty
+              and {fmtMoney(typedPrincipal)} settles the dues.
+            </p>
+          )}
+
           {!isFullyPaid && wouldOverpay && (
             <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1672,7 +1717,7 @@ function PaymentPanel({
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         </div>
 
-        <div className="flex items-center justify-end border-t border-zinc-200 px-6 py-4">
+        <div className="flex shrink-0 items-center justify-end border-t border-zinc-200 px-6 py-4">
           <button
             type="submit"
             // Only what can't be acted on stays off. Everything else is

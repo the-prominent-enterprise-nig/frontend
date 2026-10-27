@@ -2,6 +2,7 @@ import {
   Banknote,
   BarChart3,
   BookmarkCheck,
+  BookOpen,
   Calculator,
   ClipboardCheck,
   ClipboardList,
@@ -21,8 +22,9 @@ import {
   ShoppingCart,
   Star,
   Tag,
+  Tags,
   Undo2,
-  Upload,
+  Users,
   Wallet,
   Wrench,
   type LucideIcon,
@@ -41,8 +43,12 @@ import { can, canManagePosSettings, type SessionUser } from '@/src/libs/guards/p
  * redirect and detail route that already points at one keeps working. PosNav
  * renders the strip for whichever hub owns the current path.
  *
- * Product Catalog and Customers are not in any hub — they are their own sidebar
- * rows (SideBar.tsx), a deliberate departure from the revision.
+ * Two departures from the revision. Product Catalog is not a Sales Counter tab: it
+ * is its own group with Price Lists beside it (the revision has Price List Upload
+ * under Operations & Admin) — the catalog shows the prices the lists set. And
+ * Customers, Credit Applications and Collections are one group, Credit &
+ * Collections, rather than the revision's Cash & Collections: all three follow the
+ * customer's account.
  *
  * A tab can front a second row (`subTabs`): Management is Sessions | Cash Drawer
  * and Promotions is Promo Codes | Gift Cards | Loyalty — one tab in the doc, but
@@ -88,6 +94,13 @@ export type PosHubTab = {
   branchSwitcher?: boolean
   /** Business Owner / Branch Manager only — hidden from everyone else (e.g. Cashier). */
   configOnly?: boolean
+  /**
+   * The sidebar row lights on exactly this path, not on everything under it — for
+   * a tab whose route is a prefix of another group's (Collections is
+   * /pos/collections, and New Receipts lives under /pos/collections/acknowledgement
+   * in the cash group, which should be the only row lit there).
+   */
+  exactActive?: boolean
 }
 
 export type PosHub = {
@@ -208,11 +221,88 @@ export const PRICING_PROMOTION_HUB: PosHub = {
   ],
 }
 
-// Money at the counter, in the doc's order. Each page keeps its own permission, so
-// the cashier closing the shift, a Branch Manager and a Credit Investigator each
-// see the tabs they can open and the row shows when any one is held.
-export const CASH_COLLECTIONS_HUB: PosHub = {
-  entryHref: '/pos/cash-collections',
+// Not a sale, so not a Sales Counter tab: brands, models, prices and stock for the
+// branch's sellable items, with the price lists behind those prices beside it. Price
+// Lists moved here from Inventory, so it keeps that module's permission — a user
+// without it sees the catalog alone, and the group's strip is hidden. Its entry route
+// redirects, because someone who may open Price Lists but not sell would 403 on the
+// catalog.
+export const PRODUCT_CATALOG_HUB: PosHub = {
+  entryHref: '/pos/product-catalog',
+  tabs: [
+    {
+      id: 'product-catalog',
+      label: 'Product Catalog',
+      href: '/pos/catalog',
+      icon: BookOpen,
+      permissions: [POS_PERMISSIONS.TRANSACTIONS_READ],
+      // Stock is per branch, so the catalog keeps the shared switcher.
+      branchSwitcher: true,
+    },
+    {
+      // The price-list manager — lists, versions, approval and the uploads. Its
+      // list, detail and upload pages all keep the strip. Scoped by its own branch
+      // filter, not the POS branch, so no switcher here.
+      id: 'price-lists',
+      label: 'Price Lists',
+      href: '/pos/catalog/price-lists',
+      icon: Tags,
+      permissions: [INVENTORY_PERMISSIONS.PRICE_LISTS_READ],
+      prefixes: ['/pos/catalog/price-lists/'],
+    },
+  ],
+}
+
+// The customer's account, in the order the client wants them: Collections (the page
+// used all day at the till), then Credit Applications, then the Customers record.
+// Each page keeps its own permission, so a cashier, a Branch Manager and a Credit
+// Investigator each see the tabs they can open, and the row shows when any one is
+// held.
+export const CREDIT_COLLECTIONS_HUB: PosHub = {
+  entryHref: '/pos/credit-collections',
+  tabs: [
+    {
+      id: 'collections',
+      label: 'Collections',
+      href: '/pos/collections',
+      icon: Coins,
+      permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE],
+      exactActive: true,
+    },
+    {
+      // pos:application:view — credit was folded into the pos module (Scenario
+      // 22, 2026-08-08). A Credit Investigator holds only this narrow slice of
+      // pos:* (no sessions/transactions/etc.) and still needs their own way into
+      // this page. The strip shows on the list only; an application's own page
+      // ([id], new) has none.
+      id: 'credit-applications',
+      label: 'Credit Applications',
+      href: '/pos/credit-applications',
+      icon: CreditCard,
+      permissions: [CREDIT_PERMISSIONS.APPLICATION_VIEW],
+    },
+    {
+      // POS's own customers screen, over the same Customer records CRM lists — same
+      // table, same CustomerService, different permission (2026-09-19 review
+      // request). It exists so a cashier can create and correct customer profiles
+      // for a sale or a credit application while holding no crm:* permission at
+      // all. Kept in POS (client decision, against the revision doc): checkout's
+      // "New Customer" and a credit application's "+ New customer" both go through
+      // its create form. The strip shows on the list only; a customer's own page
+      // (view, edit, ledger, new) has none.
+      id: 'customers',
+      label: 'Customers',
+      href: '/pos/customers',
+      icon: Users,
+      permissions: [POS_PERMISSIONS.CUSTOMERS_READ],
+    },
+  ],
+}
+
+// Money handled at the till — not tied to a customer's account. Each page keeps its
+// own permission.
+export const CASH_RECEIPTS_HUB: PosHub = {
+  entryHref: '/pos/cash-receipts',
   tabs: [
     {
       id: 'management',
@@ -241,32 +331,14 @@ export const CASH_COLLECTIONS_HUB: PosHub = {
     },
     {
       // Scenario 57 — money received with no customer/invoice behind it (a
-      // walk-in payment, a refund). Same permission as Collections since it is
-      // the same "money received at the counter" capability. Its new / view /
+      // walk-in payment, a refund). Same permission as Collections, since it is
+      // the same "money received at the counter" capability, but it is not
+      // against a customer's account, so it stays with the cash. Its new / view /
       // import pages show no strip.
       id: 'new-receipts',
       label: 'New Receipts',
       href: '/pos/collections/acknowledgement',
       icon: ReceiptText,
-      permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE],
-    },
-    {
-      // pos:application:view — credit was folded into the pos module (Scenario
-      // 22, 2026-08-08). A Credit Investigator holds only this narrow slice of
-      // pos:* (no sessions/transactions/etc.) and still needs their own way into
-      // this page. The strip shows on the list only; an application's own page
-      // ([id], new) has none.
-      id: 'credit-applications',
-      label: 'Credit Applications',
-      href: '/pos/credit-applications',
-      icon: CreditCard,
-      permissions: [CREDIT_PERMISSIONS.APPLICATION_VIEW],
-    },
-    {
-      id: 'collections',
-      label: 'Collections',
-      href: '/pos/collections',
-      icon: Coins,
       permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE],
     },
     {
@@ -370,17 +442,6 @@ export const OPERATIONS_ADMIN_HUB: PosHub = {
       permissions: [POS_PERMISSIONS.SERVICE_DRAFTS_READ],
     },
     {
-      // Was "Price Lists". The price-list manager — lists, versions, approval and
-      // the uploads — which moved here from Inventory, so it keeps that module's
-      // permission. Its list, detail and upload pages all keep the strip.
-      id: 'price-list-upload',
-      label: 'Price List Upload',
-      href: '/pos/catalog/price-lists',
-      icon: Upload,
-      permissions: [INVENTORY_PERMISSIONS.PRICE_LISTS_READ],
-      prefixes: ['/pos/catalog/price-lists/'],
-    },
-    {
       // Every POS role needs their own PIN (checkout PIN entry, manager
       // approvals), so it has no permission — and so the row shows for any POS
       // role, including a Credit Investigator.
@@ -409,22 +470,32 @@ export const OPERATIONS_ADMIN_HUB: PosHub = {
 
 export const POS_HUBS: ReadonlyArray<PosHub> = [
   SALES_COUNTER_HUB,
+  PRODUCT_CATALOG_HUB,
+  CREDIT_COLLECTIONS_HUB,
   PRICING_PROMOTION_HUB,
-  CASH_COLLECTIONS_HUB,
+  CASH_RECEIPTS_HUB,
   APPROVALS_REVIEWS_HUB,
   REPORTS_HUB,
   OPERATIONS_ADMIN_HUB,
 ]
 
-/**
- * Pages that are not part of any hub but still read the POS branch the switcher
- * sets. They show the switcher with no tab strip beside it.
- */
-const POS_BRANCH_SWITCHER_ONLY_PATHS = ['/pos/catalog']
-
 /** Every route a hub's tabs link to, second-row pages included. */
 export function posHubHrefs(hub: PosHub): string[] {
   return hub.tabs.flatMap((tab) => (tab.subTabs ? tab.subTabs.map((s) => s.href) : [tab.href]))
+}
+
+/**
+ * The paths that light a hub's sidebar row: those it lights on exactly, and those
+ * it lights on along with everything under them. A hub is all one or the other
+ * (`activeMatch`), except for the tabs flagged `exactActive`.
+ */
+export function posHubActiveHrefs(hub: PosHub): { exact: string[]; prefix: string[] } {
+  if (hub.activeMatch === 'exact') return { exact: posHubHrefs(hub), prefix: [] }
+  const hrefsOf = (tab: PosHubTab) => (tab.subTabs ? tab.subTabs.map((s) => s.href) : [tab.href])
+  return {
+    exact: hub.tabs.filter((tab) => tab.exactActive).flatMap(hrefsOf),
+    prefix: hub.tabs.filter((tab) => !tab.exactActive).flatMap(hrefsOf),
+  }
 }
 
 /**
@@ -487,7 +558,6 @@ export function posNavModel(pathname: string, visibleHrefs: string[], canConfigu
  * nothing branch-scoped on the page (/pos/pin).
  */
 export function showsPosBranchSwitcher(pathname: string): boolean {
-  if (POS_BRANCH_SWITCHER_ONLY_PATHS.includes(pathname)) return true
   return POS_HUBS.some((hub) =>
     hub.tabs.some((tab) =>
       tab.subTabs

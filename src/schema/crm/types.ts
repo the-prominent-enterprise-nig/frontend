@@ -265,15 +265,15 @@ export interface AgentInvoice {
   agentName: string | null
   customerName: string | null
   type: AgentSaleType
-  /** Pre-VAT, pre-discount — what the commission is computed on. */
+  /** Pre-VAT, pre-discount. */
   subtotal: number
   totalAmount: number
+  /** What accounting recorded in Expenses for this sale's commission — the
+   * Commissions - Sales line's amount. Null until a recorded entry exists (a
+   * draft carries none). */
   commission: number | null
   /** The live Commissions - Sales voucher paying this sale's commission. */
   released: AgentInvoiceRelease | null
-  /** The live Commissions - SMI voucher paid on this sale (Scenario 78 Part 2) —
-   * released separately from the commission. */
-  smiReleased: AgentInvoiceRelease | null
 }
 
 export interface AgentInvoiceRelease {
@@ -435,6 +435,24 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   // (Commissions - Sales, recorded entries only). Zero until it is encoded.
   // Shown only to users who can read agents.
   salesCommission?: number | string
+  // The sale's receipt: when it was rung up, by whom, and how it was paid
+  // for at the register. Null for hand-entered/imported accounts (POS-only).
+  saleReceipt?: {
+    occurredAt: string
+    cashier: string | null
+    // The SI or DR the customer holds; null when neither was entered.
+    documentNumber: string | null
+    // The delivery fee's own CR; null when the sale had no fee.
+    deliveryFeeReferenceNumber: string | null
+    tenders: {
+      id: string
+      method: string
+      option: string | null
+      amount: number
+      // The cashier's CR booklet number for this tender.
+      referenceNumber: string | null
+    }[]
+  } | null
   // Scenario 32 item 4 — running totals, same for both POS-originated and
   // hand-entered accounts (unlike items 1/2/3/5 above, which are POS-only).
   totalPayments: number | string
