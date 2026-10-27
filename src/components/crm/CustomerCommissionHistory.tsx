@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Coins } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
+import { LedgerCard } from '@/src/components/crm/LedgerParts'
 import type { AgentInvoice, AgentInvoiceRelease } from '@/src/schema/crm/types'
 
 /**
@@ -48,35 +50,30 @@ export default function CustomerCommissionHistory({
   const totalCommission = rows.reduce((sum, r) => sum + (r.commission ?? 0), 0)
 
   return (
-    <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <h2 className="border-b border-gray-100 p-4 pb-2 text-[14px] font-semibold text-gray-900">
-        Commissions History
-      </h2>
-      <div className="overflow-x-auto">
+    <LedgerCard title="Commissions History" icon={Coins} className="mt-4">
+      <div className="overflow-x-auto rounded-xl border border-gray-100">
         <table className="w-full border-collapse text-[13px]">
           <thead>
-            <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <th className="border-r border-gray-100 px-4 py-1.5">Date</th>
-              <th className="border-r border-gray-100 px-4 py-1.5">SI / DR No.</th>
-              <th className="border-r border-gray-100 px-4 py-1.5">Agent</th>
-              <th className="border-r border-gray-100 px-4 py-1.5 text-right">Amount</th>
-              <th className="px-4 py-1.5 text-right">Commission</th>
+            <tr className="bg-gray-50 text-left text-[12px] font-semibold uppercase tracking-wide text-gray-600">
+              <th className="px-3 py-2">Date</th>
+              <th className="px-3 py-2">SI / DR No.</th>
+              <th className="px-3 py-2">Agent</th>
+              <th className="px-3 py-2 text-right">Amount</th>
+              <th className="px-3 py-2 text-right">Commission</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.map((r) => (
-              <tr key={r.id}>
-                <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 text-gray-600">
-                  {fmtDate(r.date)}
-                </td>
-                <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 font-mono text-xs text-gray-700">
+              <tr key={r.id} className="hover:bg-gray-50">
+                <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{fmtDate(r.date)}</td>
+                <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px] text-gray-700">
                   {saleDocNo(r)}
                 </td>
-                <td className="border-r border-gray-100 px-4 py-1.5 text-gray-800">
+                <td className="px-3 py-1.5 text-gray-800">
                   {linkAgents && r.agentId ? (
                     <Link
                       href={`/crm/agents/${r.agentId}`}
-                      className="text-purple-700 hover:underline"
+                      className="font-medium text-prominent-purple-700 hover:underline"
                     >
                       {r.agentName}
                     </Link>
@@ -84,26 +81,26 @@ export default function CustomerCommissionHistory({
                     (r.agentName ?? '—')
                   )}
                 </td>
-                <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 text-right text-gray-800">
+                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-800">
                   {fmtMoney(r.totalAmount)}
                 </td>
-                <td className="whitespace-nowrap px-4 py-1.5 text-right">
+                <td className="whitespace-nowrap px-3 py-1.5 text-right">
                   <CommissionCell commission={r.commission} release={r.released} />
                 </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-gray-200 bg-gray-50 text-[13px] font-semibold text-gray-900">
-              <td className="border-r border-gray-100 px-4 py-1.5" colSpan={4}>
+            <tr className="border-t-2 border-prominent-purple-100 bg-prominent-purple-50 font-semibold text-prominent-purple-900">
+              <td className="px-3 py-2" colSpan={4}>
                 Total commission
               </td>
-              <td className="px-4 py-1.5 text-right">{fmtMoney(totalCommission)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(totalCommission)}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-    </section>
+    </LedgerCard>
   )
 }
 
@@ -116,16 +113,16 @@ function CommissionCell({
   commission: number | null
   release: AgentInvoiceRelease | null
 }) {
-  if (!release) return <span className="text-xs text-gray-400">Commission not released</span>
+  if (!release) return <span className="text-[13px] text-gray-500">Commission not released</span>
   return (
     <>
-      <span className="block font-semibold text-emerald-700">
+      <span className="block font-semibold tabular-nums text-emerald-700">
         {commission != null ? fmtMoney(commission) : '—'}
       </span>
-      <span className="block text-xs text-gray-500">
+      <span className="block text-[13px] text-gray-600">
         <Link
           href={`/accounting/expenses/${release.expenseId}`}
-          className="font-medium text-purple-700 hover:underline"
+          className="font-medium text-prominent-purple-700 hover:underline"
         >
           {release.voucherNumber}
         </Link>
