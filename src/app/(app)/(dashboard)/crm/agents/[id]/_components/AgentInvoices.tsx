@@ -126,10 +126,6 @@ export default function AgentInvoices({
 
   const rows = invoices ?? []
   const totalCommission = rows.reduce((sum, r) => sum + (r.commission ?? 0), 0)
-  // A draft voucher already holds the sale but hasn't paid anything out yet.
-  const paidOut = (rel: AgentInvoiceRelease | null) => (rel && !rel.isDraft ? rel.amount : 0)
-  const totalReleased = rows.reduce((sum, r) => sum + paidOut(r.released), 0)
-  const totalSmiReleased = rows.reduce((sum, r) => sum + paidOut(r.smiReleased), 0)
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -253,11 +249,6 @@ export default function AgentInvoices({
           <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat label="Invoices" value={invoices === null ? '-' : String(rows.length)} />
             <Stat label="Commission" value={invoices === null ? '-' : fmtMoney(totalCommission)} />
-            <Stat label="Released" value={invoices === null ? '-' : fmtMoney(totalReleased)} />
-            <Stat
-              label="SMI Released"
-              value={invoices === null ? '-' : fmtMoney(totalSmiReleased)}
-            />
           </div>
 
           <div className="bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden">
@@ -288,12 +279,6 @@ export default function AgentInvoices({
                       <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                         Commission
                       </th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                        Released
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                        SMI Released
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
@@ -314,17 +299,9 @@ export default function AgentInvoices({
                         <td className="px-4 py-3 text-sm text-right text-zinc-700 whitespace-nowrap">
                           {fmtMoney(r.totalAmount)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-right font-semibold text-emerald-700 whitespace-nowrap">
-                          {r.commission != null ? fmtMoney(r.commission) : '-'}
-                        </td>
-                        <ReleaseCell
+                        <CommissionCell
+                          commission={r.commission}
                           release={r.released}
-                          emptyLabel="Commission not released"
-                          guardLeave={guardLeave}
-                        />
-                        <ReleaseCell
-                          release={r.smiReleased}
-                          emptyLabel="SMI not released"
                           guardLeave={guardLeave}
                         />
                       </tr>
@@ -392,43 +369,45 @@ function sameAgentForm(a: AgentFormState, b: AgentFormState): boolean {
   return JSON.stringify(norm(a)) === JSON.stringify(norm(b))
 }
 
-/** The voucher that released a sale's commission or SMI — linked to the
- * expense, with a Draft badge while it is still a draft. */
-function ReleaseCell({
+/** A sale's commission with the voucher that released it under it — linked to
+ * the expense, with a Draft badge while it is still a draft (a draft carries no
+ * commission yet, so its amount is a dash). */
+function CommissionCell({
+  commission,
   release,
-  emptyLabel,
   guardLeave,
 }: {
+  commission: number | null
   release: AgentInvoiceRelease | null
-  /** What an unreleased cell says — names which release it is, so the
-   * commission and SMI columns don't read the same. */
-  emptyLabel: string
   guardLeave: (href: string) => (e: React.MouseEvent) => void
 }) {
   if (!release) {
     return (
-      <td className="px-4 py-3 text-sm whitespace-nowrap">
-        <span className="text-xs text-zinc-400">{emptyLabel}</span>
+      <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
+        <span className="text-xs text-zinc-400">Commission not released</span>
       </td>
     )
   }
   const href = `/accounting/expenses/${release.expenseId}`
   return (
-    <td className="px-4 py-3 text-sm whitespace-nowrap">
-      <Link
-        href={href}
-        onClick={guardLeave(href)}
-        className="font-medium text-purple-700 hover:underline"
-      >
-        {release.voucherNumber}
-      </Link>
-      {release.isDraft && (
-        <span className="ml-1.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-          Draft
-        </span>
-      )}
+    <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
+      <span className="block font-semibold text-emerald-700">
+        {commission != null ? fmtMoney(commission) : '-'}
+      </span>
       <span className="block text-xs text-zinc-500">
-        {fmtMoney(release.amount)} · {fmtDate(release.date)}
+        <Link
+          href={href}
+          onClick={guardLeave(href)}
+          className="font-medium text-purple-700 hover:underline"
+        >
+          {release.voucherNumber}
+        </Link>
+        {release.isDraft && (
+          <span className="ml-1.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+            Draft
+          </span>
+        )}{' '}
+        · {fmtDate(release.date)}
       </span>
     </td>
   )

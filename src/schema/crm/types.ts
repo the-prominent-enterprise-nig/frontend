@@ -265,15 +265,15 @@ export interface AgentInvoice {
   agentName: string | null
   customerName: string | null
   type: AgentSaleType
-  /** Pre-VAT, pre-discount — what the commission is computed on. */
+  /** Pre-VAT, pre-discount. */
   subtotal: number
   totalAmount: number
+  /** What accounting recorded in Expenses for this sale's commission — the
+   * Commissions - Sales line's amount. Null until a recorded entry exists (a
+   * draft carries none). */
   commission: number | null
   /** The live Commissions - Sales voucher paying this sale's commission. */
   released: AgentInvoiceRelease | null
-  /** The live Commissions - SMI voucher paid on this sale (Scenario 78 Part 2) —
-   * released separately from the commission. */
-  smiReleased: AgentInvoiceRelease | null
 }
 
 export interface AgentInvoiceRelease {

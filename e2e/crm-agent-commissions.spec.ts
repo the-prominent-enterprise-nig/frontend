@@ -2,9 +2,9 @@ import { test, expect, type Page } from '@playwright/test'
 import { gotoReady } from './utils'
 
 // Scenario 78 — the Sales Agents row opens the agent's own page: their
-// invoices with commission / Released / SMI Released, and Edit and Remove in
-// the header (inline edit, in-app confirm, unsaved-changes guard). Replaces
-// the Scenario-01 "View commissions" dialog this file used to cover.
+// invoices with their commission, and Edit and Remove in the header
+// (inline edit, in-app confirm, unsaved-changes guard). Replaces the
+// Scenario-01 "View commissions" dialog this file used to cover.
 //
 // Self-contained: creates its own agent through the API, so it never depends
 // on what the roster holds, and removes it at the end (Remove is the last
@@ -58,9 +58,10 @@ test.describe('CRM Sales Agents — the agent page (Scenario 78)', () => {
 
     await expect(page.getByRole('heading', { name: NAME })).toBeVisible()
     await expect(page.getByText('All branches · 5.00% rate · Active')).toBeVisible()
-    for (const tile of ['Invoices', 'Commission', 'Released', 'SMI Released']) {
+    for (const tile of ['Invoices', 'Commission']) {
       await expect(page.getByText(tile, { exact: true }).first()).toBeVisible()
     }
+    await expect(page.getByText('SMI Released')).toHaveCount(0)
     await expect(page.getByText('No invoices sold yet.')).toBeVisible()
   })
 
