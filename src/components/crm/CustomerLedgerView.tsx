@@ -59,8 +59,8 @@ export default function CustomerLedgerView({
   backHref: string
   backLabel: string
   canEdit?: boolean
-  /** False under POS — the CRM installment-account page the plan view links to
-   * is one a cashier can't open. */
+  /** False for a viewer who can't open the CRM installment-account page the
+   * plan view links to (a cashier under POS). */
   showAccountLink?: boolean
 }) {
   // Every purchase, not only the financed ones. This was briefly narrowed to
@@ -459,7 +459,7 @@ export default function CustomerLedgerView({
         <CustomerCommissionHistory
           customerId={customerId}
           transactionId={transactionId || undefined}
-          linkAgents={showAccountLink}
+          linkAgents={showAccountLink && canViewCommission}
         />
       </div>
     </div>
