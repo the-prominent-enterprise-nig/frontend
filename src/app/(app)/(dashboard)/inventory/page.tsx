@@ -961,7 +961,7 @@ export default function InventoryPage() {
                   Transfer Activity
                 </h3>
                 <Link
-                  href="/inventory/transfers"
+                  href="/inventory/stock-transaction?tab=transfers"
                   className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
                 >
                   View all <ArrowUpRight className="h-3 w-3" />

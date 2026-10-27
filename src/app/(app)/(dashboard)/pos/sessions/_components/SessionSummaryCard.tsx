@@ -1,6 +1,10 @@
 'use client'
 
+import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import type { ShiftTransaction } from '@/src/schema/pos'
+import { tenderLabel } from './tender-label'
 
 /**
  * Scenario 61 Part 3b — the close screen's one summary card, in the order the
@@ -27,6 +31,8 @@ interface Props {
   netSales: number
   totalRefunds: number
   invoiceNumbers: string[]
+  /** The shift's transactions — what the total sales breakdown is built from. */
+  transactions: ShiftTransaction[]
   cashRows: CashRow[]
 }
 
@@ -39,7 +45,6 @@ export default function SessionSummaryCard(props: Props): React.JSX.Element {
     <div className="overflow-hidden rounded-[11px] border border-[#e4e4e9] bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
         <span className="text-[13.5px] font-semibold">Session summary</span>
-        <span className="text-[11px] text-[#5b5b6b]">System figures — not editable</span>
       </div>
       <SummaryBody {...props} />
     </div>
@@ -52,6 +57,7 @@ function SummaryBody({
   netSales,
   totalRefunds,
   invoiceNumbers,
+  transactions,
   cashRows,
 }: Props): React.JSX.Element {
   if (loading) {
@@ -73,17 +79,118 @@ function SummaryBody({
   }
   return (
     <>
-      <Row
-        label="Total sales"
-        note={totalRefunds ? `net of ₱${peso(totalRefunds)} refunded` : 'completed sales'}
-        amount={netSales}
-      />
+      <TotalSales netSales={netSales} totalRefunds={totalRefunds} transactions={transactions} />
       <InvoiceList numbers={invoiceNumbers} />
       <div className="border-t border-[#eeeef1]" aria-hidden />
       {cashRows.map(({ key, ...row }) => (
         <Row key={key} {...row} signed />
       ))}
     </>
+  )
+}
+
+type BreakdownRow = { key: string; label: string; amount: number }
+
+/**
+ * How the shift's sales were paid, summing to Total sales: each tender, the
+ * TPF financier's share, and what no tender covers — an in-house installment
+ * balance the customer pays NIG later. Refunds come off the end.
+ */
+function salesBreakdown(transactions: ShiftTransaction[]): BreakdownRow[] {
+  const byKey = new Map<string, number>()
+  const add = (key: string, amount: number): void => {
+    byKey.set(key, (byKey.get(key) ?? 0) + amount)
+  }
+  for (const t of transactions) {
+    if (t.status !== 'completed') continue
+    if (t.transactionType === 'refund') {
+      add('refund', -t.totalAmount)
+      continue
+    }
+    const paid = t.tenders.reduce((sum, p) => sum + p.amount, 0)
+    t.tenders.forEach((p) => add(p.key, p.amount))
+    const rest = t.totalAmount - paid
+    if (Math.abs(rest) >= 0.005) add(rest > 0 ? 'on-account' : 'change', rest)
+  }
+  return [...byKey.entries()]
+    .filter(([, amount]) => Math.abs(amount) >= 0.005)
+    .map(([key, amount]) => ({ key, label: breakdownLabel(key), amount }))
+    .sort((a, b) => breakdownOrder(a.key) - breakdownOrder(b.key) || a.label.localeCompare(b.label))
+}
+
+function breakdownLabel(key: string): string {
+  if (key === 'on-account') return 'In-house installment (on account)'
+  if (key === 'change') return 'Change given'
+  if (key === 'refund') return 'Less: refunds'
+  return tenderLabel(key)
+}
+
+// Cash first, then the other tenders, TPF, the on-account balance, and the
+// deductions last — the order a cashier reads a sales recap in.
+function breakdownOrder(key: string): number {
+  if (key === 'cash') return 0
+  if (key.startsWith('tpf')) return 2
+  if (key === 'on-account') return 3
+  if (key === 'change' || key === 'refund') return 4
+  return 1
+}
+
+/** Total sales, opening onto how it was paid so the cashier can check it. */
+function TotalSales({
+  netSales,
+  totalRefunds,
+  transactions,
+}: {
+  netSales: number
+  totalRefunds: number
+  transactions: ShiftTransaction[]
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const rows = salesBreakdown(transactions)
+  return (
+    <div className="border-t border-[#f4f4f6]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={rows.length === 0}
+        aria-expanded={open}
+        className="flex w-full items-start justify-between gap-4 px-4 py-2.5 text-left disabled:cursor-default"
+      >
+        <div className="flex min-w-0 flex-col">
+          <span className="flex items-center gap-1 text-[12.5px]">
+            Total sales
+            {rows.length > 0 && (
+              <ChevronDown
+                size={12}
+                className={`text-[#7c4fd1] transition-transform ${open ? '' : '-rotate-90'}`}
+              />
+            )}
+          </span>
+          <span className="text-[10.5px] text-[#5b5b6b]">
+            {totalRefunds ? `net of ₱${peso(totalRefunds)} refunded` : 'completed sales'}
+            {rows.length > 0 && !open ? ' · see how it was paid' : ''}
+          </span>
+        </div>
+        <span className="shrink-0 text-[12.5px] font-medium tabular-nums">₱{peso(netSales)}</span>
+      </button>
+      {open && (
+        <div className="flex flex-col pb-2">
+          {rows.map((row) => (
+            <div
+              key={row.key}
+              className="grid grid-cols-[minmax(0,1fr)_96px] items-baseline gap-2.5 py-1 pl-8 pr-4"
+            >
+              <span className="min-w-0 text-[11.5px] leading-[1.4] text-[#5b5b6b]">
+                {row.label}
+              </span>
+              <span className="text-right text-[11.5px] tabular-nums text-[#3d3d4a]">
+                {row.amount < 0 ? `−${peso(-row.amount)}` : peso(row.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -179,7 +179,7 @@ function Item360Content({
               Receive Stock
             </a>
             <a
-              href={`/inventory/transfers?new=1`}
+              href={`/inventory/stock-transaction?tab=transfers&new=1`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-[12px] font-medium text-[#3d3d4a] hover:border-[#a3a3b2]"
             >
               <ArrowLeftRight className="h-3.5 w-3.5" />

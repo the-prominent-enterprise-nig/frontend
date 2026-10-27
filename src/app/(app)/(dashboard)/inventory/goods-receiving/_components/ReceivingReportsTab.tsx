@@ -263,7 +263,7 @@ function PoLink({ report }: { report: ReceivingReport }) {
   // transfers list), so it travels by number and the list resolves it.
   const poId = report.stockTransfer ? null : receivingReportPoId(report)
   const href = report.stockTransfer
-    ? `/inventory/transfers?transfer=${encodeURIComponent(code)}`
+    ? `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(code)}`
     : poId
       ? `/inventory/purchase-orders?tab=orders&po=${poId}`
       : null

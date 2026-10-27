@@ -466,7 +466,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
                           </p>
                           {uds.linkedStockTransfer && (
                             <Link
-                              href="/inventory/transfers"
+                              href={`/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(uds.linkedStockTransfer.transferNumber)}`}
                               onClick={(e) => e.stopPropagation()}
                               className="mt-0.5 flex items-center gap-1 text-xs text-blue-700 hover:underline"
                             >

@@ -17,9 +17,21 @@ import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 // Matches the dropdown's `w-52` Tailwind class below.
 const DROPDOWN_WIDTH = 208
 
+/** A branch user's own branch and the running caravans it hosts — the
+ *  places they can work the POS for. (getBranches already leaves out ended
+ *  and closed caravans.) */
+function ownPlaces(list: Branch[], ownBranchId: string): Branch[] {
+  return list.filter(
+    (b) => b.id === ownBranchId || (b.isTemporary && b.hostBranchId === ownBranchId)
+  )
+}
+
 export function PosBranchSwitcher() {
   const [visible, setVisible] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
+  // Set for a branch user: their own branch, which stands in for "All
+  // Branches" (null) since they only ever see their own.
+  const [ownBranch, setOwnBranch] = useState<Branch | null>(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [dropdownLeft, setDropdownLeft] = useState(0)
@@ -33,18 +45,32 @@ export function PosBranchSwitcher() {
       if (!session) return
       const privileged = hasPrivilegedRole(session)
       if (privileged) setVisible(true)
+      const ownBranchId = privileged ? null : (session.branchId ?? null)
 
       // Every POS page — regardless of role — filters its lists by this
       // shared, localStorage-persisted branch id, but only privileged roles
-      // can see the switcher to change it. If the id was deleted, renamed, or
+      // (and a branch hosting caravans, between those) can see the switcher
+      // to change it. If the id was deleted, renamed, or
       // the database was reseeded since it was picked, it silently matches no
       // branch: the dropdown falls back to showing "All Branches" for owners,
       // while every list (including for non-owners, who never see the
       // dropdown at all) keeps filtering by the dead id and stays empty no
       // matter how much you refresh. Validate and self-heal for everyone.
       getBranches().then((res) => {
-        const list = res.data ?? []
-        if (privileged) setBranches(list)
+        const all = res.data ?? []
+        // A host branch's cashier or manager moves between their branch and
+        // the caravans it hosts, so a caravan register's lists and stock are
+        // the caravan's own.
+        const places = ownBranchId ? ownPlaces(all, ownBranchId) : []
+        if (privileged) setBranches(all)
+        else if (places.length > 1) {
+          setBranches(places.filter((b) => b.id !== ownBranchId))
+          setOwnBranch(places.find((b) => b.id === ownBranchId) ?? null)
+          setVisible(true)
+        }
+        // A branch user only ever matches their own places — an owner's
+        // leftover pick on a shared device would otherwise empty every list.
+        const list = privileged ? all : places
         const currentBranchId = usePosBranchContext.getState().branchId
         if (!currentBranchId) return
         // Also refreshes the persisted name, so a renamed branch (or a
@@ -115,9 +141,10 @@ export function PosBranchSwitcher() {
     if (filteredBranches[0] && needle) handleChange(filteredBranches[0].id)
   }
 
+  const allLabel = ownBranch?.name ?? 'All Branches'
   const currentLabel = branchId
-    ? (branches.find((b) => b.id === branchId)?.name ?? 'All Branches')
-    : 'All Branches'
+    ? (branches.find((b) => b.id === branchId)?.name ?? allLabel)
+    : allLabel
 
   return (
     <div ref={containerRef} data-testid="pos-branch-switcher" className="relative shrink-0">
@@ -155,7 +182,7 @@ export function PosBranchSwitcher() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Search branches…"
+              placeholder={ownBranch ? 'Search caravans…' : 'Search branches…'}
               aria-label="Search branches"
               aria-controls={listboxId}
               className="w-full min-w-0 bg-transparent text-xs text-zinc-700 outline-none placeholder:text-zinc-400"
@@ -172,7 +199,7 @@ export function PosBranchSwitcher() {
                   !branchId ? 'font-medium text-purple-700' : 'text-zinc-700'
                 }`}
               >
-                All Branches
+                {allLabel}
                 {!branchId && <Check size={13} className="shrink-0 text-purple-600" />}
               </button>
             )}

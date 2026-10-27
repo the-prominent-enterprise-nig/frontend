@@ -1178,7 +1178,7 @@ export default function TransferDetailModal({
       driverName: data.driverName?.trim() || undefined,
       driverPhone: data.driverPhone?.trim() || undefined,
       vehiclePlate: data.vehiclePlate,
-      carrierName: data.carrierName,
+      carrierName: data.carrierName?.trim() || undefined,
     })
     if (result.success) {
       setShowDispatchForm(false)
@@ -2128,7 +2128,7 @@ export default function TransferDetailModal({
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Carrier / Logistics Company <span className="text-red-500">*</span>
+                    Carrier / Logistics Company
                   </label>
                   <Controller
                     name="carrierName"
