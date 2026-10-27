@@ -19,7 +19,7 @@ import {
   type PayeeType,
   type ClearedType,
   type BankAccount,
-  type SpecialAccountRow,
+  type SpecialAccountOption,
   type ExpenseVehicleOption,
   type ExpenseAgentOption,
   type ExpenseAgentSale,
@@ -907,9 +907,9 @@ function ExpenseFormFields({
   // refund, and the Special Accounts register is where it would otherwise
   // go unseen. Balances come from that same register, so the figure shown
   // here is the one on the Special Accounts page.
-  const [balancesByAccount, setBalancesByAccount] = useState<Record<string, SpecialAccountRow[]>>(
-    {}
-  )
+  const [balancesByAccount, setBalancesByAccount] = useState<
+    Record<string, SpecialAccountOption[]>
+  >({})
   const deductionAccountIds = useMemo(
     () =>
       [
@@ -933,8 +933,8 @@ function ExpenseFormFields({
     const t = setTimeout(async () => {
       const entries = await Promise.all(
         deductionAccountKey.split(',').map(async (accountId) => {
-          const res = await Expenses.specialAccounts({ accountId }).catch(() => null)
-          return [accountId, res?.data?.rows ?? []] as const
+          const res = await Expenses.specialAccountOptions({ accountId }).catch(() => null)
+          return [accountId, res?.data ?? []] as const
         })
       )
       if (!cancelled) setBalancesByAccount(Object.fromEntries(entries))
