@@ -2,7 +2,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
-import { canAny, type SessionUser } from '@/src/libs/guards/permission'
+import { canNavigateAny, type SessionUser } from '@/src/libs/guards/permission'
 
 /**
  * Accounting's sidebar hubs — several screens that were separate sidebar items
@@ -233,6 +233,10 @@ export const HUBS = {
 
 export type HubKey = keyof typeof HUBS
 
+// Built from the roles' own rows: a pick list a feature brings (customers,
+// suppliers…) never adds a tab (Scenario 74).
 export function visibleHubTabs(hub: Hub, session: SessionUser) {
-  return hub.tabs.filter((tab) => tab.permissions.length === 0 || canAny(session, tab.permissions))
+  return hub.tabs.filter(
+    (tab) => tab.permissions.length === 0 || canNavigateAny(session, tab.permissions)
+  )
 }

@@ -81,4 +81,20 @@ test.describe('Account pickers load for the roles that use them', () => {
     expect(rows.length).toBeGreaterThan(0)
     expect(rows.every((row) => row.number.includes('1-01-04'))).toBe(true)
   })
+
+  // What a role's features bring (here Sales Support's customer list) is for
+  // their screens; it never adds a page to the sidebar.
+  test('Sales Support: the customer list a feature brings adds no sidebar item', async ({
+    page,
+  }) => {
+    await loginAs(page, 'technova.al-sales-support@test.com', PASSWORD)
+    await gotoReady(page, '/dashboard')
+    await page.waitForLoadState('networkidle')
+    await page.locator('aside a[href]').first().waitFor()
+    await expect(page.locator('aside a[href="/accounting/receivables"]')).toHaveCount(0)
+    const session = await page.request.get('/api/users/me')
+    const me = (await session.json()) as { permissions: string[]; rolePermissions: string[] }
+    expect(me.permissions).toContain('accounting:customer:read')
+    expect(me.rolePermissions).not.toContain('accounting:customer:read')
+  })
 })

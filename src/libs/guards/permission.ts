@@ -63,7 +63,12 @@ export interface SessionUser {
   employee?: SessionEmployee | null
   branches: SessionBranch[]
   roles: string[]
+  /** The roles' own rows plus what their features bring (view or pick only,
+   * Scenario 74). What actions and pages check. */
   permissions: Permission[]
+  /** The roles' own rows alone. What navigation is built from, so a pick list
+   * never adds a sidebar item or hub tab. Absent on older sessions. */
+  rolePermissions?: Permission[]
   primaryRole?: string
   hierarchyLevel?: number
   moduleAccess?: string[]
@@ -151,6 +156,17 @@ export function canAll(user: SessionUser, perms: Permission[]): boolean {
 // Check multiple — user must have AT LEAST ONE
 export function canAny(user: SessionUser, perms: Permission[]): boolean {
   return perms.some((p) => can(user, p))
+}
+
+/** Navigation only (sidebar, hub tabs): the roles' own rows, without what
+ * their features bring. */
+export function canNavigate(user: SessionUser, permission: Permission): boolean {
+  if (hasPrivilegedRole(user)) return true
+  return (user.rolePermissions ?? user.permissions).some((p) => matchesPermission(p, permission))
+}
+
+export function canNavigateAny(user: SessionUser, perms: Permission[]): boolean {
+  return perms.some((p) => canNavigate(user, p))
 }
 
 // Permissions granted by the admin role

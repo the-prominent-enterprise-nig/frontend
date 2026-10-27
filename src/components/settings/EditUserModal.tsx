@@ -95,7 +95,8 @@ export default function EditUserModal({ user, isOpen, onClose }: Props) {
       ...(data.dateOfBirth ? { dateOfBirth: data.dateOfBirth } : {}),
       ...(data.maritalStatus ? { maritalStatus: data.maritalStatus } : {}),
       ...(data.hireDate ? { hireDate: data.hireDate } : {}),
-      ...(data.branchId ? { branchId: data.branchId } : {}),
+      // Head Office (no branch picked) clears the branch, the same as Add User.
+      branchId: data.branchId || null,
     })
 
     if (!result.success) {

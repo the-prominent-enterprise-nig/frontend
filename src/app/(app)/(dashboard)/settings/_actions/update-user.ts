@@ -11,7 +11,8 @@ export interface UpdateUserPayload {
   dateOfBirth?: string
   maritalStatus?: string
   hireDate?: string
-  branchId?: string
+  /** null: Head Office, no branch. */
+  branchId?: string | null
 }
 
 export async function updateUser(userId: string, payload: UpdateUserPayload): Promise<ApiResponse> {

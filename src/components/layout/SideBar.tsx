@@ -5,7 +5,12 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
-import { hasExactPermission, hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
+import {
+  hasExactPermission,
+  hasModuleAccess,
+  hasNavPermission,
+  hasPermission,
+} from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import {
@@ -1117,10 +1122,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     session?.primaryRole === 'Branch Manager' ? branchManagerWorkspaceItems(session?.branchId) : []
   const allWorkspaceItems = [...workspaceItems, ...bmWorkspaceItems]
 
+  // The roles' own rows: a pick list a feature brings never adds an item.
   const hasAnyPermission = (required?: string | string[]) => {
     if (!required) return true
     const list = Array.isArray(required) ? required : [required]
-    return list.some((p) => hasPermission(session, p))
+    return list.some((p) => hasNavPermission(session, p))
   }
 
   // A parent with sub-items shows only while at least one child is visible.

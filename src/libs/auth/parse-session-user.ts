@@ -32,6 +32,10 @@ export function parseSessionUser(raw: any): SessionUser {
       ? data.permissions
       : []
 
+  const rolePermissions: string[] = Array.isArray(data.rolePermissions)
+    ? data.rolePermissions
+    : permissions
+
   const branches = Array.isArray(data.userBranches)
     ? data.userBranches
         .map((ub: { branch?: { id: string; name: string } }) => ub.branch)
@@ -77,6 +81,7 @@ export function parseSessionUser(raw: any): SessionUser {
     branches,
     roles,
     permissions,
+    rolePermissions,
     primaryRole: data.primaryRole,
     hierarchyLevel: data.hierarchyLevel,
     moduleAccess: Array.isArray(data.moduleAccess) ? data.moduleAccess : undefined,
