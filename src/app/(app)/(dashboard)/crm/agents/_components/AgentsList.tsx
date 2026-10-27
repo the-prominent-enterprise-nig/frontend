@@ -78,167 +78,159 @@ export default function AgentsList({ canCreate }: Props) {
 
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Sales Agents</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              CRM-owned agent list — separate from system user accounts. Selectable at POS checkout.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={load}
-              disabled={loading}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 rounded-lg disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-            </button>
-            {canCreate && (
-              <button
-                onClick={() => setDialogOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800"
-              >
-                <Plus className="h-4 w-4" /> Add Agent
-              </button>
-            )}
-          </div>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Sales Agents</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            CRM-owned agent list — separate from system user accounts. Selectable at POS checkout.
+          </p>
         </div>
-
-        <div className="mb-4 flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Search agents..."
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-          <select
-            value={branchFilter}
-            onChange={(e) => {
-              setBranchFilter(e.target.value)
-              setPage(1)
-            }}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 rounded-lg disabled:opacity-50"
           >
-            <option value="">All branches</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-zinc-50 border-b border-zinc-200">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Name
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Phone
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Email
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Branch
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Status
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Commission
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
-                      Loading...
-                    </td>
-                  </tr>
-                ) : agents.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
-                      No sales agents yet
-                    </td>
-                  </tr>
-                ) : (
-                  agents.map((a) => (
-                    <tr
-                      key={a.id}
-                      onClick={() => router.push(`/crm/agents/${a.id}`)}
-                      className="cursor-pointer transition-colors hover:bg-zinc-50"
-                    >
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.name}</td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">{a.phone || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">{a.email || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">
-                        {branchName(a.branchId) ?? (
-                          <span className="text-zinc-400">All branches</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                            a.status === 'active'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          {a.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">
-                        {a.commissionRate != null ? `${(a.commissionRate * 100).toFixed(2)}%` : '-'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {total > 0 && (
-            <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-4 py-3">
-              <p className="text-xs text-zinc-500">
-                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}{' '}
-                {total === 1 ? 'agent' : 'agents'}
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1 || loading}
-                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <span className="text-xs text-zinc-500">
-                  {page} / {lastPage}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
-                  disabled={page >= lastPage || loading}
-                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+          {canCreate && (
+            <button
+              onClick={() => setDialogOpen(true)}
+              className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800"
+            >
+              <Plus className="h-4 w-4" /> Add Agent
+            </button>
           )}
         </div>
+      </div>
+
+      <div className="mb-4 flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
+            placeholder="Search agents..."
+            className="w-full pl-10 pr-4 py-2 rounded-lg border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+        <select
+          value={branchFilter}
+          onChange={(e) => {
+            setBranchFilter(e.target.value)
+            setPage(1)
+          }}
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+        >
+          <option value="">All branches</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-zinc-50 border-b border-zinc-200">
+              <tr>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                  Name
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                  Phone
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                  Email
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                  Branch
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
+                    Loading...
+                  </td>
+                </tr>
+              ) : agents.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
+                    No sales agents yet
+                  </td>
+                </tr>
+              ) : (
+                agents.map((a) => (
+                  <tr
+                    key={a.id}
+                    onClick={() => router.push(`/crm/agents/${a.id}`)}
+                    className="cursor-pointer transition-colors hover:bg-zinc-50"
+                  >
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.name}</td>
+                    <td className="px-4 py-3 text-sm text-zinc-700">{a.phone || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-zinc-700">{a.email || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-zinc-700">
+                      {branchName(a.branchId) ?? (
+                        <span className="text-zinc-400">All branches</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+                          a.status === 'active'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {a.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {total > 0 && (
+          <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+            <p className="text-xs text-zinc-500">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}{' '}
+              {total === 1 ? 'agent' : 'agents'}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-zinc-500">
+                {page} / {lastPage}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
+                disabled={page >= lastPage || loading}
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {dialogOpen && (
