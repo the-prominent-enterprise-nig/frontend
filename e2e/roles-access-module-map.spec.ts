@@ -15,7 +15,7 @@ test.describe('Roles & Access — module map', () => {
       row(/^Accountant/).getByText('Accounting: All access', { exact: true })
     ).toBeVisible()
     await expect(
-      row(/^Expense Clerk/).getByText(/^Accounting: Partial \(\d+ of \d+\)$/)
+      row(/^Expense Clerk/).getByText(/^Accounting: Partial \(\d+ of \d+ features\)$/)
     ).toBeVisible()
     // Protected steps kept out: Cashier's POS for branch staff, the Business
     // Owner's stock-adjustment steps for the Inventory Manager.

@@ -25,8 +25,15 @@ test('Branch Manager reads Accounting as Partial, not Manage / Edit or Mixed', a
 
   const branchManagerRow = page.getByRole('row', { name: /^Branch Manager/ })
   await expect(branchManagerRow).toBeVisible()
-  await expect(branchManagerRow.getByText(/^Accounting: Partial \(\d+ of \d+\)$/)).toBeVisible()
+  await expect(
+    branchManagerRow.getByText(/^Accounting: Partial \(\d+ of \d+ features\)$/)
+  ).toBeVisible()
   await expect(branchManagerRow.getByText(/: (Mixed|Edit)$/)).toHaveCount(0)
+  // Every Inventory feature is on, with some steps inside them off: said
+  // outright, not "Partial (13 of 13)".
+  await expect(
+    branchManagerRow.getByText(/^Inventory: Partial \((\d+) of \1 features, some steps off\)$/)
+  ).toBeVisible()
 })
 
 // A role holding a single module-wildcard row (Branch Manager's pos:*:*)

@@ -139,8 +139,13 @@ export function summarizeModule(
 export function formatModuleSummary(summary: ModuleSummary): string {
   if (summary.kind === 'all') return 'All access'
   if (summary.kind === 'all-protected') return 'All access *'
-  if (summary.kind === 'partial')
-    return `Partial (${summary.featuresOn} of ${summary.featuresTotal})`
+  if (summary.kind === 'partial') {
+    const count = `${summary.featuresOn} of ${summary.featuresTotal} features`
+    // Every feature on, but some steps inside them off.
+    return summary.featuresOn === summary.featuresTotal
+      ? `Partial (${count}, some steps off)`
+      : `Partial (${count})`
+  }
   return 'No access'
 }
 
