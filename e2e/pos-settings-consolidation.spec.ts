@@ -63,7 +63,7 @@ test.describe('POS Settings — consolidated shell (Part 1)', () => {
 
     // /pos/settings/* has its own left-rail tabs (PosSettingsTabs). Since the
     // sidebar regroup it also sits in the Operations & Admin strip (Service
-    // Jobs | Price List Upload | POS PIN | Settings) rather than being a bare
+    // Jobs | POS PIN | Settings) rather than being a bare
     // page — the strip above, the rail below.
     for (const path of [
       '/pos/settings/general',
@@ -75,7 +75,7 @@ test.describe('POS Settings — consolidated shell (Part 1)', () => {
       await expect(page.getByRole('navigation', { name: 'POS settings tabs' })).toBeVisible()
     }
 
-    // Management (Sessions + Cash Drawer) is a tab of Cash & Collections with a
+    // Management (Sessions + Cash Drawer) is a tab of Cash & Receipts with a
     // second row — Terminals is not among them.
     await gotoReady(page, '/pos/sessions')
     await expect(posNav.getByRole('link', { name: 'Management' })).toBeVisible()
