@@ -8,6 +8,9 @@ import {
   gotoReady,
   sweepE2ECustomers,
 } from './utils'
+import { REMINDERS_ENABLED } from '../src/libs/features'
+
+const REMINDERS_HIDDEN = 'Reminders are hidden for now (src/libs/features.ts)'
 
 const CUSTOMER_NAME_PREFIX = 'E2E IaFixture'
 
@@ -943,6 +946,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   test('schedules a reminder against an installment account and completes it with outcome/contact phone', async ({
     page,
   }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -1037,6 +1041,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   test('blocks scheduling a second open reminder on the same account until the first is completed', async ({
     page,
   }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -1129,6 +1134,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   })
 
   test('recording a payment auto-closes the account’s open reminder', async ({ page }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -1214,6 +1220,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   })
 
   test('captures a structured Promise to Pay when completing a reminder', async ({ page }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -1349,6 +1356,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   test('the global Reminders page shows a linked account badge for collections tasks', async ({
     page,
   }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)

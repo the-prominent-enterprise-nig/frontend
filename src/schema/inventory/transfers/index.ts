@@ -152,7 +152,8 @@ export const DispatchTransferFormSchema = z.object({
   driverName: z.string().max(150).optional(),
   driverPhone: z.string().max(50).optional(),
   vehiclePlate: z.string().min(1, 'Vehicle plate number is required').max(50),
-  carrierName: z.string().min(1, 'Carrier name is required').max(150),
+  // Not every delivery has a logistics company — the branch's own truck.
+  carrierName: z.string().max(150).optional(),
 })
 
 export const ReceiveTransferLineSchema = z

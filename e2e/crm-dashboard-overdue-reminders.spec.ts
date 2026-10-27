@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
 import { clickStable, deleteCustomers, fillStable, gotoReady, sweepE2ECustomers } from './utils'
+import { REMINDERS_ENABLED } from '../src/libs/features'
 
 const CUSTOMER_NAME_PREFIX = 'E2E OverdueReminderFixture'
 
@@ -66,6 +67,8 @@ function panelByHeading(page: Page, heading: string): Locator {
 }
 
 test.describe('CRM Dashboard — Overdue Reminders', () => {
+  test.skip(!REMINDERS_ENABLED, 'Reminders are hidden for now (src/libs/features.ts)')
+
   let createdCustomerIds: string[] = []
 
   test.beforeAll(async ({ request }) => {

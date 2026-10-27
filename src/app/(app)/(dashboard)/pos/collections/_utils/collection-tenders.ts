@@ -114,7 +114,7 @@ export function resolveCollectionPayment(
   }
 }
 
-export type CollectionIssueField = 'amount' | 'bankReference' | 'cr'
+export type CollectionIssueField = 'amount' | 'bankReference' | 'option' | 'cr'
 
 export interface CollectionIssue {
   /** Zero-based payment, or null for the collection as a whole. */
@@ -128,7 +128,14 @@ export interface CollectionIssue {
  * Collect payment is never switched off for these: pressing it lists them.
  */
 export function collectionIssues(args: {
-  rows: { amount: number; method: PaymentMethod; bankReferenceNumber: string }[]
+  rows: {
+    amount: number
+    method: PaymentMethod
+    bankReferenceNumber: string
+    /** The bank / gateway / biller / acquirer this payment has to name — only
+     * when its method offers any; null when there is nothing to choose. */
+    option?: { label: string; chosen: boolean } | null
+  }[]
   cr: string
 }): CollectionIssue[] {
   const { rows, cr } = args
@@ -141,6 +148,16 @@ export function collectionIssues(args: {
         row: i,
         field: 'amount',
         message: several ? `${who}amount received` : 'Amount received',
+      })
+    }
+    // Which bank / gateway / acquirer the money went through is part of the
+    // record, so a method that offers a choice needs one.
+    if (r.option && !r.option.chosen) {
+      const label = r.option.label.charAt(0).toUpperCase() + r.option.label.slice(1).toLowerCase()
+      issues.push({
+        row: i,
+        field: 'option',
+        message: several ? `${who}${label.toLowerCase()}` : label,
       })
     }
     if (r.method === 'BANK_TRANSFER' && !r.bankReferenceNumber.trim()) {

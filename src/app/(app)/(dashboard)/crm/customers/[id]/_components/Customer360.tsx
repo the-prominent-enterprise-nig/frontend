@@ -23,6 +23,7 @@ import TablePagination from '@/src/components/common/TablePagination'
 import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import type { Customer, Lead, Reminder } from '@/src/schema/crm/types'
@@ -541,22 +542,24 @@ export default function Customer360({
           </ul>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Open reminders</h2>
-          {data.reminders.length === 0 && (
-            <p className="py-4 text-center text-[13px] text-gray-400">No open reminders.</p>
-          )}
-          <ul className="divide-y divide-gray-100">
-            {data.reminders.map((r) => (
-              <li key={r.id} className="py-2.5 text-[13px]">
-                <div className="text-gray-800">{r.note ?? r.reminderType}</div>
-                <div className="text-[12px] text-gray-500">
-                  Due {new Date(r.dueAt).toLocaleString()}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {REMINDERS_ENABLED && (
+          <section className="rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Open reminders</h2>
+            {data.reminders.length === 0 && (
+              <p className="py-4 text-center text-[13px] text-gray-400">No open reminders.</p>
+            )}
+            <ul className="divide-y divide-gray-100">
+              {data.reminders.map((r) => (
+                <li key={r.id} className="py-2.5 text-[13px]">
+                  <div className="text-gray-800">{r.note ?? r.reminderType}</div>
+                  <div className="text-[12px] text-gray-500">
+                    Due {new Date(r.dueAt).toLocaleString()}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       <div className="mt-4">

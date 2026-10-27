@@ -29,7 +29,7 @@ import {
   warehouseLabel,
   type WarehouseBranch,
 } from '@/src/schema/inventory/warehouses'
-import { caravanGroupKey } from '@/src/schema/inventory/serial-numbers'
+import { caravanGroupKey, caravanKeyOf } from '@/src/schema/inventory/serial-numbers'
 import { useLocationFilter } from '@/src/libs/inventory/useLocationFilter'
 
 // An opened caravan row lists what is still there first: on hand, then on
@@ -81,12 +81,10 @@ export function useSerialNumbers(
   // Narrows the Caravan tab (and its caravan picker) to these host branches.
   const [caravanHostIds, setCaravanHostIds] = useState<string[]>([])
 
-  // Scenario 60 — the Caravan tab is one list: a row per item per caravan
-  // that opens onto its units. Rows start closed, except while searching,
-  // when every matching item starts open so a typed serial is on screen
-  // straight away. `toggledKeys` holds the rows flipped from that default,
-  // and is cleared whenever the list itself changes.
-  const [toggledKeys, setToggledKeys] = useState<ReadonlySet<string>>(new Set())
+  // Scenario 60 — the Caravan tab is a split view: caravans down the side,
+  // the picked one's items and units beside them. Until one is picked (or
+  // once the picked one drops out of the list) the first caravan shows.
+  const [pickedCaravanKey, setPickedCaravanKey] = useState<string | undefined>()
 
   const queryParams = useMemo(
     () =>
@@ -170,9 +168,14 @@ export function useSerialNumbers(
   })
 
   const caravanGroups = caravanGroupsQuery.data?.data?.data ?? []
-  const isGroupOpen = (key: string): boolean => toggledKeys.has(key) !== !!search
+  // The caravan whose units load: the picked one if it has rows on this
+  // page, else the first. (A picked caravan with nothing on hand has no
+  // rows, and so nothing to load.)
+  const shownCaravanKey = caravanGroups.some((g) => caravanKeyOf(g) === pickedCaravanKey)
+    ? pickedCaravanKey
+    : caravanGroups[0] && caravanKeyOf(caravanGroups[0])
 
-  // While searching, one fetch covers every open row: the same search over
+  // While searching, one fetch covers every caravan: the same search over
   // the same caravans returns exactly the units the matching groups count.
   const searchedSerialsQuery = useQuery({
     queryKey: ['inventory-caravan-searched-serials', caravanGroupParams],
@@ -181,11 +184,12 @@ export function useSerialNumbers(
     enabled: groupedCaravan && !!search,
   })
 
-  // Otherwise each open row fetches its own units. One group is one item at
-  // one caravan — a few dozen units at most in practice, so no pagination
-  // inside a row. Narrowed by the group's own caravan and item, then by the
-  // rollup key in case the caravan holds more than one warehouse.
-  const openGroups = search ? [] : caravanGroups.filter((g) => isGroupOpen(g.key))
+  // Otherwise each item of the shown caravan fetches its own units. One
+  // group is one item at one caravan — a few dozen units at most in
+  // practice, so no pagination inside it. Narrowed by the group's own
+  // caravan and item, then by the rollup key in case the caravan holds more
+  // than one warehouse.
+  const openGroups = search ? [] : caravanGroups.filter((g) => caravanKeyOf(g) === shownCaravanKey)
   const groupSerialQueries = useQueries({
     queries: openGroups.map((group) => ({
       queryKey: ['inventory-caravan-group-serials', group.key, caravanGroupParams],
@@ -317,7 +321,7 @@ export function useSerialNumbers(
     setSearch: (v: string | undefined) => {
       setSearch(v)
       setPage(1)
-      setToggledKeys(new Set())
+      setPickedCaravanKey(undefined)
     },
     resetFilters: () => {
       setStatusFilter(undefined)
@@ -345,13 +349,13 @@ export function useSerialNumbers(
     setCaravanView: (v: boolean) => {
       setCaravanView(v)
       setPage(1)
-      setToggledKeys(new Set())
+      setPickedCaravanKey(undefined)
     },
     caravanId,
     setCaravanId: (v: string | undefined) => {
       setCaravanId(v)
       setPage(1)
-      setToggledKeys(new Set())
+      setPickedCaravanKey(undefined)
     },
     caravanHostIds,
     setCaravanHostIds: (v: string[]) => {
@@ -361,7 +365,7 @@ export function useSerialNumbers(
       const pickedHost = picked?.branch?.hostBranch?.id ?? ''
       if (v.length && !v.includes(pickedHost)) setCaravanId(undefined)
       setPage(1)
-      setToggledKeys(new Set())
+      setPickedCaravanKey(undefined)
     },
     // Every branch hosting a caravan the viewer can see.
     caravanHostOptions: hostOptions(caravanWarehouses),
@@ -376,13 +380,8 @@ export function useSerialNumbers(
     caravanGroups,
     isLoadingCaravanGroups: caravanGroupsQuery.isLoading,
     caravanGroupsError: caravanGroupsQuery.error,
-    isGroupOpen,
-    toggleGroup: (key: string) =>
-      setToggledKeys((prev) => {
-        const next = new Set(prev)
-        if (!next.delete(key)) next.add(key)
-        return next
-      }),
+    pickedCaravanKey,
+    pickCaravan: setPickedCaravanKey,
     groupSerials,
 
     registerSerials: registerMutation.mutateAsync,

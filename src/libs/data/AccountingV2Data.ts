@@ -500,6 +500,9 @@ export interface ARInvoiceDue {
 }
 
 export interface ARInvoiceInstallmentDetail {
+  /** The InstallmentSchedule behind this receivable — what the Collections
+   * deep link keys on to land on the plan's next open due. */
+  scheduleId?: string
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
@@ -2355,9 +2358,15 @@ export const Expenses = {
     api.get<ExpenseAgentOption[]>('/expenses/lookups/agents', search ? { search } : undefined),
   agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
     api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
-  /** The sales a commission line can release — one agent's with `agentId`, any agent's without. */
-  commissionSales: (params?: { agentId?: string; search?: string; excludeExpenseId?: string }) =>
-    api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
+  /** The sales a commission line can release — one agent's with `agentId`, any agent's without.
+   * With `kind: 'SMI'`, the sales an SMI line can be paid on: any completed sale, and
+   * `releasedOn` means already on another SMI line. */
+  commissionSales: (params?: {
+    agentId?: string
+    search?: string
+    excludeExpenseId?: string
+    kind?: 'AGENT_COMMISSION' | 'SMI'
+  }) => api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
   list: (params?: {
     search?: string
     status?: string

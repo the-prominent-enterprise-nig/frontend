@@ -690,6 +690,14 @@ export default function CheckoutPage() {
   // a walk-in sale need not have an agent behind it.
   const [sellingAgentId, setSellingAgentId] = useState('')
   const [sellingAgents, setSellingAgents] = useState<{ id: string; name: string }[]>([])
+  // Scenario 78 Part 3 — the Selling Agent is required and defaults to OFFICE
+  // (the house agent a walk-in is credited to). /pos/agents always lists it
+  // first; every new sale starts back on it.
+  const [officeAgentId, setOfficeAgentId] = useState('')
+  // resetSale() also runs from a long-lived poll (cancellation approval), so
+  // it reads OFFICE from a ref — a closure captured before the agent list
+  // loaded must not reset the next sale to "no agent".
+  const officeAgentIdRef = useRef('')
   const [isBranchManager, setIsBranchManager] = useState(false)
   // Whether this login already holds the approval authority an installment
   // sale would otherwise need to ask someone else for (Business Owner or
@@ -758,6 +766,12 @@ export default function CheckoutPage() {
     getSellingAgents().then((res) => {
       if (res.success && Array.isArray(res.data)) {
         setSellingAgents(res.data.map((a) => ({ id: a.id, name: a.name })))
+        const office = res.data.find((a) => a.name.trim().toUpperCase() === 'OFFICE')
+        if (office) {
+          officeAgentIdRef.current = office.id
+          setOfficeAgentId(office.id)
+          setSellingAgentId((current) => current || office.id)
+        }
       }
     })
   }, [])
@@ -4471,6 +4485,13 @@ export default function CheckoutPage() {
       return
     }
 
+    // Scenario 78 Part 3 — required. Only enforced once the list has loaded:
+    // if it couldn't load, the server credits the sale to OFFICE anyway.
+    if (saleMode === 'sale' && sellingAgents.length > 0 && !sellingAgentId) {
+      setError('Pick the Selling Agent — OFFICE for a walk-in.')
+      return
+    }
+
     if (!invoiceNumberInput.trim()) {
       setError(`Enter the ${documentLabel} for this sale.`)
       return
@@ -5300,6 +5321,8 @@ export default function CheckoutPage() {
     setInvoiceNumberInput('')
     setDocumentType('sales_invoice')
     setDocumentSwitchNote('')
+    // The last sale's agent must not carry over onto the next customer.
+    setSellingAgentId(officeAgentIdRef.current)
     setDelivery(EMPTY_DELIVERY)
     setDeliveryCustomerAddress(null)
     setSearchQuery('')
@@ -6416,25 +6439,26 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Scenario 57 — who sold it. Optional: a walk-in has no agent
-              behind it, and forcing a choice would put a false name on the
-              commission trail. SearchableSelect rather than the hand-rolled
-              combobox this block used before 1b82138 — the type-ahead is the
-              current idiom and already handles reopen/Enter properly. */}
+          {/* Scenario 57 — who sold it. Scenario 78 Part 3 — required, as the
+              client asked: a walk-in is credited to OFFICE (preselected, and
+              what every new sale starts on) rather than to no one, so every
+              sale names someone. Not clearable — clearing goes back to OFFICE.
+              SearchableSelect rather than the hand-rolled combobox this block
+              used before 1b82138 — the type-ahead is the current idiom and
+              already handles reopen/Enter properly. */}
           {saleMode === 'sale' && (
             <div className="border-b border-purple-200 p-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-                Selling Agent{' '}
+                Selling Agent *{' '}
                 <span className="font-normal normal-case tracking-normal text-gray-500">
-                  — optional
+                  — OFFICE for a walk-in
                 </span>
               </p>
               <SearchableSelect
                 value={sellingAgentId}
-                onChange={setSellingAgentId}
+                onChange={(id) => setSellingAgentId(id || officeAgentId)}
                 options={sellingAgents.map((a) => ({ value: a.id, label: a.name }))}
-                placeholder="No agent"
-                clearable
+                placeholder="Select the selling agent"
                 portal
               />
             </div>

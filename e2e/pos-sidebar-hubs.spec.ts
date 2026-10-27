@@ -5,15 +5,17 @@ import { gotoReady, loginAs } from './utils'
 // One sidebar row per group, each with a tab strip in the POS top bar:
 //
 //   Sales Counter        Overview | Checkout | Reservations | Transactions | Parked Sales
-//   Product Catalog      (own row — kept out of Sales Counter on purpose)
-//   Customers            (own row — kept in POS on purpose)
+//   Product Catalog      Product Catalog | Price Lists (not a Sales Counter tab, and Price
+//                        Lists not under Operations & Admin, on purpose)
+//   Credit & Collections Collections | Credit Applications | Customers — the customer's
+//                        account, in the client's order (Customers kept in POS on purpose)
 //   Pricing & Promotion  Promotions → second row: Promo Codes | Gift Cards | Loyalty
-//   Cash & Collections   Management → second row: Sessions | Cash Drawer,
-//                        New Receipts | Credit Applications | Collections | Collected Funds History
+//   Cash & Receipts      Management → second row: Sessions | Cash Drawer,
+//                        New Receipts | Collected Funds History
 //   Approvals & Reviews  Override Review | Unit Release Approvals | Refund Approvals |
 //                        Void Requests | Cancellations
 //   Reports              Sales Reports | Daily Collection
-//   Operations & Admin   Service Jobs | Price List Upload | POS PIN | Settings
+//   Operations & Admin   Service Jobs | POS PIN | Settings
 //
 // The tab definitions and each page's permission live in pos/_shared/pos-hubs.ts.
 //
@@ -83,9 +85,9 @@ test.describe('POS sidebar — Business Owner', () => {
     for (const label of [
       'Sales Counter',
       'Product Catalog',
-      'Customers',
+      'Credit & Collections',
       'Pricing & Promotion',
-      'Cash & Collections',
+      'Cash & Receipts',
       'Approvals & Reviews',
       'Reports',
       'Operations & Admin',
@@ -95,6 +97,9 @@ test.describe('POS sidebar — Business Owner', () => {
 
     for (const label of [
       'Operations',
+      'Price Lists',
+      'Customers',
+      'Cash & Collections',
       'Collections',
       'Cash & Shift',
       'Approvals',
@@ -133,14 +138,15 @@ test.describe('POS sidebar — Business Owner', () => {
     await expect(row(page, 'Product Catalog')).toHaveClass(lit)
   })
 
-  test('Product Catalog and Customers are their own rows with no strip', async ({ page }) => {
+  test('Product Catalog and Price Lists share one strip', async ({ page }) => {
     await gotoReady(page, '/pos/catalog')
-    await expect(strip(page)).toHaveCount(0)
-    // Stock is per branch, so the catalog keeps the shared switcher.
+    expect(await tabOrder(page)).toEqual(['Product Catalog', 'Price Lists'])
+    // Stock is per branch, so the catalog keeps the shared switcher …
     await expect(page.getByTestId('pos-branch-switcher')).toBeVisible()
 
-    await gotoReady(page, '/pos/customers')
-    await expect(strip(page)).toHaveCount(0)
+    // … and Price Lists, scoped by their own branch filter, do not.
+    await clickTab(page, 'Price Lists', '/pos/catalog/price-lists')
+    await expect(page.getByTestId('pos-branch-switcher')).toHaveCount(0)
   })
 
   test('Pricing & Promotion: Promotions (with its three pages) and Price Maker', async ({
@@ -163,19 +169,39 @@ test.describe('POS sidebar — Business Owner', () => {
     await expect(subStrip(page)).toHaveCount(0)
   })
 
-  test('Cash & Collections: the doc order, with Management fronting Sessions and Cash Drawer', async ({
+  test('Credit & Collections: Collections, Credit Applications and Customers, in that order', async ({
     page,
   }) => {
-    await gotoReady(page, '/pos/customers')
-    await clickRow(page, 'Cash & Collections', '/pos/sessions')
+    const lit = /bg-prominent-orange-200\/20/
 
-    expect(await tabOrder(page)).toEqual([
-      'Management',
-      'New Receipts',
-      'Credit Applications',
-      'Collections',
-      'Collected Funds History',
-    ])
+    await gotoReady(page, '/pos/catalog')
+    await clickRow(page, 'Credit & Collections', '/pos/collections')
+    expect(await tabOrder(page)).toEqual(['Collections', 'Credit Applications', 'Customers'])
+    await expect(row(page, 'Credit & Collections')).toHaveClass(lit)
+
+    await clickTab(page, 'Credit Applications', '/pos/credit-applications')
+    await clickTab(page, 'Customers', '/pos/customers')
+    await expect(row(page, 'Credit & Collections')).toHaveClass(lit)
+
+    // A customer's own page has no strip, but the row stays lit.
+    await gotoReady(page, '/pos/customers/new')
+    await expect(strip(page)).toHaveCount(0)
+    await expect(row(page, 'Credit & Collections')).toHaveClass(lit)
+
+    // New Receipts lives under /pos/collections too, but belongs to the cash group:
+    // only that row is lit there.
+    await gotoReady(page, '/pos/collections/acknowledgement')
+    await expect(row(page, 'Cash & Receipts')).toHaveClass(lit)
+    await expect(row(page, 'Credit & Collections')).not.toHaveClass(lit)
+  })
+
+  test('Cash & Receipts: Management fronts Sessions and Cash Drawer, with New Receipts and Collected Funds History', async ({
+    page,
+  }) => {
+    await gotoReady(page, '/pos/catalog')
+    await clickRow(page, 'Cash & Receipts', '/pos/sessions')
+
+    expect(await tabOrder(page)).toEqual(['Management', 'New Receipts', 'Collected Funds History'])
     await expect(subStrip(page).getByRole('link')).toHaveText(['Sessions', 'Cash Drawer'])
     await expect(page.getByTestId('pos-branch-switcher')).toBeVisible()
 
@@ -189,10 +215,6 @@ test.describe('POS sidebar — Business Owner', () => {
     await clickTab(page, 'Collected Funds History', '/pos/undeposited-funds')
     await expect(subStrip(page)).toHaveCount(0)
     await expect(page.getByTestId('pos-branch-switcher')).toHaveCount(0)
-
-    // Credit Applications is a tab here (it has no row of its own any more).
-    await clickTab(page, 'Credit Applications', '/pos/credit-applications')
-    await expectTabs(page, ['Collections'])
   })
 
   test('Approvals & Reviews: the doc order, opening on Override Review', async ({ page }) => {
@@ -218,26 +240,28 @@ test.describe('POS sidebar — Business Owner', () => {
     await clickTab(page, 'Daily Collection', '/pos/daily-collection')
   })
 
-  test('Operations & Admin holds Service Jobs, Price List Upload, POS PIN and Settings', async ({
+  test('Price Lists keeps the strip, and the Product Catalog row, on its list and upload pages', async ({
     page,
   }) => {
-    await gotoReady(page, '/pos/customers')
-    await clickRow(page, 'Operations & Admin', '/pos/service-jobs')
-    expect(await tabOrder(page)).toEqual([
-      'Service Jobs',
-      'Price List Upload',
-      'POS PIN',
-      'Settings',
-    ])
+    const lit = /bg-prominent-orange-200\/20/
 
-    // The price-list manager keeps its strip on its list, detail and upload pages.
-    await clickTab(page, 'Price List Upload', '/pos/catalog/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await expect(page.getByRole('heading', { name: 'Price Lists' })).toBeVisible({
       timeout: 10_000,
     })
+    await expectTabs(page, ['Product Catalog', 'Price Lists'])
+    await expect(row(page, 'Product Catalog')).toHaveClass(lit)
+
     await gotoReady(page, '/pos/catalog/price-lists/upload')
-    await expectTabs(page, ['Price List Upload'])
+    await expectTabs(page, ['Product Catalog', 'Price Lists'])
+    await expect(row(page, 'Product Catalog')).toHaveClass(lit)
     await expect(page.getByTestId('pos-branch-switcher')).toHaveCount(0)
+  })
+
+  test('Operations & Admin holds Service Jobs, POS PIN and Settings', async ({ page }) => {
+    await gotoReady(page, '/pos/customers')
+    await clickRow(page, 'Operations & Admin', '/pos/service-jobs')
+    expect(await tabOrder(page)).toEqual(['Service Jobs', 'POS PIN', 'Settings'])
 
     await clickTab(page, 'POS PIN', '/pos/pin')
     // Settings keeps its own left rail; the strip sits above it.
@@ -271,7 +295,12 @@ test.describe('POS sidebar — Cashier', () => {
   test('has Sales Counter and Product Catalog, and never Sales Reports', async ({ page }) => {
     await loginAs(page, CASHIER_EMAIL, PASSWORD)
     await gotoReady(page, '/pos/checkout')
-    for (const label of ['Sales Counter', 'Product Catalog', 'Cash & Collections']) {
+    for (const label of [
+      'Sales Counter',
+      'Product Catalog',
+      'Credit & Collections',
+      'Cash & Receipts',
+    ]) {
       await expect(row(page, label)).toHaveCount(1)
     }
 
@@ -282,11 +311,16 @@ test.describe('POS sidebar — Cashier', () => {
     await expectTabs(page, [], ['Sales Reports'])
   })
 
-  test('Cash & Collections opens without a 403', async ({ page }) => {
+  test('Credit & Collections and Cash & Receipts open without a 403', async ({ page }) => {
     await loginAs(page, CASHIER_EMAIL, PASSWORD)
-    await gotoReady(page, '/pos/cash-collections')
+
+    await gotoReady(page, '/pos/credit-collections')
+    await expect(page).toHaveURL(/\/pos\/(customers|credit-applications|collections)$/, NAVIGATED)
+    await expect(page.getByText('Access Forbidden')).toHaveCount(0)
+
+    await gotoReady(page, '/pos/cash-receipts')
     await expect(page).toHaveURL(
-      /\/pos\/(sessions|cash-drawer|collections|credit-applications|undeposited-funds)/,
+      /\/pos\/(sessions|cash-drawer|collections\/acknowledgement|undeposited-funds)$/,
       NAVIGATED
     )
     await expect(page.getByText('Access Forbidden')).toHaveCount(0)
@@ -295,9 +329,8 @@ test.describe('POS sidebar — Cashier', () => {
   test('Operations & Admin has POS PIN but no Settings for a cashier', async ({ page }) => {
     await loginAs(page, CASHIER_EMAIL, PASSWORD)
     await gotoReady(page, '/pos/admin')
-    await expect(page).toHaveURL(/\/pos\/(service-jobs|catalog\/price-lists|pin)$/, NAVIGATED)
-    // Settings is Business Owner / Branch Manager only. Price List Upload shows
-    // for whoever holds inventory:price-lists:read, as it did on the catalog page.
+    await expect(page).toHaveURL(/\/pos\/(service-jobs|pin)$/, NAVIGATED)
+    // Settings is Business Owner / Branch Manager only.
     await expectTabs(page, ['POS PIN'], ['Settings'])
   })
 })
@@ -305,20 +338,21 @@ test.describe('POS sidebar — Cashier', () => {
 test.describe('POS sidebar — Credit Investigator', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test('reaches Credit Applications through Cash & Collections, and nothing they cannot open', async ({
+  test('reaches Credit Applications through Credit & Collections, and nothing they cannot open', async ({
     page,
   }) => {
     await loginAs(page, INVESTIGATOR_EMAIL, PASSWORD)
-    await gotoReady(page, '/pos/cash-collections')
+    await gotoReady(page, '/pos/credit-collections')
     await expect(page).toHaveURL('/pos/credit-applications', NAVIGATED)
 
-    await expect(row(page, 'Cash & Collections')).toHaveCount(1)
+    await expect(row(page, 'Credit & Collections')).toHaveCount(1)
     for (const label of [
       'Sales Counter',
       'Product Catalog',
       'Approvals & Reviews',
       'Reports',
       'Pricing & Promotion',
+      'Cash & Receipts',
     ]) {
       await expect(row(page, label)).toHaveCount(0)
     }

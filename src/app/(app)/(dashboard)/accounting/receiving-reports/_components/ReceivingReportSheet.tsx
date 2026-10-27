@@ -83,6 +83,8 @@ export interface ReceivingReportDocument {
         modelNumber?: string | null
         brand?: { name?: string | null } | null
         type?: { name?: string | null } | null
+        /** Printed as "Subgroup", as on the paper RR. */
+        primaryCategory?: { name?: string | null } | null
       } | null
     }[]
   }
@@ -123,8 +125,9 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
   const metaSlots = receivingReportMetaSlots(rr)
   const branch = receivingReportBranchLine(rr)
 
-  // The print builder's own running totals: units always, money only when
-  // at least one line carries a cost (a transfer-sourced receipt has none).
+  // The lines show quantities only, as the printed RR does; the money sits in
+  // the totals below — units always, amounts only when at least one line
+  // carries a cost (a transfer-sourced receipt has none).
   let totalQty = 0
   let totalAmount = 0
   let hasAnyCost = false
@@ -224,20 +227,26 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
               <th colSpan={3} className={TH}>
                 Description
               </th>
-              <th rowSpan={2} className={`${TH} w-[8%]`}>
+              <th rowSpan={2} className={`${TH} w-[10%]`}>
                 Qty
               </th>
-              <th rowSpan={2} className={`${TH} w-[12%]`}>
-                Unit price
-              </th>
-              <th rowSpan={2} className={`${TH} w-[14%]`}>
-                Amount
-              </th>
+              {/* Only when the receipt carries costs — a transfer-sourced one
+                  has none, so its sheet stays quantities only. */}
+              {hasAnyCost && (
+                <>
+                  <th rowSpan={2} className={`${TH} w-[12%]`}>
+                    Unit cost
+                  </th>
+                  <th rowSpan={2} className={`${TH} w-[14%]`}>
+                    Amount
+                  </th>
+                </>
+              )}
             </tr>
             <tr>
               <th className={TH}>Brand</th>
+              <th className={TH}>Subgroup</th>
               <th className={TH}>Model</th>
-              <th className={TH}>Type</th>
             </tr>
           </thead>
           <tbody>
@@ -248,15 +257,19 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
                 <tr key={l.id}>
                   <td className={`${TD} font-mono`}>{(l.serialNumbers ?? []).join(', ')}</td>
                   <td className={TD}>{l.item?.brand?.name ?? ''}</td>
+                  <td className={TD}>{l.item?.primaryCategory?.name ?? ''}</td>
                   <td className={TD}>{l.item?.modelNumber || l.item?.name || ''}</td>
-                  <td className={TD}>{l.item?.type?.name ?? ''}</td>
                   <td className={`${TD} text-right tabular-nums`}>{qty}</td>
-                  <td className={`${TD} text-right tabular-nums`}>
-                    {unitCost != null ? fmtAmount(unitCost) : ''}
-                  </td>
-                  <td className={`${TD} text-right tabular-nums`}>
-                    {unitCost != null ? fmtAmount(qty * unitCost) : ''}
-                  </td>
+                  {hasAnyCost && (
+                    <>
+                      <td className={`${TD} text-right tabular-nums`}>
+                        {unitCost != null ? fmtAmount(unitCost) : '—'}
+                      </td>
+                      <td className={`${TD} text-right tabular-nums`}>
+                        {unitCost != null ? fmtAmount(qty * unitCost) : '—'}
+                      </td>
+                    </>
+                  )}
                 </tr>
               )
             })}

@@ -24,6 +24,7 @@ import {
   ClipboardList,
   Calculator,
 } from 'lucide-react'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 
 export type DashboardRole = 'admin' | 'hr' | 'accounting' | 'inventory' | 'sales' | 'default'
 
@@ -162,17 +163,21 @@ export const ALL_WIDGETS: WidgetDef[] = [
   //   minH: 3.5,
   //   roles: ['admin', 'hr', 'accounting', 'inventory'],
   // },
-  {
-    id: 'reminders',
-    label: 'Reminders',
-    icon: Bell,
-    description: 'Your upcoming reminders',
-    defaultW: 4,
-    defaultH: 3,
-    minW: 3,
-    minH: 3.5,
-    roles: ['admin', 'hr', 'accounting', 'inventory', 'default'],
-  },
+  ...(REMINDERS_ENABLED
+    ? [
+        {
+          id: 'reminders',
+          label: 'Reminders',
+          icon: Bell,
+          description: 'Your upcoming reminders',
+          defaultW: 4,
+          defaultH: 3,
+          minW: 3,
+          minH: 3.5,
+          roles: ['admin', 'hr', 'accounting', 'inventory', 'default'],
+        } satisfies WidgetDef,
+      ]
+    : []),
   {
     id: 'employee-birthdays',
     label: 'Employee Birthdays',
@@ -593,7 +598,7 @@ export const defaultWidgetsByRole: Record<DashboardRole, string[]> = {
     'outstanding-invoices',
     'pending-deliveries',
   ],
-  default: ['reminders', 'calendar', 'recent-activity'],
+  default: [...(REMINDERS_ENABLED ? ['reminders'] : []), 'calendar', 'recent-activity'],
 }
 
 // ── Default grid layouts per role ─────────────────────────────────────────────
@@ -641,9 +646,9 @@ export const defaultLayoutsByRole: Record<DashboardRole, LayoutItem[]> = {
     { i: 'system-alerts', x: 9, y: 3, w: 3, h: 3, minW: 3, minH: 3.5 },
   ],
   default: [
-    { i: 'reminders', x: 0, y: 0, w: 6, h: 3, minW: 2, minH: 3.5 },
-    { i: 'calendar', x: 0, y: 3, w: 8, h: 5, minW: 4, minH: 3.5 },
-    { i: 'recent-activity', x: 8, y: 3, w: 4, h: 3, minW: 3, minH: 3.5 },
+    ...(REMINDERS_ENABLED ? [{ i: 'reminders', x: 0, y: 0, w: 6, h: 3, minW: 2, minH: 3.5 }] : []),
+    { i: 'calendar', x: 0, y: REMINDERS_ENABLED ? 3 : 0, w: 8, h: 5, minW: 4, minH: 3.5 },
+    { i: 'recent-activity', x: 8, y: REMINDERS_ENABLED ? 3 : 0, w: 4, h: 3, minW: 3, minH: 3.5 },
   ],
   sales: [
     { i: 'sales-stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3.5 },

@@ -13,6 +13,7 @@ import {
 } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import {
   ArrowLeftRight,
   BarChart3,
@@ -43,7 +44,6 @@ import {
   ShoppingCart,
   Tag,
   Undo2,
-  Users,
   UsersRound,
   UserPlus,
   Wallet,
@@ -68,13 +68,15 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import {
   APPROVALS_REVIEWS_HUB,
-  CASH_COLLECTIONS_HUB,
+  CASH_RECEIPTS_HUB,
+  CREDIT_COLLECTIONS_HUB,
   OPERATIONS_ADMIN_HUB,
   POS_HUBS,
   PRICING_PROMOTION_HUB,
+  PRODUCT_CATALOG_HUB,
   REPORTS_HUB,
   SALES_COUNTER_HUB,
-  posHubHrefs,
+  posHubActiveHrefs,
   posTabPermissions,
   type PosHub,
 } from '@/src/app/(app)/(dashboard)/pos/_shared/pos-hubs'
@@ -190,14 +192,15 @@ function posHubNavItem(hub: PosHub, label: string, icon: LucideIcon): NavItem {
   const permissions = ungated
     ? []
     : (hub.permission ?? hub.tabs.flatMap((tab) => posTabPermissions(tab)))
-  const hrefs = posHubHrefs(hub)
+  const { exact, prefix } = posHubActiveHrefs(hub)
   return {
     label,
     href: hub.entryHref,
     icon,
     requiredPermission: permissions.length ? permissions : undefined,
     requiresModuleAccess: permissions.length ? undefined : 'pos',
-    ...(hub.activeMatch === 'exact' ? { activeWhen: hrefs } : { activePrefixes: hrefs }),
+    ...(exact.length ? { activeWhen: exact } : {}),
+    ...(prefix.length ? { activePrefixes: prefix } : {}),
   }
 }
 
@@ -329,38 +332,24 @@ const navItemsBySegment: Record<string, NavConfig> = {
         ...posHubNavItem(SALES_COUNTER_HUB, 'Sales Counter', ShoppingBag),
         keepBesideModuleRow: true,
       },
-      {
-        // Not a sale, so not a Sales Counter tab (client decision, against the
-        // revision doc) — brands, models, prices and stock for the branch's
-        // sellable items. Gated like the page. Exact match: Price List Upload
-        // lives under /pos/catalog/price-lists and has its own group.
-        label: 'Product Catalog',
-        href: '/pos/catalog',
-        icon: BookOpen,
-        requiredPermission: [POS_PERMISSIONS.TRANSACTIONS_READ, POS_PERMISSIONS.CATALOG_READ],
-        activeWhen: ['/pos/catalog'],
-      },
-      {
-        // POS's own customers screen, over the same Customer records CRM
-        // lists — same table, same CustomerService, different permission
-        // (2026-09-19 review request). It exists so a cashier can create
-        // and correct customer profiles for a sale or a credit application
-        // while holding no crm:* permission at all. Kept in POS (client
-        // decision, against the revision doc): checkout's "New Customer" and a
-        // credit application's "+ New customer" both go through its create form.
-        label: 'Customers',
-        href: '/pos/customers',
-        icon: Users,
-        requiredPermission: 'pos:customers:read',
-        activeWhen: ['/pos/customers'],
-      },
+      // Product Catalog | Price Lists. Not a sale, so not a Sales Counter tab (client
+      // decision, against the revision doc), and Price Lists sits beside it rather than
+      // under Operations & Admin: the catalog shows the prices the lists set. The row
+      // shows when either is held. Entry route: /pos/product-catalog.
+      posHubNavItem(PRODUCT_CATALOG_HUB, 'Product Catalog', BookOpen),
+      // Collections | Credit Applications | Customers — the customer's account, in the
+      // order the client wants (client decision, against the revision doc, which has
+      // Credit Applications and Collections under Cash & Collections and drops
+      // Customers). Each tab keeps its own permission; the row shows when any one
+      // is held. Entry route: /pos/credit-collections.
+      posHubNavItem(CREDIT_COLLECTIONS_HUB, 'Credit & Collections', HandCoins),
       // Promotions (Promo Codes | Gift Cards | Loyalty) and Price Maker. Entry
       // route: /pos/pricing-promotion.
       posHubNavItem(PRICING_PROMOTION_HUB, 'Pricing & Promotion', Tag),
-      // Management (Sessions | Cash Drawer), New Receipts, Credit Applications,
-      // Collections, Collected Funds History. Each tab keeps its own permission; the
-      // item shows when any one is held. Entry route: /pos/cash-collections.
-      posHubNavItem(CASH_COLLECTIONS_HUB, 'Cash & Collections', Wallet),
+      // Management (Sessions | Cash Drawer), New Receipts, Collected Funds History —
+      // the till and the money taken at it. Each tab keeps its own permission; the
+      // item shows when any one is held. Entry route: /pos/cash-receipts.
+      posHubNavItem(CASH_RECEIPTS_HUB, 'Cash & Receipts', Wallet),
       // The manager queues. Each tab is gated like its page, so Cashier (read,
       // not override) gets Unit Release Approvals and Void Requests only. The
       // pending-override badge is attached in SideBar below (withBadge). Entry
@@ -369,7 +358,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
       // Sales Reports (Branch-Manager tier) and Daily Collection (the cashier's
       // end-of-day sheet). Entry route: /pos/reporting.
       posHubNavItem(REPORTS_HUB, 'Reports', BarChart3),
-      // Service Jobs, Price List Upload, POS PIN, Settings. The row shows for
+      // Service Jobs, POS PIN, Settings. The row shows for
       // any POS role (POS PIN needs no permission); each tab is gated on its
       // own. Entry route: /pos/admin.
       posHubNavItem(OPERATIONS_ADMIN_HUB, 'Operations & Admin', Wrench),
@@ -402,18 +391,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Wallet,
         requiredPermission: CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_READ,
       },
-      {
-        label: 'Collection Incentives',
-        href: '/crm/collection-incentives',
-        icon: Coins,
-        requiredPermission: CRM_PERMISSIONS.INCENTIVES_READ,
-      },
-      {
-        label: 'Reminders',
-        href: '/crm/reminders',
-        icon: BellRing,
-        requiredPermission: CRM_PERMISSIONS.REMINDERS_READ,
-      },
+      // Collection Incentives is hidden from the nav. Its route still loads:
+      // /crm/collection-incentives.
+      ...(REMINDERS_ENABLED
+        ? [
+            {
+              label: 'Reminders',
+              href: '/crm/reminders',
+              icon: BellRing,
+              requiredPermission: CRM_PERMISSIONS.REMINDERS_READ,
+            },
+          ]
+        : []),
       {
         label: 'Segments',
         href: '/crm/segments',
@@ -454,10 +443,12 @@ function NavLink({
   onClick?: () => void
   isMobile?: boolean
 }) {
-  const isActive = item.activeWhen
-    ? item.activeWhen.includes(pathname)
-    : item.activePrefixes
-      ? item.activePrefixes.some((p) => pathname === p || pathname.startsWith(p + '/'))
+  // activeWhen (exact paths) and activePrefixes (a path and everything under it)
+  // can both be set; the row is lit by either.
+  const isActive =
+    item.activeWhen || item.activePrefixes
+      ? !!item.activeWhen?.includes(pathname) ||
+        !!item.activePrefixes?.some((p) => pathname === p || pathname.startsWith(p + '/'))
       : item.usePrefix
         ? pathname === item.href || pathname.startsWith(item.href + '/')
         : pathname === item.href

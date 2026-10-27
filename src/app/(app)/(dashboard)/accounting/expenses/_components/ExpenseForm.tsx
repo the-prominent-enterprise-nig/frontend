@@ -871,14 +871,17 @@ function ExpenseFormFields({
   const showLitersCol = lineKinds.includes('FUEL')
   const showRepairCols = lineKinds.includes('VEHICLE_REPAIR')
   const showCommissionCols = lineKinds.includes('AGENT_COMMISSION')
+  const showSmiCols = lineKinds.includes('SMI')
   /** The chip under Save naming the kind of expense this is. */
   const expenseChip = showCommissionCols
     ? 'Sales Commission Expense'
-    : showRepairCols
-      ? 'Repair & Maintenance Expense'
-      : showLitersCol || showPlateCol
-        ? 'Fuel Expense'
-        : null
+    : showSmiCols
+      ? 'SMI Expense'
+      : showRepairCols
+        ? 'Repair & Maintenance Expense'
+        : showLitersCol || showPlateCol
+          ? 'Fuel Expense'
+          : null
   // A line's fields sit on one row, all the same width. The columns are as many as the
   // fullest line on the entry has fields, so every line shares one grid (a Fuel line leaves
   // the right end empty rather than stretching its boxes) — and if the page is too narrow
@@ -891,6 +894,7 @@ function ExpenseFormFields({
       (showSpecialColumn && !k ? 1 : 0) + // Special Account
       (isItemMode ? 2 : 1) + // Qty + Unit Price, or Description
       (k === 'AGENT_COMMISSION' ? 2 : 0) + // Sales Invoice No., Sales Agent
+      (k === 'SMI' ? 1 : 0) + // Sales Invoice No.
       (k === 'FUEL' ? 2 : 0) + // Plate, Liters
       (k === 'VEHICLE_REPAIR' ? 3 : 0) + // Plate, Repair/Service Type, Service Detail
       3 + // Division, Tax Code, Amount
@@ -1189,13 +1193,22 @@ function ExpenseFormFields({
         return 'Liters cannot be negative.'
       if (kind === 'AGENT_COMMISSION' && !l.posTransactionId)
         return 'Pick the Sales Invoice No. on every commission line.'
+      if (kind === 'SMI' && !l.posTransactionId)
+        return 'Pick the Sales Invoice No. on every SMI line.'
     }
-    const releasedSales = lines
-      .filter((l) => kindOfAccount(l.categoryAccountId) === 'AGENT_COMMISSION')
-      .map((l) => l.posTransactionId)
-      .filter(Boolean)
-    if (new Set(releasedSales).size !== releasedSales.length)
-      return "The same sales invoice is on two lines — a sale's commission is released once."
+    // A sale's commission is released once, and so is its SMI — separately, so a
+    // commission line and an SMI line may name the same sale.
+    for (const [kind, what] of [
+      ['AGENT_COMMISSION', 'commission'],
+      ['SMI', 'SMI'],
+    ] as const) {
+      const releasedSales = lines
+        .filter((l) => kindOfAccount(l.categoryAccountId) === kind)
+        .map((l) => l.posTransactionId)
+        .filter(Boolean)
+      if (new Set(releasedSales).size !== releasedSales.length)
+        return `The same sales invoice is on two ${what} lines — a sale's ${what} is released once.`
+    }
     // The entry as a whole has to be money going out: record() credits cash
     // for the total, and deductions exceeding what they deduct from is a
     // mis-key. The server rejects it too. Unreachable off payroll, where
@@ -1306,7 +1319,7 @@ function ExpenseFormFields({
         line.repairServiceType = l.repairServiceType
         if (l.serviceDetail.trim()) line.serviceDetail = l.serviceDetail.trim()
       }
-      if (kind === 'AGENT_COMMISSION') line.posTransactionId = l.posTransactionId
+      if (kind === 'AGENT_COMMISSION' || kind === 'SMI') line.posTransactionId = l.posTransactionId
       if (isItemMode && l.itemId) {
         line.itemId = l.itemId
         if (l.qty) line.qty = Number(l.qty)
@@ -1660,8 +1673,13 @@ function ExpenseFormFields({
                       onChange={(id) => {
                         setForm({ ...form, agentId: id ?? '' })
                         // The sales already picked were this agent's, not the next one's.
+                        // An SMI line's sale isn't the agent's, so it stays.
                         setLines((prev) =>
-                          prev.map((l) => ({ ...l, posTransactionId: '', saleLabel: '' }))
+                          prev.map((l) =>
+                            kindOfAccount(l.categoryAccountId) === 'SMI'
+                              ? l
+                              : { ...l, posTransactionId: '', saleLabel: '' }
+                          )
                         )
                       }}
                       options={agentOptions}
@@ -1722,7 +1740,9 @@ function ExpenseFormFields({
             hint={
               showCommissionCols
                 ? 'Add one or more expense items. Use the “Sales Invoice No.” to select invoices assigned to the chosen Sales Agent.'
-                : 'Add one or more expense items. Vehicle fields will appear automatically for vehicle-related accounts.'
+                : showSmiCols
+                  ? 'Add one or more expense items. Use the “Sales Invoice No.” to pick the sale each SMI is paid on.'
+                  : 'Add one or more expense items. Vehicle fields will appear automatically for vehicle-related accounts.'
             }
             right={
               hasOwnCategoryLines ? (
@@ -1747,9 +1767,10 @@ function ExpenseFormFields({
                   // Whose sales this commission line can release: the entry's agent when it
                   // is paid to one, else the line's own pick.
                   const lineAgentId = form.payeeType === 'AGENT' ? form.agentId : line.saleAgentId
-                  // Sales already on another line of this entry — not offered again.
+                  // Sales already on another line of the same kind on this entry — not
+                  // offered again. A commission line and an SMI line may share a sale.
                   const otherSaleIds = lines
-                    .filter((_, j) => j !== i)
+                    .filter((l, j) => j !== i && kindOfAccount(l.categoryAccountId) === kind)
                     .map((l) => l.posTransactionId)
                     .filter(Boolean)
                   return (
@@ -2013,6 +2034,54 @@ function ExpenseFormFields({
                               )}
                             </LineField>
                           </>
+                        )}
+                        {/* Scenario 78 — an SMI line names the sale it is paid on. Any
+                          completed sale, whoever sold it: SMI isn't tied to the selling
+                          agent, so there's no Sales Agent here, and the amount is typed —
+                          nothing in the system computes SMI. */}
+                        {kind === 'SMI' && (
+                          <LineField label="Sales Invoice No. *">
+                            <SearchCombobox
+                              key={`${i}-${line.posTransactionId}-smi`}
+                              compact
+                              value={line.posTransactionId}
+                              initialLabel={line.saleLabel}
+                              queryKey={`expense-smi-sales:${otherSaleIds.join(',')}`}
+                              placeholder="— Select —"
+                              typeToSearchMessage="Search sales…"
+                              emptyMessage="No sales without an SMI found"
+                              onChange={(id) => {
+                                if (!id) setLine(i, { posTransactionId: '', saleLabel: '' })
+                              }}
+                              onSelect={(option) => {
+                                const sale = option.meta as ExpenseAgentSale
+                                setLine(i, {
+                                  posTransactionId: sale.id,
+                                  saleLabel: sale.number,
+                                  ...(line.description.trim() === ''
+                                    ? { description: `SMI - ${sale.number}` }
+                                    : {}),
+                                })
+                              }}
+                              search={async (query) => {
+                                const res = await Expenses.commissionSales({
+                                  kind: 'SMI',
+                                  search: query || undefined,
+                                  excludeExpenseId: initial?.id,
+                                })
+                                return (res.data ?? [])
+                                  .filter((x) => !x.releasedOn && !otherSaleIds.includes(x.id))
+                                  .map((x) => ({
+                                    id: x.id,
+                                    primary: x.number,
+                                    secondary: [x.agentName, x.customerName, fmtMoney(x.subtotal)]
+                                      .filter(Boolean)
+                                      .join(' · '),
+                                    meta: x,
+                                  }))
+                              }}
+                            />
+                          </LineField>
                         )}
                         {(kind === 'FUEL' || kind === 'VEHICLE_REPAIR') && (
                           <LineField label="Plate Number *">
