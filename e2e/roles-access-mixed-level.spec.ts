@@ -145,3 +145,16 @@ test('Business Owner shows Full Access for every module, never Mixed or partial'
     ).toBeVisible()
   }
 })
+
+// Scenario 74 review: the Accountant holds accounting:*:* plus a few rows
+// older backfills added next to it (inventory-debit-memos, restricted VAT).
+// Graded one by one, those made the whole module read "Mixed". Holding the
+// module wildcard is the whole module, so it reads Full Access.
+test('Accountant shows Full Access for Accounting, not Mixed', async ({ page }) => {
+  await gotoReady(page, '/settings/roles')
+
+  const accountantRow = page.getByRole('row', { name: /^Accountant/ })
+  await expect(accountantRow).toBeVisible()
+  await expect(accountantRow.getByText('Accounting: Full', { exact: true })).toBeVisible()
+  await expect(accountantRow.getByText('Accounting: Mixed', { exact: true })).toHaveCount(0)
+})
