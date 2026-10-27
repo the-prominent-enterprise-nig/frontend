@@ -1351,8 +1351,11 @@ function PaymentPanel({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+    // Beside the list the whole card is capped to the visible area (page
+    // scroller height less the sticky offset and a matching bottom gap), so the
+    // form scrolls inside it while the header and the Pay button stay put.
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm lg:flex lg:max-h-[calc(100vh-9rem)] lg:flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-prominent-purple-50">
             <Banknote className="h-5 w-5 text-prominent-purple-700" />
@@ -1378,8 +1381,8 @@ function PaymentPanel({
         </button>
       </div>
 
-      <form onSubmit={onSubmit} noValidate>
-        <div className="max-h-[calc(100vh-12rem)] space-y-4 overflow-y-auto px-6 py-5">
+      <form onSubmit={onSubmit} noValidate className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+        <div className="max-h-[calc(100vh-12rem)] space-y-4 overflow-y-auto px-6 py-5 lg:max-h-none lg:min-h-0 lg:flex-1">
           {single && isFullyPaid && (
             <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-[12px] text-red-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1714,7 +1717,7 @@ function PaymentPanel({
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         </div>
 
-        <div className="flex items-center justify-end border-t border-zinc-200 px-6 py-4">
+        <div className="flex shrink-0 items-center justify-end border-t border-zinc-200 px-6 py-4">
           <button
             type="submit"
             // Only what can't be acted on stays off. Everything else is
