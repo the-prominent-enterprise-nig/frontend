@@ -116,8 +116,8 @@ import type { CreditApplicationOverrideSnapshot } from '@/src/schema/pos'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import TypedPlanPanel from './_components/TypedPlanPanel'
 import { toCents, dateInputFromToday, coveringMonthly, typedPlanProblem } from './_utils/typed-plan'
-import { applicationFmiNote } from './_utils/application-fmi'
 import { fixedDownPaymentTotal, splitDownPayment, type DpRow } from './_utils/down-payment-groups'
+import { applicationFmiNote, fmiDateProblem, longDate } from './_utils/application-fmi'
 import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
 import TenderPanel from './_components/TenderPanel'
@@ -1050,6 +1050,9 @@ export default function CheckoutPage() {
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
+  // yyyy-mm-dd — the FMI date entered on the sale (empty = not entered). Its own
+  // field, apart from the typed-plan override: it only moves the first due date.
+  const [fmiDateInput, setFmiDateInput] = useState('')
   // Scenario 64 item 28 — an application arriving from "Continue to sale" on
   // its own detail page. It cannot simply be selected on arrival: the picker's
   // list is only fetched once there is an installment line in the cart, and
@@ -1853,6 +1856,11 @@ export default function CheckoutPage() {
   const inhouseInstallmentCartLines = installmentCartLines.filter(
     (l) => l.installmentProvider !== 'tpf'
   )
+  // The FMI date field starts the schedule of every in-house line that is not a
+  // typed plan (a typed plan has its own first due date), so it only has
+  // something to say while one is in the cart.
+  const fmiDateApplies = inhouseInstallmentCartLines.some((l) => !l.manualPlan)
+  const fmiDateError = fmiDateApplies ? fmiDateProblem(fmiDateInput) : null
 
   /**
    * The picker used to list every approved, unconsumed application for the
@@ -2467,7 +2475,8 @@ export default function CheckoutPage() {
         (l) =>
           `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}:${l.manualPlan ? `${l.manualTermInput}/${l.manualMonthlyInput}/${l.firstDueDateInput}` : ''}`
       )
-      .join('|') + `|dpWaived:${downPaymentZeroed}|emp:${employeeApplianceLoanActive}`
+      .join('|') +
+    `|dpWaived:${downPaymentZeroed}|emp:${employeeApplianceLoanActive}|fmi:${fmiDateInput}`
 
   // Approval happens in someone ELSE's session — only Business Owner holds
   // pos:application:approve — so "approve in another tab, come back to the
@@ -2868,6 +2877,10 @@ export default function CheckoutPage() {
                 employeeApplianceLoanActive && downPayment > 0
                   ? undefined
                   : (line.priceListItemId ?? undefined),
+              // The FMI date entered on the sale starts the schedule shown here,
+              // as it will the one posted.
+              firstDueDate:
+                fmiDateInput && !fmiDateProblem(fmiDateInput) ? fmiDateInput : undefined,
             })
         setInstallmentPreviews((prev) => ({
           ...prev,
@@ -4572,6 +4585,10 @@ export default function CheckoutPage() {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
       return
     }
+    if (fmiDateError) {
+      setError(fmiDateError)
+      return
+    }
     if (
       inhouseInstallmentCartLines.length > 0 &&
       !creditApplicationId &&
@@ -4818,6 +4835,9 @@ export default function CheckoutPage() {
             !creditApplicationWaivedActive
               ? creditApplicationId
               : undefined,
+          // The FMI date entered on the sale — its own field, not part of an
+          // override; only sent while a line that is not a typed plan can use it.
+          fmiDate: fmiDateApplies && fmiDateInput ? fmiDateInput : undefined,
           // Scenario 72 Part 6 — lets this sale claim the units the DR holds.
           deliveryReceiptId: deliveryReceipt?.id,
           // Scenario 71 — no application, on the cashier's say-so (with a
@@ -5330,6 +5350,7 @@ export default function CheckoutPage() {
     setExceptionReasonId('')
     setExceptionNote('')
     setCreditApplicationWaived(false)
+    setFmiDateInput('')
     setInvoiceNumberInput('')
     setDocumentType('sales_invoice')
     setDocumentSwitchNote('')
@@ -7286,10 +7307,13 @@ export default function CheckoutPage() {
                               compact
                             />
                           )}
-                          {/* When the first installment will fall due. Only for
-                            a rate-card plan: a plan typed here has its own date. */}
+                          {/* When the first installment will fall due, by the
+                            application. Only for a rate-card plan (a plan typed
+                            here has its own date), and not once an FMI date has
+                            been entered on the sale, which takes its place. */}
                           {creditApplicationId &&
-                            inhouseInstallmentCartLines.some((l) => !l.manualPlan) &&
+                            fmiDateApplies &&
+                            !fmiDateInput &&
                             (() => {
                               const note = applicationFmiNote(
                                 approvedCreditApplications.find((a) => a.id === creditApplicationId)
@@ -7370,6 +7394,46 @@ export default function CheckoutPage() {
                           )}
                         </div>
                       )}
+
+                    {/* The FMI date: when the first installment falls due. Its own
+                        field — changing it used to mean typing the whole plan, an
+                        override with a reason. Optional; it wins over the date on
+                        the application, which wins over one month after the sale.
+                        A plan typed here keeps its own first due date. */}
+                    {fmiDateApplies && (
+                      <div className="mt-2.5" data-testid="fmi-date-field">
+                        <label
+                          htmlFor="fmi-date-input"
+                          className="mb-1 block text-[13px] text-prominent-purple-700"
+                        >
+                          FMI date
+                        </label>
+                        <input
+                          id="fmi-date-input"
+                          data-testid="fmi-date-input"
+                          type="date"
+                          min={dateInputFromToday({})}
+                          max={dateInputFromToday({ days: 366 })}
+                          value={fmiDateInput}
+                          onChange={(e) => setFmiDateInput(e.target.value)}
+                          className="w-full rounded-lg border border-prominent-purple-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                        />
+                        {fmiDateError ? (
+                          <p data-testid="fmi-date-note" className="mt-1.5 text-xs text-amber-700">
+                            {fmiDateError}
+                          </p>
+                        ) : (
+                          <p
+                            data-testid="fmi-date-note"
+                            className="mt-1.5 text-xs text-prominent-purple-600"
+                          >
+                            {fmiDateInput
+                              ? `First installment due ${longDate(fmiDateInput)}, then monthly on the same day.`
+                              : 'Optional. Leave empty to use the FMI date on the application, or one month after this sale.'}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Scenario 71 — the ways round the credit application sit right
                         here, beside the "New credit application" button, so a cashier

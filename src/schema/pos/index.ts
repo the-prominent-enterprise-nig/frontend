@@ -576,6 +576,10 @@ export interface CreateTransactionInput {
   /** Scenario 17 Part 6 — inhouse installment invoices only, required. The
    * customer's approved, not-yet-used CreditApplication this sale fulfills. */
   creditApplicationId?: string
+  /** yyyy-mm-dd — the FMI date entered on the sale: when the first installment
+   * falls due on its in-house installment lines. Wins over the application's
+   * FMI date. Its own field, not part of an override. */
+  fmiDate?: string
   /** Scenario 72 Part 6 — the approved "sales invoice to follow" DR this sale
    * invoices; lets it claim the units the DR holds. */
   deliveryReceiptId?: string
