@@ -39,14 +39,10 @@ type Props = {
    * fabricates stock with no addressable serial, or gets rejected by the
    * backend after the rest of the form is filled in. */
   excludeSerialTracked?: boolean
-  /** Lists this supplier's approved items (ItemSupplier) — for a PO, where
-   * the client wants only what the chosen supplier carries. Falls back to
-   * the whole catalog when the supplier has none on file, and when a typed
-   * search matches none of theirs (tagged, so an off-list pick is a choice). */
+  /** Lists this supplier's approved items (ItemSupplier) first, with the rest
+   * of the catalog below them. Just the catalog when the supplier has none. */
   supplierId?: string
 }
-
-const OFF_LIST_BADGE = "Not on supplier's list"
 
 async function searchSupplierFirst(
   query: string,
@@ -69,10 +65,12 @@ async function searchSupplierFirst(
         !!m.supplierSku?.toLowerCase().includes(q)
     )
     .map((m) => ({ id: m.item.id, primary: m.item.name, secondary: m.item.sku }))
-  if (matches.length > 0 || !q) return matches
 
+  // The supplier's own items lead; the rest of the catalog follows untagged —
+  // the links are partly auto-derived, so off-list doesn't mean wrong.
+  const listed = new Set(matches.map((o) => o.id))
   const catalog = await searchCatalog(query, excludeSerialTracked)
-  return catalog.map((o) => ({ ...o, badge: OFF_LIST_BADGE }))
+  return [...matches, ...catalog.filter((o) => !listed.has(o.id))]
 }
 
 function toMeta(item: ItemSummary): ItemSearchMeta {
