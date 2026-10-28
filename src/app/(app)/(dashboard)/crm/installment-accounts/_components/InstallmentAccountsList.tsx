@@ -91,12 +91,14 @@ const STATUS_OPTIONS = [
 // Scenario 79 — client: "max 20 per page" (the API caps it there too).
 const PAGE_SIZE = 20
 
-/** '' = newest first (the API's default); otherwise by the Due Date column. */
+/** '' = newest accounts first (the API's default); otherwise by the Due Date column. */
 type DueSort = '' | 'asc' | 'desc'
 
 const SORT_OPTIONS = [
-  { value: 'asc', label: 'Due date — soonest first' },
-  { value: 'desc', label: 'Due date — latest first' },
+  // Worded for collections (Kian, 2026-10-28): ascending puts the oldest unpaid
+  // due — the most overdue account — on top.
+  { value: 'asc', label: 'Most overdue first' },
+  { value: 'desc', label: 'Furthest due date first' },
 ]
 
 export default function InstallmentAccountsList({ canCreate }: { canCreate: boolean }) {
@@ -178,8 +180,8 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
       setPage(1)
     }
 
-  // The Due Date header cycles soonest first → latest first → back to the
-  // default order.
+  // The Due Date header cycles most overdue first → furthest due date first →
+  // back to the default order (newest accounts first).
   const cycleDueSort = () =>
     resetting(setDueSort)(dueSort === '' ? 'asc' : dueSort === 'asc' ? 'desc' : '')
 
@@ -293,7 +295,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
             value={dueSort}
             onChange={(v) => resetting(setDueSort)(v as DueSort)}
             options={SORT_OPTIONS}
-            placeholder="Sort: newest first"
+            placeholder="Newest accounts first"
             clearable
             portal
             className="min-w-[13rem] flex-1"
