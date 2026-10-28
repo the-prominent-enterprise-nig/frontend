@@ -8,7 +8,7 @@ import {
   AcknowledgementReceipts,
   BankAccounts,
   fmtMoney,
-  type BankAccount,
+  type BankAccountOption,
 } from '@/src/libs/data/AccountingV2Data'
 import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
@@ -100,6 +100,7 @@ function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] 
  * account — and the Net that reached the bank, calculated here. */
 export default function NewAcknowledgementReceiptForm({
   restrictedBranchId,
+  acknowledgementOnly = false,
 }: {
   /** A branch-assigned caller's own branch — the service stores this
    * server-side regardless of what's submitted, so the form locks to it
@@ -107,6 +108,9 @@ export default function NewAcknowledgementReceiptForm({
    * non-branch-assigned caller (e.g. Business Owner), who picks one below.
    * Same idiom as financing-terms' own restrictedBranchId. */
   restrictedBranchId: string | null
+  /** The caller may record acknowledgment receipts only (Treasury Clerk,
+   * Access Levels Part 2): the type picker offers just that one. */
+  acknowledgementOnly?: boolean
 }) {
   const router = useRouter()
   const { data: branchesData, isLoading: branchesLoading } = useBranches()
@@ -134,10 +138,10 @@ export default function NewAcknowledgementReceiptForm({
   const [invoice, setInvoice] = useState<PickedInvoice | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
   useEffect(() => {
-    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+    BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
     getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))
@@ -260,7 +264,11 @@ export default function NewAcknowledgementReceiptForm({
             onChange={(value) =>
               setForm({ ...form, receiptType: value as 'COLLECTION' | 'ACKNOWLEDGEMENT' })
             }
-            options={RECEIPT_TYPE_OPTIONS}
+            options={
+              acknowledgementOnly
+                ? RECEIPT_TYPE_OPTIONS.filter((o) => o.value === 'ACKNOWLEDGEMENT')
+                : RECEIPT_TYPE_OPTIONS
+            }
             placeholder="Select receipt type…"
           />
         </Field>

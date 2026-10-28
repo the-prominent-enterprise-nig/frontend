@@ -8,7 +8,7 @@ import {
   AcknowledgementReceipts,
   BankAccounts,
   fmtMoney,
-  type BankAccount,
+  type BankAccountOption,
   type PaymentMethod,
   type AcknowledgementReceipt,
   PAYMENT_METHOD_OPTIONS,
@@ -278,10 +278,10 @@ function AcknowledgementReceiptDetailBody({
   const restrictedBranchName = restrictedBranchId
     ? (branches.find((b) => b.id === restrictedBranchId)?.name ?? 'your branch')
     : null
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
   useEffect(() => {
-    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+    BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
     getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))

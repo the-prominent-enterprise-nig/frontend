@@ -2460,6 +2460,10 @@ export const Expenses = {
    * carried against, under the control account carrying it. */
   specialAccounts: (params?: { search?: string; accountId?: string }) =>
     api.get<SpecialAccountRegister>('/expenses/special-accounts', params),
+  /** The Special Account control accounts (1-01-320 …) the caller's role may
+   * use (Access Levels Part 2). */
+  specialAccountControls: () =>
+    api.get<{ id: string; number: string; name: string }[]>('/expenses/special-accounts/controls'),
   /** The names on one control account with their balances — the Expense
    * form's picker. Open to expense roles; the register above is not. */
   specialAccountOptions: (params: { accountId: string; search?: string }) =>
@@ -2513,6 +2517,11 @@ export interface BankAccount {
   /** The fund's control-voucher series, e.g. PCFBCBN0926- — null when it has none. */
   voucherPrefix?: string | null
 }
+/** A bank account as the picker returns it: no balance. */
+export type BankAccountOption = Pick<
+  BankAccount,
+  'id' | 'name' | 'bankName' | 'accountNumber' | 'accountType' | 'isActive'
+>
 // Scenario 42 — the itemized worksheet. sourceType/direction mirror the
 // backend's BankReconciliationLineSourceType/Direction enums.
 export type BankReconciliationLineSourceType =
@@ -2629,6 +2638,12 @@ export interface BankLedgerWindow {
 }
 export const BankAccounts = {
   list: () => api.get<BankAccount[]>('/bank-accounts'),
+  /** The bank-account picker (Access Levels Part 2): names and numbers, no
+   * balances, limited to the accounts the caller's role may use. Opened by
+   * every feature that picks a bank account, so it needs no Cash & Banking
+   * permission. purpose 'expense-fund' narrows it to an expense's "Paid from". */
+  options: (purpose?: 'expense-fund') =>
+    api.get<BankAccountOption[]>('/bank-accounts/options', purpose ? { purpose } : undefined),
   get: (id: string) => api.get<BankAccount>(`/bank-accounts/${id}`),
   create: (body: any) => api.post<BankAccount>('/bank-accounts', body),
   update: (id: string, body: any) => api.patch<BankAccount>(`/bank-accounts/${id}`, body),

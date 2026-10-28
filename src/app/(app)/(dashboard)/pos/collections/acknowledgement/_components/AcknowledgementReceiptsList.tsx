@@ -21,7 +21,11 @@ function accountLabel(account: AcknowledgementReceipt['account']): string {
  * link (developer correction, 2026-09-21 — moved off Accounting's AR
  * Invoices page onto POS Collections, matching the client's own notes). No
  * search/filter yet, matching Collection Receipt's own initial scope. */
-export default function AcknowledgementReceiptsList() {
+export default function AcknowledgementReceiptsList({
+  canImport,
+}: {
+  canImport: boolean
+}): React.JSX.Element {
   const router = useRouter()
   const [receipts, setReceipts] = useState<AcknowledgementReceipt[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,12 +50,14 @@ export default function AcknowledgementReceiptsList() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => router.push('/pos/collections/acknowledgement/import')}
-            className="flex items-center gap-2 rounded-lg border border-purple-700 px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
-          >
-            <Upload className="w-4 h-4" /> Import receipts
-          </button>
+          {canImport && (
+            <button
+              onClick={() => router.push('/pos/collections/acknowledgement/import')}
+              className="flex items-center gap-2 rounded-lg border border-purple-700 px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+            >
+              <Upload className="w-4 h-4" /> Import receipts
+            </button>
+          )}
           <button
             onClick={() => router.push('/pos/collections/acknowledgement/new')}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"

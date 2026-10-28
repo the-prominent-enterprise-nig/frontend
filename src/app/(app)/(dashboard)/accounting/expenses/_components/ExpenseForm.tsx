@@ -18,7 +18,7 @@ import {
   type AccountMapping,
   type PayeeType,
   type ClearedType,
-  type BankAccount,
+  type BankAccountOption,
   type SpecialAccountOption,
   type ExpenseVehicleOption,
   type ExpenseAgentOption,
@@ -360,7 +360,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
   const [postableAccounts, setPostableAccounts] = useState<Account[]>([])
   const [inventoryAccounts, setInventoryAccounts] = useState<Account[]>([])
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [mappings, setMappings] = useState<AccountMapping[]>([])
 
   useEffect(() => {
@@ -395,7 +395,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
     // Payment Method → Bank Transfer unlocks picking which bank account the
     // cash side actually posts to.
-    BankAccounts.list().then((r) => setBankAccounts(r.data ?? []))
+    BankAccounts.options('expense-fund').then((r) => setBankAccounts(r.data ?? []))
     // Payee → Supplier line-category default (EXPENSE_SUPPLIER_INVENTORY) —
     // used when a picked Item has no inventory account of its own.
     AccountMappings.list().then((r) => setMappings(r.data ?? []))
@@ -524,7 +524,7 @@ function ExpenseFormFields({
   suppliers: APBillSupplierOption[]
   postableAccounts: Account[]
   inventoryAccounts: Account[]
-  bankAccounts: BankAccount[]
+  bankAccounts: BankAccountOption[]
   mappings: AccountMapping[]
   onSaved: () => void
 }) {

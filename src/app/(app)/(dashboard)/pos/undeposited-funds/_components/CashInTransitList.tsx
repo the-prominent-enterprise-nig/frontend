@@ -15,7 +15,7 @@ import {
   AcknowledgementReceipts,
   type AcknowledgementReceipt,
   BankAccounts,
-  type BankAccount,
+  type BankAccountOption,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
@@ -651,7 +651,7 @@ function useLedger(
   })
   const accounts = useQuery({
     queryKey: ['bank-accounts-list'],
-    queryFn: () => BankAccounts.list(),
+    queryFn: () => BankAccounts.options(),
   })
   const sessionRows = (outstanding.data?.data ?? []).flatMap(fromOutstanding)
   // Drafts holding no session — New Receipts alone — get a row of their own.
@@ -1247,7 +1247,7 @@ function DepositForm({
   onClose,
   onSaved,
 }: {
-  accounts: BankAccount[]
+  accounts: BankAccountOption[]
   sessions: LedgerRow[]
   branchId: string
   branchName: string
@@ -1517,7 +1517,7 @@ function DepositTally({
   owed: DepositOwedTotals
   entered: DepositOwedTotals
   slips: Slip[]
-  accounts: BankAccount[]
+  accounts: BankAccountOption[]
 }): React.JSX.Element {
   const lines: TallyLine[] = [
     {
@@ -1565,7 +1565,7 @@ function SlipNames({
   accounts,
 }: {
   slips: Slip[]
-  accounts: BankAccount[]
+  accounts: BankAccountOption[]
 }): React.JSX.Element {
   const counted = slips.filter((s) => slipAmount(s) > 0)
   const bankName = (id: string): string => accounts.find((a) => a.id === id)?.name ?? 'No bank'
