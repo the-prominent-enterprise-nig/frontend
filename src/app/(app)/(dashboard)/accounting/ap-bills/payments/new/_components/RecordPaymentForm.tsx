@@ -14,7 +14,7 @@ import {
   type APBill,
   type APDisbursementListItem,
   type APBillSupplierOption,
-  type BankAccount,
+  type BankAccountOption,
   type APBillLineDiscount,
   type SupplierDebitMemo,
 } from '@/src/libs/data/AccountingV2Data'
@@ -147,7 +147,7 @@ function withholdingLeftOn(b: APBill, excludeId?: string | null): number {
  * `<BANK>#<MMYY>-<last 4 of cheque>`. The server remains the authority — this
  * is a preview, which is why the field is read-only. */
 function previewVoucher(
-  bank: BankAccount | undefined,
+  bank: BankAccountOption | undefined,
   cheque: string,
   paymentDate: string
 ): string {
@@ -300,7 +300,7 @@ export default function RecordPaymentForm() {
   )
   const locked = confirmedIds !== null
   const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
 
   const [supplierId, setSupplierId] = useState(presetSupplier)
   const [bills, setBills] = useState<APBill[]>([])
@@ -340,7 +340,7 @@ export default function RecordPaymentForm() {
 
   useEffect(() => {
     APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
-    BankAccounts.list().then((r) => setBankAccounts(r.data ?? []))
+    BankAccounts.options().then((r) => setBankAccounts(r.data ?? []))
     getAccountOptions().then((r) => {
       const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
       setCoaAccounts(postableAccounts(list))

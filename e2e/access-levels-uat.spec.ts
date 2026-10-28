@@ -19,7 +19,9 @@ test.describe('Access Levels UAT fixes', () => {
 
   // 1. POS PIN needs cashier-pin:verify, like its page. These roles hold a
   // corner of POS but no PIN, so Operations & Admin isn't offered at all.
-  for (const role of ['deposit-clerk', 'stock-clerk', 'inventory-manager']) {
+  // Stock Clerk and Inventory Manager hold Sales Counter since the 2026-10-28
+  // sheet, PIN included, so POS PIN (Operations & Admin) is theirs now.
+  for (const role of ['deposit-clerk']) {
     test(`${role}: no Operations & Admin in POS`, async ({ page }) => {
       await loginAs(page, email(role), PASSWORD)
       await gotoReady(page, '/pos')

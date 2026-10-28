@@ -10,7 +10,7 @@ import type { InstallmentAccountDetail } from '@/src/schema/crm/types'
 import {
   BankAccounts,
   PAYMENT_METHOD_OPTIONS,
-  type BankAccount,
+  type BankAccountOption,
   type PaymentMethod,
 } from '@/src/libs/data/AccountingV2Data'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -79,7 +79,7 @@ export default function SettleEarlyForm({ id }: { id: string }) {
   const [method, setMethod] = useState<PaymentMethod>('CASH')
   const [bankAccountId, setBankAccountId] = useState('')
   const [notes, setNotes] = useState('')
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -89,7 +89,7 @@ export default function SettleEarlyForm({ id }: { id: string }) {
       if (res.success && res.data) setAccount(res.data)
       else setAccountError(res.error ?? 'Installment account not found')
     })
-    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+    BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
   }, [id])
 
   // MOS RUN counts the dues dated by the payment date, so the quote moves

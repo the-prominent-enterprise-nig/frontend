@@ -11,7 +11,7 @@ import {
   FileAttachments,
   fmtDate,
   fmtMoney,
-  type BankAccount,
+  type BankAccountOption,
 } from '@/src/libs/data/AccountingV2Data'
 import {
   cancelPosDeposit,
@@ -87,7 +87,7 @@ export function DepositDetailLoader({
 }: {
   id: string
   /** The bank accounts a slip can be corrected to. */
-  accounts: BankAccount[]
+  accounts: BankAccountOption[]
   canManage: boolean
   canVerify: boolean
   /** May correct a posted deposit — accounting. */
@@ -139,7 +139,7 @@ export function DepositDetail({
   onChanged,
 }: {
   deposit: PosDeposit
-  accounts: BankAccount[]
+  accounts: BankAccountOption[]
   canManage: boolean
   canVerify: boolean
   canCorrect: boolean
@@ -339,7 +339,7 @@ function SlipEdit({
   onSaved,
 }: {
   deposit: PosDeposit
-  accounts: BankAccount[]
+  accounts: BankAccountOption[]
   correcting: boolean
   onCancel: () => void
   onSaved: () => void

@@ -1,0 +1,1044 @@
+'use client'
+
+import { useState, useCallback, useMemo } from 'react'
+import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
+import Link from 'next/link'
+import {
+  TrendingUp,
+  ArrowUpRight,
+  FileText,
+  BarChart2,
+  Activity,
+  ChevronRight,
+  CreditCard,
+  Wallet,
+  Clock,
+  BookOpen,
+  ShieldAlert,
+  LayoutGrid,
+  PieChart,
+} from 'lucide-react'
+import {
+  Reports,
+  ARInvoices,
+  APBills,
+  BankAccounts,
+  FixedAssetsV2,
+  FiscalPeriods,
+  Budgets,
+  // Aliased: this file already has a local `apOutstanding` total for the KPI.
+  apOutstanding as apBillOutstanding,
+  type AgingBuckets,
+  type ARInvoiceDashboardStats,
+} from '@/src/libs/data/AccountingV2Data'
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function fmtMoney(n: number) {
+  if (!Number.isFinite(n)) return '₱0'
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : ''
+  if (abs >= 1_000_000) return `${sign}₱${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `${sign}₱${(abs / 1_000).toFixed(0)}K`
+  return `${sign}₱${Math.round(abs).toLocaleString('en-PH')}`
+}
+
+function fmtNum(n: number) {
+  if (!Number.isFinite(n)) return '0'
+  return Math.round(n).toLocaleString('en-PH')
+}
+
+function fmtDate(dateStr?: string | null) {
+  if (!dateStr) return '—'
+  return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+}
+
+function daysOverdue(dueDate?: string | null) {
+  if (!dueDate) return 0
+  return Math.max(0, Math.ceil((Date.now() - new Date(dueDate).getTime()) / 86_400_000))
+}
+
+function statusCls(status?: string) {
+  const u = status?.toUpperCase()
+  if (u === 'PAID') return 'bg-green-100 text-green-700'
+  if (u === 'OVERDUE') return 'bg-red-100 text-red-700'
+  if (u === 'PARTIAL') return 'bg-orange-100 text-orange-700'
+  if (u === 'VOID') return 'bg-gray-100 text-gray-500'
+  if (u === 'SENT' || u === 'RECEIVED') return 'bg-blue-100 text-blue-700'
+  if (u === 'DRAFT') return 'bg-zinc-100 text-zinc-500'
+  return 'bg-yellow-100 text-yellow-700'
+}
+
+function statusLabel(status?: string) {
+  const u = status?.toUpperCase()
+  if (u === 'PAID') return 'Paid'
+  if (u === 'OVERDUE') return 'Overdue'
+  if (u === 'PARTIAL') return 'Partial'
+  if (u === 'VOID') return 'Void'
+  if (u === 'SENT') return 'Sent'
+  if (u === 'RECEIVED') return 'Received'
+  if (u === 'DRAFT') return 'Draft'
+  return status ?? 'Pending'
+}
+
+const COLORS = [
+  '#7c3aed',
+  '#0ea5e9',
+  '#10b981',
+  '#f59e0b',
+  '#ef4444',
+  '#8b5cf6',
+  '#06b6d4',
+  '#22c55e',
+  '#f97316',
+  '#ec4899',
+]
+
+// ── AgingBuckets helper ───────────────────────────────────────────────────────
+
+// GET /reports/aging/:type?view=summary returns the bucket totals
+// (`{ buckets: [{ bucket, outstanding, count }] }`, bucket being the backend's
+// agingBucket(): 'Current' | '1-30' | '31-60' | '61-90' | '90+'). The full
+// endpoint is one row per open invoice/bill — 2.9 MB of AR rows on the dev
+// data — that this chart only ever summed by bucket, so the server sums them.
+function extractAging(raw: AgingBuckets | null) {
+  if (!Array.isArray(raw?.buckets)) return []
+  const BUCKET_ORDER: { key: string; label: string; color: string }[] = [
+    { key: 'Current', label: 'Current', color: '#10b981' },
+    { key: '1-30', label: '1–30 days', color: '#f59e0b' },
+    { key: '31-60', label: '31–60 days', color: '#f97316' },
+    { key: '61-90', label: '61–90 days', color: '#ef4444' },
+    { key: '90+', label: '90+ days', color: '#dc2626' },
+  ]
+  const sums: Record<string, number> = {}
+  raw.buckets.forEach((row) => {
+    const key = row.bucket ?? 'Current'
+    sums[key] = (sums[key] ?? 0) + Number(row.outstanding ?? 0)
+  })
+  return BUCKET_ORDER.filter(({ key }) => (sums[key] ?? 0) > 0).map(({ key, label, color }) => ({
+    label,
+    value: sums[key],
+    color,
+    badge: fmtMoney(sums[key]),
+  }))
+}
+
+// ── DonutChart ────────────────────────────────────────────────────────────────
+
+function DonutChart({
+  segments,
+  size = 148,
+  stroke = 22,
+}: {
+  segments: { label: string; value: number; color: string }[]
+  size?: number
+  stroke?: number
+}) {
+  const tot = useMemo(() => segments.reduce((s, x) => s + x.value, 0), [segments])
+  const r = (size - stroke) / 2
+  const C = 2 * Math.PI * r
+  const cx = size / 2
+  let accum = 0
+  const arcs = segments.map((seg) => {
+    const pct = tot > 0 ? seg.value / tot : 0
+    const len = pct * C
+    const offset = -accum
+    accum += len
+    return { ...seg, pct, len, offset }
+  })
+  if (!segments.length || tot === 0) {
+    return (
+      <div className="flex h-[148px] items-center justify-center">
+        <p className="text-xs text-gray-400 italic">No data available</p>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-5">
+      <svg width={size} height={size} className="shrink-0 -rotate-90">
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
+        {arcs.map((arc, i) =>
+          arc.len > 0.5 ? (
+            <circle
+              key={i}
+              cx={cx}
+              cy={cx}
+              r={r}
+              fill="none"
+              stroke={arc.color}
+              strokeWidth={stroke}
+              strokeDasharray={`${arc.len} ${C}`}
+              strokeDashoffset={arc.offset}
+              style={{ transition: 'stroke-dasharray 0.7s ease-out' }}
+            />
+          ) : null
+        )}
+      </svg>
+      <div className="min-w-0 flex-1 space-y-2">
+        {arcs.map((arc, i) => (
+          <div key={i} className="flex items-center gap-2 min-w-0">
+            <div
+              className="h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: arc.color }}
+            />
+            <span className="text-xs text-gray-600 truncate flex-1">{arc.label}</span>
+            <span className="text-xs font-semibold text-gray-900 tabular-nums shrink-0">
+              {(arc.pct * 100).toFixed(0)}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── HBarChart ─────────────────────────────────────────────────────────────────
+
+function HBarChart({
+  items,
+}: {
+  items: { label: string; value: number; color: string; badge?: string }[]
+}) {
+  const max = Math.max(...items.map((i) => i.value), 1)
+  return (
+    <div className="space-y-3">
+      {items.map((item, i) => (
+        <div key={i}>
+          <div className="flex items-center justify-between mb-1 gap-2">
+            <span className="text-xs text-gray-600 truncate">{item.label}</span>
+            <div className="shrink-0 flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-900 tabular-nums">
+                {fmtMoney(item.value)}
+              </span>
+              {item.badge && <span className="text-xs text-gray-400">{item.badge}</span>}
+            </div>
+          </div>
+          <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${(item.value / max) * 100}%`,
+                backgroundColor: item.color,
+                transition: 'width 0.7s ease-out',
+              }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Micro-components ──────────────────────────────────────────────────────────
+
+function Sk({ className }: { className?: string }) {
+  return <div className={`animate-pulse rounded bg-gray-200 ${className ?? ''}`} />
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-7 text-center gap-2">
+      <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+        <TrendingUp className="h-4 w-4 text-green-600" />
+      </div>
+      <p className="text-xs text-gray-500">{message}</p>
+    </div>
+  )
+}
+
+// ── Initial state ─────────────────────────────────────────────────────────────
+
+const INIT = {
+  loaded: false,
+  lastUpdated: null as Date | null,
+  // P&L
+  totalRevenue: 0,
+  totalExpenses: 0,
+  netIncome: 0,
+  grossMarginPct: 0,
+  // Balance sheet
+  totalAssets: 0,
+  totalLiabilities: 0,
+  totalEquity: 0,
+  // Cash
+  totalCash: 0,
+  // AR
+  arOutstanding: 0,
+  openInvoicesCount: 0,
+  overdueInvoicesCount: 0,
+  // AP
+  apOutstanding: 0,
+  openBillsCount: 0,
+  overdueBillsCount: 0,
+  // Fixed assets
+  activeAssetsCount: 0,
+  totalBookValue: 0,
+  // Period
+  openPeriodName: null as string | null,
+  // Budget alerts count
+  budgetAlertCount: 0,
+  // Charts
+  pnlBreakdown: [] as { label: string; value: number; color: string }[],
+  arAgingBuckets: [] as { label: string; value: number; color: string; badge?: string }[],
+  apAgingBuckets: [] as { label: string; value: number; color: string; badge?: string }[],
+  recentInvoices: [] as any[],
+  recentBills: [] as any[],
+  overdueInvoicesList: [] as any[],
+  overdueBillsList: [] as any[],
+  budgetAlerts: [] as any[],
+  bankAccountsList: [] as any[],
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+/** Which widgets the caller may load: each one's server permission. */
+export type DashboardAccess = {
+  reports: boolean
+  arInvoices: boolean
+  apBills: boolean
+  bankAccounts: boolean
+  fixedAssets: boolean
+  fiscalPeriods: boolean
+  budgets: boolean
+}
+
+export default function AccountingDashboard({
+  access,
+}: {
+  access: DashboardAccess
+}): React.JSX.Element {
+  const [s, setS] = useState(INIT)
+
+  const load = useCallback(async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const yearStart = `${new Date().getFullYear()}-01-01`
+    const fiscalYear = new Date().getFullYear()
+
+    const settled = await Promise.allSettled([
+      // A widget the caller can't read isn't requested (Access Levels): it
+      // would only come back refused. Its tiles show empty, as on a failure.
+      access.reports ? Reports.pnl(yearStart, today) : null, // 0
+      access.reports ? Reports.biSummary() : null, // 1
+      access.reports ? Reports.balanceSheet() : null, // 2
+      access.reports ? Reports.agingBuckets('ar') : null, // 3
+      access.reports ? Reports.agingBuckets('ap') : null, // 4
+      access.arInvoices ? ARInvoices.dashboardStats() : null, // 5
+      access.apBills ? APBills.list() : null, // 6
+      access.bankAccounts ? BankAccounts.list() : null, // 7
+      access.fixedAssets ? FixedAssetsV2.list() : null, // 8
+      access.fiscalPeriods ? FiscalPeriods.list() : null, // 9
+      access.budgets ? Budgets.variance(fiscalYear) : null, // 10
+    ])
+
+    function pick(i: number): any {
+      const r = settled[i]
+      if (r.status === 'rejected') return null
+      const v = r.value
+      if (!v || v.success === false) return null
+      return v.data ?? v
+    }
+
+    function arr(i: number): any[] {
+      const raw = pick(i)
+      if (!raw) return []
+      if (Array.isArray(raw)) return raw
+      if (Array.isArray(raw.items)) return raw.items
+      if (Array.isArray(raw.data)) return raw.data
+      return []
+    }
+
+    // ── P&L ──────────────────────────────────────────────────────────────────
+    const pnl = pick(0)
+    const totalRevenue = Number(pnl?.totalRevenue ?? pnl?.revenue ?? pnl?.data?.totalRevenue ?? 0)
+    const totalCogs = Number(pnl?.totalCogs ?? pnl?.data?.totalCogs ?? 0)
+    const totalOpEx = Number(pnl?.totalOpEx ?? pnl?.expenses ?? pnl?.data?.totalOpEx ?? 0)
+    // profitAndLoss() (reports.service.ts) never returns a `totalExpenses`
+    // field — the old `|| Number(pnl?.totalExpenses ...)` fallback here was
+    // dead: it only ran when totalCogs + totalOpEx was already falsy (0),
+    // and always resolved to 0 itself.
+    const totalExpenses = totalCogs + totalOpEx
+    const netIncome = Number(
+      pnl?.netIncome ?? pnl?.netProfit ?? pnl?.data?.netIncome ?? totalRevenue - totalExpenses
+    )
+    const grossMarginPct = totalRevenue > 0 ? ((totalRevenue - totalCogs) / totalRevenue) * 100 : 0
+
+    // ── BI Summary ────────────────────────────────────────────────────────────
+    const bi = pick(1)
+    const arFromBI = Number(bi?.arOutstanding ?? bi?.data?.arOutstanding ?? 0)
+    const apFromBI = Number(bi?.apOutstanding ?? bi?.data?.apOutstanding ?? 0)
+
+    // ── Balance Sheet ─────────────────────────────────────────────────────────
+    const bs = pick(2)
+    const totalAssets = Number(bs?.totalAssets ?? bs?.data?.totalAssets ?? bs?.assets?.total ?? 0)
+    const totalLiabilities = Number(
+      bs?.totalLiabilities ?? bs?.data?.totalLiabilities ?? bs?.liabilities?.total ?? 0
+    )
+    const totalEquity = Number(bs?.totalEquity ?? bs?.data?.totalEquity ?? bs?.equity?.total ?? 0)
+
+    // ── AR / AP Aging ─────────────────────────────────────────────────────────
+    const arAgingBuckets = extractAging(pick(3))
+    const apAgingBuckets = extractAging(pick(4))
+
+    // ── AR Invoices ───────────────────────────────────────────────────────────
+    // Counted and summed on the server over every invoice (the list is 4.8 MB on
+    // the dev data); the server sends the figures and the few rows listed below.
+    const arStats: ARInvoiceDashboardStats | null = pick(5)
+    // AP bills still decide overdue here, in the browser (AR invoices use the server's one definition).
+    const now = new Date()
+    const isOverdue = (doc: any) => {
+      const st = doc.status?.toUpperCase()
+      return (
+        st === 'OVERDUE' ||
+        (doc.dueDate && new Date(doc.dueDate) < now && st !== 'PAID' && st !== 'VOID')
+      )
+    }
+    const overdueInvoicesCount = arStats?.overdue.count ?? 0
+    const openInvoicesCount = arStats?.open.count ?? 0
+    const arFromInvoices = arStats?.open.outstanding ?? 0
+    const arOutstanding = arFromBI || arFromInvoices
+
+    // ── AP Bills ──────────────────────────────────────────────────────────────
+    const billList = arr(6)
+    const overdueBillsList = billList.filter(isOverdue)
+    const openBillsCount = billList.filter((bill) => {
+      const st = bill.status?.toUpperCase()
+      return st !== 'PAID' && st !== 'VOID'
+    }).length
+    const apFromBills = billList
+      .filter(
+        (bill) => bill.status?.toUpperCase() !== 'PAID' && bill.status?.toUpperCase() !== 'VOID'
+      )
+      // Net of withholding — that slice left AP for WHT Payable at receive()
+      // and is owed to the BIR, not to the supplier.
+      .reduce((sum, bill) => sum + apBillOutstanding(bill), 0)
+    const apOutstanding = apFromBI || apFromBills
+
+    // ── Bank Accounts ─────────────────────────────────────────────────────────
+    const bankList = arr(7)
+    const totalCash = bankList.reduce((sum, b) => sum + (Number(b.currentBalance) || 0), 0)
+
+    // ── Fixed Assets ──────────────────────────────────────────────────────────
+    const assetList = arr(8)
+    const activeAssetsCount = assetList.filter((a) => a.status === 'ACTIVE').length
+    const totalBookValue = assetList.reduce((sum, a) => sum + (Number(a.bookValue) || 0), 0)
+
+    // ── Fiscal Periods ────────────────────────────────────────────────────────
+    const periodList = arr(9)
+    const openPeriod = periodList.find((p) => p.status === 'OPEN')
+    const openPeriodName = openPeriod?.name ?? null
+
+    // ── Budget Variance ───────────────────────────────────────────────────────
+    const varianceList = arr(10)
+    const budgetAlerts = varianceList.filter((v: any) => v.alertTriggered || v.warnTriggered)
+
+    // ── P&L Breakdown chart ───────────────────────────────────────────────────
+    const pnlBreakdown = [
+      { label: 'COGS', value: totalCogs, color: '#f59e0b' },
+      { label: 'Op. Expenses', value: totalOpEx, color: '#ef4444' },
+      { label: 'Net Income', value: Math.max(0, netIncome), color: '#10b981' },
+    ].filter((seg) => seg.value > 0)
+
+    setS({
+      loaded: true,
+      lastUpdated: new Date(),
+      totalRevenue,
+      totalExpenses,
+      netIncome,
+      grossMarginPct,
+      totalAssets,
+      totalLiabilities,
+      totalEquity,
+      totalCash,
+      arOutstanding,
+      openInvoicesCount,
+      overdueInvoicesCount,
+      apOutstanding,
+      openBillsCount,
+      overdueBillsCount: overdueBillsList.length,
+      activeAssetsCount,
+      totalBookValue,
+      openPeriodName,
+      budgetAlertCount: budgetAlerts.length,
+      pnlBreakdown,
+      arAgingBuckets,
+      apAgingBuckets,
+      recentInvoices: arStats?.recent ?? [],
+      recentBills: billList.slice(0, 8),
+      overdueInvoicesList: arStats?.overdue.top ?? [],
+      overdueBillsList: overdueBillsList.slice(0, 6),
+      budgetAlerts: budgetAlerts.slice(0, 6),
+      bankAccountsList: bankList.slice(0, 4),
+    })
+  }, [access])
+
+  // Scenario 29 — this dashboard previously only ever fetched once on
+  // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
+  // CRM's dashboard fix and POS's own overview page (refetchInterval:
+  // 30_000 + refetchOnWindowFocus: true), the working reference pattern
+  // already established in this codebase. `load` fans out 11 API calls, so
+  // the poll pauses in hidden tabs and never overlaps itself (see the hook).
+  useVisiblePolling(load, 30_000)
+
+  const loading = !s.loaded
+
+  const netPositive = s.netIncome >= 0
+
+  return (
+    <div className="min-h-full bg-zinc-50">
+      {/* Header */}
+      <div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur px-6 py-4">
+        <div className="mx-auto max-w-7xl flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Financial Intelligence</h1>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {s.lastUpdated
+                ? `Updated ${s.lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
+                : 'Loading…'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/accounting/reports"
+              className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <BarChart2 className="h-3.5 w-3.5 text-gray-500" />
+              Reports
+            </Link>
+            <Link
+              href="/accounting/journal-entries"
+              className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <BookOpen className="h-3.5 w-3.5 text-gray-500" />
+              Journal
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-6 pt-8 pb-6 space-y-6">
+        {/* Module Navigation */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <LayoutGrid className="h-4 w-4 text-violet-500" />
+            <h2 className="text-base font-semibold text-gray-900">Module Navigation</h2>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
+              {(
+                [
+                  { label: 'AR Invoices', href: '/accounting/ar-invoices', icon: FileText },
+                  { label: 'AP Invoices', href: '/accounting/ap-bills', icon: CreditCard },
+                  {
+                    label: 'Journal Entries',
+                    href: '/accounting/journal-entries',
+                    icon: BookOpen,
+                  },
+                  {
+                    label: 'Chart of Accounts',
+                    href: '/accounting/chart-of-accounts',
+                    icon: BarChart2,
+                  },
+                  { label: 'Bank Recon', href: '/accounting/bank-reconciliation', icon: Wallet },
+                  { label: 'Reports', href: '/accounting/reports', icon: Clock },
+                ] as const
+              ).map(({ label, href, icon: Icon }, i) => (
+                <Link
+                  key={i}
+                  href={href}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-gray-100 bg-gray-50/50 px-3.5 py-2 text-xs font-medium text-gray-700 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-all"
+                >
+                  <Icon className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Secondary strip */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <BarChart2 className="h-4 w-4 text-violet-500" />
+            <h2 className="text-base font-semibold text-gray-900">Quick Stats</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(
+              [
+                {
+                  label: 'Open Invoices',
+                  val: s.openInvoicesCount,
+                  href: '/accounting/ar-invoices',
+                  accent: 'text-sky-700',
+                  bg: 'bg-sky-50 border-sky-100',
+                },
+                {
+                  label: 'Open Bills',
+                  val: s.openBillsCount,
+                  href: '/accounting/ap-bills',
+                  accent: 'text-purple-700',
+                  bg: 'bg-purple-50 border-purple-100',
+                },
+                {
+                  label: 'Budget Alerts',
+                  val: s.budgetAlertCount,
+                  href: '/accounting/budgets',
+                  accent: s.budgetAlertCount > 0 ? 'text-red-700' : 'text-gray-700',
+                  bg:
+                    s.budgetAlertCount > 0
+                      ? 'bg-red-50 border-red-100'
+                      : 'bg-gray-50 border-gray-100',
+                },
+                {
+                  label: 'Active Period',
+                  display: s.openPeriodName ?? '—',
+                  href: '/accounting/fiscal-periods',
+                  accent: s.openPeriodName ? 'text-emerald-700' : 'text-gray-400',
+                  bg: 'bg-emerald-50 border-emerald-100',
+                },
+              ] as const
+            ).map((m, i) => (
+              <Link
+                key={i}
+                href={m.href}
+                className={`rounded-xl border px-4 py-3 flex items-center justify-between hover:shadow-sm transition-all ${m.bg}`}
+              >
+                <span className="text-xs text-gray-600 font-medium">{m.label}</span>
+                <span className={`text-sm font-bold tabular-nums ${m.accent}`}>
+                  {loading ? '—' : 'display' in m ? m.display : fmtNum(m.val)}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Analysis: P&L breakdown + AR aging + AP aging */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <PieChart className="h-4 w-4 text-violet-500" />
+            <h2 className="text-base font-semibold text-gray-900">Financial Health</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">P&amp;L Breakdown</h2>
+                <p className="text-xs text-gray-400">Revenue allocation — year to date</p>
+              </div>
+              {loading ? (
+                <div className="flex items-center gap-6">
+                  <Sk className="h-[148px] w-[148px] rounded-full" />
+                  <div className="space-y-2.5 flex-1">
+                    {[...Array(3)].map((_, i) => (
+                      <Sk key={i} className="h-4 w-full" />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <DonutChart segments={s.pnlBreakdown} />
+              )}
+              {!loading && (
+                <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Revenue</p>
+                    <p className="text-sm font-bold text-emerald-700">{fmtMoney(s.totalRevenue)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Net Income</p>
+                    <p
+                      className={`text-sm font-bold ${netPositive ? 'text-violet-700' : 'text-red-600'}`}
+                    >
+                      {fmtMoney(s.netIncome)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">AR Aging</h2>
+                  <p className="text-xs text-gray-400">Receivables by days outstanding</p>
+                </div>
+                <Link
+                  href="/accounting/ar-invoices"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  All <ChevronRight className="h-3 w-3" />
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-8 w-full" />
+                  ))}
+                </div>
+              ) : s.arAgingBuckets.length === 0 ? (
+                <EmptyState message="No AR aging data available" />
+              ) : (
+                <HBarChart items={s.arAgingBuckets} />
+              )}
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">AP Aging</h2>
+                  <p className="text-xs text-gray-400">Payables by days outstanding</p>
+                </div>
+                <Link
+                  href="/accounting/ap-bills"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  All <ChevronRight className="h-3 w-3" />
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-8 w-full" />
+                  ))}
+                </div>
+              ) : s.apAgingBuckets.length === 0 ? (
+                <EmptyState message="No AP aging data available" />
+              ) : (
+                <HBarChart items={s.apAgingBuckets} />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Bank Accounts */}
+        {(loading || s.bankAccountsList.length > 0) && (
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Bank Account Balances</h2>
+                <p className="text-xs text-gray-400">Current balances across all active accounts</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full border border-violet-100">
+                  {loading ? '…' : fmtMoney(s.totalCash)} total
+                </span>
+                <Link
+                  href="/accounting/bank-accounts"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  All <ChevronRight className="h-3 w-3" />
+                </Link>
+              </div>
+            </div>
+            {loading ? (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[...Array(4)].map((_, i) => (
+                  <Sk key={i} className="h-14 w-full" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {s.bankAccountsList.map((bank, i) => (
+                  <div key={i} className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: COLORS[i % COLORS.length] }}
+                      />
+                      <p className="text-xs text-gray-500 truncate">{bank.bankName}</p>
+                    </div>
+                    <p className="text-xs font-medium text-gray-700 truncate">{bank.name}</p>
+                    <p className="text-sm font-bold text-gray-900 tabular-nums mt-0.5">
+                      {fmtMoney(Number(bank.currentBalance) || 0)}
+                    </p>
+                    <p className="text-[10px] text-gray-400">
+                      {bank.currencyCode} · {bank.accountType}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Operations: AR Invoices + AP Bills */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <Activity className="h-4 w-4 text-gray-500" />
+            <h2 className="text-base font-semibold text-gray-900">Recent Transactions</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-sky-500" />
+                  AR Invoices
+                </h3>
+                <Link
+                  href="/accounting/ar-invoices"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  View all <ArrowUpRight className="h-3 w-3" />
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-11 w-full" />
+                  ))}
+                </div>
+              ) : s.recentInvoices.length === 0 ? (
+                <EmptyState message="No invoices found" />
+              ) : (
+                <div className="space-y-1">
+                  {s.recentInvoices.map((inv, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-900 truncate">
+                          {inv.customer ? inv.customer.name : inv.customerId}
+                        </p>
+                        <p className="text-[11px] text-gray-400">
+                          {inv.invoiceNumber} · {fmtDate(inv.invoiceDate)}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-xs font-bold text-gray-900 tabular-nums">
+                          {fmtMoney(Number(inv.totalAmount) || 0)}
+                        </p>
+                        <span
+                          className={`text-[10px] font-medium capitalize rounded-full px-1.5 py-0.5 ${statusCls(inv.status)}`}
+                        >
+                          {statusLabel(inv.status)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-purple-500" />
+                  AP Invoices
+                </h3>
+                <Link
+                  href="/accounting/ap-bills"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  View all <ArrowUpRight className="h-3 w-3" />
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-11 w-full" />
+                  ))}
+                </div>
+              ) : s.recentBills.length === 0 ? (
+                <EmptyState message="No bills found" />
+              ) : (
+                <div className="space-y-1">
+                  {s.recentBills.map((bill, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-900 truncate">
+                          {bill.supplier?.name ?? bill.supplierId}
+                        </p>
+                        <p className="text-[11px] text-gray-400">
+                          {bill.billNumber} · {fmtDate(bill.billDate)}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-xs font-bold text-gray-900 tabular-nums">
+                          {fmtMoney(Number(bill.totalAmount) || 0)}
+                        </p>
+                        <span
+                          className={`text-[10px] font-medium capitalize rounded-full px-1.5 py-0.5 ${statusCls(bill.status)}`}
+                        >
+                          {statusLabel(bill.status)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Alerts: Overdue + Budget */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-red-500" />
+            <h2 className="text-base font-semibold text-gray-900">Alerts &amp; Risk Signals</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Overdue Invoices */}
+            <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                  Overdue Receivables
+                </h3>
+                <Link
+                  href="/accounting/ar-invoices"
+                  className="text-xs text-red-600 hover:underline tabular-nums"
+                >
+                  {loading ? '…' : s.overdueInvoicesCount} total
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.overdueInvoicesList.length === 0 ? (
+                <EmptyState message="No overdue receivables" />
+              ) : (
+                <div className="space-y-2">
+                  {s.overdueInvoicesList.map((inv, i) => {
+                    const days = daysOverdue(inv.dueDate)
+                    return (
+                      <div key={i} className="rounded-lg border border-red-100 bg-red-50 p-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-900 truncate">
+                              {inv.customer ? inv.customer.name : inv.customerId}
+                            </p>
+                            <p className="text-[11px] text-gray-500">
+                              {inv.invoiceNumber} · Due {fmtDate(inv.dueDate)}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-xs font-bold text-gray-900">
+                              {fmtMoney(Number(inv.totalAmount) - Number(inv.amountPaid))}
+                            </p>
+                            <p className="text-[10px] text-red-600 font-medium">{days}d overdue</p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Budget Alerts */}
+            <div className="rounded-xl border border-amber-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  Budget Variance Alerts
+                </h3>
+                <Link
+                  href="/accounting/budgets"
+                  className="text-xs text-amber-600 hover:underline tabular-nums"
+                >
+                  {loading ? '…' : s.budgetAlertCount} alerts
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.budgetAlerts.length === 0 ? (
+                <EmptyState message="All budgets within thresholds" />
+              ) : (
+                <div className="space-y-2">
+                  {s.budgetAlerts.map((v, i) => {
+                    const isAlert = v.alertTriggered
+                    return (
+                      <div
+                        key={i}
+                        className={`rounded-lg border p-2.5 ${isAlert ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-900 truncate">
+                              {v.account?.name ?? v.account?.number ?? 'Unknown Account'}
+                            </p>
+                            <div className="mt-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${isAlert ? 'bg-red-500' : 'bg-amber-500'}`}
+                                style={{ width: `${Math.min(v.usedPct ?? 0, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p
+                              className={`text-xs font-bold ${isAlert ? 'text-red-700' : 'text-amber-700'}`}
+                            >
+                              {v.usedPct != null ? `${v.usedPct.toFixed(0)}%` : '—'}
+                            </p>
+                            <p className="text-[10px] text-gray-400">of budget</p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Overdue Bills */}
+        {(loading || s.overdueBillsList.length > 0) && (
+          <div className="rounded-xl border border-rose-100 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[11px] font-bold text-rose-700 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                Overdue Payables
+              </h3>
+              <Link
+                href="/accounting/ap-bills"
+                className="text-xs text-rose-600 hover:underline tabular-nums"
+              >
+                {loading ? '…' : s.overdueBillsCount} total
+              </Link>
+            </div>
+            {loading ? (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {[...Array(3)].map((_, i) => (
+                  <Sk key={i} className="h-14 w-full" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {s.overdueBillsList.map((bill, i) => {
+                  const days = daysOverdue(bill.dueDate)
+                  return (
+                    <div key={i} className="rounded-lg border border-rose-100 bg-rose-50 p-2.5">
+                      <p className="text-xs font-semibold text-gray-900 truncate">
+                        {bill.supplier?.name ?? bill.supplierId}
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        {bill.billNumber} · Due {fmtDate(bill.dueDate)}
+                      </p>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-xs font-bold text-gray-900">
+                          {fmtMoney(apBillOutstanding(bill))}
+                        </span>
+                        <span className="text-[10px] text-rose-600 font-medium">
+                          {days}d overdue
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

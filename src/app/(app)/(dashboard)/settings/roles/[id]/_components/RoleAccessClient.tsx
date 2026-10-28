@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { ArrowLeft, AlertTriangle, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -184,6 +185,13 @@ export default function RoleAccessClient({
                 {role.description && (
                   <p className="mt-0.5 text-sm text-zinc-500">{role.description}</p>
                 )}
+                {/* Access Levels Part 2: which accounts the role may use. */}
+                <Link
+                  href={`/settings/roles/${role.id}/limits`}
+                  className="mt-1.5 inline-flex text-xs font-medium text-prominent-purple-700 hover:underline"
+                >
+                  Account limits →
+                </Link>
               </div>
             </div>
             <span

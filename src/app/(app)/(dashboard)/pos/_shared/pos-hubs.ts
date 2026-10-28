@@ -32,6 +32,7 @@ import {
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { RESERVATION_ACCESS } from '@/src/libs/guards/shared-ownership'
 import { canManagePosSettings, canNavigate, type SessionUser } from '@/src/libs/guards/permission'
 
 /**
@@ -147,7 +148,10 @@ export const SALES_COUNTER_HUB: PosHub = {
       label: 'Reservations',
       href: '/pos/reservations',
       icon: BookmarkCheck,
-      permissions: [],
+      // The page and its routes take POS's or Inventory's reservation
+      // permission; a role with neither (Deposit Clerk, Stock Clerk) used to
+      // see the tab and land on /403.
+      permissions: RESERVATION_ACCESS.READ,
       branchSwitcher: true,
     },
     {
@@ -339,7 +343,10 @@ export const CASH_RECEIPTS_HUB: PosHub = {
       label: 'New Receipts',
       href: '/pos/collections/acknowledgement',
       icon: ReceiptText,
-      permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE],
+      permissions: [
+        POS_PERMISSIONS.COLLECTIONS_MANAGE,
+        POS_PERMISSIONS.ACKNOWLEDGEMENT_RECEIPTS_CREATE,
+      ],
     },
     {
       // Collected Funds History (client, 2026-10-26), formerly Undeposited
