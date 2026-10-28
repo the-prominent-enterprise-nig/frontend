@@ -3,7 +3,7 @@
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
 import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
 import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
-import { getAgingReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-report'
+import { getAgingSummary } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-summary'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
 import { getStockoutAlerts } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-stockout-alerts'
 import { getExpiringBatches } from '@/src/app/(app)/(dashboard)/inventory/batches/_actions/get-batches'
@@ -50,7 +50,7 @@ export async function getInventoryDashboard(): Promise<InventoryDashboardRead[]>
     getNegativeStockViolations({ limit: 50 }), // 9
     getBackorders({ limit: 50 }), // 10
     getReturns({ limit: 20 }), // 11
-    getAgingReport({ limit: 1 }), // 12 — only `summary` (computed before paging) is used, not the rows
+    getAgingSummary(), // 12 — only `summary` is used; the summary view skips the unit rows and their joins
     getPurchaseRequests({ limit: 50 }), // 13
     getPurchaseOrders({ limit: 50 }), // 14
     getAdjustments({ limit: 50 }), // 15
