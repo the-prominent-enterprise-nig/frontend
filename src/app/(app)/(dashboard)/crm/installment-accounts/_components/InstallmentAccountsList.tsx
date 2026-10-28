@@ -3,7 +3,16 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, Wallet, FileClock, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import {
+  Plus,
+  Search,
+  Wallet,
+  FileClock,
+  Upload,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+} from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -91,7 +100,13 @@ const SORT_OPTIONS = [
   { value: 'desc', label: 'Upcoming Due' },
 ]
 
-export default function InstallmentAccountsList({ canCreate }: { canCreate: boolean }) {
+export default function InstallmentAccountsList({
+  canCreate,
+  canLoadAging,
+}: {
+  canCreate: boolean
+  canLoadAging: boolean
+}) {
   const router = useRouter()
   const [accounts, setAccounts] = useState<InstallmentAccount[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
@@ -191,6 +206,15 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
             <FileClock className="h-4 w-4" />
             AR Aging Report
           </Link>
+          {canLoadAging && (
+            <Link
+              href="/crm/installment-accounts/load-aging"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
+            >
+              <Upload className="h-4 w-4" />
+              Load aging sheet
+            </Link>
+          )}
           {canCreate && (
             <Link
               href="/crm/installment-accounts/new"

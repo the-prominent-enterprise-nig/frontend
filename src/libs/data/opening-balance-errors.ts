@@ -7,6 +7,8 @@ const OPENING_ERROR_MESSAGES: Record<string, string> = {
   as_of_date_required: 'Enter the cut-off date the balances are as of.',
   as_of_date_in_future: 'The cut-off date cannot be in the future.',
   offset_account_not_found: 'The account to post against was not found. Pick another one.',
+  load_in_progress: 'An aging load is still running. Wait for it to finish, then try again.',
+  nothing_to_load: 'Every row in this file was skipped, so there is nothing to load.',
 }
 
 /**
@@ -24,6 +26,7 @@ export function humanizeOpeningImportError(message?: string): string | undefined
     return `The column headers weren't recognized (${detail}). Use the template's headers.`
   }
   if (code === 'too_many_rows') return `This file has too many rows — ${detail}.`
+  if (code === 'load_not_found') return detail || message
   if (code === 'row_failed') {
     return `A row could not be saved${detail ? ` — ${detail}` : ''}. Nothing was imported.`
   }

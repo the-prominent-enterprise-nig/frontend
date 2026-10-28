@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
+import { can, canAny } from '@/src/libs/guards/permission'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { PendingDim, UrlFiltersProvider } from '@/src/components/ssr/UrlFilters'
@@ -49,7 +49,14 @@ export default async function AgingReportPage({
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <AgingHeading />
           <Suspense fallback={<ActionsSkeleton />}>
-            <AgingActions summary={summary} filters={filters} />
+            <AgingActions
+              summary={summary}
+              filters={filters}
+              canLoad={canAny(session, [
+                CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_CREATE,
+                ACCOUNTING_PERMISSIONS.AR_INVOICES_CREATE,
+              ])}
+            />
           </Suspense>
         </header>
 
