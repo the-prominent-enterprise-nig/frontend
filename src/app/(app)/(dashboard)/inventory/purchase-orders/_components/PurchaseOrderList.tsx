@@ -1152,10 +1152,13 @@ export function PurchaseOrderList({
         onCreate={async (data) => {
           await createPR(data)
           // Creating here always drafts a Purchase Request, not a Purchase
-          // Order — show it under the Requests filter, or switch to the
-          // separate Requests tab where this list has no such filter.
-          if (requestsSession) setShowRequests(true)
-          else router.replace(procurementHref(pathname, 'requests'))
+          // Order — show it under Requests › Awaiting action (whichever view
+          // was last open), or switch to the separate Requests tab where
+          // this list has no such filter.
+          if (requestsSession) {
+            requests.setView('open')
+            setShowRequests(true)
+          } else router.replace(procurementHref(pathname, 'requests'))
         }}
         isCreating={isCreating}
         po={editingPo}
