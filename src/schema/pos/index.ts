@@ -1680,7 +1680,15 @@ export interface OverrideReviewEntry {
   transactionNumber: string
   salesInvoiceNumber: string | null
   occurredAt: string
+  /** Null for a walk-in sale with no customer on it. */
+  customer: { id: string; name: string; customerCode: string } | null
+  /** The whole sale's total, not just this line's. */
+  saleTotal: number
   item: { id: string; name: string; sku: string | null }
+  /** Serial number(s) of the unit sold — two for a split-type item; empty when not serial-tracked. */
+  serials: string[]
+  /** The installment account this line's plan became; null for a cash or TPF line. */
+  installmentAccount: { id: string; accountNumber: string } | null
   quantity: number
   sellerName: string | null
   cashierName: string | null
