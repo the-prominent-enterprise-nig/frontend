@@ -821,7 +821,6 @@ export default function InstallmentAccountDetail({
                 }
               />
               <Row label="Months run" value={String(account.monthsRun)} />
-              <Row label="Points" value={String(account.points)} />
             </dl>
 
             {account.category !== 'C' &&
