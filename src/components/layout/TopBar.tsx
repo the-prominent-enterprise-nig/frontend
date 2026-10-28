@@ -58,6 +58,8 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
   // Workspace block, so the dropdown stays out of their way — unchanged.
   const showAdminDropdown = canSeeUsers && session?.primaryRole !== 'Business Owner'
   const displayName = session?.firstName || session?.fullName || session?.email || 'User'
+  // The primary role when there is one; otherwise every role they hold.
+  const roleLabel = session?.primaryRole || session?.roles.join(', ')
   const initials =
     displayName
       .split(/\s+/)
@@ -91,6 +93,9 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                     <div className="absolute right-0 top-full z-[60] mt-1 min-w-48 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
                       <div className="border-b border-zinc-100 px-3 py-2.5">
                         <p className="text-sm font-semibold text-zinc-900">{displayName}</p>
+                        {roleLabel && (
+                          <p className="text-xs font-medium text-[#5b21b6]">{roleLabel}</p>
+                        )}
                         {session.email && <p className="text-xs text-zinc-400">{session.email}</p>}
                       </div>
                       <Link

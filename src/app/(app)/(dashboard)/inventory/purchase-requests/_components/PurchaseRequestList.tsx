@@ -213,7 +213,8 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
     createPR,
     isCreating,
   } = usePurchaseRequests()
-  const actions = usePurchaseRequestActions(session)
+  // A submit that auto-converted stays here, on the Converted tab.
+  const actions = usePurchaseRequestActions(session, undefined, () => setStatusFilter('converted'))
   const canCreate = actions.can.create
 
   const [searchFocus, setSearchFocus] = useState(false)
@@ -291,6 +292,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                 <button
                   key={tab.label}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => setStatusFilter(tab.value)}
                   className={`rounded-[20px] border px-3 py-[6px] text-[12.5px] transition-colors ${
                     on
