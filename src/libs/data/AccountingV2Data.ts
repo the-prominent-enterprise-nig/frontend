@@ -1074,7 +1074,14 @@ export const AcknowledgementReceipts = {
 
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
-export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill' | 'x_deal'
+export type CreditMemoType =
+  | 'sales_return'
+  | 'billing_adjustment'
+  | 'goodwill'
+  | 'x_deal'
+  // Scenario 79 — the interest an early settlement forgives; issued with the
+  // payoff from the CRM account page, voided through EarlySettlementMemos.
+  | 'early_settlement'
 export interface CreditMemoLine {
   id: string
   itemId: string
@@ -1175,6 +1182,11 @@ export const XDealMemos = {
   issue: (body: { posTransactionId: string; reason?: string; memoDate?: string }) =>
     api.post<CreditMemo>('/credit-memos/x-deal', body),
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/x-deal/${id}/void`, {}),
+}
+
+/** Scenario 79 — voiding one reopens the installment account it settled. */
+export const EarlySettlementMemos = {
+  void: (id: string) => api.post<CreditMemo>(`/credit-memos/early-settlement/${id}/void`, {}),
 }
 
 // ============ Debit Memos ============

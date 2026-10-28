@@ -345,6 +345,10 @@ export interface Collector {
   status: CollectorStatus
   /** Free-text supervisor name from the client's collector list. */
   supervisorName?: string | null
+  /** Municipality/town-level area, e.g. "Antique_North" — "Area:" on the AR Aging print. */
+  area?: string | null
+  /** Old IAS area code, e.g. "ANTIQUE N" — the AR Aging print sorts and heads collectors by it. */
+  areaCode?: string | null
   createdAt: string
   updatedAt: string
 }

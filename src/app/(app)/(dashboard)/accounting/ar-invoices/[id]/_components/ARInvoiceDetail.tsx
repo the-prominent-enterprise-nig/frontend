@@ -81,6 +81,7 @@ const MEMO_TYPE_LABELS: Record<string, string> = {
   billing_adjustment: 'Billing Adjustment',
   goodwill: 'Goodwill',
   x_deal: 'X-Deal',
+  early_settlement: 'Early Settlement',
 }
 
 /** One credit or debit memo against this invoice. Direction is what the

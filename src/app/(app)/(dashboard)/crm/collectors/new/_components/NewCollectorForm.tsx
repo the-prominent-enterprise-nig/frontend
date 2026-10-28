@@ -15,6 +15,9 @@ const initial: CreateCollectorInput = {
   name: '',
   branchId: '',
   status: 'active',
+  area: '',
+  areaCode: '',
+  supervisorName: '',
   areaBarangayCodes: [],
 }
 
@@ -91,6 +94,30 @@ export default function NewCollectorForm() {
             value={form.name}
             onChange={(v) => setField('name', v)}
             placeholder="Juan Dela Cruz"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="Area"
+            error={errors.area}
+            value={form.area ?? ''}
+            onChange={(v) => setField('area', v)}
+            placeholder="Antique_North"
+          />
+          <Field
+            label="Area code"
+            error={errors.areaCode}
+            value={form.areaCode ?? ''}
+            onChange={(v) => setField('areaCode', v)}
+            placeholder="ANTIQUE N"
+          />
+          <Field
+            label="Supervisor"
+            error={errors.supervisorName}
+            value={form.supervisorName ?? ''}
+            onChange={(v) => setField('supervisorName', v)}
+            placeholder="Rivera Roderick"
           />
         </div>
 

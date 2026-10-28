@@ -27,8 +27,6 @@ import {
   Scale,
 } from 'lucide-react'
 import { installmentAccountsApi, remindersApi } from '@/src/libs/api/crm'
-import EarlyPayoffModal from '@/src/components/crm/EarlyPayoffModal'
-import RecordPaymentModal from '@/src/components/crm/RecordPaymentModal'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import CompleteReminderModal from '@/src/components/crm/CompleteReminderModal'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
@@ -154,7 +152,8 @@ export default function InstallmentAccountDetail({
   id,
   canEdit,
   canEarlyPayoff,
-  canRecordPayment,
+  canCollectAtPos,
+  canRecordReceipt,
   canApproveGraduation,
   canApproveDamEscalation,
   canManageLegalEscalation,
@@ -166,7 +165,10 @@ export default function InstallmentAccountDetail({
   id: string
   canEdit: boolean
   canEarlyPayoff: boolean
-  canRecordPayment: boolean
+  /** Record payment for a POS-sale plan — it opens POS Collections. */
+  canCollectAtPos: boolean
+  /** Record payment for an imported/hand-entered account — it opens AR New Receipt. */
+  canRecordReceipt: boolean
   canApproveGraduation: boolean
   canApproveDamEscalation: boolean
   canManageLegalEscalation: boolean
@@ -180,24 +182,6 @@ export default function InstallmentAccountDetail({
   const [account, setAccount] = useState<DetailType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [payoffOpen, setPayoffOpen] = useState(false)
-  const [paymentOpen, setPaymentOpen] = useState(false)
-  const [payoffQuote, setPayoffQuote] = useState<number | null>(null)
-  // EarlyPayoffModal seeds its form state from `suggestedAmount` only on
-  // mount (it stays mounted, just returns null while closed) — bumping this
-  // key forces a fresh mount each time so the just-fetched quote actually
-  // makes it into the pre-filled amount instead of the stale first value.
-  const [payoffModalKey, setPayoffModalKey] = useState(0)
-
-  async function openPayoffModal() {
-    // Pre-fill with the real early-closure quote (ID/Terms x MosRun + LCP -
-    // Total Paid) instead of the full remaining balance — falls back to the
-    // balance only if the quote call fails, so the modal still opens.
-    const res = await installmentAccountsApi.getEarlyPayoffQuote(id)
-    setPayoffQuote(res.success ? (res.data?.payoffAmount ?? null) : null)
-    setPayoffModalKey((k) => k + 1)
-    setPayoffOpen(true)
-  }
 
   const [graduationRequests, setGraduationRequests] = useState<CategoryGraduationRequest[]>([])
   const [requestingGraduation, setRequestingGraduation] = useState(false)
@@ -366,7 +350,29 @@ export default function InstallmentAccountDetail({
   }
 
   const canSettle = canEarlyPayoff && account.status === 'active'
-  const canPay = canRecordPayment && account.status === 'active'
+  // Scenario 79 — Record payment goes where the payment is posted (receipt,
+  // GL, dues), not the old CRM-only modal that only moved this account's
+  // stored figures. POS Collections only lists POS-sale plans, so an
+  // imported/hand-entered account (one AR invoice, no schedule) goes to AR
+  // New Receipt with that invoice picked instead.
+  const paymentHref = account.installmentScheduleId
+    ? `/pos/collections?${new URLSearchParams({
+        customerId: account.customerId,
+        customerName: account.customer.name,
+        scheduleId: account.installmentScheduleId,
+      })}`
+    : account.arInvoiceId
+      ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
+          customerId: account.customerId,
+          customerName: account.customer.name,
+          invoiceId: account.arInvoiceId,
+          returnTo: `/crm/installment-accounts/${id}`,
+        })}`
+      : null
+  const canPay =
+    account.status === 'active' &&
+    !!paymentHref &&
+    (account.installmentScheduleId ? canCollectAtPos : canRecordReceipt)
   // The first payment still to come — the one the billing list points at.
   const nextBillLine = account.billingHistory.find(
     (b) => b.status !== 'PAID' && b.status !== 'CANCELLED'
@@ -411,23 +417,23 @@ export default function InstallmentAccountDetail({
               <BookOpen className="h-4 w-4" />
               View ledger
             </Link>
-            {canPay && (
-              <button
-                onClick={() => setPaymentOpen(true)}
-                className={`${ACTION_BUTTON} flex-1 sm:flex-none`}
-              >
+            {canPay && paymentHref && (
+              // Scenario 79 — opens where the payment is posted (see paymentHref).
+              <Link href={paymentHref} className={`${ACTION_BUTTON} flex-1 sm:flex-none`}>
                 <Coins className="h-4 w-4" />
                 Record payment
-              </button>
+              </Link>
             )}
             {canSettle && (
-              <button
-                onClick={() => void openPayoffModal()}
+              // Scenario 79 — its own page (the payoff breakdown plus the
+              // receipt it's collected on); it was a modal.
+              <Link
+                href={`/crm/installment-accounts/${id}/settle-early`}
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700 sm:flex-none"
               >
                 <Banknote className="h-4 w-4" />
                 Settle early
-              </button>
+              </Link>
             )}
             {canEdit && (
               <Link
@@ -815,7 +821,6 @@ export default function InstallmentAccountDetail({
                 }
               />
               <Row label="Months run" value={String(account.monthsRun)} />
-              <Row label="Points" value={String(account.points)} />
             </dl>
 
             {account.category !== 'C' &&
@@ -926,38 +931,6 @@ export default function InstallmentAccountDetail({
         onClose={() => setCompletingReminderId(null)}
         onCompleted={loadReminders}
         reminderId={completingReminderId}
-      />
-
-      <EarlyPayoffModal
-        key={payoffModalKey}
-        open={payoffOpen}
-        onClose={() => setPayoffOpen(false)}
-        onSettled={() => {
-          reload()
-          // Scenario 20 (NAMIDRe): an early payoff auto-closes any open
-          // reminder on this account server-side — refresh the list so
-          // that shows up without a manual page reload.
-          loadReminders()
-        }}
-        accountId={id}
-        suggestedAmount={payoffQuote ?? Number(account.currentBalance)}
-      />
-
-      <RecordPaymentModal
-        open={paymentOpen}
-        onClose={() => setPaymentOpen(false)}
-        onRecorded={() => {
-          reload()
-          // Scenario 20 (NAMIDRe): a recorded payment auto-closes any open
-          // reminder on this account server-side — refresh the list so
-          // that shows up without a manual page reload.
-          loadReminders()
-        }}
-        accountId={id}
-        suggestedAmount={Number(account.monthlyInstallment)}
-        suggestedRebate={Number(account.ppd)}
-        monthlyInstallment={Number(account.monthlyInstallment)}
-        partialPaymentOnNextDue={Number(account.partialPaymentOnNextDue)}
       />
 
       {rejectingRequestId && (

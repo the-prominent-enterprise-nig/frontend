@@ -306,8 +306,38 @@ export type InstallmentAccountFilters = {
   dueFrom?: string
   dueTo?: string
   page?: number
+  /** At most 20 — the API rejects more. */
   limit?: number
+  /** 'dueDate' sorts by the Due Date the list shows; accounts with none come last. */
+  sortBy?: 'createdAt' | 'dueDate'
+  sortOrder?: 'asc' | 'desc'
 } & Record<string, string | number | boolean | undefined>
+
+/**
+ * Scenario 79 — the client's Settle Early formula:
+ * payoff = ID / Terms × MOS RUN + LCP − Total Paid.
+ */
+export interface EarlyPayoffQuote {
+  installmentAccountId: string
+  asOf: string
+  interestDifferential: number | string
+  termMonths: number
+  listedCashPrice: number | string
+  /** MOS RUN — months elapsed by asOf (dues whose date has arrived), not months paid. */
+  monthsRun: number
+  /** Down payment included. */
+  totalPaid: number
+  /** What the settlement clears off the account. */
+  receivable: number
+  /** ID / Terms × MOS RUN — the interest the customer still pays. */
+  interestCharged: number
+  /** The interest forgiven: receivable − payoff. */
+  discount: number
+  payoffAmount: number
+  blockedReason: 'unpaid_down_payment' | 'no_receivable' | 'nothing_outstanding' | null
+  /** The earliest payment date it can be settled on (YYYY-MM-DD): the later of the sale and the last payment. */
+  earliestDate: string | null
+}
 
 export const installmentAccountsApi = {
   list: (filters?: InstallmentAccountFilters) =>
@@ -328,16 +358,12 @@ export const installmentAccountsApi = {
     ),
   earlyPayoff: (id: string, body: EarlyPayoffInput) =>
     api.post<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/early-payoff`, body),
-  getEarlyPayoffQuote: (id: string) =>
-    api.get<{
-      installmentAccountId: string
-      interestDifferential: number | string
-      termMonths: number
-      monthsRun: number
-      listedCashPrice: number | string
-      totalPaid: number
-      payoffAmount: number
-    }>(`/crm/installment-accounts/${id}/early-payoff-quote`),
+  /** Scenario 79 — as of `asOf` (YYYY-MM-DD, the payment date; today if omitted). */
+  getEarlyPayoffQuote: (id: string, asOf?: string) =>
+    api.get<EarlyPayoffQuote>(
+      `/crm/installment-accounts/${id}/early-payoff-quote`,
+      asOf ? { asOf } : undefined
+    ),
   recordPayment: (id: string, body: RecordPaymentInput) =>
     api.post<InstallmentAccountDetail & { pointEarned: boolean; monthsCovered: number }>(
       `/crm/installment-accounts/${id}/payments`,
