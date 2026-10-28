@@ -45,7 +45,9 @@ test.describe('Roles & Access — module map', () => {
       .click()
     const customers = page.locator('[data-feature="accounting.customers"]')
     await expect(customers).toContainText('Shared with: CRM, POS')
-    await expect(customers).toContainText('Owner pending (A)')
+    // Ownership answer A: shared by all three, no single owner.
+    await expect(customers).toContainText('Customers owned by: Accounting, CRM, POS')
+    await expect(page.getByText(/Owner pending/)).toHaveCount(0)
     const expenses = page.locator('[data-feature="accounting.expenses"]')
     await expect(expenses).toContainText('On')
     await expect(expenses).toContainText('Comes with, view only:')

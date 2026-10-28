@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { canAny } from '@/src/libs/guards/permission'
 import { HubTabs } from '../_shared/HubTabs'
 import { DriverList } from './_components/DriverList'
+import { DRIVER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 export const metadata = {
   title: 'Drivers | NIG Central',
@@ -15,7 +15,7 @@ export default async function DriversPage() {
   const session = await getSessionOrNull()
 
   if (!session) redirect('/login')
-  if (!can(session, INVENTORY_PERMISSIONS.TRANSFERS_READ)) redirect('/403')
+  if (!canAny(session, DRIVER_ACCESS.READ)) redirect('/403')
 
   return (
     <div className="min-h-screen bg-zinc-50">

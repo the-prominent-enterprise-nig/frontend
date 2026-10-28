@@ -4,6 +4,7 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { canAny } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { DebitMemosHub } from './_components/DebitMemosHub'
+import { INVENTORY_DEBIT_MEMO_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 export const metadata = {
   title: 'Debit Memos | NIG Central',
@@ -20,7 +21,7 @@ export default async function DebitMemosPage() {
   const hasAccess = canAny(session, [
     ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
     ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
-    ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ,
+    ...INVENTORY_DEBIT_MEMO_ACCESS.READ,
   ])
 
   if (!hasAccess) redirect('/403')

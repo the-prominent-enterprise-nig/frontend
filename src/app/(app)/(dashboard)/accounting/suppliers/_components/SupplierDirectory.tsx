@@ -17,6 +17,7 @@ import { useSuppliers, type StatusFilter } from '../_hooks/useSuppliers'
 import SupplierList from './SupplierList'
 import SupplierDetailPanel from './SupplierDetailPanel'
 import { SupplierFormModal } from './SupplierFormModal'
+import { SUPPLIER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 /**
  * The Suppliers screen: who we buy from, the terms we buy on, and the items
@@ -27,8 +28,8 @@ import { SupplierFormModal } from './SupplierFormModal'
  * "where do we pay them") are all about one row, and none of them fit a column.
  */
 export default function SupplierDirectory({ session }: { session: SessionUser }) {
-  const canCreate = hasPermission(session, PROCUREMENT_PERMISSIONS.SUPPLIERS_CREATE)
-  const canUpdate = hasPermission(session, PROCUREMENT_PERMISSIONS.SUPPLIERS_UPDATE)
+  const canCreate = SUPPLIER_ACCESS.CREATE.some((p) => hasPermission(session, p))
+  const canUpdate = SUPPLIER_ACCESS.UPDATE.some((p) => hasPermission(session, p))
   // Procurement gates its "+ New Purchase" on PR_CREATE, because creating
   // there drafts a purchase request rather than a live PO. The shortcut from
   // here lands on that same form, so it answers to the same permission.

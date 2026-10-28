@@ -15,8 +15,8 @@ export type AccessFeature = {
   sharedWith: string[]
   /** Exact permissions that come with the feature, view or pick only. */
   needs: string[]
-  /** Ownership question A–F in the Step 0 map, until it's answered. */
-  pendingDecision?: string
+  /** A part owned by more than one module (ownership answers A, D and F). */
+  jointOwners?: { part: string; owners: string[] }
 }
 
 export type AccessMap = {

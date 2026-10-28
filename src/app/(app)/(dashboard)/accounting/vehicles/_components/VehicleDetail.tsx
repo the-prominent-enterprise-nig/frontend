@@ -6,12 +6,12 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Pencil, Receipt, X } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import type { VehicleListItem } from '@/src/schema/inventory/vehicles'
 import { getVehicleExpenses } from '../_actions/get-vehicle-expenses'
 import { CATEGORY_LABELS, EXPENSE_KIND_LABELS } from './vehicle-labels'
+import { DRIVER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 const PAGE_SIZE = 25
 
@@ -35,7 +35,7 @@ export function VehicleDetail({
   const [to, setTo] = useState('')
   const [page, setPage] = useState(1)
 
-  const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.DRIVERS_UPDATE)
+  const canUpdate = DRIVER_ACCESS.UPDATE.some((p) => hasPermission(session, p))
   // The vehicle itself is readable with transfers:read, but its expenses are
   // accounting data and the API gates them on accounting:expense:read.
   const canSeeExpenses = hasPermission(session, ACCOUNTING_PERMISSIONS.EXPENSE_READ)

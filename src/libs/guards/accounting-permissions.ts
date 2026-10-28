@@ -74,6 +74,12 @@ export const ACCOUNTING_PERMISSIONS = {
   SUPPLIER_UPDATE: 'accounting:supplier:update',
   SUPPLIER_DELETE: 'accounting:supplier:delete',
 
+  // Scenario 74 (C): Accounting owns Drivers, and the fleet roster's vehicles.
+  DRIVERS_READ: 'accounting:drivers:read',
+  DRIVERS_CREATE: 'accounting:drivers:create',
+  DRIVERS_UPDATE: 'accounting:drivers:update',
+  DRIVERS_DELETE: 'accounting:drivers:delete',
+
   CUSTOMER_READ: 'accounting:customer:read',
   CUSTOMER_CREATE: 'accounting:customer:create',
   CUSTOMER_UPDATE: 'accounting:customer:update',
@@ -384,6 +390,10 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
     'Post an inventory debit memo — moves its Delivery Receipt stock and posts the journal entry',
   'accounting:inventory-debit-memos:void':
     'Void a posted inventory debit memo, reversing stock and GL',
+  'accounting:drivers:read': 'View the drivers on the fleet roster',
+  'accounting:drivers:create': 'Add a driver or a vehicle to the fleet roster',
+  'accounting:drivers:update': 'Edit a driver or a vehicle on the fleet roster',
+  'accounting:drivers:delete': 'Remove a driver or a vehicle from the fleet roster',
   'accounting:query-center:read':
     'Data Query Center — browse and export raw data from every module (Business Owner only)',
   'accounting:*': 'Wildcard full accounting access',

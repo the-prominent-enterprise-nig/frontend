@@ -4,8 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import { UpdateSupplierServerSchema } from '@/src/schema/inventory/suppliers'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
+import { canAny } from '@/src/libs/guards/permission'
+import { SUPPLIER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 export async function updateSupplier(
   id: string,
@@ -15,7 +15,7 @@ export async function updateSupplier(
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
-  if (!can(session, PROCUREMENT_PERMISSIONS.SUPPLIERS_UPDATE)) {
+  if (!canAny(session, SUPPLIER_ACCESS.UPDATE)) {
     return {
       success: false,
       error: 'Forbidden',

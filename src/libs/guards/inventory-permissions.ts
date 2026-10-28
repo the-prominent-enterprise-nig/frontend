@@ -26,6 +26,13 @@ export const INVENTORY_PERMISSIONS = {
   DRIVERS_UPDATE: 'inventory:drivers:update',
   DRIVERS_DELETE: 'inventory:drivers:delete',
 
+  // ── Inventory Debit Memos (Scenario 74 F: either module's permission) ─────
+  DEBIT_MEMOS_READ: 'inventory:debit-memos:read',
+  DEBIT_MEMOS_CREATE: 'inventory:debit-memos:create',
+  DEBIT_MEMOS_UPDATE: 'inventory:debit-memos:update',
+  DEBIT_MEMOS_APPROVE: 'inventory:debit-memos:approve',
+  DEBIT_MEMOS_VOID: 'inventory:debit-memos:void',
+
   // ── Units of Measure ───────────────────────────────────────────────────────
   UOM_READ: 'inventory:uom:read',
   UOM_CREATE: 'inventory:uom:create',
@@ -218,6 +225,12 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:drivers:create': 'Add a driver to the fleet roster',
   'inventory:drivers:update': 'Edit a driver on the fleet roster',
   'inventory:drivers:delete': 'Remove a driver from the fleet roster',
+  'inventory:debit-memos:read': 'View inventory debit memos (DMINV)',
+  'inventory:debit-memos:create': 'Raise a standalone inventory debit memo (journal entry only)',
+  'inventory:debit-memos:update': 'Edit the accounts and amounts on a draft inventory debit memo',
+  'inventory:debit-memos:approve':
+    'Post an inventory debit memo: moves its Delivery Receipt stock and posts the journal entry',
+  'inventory:debit-memos:void': 'Void a posted inventory debit memo, reversing stock and GL',
   'inventory:uom:read': 'View units of measure',
   'inventory:uom:create': 'Create units of measure and conversion rates',
   'inventory:uom:update': 'Edit units of measure and conversion rates',

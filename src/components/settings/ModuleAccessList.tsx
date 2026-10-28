@@ -69,12 +69,12 @@ function FeatureHeading({
           {on ? 'On' : 'Off'}
         </span>
         <span className="text-[13px] font-semibold text-zinc-800">{feature.label}</span>
-        {feature.pendingDecision && (
-          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
-            Owner pending ({feature.pendingDecision})
-          </span>
-        )}
       </div>
+      {feature.jointOwners && (
+        <p className="mt-0.5 pl-1 text-[11px] text-zinc-500">
+          {feature.jointOwners.part} owned by: {moduleNames(feature.jointOwners.owners)}
+        </p>
+      )}
       {feature.sharedWith.length > 0 && (
         <p className="mt-0.5 pl-1 text-[11px] text-zinc-500">
           Shared with: {moduleNames(feature.sharedWith)}
