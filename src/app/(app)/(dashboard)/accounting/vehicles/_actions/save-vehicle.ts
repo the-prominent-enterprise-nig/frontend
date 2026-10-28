@@ -4,8 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { VehicleFormSchema } from '@/src/schema/inventory/vehicles'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { canAny } from '@/src/libs/guards/permission'
+import { DRIVER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 function failure(result: { error?: unknown; message?: unknown }, fallback: string) {
   const errStr = Array.isArray(result.error) ? result.error.join(' ') : String(result.error ?? '')
@@ -15,14 +15,14 @@ function failure(result: { error?: unknown; message?: unknown }, fallback: strin
 }
 
 // Create (no id) or update (id). The roster is managed with the same
-// inventory:drivers:* permissions the Drivers list uses. An emptied Vehicle
+// permissions as Drivers: accounting:drivers:* or inventory:drivers:*. An emptied Vehicle
 // Type is sent as '' so the backend clears it; an empty branch is dropped (head
 // office picks one, a branch-assigned user is forced into their own server-side).
 export async function saveVehicle(id: string | null, input: unknown): Promise<ApiResponse<void>> {
   const session = await getSessionIfAvailable()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
-  const needed = id ? INVENTORY_PERMISSIONS.DRIVERS_UPDATE : INVENTORY_PERMISSIONS.DRIVERS_CREATE
-  if (!can(session, needed)) {
+  const needed = id ? DRIVER_ACCESS.UPDATE : DRIVER_ACCESS.CREATE
+  if (!canAny(session, needed)) {
     return {
       success: false,
       error: 'Forbidden',

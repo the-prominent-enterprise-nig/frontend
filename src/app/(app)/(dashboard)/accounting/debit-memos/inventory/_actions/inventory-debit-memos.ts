@@ -3,8 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { canAny } from '@/src/libs/guards/permission'
 import {
   IdmDetailSchema,
   IdmFormSchema,
@@ -16,12 +15,13 @@ import {
 } from '@/src/schema/accounting/inventory-debit-memos'
 import { idmFailure } from '../_lib/idm-errors'
 import type { PrintDocumentEnvelope } from '@/src/libs/print/printInventoryDocument'
+import { INVENTORY_DEBIT_MEMO_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 const BASE = '/inventory-debit-memos'
 
-async function allowed(permission: string): Promise<boolean> {
+async function allowed(permissions: string[]): Promise<boolean> {
   const session = await getSessionOrNull()
-  return !!session && can(session, permission)
+  return !!session && canAny(session, permissions)
 }
 
 const forbidden = <T>(): ApiResponse<T> => ({
@@ -78,9 +78,7 @@ export async function saveInventoryDebitMemo(
   id: string | null,
   input: unknown
 ): Promise<ApiResponse<{ id: string; memoNumber: string }>> {
-  const permission = id
-    ? ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_UPDATE
-    : ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_CREATE
+  const permission = id ? INVENTORY_DEBIT_MEMO_ACCESS.UPDATE : INVENTORY_DEBIT_MEMO_ACCESS.CREATE
   if (!(await allowed(permission))) return forbidden()
   const parsed = IdmFormSchema.safeParse(input)
   if (!parsed.success) {
@@ -96,7 +94,7 @@ export async function saveInventoryDebitMemo(
 }
 
 export async function postInventoryDebitMemo(id: string): Promise<ApiResponse<{ id: string }>> {
-  if (!(await allowed(ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_APPROVE))) return forbidden()
+  if (!(await allowed(INVENTORY_DEBIT_MEMO_ACCESS.APPROVE))) return forbidden()
   const result = await api.post(`${BASE}/${id}/post`)
   if (!result.success) return idmFailure(result, 'Failed to post the memo')
   revalidate(id)
@@ -107,7 +105,7 @@ export async function voidInventoryDebitMemo(
   id: string,
   reason: string
 ): Promise<ApiResponse<{ id: string }>> {
-  if (!(await allowed(ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_VOID))) return forbidden()
+  if (!(await allowed(INVENTORY_DEBIT_MEMO_ACCESS.VOID))) return forbidden()
   const result = await api.post(`${BASE}/${id}/void`, { reason: reason.trim() })
   if (!result.success) return idmFailure(result, 'Failed to void the memo')
   revalidate(id)

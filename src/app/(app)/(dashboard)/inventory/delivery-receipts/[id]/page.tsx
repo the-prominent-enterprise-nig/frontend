@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { requirePermission } from '@/src/libs/guards/require-permission'
-import { can } from '@/src/libs/guards/permission'
+import { can, canAny } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { getDeliveryReceipt } from '../_actions/get-delivery-receipt'
 import { drToFormValues } from '../_lib/dr-form-values'
@@ -11,8 +11,8 @@ import { DrApprovalActions } from '../_components/DrApprovalActions'
 import { DrVoidAction } from '../_components/DrVoidAction'
 import { DrProceedToPos } from '../_components/DrProceedToPos'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
-import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { isRepairPurpose } from '@/src/schema/inventory/delivery-receipts'
+import { INVENTORY_DEBIT_MEMO_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 export const metadata = { title: 'Delivery Receipt' }
 
@@ -50,7 +50,7 @@ export default async function Page({
     ? can(session, INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ)
       ? '/inventory/debit-memos'
       : undefined
-    : dr.debitMemo && can(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
+    : dr.debitMemo && canAny(session, INVENTORY_DEBIT_MEMO_ACCESS.READ)
       ? `/accounting/debit-memos/inventory/${dr.debitMemo.id}`
       : undefined
   // Scenario 72 Part 6 — an approved sales invoice to follow is rung up at

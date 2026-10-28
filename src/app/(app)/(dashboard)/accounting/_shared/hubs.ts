@@ -1,8 +1,7 @@
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
-import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
-import { canAny, type SessionUser } from '@/src/libs/guards/permission'
+import { canNavigateAny, type SessionUser } from '@/src/libs/guards/permission'
+import { DRIVER_ACCESS, SUPPLIER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 /**
  * Accounting's sidebar hubs — several screens that were separate sidebar items
@@ -21,11 +20,7 @@ export type HubTab = {
   id: string
   label: string
   href: string
-  /**
-   * Holding any one of these shows the tab. Empty means no permission is
-   * required — only Special Accounts, whose page and sidebar item were never
-   * gated; left as it was rather than tightened here.
-   */
+  /** Holding any one of these shows the tab. Empty means no permission is required. */
   permissions: string[]
 }
 
@@ -121,13 +116,13 @@ export const EXPENSES_HUB: Hub = {
       id: 'recurring-expenses',
       label: 'Recurring',
       href: '/accounting/expenses/recurring',
-      permissions: [ACCOUNTING_PERMISSIONS.EXPENSE_READ],
+      permissions: [ACCOUNTING_PERMISSIONS.RECURRING_EXPENSES_READ],
     },
     {
       id: 'special-accounts',
       label: 'Special Accounts',
       href: '/accounting/special-accounts',
-      permissions: [],
+      permissions: [ACCOUNTING_PERMISSIONS.SPECIAL_ACCOUNTS_READ],
     },
     {
       // Scenario 52 — issues against the same Employee Cash Loan Special
@@ -139,13 +134,13 @@ export const EXPENSES_HUB: Hub = {
     },
     {
       // The people on the fleet roster — name, contact number, branch. Not tied
-      // to a vehicle. Moved over from Inventory's Master Data; the permissions
-      // did not move with it — the API still gates drivers on inventory:*, and
-      // the list reads on inventory:transfers:read.
+      // to a vehicle. Moved over from Inventory's Master Data. Accounting owns
+      // it (Scenario 74 C): accounting:drivers opens it, and Inventory's
+      // permissions still work (the list reads on inventory:transfers:read).
       id: 'drivers',
       label: 'Drivers',
       href: '/accounting/drivers',
-      permissions: [INVENTORY_PERMISSIONS.TRANSFERS_READ],
+      permissions: DRIVER_ACCESS.READ,
     },
     {
       // The roster by plate, and each vehicle's recorded Fuel / Repair expenses
@@ -154,7 +149,7 @@ export const EXPENSES_HUB: Hub = {
       id: 'vehicles',
       label: 'Vehicles',
       href: '/accounting/vehicles',
-      permissions: [INVENTORY_PERMISSIONS.TRANSFERS_READ, ACCOUNTING_PERMISSIONS.EXPENSE_READ],
+      permissions: [...DRIVER_ACCESS.READ, ACCOUNTING_PERMISSIONS.EXPENSE_READ],
     },
   ],
 }
@@ -218,11 +213,12 @@ export const PAYABLES_HUB: Hub = {
     },
     {
       // Moved over from Inventory's Master Data, the way Customers sits beside
-      // AR Invoices. Supplier permissions stayed inventory:suppliers:*.
+      // AR Invoices. Accounting owns it (Scenario 74 B): accounting:supplier
+      // opens it, and inventory:suppliers:* still works for POs and Receiving.
       id: 'suppliers',
       label: 'Suppliers',
       href: '/accounting/suppliers',
-      permissions: [PROCUREMENT_PERMISSIONS.SUPPLIERS_READ],
+      permissions: SUPPLIER_ACCESS.READ,
     },
   ],
 }
@@ -237,6 +233,10 @@ export const HUBS = {
 
 export type HubKey = keyof typeof HUBS
 
+// Built from the roles' own rows: a pick list a feature brings (customers,
+// suppliers…) never adds a tab (Scenario 74).
 export function visibleHubTabs(hub: Hub, session: SessionUser) {
-  return hub.tabs.filter((tab) => tab.permissions.length === 0 || canAny(session, tab.permissions))
+  return hub.tabs.filter(
+    (tab) => tab.permissions.length === 0 || canNavigateAny(session, tab.permissions)
+  )
 }

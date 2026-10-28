@@ -10,7 +10,7 @@ import {
   fmtMoney,
   type BankAccount,
 } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import SegmentedControl from '@/src/components/ui/SegmentedControl'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -138,7 +138,7 @@ export default function NewAcknowledgementReceiptForm({
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
   useEffect(() => {
     BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
-    getAccounts({ limit: 500 }).then((res) => {
+    getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))
     })

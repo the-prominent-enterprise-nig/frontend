@@ -41,8 +41,8 @@ import type { IdmDetail } from '@/src/schema/accounting/inventory-debit-memos'
 import { MemoDetailPanel } from './MemoDetailPanel'
 import DebitMemoFormModal from './DebitMemoFormModal'
 import { InternalMemoCard, InternalMemoRow, TypeChip } from './InternalMemoRows'
-import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import WaybillPanel from './WaybillPanel'
+import { INVENTORY_DEBIT_MEMO_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 // Hand-rolled rather than built on the shared MemoTable: this list carries
 // two-line cells and a primary action per row, and it has to stack into cards
@@ -240,7 +240,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
 
   const [type, setType] = useState<MemoTypeFilter>('all')
   const [requestedPage, setRequestedPage] = useState(1)
-  const canOpenMemo = hasPermission(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
+  const canOpenMemo = INVENTORY_DEBIT_MEMO_ACCESS.READ.some((p) => hasPermission(session, p))
   const internal = useInternalMemos(filters, type)
 
   const rows: MemoRow[] = useMemo(() => {

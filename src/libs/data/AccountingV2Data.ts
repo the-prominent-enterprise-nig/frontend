@@ -2249,6 +2249,12 @@ export interface SpecialAccountRow {
   entries: number
   lastActivity: string | null
 }
+/** One name on a control account, as the Expense form sees it. */
+export interface SpecialAccountOption {
+  name: string
+  balance: number
+  employee: { id: string; name: string } | null
+}
 export interface SpecialAccountRegister {
   rows: SpecialAccountRow[]
   totals: { people: number; balance: number }
@@ -2396,6 +2402,10 @@ export const Expenses = {
    * carried against, under the control account carrying it. */
   specialAccounts: (params?: { search?: string; accountId?: string }) =>
     api.get<SpecialAccountRegister>('/expenses/special-accounts', params),
+  /** The names on one control account with their balances — the Expense
+   * form's picker. Open to expense roles; the register above is not. */
+  specialAccountOptions: (params: { accountId: string; search?: string }) =>
+    api.get<SpecialAccountOption[]>('/expenses/special-accounts/options', params),
   /** Open a named balance under a control account, before anything has been
    * posted to it. */
   createSpecialAccount: (body: CreateSpecialAccountBody) =>

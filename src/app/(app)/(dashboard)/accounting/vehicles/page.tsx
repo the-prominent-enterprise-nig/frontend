@@ -3,9 +3,9 @@ import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { canAny } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { HubTabs } from '../_shared/HubTabs'
 import { VehicleList } from './_components/VehicleList'
+import { DRIVER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 export const metadata = {
   title: 'Vehicles | NIG Central',
@@ -18,9 +18,7 @@ export default async function VehiclesPage() {
   if (!session) redirect('/login')
   // Either the roster permission or the expense one — an accountant reads
   // vehicles here without holding transfers:read.
-  if (
-    !canAny(session, [INVENTORY_PERMISSIONS.TRANSFERS_READ, ACCOUNTING_PERMISSIONS.EXPENSE_READ])
-  ) {
+  if (!canAny(session, [...DRIVER_ACCESS.READ, ACCOUNTING_PERMISSIONS.EXPENSE_READ])) {
     redirect('/403')
   }
 

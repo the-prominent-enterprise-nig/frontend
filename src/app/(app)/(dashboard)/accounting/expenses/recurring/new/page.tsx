@@ -6,6 +6,6 @@ import RecurringTypeForm from '../_components/RecurringTypeForm'
 export const metadata = { title: 'Add to Recurring Expenses' }
 export default async function Page() {
   const session = await getSessionOrNull()
-  requirePermission(session, ACCOUNTING_PERMISSIONS.EXPENSE_CREATE)
+  requirePermission(session, ACCOUNTING_PERMISSIONS.RECURRING_EXPENSES_CREATE)
   return <RecurringTypeForm />
 }

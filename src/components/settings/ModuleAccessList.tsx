@@ -18,6 +18,18 @@ import {
   getSelectedPermissionIdsForLevel,
   type AccessLevel,
 } from './access-levels'
+import {
+  EMPTY_ACCESS_MAP,
+  MODULE_LABELS,
+  formatModuleSummary,
+  isFeatureOn,
+  needNames,
+  permissionSlug,
+  sharedAccessFor,
+  summarizeModule,
+  type AccessFeature,
+  type AccessMap,
+} from './module-map'
 
 type ModuleAccessListProps = {
   availablePermissions: Permission[]
@@ -29,6 +41,52 @@ type ModuleAccessListProps = {
    * gets plain alphabetical.
    */
   moduleOrder?: string[]
+  /** The module map (Scenario 74): feature groups and "Shared with" notes. */
+  accessMap?: AccessMap
+}
+
+function moduleNames(modules: string[]): string {
+  return modules.map((module) => MODULE_LABELS[module] ?? module).join(', ')
+}
+
+function FeatureHeading({
+  feature,
+  on,
+  map,
+}: {
+  feature: AccessFeature
+  on: boolean
+  map: AccessMap
+}): React.JSX.Element {
+  return (
+    <div className="mb-1.5 mt-3 first:mt-0" data-feature={feature.key}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+            on ? 'bg-prominent-purple-100 text-prominent-purple-700' : 'bg-zinc-100 text-zinc-500'
+          }`}
+        >
+          {on ? 'On' : 'Off'}
+        </span>
+        <span className="text-[13px] font-semibold text-zinc-800">{feature.label}</span>
+      </div>
+      {feature.jointOwners && (
+        <p className="mt-0.5 pl-1 text-[11px] text-zinc-500">
+          {feature.jointOwners.part} owned by: {moduleNames(feature.jointOwners.owners)}
+        </p>
+      )}
+      {feature.sharedWith.length > 0 && (
+        <p className="mt-0.5 pl-1 text-[11px] text-zinc-500">
+          Shared with: {moduleNames(feature.sharedWith)}
+        </p>
+      )}
+      {feature.needs.length > 0 && (
+        <p className="mt-0.5 pl-1 text-[11px] text-zinc-500">
+          Comes with, view only: {needNames(map, feature.needs)}
+        </p>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -52,6 +110,7 @@ export default function ModuleAccessList({
   selected,
   onChange,
   moduleOrder,
+  accessMap = EMPTY_ACCESS_MAP,
 }: ModuleAccessListProps) {
   // One module open at a time. Expanding every module would otherwise stack to
   // ~5,300px of resource rows.
@@ -62,6 +121,12 @@ export default function ModuleAccessList({
   // the mouse moves off. Only one module is ever open at a time, so keying
   // purely by resource name is safe.
   const [expandedResources, setExpandedResources] = useState<Set<string>>(new Set())
+
+  const heldSlugs = useMemo(
+    () => availablePermissions.filter((p) => selected.has(p.id)).map(permissionSlug),
+    [availablePermissions, selected]
+  )
+  const sharedAccess = useMemo(() => sharedAccessFor(accessMap, heldSlugs), [accessMap, heldSlugs])
 
   const moduleRows = useMemo(() => {
     return ACCESS_MODULES.map((moduleConfig) => {
@@ -136,6 +201,14 @@ export default function ModuleAccessList({
 
   return (
     <div className="divide-y divide-zinc-100">
+      {sharedAccess.length > 0 && (
+        <div className="px-6 py-3" data-shared-access>
+          <p className="text-xs text-zinc-600">
+            <span className="font-semibold">Comes with this role&apos;s features</span>, view only,
+            nothing to set: {needNames(accessMap, sharedAccess)}
+          </p>
+        </div>
+      )}
       {moduleRows.map(
         ({
           moduleConfig,
@@ -145,6 +218,12 @@ export default function ModuleAccessList({
           selectedCount,
           holdsWildcard,
         }) => {
+          const summary = summarizeModule(
+            accessMap,
+            heldSlugs,
+            moduleConfig.key,
+            availablePermissions
+          )
           const isExpanded = expandedModule === moduleConfig.key
           const allResourceRows = isExpanded ? getResourceRows(modulePermissions, selected) : []
           const query = resourceQuery.trim().toLowerCase()
@@ -185,11 +264,24 @@ export default function ModuleAccessList({
                       <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400 group-hover:text-prominent-purple-500" />
                     )}
                     {moduleConfig.label}
-                    {level === 'mixed' && (
-                      <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-200">
-                        Mixed
-                      </span>
-                    )}
+                    {summary
+                      ? summary.kind !== 'none' && (
+                          <span
+                            data-module-summary={moduleConfig.key}
+                            className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ring-1 ring-inset ${
+                              summary.kind === 'partial'
+                                ? 'bg-amber-50 text-amber-700 ring-amber-200'
+                                : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                            }`}
+                          >
+                            {formatModuleSummary(summary)}
+                          </span>
+                        )
+                      : level === 'mixed' && (
+                          <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-200">
+                            Mixed
+                          </span>
+                        )}
                   </button>
                   <div className="mt-1.5 flex items-center gap-2.5 pl-5.5">
                     <div className="h-1 w-24 overflow-hidden rounded-full bg-zinc-100">
@@ -225,7 +317,16 @@ export default function ModuleAccessList({
                 </div>
               </div>
 
-              {level === 'mixed' && !isExpanded && (
+              {summary?.kind === 'all-protected' && (
+                <p className="mt-2 pl-5.5 text-xs text-zinc-500">
+                  * Except:{' '}
+                  {summary.missingProtected
+                    .map((perm) => accessMap.protectedPermissions[perm] ?? perm)
+                    .join('; ')}
+                </p>
+              )}
+
+              {!summary && level === 'mixed' && !isExpanded && (
                 <p className="mt-2 pl-5.5 text-xs text-amber-700">
                   Resources are at different levels — expand to see which.
                 </p>
@@ -370,14 +471,46 @@ export default function ModuleAccessList({
                       )
                     }
 
-                    return (
+                    const renderColumns = (rows: typeof resourceRows) => (
                       <div className="grid items-start gap-2 lg:grid-cols-2">
                         <div className="space-y-2">
-                          {resourceRows.filter((_, index) => index % 2 === 0).map(renderRow)}
+                          {rows.filter((_, index) => index % 2 === 0).map(renderRow)}
                         </div>
                         <div className="space-y-2">
-                          {resourceRows.filter((_, index) => index % 2 === 1).map(renderRow)}
+                          {rows.filter((_, index) => index % 2 === 1).map(renderRow)}
                         </div>
+                      </div>
+                    )
+
+                    // Grouped by feature when the module map covers this
+                    // module: each group carries its "Shared with" note.
+                    const features = accessMap.features.filter(
+                      (feature) => feature.module === moduleConfig.key
+                    )
+                    if (features.length === 0) return renderColumns(resourceRows)
+                    const inFeature = (feature: AccessFeature) =>
+                      resourceRows.filter((row) =>
+                        feature.resources.includes(`${moduleConfig.key}:${row.resource}`)
+                      )
+                    const grouped = new Set(features.flatMap(inFeature).map((row) => row.resource))
+                    const other = resourceRows.filter((row) => !grouped.has(row.resource))
+                    return (
+                      <div>
+                        {features.map((feature) => {
+                          const rows = inFeature(feature)
+                          if (rows.length === 0) return null
+                          return (
+                            <div key={feature.key}>
+                              <FeatureHeading
+                                feature={feature}
+                                on={isFeatureOn(feature, heldSlugs)}
+                                map={accessMap}
+                              />
+                              {renderColumns(rows)}
+                            </div>
+                          )
+                        })}
+                        {other.length > 0 && <div className="mt-3">{renderColumns(other)}</div>}
                       </div>
                     )
                   })()}

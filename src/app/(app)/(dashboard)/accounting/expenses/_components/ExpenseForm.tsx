@@ -19,14 +19,14 @@ import {
   type PayeeType,
   type ClearedType,
   type BankAccount,
-  type SpecialAccountRow,
+  type SpecialAccountOption,
   type ExpenseVehicleOption,
   type ExpenseAgentOption,
   type ExpenseAgentSale,
   vehicleLabel,
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import CustomerPicker from '@/src/components/crm/CustomerPicker'
 import { customersApi } from '@/src/libs/api/crm'
 import EmployeePicker from '@/src/components/accounting/EmployeePicker'
@@ -364,7 +364,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   const [mappings, setMappings] = useState<AccountMapping[]>([])
 
   useEffect(() => {
-    getAccounts({ limit: 500 }).then((r) => {
+    getAccountOptions().then((r) => {
       const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
       // Not expenses only. A payroll run credits assets and liabilities as
       // well as debiting expense — the client's own disbursement sheet
@@ -911,9 +911,9 @@ function ExpenseFormFields({
   // refund, and the Special Accounts register is where it would otherwise
   // go unseen. Balances come from that same register, so the figure shown
   // here is the one on the Special Accounts page.
-  const [balancesByAccount, setBalancesByAccount] = useState<Record<string, SpecialAccountRow[]>>(
-    {}
-  )
+  const [balancesByAccount, setBalancesByAccount] = useState<
+    Record<string, SpecialAccountOption[]>
+  >({})
   const deductionAccountIds = useMemo(
     () =>
       [
@@ -937,8 +937,8 @@ function ExpenseFormFields({
     const t = setTimeout(async () => {
       const entries = await Promise.all(
         deductionAccountKey.split(',').map(async (accountId) => {
-          const res = await Expenses.specialAccounts({ accountId }).catch(() => null)
-          return [accountId, res?.data?.rows ?? []] as const
+          const res = await Expenses.specialAccountOptions({ accountId }).catch(() => null)
+          return [accountId, res?.data ?? []] as const
         })
       )
       if (!cancelled) setBalancesByAccount(Object.fromEntries(entries))

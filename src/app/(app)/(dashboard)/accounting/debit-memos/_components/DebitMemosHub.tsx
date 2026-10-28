@@ -27,6 +27,7 @@ import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import type { IdmDetail } from '@/src/schema/accounting/inventory-debit-memos'
 import { getInventoryDebitMemos } from '../inventory/_actions/inventory-debit-memos'
 import { PrintMemoIconButton } from '../../../inventory/debit-memos/_components/PrintMemoIconButton'
+import { INVENTORY_DEBIT_MEMO_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 const CUSTOMER_TYPE_LABELS: Record<DebitMemoType, string> = {
   unit_replacement: 'Unit Replacement',
@@ -71,7 +72,8 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
   const canCreateCustomer = hasPermission(session, ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_CREATE)
   // Scenario 72 — the internal DMINV memos a Delivery Receipt drafts, which
   // accounting edits and posts from here. None is raised here (client).
-  const canReadInventory = hasPermission(session, ACCOUNTING_PERMISSIONS.INVENTORY_DEBIT_MEMOS_READ)
+  // Owned by both modules (Scenario 74 F), so Inventory's permission opens it too.
+  const canReadInventory = INVENTORY_DEBIT_MEMO_ACCESS.READ.some((p) => hasPermission(session, p))
 
   const [search, setSearch] = useState('')
   const [voiding, setVoiding] = useState<string | null>(null)

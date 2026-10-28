@@ -49,7 +49,7 @@ import {
   supplierVatStatus,
   type SupplierVatStatus,
 } from '@/src/libs/tax/input-vat'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { getSupplier } from '@/src/app/(app)/(dashboard)/accounting/suppliers/_actions/get-supplier'
 
 // Scenario 41 — same treatment Scenario 40 gave Expenses (developer
@@ -236,7 +236,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
   // one to the balance-sheet account it belongs to.
   const [accounts, setAccounts] = useState<Account[]>([])
   useEffect(() => {
-    getAccounts({ limit: 500 }).then((r) => {
+    getAccountOptions().then((r) => {
       const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
       setAccounts(
         list.filter(

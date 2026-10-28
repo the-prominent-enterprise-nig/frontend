@@ -21,7 +21,7 @@ import {
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { Select } from '@/src/components/ui/Select'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { accountsToOptions, postableAccounts } from '@/src/libs/accounting/coa-options'
 
 const PAYABLE_STATUSES = ['RECEIVED', 'PARTIAL', 'OVERDUE']
@@ -341,7 +341,7 @@ export default function RecordPaymentForm() {
   useEffect(() => {
     APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
     BankAccounts.list().then((r) => setBankAccounts(r.data ?? []))
-    getAccounts({ limit: 500 }).then((r) => {
+    getAccountOptions().then((r) => {
       const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
       setCoaAccounts(postableAccounts(list))
     })

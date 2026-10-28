@@ -7,7 +7,10 @@ import RecurringTypesList from './_components/RecurringTypesList'
 
 export const metadata = { title: 'Recurring Expenses' }
 export default async function Page() {
-  const session = requirePermission(await getSessionOrNull(), ACCOUNTING_PERMISSIONS.EXPENSE_READ)
+  const session = requirePermission(
+    await getSessionOrNull(),
+    ACCOUNTING_PERMISSIONS.RECURRING_EXPENSES_READ
+  )
   return (
     <>
       <Suspense fallback={null}>

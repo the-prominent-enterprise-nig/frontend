@@ -4,8 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { DriverFormSchema } from '@/src/schema/inventory/drivers'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { canAny } from '@/src/libs/guards/permission'
+import { DRIVER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 function failure(result: { error?: unknown; message?: unknown }, fallback: string) {
   const errStr = Array.isArray(result.error) ? result.error.join(' ') : String(result.error ?? '')
@@ -20,8 +20,8 @@ function failure(result: { error?: unknown; message?: unknown }, fallback: strin
 export async function saveDriver(id: string | null, input: unknown): Promise<ApiResponse<void>> {
   const session = await getSessionIfAvailable()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
-  const needed = id ? INVENTORY_PERMISSIONS.DRIVERS_UPDATE : INVENTORY_PERMISSIONS.DRIVERS_CREATE
-  if (!can(session, needed)) {
+  const needed = id ? DRIVER_ACCESS.UPDATE : DRIVER_ACCESS.CREATE
+  if (!canAny(session, needed)) {
     return {
       success: false,
       error: 'Forbidden',

@@ -6,7 +6,10 @@ import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { ProductCatalog } from './_components/ProductCatalog'
 
 export default function PosCatalogPage() {
-  const { session, status } = useRequirePermission(POS_PERMISSIONS.TRANSACTIONS_READ)
+  const { session, status } = useRequirePermission([
+    POS_PERMISSIONS.TRANSACTIONS_READ,
+    POS_PERMISSIONS.CATALOG_READ,
+  ])
   const { branchId, branchName } = usePosBranchContext()
 
   if (status !== 'authorized' || !session) return null

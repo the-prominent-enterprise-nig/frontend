@@ -32,7 +32,7 @@ import {
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
-import { can, canManagePosSettings, type SessionUser } from '@/src/libs/guards/permission'
+import { canManagePosSettings, canNavigate, type SessionUser } from '@/src/libs/guards/permission'
 
 /**
  * POS's sidebar hubs — six groups, named and ordered as the client's "Proposed
@@ -567,8 +567,10 @@ export function showsPosBranchSwitcher(pathname: string): boolean {
   )
 }
 
+// Navigation: the roles' own rows, so a pick list a feature brings (POS
+// customers for a credit application) never adds a tab (Scenario 74).
 function holdsAny(session: SessionUser, permissions: string[]): boolean {
-  return permissions.length === 0 || permissions.some((p) => can(session, p))
+  return permissions.length === 0 || permissions.some((p) => canNavigate(session, p))
 }
 
 /** Hrefs of every hub page the caller may open — what PosNav is allowed to draw. */

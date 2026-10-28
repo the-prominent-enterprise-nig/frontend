@@ -4,6 +4,8 @@ import { can, isAdmin } from '@/src/libs/guards/permission'
 import { getUsers } from '../_actions/get-users'
 import { getRoles } from '../_actions/get-roles'
 import { getBranches } from '../_actions/get-branches'
+import { getPermissions } from '../_actions/get-permissions'
+import { getAccessMap } from '../_actions/get-access-map'
 import { redirect } from 'next/navigation'
 
 export default async function UsersPage({
@@ -28,17 +30,20 @@ export default async function UsersPage({
   const currentBranchId = sp.branchId ?? ''
   const currentPage = sp.page ? Math.max(1, parseInt(sp.page, 10)) : 1
 
-  const [usersResult, rolesResult, branchesResult] = await Promise.all([
-    getUsers({
-      search: currentSearch || undefined,
-      status: currentStatus || undefined,
-      branchId: currentBranchId || undefined,
-      page: currentPage,
-      limit: 20,
-    }),
-    getRoles(),
-    getBranches(),
-  ])
+  const [usersResult, rolesResult, branchesResult, permissionsResult, accessMap] =
+    await Promise.all([
+      getUsers({
+        search: currentSearch || undefined,
+        status: currentStatus || undefined,
+        branchId: currentBranchId || undefined,
+        page: currentPage,
+        limit: 20,
+      }),
+      getRoles(),
+      getBranches(),
+      getPermissions(),
+      getAccessMap(),
+    ])
 
   if (!usersResult.success || !usersResult.data) {
     return (
@@ -63,6 +68,12 @@ export default async function UsersPage({
         : rolesResult.data.data
       : []
   const branches = branchesResult.success && branchesResult.data ? branchesResult.data : []
+  const permissions =
+    permissionsResult.success && permissionsResult.data
+      ? Array.isArray(permissionsResult.data)
+        ? permissionsResult.data
+        : permissionsResult.data.data
+      : []
 
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">
@@ -75,6 +86,8 @@ export default async function UsersPage({
           currentBranchId={currentBranchId}
           branches={branches}
           availableRoles={roles}
+          availablePermissions={permissions}
+          accessMap={accessMap}
           currentUserId={session.id}
           canAddUser={isAdmin(session) || can(session, 'admin:users:create')}
         />

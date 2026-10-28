@@ -21,7 +21,7 @@ import {
   type ItemSearchMeta,
 } from '../../purchase-requests/_components/ItemSearchCombobox'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
-import { getAccounts } from '@/src/libs/data/AccountingData'
+import { getAccountOptions } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
@@ -208,7 +208,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
   // "Incentives from Supplier" are the seeded ones).
   const accountsQuery = useQuery({
     queryKey: ['coa-revenue-accounts'],
-    queryFn: () => getAccounts({ limit: 500 }),
+    queryFn: () => getAccountOptions(),
     enabled: open,
     staleTime: 5 * 60 * 1000,
   })

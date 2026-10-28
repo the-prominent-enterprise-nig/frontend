@@ -9,11 +9,11 @@ import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActions
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
 import { hasPermission } from '@/src/hooks/usePermission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { getDrivers } from '../_actions/get-drivers'
 import { getBranches } from '../_actions/get-branches'
 import { deleteDriver } from '../_actions/delete-driver'
+import { DRIVER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 const PAGE_SIZE = 25
 
@@ -28,9 +28,9 @@ export function DriverList({ session }: { session: SessionUser }) {
 
   const router = useRouter()
   const queryClient = useQueryClient()
-  const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.DRIVERS_CREATE)
-  const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.DRIVERS_UPDATE)
-  const canDelete = hasPermission(session, INVENTORY_PERMISSIONS.DRIVERS_DELETE)
+  const canCreate = DRIVER_ACCESS.CREATE.some((p) => hasPermission(session, p))
+  const canUpdate = DRIVER_ACCESS.UPDATE.some((p) => hasPermission(session, p))
+  const canDelete = DRIVER_ACCESS.DELETE.some((p) => hasPermission(session, p))
   const showActions = canUpdate || canDelete
 
   // A branch-assigned user is scoped to their own branch by the server, so

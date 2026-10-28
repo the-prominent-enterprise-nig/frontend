@@ -272,6 +272,17 @@ export function getAccessLevelForPermissions(
 ): AccessLevel {
   if (selectedPermissions.length === 0) return 'none'
 
+  // Holding the module wildcard (module:*:*) is the whole module, whatever
+  // else the role holds there. Older backfills left individual rows next to
+  // the Accountant's accounting:*:*, and grading those on their own made the
+  // module read "Mixed" (Scenario 74 review). The rows stay; they're covered.
+  if (
+    selectedPermissions.some(
+      (permission) => permission.resource === '*' && permission.action === '*'
+    )
+  )
+    return 'full'
+
   // A grant that is exactly what a preset produces IS that preset. Without
   // this, withholding sensitive permissions from View Only / Manage / Edit (see
   // PRESET_EXCLUDED_PERMISSIONS) leaves the withheld resources sitting at a

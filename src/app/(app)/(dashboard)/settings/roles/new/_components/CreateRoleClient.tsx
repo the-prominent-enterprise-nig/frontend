@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { type Permission } from '@/src/schema/settings/list'
 import { createRole } from '@/src/app/(app)/(dashboard)/settings/_actions'
 import ModuleAccessList from '@/src/components/settings/ModuleAccessList'
+import { type AccessMap } from '@/src/components/settings/module-map'
 import AdvancedPermissionsSection from '@/src/components/settings/AdvancedPermissionsSection'
 import UnsavedChangesModal from '@/src/components/settings/UnsavedChangesModal'
 import { showToast } from '@/src/components/ui/toast'
@@ -13,9 +14,13 @@ import { useUnsavedChangesGuard } from '@/src/hooks/useUnsavedChangesGuard'
 
 type CreateRoleClientProps = {
   availablePermissions: Permission[]
+  accessMap: AccessMap
 }
 
-export default function CreateRoleClient({ availablePermissions }: CreateRoleClientProps) {
+export default function CreateRoleClient({
+  availablePermissions,
+  accessMap,
+}: CreateRoleClientProps) {
   const router = useRouter()
 
   const [name, setName] = useState('')
@@ -164,6 +169,7 @@ export default function CreateRoleClient({ availablePermissions }: CreateRoleCli
             availablePermissions={availablePermissions}
             selected={selected}
             onChange={setSelected}
+            accessMap={accessMap}
           />
         </section>
 

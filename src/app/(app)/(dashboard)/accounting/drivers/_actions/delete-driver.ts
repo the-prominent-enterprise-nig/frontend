@@ -3,13 +3,13 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { canAny } from '@/src/libs/guards/permission'
+import { DRIVER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 export async function deleteDriver(id: string): Promise<ApiResponse<void>> {
   const session = await getSessionIfAvailable()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
-  if (!can(session, INVENTORY_PERMISSIONS.DRIVERS_DELETE)) {
+  if (!canAny(session, DRIVER_ACCESS.DELETE)) {
     return {
       success: false,
       error: 'Forbidden',

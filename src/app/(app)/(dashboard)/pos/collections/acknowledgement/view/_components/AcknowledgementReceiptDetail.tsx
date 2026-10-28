@@ -13,7 +13,7 @@ import {
   type AcknowledgementReceipt,
   PAYMENT_METHOD_OPTIONS,
 } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { downloadElementAsPdf } from '@/src/libs/print/htmlToPdf'
 import SegmentedControl from '@/src/components/ui/SegmentedControl'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -282,7 +282,7 @@ function AcknowledgementReceiptDetailBody({
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
   useEffect(() => {
     BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
-    getAccounts({ limit: 500 }).then((res) => {
+    getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))
     })

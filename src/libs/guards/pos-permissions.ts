@@ -5,6 +5,9 @@ export const POS_PERMISSIONS = {
   SESSIONS_OPEN: 'pos:sessions:open',
   SESSIONS_CLOSE: 'pos:sessions:close',
   TRANSACTIONS_READ: 'pos:transactions:read',
+  // The Product Catalog on its own, for inventory roles the client's Access
+  // Levels sheet gives the catalog without the rest of POS.
+  CATALOG_READ: 'pos:catalog:read',
   TRANSACTIONS_CREATE: 'pos:transactions:create',
   TRANSACTIONS_VOID: 'pos:transactions:void',
   TRANSACTIONS_REFUND: 'pos:transactions:refund',
@@ -81,6 +84,7 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:sessions:open': 'Open a POS session',
   'pos:sessions:close': 'Close a POS session',
   'pos:transactions:read': 'View POS transactions',
+  'pos:catalog:read': 'Browse the POS Product Catalog and its prices without other POS access',
   'pos:reports:read': 'View and export POS sales reports (Branch Manager tier)',
   'pos:daily-collection:read': "View and export a branch's Daily Collection Report",
   'pos:daily-collection:update':

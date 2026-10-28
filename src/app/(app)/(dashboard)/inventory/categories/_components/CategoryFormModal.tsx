@@ -17,7 +17,7 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import { uploadCategoryFile } from '../_actions/category-cover'
 import { showToast } from '@/src/components/ui/toast'
 import { formatClassificationLabel } from '@/src/libs/format/text'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 
 type CreateProps = {
   mode: 'create'
@@ -88,7 +88,7 @@ export default function CategoryFormModal(props: Props) {
   // fetch whole — same call the item form's account overrides make.
   const accountsQuery = useQuery({
     queryKey: ['coa-asset-accounts'],
-    queryFn: () => getAccounts({ limit: 500 }),
+    queryFn: () => getAccountOptions(),
     enabled: isOpen,
     staleTime: 5 * 60 * 1000,
   })

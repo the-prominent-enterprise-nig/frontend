@@ -7,7 +7,7 @@ import { Plus, Pencil, Trash2, CheckCircle, Ban, Search, Printer, Eye } from 'lu
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
@@ -145,7 +145,7 @@ export default function ExpensesList() {
     BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
   }, [])
   useEffect(() => {
-    getAccounts({ limit: 500 }).then((r) =>
+    getAccountOptions().then((r) =>
       setAccounts(((r.data as any)?.items ?? r.data ?? []) as Account[])
     )
   }, [])

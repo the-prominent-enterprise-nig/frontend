@@ -1,7 +1,7 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { isAdmin } from '@/src/libs/guards/permission'
 import RolesSection from '@/src/components/settings/RolesSection'
-import { getRoles, getPermissions } from '../_actions'
+import { getRoles, getPermissions, getAccessMap } from '../_actions'
 import { redirect } from 'next/navigation'
 
 export default async function RolesPage() {
@@ -16,12 +16,13 @@ export default async function RolesPage() {
   }
 
   // Fetch roles and permissions server-side
-  const [rolesResult, permissionsResult] = await Promise.all([
+  const [rolesResult, permissionsResult, accessMap] = await Promise.all([
     // page/limit repeat QueryParamsSchema's own defaults — the roles
     // endpoint ignores both (no pagination on this list), but the schema's
     // z.infer output type requires them once any field is passed at all.
     getRoles({ includeInactive: true, page: 1, limit: 10 }),
     getPermissions(),
+    getAccessMap(),
   ])
 
   // Handle error case for roles
@@ -62,7 +63,11 @@ export default async function RolesPage() {
             Review roles, module access, and permissions for users in your enterprise.
           </p>
         </div>
-        <RolesSection initialRoles={roles} availablePermissions={permissions} />
+        <RolesSection
+          initialRoles={roles}
+          availablePermissions={permissions}
+          accessMap={accessMap}
+        />
       </div>
     </div>
   )

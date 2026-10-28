@@ -36,6 +36,16 @@ export const ACCOUNTING_PERMISSIONS = {
   EXPENSE_UPDATE: 'accounting:expense:update',
   EXPENSE_DELETE: 'accounting:expense:delete',
 
+  // The client's Access Levels sheet gives some roles Expenses without
+  // Recurring, or Special Accounts without Expenses, so both have their own
+  // permissions rather than riding on the expense ones.
+  RECURRING_EXPENSES_READ: 'accounting:recurring-expenses:read',
+  RECURRING_EXPENSES_CREATE: 'accounting:recurring-expenses:create',
+  RECURRING_EXPENSES_UPDATE: 'accounting:recurring-expenses:update',
+  RECURRING_EXPENSES_DELETE: 'accounting:recurring-expenses:delete',
+  SPECIAL_ACCOUNTS_READ: 'accounting:special-accounts:read',
+  SPECIAL_ACCOUNTS_CREATE: 'accounting:special-accounts:create',
+
   // Employees master list (Scenario 40 Gap 1 read-only search extended
   // into full Business-Owner-level CRUD) — the source of both the
   // loan/expense payee picker and the "Create Customer" quick-link on its
@@ -63,6 +73,12 @@ export const ACCOUNTING_PERMISSIONS = {
   SUPPLIER_CREATE: 'accounting:supplier:create',
   SUPPLIER_UPDATE: 'accounting:supplier:update',
   SUPPLIER_DELETE: 'accounting:supplier:delete',
+
+  // Scenario 74 (C): Accounting owns Drivers, and the fleet roster's vehicles.
+  DRIVERS_READ: 'accounting:drivers:read',
+  DRIVERS_CREATE: 'accounting:drivers:create',
+  DRIVERS_UPDATE: 'accounting:drivers:update',
+  DRIVERS_DELETE: 'accounting:drivers:delete',
 
   CUSTOMER_READ: 'accounting:customer:read',
   CUSTOMER_CREATE: 'accounting:customer:create',
@@ -241,6 +257,13 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:expense:create': 'Create expenses',
   'accounting:expense:update': 'Edit expenses',
   'accounting:expense:delete': 'Delete expenses',
+  'accounting:recurring-expenses:read': 'View recurring expenses and their types',
+  'accounting:recurring-expenses:create':
+    'Add a recurring expense type, or run a recurring expense',
+  'accounting:recurring-expenses:update': 'Edit a recurring expense or its type',
+  'accounting:recurring-expenses:delete': 'Delete a recurring expense or its type',
+  'accounting:special-accounts:read': 'View the Special Accounts register and each account ledger',
+  'accounting:special-accounts:create': 'Open a Special Account',
   'accounting:employee:read': 'View the Employees master list and search employees',
   'accounting:employee:create': 'Add a new employee to the master list',
   'accounting:employee:update': 'Edit an employee record',
@@ -367,6 +390,10 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
     'Post an inventory debit memo — moves its Delivery Receipt stock and posts the journal entry',
   'accounting:inventory-debit-memos:void':
     'Void a posted inventory debit memo, reversing stock and GL',
+  'accounting:drivers:read': 'View the drivers on the fleet roster',
+  'accounting:drivers:create': 'Add a driver or a vehicle to the fleet roster',
+  'accounting:drivers:update': 'Edit a driver or a vehicle on the fleet roster',
+  'accounting:drivers:delete': 'Remove a driver or a vehicle from the fleet roster',
   'accounting:query-center:read':
     'Data Query Center — browse and export raw data from every module (Business Owner only)',
   'accounting:*': 'Wildcard full accounting access',

@@ -5,7 +5,12 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
-import { hasExactPermission, hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
+import {
+  hasExactPermission,
+  hasModuleAccess,
+  hasNavPermission,
+  hasPermission,
+} from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
@@ -163,10 +168,9 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
     label,
     href: hub.entryHref,
     icon,
-    // A tab with no permission requirement (Special Accounts) keeps the item
-    // visible to anyone with accounting access, as that tab's own sidebar
-    // item was — requiresModuleAccess, so it still disappears for someone
-    // with no accounting access at all.
+    // A tab with no permission requirement keeps the item visible to anyone
+    // with accounting access — requiresModuleAccess, so it still disappears
+    // for someone with no accounting access at all.
     requiredPermission: hub.tabs.some((tab) => tab.permissions.length === 0)
       ? undefined
       : hub.tabs.flatMap((tab) => tab.permissions),
@@ -1109,10 +1113,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     session?.primaryRole === 'Branch Manager' ? branchManagerWorkspaceItems(session?.branchId) : []
   const allWorkspaceItems = [...workspaceItems, ...bmWorkspaceItems]
 
+  // The roles' own rows: a pick list a feature brings never adds an item.
   const hasAnyPermission = (required?: string | string[]) => {
     if (!required) return true
     const list = Array.isArray(required) ? required : [required]
-    return list.some((p) => hasPermission(session, p))
+    return list.some((p) => hasNavPermission(session, p))
   }
 
   // A parent with sub-items shows only while at least one child is visible.

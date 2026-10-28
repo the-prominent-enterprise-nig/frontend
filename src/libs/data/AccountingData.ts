@@ -173,6 +173,16 @@ export function getAccounts(params?: ListParams) {
   })
 }
 
+/** The chart of accounts for a picker: the accounts alone, no balances or
+ * transactions. Every screen outside the Chart of Accounts picks from this:
+ * GET /accounts carries every posted transaction, and most roles that pick
+ * an account may not read it. */
+export function getAccountOptions(params?: { search?: string }) {
+  return api.get<Account[]>('/accounts/options', params, {
+    tags: ['accounting-accounts'],
+  })
+}
+
 export function getAccountById(id: string) {
   return api.get<Account>(`/accounts/${id}`, undefined, {
     tags: ['accounting-accounts', `accounting-account-${id}`],

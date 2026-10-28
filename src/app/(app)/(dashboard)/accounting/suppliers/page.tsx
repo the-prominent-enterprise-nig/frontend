@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
+import { canAny } from '@/src/libs/guards/permission'
 import { HubTabs } from '../_shared/HubTabs'
 import SupplierDirectory from './_components/SupplierDirectory'
+import { SUPPLIER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 export const metadata = {
   title: 'Suppliers | NIG Central',
@@ -15,7 +15,7 @@ export default async function SuppliersPage() {
   const session = await getSessionOrNull()
 
   if (!session) redirect('/login')
-  if (!can(session, PROCUREMENT_PERMISSIONS.SUPPLIERS_READ)) redirect('/403')
+  if (!canAny(session, SUPPLIER_ACCESS.READ)) redirect('/403')
 
   return (
     <div className="flex min-h-full flex-col bg-zinc-50">

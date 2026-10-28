@@ -23,6 +23,14 @@ import {
   getAccessLevelForRole,
   type AccessLevel,
 } from './access-levels'
+import {
+  EMPTY_ACCESS_MAP,
+  formatModuleSummary,
+  permissionSlug,
+  summarizeModule,
+  type AccessMap,
+  type ModuleSummary,
+} from './module-map'
 
 // Default roles — cannot be deactivated
 const PROTECTED_ROLE_NAMES = new Set([
@@ -39,6 +47,57 @@ type OpenMenu = string | null
 type RolesSectionProps = {
   initialRoles: Role[]
   availablePermissions?: Permission[]
+  /** The module map (Scenario 74). Empty → the per-resource labels below. */
+  accessMap?: AccessMap
+}
+
+type ModuleChip = {
+  key: string
+  label: string
+  text: string
+  title: string
+  dotClass: string
+  ring: boolean
+}
+
+function summaryTitle(label: string, summary: ModuleSummary, map: AccessMap): string {
+  const text = `${label}: ${formatModuleSummary(summary)}`
+  if (summary.kind !== 'all-protected') return text
+  const steps = summary.missingProtected.map((perm) => map.protectedPermissions[perm] ?? perm)
+  return `${text}\nExcept: ${steps.join('; ')}`
+}
+
+/** "Module: access level" chips for a role, from the module map when it has one. */
+function moduleChips(role: Role, available: Permission[], map: AccessMap): ModuleChip[] {
+  const held = role.permissions.map((rolePermission) => permissionSlug(rolePermission.permission))
+  return ACCESS_MODULES.flatMap((moduleConfig): ModuleChip[] => {
+    const summary = summarizeModule(map, held, moduleConfig.key, available)
+    if (summary) {
+      if (summary.kind === 'none') return []
+      return [
+        {
+          key: moduleConfig.key,
+          label: moduleConfig.label,
+          text: formatModuleSummary(summary),
+          title: summaryTitle(moduleConfig.label, summary, map),
+          dotClass: summary.kind === 'partial' ? '' : 'bg-emerald-500',
+          ring: summary.kind === 'partial',
+        },
+      ]
+    }
+    const level = getAccessLevelForRole(role, moduleConfig, available)
+    if (level === 'none') return []
+    return [
+      {
+        key: moduleConfig.key,
+        label: moduleConfig.label,
+        text: SHORT_ACCESS_LEVEL_LABELS[level],
+        title: `${moduleConfig.label}: ${ACCESS_LEVEL_LABELS[level]}`,
+        dotClass: level === 'mixed' ? '' : getAccessDotClass(level),
+        ring: level === 'mixed',
+      },
+    ]
+  })
 }
 
 // Chips read as neutral tags (bordered, not filled) — a colored dot carries
@@ -60,6 +119,7 @@ function getAccessDotClass(level: Exclude<AccessLevel, 'mixed'>): string {
 export default function RolesSection({
   initialRoles,
   availablePermissions = [],
+  accessMap = EMPTY_ACCESS_MAP,
 }: RolesSectionProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -209,10 +269,7 @@ export default function RolesSection({
               {filtered.length > 0 ? (
                 filtered.map((role, index) => {
                   const isNearBottom = index >= filtered.length - 3
-                  const moduleAccess = ACCESS_MODULES.map((moduleConfig) => ({
-                    moduleConfig,
-                    level: getAccessLevelForRole(role, moduleConfig, availablePermissions),
-                  })).filter((item) => item.level !== 'none')
+                  const moduleAccess = moduleChips(role, availablePermissions, accessMap)
                   const isProtected = PROTECTED_ROLE_NAMES.has(role.name)
                   // Business Owner's permissions and active status can't be
                   // changed by anyone via the API (see roles.service.ts's
@@ -234,23 +291,20 @@ export default function RolesSection({
                       <td className="px-4 py-3.5">
                         {moduleAccess.length > 0 ? (
                           <div className="flex max-w-md flex-wrap gap-1.5">
-                            {moduleAccess.map(({ moduleConfig, level }) => (
+                            {moduleAccess.map((chip) => (
                               <span
-                                key={moduleConfig.key}
-                                title={`${moduleConfig.label}: ${ACCESS_LEVEL_LABELS[level]}`}
+                                key={chip.key}
+                                title={chip.title}
                                 className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700"
                               >
-                                {level === 'mixed' ? (
+                                {chip.ring ? (
                                   <span className="h-1.5 w-1.5 shrink-0 rounded-full ring-2 ring-inset ring-amber-500" />
                                 ) : (
                                   <span
-                                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${getAccessDotClass(level)}`}
+                                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${chip.dotClass}`}
                                   />
                                 )}
-                                {moduleConfig.label}:{' '}
-                                <span className="text-zinc-500">
-                                  {SHORT_ACCESS_LEVEL_LABELS[level]}
-                                </span>
+                                {chip.label}: <span className="text-zinc-500">{chip.text}</span>
                               </span>
                             ))}
                           </div>

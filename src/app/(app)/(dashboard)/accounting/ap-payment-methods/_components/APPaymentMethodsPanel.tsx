@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw, Trash2, CreditCard } from 'lucide-react'
 import { APPaymentMethods, type APPaymentMethodConfig } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 
 // Scenario 10 (Purchasing & AP) Part 3 — configures how suppliers get paid
 // (method) and which GL account each maps to. Distinct from the POS-side
@@ -19,7 +19,7 @@ export default function APPaymentMethodsPanel() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [m, a] = await Promise.all([APPaymentMethods.list(), getAccounts({ limit: 500 })])
+    const [m, a] = await Promise.all([APPaymentMethods.list(), getAccountOptions()])
     setMethods(m.data ?? [])
     const d = a.data as any
     setAccounts(d?.items ?? d ?? [])
