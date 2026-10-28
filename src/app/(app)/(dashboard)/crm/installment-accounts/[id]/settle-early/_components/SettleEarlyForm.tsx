@@ -27,6 +27,15 @@ function manilaToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
 }
 
+/** YYYY-MM-DD as e.g. "Oct 5, 2026". */
+function longDate(ymd: string): string {
+  return new Date(`${ymd}T00:00:00`).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
 const BLOCKED_MESSAGES: Record<NonNullable<EarlyPayoffQuote['blockedReason']>, string> = {
   unpaid_down_payment:
     "This account still has an unpaid down payment, which isn't on its invoice. Collect the down payment first, then settle.",
@@ -39,6 +48,9 @@ const SERVER_MESSAGES: Record<string, string> = {
     'The payoff changed since it was shown (a payment may have come in). Check the new amount and try again.',
   early_settlement_employee_appliance_loan:
     'An Employee Appliance Loan is settled through payroll deduction, not here.',
+  early_settlement_date_in_future: "The payment date can't be in the future.",
+  early_settlement_date_too_early:
+    "The payment date can't be before the sale or the account's last payment.",
 }
 
 const INPUT_CLASS =
@@ -59,6 +71,9 @@ export default function SettleEarlyForm({ id }: { id: string }) {
   const [paidAt, setPaidAt] = useState(manilaToday)
   const [quote, setQuote] = useState<EarlyPayoffQuote | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
+  // Kept from the last quote that loaded, so the date picker stays bounded
+  // while a refused date's quote shows its error.
+  const [earliestDate, setEarliestDate] = useState<string | null>(null)
   const [loadingQuote, setLoadingQuote] = useState(true)
   const [orNumber, setOrNumber] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('CASH')
@@ -87,10 +102,13 @@ export default function SettleEarlyForm({ id }: { id: string }) {
     installmentAccountsApi.getEarlyPayoffQuote(id, paidAt).then((res) => {
       if (cancelled) return
       setLoadingQuote(false)
-      if (res.success && res.data) setQuote(res.data)
-      else {
+      if (res.success && res.data) {
+        setQuote(res.data)
+        setEarliestDate(res.data.earliestDate)
+      } else {
         setQuote(null)
-        setQuoteError(res.error ?? 'Could not work out the payoff')
+        const code = res.message ?? res.error ?? ''
+        setQuoteError(SERVER_MESSAGES[code] ?? (res.error || 'Could not work out the payoff'))
       }
     })
     return () => {
@@ -180,10 +198,16 @@ export default function SettleEarlyForm({ id }: { id: string }) {
             id="payoff-paidAt"
             type="date"
             value={paidAt}
+            min={earliestDate ?? undefined}
             max={manilaToday()}
             onChange={(e) => setPaidAt(e.target.value)}
             className={INPUT_CLASS}
           />
+          {earliestDate && (
+            <p className="mt-1 text-[12px] text-gray-500">
+              From {longDate(earliestDate)}, the sale or last payment, up to today.
+            </p>
+          )}
           {errors.paidAt && <p className="mt-1 text-[12px] text-red-600">{errors.paidAt}</p>}
         </div>
 

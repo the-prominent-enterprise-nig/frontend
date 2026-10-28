@@ -335,6 +335,8 @@ export interface EarlyPayoffQuote {
   discount: number
   payoffAmount: number
   blockedReason: 'unpaid_down_payment' | 'no_receivable' | 'nothing_outstanding' | null
+  /** The earliest payment date it can be settled on (YYYY-MM-DD): the later of the sale and the last payment. */
+  earliestDate: string | null
 }
 
 export const installmentAccountsApi = {
