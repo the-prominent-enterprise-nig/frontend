@@ -42,7 +42,10 @@ export function usePurchaseRequestActions(
   session: SessionUser | null,
   /** Where to go once a submit or Convert to PO makes a PO; navigates to the
    * orders view when left out. */
-  onConverted?: () => void
+  onConverted?: () => void,
+  /** Overrides `onConverted` for a submit that auto-converted — the submitter
+   * follows their request to the Converted list, not the approver's PO. */
+  onSubmitConverted?: () => void
 ): PurchaseRequestActions {
   const can = {
     create: hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CREATE),
@@ -51,7 +54,7 @@ export function usePurchaseRequestActions(
     convert: hasPermission(session, PROCUREMENT_PERMISSIONS.PO_CREATE),
   }
   const { updatePR, isUpdating, submitPR, isSubmitting, cancelPR, isCancelling } =
-    usePurchaseRequests({ list: false, onConverted })
+    usePurchaseRequests({ list: false, onConverted: onSubmitConverted ?? onConverted })
   const { convertFromPr, isConverting } = usePurchaseOrders({ onConverted })
 
   const [editingPr, setEditingPr] = useState<Pr | null>(null)

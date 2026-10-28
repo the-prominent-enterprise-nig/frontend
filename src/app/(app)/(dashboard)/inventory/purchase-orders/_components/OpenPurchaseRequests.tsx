@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { STALE } from '@/src/libs/query/stale-times'
@@ -18,14 +20,32 @@ import {
   fmtPHP,
   prTotal,
 } from '../../purchase-requests/_components/PurchaseRequestList'
-import { MONO, SupplierAvatar, fmtDate as fmtPoDate, fmtPeso } from './procurementTokens'
+import { procurementHref } from '../_lib/procurementHref'
+import {
+  MONO,
+  STATUS_META,
+  SupplierAvatar,
+  fmtDate as fmtPoDate,
+  fmtPeso,
+  type PoStatus,
+} from './procurementTokens'
 
 // Draft and submitted are the only statuses with a next step left — a
-// converted request lives on as its PO, and a cancelled one is done.
-type OpenStatus = 'draft' | 'submitted'
+// converted request lives on as its PO, and a cancelled one is done. Those
+// two stay reachable as history, so a branch can follow its request after
+// it leaves the open list.
 const OPEN_LIMIT = 50
 
-function openRequestsQuery(status: OpenStatus, enabled: boolean) {
+/** Which requests the Requests filter lists. */
+export type RequestsView = 'open' | 'converted' | 'cancelled'
+
+const REQUEST_VIEWS: { label: string; value: RequestsView }[] = [
+  { label: 'Awaiting action', value: 'open' },
+  { label: 'Converted', value: 'converted' },
+  { label: 'Cancelled', value: 'cancelled' },
+]
+
+function openRequestsQuery(status: PurchaseRequestSummary['status'], enabled: boolean) {
   const params = { status, limit: OPEN_LIMIT }
   return {
     queryKey: ['purchase-requests', params],
@@ -38,11 +58,18 @@ function openRequestsQuery(status: OpenStatus, enabled: boolean) {
   }
 }
 
-export type OpenPurchaseRequestsState = {
-  actions: PurchaseRequestActions
+type RequestPage = {
   items: PurchaseRequestSummary[]
   total: number
   isLoading: boolean
+}
+
+export type OpenPurchaseRequestsState = RequestPage & {
+  actions: PurchaseRequestActions
+  view: RequestsView
+  setView: (view: RequestsView) => void
+  /** Converted or cancelled requests — fetched only while `view` asks for them. */
+  history: RequestPage
 }
 
 /**
@@ -55,18 +82,60 @@ export type OpenPurchaseRequestsState = {
 export function useOpenPurchaseRequests(
   session: SessionUser | null,
   /** The list's own switch back to its orders — see usePurchaseRequestActions. */
-  onConverted?: () => void
+  onConverted?: () => void,
+  /** The list's own switch to this Requests filter — a submit that
+   * auto-converted lands on its Converted view. */
+  onShowRequests?: () => void
 ): OpenPurchaseRequestsState {
-  const actions = usePurchaseRequestActions(session, onConverted)
+  const [view, setView] = useState<RequestsView>('open')
+  const actions = usePurchaseRequestActions(session, onConverted, () => {
+    setView('converted')
+    onShowRequests?.()
+  })
   const drafts = useQuery(openRequestsQuery('draft', !!session))
   const submitted = useQuery(openRequestsQuery('submitted', !!session))
+  const past = useQuery(
+    openRequestsQuery(
+      view === 'cancelled' ? 'cancelled' : 'converted',
+      !!session && view !== 'open'
+    )
+  )
   const pages = [drafts.data?.data, submitted.data?.data]
   return {
     actions,
     items: pages.flatMap((p) => p?.data ?? []),
     total: pages.reduce((sum, p) => sum + (p?.total ?? 0), 0),
     isLoading: drafts.isLoading || submitted.isLoading,
+    view,
+    setView,
+    history: {
+      items: past.data?.data?.data ?? [],
+      total: past.data?.data?.total ?? 0,
+      isLoading: past.isLoading,
+    },
   }
+}
+
+/** A converted request's PO and where it stands now — e.g. still pending on
+ * the Inventory OIC — opening that PO's detail. */
+function ConvertedPoLink({ pr }: { pr: PurchaseRequestSummary }): React.ReactElement | null {
+  const router = useRouter()
+  const pathname = usePathname()
+  const po = pr.convertedToPo
+  if (pr.status !== 'converted' || !po) return null
+  const meta = STATUS_META[po.status as PoStatus] ?? STATUS_META.draft
+  return (
+    <button
+      type="button"
+      onClick={() => router.push(procurementHref(pathname, 'orders', { po: po.id }))}
+      className="flex items-center gap-1.5 rounded-[6px] px-1.5 py-1 hover:bg-[#f1ebfb]"
+    >
+      <span className={`${MONO} text-[11.5px] font-medium text-[#5b21b6]`}>{po.code}</span>
+      <span className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${meta.badge}`}>
+        {meta.label}
+      </span>
+    </button>
+  )
 }
 
 function OpenRequestRow({
@@ -99,6 +168,7 @@ function OpenRequestRow({
       <td className="px-4 py-[10px] text-[11.5px] text-[#8b8b9b]">{fmtDate(pr.createdAt)}</td>
       <td className="px-4 py-[10px]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-end gap-2">
+          <ConvertedPoLink pr={pr} />
           <PrRowActions pr={pr} actions={actions} />
         </div>
       </td>
@@ -106,25 +176,85 @@ function OpenRequestRow({
   )
 }
 
-function RequestsEmpty(): React.ReactElement {
+const EMPTY_COPY: Record<RequestsView, { title: string; body: string }> = {
+  open: {
+    title: 'No requests awaiting action',
+    body: 'Drafts and submitted purchase requests show here until they become purchase orders.',
+  },
+  converted: {
+    title: 'No converted requests',
+    body: 'A request shows here once it becomes a purchase order, with that order’s status.',
+  },
+  cancelled: {
+    title: 'No cancelled requests',
+    body: 'Requests cancelled before they became purchase orders show here.',
+  },
+}
+
+function RequestsEmpty({ view }: { view: RequestsView }): React.ReactElement {
+  const copy = EMPTY_COPY[view]
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
       <div className="h-[34px] w-[34px] rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]" />
-      <div className="mt-1 text-[15px] font-semibold">No requests awaiting action</div>
-      <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
-        Drafts and submitted purchase requests show here until they become purchase orders.
-      </div>
+      <div className="mt-1 text-[15px] font-semibold">{copy.title}</div>
+      <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">{copy.body}</div>
     </div>
   )
 }
 
-/** The table body of the "Requests" filter — goes inside the list's table card. */
+function RequestsViewPills({
+  view,
+  setView,
+}: Pick<OpenPurchaseRequestsState, 'view' | 'setView'>): React.ReactElement {
+  return (
+    <div className="flex flex-wrap gap-[7px] border-b border-[#eeeef1] px-4 py-[10px]">
+      {REQUEST_VIEWS.map((v) => (
+        <button
+          key={v.value}
+          type="button"
+          aria-pressed={view === v.value}
+          onClick={() => setView(v.value)}
+          className={`rounded-[20px] border px-3 py-[5px] text-[12px] transition-colors ${
+            view === v.value
+              ? 'border-[#5b21b6] bg-[#f1ebfb] font-medium text-[#3f1490]'
+              : 'border-transparent bg-[#f4f4f6] text-[#3d3d4a] hover:bg-[#eeeef1]'
+          }`}
+        >
+          {v.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** The "Requests" filter — view pills above the table, inside the list's table card. */
 export function OpenRequestsTable({
   state,
 }: {
   state: OpenPurchaseRequestsState
 }): React.ReactElement {
-  const { items, total, isLoading, actions } = state
+  return (
+    <>
+      <RequestsViewPills view={state.view} setView={state.setView} />
+      <RequestsTableBody
+        page={state.view === 'open' ? state : state.history}
+        view={state.view}
+        actions={state.actions}
+      />
+    </>
+  )
+}
+
+function RequestsTableBody({
+  page,
+  view,
+  actions,
+}: {
+  page: RequestPage
+  view: RequestsView
+  actions: PurchaseRequestActions
+}): React.ReactElement {
+  const { items, total, isLoading } = page
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -132,7 +262,7 @@ export function OpenRequestsTable({
       </div>
     )
   }
-  if (items.length === 0) return <RequestsEmpty />
+  if (items.length === 0) return <RequestsEmpty view={view} />
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm" aria-label="Purchase requests">
