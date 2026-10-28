@@ -90,7 +90,7 @@ import {
   type PosPriceUseType,
 } from '../_actions/pos-actions'
 import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
-import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import {
   DOWN_PAYMENT_FLOOR_RATE,
   DOWN_PAYMENT_FLOOR_LABEL,
@@ -689,15 +689,22 @@ export default function CheckoutPage() {
   // field was the only part that had gone. Optional, as it was before —
   // a walk-in sale need not have an agent behind it.
   const [sellingAgentId, setSellingAgentId] = useState('')
-  const [sellingAgents, setSellingAgents] = useState<{ id: string; name: string }[]>([])
+  // The picker only learns an agent's name from the pick itself, so the name
+  // travels with the id — see the Selling Agent block.
+  const [sellingAgentName, setSellingAgentName] = useState('')
   // Scenario 78 Part 3 — the Selling Agent is required and defaults to OFFICE
   // (the house agent a walk-in is credited to). /pos/agents always lists it
   // first; every new sale starts back on it.
-  const [officeAgentId, setOfficeAgentId] = useState('')
   // resetSale() also runs from a long-lived poll (cancellation approval), so
-  // it reads OFFICE from a ref — a closure captured before the agent list
+  // it reads OFFICE from refs — a closure captured before the agent list
   // loaded must not reset the next sale to "no agent".
   const officeAgentIdRef = useRef('')
+  const officeAgentNameRef = useRef('')
+  async function searchSellingAgents(query: string): Promise<SearchComboboxOption[]> {
+    const res = await getSellingAgents(query)
+    if (!res.success || !res.data) return []
+    return res.data.map((a) => ({ id: a.id, primary: a.name }))
+  }
   const [isBranchManager, setIsBranchManager] = useState(false)
   // Whether this login already holds the approval authority an installment
   // sale would otherwise need to ask someone else for (Business Owner or
@@ -765,12 +772,14 @@ export default function CheckoutPage() {
   useEffect(() => {
     getSellingAgents().then((res) => {
       if (res.success && Array.isArray(res.data)) {
-        setSellingAgents(res.data.map((a) => ({ id: a.id, name: a.name })))
+        // Only OFFICE is needed up front — it is always listed first. Every
+        // other agent comes from the picker's own server-side search.
         const office = res.data.find((a) => a.name.trim().toUpperCase() === 'OFFICE')
         if (office) {
           officeAgentIdRef.current = office.id
-          setOfficeAgentId(office.id)
+          officeAgentNameRef.current = office.name
           setSellingAgentId((current) => current || office.id)
+          setSellingAgentName((current) => current || office.name)
         }
       }
     })
@@ -4485,9 +4494,9 @@ export default function CheckoutPage() {
       return
     }
 
-    // Scenario 78 Part 3 — required. Only enforced once the list has loaded:
-    // if it couldn't load, the server credits the sale to OFFICE anyway.
-    if (saleMode === 'sale' && sellingAgents.length > 0 && !sellingAgentId) {
+    // Scenario 78 Part 3 — required. Only enforced once OFFICE has loaded:
+    // if it couldn't, the server credits the sale to OFFICE anyway.
+    if (saleMode === 'sale' && officeAgentIdRef.current && !sellingAgentId) {
       setError('Pick the Selling Agent — OFFICE for a walk-in.')
       return
     }
@@ -5323,6 +5332,7 @@ export default function CheckoutPage() {
     setDocumentSwitchNote('')
     // The last sale's agent must not carry over onto the next customer.
     setSellingAgentId(officeAgentIdRef.current)
+    setSellingAgentName(officeAgentNameRef.current)
     setDelivery(EMPTY_DELIVERY)
     setDeliveryCustomerAddress(null)
     setSearchQuery('')
@@ -6442,10 +6452,13 @@ export default function CheckoutPage() {
           {/* Scenario 57 — who sold it. Scenario 78 Part 3 — required, as the
               client asked: a walk-in is credited to OFFICE (preselected, and
               what every new sale starts on) rather than to no one, so every
-              sale names someone. Not clearable — clearing goes back to OFFICE.
-              SearchableSelect rather than the hand-rolled combobox this block
-              used before 1b82138 — the type-ahead is the current idiom and
-              already handles reopen/Enter properly. */}
+              sale names someone. Not clearable.
+              A server-side type-ahead, not a list loaded once: /pos/agents
+              caps at 100 agents by name, so a picker that only filtered what
+              it had loaded could never reach an agent past the first 100.
+              SearchCombobox only learns its label from `initialLabel` at
+              mount, so it is re-keyed on the agent — that is what shows
+              OFFICE once it loads and again when a new sale resets to it. */}
           {saleMode === 'sale' && (
             <div className="border-b border-purple-200 p-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
@@ -6454,12 +6467,17 @@ export default function CheckoutPage() {
                   — OFFICE for a walk-in
                 </span>
               </p>
-              <SearchableSelect
+              <SearchCombobox
+                key={sellingAgentId}
                 value={sellingAgentId}
-                onChange={(id) => setSellingAgentId(id || officeAgentId)}
-                options={sellingAgents.map((a) => ({ value: a.id, label: a.name }))}
+                onChange={setSellingAgentId}
+                onSelect={(option) => setSellingAgentName(option.primary)}
+                initialLabel={sellingAgentName}
+                queryKey="pos-selling-agents"
+                search={searchSellingAgents}
                 placeholder="Select the selling agent"
-                portal
+                typeToSearchMessage="Type an agent's name"
+                clearable={false}
               />
             </div>
           )}
