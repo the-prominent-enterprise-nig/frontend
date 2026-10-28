@@ -783,10 +783,10 @@ type Props = {
   canManagerApprove: boolean
   canManagerReject: boolean
   currentUserBranchId?: string | null
-  // The region of the caller's own branch — drives whether they can act on
-  // a transfer touching a real standalone warehouse (branchId: null,
+  // The region of the caller's own warehouse branch — drives whether they can
+  // act on a transfer touching a real standalone warehouse (branchId: null,
   // Scenario 27), which exact branch-ownership can never match. null/
-  // undefined for an unrestricted caller, or a branch with no region set.
+  // undefined for an unrestricted caller or anyone on a store branch.
   currentUserRegion?: string | null
   onAccept: (id: string) => Promise<ApiResponse<unknown>>
   onReject: (id: string, data: RejectTransferFormValues) => Promise<ApiResponse<unknown>>
