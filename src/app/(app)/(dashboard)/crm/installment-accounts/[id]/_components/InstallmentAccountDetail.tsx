@@ -19,7 +19,6 @@ import {
   CalendarClock,
 } from 'lucide-react'
 import { installmentAccountsApi, remindersApi } from '@/src/libs/api/crm'
-import EarlyPayoffModal from '@/src/components/crm/EarlyPayoffModal'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import CompleteReminderModal from '@/src/components/crm/CompleteReminderModal'
 import type {
@@ -126,18 +125,6 @@ export default function InstallmentAccountDetail({
   const [account, setAccount] = useState<DetailType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [payoffOpen, setPayoffOpen] = useState(false)
-  // EarlyPayoffModal keeps its form state while mounted (it just returns
-  // null while closed) — bumping this key gives each opening a fresh form
-  // and a fresh quote.
-  const [payoffModalKey, setPayoffModalKey] = useState(0)
-
-  function openPayoffModal() {
-    // Scenario 79 — the modal fetches the quote itself, as of the payment
-    // date it shows (MOS RUN depends on it).
-    setPayoffModalKey((k) => k + 1)
-    setPayoffOpen(true)
-  }
 
   const [graduationRequests, setGraduationRequests] = useState<CategoryGraduationRequest[]>([])
   const [requestingGraduation, setRequestingGraduation] = useState(false)
@@ -365,13 +352,15 @@ export default function InstallmentAccountDetail({
             </Link>
           )}
           {canSettle && (
-            <button
-              onClick={openPayoffModal}
+            // Scenario 79 — its own page now (the payoff breakdown plus the
+            // receipt it's collected on); it was a modal.
+            <Link
+              href={`/crm/installment-accounts/${id}/settle-early`}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 sm:flex-none"
             >
               <Banknote className="h-4 w-4" />
               Settle early
-            </button>
+            </Link>
           )}
           {canEdit && (
             <Link
@@ -842,20 +831,6 @@ export default function InstallmentAccountDetail({
         onClose={() => setCompletingReminderId(null)}
         onCompleted={loadReminders}
         reminderId={completingReminderId}
-      />
-
-      <EarlyPayoffModal
-        key={payoffModalKey}
-        open={payoffOpen}
-        onClose={() => setPayoffOpen(false)}
-        onSettled={() => {
-          reload()
-          // Scenario 20 (NAMIDRe): an early payoff auto-closes any open
-          // reminder on this account server-side — refresh the list so
-          // that shows up without a manual page reload.
-          loadReminders()
-        }}
-        accountId={id}
       />
 
       {rejectingRequestId && (

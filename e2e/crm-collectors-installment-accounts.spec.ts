@@ -757,7 +757,7 @@ test.describe('CRM — Installment Accounts', () => {
   // Scenario 79 — Settle Early now collects the payoff on a receipt and books
   // the forgiven interest against the account's AR invoice. A hand-entered
   // account with no invoice linked has no receivable to post either against,
-  // so the modal explains that and won't settle (it used to just flip the
+  // so the Settle early page explains that and won't settle (it used to just flip the
   // status to early_closed with nothing posted).
   test('Settle early explains a hand-entered account with no AR invoice cannot be settled', async ({
     page,
@@ -785,18 +785,20 @@ test.describe('CRM — Installment Accounts', () => {
     const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
 
     await clickStable(
-      page.getByRole('button', { name: 'Settle early' }),
+      page.getByRole('link', { name: 'Settle early' }),
       page.getByRole('heading', { name: 'Settle account early' })
     )
+    await expect(page).toHaveURL(/\/settle-early$/)
     await expect(page.getByText('This account has no AR invoice to settle against.')).toBeVisible({
       timeout: 10_000,
     })
     await expect(page.getByRole('button', { name: /^Settle for / })).toBeDisabled()
 
     // Nothing was settled: still active, still offered.
-    await page.getByRole('button', { name: 'Cancel' }).click()
+    await page.getByRole('link', { name: 'Cancel' }).click()
+    await expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/)
     await expect(page.getByText('early closed')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Settle early' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Settle early' })).toBeVisible()
 
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
