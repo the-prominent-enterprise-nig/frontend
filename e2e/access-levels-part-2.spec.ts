@@ -43,6 +43,21 @@ test.describe('Access Levels Part 2', () => {
     expect(funds.every((f) => /^Petty Cash Fund - /.test(f.name))).toBe(true)
   })
 
+  test('Cashier: Expenses, CRM and Stock Transaction open; "Paid from" is their branch petty cash', async ({
+    page,
+  }) => {
+    await loginAs(page, 'technova.b1.cashier@test.com', PASSWORD)
+    for (const path of ['/accounting/expenses', '/crm/customers', '/inventory/stock-transaction']) {
+      await gotoReady(page, path)
+      await expect(page).not.toHaveURL(/\/403/)
+    }
+    const res = await page.request.get('/api/bank-accounts/options?purpose=expense-fund')
+    expect(res.status()).toBe(200)
+    const funds = (await res.json()) as { name: string }[]
+    expect(funds.length).toBeGreaterThan(0)
+    expect(funds.every((f) => /^Petty Cash Fund - /.test(f.name))).toBe(true)
+  })
+
   test('Accounting opens on the first page a clerk can use, not the financial dashboard', async ({
     page,
   }) => {
