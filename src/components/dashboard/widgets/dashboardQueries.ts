@@ -8,13 +8,14 @@ import {
 import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts'
 import { getReorderAlertsByWarehouse } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts-by-warehouse'
 import { getRecentActivity } from '@/src/app/(app)/(dashboard)/_actions/activity-actions'
-import { ARInvoices, APBills } from '@/src/libs/data/AccountingV2Data'
+import { APBills } from '@/src/libs/data/AccountingV2Data'
 import { customersApi, leadsApi } from '@/src/libs/api/crm'
 import { getEnterpriseSummary } from '@/src/libs/actions/enterprise.actions'
 import { api } from '@/src/libs/api/client'
 import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
 import { getNeedsAttentionItems } from './needsAttentionData'
-import { arInvoicesKey, salesByBranchKey, needsAttentionKey } from './dashboardQueryKeys'
+import { fetchArStats, loadArStats } from './arStats'
+import { arStatsKey, salesByBranchKey, needsAttentionKey } from './dashboardQueryKeys'
 
 export type EmployeeBirthday = {
   id: string
@@ -35,31 +36,21 @@ export function useEmployeeBirthdays() {
 }
 
 /**
- * Shared between any widget that needs this branch's AR invoices (currently
- * the KPI strip's "Outstanding AR" tile) — see `needsAttentionData.ts` for
- * the other side of the dedup, which fetches the same key internally.
+ * The AR figures for this branch (or the whole tenant when `branchId` is
+ * omitted): outstanding, the overdue count and the few invoices the widgets
+ * list — see `arStats.ts`. One shared key per branch, so the KPI strip, the
+ * Outstanding Invoices widget, System Alerts and the Modules card reuse one
+ * request; Needs Attention, `useModuleStats` and the branch customer count go
+ * through the same key via `fetchArStats`.
  *
- * `isOverdue` is computed here (at fetch time) rather than in the widget's
- * render — comparing against `Date.now()` directly during render is an
- * impure read the React Compiler/eslint-plugin-react-hooks purity rule
- * flags, since it'd make the component's output depend on something other
- * than its props/state snapshot.
+ * "Overdue" is one definition for all of them, decided on the server (against its clock), not in a
+ * render: comparing against `Date.now()` during render is an impure read the
+ * React Compiler/eslint-plugin-react-hooks purity rule flags.
  */
-export function useDashboardArInvoices(branchId?: string) {
+export function useDashboardArStats(branchId?: string) {
   return useQuery({
-    queryKey: arInvoicesKey(branchId),
-    queryFn: async () => {
-      const invoices = (await ARInvoices.list({ branchId, view: 'summary' })).data?.items ?? []
-      const now = Date.now()
-      return invoices.map((inv) => {
-        const paid = (inv.amountPaid ?? 0) >= (inv.totalAmount ?? 0) && (inv.totalAmount ?? 0) > 0
-        const isOverdue =
-          !paid &&
-          (inv.status === 'OVERDUE' ||
-            (inv.dueDate ? new Date(inv.dueDate).getTime() < now : false))
-        return { ...inv, isOverdue }
-      })
-    },
+    queryKey: arStatsKey(branchId),
+    queryFn: () => loadArStats(branchId),
   })
 }
 
@@ -84,31 +75,33 @@ export function useDashboardSalesByBranch(dateFrom?: string) {
  * total directly.
  */
 export function useDashboardCustomersCount(branchId?: string) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: ['dashboard', 'customers-count', branchId ?? 'all'] as const,
     queryFn: async () => {
       if (!branchId) {
         return (await customersApi.list({ limit: 1 })).data?.meta?.total ?? 0
       }
-      const [txRes, arRes] = await Promise.all([
+      const [txRes, arStats] = await Promise.all([
         getTransactions({ branchId }),
-        ARInvoices.list({ branchId, view: 'summary' }),
+        fetchArStats(queryClient, branchId),
       ])
-      return branchCustomerIds(txRes.data ?? [], arRes.data?.items ?? []).size
+      return branchCustomerIds(txRes.data ?? [], arStats.customerIds ?? []).size
     },
   })
 }
 
 /** Distinct customer IDs present in this branch's transactions/invoices —
  * shared by useDashboardCustomersCount and useModuleStats so both agree on
- * what counts as "this branch's customers" without re-fetching anything. */
+ * what counts as "this branch's customers" without re-fetching anything.
+ * The invoices' customers come with the branch's AR stats. */
 function branchCustomerIds(
   transactions: { customerId?: string | null }[],
-  invoices: { customerId: string }[]
+  invoiceCustomerIds: string[]
 ): Set<string> {
   const ids = new Set<string>()
   for (const t of transactions) if (t.customerId) ids.add(t.customerId)
-  for (const inv of invoices) if (inv.customerId) ids.add(inv.customerId)
+  for (const id of invoiceCustomerIds) if (id) ids.add(id)
   return ids
 }
 
@@ -172,10 +165,11 @@ async function loadInventoryAlerts(
  * together as a unit in the UI.
  */
 export function useModuleStats(branchId: string | null) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: ['dashboard', 'module-stats', branchId ?? 'all'] as const,
     queryFn: async () => {
-      const [txRes, inventoryAlerts, itemsRes, arRes, apRes, customersRes, leadsRes] =
+      const [txRes, inventoryAlerts, itemsRes, arStats, apRes, customersRes, leadsRes] =
         await Promise.all([
           getTransactions({ branchId: branchId ?? undefined }),
           loadInventoryAlerts(branchId),
@@ -185,7 +179,7 @@ export function useModuleStats(branchId: string | null) {
           // dashboard. AP bills and customers have no branch concept at
           // all (purchasing is enterprise-wide; a customer isn't "owned" by
           // one branch) — those two stay unfiltered on purpose.
-          ARInvoices.list({ branchId: branchId ?? undefined, view: 'summary' }),
+          fetchArStats(queryClient, branchId ?? undefined),
           APBills.list(),
           customersApi.list({ limit: 200 }),
           leadsApi.list({ limit: 200, branchId: branchId ?? undefined }),
@@ -199,18 +193,8 @@ export function useModuleStats(branchId: string | null) {
 
       const activeSkus = itemsRes.data?.meta?.total ?? 0
 
-      const invoices = arRes.data?.items ?? []
-      const outstanding = invoices.reduce(
-        (s, i) => s + Math.max(0, (i.totalAmount ?? 0) - (i.amountPaid ?? 0)),
-        0
-      )
-      const now = Date.now()
-      const overdueCount = invoices.filter((i) => {
-        const paid = (i.amountPaid ?? 0) >= (i.totalAmount ?? 0) && (i.totalAmount ?? 0) > 0
-        if (paid) return false
-        if (i.status === 'OVERDUE') return true
-        return i.dueDate ? new Date(i.dueDate).getTime() < now : false
-      }).length
+      const { outstanding } = arStats
+      const overdueCount = arStats.overdue.count
       const apBills = apRes.data?.items ?? []
       const pendingApprovalCount = apBills.filter(
         (b) =>
@@ -219,8 +203,8 @@ export function useModuleStats(branchId: string | null) {
       ).length
 
       // Same branch-derived customer set useDashboardCustomersCount uses —
-      // reuses txRes/arRes already fetched above instead of asking again.
-      const branchIds = branchId ? branchCustomerIds(allTxns, invoices) : null
+      // reuses txRes/arStats already fetched above instead of asking again.
+      const branchIds = branchId ? branchCustomerIds(allTxns, arStats.customerIds ?? []) : null
       const totalCustomers = branchIds ? branchIds.size : (customersRes.data?.meta?.total ?? 0)
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       const newThisMonth = (customersRes.data?.data ?? []).filter(

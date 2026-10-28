@@ -201,6 +201,10 @@ export const Reports = {
     api.get<any>('/reports/cash-flow', { startDate, endDate }),
   aging: (type: 'ar' | 'ap', asOf?: string) =>
     api.get<any>(`/reports/aging/${type}`, asOf ? { asOf } : undefined),
+  // Bucket totals only (five numbers) for charts — aging() above is one row per open document
+  // (2.9 MB of AR rows on the dev data).
+  agingBuckets: (type: 'ar' | 'ap', asOf?: string) =>
+    api.get<AgingBuckets>(`/reports/aging/${type}`, { view: 'summary', ...(asOf ? { asOf } : {}) }),
   // Scenario 36 Gap 2 — receipts already posted to the GL but not yet
   // matched to a supplier bill/invoice.
   grni: () => api.get<any>('/reports/grni'),
@@ -646,6 +650,55 @@ export interface BulkRecordPaymentResult {
   invoiceCount: number
 }
 
+/** An invoice as the dashboard lists show it: the summary list's columns, nothing heavier. */
+export type ARInvoiceDashboardRow = Pick<
+  ARInvoice,
+  | 'id'
+  | 'invoiceNumber'
+  | 'customerId'
+  | 'invoiceDate'
+  | 'dueDate'
+  | 'totalAmount'
+  | 'amountPaid'
+  | 'status'
+> & { customer: { id: string; name: string } | null }
+
+/**
+ * The dashboards' invoice figures, worked out on the server over every invoice (the same filter and
+ * order as the list) so the browser stops downloading the whole list to add it up. Every "overdue"
+ * figure is the same one: a live invoice (sent, partial or overdue — not paid, draft or cancelled)
+ * with a balance owing that is past its due date.
+ */
+export interface ARInvoiceDashboardStats {
+  /** Invoices the list would return, any status. */
+  invoiceCount: number
+  /** Σ max(0, total − paid). */
+  outstanding: number
+  /** Not PAID/VOID: count and Σ(total − paid) (accounting dashboard). */
+  open: { count: number; outstanding: number }
+  /**
+   * Overdue invoices: how many, what they owe, the earliest due date (ISO, null when none) and the
+   * first few in list order.
+   */
+  overdue: {
+    count: number
+    outstanding: number
+    oldestDueDate: string | null
+    top: ARInvoiceDashboardRow[]
+  }
+  /** Positive balance, earliest due first (Outstanding Invoices widget). */
+  outstandingTop: ARInvoiceDashboardRow[]
+  /** The list's first rows (accounting dashboard's recent invoices). */
+  recent: ARInvoiceDashboardRow[]
+  /** Distinct customers across the invoices; only present when a branch was asked for. */
+  customerIds?: string[]
+}
+
+/** Totals per aging bucket, for charting without downloading a row per document. */
+export interface AgingBuckets {
+  buckets: { bucket: string; outstanding: number; count: number }[]
+}
+
 /** One row of the AR Invoices landing: everything a customer owes, rolled up on the server. */
 export interface ARInvoiceCustomerRollup {
   customerId: string
@@ -838,6 +891,11 @@ export const ARInvoices = {
       '/ar-invoices/by-customer',
       params as any
     ),
+  // The home and accounting dashboards' tiles (outstanding, overdue, the few rows their widgets
+  // list), summed on the server — a few KB instead of the whole invoice list. Pass branchId to
+  // scope to one branch (the response then also carries that branch's customerIds).
+  dashboardStats: (params?: { branchId?: string }) =>
+    api.get<ARInvoiceDashboardStats>('/ar-invoices/dashboard-stats', params as any),
   // Scenario 44 — flat cross-customer Receipts register (one row per
   // ARPayment) backing the AR Invoices landing page, distinct from list()
   // above which returns ARInvoice rows for the customer-grouped rollup.
