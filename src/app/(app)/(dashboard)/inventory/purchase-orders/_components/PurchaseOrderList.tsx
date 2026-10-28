@@ -383,13 +383,18 @@ export function PurchaseOrderList({
   const requestsSession = session && can(session, PROCUREMENT_PERMISSIONS.PR_READ) ? session : null
   /** The "Requests" pill — swaps the orders table for open purchase requests. */
   const [showRequests, setShowRequests] = useState(false)
-  // A request submitted (or converted) from the Requests filter is a PO now:
-  // show it in All, where its next steps are, rather than the Requests list
-  // it just left. A URL change can't do it — this view is local state.
-  const requests = useOpenPurchaseRequests(requestsSession, () => {
-    setShowRequests(false)
-    setStatusFilter(undefined)
-  })
+  // A request converted from the Requests filter is a PO now: show it in
+  // All, where its next steps are. A submit that auto-converted instead
+  // follows the request to Requests › Converted, with its PO's status. A URL
+  // change can't do either — this view is local state.
+  const requests = useOpenPurchaseRequests(
+    requestsSession,
+    () => {
+      setShowRequests(false)
+      setStatusFilter(undefined)
+    },
+    () => setShowRequests(true)
+  )
   const [searchFocus, setSearchFocus] = useState(false)
   /** Guards the row's own Download button against a second click while its
    * document is still being fetched. */
@@ -1147,10 +1152,13 @@ export function PurchaseOrderList({
         onCreate={async (data) => {
           await createPR(data)
           // Creating here always drafts a Purchase Request, not a Purchase
-          // Order — show it under the Requests filter, or switch to the
-          // separate Requests tab where this list has no such filter.
-          if (requestsSession) setShowRequests(true)
-          else router.replace(procurementHref(pathname, 'requests'))
+          // Order — show it under Requests › Awaiting action (whichever view
+          // was last open), or switch to the separate Requests tab where
+          // this list has no such filter.
+          if (requestsSession) {
+            requests.setView('open')
+            setShowRequests(true)
+          } else router.replace(procurementHref(pathname, 'requests'))
         }}
         isCreating={isCreating}
         po={editingPo}
