@@ -209,21 +209,26 @@ export function InstallmentLedgerBody({
 
         {ledger.account.unitItems.length > 0 && (
           <LedgerCard title="Item" icon={Package}>
-            <LedgerFields
-              fields={[
-                { label: 'Brand', value: ledger.account.unitItems[0].brand ?? '—' },
-                { label: 'Type', value: ledger.account.unitItems[0].itemType ?? '—' },
-                { label: 'Model', value: ledger.account.unitItems[0].modelNumber ?? '—' },
-                {
-                  label: 'Serial',
-                  value:
-                    ledger.account.unitItems[0].serialNumber ??
-                    (ledger.account.unitItems.length > 1
-                      ? `+${ledger.account.unitItems.length - 1} more item(s)`
-                      : '—'),
-                },
-              ]}
-            />
+            {/* A sale of several items is one ledger, so the card lists every item
+                it carries — one block each — not just the first. */}
+            <div className="space-y-3">
+              {ledger.account.unitItems.map((unit, index) => (
+                <div
+                  key={unit.id}
+                  data-testid="ledger-item"
+                  className={index === 0 ? '' : 'border-t border-gray-100 pt-3'}
+                >
+                  <LedgerFields
+                    fields={[
+                      { label: 'Brand', value: unit.brand ?? '—' },
+                      { label: 'Type', value: unit.itemType ?? '—' },
+                      { label: 'Model', value: unit.modelNumber ?? '—' },
+                      { label: 'Serial', value: unit.serialNumber ?? '—' },
+                    ]}
+                  />
+                </div>
+              ))}
+            </div>
           </LedgerCard>
         )}
 

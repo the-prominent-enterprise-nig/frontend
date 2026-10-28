@@ -1018,8 +1018,6 @@ export function buildCustomerLedgerHtml(
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  const unitItem = account.unitItems[0]
-
   const cell = (label: string, value: string, colspan = 1) =>
     `<td colspan="${colspan}"><p class="cell-value">${esc(value)}</p><p class="cell-label">${esc(label)}</p></td>`
 
@@ -1109,14 +1107,18 @@ export function buildCustomerLedgerHtml(
         </td>
       </tr>
       ${
-        unitItem
-          ? `<tr>
+        // One row per item: a sale of several items is one ledger, and the
+        // paper card lists every one of them.
+        account.unitItems
+          .map(
+            (unitItem) => `<tr>
         ${cell('Brand', unitItem.brand ?? '—')}
         ${cell('Type', unitItem.itemType ?? '—')}
         ${cell('Model', unitItem.modelNumber ?? '—')}
         ${cell('Serial', unitItem.serialNumber ?? '—')}
       </tr>`
-          : ''
+          )
+          .join('')
       }
       <tr>
         ${cell('Agent', account.sellingAgent?.name ?? '—')}
