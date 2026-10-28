@@ -20,22 +20,7 @@ import {
   LayoutGrid,
 } from 'lucide-react'
 
-import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
-import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
-import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
-import { getAgingReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-report'
-import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
-import { getStockoutAlerts } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-stockout-alerts'
-import { getExpiringBatches } from '@/src/app/(app)/(dashboard)/inventory/batches/_actions/get-batches'
-import { getStockBalances } from '@/src/app/(app)/(dashboard)/inventory/stock/_actions/get-stock-balances'
-import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
-import { getReservations } from '@/src/app/(app)/(dashboard)/inventory/reservations/_actions/get-reservations'
-import { getNegativeStockViolations } from '@/src/app/(app)/(dashboard)/inventory/negative-stock/_actions/get-negative-stock-violations'
-import { getBackorders } from '@/src/app/(app)/(dashboard)/inventory/backorders/_actions/get-backorders'
-import { getReturns } from '@/src/app/(app)/(dashboard)/inventory/returns/_actions/get-returns'
-import { getPurchaseRequests } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_actions/get-purchase-requests'
-import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
-import { getAdjustments } from '@/src/app/(app)/(dashboard)/inventory/adjustments/_actions/get-adjustments'
+import { getInventoryDashboard } from '@/src/app/(app)/(dashboard)/inventory/_actions/get-inventory-dashboard'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -270,30 +255,14 @@ export default function InventoryPage() {
   const { pushPanel } = useUIShell()
 
   const load = useCallback(async () => {
-    const settled = await Promise.allSettled([
-      getItems({ limit: 1 }), // 0
-      getValuationReport({ limit: 1 }), // 1 — only the pre-aggregated `summary` is used, not `data`
-      getTurnoverReport({ periodDays: 90 }), // 2
-      getTransfers({ limit: 20 }), // 3
-      getStockoutAlerts({ days: 30 }), // 4
-      getExpiringBatches({ days: 30, limit: 20 }), // 5
-      getStockBalances({ limit: 1 }), // 6 — only the pre-aggregated `summary` is used, not `data`
-      getWarehouses({ status: 'active', limit: 50 }), // 7
-      getReservations({ limit: 1 }), // 8 — only the pre-aggregated `summary` is used, not `data`
-      getNegativeStockViolations({ limit: 50 }), // 9
-      getBackorders({ limit: 50 }), // 10
-      getReturns({ limit: 20 }), // 11
-      getAgingReport(), // 12
-      getPurchaseRequests({ limit: 50 }), // 13
-      getPurchaseOrders({ limit: 50 }), // 14
-      getAdjustments({ limit: 50 }), // 15
-    ])
+    // The sixteen reads (index order is documented in the action) run in parallel on the server:
+    // called one by one from the browser they queue and run back to back.
+    const results = await getInventoryDashboard()
 
     function pick(i: number): any {
-      const r = settled[i]
-      if (r.status === 'rejected') return null
-      if (!r.value?.success) return null
-      return r.value.data
+      const r = results[i]
+      if (!r?.success) return null
+      return r.data
     }
 
     function arr(i: number): any[] {
