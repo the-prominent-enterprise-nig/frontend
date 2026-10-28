@@ -97,8 +97,8 @@ type DueSort = '' | 'asc' | 'desc'
 const SORT_OPTIONS = [
   // Worded for collections (Kian, 2026-10-28): ascending puts the oldest unpaid
   // due — the most overdue account — on top.
-  { value: 'asc', label: 'Most overdue first' },
-  { value: 'desc', label: 'Furthest due date first' },
+  { value: 'asc', label: 'Past Due First' },
+  { value: 'desc', label: 'Upcoming Due First' },
 ]
 
 export default function InstallmentAccountsList({ canCreate }: { canCreate: boolean }) {
@@ -180,7 +180,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
       setPage(1)
     }
 
-  // The Due Date header cycles most overdue first → furthest due date first →
+  // The Due Date header cycles past due first → upcoming due first →
   // back to the default order (newest accounts first).
   const cycleDueSort = () =>
     resetting(setDueSort)(dueSort === '' ? 'asc' : dueSort === 'asc' ? 'desc' : '')
