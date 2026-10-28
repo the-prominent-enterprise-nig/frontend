@@ -29,13 +29,14 @@ export default function AssignRoleModal({
   const currentRoleIds = new Set(user.userRoles.map((ur) => ur.role.id))
 
   const handleRemove = async (roleId: string, roleName: string) => {
+    if (!confirm(`Remove ${roleName} from ${user.email}?`)) return
     setRemovingRoleId(roleId)
     try {
       const result = await removeRole(user.id, roleId)
       if (!result.success) {
         showToast({
           title: 'Failed to remove role',
-          description: result.error ?? 'Please try again.',
+          description: result.message ?? result.error ?? 'Please try again.',
           status: 'error',
         })
         return
