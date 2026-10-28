@@ -9,9 +9,9 @@ export type ReceivingReportsSummary = {
   shortDeliveries: number
 }
 
-// Tenant-wide KPIs for the Receiving Reports header — independent of
-// whatever filters the table below has active, same as the Serial Number
-// Tracking stat row.
+// KPIs for the Receiving Reports header — independent of whatever filters
+// the table below has active, same as the Serial Number Tracking stat row.
+// Tenant-wide, except a branch-assigned user gets their own branch's figures.
 export async function getReceivingReportsSummary() {
   return api.get<ReceivingReportsSummary>('/inventory/stock/receiving-reports/summary')
 }

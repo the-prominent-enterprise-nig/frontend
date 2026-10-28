@@ -270,7 +270,11 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // destination-branch-only on the backend — a Branch Manager can hold the
   // permission in general but still not be the right branch for a given row,
   // so the row action here must match what the detail panel actually allows.
-  const currentUserRegion = branchOptions.find((b) => b.id === session.branchId)?.region ?? null
+  // Only a warehouse branch's own staff act for its region's standalone
+  // warehouse — a store branch is limited to itself (mirrors the backend's
+  // resolveActorRegion).
+  const ownBranch = branchOptions.find((b) => b.id === session.branchId)
+  const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
   const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
     !session.branchId ||
     warehouseBranchId === session.branchId ||
