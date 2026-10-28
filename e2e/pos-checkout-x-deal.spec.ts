@@ -274,7 +274,7 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
 
     await expect(xDealReference(page)).toBeVisible()
     await expect(page.getByText('X-Deal — no credit application required.')).toBeVisible()
-    await expect(page.getByText('Approved Credit Application')).toHaveCount(0)
+    await expect(page.getByText('Approved Credit Application', { exact: true })).toHaveCount(0)
     await expect(page.getByTestId('dp-payment-mode-toggle')).toHaveCount(0)
 
     await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeDisabled()
@@ -291,7 +291,7 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await expect(downPayment).toContainText(
       'The X-Deal credit memo clears the whole sale when it is approved.'
     )
-    await expect(page.getByText('Nothing to collect at checkout for this cart.')).toBeVisible()
+    await expect(page.getByText(/Nothing to collect for the items at checkout/)).toBeVisible()
   })
 
   test('XD-F03: Confirm is blocked without a reference, including a whitespace-only one', async ({
@@ -338,7 +338,8 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await expect(page.getByText('Approved Credit Application', { exact: true })).toBeVisible()
     await expect(page.getByTestId('dp-payment-mode-toggle')).toBeVisible()
     await expect(page.getByTestId('x-deal-down-payment')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeEnabled()
+    // (The first Cash is the Payment Mode one; the down-payment method has its own.)
+    await expect(page.getByRole('button', { name: 'Cash', exact: true }).first()).toBeEnabled()
     await expect(page.getByRole('button', { name: 'TPF Installment', exact: true })).toBeEnabled()
 
     // A down-payment method picked before ticking X-Deal stops showing its

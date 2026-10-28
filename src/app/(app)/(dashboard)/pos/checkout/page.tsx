@@ -116,8 +116,8 @@ import type { CreditApplicationOverrideSnapshot } from '@/src/schema/pos'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import TypedPlanPanel from './_components/TypedPlanPanel'
 import { toCents, dateInputFromToday, coveringMonthly, typedPlanProblem } from './_utils/typed-plan'
-import { fixedDownPaymentTotal, splitDownPayment, type DpRow } from './_utils/down-payment-groups'
 import { applicationFmiNote, fmiDateProblem, longDate } from './_utils/application-fmi'
+import { shareByAmount, splitDownPayment, type DpRow } from './_utils/down-payment-groups'
 import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
 import TenderPanel from './_components/TenderPanel'
@@ -410,87 +410,105 @@ const SHOW_PROMO_ENTRY = false
  * so turning this back on restores it with nothing else to change. */
 const SHOW_CREDIT_OVERRIDE = false
 
-/** The down payment on an installment row. It is a field from the start — a
- * figure with a "Change amount" link read as fixed, and cashiers did not find
- * out they could edit it. Prefilled with what the sale will use; when the rate
- * card fixes the amount for the chosen term it is a figure, not a field. */
-/** Installment rows that pay ONE down payment together: in-house rows on the
- * same financing term, or every TPF row. See _utils/down-payment-groups. */
-type DpBucket = {
-  key: string
-  /** "12 months" or "TPF" — what the group has in common. */
-  label: string
-  /** The cart rows (display groups) in it, in cart order; the first hosts the box. */
-  groups: CartLine[][]
-  rows: DpRow[]
-  /** What the group pays now, in all. */
+/** The plan's figures from its items' own: every installment line is previewed
+ * on its own, and the plan is their sum. Null while any line's is missing. */
+function sumPreviews(
+  previews: (InstallmentPreview | null | undefined)[]
+): InstallmentPreview | null {
+  if (previews.length === 0 || previews.some((p) => !p)) return null
+  const all = previews as InstallmentPreview[]
+  const round = (n: number) => Math.round(n * 100) / 100
+  const sum = (pick: (p: InstallmentPreview) => number) =>
+    round(all.reduce((total, p) => total + pick(p), 0))
+  const longest = all.reduce((a, b) => (b.lines.length > a.lines.length ? b : a))
+  return {
+    amountFinanced: sum((p) => p.amountFinanced),
+    totalPayable: sum((p) => p.totalPayable),
+    monthlyInstallment: sum((p) => p.monthlyInstallment),
+    lines: longest.lines.map((l, i) => ({
+      ...l,
+      amount: round(all.reduce((total, p) => total + (p.lines[i]?.amount ?? 0), 0)),
+    })),
+    ppd: all.some((p) => p.ppd != null) ? sum((p) => p.ppd ?? 0) : undefined,
+  }
+}
+
+/** The one down payment of an installment plan. Typing shares the figure across
+ * the plan's items at once (see _utils/down-payment-groups); the text is kept
+ * locally while the field has focus so a half-typed "12." is not reformatted
+ * under the cashier's fingers. An in-house plan may take 0 (`allowZero`); a TPF
+ * sale never. */
+function PlanDownPaymentField({
+  total,
+  max,
+  allowZero,
+  badge,
+  hint,
+  title,
+  ariaLabel,
+  placeholder,
+  blankWhenZero,
+  onCommit,
+}: {
+  /** What the plan pays now, in all. */
   total: number
   /** What all of its items cost — the most a down payment can be. */
   max: number
-  /** The part the rate card fixes. */
-  fixedTotal: number
-}
-
-/** The single down payment box for a bucket of rows. Typing shares the figure
- * across the rows at once; the text is kept locally while the field has focus
- * so a half-typed "12." is not reformatted under the cashier's fingers. */
-function CombinedDownPaymentField({
-  bucket,
-  onCommit,
-}: {
-  bucket: DpBucket
+  allowZero: boolean
+  badge: string
+  hint?: string
+  title?: string
+  ariaLabel?: string
+  placeholder?: string
+  /** Shows an empty box rather than 0.00 — for a figure that is optional. */
+  blankWhenZero?: boolean
   onCommit: (total: number) => void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
-  const allFixed = bucket.rows.every((r) => r.fixedPerLine != null)
   const typed = draft != null ? parseFloat(draft) : NaN
+  const required = 'A down payment is required — it can be small, but not 0.'
 
   let error: string | undefined
   if (draft != null) {
-    if (!Number.isFinite(typed) || typed <= 0) {
-      error = 'A down payment is required — it can be small, but not 0.'
-    } else {
-      const split = splitDownPayment(bucket.rows, typed)
-      if (!split.ok) {
-        error =
-          split.reason === 'too_large'
-            ? `Can’t be more than the ${fmt(bucket.max)} these items cost.`
-            : bucket.fixedTotal > 0
-              ? `Must be more than the ${fmt(bucket.fixedTotal)} the rate card sets for part of this.`
-              : 'A down payment is required — it can be small, but not 0.'
-      }
+    if (!Number.isFinite(typed)) {
+      if (!allowZero) error = required
+    } else if (typed < 0) {
+      error = 'A down payment can’t be negative.'
+    } else if (typed > max + 0.005) {
+      error = `Can’t be more than the ${fmt(max)} these items cost.`
+    } else if (!allowZero && typed <= 0) {
+      error = required
     }
-  } else if (bucket.total <= 0) {
-    error = 'A down payment is required — it can be small, but not 0.'
+  } else if (!allowZero && total <= 0) {
+    error = required
   }
 
+  const acceptable = (n: number) => Number.isFinite(n) && n >= 0 && n <= max + 0.005
   return (
     <div data-testid="combined-down-payment">
       <DownPaymentField
-        badge={allFixed ? 'Rate card' : `Combined · ${bucket.groups.length} items`}
-        value={draft ?? bucket.total.toFixed(2)}
-        fixedDisplay={allFixed ? fmt(bucket.total) : undefined}
+        badge={badge}
+        title={title}
+        ariaLabel={ariaLabel}
+        placeholder={placeholder}
+        value={draft ?? (blankWhenZero && total <= 0 ? '' : total.toFixed(2))}
         error={error}
         onChange={(v) => {
           setDraft(v)
           const n = parseFloat(v)
-          if (Number.isFinite(n) && n > 0) onCommit(n)
+          if (acceptable(n) && (allowZero || n > 0)) onCommit(n)
+          else if (allowZero && v.trim() === '') onCommit(0)
         }}
         onBlur={(v) => {
           setDraft(null)
           const n = parseFloat(v)
-          // Whole pesos, rounded up — the same tidying a single row gets.
-          if (Number.isFinite(n) && n > 0) onCommit(Math.ceil(n))
+          // Whole pesos, rounded up — the same tidying a single figure always
+          // got — but never past what the items cost.
+          if (acceptable(n) && (allowZero || n > 0)) onCommit(Math.min(Math.ceil(n), max))
+          else if (allowZero && v.trim() === '') onCommit(0)
         }}
       />
-      <p className="mt-1 text-xs text-prominent-purple-500">
-        One down payment for these {bucket.groups.length} items on {bucket.label}
-        {allFixed
-          ? ' — set by the rate card.'
-          : bucket.fixedTotal > 0
-            ? `, shared out by price after the ${fmt(bucket.fixedTotal)} the rate card sets.`
-            : ', shared out by price.'}
-      </p>
+      {hint && <p className="mt-1 text-xs text-prominent-purple-500">{hint}</p>}
     </div>
   )
 }
@@ -498,54 +516,51 @@ function CombinedDownPaymentField({
 function DownPaymentField({
   badge,
   value,
-  fixedDisplay,
   error,
+  title = 'Down payment',
+  ariaLabel = 'Down payment',
+  placeholder = 'Down payment',
   onChange,
   onBlur,
 }: {
   badge: string
   value: string
-  /** Set when the rate card fixes the amount — shown as a figure. */
-  fixedDisplay?: string
   /** Shown under the field, which turns red — so a missing down payment is
    * caught where it is typed, not only when Checkout is pressed. */
   error?: string
+  title?: string
+  ariaLabel?: string
+  placeholder?: string
   onChange: (next: string) => void
   onBlur: (current: string) => void
 }) {
   return (
     <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-semibold text-prominent-purple-700">Down payment</span>
+        <span className="text-[13px] font-semibold text-prominent-purple-700">{title}</span>
         <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
           {badge}
         </span>
       </div>
-      {fixedDisplay !== undefined ? (
-        <div className="mt-1 pl-4">
-          <span className="text-[15px] font-bold text-prominent-purple-800">{fixedDisplay}</span>
-        </div>
-      ) : (
-        <input
-          type="number"
-          min={0}
-          step={1}
-          inputMode="decimal"
-          aria-label="Down payment"
-          data-testid="down-payment-input"
-          placeholder="Down payment"
-          value={value}
-          aria-invalid={error ? true : undefined}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={(e) => onBlur(e.target.value)}
-          className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-right text-[15px] font-bold text-prominent-purple-800 outline-none [appearance:textfield] focus:ring-2 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-            error
-              ? 'border-red-400 focus:border-red-500 focus:ring-red-100'
-              : 'border-purple-200 focus:border-prominent-purple-400 focus:ring-prominent-purple-100'
-          }`}
-        />
-      )}
-      {error && fixedDisplay === undefined && (
+      <input
+        type="number"
+        min={0}
+        step={1}
+        inputMode="decimal"
+        aria-label={ariaLabel}
+        data-testid="down-payment-input"
+        placeholder={placeholder}
+        value={value}
+        aria-invalid={error ? true : undefined}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onBlur(e.target.value)}
+        className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-right text-[15px] font-bold text-prominent-purple-800 outline-none [appearance:textfield] focus:ring-2 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+          error
+            ? 'border-red-400 focus:border-red-500 focus:ring-red-100'
+            : 'border-purple-200 focus:border-prominent-purple-400 focus:ring-prominent-purple-100'
+        }`}
+      />
+      {error && (
         <p role="alert" data-testid="down-payment-error" className="mt-1 text-xs text-red-600">
           {error}
         </p>
@@ -1947,7 +1962,6 @@ export default function CheckoutPage() {
     employeeApplianceLoanActive || xDealActive || creditApplicationWaivedActive
   const skipsCreditApplicationLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
   const downPaymentWaived = employeeApplianceLoanActive || xDealActive
-  const downPaymentWaivedLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
   // Nothing is forced to ₱0 any more: an X-Deal's part paid now is its cash
   // portion (Scenario 68), typed by the cashier like an Employee Appliance
   // Loan's optional down payment.
@@ -1971,92 +1985,99 @@ export default function CheckoutPage() {
           .reduce((s, l) => s + lineDownPayment(l), 0) * 100
       ) / 100
     : 0
-  // Whether a cash portion is being taken here at all — an X-Deal only when
-  // part of it is paid now.
-  const xDealCollectsNothing = xDealActive && xDealDownPaymentTotal <= 0
 
-  // A line the rate card prices for its term carries exactly the card's down
-  // payment (lineCardDownPayment). Whatever left another figure in the field —
-  // one typed before a Price Use change, a restored or resumed cart — it is
-  // brought back in line here, so the field, the installment preview, the
-  // submit check and the sale itself all say the same amount. Not while the
-  // down payment is waived (Employee Appliance Loan) or optional (X-Deal):
-  // the cashier's figure stands.
-  useEffect(() => {
-    if (downPaymentFree) return
-    setCart((prev) => {
-      let changed = false
-      const next = prev.map((l) => {
-        if (l.invoiceType !== 'installment' || l.installmentProvider === 'tpf') return l
-        const fixed = lineCardDownPayment(l)
-        if (fixed == null || l.downPaymentInput === fixed.toFixed(2)) return l
-        changed = true
-        return {
-          ...l,
-          downPaymentInput: fixed.toFixed(2),
-          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
-        }
-      })
-      return changed ? next : prev
-    })
-    // lineCardDownPayment reads only the line and financingTerms, both deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, financingTerms, downPaymentFree])
+  // ─── One installment plan per cart ─────────────────────────────────────────
+  //
+  // An installment sale is ONE plan (2026-10-28): one provider (Inhouse or TPF),
+  // one term, one down payment and one ledger, whatever the number of items.
+  // The cart still carries those fields on every line — the server adds the
+  // lines up into the one schedule — so everything below treats every
+  // installment line alike: a control writes to all of them, and a line added
+  // later adopts the plan (see the effect further down).
 
-  // One down payment for several items. The server already makes in-house
-  // lines on the same term ONE schedule with ONE down payment, and every TPF
-  // line ONE down payment; the till now asks for it that way too. A bucket is
-  // two or more rows that pay together — a lone row keeps its own box, and a
-  // plan typed at the till (its own panel), an X-Deal and an Employee
-  // Appliance Loan (their own down payment rules) stay out of it.
-  const dpBucketKeyOf = (group: CartLine[]): string | null => {
-    const l = group[0]
-    if (downPaymentFree || l.invoiceType !== 'installment' || l.manualPlan) return null
-    if (l.installmentProvider === 'tpf') return 'tpf'
-    return l.financingTermId ? `inhouse:${l.financingTermId}` : null
-  }
-  const dpBuckets = (() => {
-    const byKey = new Map<string, CartLine[][]>()
-    for (const group of displayGroups) {
-      const key = dpBucketKeyOf(group)
-      if (key) byKey.set(key, [...(byKey.get(key) ?? []), group])
-    }
-    const out = new Map<string, DpBucket>()
-    for (const [key, groups] of byKey) {
-      if (groups.length < 2) continue
-      const rows: DpRow[] = groups.map((g) => ({
-        lineIds: g.map((x) => x.lineId),
-        amount: g.reduce(
-          (sum, x) =>
-            sum + effectiveUnitPrice(x, activeTaxRate, inclusivePricing, isTaxExempt) * x.quantity,
-          0
-        ),
-        fixedPerLine: key === 'tpf' ? null : lineCardDownPayment(g[0]),
-      }))
-      const months = financingTerms.find((t) => t.id === groups[0][0].financingTermId)?.termMonths
-      out.set(key, {
-        key,
-        label: key === 'tpf' ? 'TPF installment' : `${months ?? '?'} months`,
-        groups,
-        rows,
-        total:
-          Math.round(groups.flat().reduce((sum, x) => sum + lineDownPayment(x), 0) * 100) / 100,
-        max: rows.reduce((sum, r) => sum + r.amount, 0),
-        fixedTotal: fixedDownPaymentTotal(rows),
-      })
-    }
-    return out
-  })()
-  const dpBucketFor = (group: CartLine[]): DpBucket | undefined => {
-    const key = dpBucketKeyOf(group)
-    return key ? dpBuckets.get(key) : undefined
-  }
-  /** Shares a typed total across a bucket's open rows. A figure that cannot be
-   * shared (more than the items cost, nothing left after the rate card's rows)
-   * changes nothing — the box says why. */
-  function setBucketDownPayment(bucket: DpBucket, total: number) {
-    const split = splitDownPayment(bucket.rows, total)
+  /** What a line's down payment starts as: its price-list figure, else the 10%
+   * default. Only a starting point — the cashier may type any amount. */
+  const defaultLineDownPayment = (l: CartLine): number =>
+    l.priceListDownPayment != null
+      ? Math.round(Number(l.priceListDownPayment) * l.quantity * 100) / 100
+      : Math.ceil(
+          effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) *
+            l.quantity *
+            DOWN_PAYMENT_FLOOR_RATE
+        )
+
+  const planLineIds = installmentCartLines.map((l) => l.lineId)
+  const planProvider: InstallmentProvider =
+    installmentCartLines[0]?.installmentProvider ?? 'inhouse'
+  const planIsTpf = planProvider === 'tpf'
+  /** The plan's one term — the same on every in-house line. */
+  const planTermId = inhouseInstallmentCartLines.find((l) => !l.manualPlan)?.financingTermId ?? ''
+  /** The plan is one the cashier typed (Scenario 71) rather than a Financing Term's. */
+  const planTyped = !planIsTpf && inhouseInstallmentCartLines.some((l) => l.manualPlan)
+  const planRows: DpRow[] = displayGroups
+    .filter((g) => g[0].invoiceType === 'installment')
+    .map((g) => ({
+      lineIds: g.map((x) => x.lineId),
+      amount: g.reduce(
+        (sum, x) =>
+          sum + effectiveUnitPrice(x, activeTaxRate, inclusivePricing, isTaxExempt) * x.quantity,
+        0
+      ),
+      fixedPerLine: null,
+    }))
+  /** What all of the plan's items cost — the most its down payment can be. */
+  const planSaleAmount = Math.round(planRows.reduce((sum, r) => sum + r.amount, 0) * 100) / 100
+  /** The plan's one down payment: the lines' shares added up. */
+  const planDownPayment =
+    Math.round(installmentCartLines.reduce((s, l) => s + lineDownPayment(l), 0) * 100) / 100
+  const planDefaultDownPayment = installmentCartLines.reduce(
+    (s, l) => s + defaultLineDownPayment(l),
+    0
+  )
+  // Whether anything is paid at this register for the plan. A plan with no
+  // down payment (an in-house one may take none) has nothing to tender, which
+  // is how an X-Deal with nothing paid now already behaves.
+  const dpCollectsNothing = installmentCartLines.length > 0 && planDownPayment <= 0
+
+  // The price list works out each item's monthly from its own down payment. The
+  // plan takes its monthly from the price list only while every item is on it
+  // for this term AND the down payment is still the one the list was worked out
+  // from — change the down payment and the term's factor rate prices the plan
+  // instead (the server decides the same way; see createAndPostInstallmentPlan).
+  const planOnCard =
+    !planIsTpf &&
+    !planTyped &&
+    inhouseInstallmentCartLines.length > 0 &&
+    inhouseInstallmentCartLines.every((l) => lineCardDownPayment(l) != null)
+  const planCardDownPayment = planOnCard
+    ? Math.round(
+        inhouseInstallmentCartLines.reduce((s, l) => s + lineCardDownPayment(l)!, 0) * 100
+      ) / 100
+    : null
+  const planDownPaymentIsCards =
+    planCardDownPayment != null &&
+    Math.abs(planDownPayment - planCardDownPayment) <= DOWN_PAYMENT_FLOOR_TOLERANCE
+  const planUsesCardMonthly = employeeApplianceLoanActive
+    ? planDownPayment <= 0
+    : xDealActive || (planOnCard && planDownPaymentIsCards)
+  /** The price list would price this plan, but the down payment was changed. */
+  const planCardOverridden = planOnCard && !planDownPaymentIsCards && !downPaymentFree
+
+  // A credit application is the DEFAULT for the plan's term and down payment, not
+  // a rule: once the cashier has changed one of them at the till, the till's figure
+  // stands and no later application of the application's terms (it landing, an item
+  // added, a restored cart) puts it back. Picking an application from the list is
+  // the cashier asking for ITS terms, so that starts over. Tracked per field —
+  // changing the down payment says nothing about the term.
+  const posEditedRef = useRef({ term: false, dp: false })
+
+  /** Shares a typed down payment across the plan's items. A figure that cannot be
+   * shared (more than the items cost) changes nothing — the box says why. */
+  function setPlanDownPayment(total: number) {
+    const split = splitDownPayment(planRows, total, { allowZero: !planIsTpf })
     if (!split.ok) return
+    // Leaving the box as it was (a click in and out) is not an edit.
+    if (Math.abs(total - planDownPayment) > 0.004) posEditedRef.current.dp = true
     setCart((prev) =>
       prev.map((l) =>
         split.byLine.has(l.lineId)
@@ -2070,41 +2091,79 @@ export default function CheckoutPage() {
       )
     )
   }
-  /** The down payment slot of a row that is part of a bucket: the first row
-   * hosts the one box, the others show their share. */
-  function renderBucketDownPayment(group: CartLine[]) {
-    const bucket = dpBucketFor(group)!
-    if (bucket.groups[0][0].lineId === group[0].lineId) {
+
+  /** The plan's own figures: its items' previews added up. */
+  const planPreview = sumPreviews(installmentCartLines.map((l) => installmentPreviews[l.lineId]))
+  const planPreviewLoading = installmentCartLines.some((l) => installmentPreviewLoading[l.lineId])
+  const planPreviewError =
+    installmentCartLines.map((l) => installmentPreviewErrors[l.lineId]).find(Boolean) ?? null
+  /** Where the down payment on show came from. */
+  const planDpBadge = (() => {
+    if (Math.abs(planDownPayment - planDefaultDownPayment) > DOWN_PAYMENT_FLOOR_TOLERANCE) {
+      return 'Changed'
+    }
+    const priced = installmentCartLines.filter((l) => l.priceListDownPayment != null).length
+    if (priced === installmentCartLines.length) return 'Rate card'
+    if (priced === 0) return `${DOWN_PAYMENT_FLOOR_LABEL} default`
+    return 'Rate card + default'
+  })()
+
+  /** The plan's one down payment box. An in-house plan may take 0; a TPF sale
+   * never. An X-Deal's is the cash portion and an Employee Appliance Loan's is
+   * optional — their own wording, the same single figure. */
+  function renderPlanDownPayment() {
+    if (xDealActive) {
+      // Scenario 68 — the part paid now, if any.
       return (
-        <CombinedDownPaymentField
-          key={bucket.key}
-          bucket={bucket}
-          onCommit={(total) => setBucketDownPayment(bucket, total)}
+        <div data-testid="x-deal-down-payment">
+          <PlanDownPaymentField
+            total={planDownPayment}
+            max={planSaleAmount}
+            allowZero
+            blankWhenZero
+            title="Cash portion"
+            ariaLabel="X-Deal cash portion"
+            placeholder="0.00"
+            badge="X-Deal · optional"
+            hint={
+              planDownPayment > 0
+                ? `Paid now at this counter. The rest, ${fmt(
+                    Math.max(0, planSaleAmount - planDownPayment)
+                  )}, is cleared by the X-Deal credit memo when the sale is approved.`
+                : 'The X-Deal credit memo clears the whole sale when it is approved.'
+            }
+            onCommit={setPlanDownPayment}
+          />
+        </div>
+      )
+    }
+    if (employeeApplianceLoanActive) {
+      return (
+        <PlanDownPaymentField
+          total={planDownPayment}
+          max={planSaleAmount}
+          allowZero
+          blankWhenZero
+          placeholder="Down payment (optional)"
+          badge="Employee loan · optional"
+          hint={`Optional — leave blank for no down payment. No more than ${fmt(planSaleAmount)}.`}
+          onCommit={setPlanDownPayment}
         />
       )
     }
-    const share = Math.round(group.reduce((sum, x) => sum + lineDownPayment(x), 0) * 100) / 100
-    const fixed = bucket.key !== 'tpf' && lineCardDownPayment(group[0]) != null
     return (
-      <div
-        data-testid="down-payment-share"
-        className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[13px] font-semibold text-prominent-purple-700">Down payment</span>
-          <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-            {fixed ? 'Rate card' : 'Share'}
-          </span>
-        </div>
-        <div className="mt-1 pl-4">
-          <span className="text-[15px] font-bold text-prominent-purple-800">{fmt(share)}</span>
-        </div>
-        <p className="mt-1 text-xs text-prominent-purple-500">
-          {fixed
-            ? 'Set by the rate card, and part of the combined down payment above.'
-            : 'Part of the combined down payment above.'}
-        </p>
-      </div>
+      <PlanDownPaymentField
+        total={planDownPayment}
+        max={planSaleAmount}
+        allowZero={!planIsTpf}
+        badge={planDpBadge}
+        hint={
+          installmentCartLines.length > 1
+            ? `One down payment for these ${installmentCartLines.length} items, shared out by price.`
+            : undefined
+        }
+        onCommit={setPlanDownPayment}
+      />
     )
   }
 
@@ -2124,7 +2183,7 @@ export default function CheckoutPage() {
   const hasCreditCardLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
     (installmentCartLines.length > 0 &&
-      !xDealCollectsNothing &&
+      !dpCollectsNothing &&
       installmentPaymentMethod === 'credit_card')
   // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR). Also
   // covers the down payment's cash tendering now that it shares this pool —
@@ -2132,9 +2191,7 @@ export default function CheckoutPage() {
   // of the two OR branches is ever true.
   const hasCashLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment') ||
-    (installmentCartLines.length > 0 &&
-      !xDealCollectsNothing &&
-      installmentPaymentMethod === 'cash')
+    (installmentCartLines.length > 0 && !dpCollectsNothing && installmentPaymentMethod === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
   // value (net of promo discount, prorated by the cash lines' share of the
@@ -2476,7 +2533,7 @@ export default function CheckoutPage() {
           `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}:${l.manualPlan ? `${l.manualTermInput}/${l.manualMonthlyInput}/${l.firstDueDateInput}` : ''}`
       )
       .join('|') +
-    `|dpWaived:${downPaymentZeroed}|emp:${employeeApplianceLoanActive}|fmi:${fmiDateInput}`
+    `|dpWaived:${downPaymentZeroed}|emp:${employeeApplianceLoanActive}|card:${planUsesCardMonthly}|fmi:${fmiDateInput}`
 
   // Approval happens in someone ELSE's session — only Business Owner holds
   // pos:application:approve — so "approve in another tab, come back to the
@@ -2796,10 +2853,17 @@ export default function CheckoutPage() {
   // out to raise the application on 5 months and came back restored "as the
   // cashier left it" — every line already had the 5-month down payment, so the
   // old down-payment-only guard skipped it and checkout kept 5 months though
-  // the application said 12. A typed down payment is still never lowered
-  // (applyCreditApplicationTerms only raises it), and an application with no
-  // term leaves the lines' own.
+  // the application said 12. What the cashier has changed at the till is not
+  // touched either way (posEditedRef — applyCreditApplicationTerms only fills in
+  // the rest), and an application with no term leaves the lines' own.
   const appliedTermsKeyRef = useRef<string | null>(null)
+  // A new sale (the cart emptied) is a fresh start for what the till has changed
+  // against an application's terms. Not a change of customer: a figure typed
+  // before the customer was picked is still the cashier's.
+  const cartIsEmpty = cart.length === 0
+  useEffect(() => {
+    posEditedRef.current = { term: false, dp: false }
+  }, [cartIsEmpty])
   useEffect(() => {
     if (!creditApplicationId || inhouseInstallmentCartLines.length === 0) return
     const key = `${creditApplicationId}:${inhouseInstallmentCartLines.length}`
@@ -2839,6 +2903,9 @@ export default function CheckoutPage() {
           firstDueDate: line.firstDueDateInput,
           downPayment: lineDownPayment(line),
           saleAmount: lineAmount,
+          // One item's share of a plan: the plan as a whole has to cover the
+          // sale (checked in the panel and at Confirm), not each share to the centavo.
+          skipCoverage: installmentCartLines.length > 1,
         }) === null
       if (line.manualPlan ? !typedReady : !financingTermId || lineAmount <= 0) {
         setInstallmentPreviews((prev) => ({ ...prev, [line.lineId]: null }))
@@ -2871,12 +2938,13 @@ export default function CheckoutPage() {
               // even for a rate-card SKU (found 2026-09-22: DP badge showed the
               // curated ₱3,590 but the monthly installment showed the generic
               // ₱4,575.60 instead of the rate card's ₱5,130).
-              // Not for an Employee Appliance Loan that takes a down payment: the
-              // card's monthly was worked out from the card's own down payment.
-              priceListItemId:
-                employeeApplianceLoanActive && downPayment > 0
-                  ? undefined
-                  : (line.priceListItemId ?? undefined),
+              // Only while the plan is still on the price list's own down payment
+              // (planUsesCardMonthly): the card's monthly was worked out from it,
+              // so a changed down payment — or an Employee Appliance Loan that
+              // takes one — is priced from the term's factor rate instead.
+              priceListItemId: planUsesCardMonthly
+                ? (line.priceListItemId ?? undefined)
+                : undefined,
               // The FMI date entered on the sale starts the schedule shown here,
               // as it will the one posted.
               firstDueDate:
@@ -3634,18 +3702,12 @@ export default function CheckoutPage() {
         // moment to hang the down-payment pre-fill off the way inhouse does
         // (see setLineFinancingTermId) — seed it here instead, so the panel
         // never opens on a blank field that reads as "nothing to collect".
-        // Same curated-over-floor priority as setLineFinancingTermId().
-        const lineAmount =
-          effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-        const fallbackDownPayment =
-          l.priceListDownPayment != null
-            ? Number(l.priceListDownPayment).toFixed(2)
-            : Math.ceil(lineAmount * DOWN_PAYMENT_FLOOR_RATE).toFixed(2)
+        // Same price-list-over-10% priority as an inhouse line's.
         return {
           ...l,
           installmentProvider: provider,
           financingTermId: undefined,
-          downPaymentInput: l.downPaymentInput ?? fallbackDownPayment,
+          downPaymentInput: l.downPaymentInput ?? defaultLineDownPayment(l).toFixed(2),
           downPaymentAutoForPriceListItemId: l.downPaymentInput
             ? l.downPaymentAutoForPriceListItemId
             : (l.priceListItemId ?? null),
@@ -3703,7 +3765,21 @@ export default function CheckoutPage() {
    */
   function toggleXDeal(on: boolean) {
     setXDealChecked(on)
-    if (!on) return
+    if (!on) {
+      // The box the X-Deal left blank goes back to what a plan starts at.
+      setCart((prev) =>
+        prev.map((l) =>
+          l.invoiceType === 'installment' && !l.downPaymentInput
+            ? {
+                ...l,
+                downPaymentInput: defaultLineDownPayment(l).toFixed(2),
+                downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+              }
+            : l
+        )
+      )
+      return
+    }
     setCreditApplicationWaived(false)
     setCreditApplicationOverridden(false)
     setEmployeeApplianceLoanChecked(false)
@@ -3760,78 +3836,53 @@ export default function CheckoutPage() {
     const lineAmount = (l: CartLine) =>
       effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
     const approvedDp = application.downPayment ?? null
-    // A line the rate card prices for the application's term takes exactly
-    // its card down payment — fixed, see lineCardDownPayment(). The rest of
-    // the approved figure is shared out over the other lines as before.
-    const termFor = (l: CartLine) => ({
-      ...l,
-      financingTermId: application.financingTermId ?? l.financingTermId,
-    })
-    const cardDpByLine = new Map<string, number>()
-    for (const l of lines) {
-      const fixed = lineCardDownPayment(termFor(l))
-      if (fixed != null) cardDpByLine.set(l.lineId, fixed)
-    }
-    const shared = lines.filter((l) => !cardDpByLine.has(l.lineId))
-    const total = shared.reduce((sum, l) => sum + lineAmount(l), 0)
-    const sharedDp =
-      approvedDp != null
-        ? approvedDp - [...cardDpByLine.values()].reduce((sum, v) => sum + v, 0)
-        : null
+    // The approved down payment is the plan's one figure, shared out across the
+    // lines by price. (It is also the price list's own figure whenever the list
+    // quotes the term — the application is held to that when it is raised — so
+    // the plan keeps the price list's monthly.)
+    const total = lines.reduce((sum, l) => sum + lineAmount(l), 0)
 
     let allocated = 0
     const dpByLine = new Map<string, string>()
-    for (const [lineId, fixed] of cardDpByLine) dpByLine.set(lineId, fixed.toFixed(2))
-    if (sharedDp != null && total > 0) {
-      shared.forEach((l, idx) => {
-        const isLast = idx === shared.length - 1
+    if (approvedDp != null && total > 0) {
+      lines.forEach((l, idx) => {
+        const isLast = idx === lines.length - 1
         const rawShare = isLast
-          ? sharedDp - allocated
-          : Math.round(sharedDp * (lineAmount(l) / total) * 100) / 100
+          ? approvedDp - allocated
+          : Math.round(approvedDp * (lineAmount(l) / total) * 100) / 100
         allocated += rawShare
         // The approved down payment is shared out as approved. There is no
         // 10% floor to raise a share to any more (2026-10-20: an application
         // may be approved below it, and the till takes it as approved) — only
         // "never 0", so a share that rounds away still collects a centavo.
-        // The cashier can always take more: a figure already typed is never
-        // reduced (below).
         const share = Math.max(rawShare, 0.01)
         dpByLine.set(l.lineId, share.toFixed(2))
       })
     }
 
+    // The application only fills in what the cashier has not changed (see
+    // posEditedRef) — their figure, higher or lower, is the one that stands.
+    const keepTerm = posEditedRef.current.term
+    const keepDownPayment = posEditedRef.current.dp
+    if (keepTerm && keepDownPayment) return
     setCart((prev) =>
       prev.map((l) => {
-        if (!dpByLine.has(l.lineId) && !application.financingTermId) return l
         if (!lines.some((x) => x.lineId === l.lineId)) return l
-        // Never reduce a figure the cashier has already entered — they may
-        // have agreed a larger down payment at the counter, and silently
-        // replacing it with the apportioned share loses that. Only a figure
-        // they TYPED counts: the 10% a term pre-fills is the system's own
-        // starting value (it carries the auto-fill marker), and keeping it
-        // over a smaller approved figure would put the line back at 10%.
-        const typed =
-          l.downPaymentAutoForPriceListItemId !== undefined
-            ? 0
-            : parseFloat(l.downPaymentInput ?? '') || 0
-        const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
-        // A card line's figure is exact, typed or not.
-        const downPaymentInput = cardDpByLine.has(l.lineId)
-          ? cardDpByLine.get(l.lineId)!.toFixed(2)
-          : dpByLine.has(l.lineId)
-            ? Math.max(typed, apportioned).toFixed(2)
-            : l.downPaymentInput
-        return {
-          ...l,
-          financingTermId: application.financingTermId ?? l.financingTermId,
-          downPaymentInput,
-          // An approved application's figure is authoritative, same as a
-          // cashier's own typed entry — a later Price Use change must not
-          // treat it as a stale auto-fill and silently recompute it away.
-          downPaymentAutoForPriceListItemId: dpByLine.has(l.lineId)
-            ? undefined
-            : l.downPaymentAutoForPriceListItemId,
+        let next = l
+        if (!keepTerm && application.financingTermId) {
+          next = { ...next, financingTermId: application.financingTermId }
         }
+        if (!keepDownPayment && dpByLine.has(l.lineId)) {
+          next = {
+            ...next,
+            downPaymentInput: dpByLine.get(l.lineId)!,
+            // An approved application's figure is authoritative until the
+            // cashier says otherwise — a later Price Use change must not treat
+            // it as a stale auto-fill and silently recompute it away.
+            downPaymentAutoForPriceListItemId: undefined,
+          }
+        }
+        return next
       })
     )
   }
@@ -3841,60 +3892,24 @@ export default function CheckoutPage() {
     setCart((prev) =>
       prev.map((l) => {
         if (!ids.has(l.lineId)) return l
-        // Pre-fill the down payment as soon as a term is picked (never
-        // overwriting a value the cashier already typed) — otherwise the
-        // cart sits at a blank/0 down payment that reads as "nothing to
-        // collect" but can't actually be submitted that way. Scenario 15,
-        // Part 5 — a curated per-SKU down payment from the real NIG rate
-        // card wins over the generic 10%-floor fallback when one exists.
-        //
-        // A term the card quotes fixes the down payment outright, so it is
-        // set even over a typed figure (PR #199 review).
-        //
         // Scenario 68 — not on an X-Deal: its down payment is whatever part
         // the cashier says is paid now, blank meaning fully bartered.
         if (xDealActive) return { ...l, financingTermId }
-        const fixed = lineCardDownPayment({ ...l, financingTermId })
-        if (fixed != null) {
-          return {
-            ...l,
-            financingTermId,
-            downPaymentInput: fixed.toFixed(2),
-            downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
-          }
-        }
-        if (l.downPaymentInput) return { ...l, financingTermId }
-        const downPaymentInput =
-          l.priceListDownPayment != null
-            ? (Number(l.priceListDownPayment) * l.quantity).toFixed(2)
-            : // Whole pesos, rounded UP — never centavos, and never below the
-              // floor (ceil instead of round guarantees that even if the
-              // exact figure has a fractional remainder).
-              Math.ceil(
-                effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) *
-                  l.quantity *
-                  DOWN_PAYMENT_FLOOR_RATE
-              ).toFixed(2)
+        // A figure the cashier typed stays (2026-10-28: the down payment is a
+        // field, whatever the price list says). Anything the system put there
+        // is refreshed — pre-filled as soon as a term is picked, so the cart
+        // never sits at a blank/0 that reads as "nothing to collect" — from
+        // the price list's down payment, else the 10% default. Whole pesos,
+        // rounded UP for the 10%, so never centavos.
+        const typed = !!l.downPaymentInput && l.downPaymentAutoForPriceListItemId === undefined
+        if (typed) return { ...l, financingTermId }
         return {
           ...l,
           financingTermId,
-          downPaymentInput,
+          downPaymentInput: defaultLineDownPayment(l).toFixed(2),
           downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
         }
       })
-    )
-  }
-
-  function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
-    const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) =>
-      prev.map((l) =>
-        ids.has(l.lineId)
-          ? // An explicit cashier edit — no longer an auto-fill a later
-            // Price Use change is allowed to silently recompute.
-            { ...l, downPaymentInput, downPaymentAutoForPriceListItemId: undefined }
-          : l
-      )
     )
   }
 
@@ -3922,8 +3937,10 @@ export default function CheckoutPage() {
         if (!ids.has(l.lineId)) return l
         const sale = saleAmountOf(l)
         const months = financingTerms.find((t) => t.id === l.financingTermId)?.termMonths ?? 12
-        const downPayment =
-          parseFloat(l.downPaymentInput ?? '') || Math.ceil(sale * DOWN_PAYMENT_FLOOR_RATE)
+        const enteredDownPayment = parseFloat(l.downPaymentInput ?? '')
+        const downPayment = Number.isFinite(enteredDownPayment)
+          ? enteredDownPayment
+          : Math.ceil(sale * DOWN_PAYMENT_FLOOR_RATE)
         // What the row is quoting right now (a rate card's monthly included)
         // when a term is picked; otherwise the figure that just covers the sale.
         const shown = l.financingTermId ? installmentPreviews[l.lineId] : null
@@ -3955,6 +3972,151 @@ export default function CheckoutPage() {
     const ids = new Set(lineIds)
     setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, ...patch } : l)))
   }
+
+  // The typed plan's down payment and monthly are the PLAN's, typed once; the
+  // lines carry shares of them. What was typed is kept as typed while the field
+  // has it, so a half-typed "12." is not reformatted under the cashier's fingers.
+  const [planTypedDraft, setPlanTypedDraft] = useState<{
+    downPaymentInput?: string
+    manualMonthlyInput?: string
+  }>({})
+  const planTypedMonthly =
+    Math.round(
+      inhouseInstallmentCartLines.reduce(
+        (s, l) => s + (parseFloat(l.manualMonthlyInput ?? '') || 0),
+        0
+      ) * 100
+    ) / 100
+  useEffect(() => {
+    // A draft that no longer says what the lines add up to (a one-tap plan, the
+    // rate card's values, an item added) gives way to the real figure.
+    setPlanTypedDraft((d) => {
+      const dp = parseFloat(d.downPaymentInput ?? '')
+      const monthly = parseFloat(d.manualMonthlyInput ?? '')
+      const next = {
+        downPaymentInput:
+          Number.isFinite(dp) && Math.abs(dp - planDownPayment) > 0.004
+            ? undefined
+            : d.downPaymentInput,
+        manualMonthlyInput:
+          Number.isFinite(monthly) && Math.abs(monthly - planTypedMonthly) > 0.004
+            ? undefined
+            : d.manualMonthlyInput,
+      }
+      return next.downPaymentInput === d.downPaymentInput &&
+        next.manualMonthlyInput === d.manualMonthlyInput
+        ? d
+        : next
+    })
+  }, [planDownPayment, planTypedMonthly])
+
+  /** The typed panel's edits, for a plan of several items: months and the first
+   * due date go on every line as they are; the down payment and the monthly are
+   * totals, shared out across the lines by price. */
+  function patchTypedPlanTotals(
+    _lineIds: string[],
+    patch: Partial<
+      Pick<
+        CartLine,
+        'manualTermInput' | 'manualMonthlyInput' | 'firstDueDateInput' | 'downPaymentInput'
+      >
+    >
+  ) {
+    const { downPaymentInput, manualMonthlyInput, ...shared } = patch
+    if (Object.keys(shared).length > 0) patchTypedPlan(planLineIds, shared)
+    if (downPaymentInput !== undefined) {
+      setPlanTypedDraft((d) => ({ ...d, downPaymentInput }))
+      const n = parseFloat(downPaymentInput)
+      if (Number.isFinite(n) && n >= 0 && n <= planSaleAmount) setPlanDownPayment(n)
+    }
+    if (manualMonthlyInput !== undefined) {
+      setPlanTypedDraft((d) => ({ ...d, manualMonthlyInput }))
+      const n = parseFloat(manualMonthlyInput)
+      if (Number.isFinite(n) && n > 0) {
+        const shares = shareByAmount(planRows, n)
+        setCart((prev) =>
+          prev.map((l) =>
+            shares.has(l.lineId)
+              ? { ...l, manualMonthlyInput: shares.get(l.lineId)!.toFixed(2) }
+              : l
+          )
+        )
+      }
+    }
+  }
+
+  // One plan per cart: every installment line carries the plan of the first one
+  // — its provider, and its term (or its typed months and first due date). A line
+  // added to the cart afterwards, or a restored or resumed cart still in the old
+  // item-by-item shape, comes into line here. And every line has a down payment
+  // from the start (its price-list figure, else the 10% default), so the plan's
+  // field shows what the sale will use before a term is even picked.
+  useEffect(() => {
+    const lines = cart.filter((l) => l.invoiceType === 'installment')
+    if (lines.length === 0) return
+    const holder = lines[0]
+    const holderProvider = holder.installmentProvider ?? 'inhouse'
+    const off = lines
+      .slice(1)
+      .filter(
+        (l) =>
+          (l.installmentProvider ?? 'inhouse') !== holderProvider ||
+          (holderProvider !== 'tpf' &&
+            (!!l.manualPlan !== !!holder.manualPlan ||
+              (holder.manualPlan
+                ? l.manualTermInput !== holder.manualTermInput ||
+                  l.firstDueDateInput !== holder.firstDueDateInput
+                : (l.financingTermId ?? '') !== (holder.financingTermId ?? ''))))
+      )
+    const unseeded = xDealActive ? [] : lines.filter((l) => l.downPaymentInput === undefined)
+    if (off.length === 0 && unseeded.length === 0) return
+    const offIds = new Set(off.map((l) => l.lineId))
+    const unseededIds = new Set(unseeded.map((l) => l.lineId))
+    setCart((prev) =>
+      prev.map((l) => {
+        let next = l
+        if (offIds.has(l.lineId)) {
+          if (holderProvider === 'tpf') {
+            next = {
+              ...withoutTypedPlan(l),
+              installmentProvider: 'tpf',
+              financingTermId: undefined,
+            }
+          } else if (holder.manualPlan) {
+            const months = Number(holder.manualTermInput) || 12
+            const sale = saleAmountOf(l)
+            const dp = parseFloat(l.downPaymentInput ?? '') || defaultLineDownPayment(l)
+            next = {
+              ...l,
+              installmentProvider: 'inhouse',
+              financingTermId: undefined,
+              manualPlan: true,
+              manualTermInput: holder.manualTermInput,
+              firstDueDateInput: holder.firstDueDateInput,
+              manualMonthlyInput: coveringMonthly(sale, dp, months).toFixed(2),
+            }
+          } else {
+            next = {
+              ...withoutTypedPlan(l),
+              installmentProvider: 'inhouse',
+              financingTermId: holder.financingTermId,
+            }
+          }
+        }
+        if (unseededIds.has(l.lineId) && next.downPaymentInput === undefined) {
+          next = {
+            ...next,
+            downPaymentInput: defaultLineDownPayment(next).toFixed(2),
+            downPaymentAutoForPriceListItemId: next.priceListItemId ?? null,
+          }
+        }
+        return next
+      })
+    )
+    // saleAmountOf / defaultLineDownPayment read only the line and the sale's
+    // tax settings, which are what re-run this through `cart`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, xDealActive])
 
   /** "50% down, the balance in 60 days" — the common case in one tap. */
   function applySixtyDayPlan(lineIds: string[]) {
@@ -4609,67 +4771,52 @@ export default function CheckoutPage() {
         setError("Enter the financier's reference number for the TPF-financed item(s).")
         return
       }
-      // Same "never 0" rule as inhouse — the financier funds only the balance,
-      // so a missing down payment isn't "financed in full", it's unbilled.
+      // A TPF sale never takes 0 down (an inhouse plan may) — the financier
+      // funds only the balance, so a missing down payment isn't "financed in
+      // full", it's unbilled. Scenario 60 — an Employee Appliance Loan waives the
+      // down payment (and this check) entirely. There is no percentage floor
+      // (2026-10-15): any amount above 0 will do.
+      if (!downPaymentWaived && planDownPayment <= 0) {
+        setError('Enter the down payment — TPF sales still collect one at checkout.')
+        return
+      }
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
         const downPayment = lineDownPayment(l)
-        // Scenario 60 — an Employee Appliance Loan waives the down payment
-        // (and the ">0" check below) entirely. There is no percentage floor
-        // (2026-10-15): any amount above 0 will do.
-        if (!downPaymentWaived && downPayment <= 0) {
-          setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
-          return
-        }
         if (downPayment > lineAmount) {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
       }
     }
+    // Scenario 71 — a typed plan answers to its own rules, not a Financing Term's
+    // or the price list's, and is weighed as ONE plan: its down payment and
+    // monthly are the lines' shares added up.
+    if (planTyped) {
+      const holder = inhouseInstallmentCartLines[0]
+      const problem = typedPlanProblem({
+        months: holder.manualTermInput,
+        monthly: String(planTypedMonthly),
+        firstDueDate: holder.firstDueDateInput,
+        downPayment: planDownPayment,
+        saleAmount: planSaleAmount,
+      })
+      if (problem) {
+        setError(problem)
+        return
+      }
+    }
     for (const l of inhouseInstallmentCartLines) {
+      if (l.manualPlan) continue
       const lineAmount =
         effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
       const downPayment = lineDownPayment(l)
-      // Scenario 71 — a typed plan answers to its own rules, not the 10% floor
-      // or a rate card's fixed down payment.
-      if (l.manualPlan) {
-        const problem = typedPlanProblem({
-          months: l.manualTermInput,
-          monthly: l.manualMonthlyInput,
-          firstDueDate: l.firstDueDateInput,
-          downPayment,
-          saleAmount: Math.round(lineAmount * 100) / 100,
-        })
-        if (problem) {
-          setError(`${l.itemName}: ${problem}`)
-          return
-        }
-        continue
-      }
+      // The down payment is the cashier's to set — any amount, even 0
+      // (2026-10-28). Where it is not the price list's own, the monthly is
+      // priced from the term's factor rate instead (see planUsesCardMonthly).
       if (downPayment < 0 || downPayment > lineAmount) {
-        setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
-        return
-      }
-      // A line the rate card prices for its term must carry exactly the
-      // card's down payment — the same rule the server applies. Not when the
-      // down payment is waived (Employee Appliance Loan) or optional (X-Deal).
-      const fixed = downPaymentFree ? null : lineCardDownPayment(l)
-      if (fixed != null) {
-        if (Math.abs(downPayment - fixed) > DOWN_PAYMENT_FLOOR_TOLERANCE) {
-          setError(
-            `${l.itemName}'s down payment is fixed by the price list at ${fmt(fixed)} for this term.`
-          )
-          return
-        }
-        continue
-      }
-      // No percentage floor (2026-10-15): the down payment can be as low as
-      // the cashier sets it, but never 0. Waived entirely for an Employee
-      // Appliance Loan (development) or an X-Deal (Scenario 67 / 68).
-      if (!downPaymentFree && downPayment <= 0) {
-        setError(`${l.itemName} needs a down payment — it can be small, but not 0.`)
+        setError(`The down payment must be between 0 and what the items cost.`)
         return
       }
     }
@@ -4677,7 +4824,7 @@ export default function CheckoutPage() {
     // Down payment — forced explicit choice before its amount can even be
     // tendered, same as before the down payment shared this pool.
     // An X-Deal with nothing paid now has nothing to choose a method for.
-    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !xDealCollectsNothing) {
+    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !dpCollectsNothing) {
       setError(
         xDealActive
           ? 'Choose how the cash portion will be paid — Cash or Credit/Debit Card.'
@@ -7284,7 +7431,11 @@ export default function CheckoutPage() {
                               value={creditApplicationId}
                               onChange={(v) => {
                                 setCreditApplicationId(v)
-                                if (v) applyCreditApplicationTerms(v)
+                                if (v) {
+                                  // Asking for this application's terms starts over.
+                                  posEditedRef.current = { term: false, dp: false }
+                                  applyCreditApplicationTerms(v)
+                                }
                               }}
                               options={creditApplicationOptions}
                               placeholder={
@@ -7510,7 +7661,10 @@ export default function CheckoutPage() {
                               value={creditApplicationId}
                               onChange={(v) => {
                                 setCreditApplicationId(v)
-                                if (v) applyCreditApplicationTerms(v, overrideApplications)
+                                if (v) {
+                                  posEditedRef.current = { term: false, dp: false }
+                                  applyCreditApplicationTerms(v, overrideApplications)
+                                }
                               }}
                               options={overrideApplicationOptions}
                               placeholder={
@@ -7597,51 +7751,11 @@ export default function CheckoutPage() {
                 {displayGroups.map((group) => {
                   const line = group[0]
                   const groupQty = group.length
-                  const groupLineIds = group.map((l) => l.lineId)
-                  const groupMode = line.invoiceType ?? 'cash'
-                  const groupProvider = line.installmentProvider ?? 'inhouse'
-                  const lineSaleAmount =
-                    effectiveUnitPrice(line, activeTaxRate, inclusivePricing, isTaxExempt) *
-                    line.quantity
-                  const minDownPayment = DOWN_PAYMENT_FLOOR_RATE * lineSaleAmount
-                  // Whole pesos, rounded up — matches the auto-fill in
-                  // setLineFinancingTermId() so the displayed floor is never
-                  // a centavo amount the field itself won't accept.
-                  const minDownPaymentWhole = Math.ceil(minDownPayment)
-                  // Scenario 60 — an Employee Appliance Loan waives the down
-                  // payment entirely, overriding whatever was typed/defaulted
-                  // before the checkbox was checked, both for display here
-                  // and for what actually gets submitted (see handleConfirm).
-                  //
-                  // Otherwise, same priority as setLineFinancingTermId()'s
-                  // auto-fill: a curated per-SKU down payment from the real
-                  // rate card wins over the generic 10%-floor fallback when
-                  // one exists — the DISPLAY-time version of that rule, for
-                  // before a term has been picked yet (downPaymentInput still
-                  // unset) so the shown figure doesn't disagree with what
-                  // picking a term is about to fill in.
-                  // Waived entirely for an Employee Appliance Loan (development).
-                  const curatedDownPaymentWhole =
-                    line.priceListDownPayment != null
-                      ? Math.round(Number(line.priceListDownPayment) * line.quantity)
-                      : null
-                  // Set when the card quotes this line's term: the down payment
-                  // is then the card's, and there is nothing to change.
-                  const fixedDownPayment =
-                    groupProvider === 'inhouse' && !downPaymentFree
-                      ? lineCardDownPayment(line)
-                      : null
-                  const downPaymentValue = downPaymentWaived
-                    ? lineDownPayment(line)
-                    : (fixedDownPayment ??
-                      (line.downPaymentInput
-                        ? parseFloat(line.downPaymentInput) || 0
-                        : (curatedDownPaymentWhole ?? minDownPaymentWhole)))
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
-                      {/* Name only, as a label for the config below — price
-                          lives in Order Summary now, not duplicated here. */}
-                      <p className="mb-1.5 truncate text-xs font-medium text-gray-800">
+                      {/* Name only, as a label for the plan below — price lives
+                          in Order Summary now, not duplicated here. */}
+                      <p className="truncate text-xs font-medium text-gray-800">
                         {itemDisplayLabel({
                           name: line.itemName,
                           brandName: line.brandName,
@@ -7650,331 +7764,135 @@ export default function CheckoutPage() {
                         })}
                         {groupQty > 1 && <span className="text-gray-400"> × {groupQty}</span>}
                       </p>
-                      {groupMode === 'installment' && (
-                        <div className="mt-2 space-y-3">
-                          <div className="flex gap-1.5">
-                            {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
-                              <button
-                                key={provider}
-                                onClick={() => setLineInstallmentProvider(groupLineIds, provider)}
-                                // Scenario 67 — an X-Deal is inhouse-only.
-                                disabled={xDealActive && provider === 'tpf'}
-                                className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
-                                  groupProvider === provider
-                                    ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-50'
-                                }`}
-                              >
-                                {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
-                              </button>
-                            ))}
-                          </div>
-                          {groupProvider === 'inhouse' && line.manualPlan && (
-                            <TypedPlanPanel
-                              line={line}
-                              lineIds={groupLineIds}
-                              saleAmount={Math.round(lineSaleAmount * 100) / 100}
-                              downPayment={lineDownPayment(line)}
-                              preview={installmentPreviews[line.lineId] ?? null}
-                              previewLoading={!!installmentPreviewLoading[line.lineId]}
-                              onPatch={patchTypedPlan}
-                              onSixtyDay={applySixtyDayPlan}
-                              onRateCard={applyRateCardPlan}
-                            />
-                          )}
-                          {groupProvider === 'inhouse' && !line.manualPlan && (
-                            <>
-                              <Select
-                                value={line.financingTermId ?? ''}
-                                onChange={(v) => setLineFinancingTermId(groupLineIds, v)}
-                                options={financingTerms.map((t) => ({
-                                  value: t.id,
-                                  label: `${t.termMonths} months`,
-                                }))}
-                                placeholder="Select a term…"
-                                compact
-                              />
-                              {downPaymentZeroed ? (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      Waived
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(0)}
-                                    </span>
-                                    <span className="ml-2 text-xs text-prominent-purple-500">
-                                      {downPaymentWaivedLabel}
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : xDealActive ? (
-                                // Scenario 68 — the part paid now, if any.
-                                <div
-                                  data-testid="x-deal-down-payment"
-                                  className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Cash portion
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      X-Deal · optional
-                                    </span>
-                                  </div>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={0.01}
-                                    inputMode="decimal"
-                                    aria-label="X-Deal cash portion"
-                                    placeholder="0.00"
-                                    value={line.downPaymentInput ?? ''}
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
-                                    className="mt-1 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                  />
-                                  <p className="mt-1 text-xs text-prominent-purple-500">
-                                    {(parseFloat(line.downPaymentInput ?? '') || 0) > 0
-                                      ? `Paid now at this counter. The rest, ${fmt(
-                                          Math.max(
-                                            0,
-                                            lineSaleAmount -
-                                              (parseFloat(line.downPaymentInput ?? '') || 0)
-                                          )
-                                        )}, is cleared by the X-Deal credit memo when the sale is approved.`
-                                      : 'The X-Deal credit memo clears the whole sale when it is approved.'}
-                                  </p>
-                                </div>
-                              ) : employeeApplianceLoanActive ? (
-                                <>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder="Down payment (optional)"
-                                    value={
-                                      line.downPaymentAutoForPriceListItemId !== undefined
-                                        ? ''
-                                        : (line.downPaymentInput ?? '')
-                                    }
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
-                                    onBlur={(e) => {
-                                      // Normalize to a whole peso on blur (round up,
-                                      // never below the 10% floor) rather than
-                                      // fighting the cashier's typing keystroke by
-                                      // keystroke.
-                                      const parsed = parseFloat(e.target.value)
-                                      if (!Number.isFinite(parsed)) return
-                                      setLineDownPaymentInput(
-                                        groupLineIds,
-                                        Math.ceil(parsed).toFixed(2)
-                                      )
-                                    }}
-                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                  />
-                                  <p className="text-xs text-gray-500">
-                                    {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
-                                  </p>
-                                </>
-                              ) : dpBucketFor(group) ? (
-                                renderBucketDownPayment(group)
-                              ) : (
-                                <DownPaymentField
-                                  badge={
-                                    curatedDownPaymentWhole !== null
-                                      ? 'Rate card'
-                                      : `${DOWN_PAYMENT_FLOOR_LABEL} default`
-                                  }
-                                  value={line.downPaymentInput ?? downPaymentValue.toFixed(2)}
-                                  fixedDisplay={
-                                    fixedDownPayment != null ? fmt(downPaymentValue) : undefined
-                                  }
-                                  error={
-                                    !downPaymentFree &&
-                                    fixedDownPayment == null &&
-                                    downPaymentValue <= 0
-                                      ? 'A down payment is required — it can be small, but not 0.'
-                                      : undefined
-                                  }
-                                  onChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
-                                  onBlur={(v) => {
-                                    // Whole pesos, rounded up, never below the 10% floor —
-                                    // normalised on blur rather than fighting the typing.
-                                    const parsed = parseFloat(v)
-                                    // Left empty, the field goes back to the figure the sale will use.
-                                    if (!Number.isFinite(parsed)) {
-                                      setLineDownPaymentInput(
-                                        groupLineIds,
-                                        downPaymentValue.toFixed(2)
-                                      )
-                                      return
-                                    }
-                                    setLineDownPaymentInput(
-                                      groupLineIds,
-                                      Math.ceil(parsed).toFixed(2)
-                                    )
-                                  }}
-                                />
-                              )}
-                              {!downPaymentFree && fixedDownPayment != null && (
-                                <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
-                                  <span className="text-prominent-purple-400">●</span>
-                                  Set by the rate card for this term — its monthly installment is
-                                  calculated from this down payment.
-                                </p>
-                              )}
-                              {line.financingTermId && (
-                                <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
-                                  {installmentPreviewLoading[line.lineId] ? (
-                                    <span className="flex items-center gap-1.5">
-                                      <Loader2 size={10} className="animate-spin" /> Calculating…
-                                    </span>
-                                  ) : installmentPreviews[line.lineId] ? (
-                                    <div className="flex items-center justify-between">
-                                      <span>
-                                        {fmt(installmentPreviews[line.lineId]!.monthlyInstallment)}
-                                        /mo
-                                      </span>
-                                      <span className="font-semibold">
-                                        {fmt(installmentPreviews[line.lineId]!.totalPayable)} total
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <span className="opacity-70">
-                                      {installmentPreviewErrors[line.lineId] ??
-                                        'Preview unavailable.'}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                              {!xDealActive && !employeeApplianceLoanActive && (
-                                <div className="flex flex-wrap gap-x-4 gap-y-1">
-                                  <button
-                                    type="button"
-                                    data-testid="type-terms"
-                                    onClick={() => startTypedPlan(groupLineIds)}
-                                    className="text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                  >
-                                    Type the terms yourself
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-testid="sixty-day-plan"
-                                    onClick={() => applySixtyDayPlan(groupLineIds)}
-                                    className="text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                  >
-                                    50% down · balance in 60 days
-                                  </button>
-                                </div>
-                              )}
-                            </>
-                          )}
-                          {groupProvider === 'tpf' && (
-                            <>
-                              {downPaymentZeroed ? (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      Waived
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(0)}
-                                    </span>
-                                    <span className="ml-2 text-xs text-prominent-purple-500">
-                                      {downPaymentWaivedLabel}
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : employeeApplianceLoanActive ? (
-                                <>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder="Down payment (optional)"
-                                    value={
-                                      line.downPaymentAutoForPriceListItemId !== undefined
-                                        ? ''
-                                        : (line.downPaymentInput ?? '')
-                                    }
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
-                                    onBlur={(e) => {
-                                      const parsed = parseFloat(e.target.value)
-                                      if (!Number.isFinite(parsed)) return
-                                      setLineDownPaymentInput(
-                                        groupLineIds,
-                                        Math.ceil(parsed).toFixed(2)
-                                      )
-                                    }}
-                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                  />
-                                  <p className="text-xs text-gray-500">
-                                    {`Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`}
-                                  </p>
-                                </>
-                              ) : dpBucketFor(group) ? (
-                                renderBucketDownPayment(group)
-                              ) : (
-                                <DownPaymentField
-                                  badge={
-                                    curatedDownPaymentWhole !== null
-                                      ? 'Rate card'
-                                      : `${DOWN_PAYMENT_FLOOR_LABEL} default`
-                                  }
-                                  value={line.downPaymentInput ?? downPaymentValue.toFixed(2)}
-                                  fixedDisplay={
-                                    fixedDownPayment != null ? fmt(downPaymentValue) : undefined
-                                  }
-                                  error={
-                                    !downPaymentFree &&
-                                    fixedDownPayment == null &&
-                                    downPaymentValue <= 0
-                                      ? 'A down payment is required — it can be small, but not 0.'
-                                      : undefined
-                                  }
-                                  onChange={(v) => setLineDownPaymentInput(groupLineIds, v)}
-                                  onBlur={(v) => {
-                                    // Whole pesos, rounded up, never below the 10% floor —
-                                    // normalised on blur rather than fighting the typing.
-                                    const parsed = parseFloat(v)
-                                    // Left empty, the field goes back to the figure the sale will use.
-                                    if (!Number.isFinite(parsed)) {
-                                      setLineDownPaymentInput(
-                                        groupLineIds,
-                                        downPaymentValue.toFixed(2)
-                                      )
-                                      return
-                                    }
-                                    setLineDownPaymentInput(
-                                      groupLineIds,
-                                      Math.ceil(parsed).toFixed(2)
-                                    )
-                                  }}
-                                />
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )}
                     </div>
                   )
                 })}
+                {/* One plan for the whole cart: the provider, the term and the
+                    down payment are asked for once, whatever the number of items
+                    — one schedule, one ledger. */}
+                {installmentCartLines.length > 0 && (
+                  <div
+                    data-testid="installment-plan"
+                    className="space-y-3 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
+                  >
+                    <div className="flex gap-1.5">
+                      {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
+                        <button
+                          key={provider}
+                          type="button"
+                          onClick={() => setLineInstallmentProvider(planLineIds, provider)}
+                          // Scenario 67 — an X-Deal is inhouse-only.
+                          disabled={xDealActive && provider === 'tpf'}
+                          className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
+                            planProvider === provider
+                              ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                              : 'bg-gray-50 text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-50'
+                          }`}
+                        >
+                          {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
+                        </button>
+                      ))}
+                    </div>
+                    {planProvider === 'inhouse' && planTyped && (
+                      <TypedPlanPanel
+                        line={{
+                          manualTermInput: inhouseInstallmentCartLines[0]?.manualTermInput,
+                          firstDueDateInput: inhouseInstallmentCartLines[0]?.firstDueDateInput,
+                          manualMonthlyInput:
+                            planTypedDraft.manualMonthlyInput ?? planTypedMonthly.toFixed(2),
+                          downPaymentInput:
+                            planTypedDraft.downPaymentInput ?? planDownPayment.toFixed(2),
+                        }}
+                        lineIds={planLineIds}
+                        saleAmount={planSaleAmount}
+                        downPayment={planDownPayment}
+                        preview={planPreview}
+                        previewLoading={planPreviewLoading}
+                        onPatch={patchTypedPlanTotals}
+                        onSixtyDay={applySixtyDayPlan}
+                        onRateCard={applyRateCardPlan}
+                      />
+                    )}
+                    {planProvider === 'inhouse' && !planTyped && (
+                      <>
+                        <Select
+                          value={planTermId}
+                          onChange={(v) => {
+                            posEditedRef.current.term = true
+                            setLineFinancingTermId(planLineIds, v)
+                          }}
+                          options={financingTerms.map((t) => ({
+                            value: t.id,
+                            label: `${t.termMonths} months`,
+                          }))}
+                          placeholder="Select a term…"
+                          compact
+                        />
+                        {renderPlanDownPayment()}
+                        {planOnCard && planUsesCardMonthly && !downPaymentFree && (
+                          <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
+                            <span className="text-prominent-purple-400">●</span>
+                            The monthly installment comes from the rate card for this term — it is
+                            worked out from the rate card&apos;s down payment (
+                            {fmt(planCardDownPayment ?? 0)}).
+                          </p>
+                        )}
+                        {planCardOverridden && (
+                          <p
+                            data-testid="dp-changed-note"
+                            className="flex items-start gap-1 text-xs text-amber-700"
+                          >
+                            <span>●</span>
+                            Down payment changed from the rate card&apos;s{' '}
+                            {fmt(planCardDownPayment ?? 0)}, so the monthly installment is
+                            recalculated from the term&apos;s rate.
+                          </p>
+                        )}
+                        {planTermId && (
+                          <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
+                            {planPreviewLoading ? (
+                              <span className="flex items-center gap-1.5">
+                                <Loader2 size={10} className="animate-spin" /> Calculating…
+                              </span>
+                            ) : planPreview ? (
+                              <div className="flex items-center justify-between">
+                                <span>{fmt(planPreview.monthlyInstallment)}/mo</span>
+                                <span className="font-semibold">
+                                  {fmt(planPreview.totalPayable)} total
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="opacity-70">
+                                {planPreviewError ?? 'Preview unavailable.'}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {!xDealActive && !employeeApplianceLoanActive && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            <button
+                              type="button"
+                              data-testid="type-terms"
+                              onClick={() => startTypedPlan(planLineIds)}
+                              className="text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                            >
+                              Type the terms yourself
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="sixty-day-plan"
+                              onClick={() => applySixtyDayPlan(planLineIds)}
+                              className="text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                            >
+                              50% down · balance in 60 days
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {planProvider === 'tpf' && renderPlanDownPayment()}
+                  </div>
+                )}
                 {tpfInstallmentCartLines.length > 0 && (
                   <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-3">
                     <p className="text-xs font-medium text-prominent-purple-700">
@@ -8019,7 +7937,7 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 )}
-                {installmentCartLines.length > 0 && !xDealCollectsNothing && (
+                {installmentCartLines.length > 0 && !dpCollectsNothing && (
                   <div
                     data-testid="dp-payment-mode-toggle"
                     className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
@@ -8500,16 +8418,7 @@ export default function CheckoutPage() {
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
               const tpfMissingDownPayment =
-                !downPaymentWaived &&
-                tpfInstallmentCartLines.some((l) => !(parseFloat(l.downPaymentInput ?? '0') > 0))
-              // An in-house line whose down payment is the cashier's to set and is 0 —
-              // the field above says so too; a typed plan and a rate-card-fixed
-              // line have their own rules.
-              const inhouseMissingDownPayment =
-                !downPaymentFree &&
-                inhouseInstallmentCartLines.some(
-                  (l) => !l.manualPlan && lineCardDownPayment(l) == null && lineDownPayment(l) <= 0
-                )
+                !downPaymentWaived && tpfInstallmentCartLines.length > 0 && planDownPayment <= 0
               const missingHrLoanNumber =
                 employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
               const missingXDealReference = xDealActive && !xDealReference.trim()
@@ -8539,42 +8448,40 @@ export default function CheckoutPage() {
                             ? 'Select a financing term for every installment item'
                             : saleMode === 'sale' && installmentMissingCreditApplication
                               ? 'Select an approved credit application'
-                              : saleMode === 'sale' && inhouseMissingDownPayment
-                                ? 'Enter a down payment — it can be small, but not 0'
-                                : saleMode === 'sale' &&
-                                    installmentCartLines.length > 0 &&
-                                    !installmentPaymentMethod &&
-                                    !xDealCollectsNothing
-                                  ? xDealActive
-                                    ? 'Choose how the cash portion is paid'
-                                    : 'Choose a down payment method'
-                                  : saleMode === 'sale' && tpfMissingReference
-                                    ? 'Select a TPF provider and enter a reference number'
-                                    : saleMode === 'sale' && tpfMissingDownPayment
-                                      ? 'Enter the down payment for the TPF-financed item(s)'
-                                      : saleMode === 'sale' && missingHrLoanNumber
-                                        ? 'Enter the HR appliance loan application number'
-                                        : saleMode === 'sale' && missingXDealReference
-                                          ? 'Enter the X-Deal reference'
-                                          : saleMode === 'sale' &&
-                                              !hasChargeOrInstallmentLine &&
-                                              !selectedCustomer
-                                            ? 'Select a customer'
-                                            : saleMode === 'sale' && balance > 0.009
-                                              ? `Underpaid by ${fmt(balance)}`
-                                              : saleMode === 'sale' && loyaltyOverBalance
-                                                ? 'Insufficient loyalty points'
-                                                : needsManagerOverride && !managerOverrideApproved
-                                                  ? 'Manager override required'
-                                                  : cart.some((l) => l.isSerialTracked)
-                                                    ? 'Checkout'
-                                                    : saleMode === 'reserve'
-                                                      ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                      : allCharge
-                                                        ? 'Issue Charge Invoice'
-                                                        : allInstallment
-                                                          ? 'Create Installment Plan'
-                                                          : 'Confirm Sale'
+                              : saleMode === 'sale' &&
+                                  installmentCartLines.length > 0 &&
+                                  !installmentPaymentMethod &&
+                                  !dpCollectsNothing
+                                ? xDealActive
+                                  ? 'Choose how the cash portion is paid'
+                                  : 'Choose a down payment method'
+                                : saleMode === 'sale' && tpfMissingReference
+                                  ? 'Select a TPF provider and enter a reference number'
+                                  : saleMode === 'sale' && tpfMissingDownPayment
+                                    ? 'Enter the down payment for the TPF-financed item(s)'
+                                    : saleMode === 'sale' && missingHrLoanNumber
+                                      ? 'Enter the HR appliance loan application number'
+                                      : saleMode === 'sale' && missingXDealReference
+                                        ? 'Enter the X-Deal reference'
+                                        : saleMode === 'sale' &&
+                                            !hasChargeOrInstallmentLine &&
+                                            !selectedCustomer
+                                          ? 'Select a customer'
+                                          : saleMode === 'sale' && balance > 0.009
+                                            ? `Underpaid by ${fmt(balance)}`
+                                            : saleMode === 'sale' && loyaltyOverBalance
+                                              ? 'Insufficient loyalty points'
+                                              : needsManagerOverride && !managerOverrideApproved
+                                                ? 'Manager override required'
+                                                : cart.some((l) => l.isSerialTracked)
+                                                  ? 'Checkout'
+                                                  : saleMode === 'reserve'
+                                                    ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                    : allCharge
+                                                      ? 'Issue Charge Invoice'
+                                                      : allInstallment
+                                                        ? 'Create Installment Plan'
+                                                        : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'
@@ -9530,50 +9437,71 @@ function SuccessScreen({
 
           {installmentOutcomes.length > 0 && (
             <div className="space-y-2 px-6 pb-4">
-              {installmentOutcomes.map((o) => (
-                <div
-                  key={o.lineId}
-                  className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700"
-                >
-                  <p className="mb-1 font-semibold">
-                    {o.itemName}
-                    <span className="ml-1.5 font-normal opacity-70">
-                      · {o.installmentProvider === 'tpf' ? 'TPF' : 'Inhouse'}
-                    </span>
-                  </p>
-                  {o.installmentProvider === 'tpf' ? (
-                    <>
-                      <div className="flex justify-between">
-                        <span>Down Payment</span>
-                        <span className="font-mono font-semibold">{fmt(o.downPayment ?? 0)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Financed by Third Party</span>
-                        <span className="font-mono font-semibold">
-                          {fmt(o.financedBalance ?? 0)}
-                        </span>
-                      </div>
-                    </>
-                  ) : o.installmentPreview ? (
-                    <>
-                      <div className="flex justify-between">
-                        <span>Monthly Installment</span>
-                        <span className="font-mono font-semibold">
-                          {fmt(o.installmentPreview.monthlyInstallment)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Total Payable</span>
-                        <span className="font-mono font-semibold">
-                          {fmt(o.installmentPreview.totalPayable)}
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <span className="opacity-70">Preview unavailable.</span>
-                  )}
-                </div>
-              ))}
+              {/* One card per way of financing — an installment sale is ONE plan
+                  (one ledger, one collection), so its items are listed on it and
+                  its figures are the plan's, not item by item. */}
+              {(['inhouse', 'tpf'] as const).map((provider) => {
+                const outcomes = installmentOutcomes.filter(
+                  (o) => (o.installmentProvider === 'tpf' ? 'tpf' : 'inhouse') === provider
+                )
+                if (outcomes.length === 0) return null
+                const plan =
+                  provider === 'inhouse'
+                    ? sumPreviews(outcomes.map((o) => o.installmentPreview))
+                    : null
+                return (
+                  <div
+                    key={provider}
+                    data-testid="installment-outcome"
+                    className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700"
+                  >
+                    <p className="mb-1 font-semibold">
+                      {outcomes.length === 1 ? outcomes[0].itemName : `${outcomes.length} items`}
+                      <span className="ml-1.5 font-normal opacity-70">
+                        · {provider === 'tpf' ? 'TPF' : 'Inhouse'}
+                      </span>
+                    </p>
+                    {outcomes.length > 1 && (
+                      <ul className="mb-1 list-disc pl-4 opacity-80">
+                        {outcomes.map((o) => (
+                          <li key={o.lineId}>{o.itemName}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {provider === 'tpf' ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Down Payment</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(outcomes.reduce((sum, o) => sum + (o.downPayment ?? 0), 0))}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Financed by Third Party</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(outcomes.reduce((sum, o) => sum + (o.financedBalance ?? 0), 0))}
+                          </span>
+                        </div>
+                      </>
+                    ) : plan ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Monthly Installment</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(plan.monthlyInstallment)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Total Payable</span>
+                          <span className="font-mono font-semibold">{fmt(plan.totalPayable)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="opacity-70">Preview unavailable.</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 
