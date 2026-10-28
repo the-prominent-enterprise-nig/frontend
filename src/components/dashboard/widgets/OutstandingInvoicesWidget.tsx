@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { ARInvoices, type ARInvoice } from '@/src/libs/data/AccountingV2Data'
+import type { ARInvoiceDashboardRow } from '@/src/libs/data/AccountingV2Data'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { useDashboardArStats } from './dashboardQueries'
 
 const STATUS_STYLES: Record<string, string> = {
   SENT: 'bg-amber-100 text-amber-700',
@@ -16,7 +16,7 @@ function fmtMoney(n: number): string {
   return `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function dueLabel(invoice: ARInvoice): string {
+function dueLabel(invoice: ARInvoiceDashboardRow): string {
   if (!invoice.dueDate) return ''
   const due = new Date(invoice.dueDate)
   const diffDays = Math.round((due.getTime() - Date.now()) / 86400000)
@@ -30,29 +30,15 @@ export default function OutstandingInvoicesWidget() {
   const { variant } = useWidgetSize()
   const isCompact = variant === 'xs'
   const limit = isCompact ? 3 : 4
-  const [invoices, setInvoices] = useState<ARInvoice[] | null>(null)
   const branchId = usePosBranchContext((s) => s.branchId)
+  // Outstanding = not fully paid, earliest due first — the server sends the first few, which is
+  // all this widget shows, instead of every invoice.
+  const { data: stats } = useDashboardArStats(branchId ?? undefined)
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const res = await ARInvoices.list({ branchId: branchId ?? undefined, view: 'summary' })
-      if (cancelled) return
-      const all = res.data?.items ?? []
-      // Outstanding = not fully paid, sorted by due date ascending
-      const outstanding = all
-        .filter((i) => (i.totalAmount ?? 0) > (i.amountPaid ?? 0))
-        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-      setInvoices(outstanding)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [branchId])
-
-  if (invoices === null) {
+  if (stats === undefined) {
     return <div className="text-xs text-zinc-400 p-2">Loading...</div>
   }
+  const invoices = stats.outstandingTop
   if (invoices.length === 0) {
     return <div className="text-xs text-zinc-400 p-2 italic">No outstanding invoices.</div>
   }

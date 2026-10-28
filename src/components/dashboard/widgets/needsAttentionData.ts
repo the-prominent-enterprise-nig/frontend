@@ -1,24 +1,13 @@
-import {
-  ShoppingBag,
-  RotateCcw,
-  XCircle,
-  ArrowLeftRight,
-  Receipt,
-  Calculator,
-  Truck,
-} from 'lucide-react'
+import { ShoppingBag, RotateCcw, XCircle, ArrowLeftRight, Calculator, Truck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { QueryClient } from '@tanstack/react-query'
 import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
 import {
   getPendingReturnRefundRequests,
   getMissingCogsReport,
 } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
-import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
 import { getDeliveryReceipts } from '@/src/app/(app)/(dashboard)/inventory/delivery-receipts/_actions/get-delivery-receipts'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
-import { arInvoicesKey } from './dashboardQueryKeys'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 export type AttentionItem = {
@@ -43,31 +32,26 @@ function fmtMoney(n: number): string {
 
 /**
  * Merges the four separate pending-decision sources (draft POs, void/refund
- * requests, stock transfers awaiting approval) with the two revenue-integrity
- * signals (COGS posting gaps, overdue AR) into one prioritized feed — an
- * owner cares about "what needs a decision from me," not which module it
- * happens to live in. Shared between the Needs Attention widget (full list)
- * and the KPI strip (just the count), so both agree on what counts.
+ * requests, stock transfers awaiting approval) with the revenue-integrity
+ * signal (COGS posting gaps) into one prioritized feed — an owner cares about
+ * "what needs a decision from me," not which module it happens to live in.
+ * Shared between the Needs Attention widget (full list) and the KPI strip
+ * (just the count), so both agree on what counts.
  *
- * `queryClient`, when passed (see `useNeedsAttentionItems`), routes the AR
- * invoices fetch through the same cache key the KPI strip's own "Outstanding
- * AR" tile uses (`arInvoicesKey`) — whichever widget asks first, the other
- * reuses that in-flight/cached request instead of firing a second one.
+ * Overdue AR invoices are not in this feed. They were meant to be — the feed
+ * read the invoice list from the KPI strip's cache key, but that key held a
+ * differently shaped list, so it never found any and the feed has always been
+ * without them. Fetching the whole invoice list (4.8 MB on the dev data) just
+ * to come up empty was the cost. Listing them is a product call: it would put
+ * every overdue invoice here (12,702 on the dev data).
  */
-export async function getNeedsAttentionItems(
-  branchId?: string,
-  queryClient?: QueryClient
-): Promise<AttentionItem[]> {
-  const fetchArInvoices = () => ARInvoices.list({ branchId, view: 'summary' })
-  const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, arRes, drRes] = await Promise.all([
+export async function getNeedsAttentionItems(branchId?: string): Promise<AttentionItem[]> {
+  const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, drRes] = await Promise.all([
     getPurchaseOrders({ status: 'draft', limit: 20, branchId }),
     getPendingReturnRefundRequests(branchId),
     getTransfers({ status: 'pending_manager_approval', limit: 20, branchId }),
     getTransfers({ status: 'pending_hq_approval', limit: 20, branchId }),
     getMissingCogsReport(branchId),
-    queryClient
-      ? queryClient.fetchQuery({ queryKey: arInvoicesKey(branchId), queryFn: fetchArInvoices })
-      : fetchArInvoices(),
     // Scenario 72 — branch-scoped server-side, empty for roles without DR access.
     getDeliveryReceipts({ status: 'pending_approval', limit: 20 }),
   ])
@@ -91,28 +75,6 @@ export async function getNeedsAttentionItems(
         href: '/pos/transactions',
       })
     }
-  }
-
-  const now = Date.now()
-  const invoices = arRes.data?.items ?? []
-  for (const inv of invoices) {
-    const balance = (inv.totalAmount ?? 0) - (inv.amountPaid ?? 0)
-    if (balance <= 0) continue
-    const isOverdue =
-      inv.status === 'OVERDUE' || (inv.dueDate ? new Date(inv.dueDate).getTime() < now : false)
-    if (!isOverdue) continue
-    items.push({
-      id: `ar-${inv.id}`,
-      icon: Receipt,
-      iconStyle: 'text-red-500 bg-red-50',
-      label: `Overdue Invoice — ${inv.invoiceNumber}`,
-      sub: `${inv.customer?.name ?? 'Unknown'} · ${fmtMoney(balance)}`,
-      timestamp: inv.dueDate,
-      tier: 1,
-      badge: 'Overdue',
-      badgeStyle: 'bg-red-100 text-red-700',
-      href: `/accounting/ar-invoices/${inv.id}`,
-    })
   }
 
   // ── Tier 2: routine approvals awaiting a decision ─────────────────────────

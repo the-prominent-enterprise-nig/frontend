@@ -15,7 +15,7 @@ import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { CARD_SHADOW_RESTING, CARD_SHADOW_HOVER } from '../DashboardWidgetWrapper'
 import {
-  useDashboardArInvoices,
+  useDashboardArStats,
   useDashboardSalesByBranch,
   useDashboardCustomersCount,
   useDashboardEnterpriseSummary,
@@ -91,14 +91,14 @@ export default function HeroKpiStripWidget() {
   // widget needs the same data — see dashboardQueries.ts. React Query fires
   // the underlying request once per unique key, however many widgets ask.
   const salesQuery = useDashboardSalesByBranch(undefined)
-  const arInvoicesQuery = useDashboardArInvoices(branchId ?? undefined)
+  const arStatsQuery = useDashboardArStats(branchId ?? undefined)
   const customersQuery = useDashboardCustomersCount(branchId ?? undefined)
   const attentionQuery = useNeedsAttentionItems(branchId ?? undefined)
   const enterpriseQuery = useDashboardEnterpriseSummary()
 
   const loaded =
     salesQuery.data !== undefined &&
-    arInvoicesQuery.data !== undefined &&
+    arStatsQuery.data !== undefined &&
     customersQuery.data !== undefined &&
     attentionQuery.data !== undefined
 
@@ -113,15 +113,12 @@ export default function HeroKpiStripWidget() {
     const totalRevenue = branches.reduce((s, b) => s + b.totalSales, 0)
     const totalTxns = branches.reduce((s, b) => s + b.transactionCount, 0)
 
-    const invoices = arInvoicesQuery.data ?? []
-    const outstanding = invoices.reduce(
-      (s, i) => s + Math.max(0, (i.totalAmount ?? 0) - (i.amountPaid ?? 0)),
-      0
-    )
-    const overdueCount = invoices.filter((i) => i.isOverdue).length
+    const outstanding = arStatsQuery.data?.outstanding ?? 0
+    const overdueCount = arStatsQuery.data?.overdueCount ?? 0
 
     const totalCustomers = customersQuery.data ?? 0
     const attentionItems = attentionQuery.data ?? []
+    const attentionCount = attentionItems.length
     const urgentCount = attentionItems.filter((a) => a.tier === 1).length
 
     return [
@@ -143,15 +140,15 @@ export default function HeroKpiStripWidget() {
       },
       {
         label: 'Needs Attention',
-        value: String(attentionItems.length),
+        value: String(attentionCount),
         sub:
           urgentCount > 0
             ? `${urgentCount} urgent`
-            : attentionItems.length > 0
+            : attentionCount > 0
               ? 'All routine'
               : 'All caught up',
         icon: AlertCircle,
-        tone: attentionItems.length === 0 ? 'good' : urgentCount > 0 ? 'warn' : 'default',
+        tone: attentionCount === 0 ? 'good' : urgentCount > 0 ? 'warn' : 'default',
         onClick: scrollToNeedsAttention,
       },
       {

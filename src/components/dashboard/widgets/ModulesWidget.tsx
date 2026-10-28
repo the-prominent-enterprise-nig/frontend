@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Users, Calculator, Package, ShoppingCart, UsersRound, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
+import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/src/libs/api/client'
 import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts'
 import { getReorderAlertsByWarehouse } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts-by-warehouse'
@@ -13,6 +13,7 @@ import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-ac
 import { customersApi } from '@/src/libs/api/crm'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
+import { fetchArStats } from './arStats'
 
 interface ModuleStat {
   label: string
@@ -118,12 +119,13 @@ export default function ModulesWidget() {
   ])
 
   const branchId = usePosBranchContext((s) => s.branchId)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-      const [items, ar, inventoryStatsResult, txRes, customersRes] = await Promise.all([
+      const [items, arStats, inventoryStatsResult, txRes, customersRes] = await Promise.all([
         // HR: see the commented-out hrStats state above — /employees and
         // /leave-management/summary both 404, no HR backend module exists.
         // api.get<{ meta?: { total?: number } }>('/employees', { limit: 1 }),
@@ -134,7 +136,8 @@ export default function ModulesWidget() {
         //   approvedRequests?: number
         // }>('/leave-management/summary'),
         api.get<{ meta?: { total?: number } }>('/inventory/items', { limit: 1 }),
-        ARInvoices.list({ view: 'summary' }),
+        // Tenant-wide AR figures, summed on the server and shared with the other dashboard widgets.
+        fetchArStats(queryClient),
         loadInventoryStats(branchId),
         getTransactions({ dateFrom: monthStart.toISOString(), branchId: branchId ?? undefined }),
         customersApi.list({ limit: 200 }),
@@ -147,22 +150,10 @@ export default function ModulesWidget() {
         { label: 'Value', value: fmtMoneyShort(inventoryStatsResult.totalValue) },
       ])
 
-      const invoices = ar.data?.items ?? []
-      const outstanding = invoices.reduce(
-        (s, i) => s + Math.max(0, (i.totalAmount ?? 0) - (i.amountPaid ?? 0)),
-        0
-      )
-      const now = Date.now()
-      const overdue = invoices.filter((i) => {
-        const paid = (i.amountPaid ?? 0) >= (i.totalAmount ?? 0) && (i.totalAmount ?? 0) > 0
-        if (paid) return false
-        if (i.status === 'OVERDUE') return true
-        return i.dueDate ? new Date(i.dueDate).getTime() < now : false
-      }).length
       setAccountingStats([
-        { label: 'Invoices', value: invoices.length },
-        { label: 'Outstanding', value: fmtMoneyShort(outstanding) },
-        { label: 'Overdue', value: overdue },
+        { label: 'Invoices', value: arStats.invoiceCount },
+        { label: 'Outstanding', value: fmtMoneyShort(arStats.outstanding) },
+        { label: 'Overdue', value: arStats.overdueCount },
       ])
 
       const txns = txRes.data ?? []
@@ -187,7 +178,7 @@ export default function ModulesWidget() {
     return () => {
       cancelled = true
     }
-  }, [branchId])
+  }, [branchId, queryClient])
 
   const modules: Module[] = [
     // Human Resources — see the commented-out hrStats state above.
