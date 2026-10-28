@@ -75,7 +75,7 @@ export default function SystemAlertsWidget() {
         const outOfStockCount = alertList.filter((a) => a.currentQty === 0).length
         const lowStockCount = alertList.length - outOfStockCount
 
-        const overdueCount = arStats.statusOverdueCount
+        const overdueCount = arStats.overdue.count
 
         const computed: Alert[] = []
         if (outOfStockCount > 0) {

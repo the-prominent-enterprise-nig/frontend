@@ -1,5 +1,14 @@
-import { ShoppingBag, RotateCcw, XCircle, ArrowLeftRight, Calculator, Truck } from 'lucide-react'
+import {
+  ShoppingBag,
+  RotateCcw,
+  XCircle,
+  ArrowLeftRight,
+  Receipt,
+  Calculator,
+  Truck,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { QueryClient } from '@tanstack/react-query'
 import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
 import {
@@ -9,6 +18,7 @@ import {
 import { getDeliveryReceipts } from '@/src/app/(app)/(dashboard)/inventory/delivery-receipts/_actions/get-delivery-receipts'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
+import { fetchArStats, loadArStats } from './arStats'
 
 export type AttentionItem = {
   id: string
@@ -38,20 +48,28 @@ function fmtMoney(n: number): string {
  * Shared between the Needs Attention widget (full list) and the KPI strip
  * (just the count), so both agree on what counts.
  *
- * Overdue AR invoices are not in this feed. They were meant to be — the feed
- * read the invoice list from the KPI strip's cache key, but that key held a
- * differently shaped list, so it never found any and the feed has always been
- * without them. Fetching the whole invoice list (4.8 MB on the dev data) just
- * to come up empty was the cost. Listing them is a product call: it would put
- * every overdue invoice here (12,702 on the dev data).
+ * Overdue AR invoices are ONE summary row ("N overdue invoices", what they
+ * owe), not a row each — nearly every imported invoice is past due, so listing
+ * them would bury everything else (12,702 on the dev data). The row links to
+ * the AR invoices page, where the individual ones are. The count is the same
+ * one the KPI strip and the other dashboard widgets use.
+ *
+ * `queryClient`, when passed (see `useNeedsAttentionItems`), routes the AR
+ * figures through the same cache key the KPI strip's own "Outstanding AR"
+ * tile uses (`arStatsKey`) — whichever asks first, the other reuses that
+ * in-flight/cached request instead of firing a second one.
  */
-export async function getNeedsAttentionItems(branchId?: string): Promise<AttentionItem[]> {
-  const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, drRes] = await Promise.all([
+export async function getNeedsAttentionItems(
+  branchId?: string,
+  queryClient?: QueryClient
+): Promise<AttentionItem[]> {
+  const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, arStats, drRes] = await Promise.all([
     getPurchaseOrders({ status: 'draft', limit: 20, branchId }),
     getPendingReturnRefundRequests(branchId),
     getTransfers({ status: 'pending_manager_approval', limit: 20, branchId }),
     getTransfers({ status: 'pending_hq_approval', limit: 20, branchId }),
     getMissingCogsReport(branchId),
+    queryClient ? fetchArStats(queryClient, branchId) : loadArStats(branchId),
     // Scenario 72 — branch-scoped server-side, empty for roles without DR access.
     getDeliveryReceipts({ status: 'pending_approval', limit: 20 }),
   ])
@@ -75,6 +93,23 @@ export async function getNeedsAttentionItems(branchId?: string): Promise<Attenti
         href: '/pos/transactions',
       })
     }
+  }
+
+  const { overdue } = arStats
+  if (overdue.count > 0 && overdue.oldestDueDate) {
+    items.push({
+      id: 'ar-overdue',
+      icon: Receipt,
+      iconStyle: 'text-red-500 bg-red-50',
+      label: `${overdue.count.toLocaleString()} overdue invoice${overdue.count === 1 ? '' : 's'}`,
+      sub: `${fmtMoney(overdue.outstanding)} outstanding`,
+      // The longest-overdue due date, so it sorts with the oldest-waiting items.
+      timestamp: overdue.oldestDueDate,
+      tier: 1,
+      badge: 'Overdue',
+      badgeStyle: 'bg-red-100 text-red-700',
+      href: '/accounting/ar-invoices',
+    })
   }
 
   // ── Tier 2: routine approvals awaiting a decision ─────────────────────────

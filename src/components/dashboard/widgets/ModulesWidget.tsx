@@ -153,7 +153,7 @@ export default function ModulesWidget() {
       setAccountingStats([
         { label: 'Invoices', value: arStats.invoiceCount },
         { label: 'Outstanding', value: fmtMoneyShort(arStats.outstanding) },
-        { label: 'Overdue', value: arStats.overdueCount },
+        { label: 'Overdue', value: arStats.overdue.count },
       ])
 
       const txns = txRes.data ?? []

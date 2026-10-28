@@ -665,22 +665,27 @@ export type ARInvoiceDashboardRow = Pick<
 
 /**
  * The dashboards' invoice figures, worked out on the server over every invoice (the same filter and
- * order as the list) so the browser stops downloading the whole list to add it up. Each figure
- * keeps the rule its widget used — the "overdue" counts differ on purpose.
+ * order as the list) so the browser stops downloading the whole list to add it up. Every "overdue"
+ * figure is the same one: a live invoice (sent, partial or overdue — not paid, draft or cancelled)
+ * with a balance owing that is past its due date.
  */
 export interface ARInvoiceDashboardStats {
   /** Invoices the list would return, any status. */
   invoiceCount: number
   /** Σ max(0, total − paid). */
   outstanding: number
-  /** Not fully paid, and OVERDUE or past due (KPI strip, Modules tile). */
-  overdueCount: number
-  /** Displayed status is OVERDUE (System Alerts). */
-  statusOverdueCount: number
   /** Not PAID/VOID: count and Σ(total − paid) (accounting dashboard). */
   open: { count: number; outstanding: number }
-  /** OVERDUE, or past due and not PAID/VOID, in list order (accounting dashboard). */
-  overdue: { count: number; top: ARInvoiceDashboardRow[] }
+  /**
+   * Overdue invoices: how many, what they owe, the earliest due date (ISO, null when none) and the
+   * first few in list order.
+   */
+  overdue: {
+    count: number
+    outstanding: number
+    oldestDueDate: string | null
+    top: ARInvoiceDashboardRow[]
+  }
   /** Positive balance, earliest due first (Outstanding Invoices widget). */
   outstandingTop: ARInvoiceDashboardRow[]
   /** The list's first rows (accounting dashboard's recent invoices). */

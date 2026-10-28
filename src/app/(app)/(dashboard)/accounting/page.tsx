@@ -366,6 +366,7 @@ export default function AccountingPage() {
     // Counted and summed on the server over every invoice (the list is 4.8 MB on
     // the dev data); the server sends the figures and the few rows listed below.
     const arStats: ARInvoiceDashboardStats | null = pick(5)
+    // AP bills still decide overdue here, in the browser (AR invoices use the server's one definition).
     const now = new Date()
     const isOverdue = (doc: any) => {
       const st = doc.status?.toUpperCase()

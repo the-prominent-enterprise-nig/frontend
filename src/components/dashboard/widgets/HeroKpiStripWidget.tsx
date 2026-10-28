@@ -114,7 +114,7 @@ export default function HeroKpiStripWidget() {
     const totalTxns = branches.reduce((s, b) => s + b.transactionCount, 0)
 
     const outstanding = arStatsQuery.data?.outstanding ?? 0
-    const overdueCount = arStatsQuery.data?.overdueCount ?? 0
+    const overdueCount = arStatsQuery.data?.overdue.count ?? 0
 
     const totalCustomers = customersQuery.data ?? 0
     const attentionItems = attentionQuery.data ?? []

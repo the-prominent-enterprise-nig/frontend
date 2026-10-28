@@ -6,10 +6,8 @@ import { arStatsKey } from './dashboardQueryKeys'
 const EMPTY_AR_STATS: ARInvoiceDashboardStats = {
   invoiceCount: 0,
   outstanding: 0,
-  overdueCount: 0,
-  statusOverdueCount: 0,
   open: { count: 0, outstanding: 0 },
-  overdue: { count: 0, top: [] },
+  overdue: { count: 0, outstanding: 0, oldestDueDate: null, top: [] },
   outstandingTop: [],
   recent: [],
 }

@@ -37,13 +37,13 @@ export function useEmployeeBirthdays() {
 
 /**
  * The AR figures for this branch (or the whole tenant when `branchId` is
- * omitted): outstanding, the overdue counts and the few invoices the widgets
+ * omitted): outstanding, the overdue count and the few invoices the widgets
  * list — see `arStats.ts`. One shared key per branch, so the KPI strip, the
  * Outstanding Invoices widget, System Alerts and the Modules card reuse one
- * request; `useModuleStats` and the branch customer count go through the same
- * key via `fetchArStats`.
+ * request; Needs Attention, `useModuleStats` and the branch customer count go
+ * through the same key via `fetchArStats`.
  *
- * The overdue counts are decided on the server (against its clock), not in a
+ * "Overdue" is one definition for all of them, decided on the server (against its clock), not in a
  * render: comparing against `Date.now()` during render is an impure read the
  * React Compiler/eslint-plugin-react-hooks purity rule flags.
  */
@@ -119,9 +119,10 @@ export function useDashboardEnterpriseSummary() {
  * result, instead of each independently computing it.
  */
 export function useNeedsAttentionItems(branchId?: string) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: needsAttentionKey(branchId),
-    queryFn: () => getNeedsAttentionItems(branchId),
+    queryFn: () => getNeedsAttentionItems(branchId, queryClient),
   })
 }
 
@@ -192,7 +193,8 @@ export function useModuleStats(branchId: string | null) {
 
       const activeSkus = itemsRes.data?.meta?.total ?? 0
 
-      const { outstanding, overdueCount } = arStats
+      const { outstanding } = arStats
+      const overdueCount = arStats.overdue.count
       const apBills = apRes.data?.items ?? []
       const pendingApprovalCount = apBills.filter(
         (b) =>
