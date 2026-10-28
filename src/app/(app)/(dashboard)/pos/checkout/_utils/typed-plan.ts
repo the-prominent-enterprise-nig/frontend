@@ -36,13 +36,18 @@ export function coveringMonthly(saleAmount: number, downPayment: number, months:
   return Math.max(0, Math.ceil((toCents(saleAmount) - toCents(downPayment)) / months)) / 100
 }
 
-/** What is wrong with a typed plan, in words a cashier can act on, or null. */
+/** What is wrong with a typed plan, in words a cashier can act on, or null.
+ * `skipCoverage` leaves out the two checks that weigh the plan against the sale
+ * (part left to finance, the terms covering it) — for one item's share of a
+ * plan, where rounding can leave a share a centavo or two off and the plan as a
+ * whole is what has to cover the sale. */
 export function typedPlanProblem(plan: {
   months: string | undefined
   monthly: string | undefined
   firstDueDate: string | undefined
   downPayment: number
   saleAmount: number
+  skipCoverage?: boolean
 }): string | null {
   const months = Number(plan.months)
   if (!Number.isInteger(months) || months < 1 || months > 60) {
@@ -60,6 +65,7 @@ export function typedPlanProblem(plan: {
     return 'The first due date is more than a year away.'
   }
   if (plan.downPayment < 0) return 'The down payment cannot be negative.'
+  if (plan.skipCoverage) return null
   if (toCents(plan.downPayment) >= toCents(plan.saleAmount)) {
     return 'Part of the sale has to be left to pay in installments.'
   }

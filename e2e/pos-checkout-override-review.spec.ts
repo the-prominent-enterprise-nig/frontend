@@ -2,6 +2,7 @@ import {
   test,
   expect,
   type APIRequestContext,
+  type Locator,
   type Page,
   type PlaywrightWorkerArgs,
 } from '@playwright/test'
@@ -253,6 +254,13 @@ const reviewUrl = (day: string) =>
 const entryFor = (page: Page, si: string) =>
   page.getByTestId('override-entry').filter({ hasText: si })
 
+/** The row is one line; the full receipt opens beneath it. */
+async function openDetails(entry: Locator) {
+  const toggle = entry.getByTestId('entry-toggle')
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  await expect(entry.getByTestId('entry-details')).toBeVisible()
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test.describe('POS Override Review — decide the day, sign it off (Scenario 71 Part 4)', () => {
@@ -293,13 +301,27 @@ test.describe('POS Override Review — decide the day, sign it off (Scenario 71 
     }
 
     const deep = entryFor(page, deepSale.si)
-    await expect(deep).toContainText('₱12,000.00') // the list price it started from
-    await expect(deep).toContainText('₱10,000.00') // what was charged
-    // Discount column: the pesos, and how far below list that is.
+    await expect(deep).toHaveAttribute('data-status', 'pending')
+    // The line itself: what was charged, the discount in pesos and percent, the
+    // branch always (this page is filtered to one), and the customer in place of
+    // the old Seller column.
+    await expect(deep).toContainText('₱10,000.00')
     await expect(deep).toContainText('₱2,000.00')
+    await expect(deep.getByTestId('entry-branch')).toHaveText(BRANCH)
+    await expect(deep.getByTestId('entry-customer')).toContainText(`${PREFIX} deep`)
+    await expect(deep).toContainText('Over 10%')
+    await expect(deep).not.toContainText('Seller')
+
+    // Opening it shows the whole receipt.
+    await openDetails(deep)
+    await expect(deep).toContainText('₱12,000.00') // the list price it started from
     await expect(deep).toContainText('16.7% below')
     await expect(deep).toContainText('Kilala ni Boss deep')
-    await expect(deep).toHaveAttribute('data-status', 'pending')
+    const details = deep.getByTestId('entry-details')
+    await expect(details).toContainText('Sale total')
+    await expect(details).toContainText('₱10,000.00')
+    // A cash sale has no installment account to open.
+    await expect(deep.getByTestId('entry-ia-link')).toHaveCount(0)
 
     const entries = Number(await page.getByTestId('kpi-entries').locator('p').nth(1).textContent())
     expect(entries).toBeGreaterThanOrEqual(3)
@@ -338,8 +360,9 @@ test.describe('POS Override Review — decide the day, sign it off (Scenario 71 
     await deep.getByTestId('entry-approve').click()
 
     await expect(deep).toHaveAttribute('data-status', 'approved')
-    // The Decision column: the status, then who and when.
+    // The Decision column: the status; the details say who and when.
     await expect(deep).toContainText('Approved')
+    await openDetails(deep)
     await expect(deep.getByTestId('entry-decision')).toContainText(/^by \S/)
     // No PIN prompt came up at any point.
     await expect(page.getByLabel(/PIN/i)).toHaveCount(0)
@@ -361,6 +384,7 @@ test.describe('POS Override Review — decide the day, sign it off (Scenario 71 
     await confirm.click()
 
     await expect(entry).toHaveAttribute('data-status', 'rejected')
+    await openDetails(entry)
     await expect(entry.getByTestId('entry-decision')).toContainText(
       'Discount too deep for this customer'
     )

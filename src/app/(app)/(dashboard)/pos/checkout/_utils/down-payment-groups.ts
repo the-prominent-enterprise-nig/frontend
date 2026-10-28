@@ -1,13 +1,11 @@
-// One down payment for several items.
+// One down payment for the whole plan.
 //
-// The server already treats the installment lines of a sale as groups: in-house
-// lines on the same financing term become ONE schedule with ONE down payment
-// (the sum of their lines'), and every TPF line is collected as ONE down
-// payment. The till used to ask for it item by item, so a customer saying
-// "₱5,000 down for the lot" had to be split by hand. This is that split: a
-// single figure for the group, shared out across its items by sale amount.
+// An installment sale is ONE plan (2026-10-28): one provider, one term, one
+// down payment, whatever the number of items. The server still carries the
+// down payment per line (it sums them into one schedule), so this is the split:
+// a single figure for the plan, shared out across its items by sale amount.
 
-/** A cart row's share of a group. A serialized item's units share one row. */
+/** A cart row's share of the plan. A serialized item's units share one row. */
 export interface DpRow {
   /** Ids of the cart lines in the row (one per unit). */
   lineIds: string[]
@@ -48,17 +46,22 @@ export function fixedDownPaymentTotal(rows: DpRow[]): number {
 }
 
 /**
- * Shares one total down payment across a group's open rows, by sale amount.
+ * Shares one total down payment across a plan's open rows, by sale amount.
  *
- * - Rate-card rows keep their fixed figure; the total is what the group pays
+ * - Rate-card rows keep their fixed figure; the total is what the plan pays
  *   altogether, so the open rows get the total less those.
  * - Each row's share is to the centavo and the last open row takes the
  *   remainder, so the shares add up to the total exactly.
  * - Inside a row the units share equally, the last one taking the remainder.
- * - Every line gets at least a centavo — a down payment is never 0 — and no
- *   more than it costs.
+ * - Every line gets at least a centavo unless `allowZero` — an in-house plan
+ *   may take no down payment at all; a TPF sale never — and no more than it
+ *   costs.
  */
-export function splitDownPayment(rows: DpRow[], total: number): DpSplit {
+export function splitDownPayment(
+  rows: DpRow[],
+  total: number,
+  { allowZero = false }: { allowZero?: boolean } = {}
+): DpSplit {
   const byLine = new Map<string, number>()
   const open = rows.filter((r) => r.fixedPerLine == null)
   if (open.length === 0) return { ok: true, byLine }
@@ -68,7 +71,8 @@ export function splitDownPayment(rows: DpRow[], total: number): DpSplit {
 
   const openLines = open.reduce((sum, r) => sum + r.lineIds.length, 0)
   const openTotal = cents(total - fixedDownPaymentTotal(rows))
-  if (openTotal + 1e-9 < MIN_PER_LINE * openLines) return { ok: false, reason: 'too_small' }
+  const minPerLine = allowZero ? 0 : MIN_PER_LINE
+  if (openTotal + 1e-9 < minPerLine * openLines) return { ok: false, reason: 'too_small' }
 
   const weight = open.reduce((sum, r) => sum + r.amount, 0)
   let allocated = 0
@@ -91,9 +95,32 @@ export function splitDownPayment(rows: DpRow[], total: number): DpSplit {
   for (const row of open) {
     const rowShare = row.lineIds.reduce((sum, id) => sum + (byLine.get(id) ?? 0), 0)
     if (rowShare > row.amount + 0.005) return { ok: false, reason: 'too_large' }
-    if (rowShare + 1e-9 < MIN_PER_LINE * row.lineIds.length) {
+    if (rowShare + 1e-9 < minPerLine * row.lineIds.length) {
       return { ok: false, reason: 'too_small' }
     }
   }
   return { ok: true, byLine }
+}
+
+/**
+ * Shares any figure across the rows by sale amount, to the centavo, the last
+ * row taking the remainder — no caps and no minimums. For a typed plan's
+ * monthly installment, which has no ceiling to hold to.
+ */
+export function shareByAmount(rows: DpRow[], total: number): Map<string, number> {
+  const byLine = new Map<string, number>()
+  const weight = rows.reduce((sum, r) => sum + r.amount, 0)
+  let allocated = 0
+  rows.forEach((row, index) => {
+    const isLast = index === rows.length - 1
+    const proportional = weight > 0 ? (total * row.amount) / weight : total / rows.length
+    const share = isLast ? cents(total - allocated) : cents(proportional)
+    allocated = cents(allocated + share)
+    const n = row.lineIds.length
+    const perLine = cents(share / n)
+    row.lineIds.forEach((lineId, i) => {
+      byLine.set(lineId, i === n - 1 ? cents(share - perLine * (n - 1)) : perLine)
+    })
+  })
+  return byLine
 }
