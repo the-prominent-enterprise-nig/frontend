@@ -20,10 +20,10 @@ import {
 // delivery fee collected on its own collection receipt, never part of the
 // sale. Scenario 68 totalled the fee into the checkout and paid it with the
 // sale's tender; Scenario 70 (DT-F…) undid the tender half: the Delivery
-// section is the last one before Confirm, the Total is the sale's alone
-// with the fee as a note under it (a collection on its own CR, not part of
-// the sale), and the fee always has its own Paid with and CR — the sale's
-// payment box measures the sale alone.
+// section is the last one before Confirm, and the fee always has its own
+// Paid with and CR — the sale's payment box measures the sale alone. The two
+// checkout Totals do list Amount + Delivery fee = Total, but only as the
+// cashier's view: the invoice, the tender and the JEs stay the sale's.
 // The money side (the fee's receipt and JE, the CR rules, reports) is
 // covered by backend/test/pos-delivery-fee-checkout.e2e-spec.ts and
 // pos-delivery-fee-reports.e2e-spec.ts; this spec covers the checkout UI that
@@ -353,7 +353,7 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await expect(section(page)).toContainText('Free delivery — no fee to collect.')
   })
 
-  test("DF-F02 / DT-F01 (Scenario 70): the Total stays the sale's alone — the delivery fee is a note under it, never added in; the fee has its own Paid with and CR", async ({
+  test('DF-F02 / DT-F01 (Scenario 70): the checkout Totals read Amount + Delivery fee = Total for the cashier; the fee has its own Paid with and CR', async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'F02', withAddress)
@@ -362,19 +362,21 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await selectCustomer(page, customer.name)
     await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,000.00')
     await expect(page.getByTestId('order-summary-delivery-fee')).toHaveCount(0)
+    await expect(page.getByTestId('order-summary-amount')).toHaveCount(0)
 
     await toggle(page).check()
     await fillStable(feeInput(page), '150')
 
-    // Order Summary: the Total is still the items; the fee is a note.
-    await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,000.00')
+    // Order Summary: Amount, Delivery fee, then the Total with the fee in.
+    await expect(page.getByTestId('order-summary-amount')).toContainText('₱8,000.00')
     await expect(page.getByTestId('order-summary-delivery-fee')).toContainText('₱150.00')
-    // The Total at the very bottom is the sale's too, with the fee as a note
-    // under it. Nothing anywhere adds the two.
-    await expect(page.getByTestId('checkout-grand-total')).toHaveText('₱8,000.00')
+    await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,150.00')
+    // Same at the very bottom. This is the cashier's view only: the Copy
+    // beside the Amount stays the sale's figure (see DT-F07).
+    await expect(page.getByTestId('checkout-sale-amount')).toContainText('₱8,000.00')
     await expect(page.getByTestId('checkout-fee-total')).toContainText('₱150.00')
+    await expect(page.getByTestId('checkout-grand-total')).toHaveText('₱8,150.00')
     await expect(page.getByText('Total w/ delivery fee')).toHaveCount(0)
-    await expect(page.getByText('₱8,150.00')).toHaveCount(0)
     // The fee has its own Paid with and its own CR — never the sale's tender.
     await expect(page.getByTestId('delivery-fee-method')).toBeVisible()
     await expect(page.getByTestId('delivery-fee-with-sale')).toHaveCount(0)
@@ -423,7 +425,8 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
     const customer = await createCustomer(page.request, 'DTF07', withAddress)
     await readyCashSale(page, customer.name, `SI-DTF07-${Date.now()}`)
-    // The delivery fee is not part of the Total, so it is not what gets copied.
+    // Copy sits beside the Amount, which is what Amount received takes — the
+    // delivery fee is paid apart, so it is not what gets copied.
     await toggle(page).check()
     await fillStable(feeInput(page), '150')
 

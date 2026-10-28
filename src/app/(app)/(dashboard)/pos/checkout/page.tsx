@@ -892,8 +892,9 @@ export default function CheckoutPage() {
       : { salesInvoiceNumber: trimmed }
 
   // Scenario 66 — Deliver to / Delivery Address / delivery fee. The fee is
-  // collected on its own collection receipt and never enters the Total, the
-  // tender, the change or the loyalty points below.
+  // collected on its own collection receipt and never enters the invoice, the
+  // tender, the change or the loyalty points below. The checkout Totals show
+  // it added in, for the cashier only.
   const [delivery, setDelivery] = useState<DeliveryState>(EMPTY_DELIVERY)
   // The selected customer's own address, fetched in full when delivery is
   // turned on — customer search results carry no address.
@@ -2203,11 +2204,13 @@ export default function CheckoutPage() {
   const deliveryFeeAmount = delivery.enabled ? (parseDeliveryFee(delivery.fee) ?? 0) : 0
   // Scenario 70 — the fee is paid with its own tender (the Delivery section's
   // Paid with), on its own CR, never through the sale's payment box. So the
-  // payment box's Total, Amount received, change and "Underpaid" measure the
-  // sale alone (tenderTarget). The Totals (Order Summary and the block above
-  // Confirm) are the sale's too; the fee is only a note under them — it is a
-  // collection on its own CR, not part of the sale. This undoes Scenario 68's
-  // "fee rides on the sale's tender" and its "Total = items + fee".
+  // payment box's Amount received, change and "Underpaid" measure the sale
+  // alone (tenderTarget), and the invoice and journal entries carry the sale
+  // alone. The two Totals (Order Summary and the block above Confirm) are a
+  // cashier's view only: they list Amount + Delivery fee and add the fee in,
+  // so the cashier sees everything the customer hands over at a glance.
+  const totalWithDeliveryFee = Math.round((totalAmount + deliveryFeeAmount) * 100) / 100
+  const tenderTargetWithDeliveryFee = Math.round((tenderTarget + deliveryFeeAmount) * 100) / 100
 
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
   const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
@@ -6853,23 +6856,44 @@ export default function CheckoutPage() {
                 </div>
               )}
             </div>
-            <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
-              <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-2xl font-bold text-gray-900" data-testid="order-summary-total">
-                {fmt(totalAmount)}
-              </span>
-            </div>
-            {/* Scenario 70 — the delivery fee is a note under the Total, never
-                part of it: it is collected on its own receipt and JE. */}
-            {deliveryFeeAmount > 0 && (
+            {/* Amount + Delivery fee = Total, for the cashier's eyes only: the
+                invoice and the journal entries still carry the sale alone. */}
+            <div className="mt-3 border-t border-purple-200 pt-3">
+              {deliveryFeeAmount > 0 && (
+                <>
+                  <div
+                    className="flex justify-between text-base text-gray-700"
+                    data-testid="order-summary-amount"
+                  >
+                    <span>Amount</span>
+                    <span className="font-medium">{fmt(totalAmount)}</span>
+                  </div>
+                  <div
+                    className="flex justify-between text-base text-gray-700"
+                    data-testid="order-summary-delivery-fee"
+                  >
+                    <span>Delivery fee</span>
+                    <span className="font-medium">{fmt(deliveryFeeAmount)}</span>
+                  </div>
+                </>
+              )}
               <div
-                className="mt-2 flex items-center justify-between gap-3 text-xs text-purple-700"
-                data-testid="order-summary-delivery-fee"
+                className={`flex items-baseline justify-between ${deliveryFeeAmount > 0 ? 'mt-1' : ''}`}
               >
-                <span>Delivery fee — collected on its own CR, not part of the sale</span>
-                <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
+                <span className="text-sm font-semibold text-gray-700">Total</span>
+                <span
+                  className="text-2xl font-bold text-gray-900"
+                  data-testid="order-summary-total"
+                >
+                  {fmt(totalWithDeliveryFee)}
+                </span>
               </div>
-            )}
+              {deliveryFeeAmount > 0 && (
+                <p className="mt-1 text-xs text-purple-700">
+                  The delivery fee is on its own CR — the invoice stays the sale amount.
+                </p>
+              )}
+            </div>
 
             {/* VAT treatment (Scenario 69 Part F). Not offered on a table tab's
                 sale: it already exists, so there is nothing left to classify. */}
@@ -7987,16 +8011,54 @@ export default function CheckoutPage() {
           )}
 
           {/* Scenario 70 — the Total comes first, then the payment fields under it
-              (Amount received, CR Number, Change), then Confirm. It is
-              the sale's own figure (what the register collects for the items);
-              the delivery fee under it is a note, not part of it — the fee is a
-              collection on its own CR, paid in the Delivery section above, and
-              never part of the sale. */}
+              (Amount received, CR Number, Change), then Confirm. With a
+              delivery fee it reads Amount + Delivery fee = Total, so the
+              cashier sees everything to collect at a glance. That is a view
+              only: Amount received (and its Copy) stays the sale's own figure,
+              because the fee is a collection on its own CR, paid in the
+              Delivery section above, and never part of the sale. */}
           {saleMode === 'sale' &&
             cart.length > 0 &&
             (tenderTarget > 0 || deliveryFeeAmount > 0) && (
               <div className="border-t border-purple-200 p-5" data-testid="checkout-totals">
-                {tenderTarget > 0 && (
+                {tenderTarget > 0 && deliveryFeeAmount > 0 && (
+                  <>
+                    <div
+                      className="flex items-center justify-between text-base text-gray-700"
+                      data-testid="checkout-sale-amount"
+                    >
+                      <span>
+                        {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Amount' : 'Amount due now'}
+                      </span>
+                      <span className="flex items-center gap-3">
+                        <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
+                        <span className="font-medium">{fmt(tenderTarget)}</span>
+                      </span>
+                    </div>
+                    <div
+                      className="flex justify-between text-base text-gray-700"
+                      data-testid="checkout-fee-total"
+                    >
+                      <span>Delivery fee</span>
+                      <span className="font-medium">{fmt(deliveryFeeAmount)}</span>
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-between">
+                      <span className="text-sm font-semibold text-gray-700">
+                        {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
+                      </span>
+                      <span
+                        className="text-2xl font-bold text-gray-900"
+                        data-testid="checkout-grand-total"
+                      >
+                        {fmt(tenderTargetWithDeliveryFee)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-purple-700">
+                      The delivery fee is on its own CR — the invoice stays the sale amount.
+                    </p>
+                  </>
+                )}
+                {tenderTarget > 0 && deliveryFeeAmount <= 0 && (
                   <div className="flex items-baseline justify-between">
                     <span className="text-sm font-semibold text-gray-700">
                       {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
@@ -8012,11 +8074,11 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                 )}
-                {deliveryFeeAmount > 0 && (
+                {/* Nothing to collect for the items, so there is no Amount to add
+                    the fee to: it stays a note, paid in the Delivery section. */}
+                {tenderTarget <= 0 && deliveryFeeAmount > 0 && (
                   <div
-                    className={`flex items-center justify-between gap-3 text-xs text-purple-700 ${
-                      tenderTarget > 0 ? 'mt-2' : ''
-                    }`}
+                    className="flex items-center justify-between gap-3 text-xs text-purple-700"
                     data-testid="checkout-fee-total"
                   >
                     <span>Delivery fee — collected on its own CR, not part of the sale</span>
