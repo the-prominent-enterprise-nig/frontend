@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
@@ -10,14 +10,26 @@ import { createPurchaseRequest } from '../_actions/create-purchase-request'
 import { updatePurchaseRequest } from '../_actions/update-purchase-request'
 import { submitPurchaseRequest } from '../_actions/submit-purchase-request'
 import { cancelPurchaseRequest } from '../_actions/cancel-purchase-request'
+import { procurementHref } from '../../purchase-orders/_lib/procurementHref'
 import type {
   CreatePurchaseRequestFormValues,
   UpdatePurchaseRequestFormValues,
 } from '@/src/schema/inventory/purchase-requests'
 
-export function usePurchaseRequests() {
+/** `list: false` skips the list query — for callers that only need the mutations. */
+export function usePurchaseRequests({
+  list = true,
+  onConverted,
+}: {
+  list?: boolean
+  /** Called instead of navigating when a submit auto-converts the PR — for
+   * a list that shows requests and orders on one screen, where a URL change
+   * would not move it off its Requests view. */
+  onConverted?: () => void
+} = {}) {
   const queryClient = useQueryClient()
   const router = useRouter()
+  const pathname = usePathname()
 
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
@@ -32,6 +44,7 @@ export function usePurchaseRequests() {
   const listQuery = useQuery({
     queryKey: ['purchase-requests', queryParams],
     queryFn: () => getPurchaseRequests(queryParams),
+    enabled: list,
     placeholderData: keepPreviousData,
     staleTime: STALE.OPERATIONAL,
     // Scenario 26 — same gap found live in credit applications, item
@@ -108,7 +121,8 @@ export function usePurchaseRequests() {
         // where it actually lives now instead of leaving the submitter
         // looking at a list it just vanished from.
         if (result.data?.convertedToPo) {
-          router.replace('/inventory/purchase-orders?tab=orders')
+          if (onConverted) onConverted()
+          else router.replace(procurementHref(pathname, 'orders'))
         }
       } else {
         showToast({

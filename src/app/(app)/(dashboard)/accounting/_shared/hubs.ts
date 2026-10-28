@@ -1,6 +1,7 @@
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
-import { canAny, type SessionUser } from '@/src/libs/guards/permission'
+import { canNavigateAny, type SessionUser } from '@/src/libs/guards/permission'
+import { DRIVER_ACCESS, SUPPLIER_ACCESS } from '@/src/libs/guards/shared-ownership'
 
 /**
  * Accounting's sidebar hubs — several screens that were separate sidebar items
@@ -19,11 +20,7 @@ export type HubTab = {
   id: string
   label: string
   href: string
-  /**
-   * Holding any one of these shows the tab. Empty means no permission is
-   * required — only Special Accounts, whose page and sidebar item were never
-   * gated; left as it was rather than tightened here.
-   */
+  /** Holding any one of these shows the tab. Empty means no permission is required. */
   permissions: string[]
 }
 
@@ -43,6 +40,8 @@ export type HubTabId =
   | 'recurring-expenses'
   | 'special-accounts'
   | 'employee-cash-loans'
+  | 'drivers'
+  | 'vehicles'
   | 'bank-accounts'
   | 'undeposited-funds'
   | 'inter-account-transfer'
@@ -50,6 +49,7 @@ export type HubTabId =
   | 'ap-invoices'
   | 'ap-payments'
   | 'receiving-reports'
+  | 'suppliers'
 
 export const BOOKS_HUB: Hub = {
   entryHref: '/accounting/books',
@@ -116,13 +116,13 @@ export const EXPENSES_HUB: Hub = {
       id: 'recurring-expenses',
       label: 'Recurring',
       href: '/accounting/expenses/recurring',
-      permissions: [ACCOUNTING_PERMISSIONS.EXPENSE_READ],
+      permissions: [ACCOUNTING_PERMISSIONS.RECURRING_EXPENSES_READ],
     },
     {
       id: 'special-accounts',
       label: 'Special Accounts',
       href: '/accounting/special-accounts',
-      permissions: [],
+      permissions: [ACCOUNTING_PERMISSIONS.SPECIAL_ACCOUNTS_READ],
     },
     {
       // Scenario 52 — issues against the same Employee Cash Loan Special
@@ -131,6 +131,25 @@ export const EXPENSES_HUB: Hub = {
       label: 'Employee Cash Loans',
       href: '/accounting/employee-cash-loans',
       permissions: [ACCOUNTING_PERMISSIONS.EMPLOYEE_CASH_LOAN_READ],
+    },
+    {
+      // The people on the fleet roster — name, contact number, branch. Not tied
+      // to a vehicle. Moved over from Inventory's Master Data. Accounting owns
+      // it (Scenario 74 C): accounting:drivers opens it, and Inventory's
+      // permissions still work (the list reads on inventory:transfers:read).
+      id: 'drivers',
+      label: 'Drivers',
+      href: '/accounting/drivers',
+      permissions: DRIVER_ACCESS.READ,
+    },
+    {
+      // The roster by plate, and each vehicle's recorded Fuel / Repair expenses
+      // (read-only). Either permission shows it: an accountant reads vehicles
+      // here through expense:read without holding transfers:read.
+      id: 'vehicles',
+      label: 'Vehicles',
+      href: '/accounting/vehicles',
+      permissions: [...DRIVER_ACCESS.READ, ACCOUNTING_PERMISSIONS.EXPENSE_READ],
     },
   ],
 }
@@ -147,7 +166,7 @@ export const CASH_BANKING_HUB: Hub = {
     {
       // Route and permissions keep the old cash-in-transit name (Scenario 61).
       id: 'undeposited-funds',
-      label: 'Undeposited Funds',
+      label: 'Collected Funds History',
       href: '/accounting/cash-in-transit',
       permissions: [ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ],
     },
@@ -192,6 +211,15 @@ export const PAYABLES_HUB: Hub = {
       href: '/accounting/receiving-reports',
       permissions: [ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ],
     },
+    {
+      // Moved over from Inventory's Master Data, the way Customers sits beside
+      // AR Invoices. Accounting owns it (Scenario 74 B): accounting:supplier
+      // opens it, and inventory:suppliers:* still works for POs and Receiving.
+      id: 'suppliers',
+      label: 'Suppliers',
+      href: '/accounting/suppliers',
+      permissions: SUPPLIER_ACCESS.READ,
+    },
   ],
 }
 
@@ -205,6 +233,10 @@ export const HUBS = {
 
 export type HubKey = keyof typeof HUBS
 
+// Built from the roles' own rows: a pick list a feature brings (customers,
+// suppliers…) never adds a tab (Scenario 74).
 export function visibleHubTabs(hub: Hub, session: SessionUser) {
-  return hub.tabs.filter((tab) => tab.permissions.length === 0 || canAny(session, tab.permissions))
+  return hub.tabs.filter(
+    (tab) => tab.permissions.length === 0 || canNavigateAny(session, tab.permissions)
+  )
 }

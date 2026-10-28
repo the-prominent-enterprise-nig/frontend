@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, X } from 'lucide-react'
-import { Expenses, type SpecialAccountRow } from '@/src/libs/data/AccountingV2Data'
+import { Expenses, type SpecialAccountOption } from '@/src/libs/data/AccountingV2Data'
 import { accountingCustomersApi } from '@/src/libs/api/crm'
 
 const fmtMoney = (n: number) =>
@@ -44,7 +44,7 @@ type Props = {
  */
 export function SpecialAccountPicker({ value, onChange, accountId, disabled }: Props) {
   const [open, setOpen] = useState(false)
-  const [rows, setRows] = useState<SpecialAccountRow[]>([])
+  const [rows, setRows] = useState<SpecialAccountOption[]>([])
   const [customers, setCustomers] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -72,11 +72,11 @@ export function SpecialAccountPicker({ value, onChange, accountId, disabled }: P
     setLoading(true)
     const t = setTimeout(async () => {
       const [register, matches] = await Promise.all([
-        Expenses.specialAccounts({ accountId, search: query || undefined }).catch(() => null),
+        Expenses.specialAccountOptions({ accountId, search: query || undefined }).catch(() => null),
         query.length >= 2 ? accountingCustomersApi.search(query).catch(() => null) : null,
       ])
       if (cancelled) return
-      setRows(register?.data?.rows ?? [])
+      setRows(register?.data ?? [])
       setCustomers(((matches?.data ?? []) as { id: string; name: string }[]).slice(0, 6))
       setLoading(false)
     }, 250)
@@ -177,7 +177,7 @@ export function SpecialAccountPicker({ value, onChange, accountId, disabled }: P
             {!loading &&
               rows.map((r) => (
                 <button
-                  key={`${r.controlAccount.id}:${r.name}`}
+                  key={r.name}
                   type="button"
                   onClick={() => {
                     onChange({ name: r.name, customerId: '', customerLabel: '' })

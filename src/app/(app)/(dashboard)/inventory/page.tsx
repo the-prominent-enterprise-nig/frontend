@@ -7,7 +7,6 @@ import { useUIShell } from '@/src/stores/ui-shell.store'
 import {
   Package,
   TrendingUp,
-  RefreshCw,
   Clock,
   ArrowUpRight,
   BarChart2,
@@ -16,28 +15,12 @@ import {
   Truck,
   ShieldAlert,
   ChevronRight,
-  Tag,
   ClipboardCheck,
   PieChart,
   LayoutGrid,
 } from 'lucide-react'
 
-import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
-import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
-import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
-import { getAgingReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-report'
-import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
-import { getStockoutAlerts } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-stockout-alerts'
-import { getExpiringBatches } from '@/src/app/(app)/(dashboard)/inventory/batches/_actions/get-batches'
-import { getStockBalances } from '@/src/app/(app)/(dashboard)/inventory/stock/_actions/get-stock-balances'
-import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
-import { getReservations } from '@/src/app/(app)/(dashboard)/inventory/reservations/_actions/get-reservations'
-import { getNegativeStockViolations } from '@/src/app/(app)/(dashboard)/inventory/negative-stock/_actions/get-negative-stock-violations'
-import { getBackorders } from '@/src/app/(app)/(dashboard)/inventory/backorders/_actions/get-backorders'
-import { getReturns } from '@/src/app/(app)/(dashboard)/inventory/returns/_actions/get-returns'
-import { getPurchaseRequests } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_actions/get-purchase-requests'
-import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
-import { getAdjustments } from '@/src/app/(app)/(dashboard)/inventory/adjustments/_actions/get-adjustments'
+import { getInventoryDashboard } from '@/src/app/(app)/(dashboard)/inventory/_actions/get-inventory-dashboard'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -272,30 +255,14 @@ export default function InventoryPage() {
   const { pushPanel } = useUIShell()
 
   const load = useCallback(async () => {
-    const settled = await Promise.allSettled([
-      getItems({ limit: 1 }), // 0
-      getValuationReport({ limit: 1 }), // 1 — only the pre-aggregated `summary` is used, not `data`
-      getTurnoverReport({ periodDays: 90 }), // 2
-      getTransfers({ limit: 20 }), // 3
-      getStockoutAlerts({ days: 30 }), // 4
-      getExpiringBatches({ days: 30, limit: 20 }), // 5
-      getStockBalances({ limit: 1 }), // 6 — only the pre-aggregated `summary` is used, not `data`
-      getWarehouses({ status: 'active', limit: 50 }), // 7
-      getReservations({ limit: 1 }), // 8 — only the pre-aggregated `summary` is used, not `data`
-      getNegativeStockViolations({ limit: 50 }), // 9
-      getBackorders({ limit: 50 }), // 10
-      getReturns({ limit: 20 }), // 11
-      getAgingReport(), // 12
-      getPurchaseRequests({ limit: 50 }), // 13
-      getPurchaseOrders({ limit: 50 }), // 14
-      getAdjustments({ limit: 50 }), // 15
-    ])
+    // The sixteen reads (index order is documented in the action) run in parallel on the server:
+    // called one by one from the browser they queue and run back to back.
+    const results = await getInventoryDashboard()
 
     function pick(i: number): any {
-      const r = settled[i]
-      if (r.status === 'rejected') return null
-      if (!r.value?.success) return null
-      return r.value.data
+      const r = results[i]
+      if (!r?.success) return null
+      return r.data
     }
 
     function arr(i: number): any[] {
@@ -490,7 +457,7 @@ export default function InventoryPage() {
     }
   }, [])
 
-  const { data, isFetching, refetch } = useQuery({
+  const { data } = useQuery({
     queryKey: ['inventory-dashboard'],
     queryFn: load,
     refetchInterval: 30_000,
@@ -531,14 +498,6 @@ export default function InventoryPage() {
               <Package className="h-3.5 w-3.5 text-gray-500" />
               All Items
             </Link>
-            <button
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-60 transition-colors"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
           </div>
         </div>
       </div>
@@ -551,7 +510,7 @@ export default function InventoryPage() {
             <h2 className="text-base font-semibold text-gray-900">Module Navigation</h2>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
               {(
                 [
                   { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
@@ -568,7 +527,6 @@ export default function InventoryPage() {
                   },
                   { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
                   { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
-                  { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
                 ] as const
               ).map(({ label, href, icon: Icon }, i) => (
                 <Link
@@ -963,7 +921,7 @@ export default function InventoryPage() {
                   Transfer Activity
                 </h3>
                 <Link
-                  href="/inventory/transfers"
+                  href="/inventory/stock-transaction?tab=transfers"
                   className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
                 >
                   View all <ArrowUpRight className="h-3 w-3" />

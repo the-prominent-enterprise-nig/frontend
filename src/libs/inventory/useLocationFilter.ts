@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
-import { getBranches } from '@/src/app/(app)/(dashboard)/inventory/price-lists/_actions/get-branches'
+import { getBranches } from '@/src/app/(app)/(dashboard)/pos/catalog/price-lists/_actions/get-branches'
 import {
   branchToken,
   splitLocationTokens,

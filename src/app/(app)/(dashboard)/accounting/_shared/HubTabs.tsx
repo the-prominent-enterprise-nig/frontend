@@ -4,8 +4,10 @@ import {
   ArrowLeftRight,
   Banknote,
   BookOpen,
+  Car,
   Coins,
   HandCoins,
+  IdCard,
   Key,
   Landmark,
   Library,
@@ -15,6 +17,7 @@ import {
   ReceiptText,
   Repeat,
   Scale,
+  Truck,
   Users,
   Wallet,
   type LucideIcon,
@@ -34,6 +37,8 @@ const ICONS: Record<HubTabId, LucideIcon> = {
   'recurring-expenses': Repeat,
   'special-accounts': Wallet,
   'employee-cash-loans': HandCoins,
+  drivers: IdCard,
+  vehicles: Car,
   'bank-accounts': Landmark,
   'undeposited-funds': Banknote,
   'inter-account-transfer': ArrowLeftRight,
@@ -41,6 +46,7 @@ const ICONS: Record<HubTabId, LucideIcon> = {
   'ap-invoices': ReceiptText,
   'ap-payments': PhilippinePeso,
   'receiving-reports': PackageCheck,
+  suppliers: Truck,
 }
 
 /**

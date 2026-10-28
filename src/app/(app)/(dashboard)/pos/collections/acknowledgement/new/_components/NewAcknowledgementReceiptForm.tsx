@@ -1,29 +1,41 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import {
   AcknowledgementReceipts,
   BankAccounts,
+  fmtMoney,
   type BankAccount,
-  type PaymentMethod,
-  PAYMENT_METHOD_OPTIONS,
 } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import SegmentedControl from '@/src/components/ui/SegmentedControl'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { useBranches } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePos'
+import CustomerField, { type PickedCustomer } from './CustomerField'
+import InvoiceField, { type PickedInvoice } from './InvoiceField'
+import {
+  CLEARED_OPTIONS,
+  buildJournalPreview,
+  clearDateError,
+  computeSettlementNet,
+  todayLocalIso,
+  toAmount,
+  type ClearedType,
+} from '../_lib/settlement'
 
 function Field({
   label,
   required,
+  hint,
   children,
 }: {
   label: string
   required?: boolean
+  hint?: string
   children: React.ReactNode
 }) {
   return (
@@ -32,9 +44,15 @@ function Field({
         {label} {required && <span className="text-red-600">*</span>}
       </span>
       {children}
+      {hint && <span className="mt-1 block text-xs text-gray-500">{hint}</span>}
     </label>
   )
 }
+
+const RECEIPT_TYPE_OPTIONS = [
+  { value: 'ACKNOWLEDGEMENT', label: 'Acknowledgement' },
+  { value: 'COLLECTION', label: 'Collection' },
+]
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs, same helper
@@ -69,15 +87,17 @@ function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] 
  * moved off Accounting's AR Invoices page, since this is a Collections
  * action per the client's own notes, not a back-office bookkeeping one).
  * Layout follows the client's own reference receipt tool (Date/Reference,
- * Paid by, Received in, Account, Description) rather than this app's usual
+ * Customer, Received in, Description) rather than this app's usual
  * two-column Field grid — developer-requested, 2026-09-21. "Received in" is
  * the tenant's own bank/cash accounts (which physical drawer/account the
  * money landed in, informational only — same posture as CollectionReceipt's
- * own bankAccountId); "Account" further down is a separate Chart-of-Accounts
- * pick that actually drives which account the receipt credits. Payer is
- * free text by developer decision — no search/link to an existing
- * Customer/Supplier/Employee record, closer to a digitized paper receipt
- * book than a linked transaction. */
+ * own bankAccountId).
+ *
+ * Settlement (client's proposed receipts template): the receipt carries the
+ * customer and sales invoice it is for (the invoice is a reference only —
+ * nothing is created and no invoice balance moves), the Gross AR amount, the
+ * Subsidy and Withholding Tax taken out of it — each with its own selectable
+ * account — and the Net that reached the bank, calculated here. */
 export default function NewAcknowledgementReceiptForm({
   restrictedBranchId,
 }: {
@@ -98,42 +118,111 @@ export default function NewAcknowledgementReceiptForm({
   const [form, setForm] = useState({
     paymentDate: new Date().toISOString().slice(0, 10),
     reference: '',
-    payerName: '',
     bankAccountId: '',
-    accountId: '',
     reason: '',
-    amount: '',
     receiptType: 'ACKNOWLEDGEMENT' as 'COLLECTION' | 'ACKNOWLEDGEMENT',
-    method: 'CASH' as PaymentMethod,
-    clearedType: 'SAME_DATE',
+    clearedType: 'SAME_DATE' as ClearedType,
     clearedDate: '',
     branchId: restrictedBranchId ?? '',
+    gross: '',
+    subsidy: '',
+    subsidyAccountId: '',
+    withholding: '',
+    withholdingAccountId: '',
   })
+  const [customer, setCustomer] = useState<PickedCustomer | null>(null)
+  const [invoice, setInvoice] = useState<PickedInvoice | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
   useEffect(() => {
     BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
-    getAccounts({ limit: 500 }).then((res) => {
+    getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))
     })
   }, [])
 
+  const gross = toAmount(form.gross)
+  const subsidy = toAmount(form.subsidy)
+  const withholding = toAmount(form.withholding)
+  const net = computeSettlementNet(gross, subsidy, withholding)
+  const netInvalid = gross > 0 && net <= 0
+  const today = todayLocalIso()
+  const clearErr = clearDateError(form.clearedType, form.clearedDate, today)
+
+  const accountLabel = useMemo(() => {
+    const byId = new Map(accountOptions.map((o) => [o.id, o.name]))
+    return (id: string) => (id ? (byId.get(id) ?? null) : null)
+  }, [accountOptions])
+  const journalLines = buildJournalPreview({
+    net,
+    subsidy,
+    withholding,
+    gross,
+    // Which account the cash lands in does not follow "Received in" (that is
+    // informational): a branch's receipt sits in Cash on Hand — Branch
+    // Collections until it is banked, and head office's goes straight to the bank.
+    cashLabel:
+      (restrictedBranchId ?? form.branchId) ? 'Cash on Hand — Branch Collections' : 'Cash in Bank',
+    subsidyAccountLabel: accountLabel(form.subsidyAccountId),
+    withholdingAccountLabel: accountLabel(form.withholdingAccountId),
+    creditAccountLabel: null,
+  })
+
+  const changeCustomer = (next: PickedCustomer | null) => {
+    // An invoice picked from the search belongs to the customer it was found
+    // under; a typed number is just text and stays.
+    if (invoice?.id && next?.id !== customer?.id) setInvoice(null)
+    setCustomer(next)
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSaving(true)
     setError(null)
+    if (!customer) {
+      setError('Pick a customer, or add a new one.')
+      return
+    }
+    if (!(gross > 0)) {
+      setError('Gross must be greater than 0.')
+      return
+    }
+    if (subsidy < 0 || withholding < 0) {
+      setError('Subsidy and Withholding Tax cannot be negative.')
+      return
+    }
+    if (net <= 0) {
+      setError(
+        'Net amount must be greater than 0 — Subsidy plus Withholding Tax cannot reach Gross.'
+      )
+      return
+    }
+    if (clearErr) {
+      setError(clearErr)
+      return
+    }
+    setSaving(true)
     const res = await AcknowledgementReceipts.create({
-      ...form,
-      amount: Number(form.amount),
-      bankAccountId: form.bankAccountId || undefined,
-      accountId: form.accountId || undefined,
-      reason: form.reason || undefined,
-      reference: form.reference || undefined,
+      receiptType: form.receiptType,
       branchId: restrictedBranchId ?? (form.branchId || undefined),
-      clearedDate: form.clearedType === 'LATER_DATE' ? form.clearedDate || undefined : undefined,
+      paymentDate: form.paymentDate,
+      reference: form.reference || undefined,
+      payerName: customer.name,
+      customerId: customer.id,
+      invoiceNo: invoice?.number || undefined,
+      arInvoiceId: invoice?.id || undefined,
+      bankAccountId: form.bankAccountId || undefined,
+      reason: form.reason || undefined,
+      clearedType: form.clearedType,
+      clearedDate: form.clearedType === 'SAME_DATE' ? undefined : form.clearedDate || undefined,
+      grossAmount: gross,
+      subsidyAmount: subsidy,
+      subsidyAccountId: subsidy > 0 ? form.subsidyAccountId || undefined : undefined,
+      withholdingAmount: withholding,
+      withholdingAccountId: withholding > 0 ? form.withholdingAccountId || undefined : undefined,
+      amount: net,
     })
     setSaving(false)
     if (!res.success || !res.data) {
@@ -157,8 +246,8 @@ export default function NewAcknowledgementReceiptForm({
         New {form.receiptType === 'COLLECTION' ? 'Collection' : 'Acknowledgement'} Receipt
       </h1>
       <p className="mt-1 text-sm text-gray-500">
-        Record money received with no customer or invoice behind it — a walk-in payment, a refund,
-        or anything else that isn&apos;t tied to a real customer invoice.
+        Record money received for a customer&apos;s sale — gross, less any subsidy and withholding
+        tax, with the net that reached the bank. Receipts from earlier dates can be recorded too.
       </p>
 
       <form
@@ -166,17 +255,14 @@ export default function NewAcknowledgementReceiptForm({
         className="mt-6 space-y-4 rounded-xl border border-gray-200 bg-white p-5"
       >
         <Field label="Receipt Type" required>
-          <select
-            required
+          <SearchableSelect
             value={form.receiptType}
-            onChange={(e) =>
-              setForm({ ...form, receiptType: e.target.value as 'COLLECTION' | 'ACKNOWLEDGEMENT' })
+            onChange={(value) =>
+              setForm({ ...form, receiptType: value as 'COLLECTION' | 'ACKNOWLEDGEMENT' })
             }
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-          >
-            <option value="ACKNOWLEDGEMENT">Acknowledgement</option>
-            <option value="COLLECTION">Collection</option>
-          </select>
+            options={RECEIPT_TYPE_OPTIONS}
+            placeholder="Select receipt type…"
+          />
         </Field>
 
         <Field label="Branch">
@@ -225,36 +311,48 @@ export default function NewAcknowledgementReceiptForm({
                 setForm({
                   ...form,
                   clearedType: value,
-                  clearedDate: value === 'LATER_DATE' ? form.clearedDate : '',
+                  clearedDate: value === 'SAME_DATE' ? '' : form.clearedDate,
                 })
               }
-              options={[
-                { value: 'SAME_DATE', label: 'Same date' },
-                { value: 'LATER_DATE', label: 'Later date' },
-              ]}
+              options={CLEARED_OPTIONS}
             />
           </Field>
-          <Field label="Clear Date">
+          <Field
+            label="Clear Date"
+            required={form.clearedType === 'PAST_DATE'}
+            hint={
+              form.clearedType === 'PAST_DATE'
+                ? 'The date it already cleared — on or before today.'
+                : undefined
+            }
+          >
             <input
               type="date"
-              disabled={form.clearedType !== 'LATER_DATE'}
+              disabled={form.clearedType === 'SAME_DATE'}
+              required={form.clearedType === 'PAST_DATE'}
+              max={form.clearedType === 'PAST_DATE' ? today : undefined}
               value={form.clearedDate}
               onChange={(e) => setForm({ ...form, clearedDate: e.target.value })}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
             />
+            {form.clearedType === 'PAST_DATE' && form.clearedDate && clearErr && (
+              <span className="mt-1 block text-xs text-red-600">{clearErr}</span>
+            )}
           </Field>
         </div>
 
-        <Field label="Paid by">
-          <input
-            required
-            autoFocus
-            placeholder="Payer name"
-            value={form.payerName}
-            onChange={(e) => setForm({ ...form, payerName: e.target.value })}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none"
-          />
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <span className="mb-1 block text-xs font-medium text-gray-800">
+              Customer <span className="text-red-600">*</span>
+            </span>
+            <CustomerField value={customer} onChange={changeCustomer} />
+          </div>
+          <div>
+            <span className="mb-1 block text-xs font-medium text-gray-800">Sales Invoice No.</span>
+            <InvoiceField customer={customer} value={invoice} onChange={setInvoice} />
+          </div>
+        </div>
 
         <Field label="Received in">
           <SearchableSelect
@@ -269,16 +367,6 @@ export default function NewAcknowledgementReceiptForm({
           />
         </Field>
 
-        <Field label="Account">
-          <CategorySelect
-            value={form.accountId || undefined}
-            onChange={(value) => setForm({ ...form, accountId: value ?? '' })}
-            options={accountOptions}
-            placeholder="Select account…"
-            noun="accounts"
-          />
-        </Field>
-
         <Field label="Description">
           <input
             placeholder="Optional"
@@ -288,30 +376,112 @@ export default function NewAcknowledgementReceiptForm({
           />
         </Field>
 
+        <h2 className="border-t border-gray-100 pt-4 text-sm font-semibold text-prominent-purple-900">
+          Settlement
+        </h2>
+
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Amount" required>
+          <Field
+            label="Gross (AR amount)"
+            required
+            hint="Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
+          >
             <input
               required
               type="number"
               step="0.01"
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              min="0"
+              value={form.gross}
+              onChange={(e) => setForm({ ...form, gross: e.target.value })}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
             />
           </Field>
-          <Field label="Method">
-            <select
-              value={form.method}
-              onChange={(e) => setForm({ ...form, method: e.target.value as PaymentMethod })}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Subsidy (debit)">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.subsidy}
+              onChange={(e) => setForm({ ...form, subsidy: e.target.value })}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-            >
-              {PAYMENT_METHOD_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            />
           </Field>
+          <Field label="Subsidy account">
+            <CategorySelect
+              value={form.subsidyAccountId || undefined}
+              onChange={(value) => setForm({ ...form, subsidyAccountId: value ?? '' })}
+              options={accountOptions}
+              placeholder="Default: Sales Discounts and Rebates"
+              noun="accounts"
+              disabled={!(subsidy > 0)}
+            />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Withholding Tax">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.withholding}
+              onChange={(e) => setForm({ ...form, withholding: e.target.value })}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field label="Withholding Tax account">
+            <CategorySelect
+              value={form.withholdingAccountId || undefined}
+              onChange={(value) => setForm({ ...form, withholdingAccountId: value ?? '' })}
+              options={accountOptions}
+              placeholder="Default: Withholding Tax Receivable"
+              noun="accounts"
+              disabled={!(withholding > 0)}
+            />
+          </Field>
+        </div>
+
+        <Field
+          label="Net amount (credited to bank)"
+          hint="Calculated: Gross − Subsidy − Withholding Tax."
+        >
+          <input
+            readOnly
+            tabIndex={-1}
+            value={gross > 0 ? net.toFixed(2) : ''}
+            placeholder="0.00"
+            className="w-full cursor-default rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700"
+          />
+          {netInvalid && (
+            <span className="mt-1 block text-xs text-red-600">
+              Net must be greater than 0 — Subsidy plus Withholding Tax cannot reach Gross.
+            </span>
+          )}
+        </Field>
+
+        <div className="border-t border-gray-100 pt-4">
+          <h2 className="text-sm font-semibold text-prominent-purple-900">Journal entry preview</h2>
+          {journalLines.length === 0 ? (
+            <p className="mt-2 text-sm text-gray-400">Enter the Gross amount to see the entry.</p>
+          ) : (
+            <div className="mt-2 space-y-1 text-sm text-gray-800">
+              {journalLines.map((line, i) => (
+                <div
+                  key={`${line.side}-${i}`}
+                  className={`flex justify-between gap-4 ${line.side === 'Cr' ? 'pl-8' : ''}`}
+                >
+                  <span>
+                    <span className="inline-block w-7 font-medium text-gray-500">{line.side}</span>
+                    {line.label}
+                  </span>
+                  <span className="tabular-nums">{fmtMoney(line.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {error && (

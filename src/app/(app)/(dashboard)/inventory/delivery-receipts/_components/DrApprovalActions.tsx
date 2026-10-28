@@ -13,8 +13,12 @@ import { BTN_PRIMARY, BTN_SECONDARY, TEXTAREA } from './drFormUi'
 
 /** What approving does, in the approver's terms, per purpose. */
 function approveMessage(dr: DrDetail): string {
+  if (dr.purpose === 'others') {
+    return 'The units leave the branch now. The debit memo goes to Accounting, who choose the account and post the journal entry.'
+  }
+  // Only a memo-purpose DR submitted before submit started posting it.
   if (DR_PURPOSE_CONFIG[dr.purpose].withDebitMemo) {
-    return 'A debit memo is drafted for accounting and the units are held. Stock moves only when accounting posts the memo.'
+    return 'The debit memo posts with this approval: the units leave the branch and the journal entry is recorded.'
   }
   if (dr.purpose === 'sales_invoice_to_follow') {
     return 'The units are held for this customer. Nothing is posted until the sale is rung up at POS.'

@@ -46,9 +46,6 @@ import type {
   UpdatePosConfigInput,
   CashDrawerEvent,
   CreateCashDrawerEventInput,
-  BranchPricing,
-  CreateBranchPricingInput,
-  UpdateBranchPricingInput,
   FinancingTerm,
   CreateFinancingTermInput,
   UpdateFinancingTermInput,
@@ -107,7 +104,6 @@ const TAGS = {
   loyalty: (customerId: string) => `pos-loyalty-${customerId}`,
   loyaltyProgram: 'pos-loyalty-program',
   cashDrawer: (sessionId: string) => `pos-cash-drawer-${sessionId}`,
-  branchPricing: 'pos-branch-pricing',
   financingTerms: 'pos-financing-terms',
   tpfProviders: 'pos-tpf-providers',
   parkedSales: 'pos-parked-sales',
@@ -958,71 +954,6 @@ export async function createCashDrawerEvent(
   }
 }
 
-// â”€â”€â”€ Branch Pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-export async function getBranchPricing(
-  branchId?: string,
-  itemId?: string
-): Promise<ApiResponse<BranchPricing[]>> {
-  try {
-    const result = await api.get<BranchPricing[]>(
-      '/pos/branch-pricing',
-      { branchId, itemId } as Record<string, string>,
-      { tags: [TAGS.branchPricing] }
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to fetch branch pricing' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to fetch branch pricing' }
-  }
-}
-
-export async function createBranchPricing(
-  input: CreateBranchPricingInput
-): Promise<ApiResponse<BranchPricing>> {
-  try {
-    const result = await api.post<BranchPricing>('/pos/branch-pricing', input)
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to create branch pricing' }
-    }
-    revalidateTag(TAGS.branchPricing, 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to create branch pricing' }
-  }
-}
-
-export async function updateBranchPricing(
-  id: string,
-  input: UpdateBranchPricingInput
-): Promise<ApiResponse<BranchPricing>> {
-  try {
-    const result = await api.patch<BranchPricing>(`/pos/branch-pricing/${id}`, input)
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to update branch pricing' }
-    }
-    revalidateTag(TAGS.branchPricing, 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to update branch pricing' }
-  }
-}
-
-export async function deleteBranchPricing(id: string): Promise<ApiResponse<void>> {
-  try {
-    const result = await api.delete(`/pos/branch-pricing/${id}`)
-    if (!result.success) {
-      return { success: false, error: result.error || 'Failed to delete branch pricing' }
-    }
-    revalidateTag(TAGS.branchPricing, 'max')
-    return { success: true }
-  } catch {
-    return { success: false, error: 'Failed to delete branch pricing' }
-  }
-}
-
 // ─── Financing Terms (Phase 3 — Installment Financing) ────────────────────────
 
 export async function getFinancingTerms(): Promise<ApiResponse<FinancingTerm[]>> {
@@ -1450,25 +1381,6 @@ export async function createLoyaltyAccount(
   }
 }
 
-export async function getBranchPricingByItem(
-  itemId: string,
-  branchId?: string
-): Promise<ApiResponse<BranchPricing[]>> {
-  try {
-    const result = await api.get<BranchPricing[]>(
-      `/pos/branch-pricing/item/${itemId}`,
-      branchId ? { branchId } : undefined,
-      { tags: [TAGS.branchPricing] }
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to fetch branch pricing for item' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to fetch branch pricing for item' }
-  }
-}
-
 export async function cancelParkedSale(id: string): Promise<ApiResponse<ParkedSale>> {
   try {
     const result = await api.post<ParkedSale>(`/pos/parked-sales/${id}/cancel`)
@@ -1850,7 +1762,9 @@ export async function searchUsers(
   }
 }
 
-export async function getSellingAgents(): Promise<
+export async function getSellingAgents(
+  search?: string
+): Promise<
   ApiResponse<{ id: string; name: string; phone?: string | null; email?: string | null }[]>
 > {
   try {
@@ -1860,7 +1774,11 @@ export async function getSellingAgents(): Promise<
     // pointing checkout at it rendered an empty picker for every cashier,
     // which is why the agent field was dropped in 1b82138 rather than fixed.
     // Status is forced to active server-side, so it is not sent here.
+    // The list is capped at 100 by name, so the checkout picker searches
+    // server-side as the cashier types — an agent past the first 100 is only
+    // ever reachable that way.
     const result = await api.get<{ data: AgentRow[] }>('/pos/agents', {
+      search: search?.trim() || undefined,
       limit: 100,
     })
     if (!result.success || !result.data) {
@@ -2375,7 +2293,8 @@ export async function bulkUpdateAccountMappings(
 
 export async function getGLAccounts(): Promise<ApiResponse<GLAccount[]>> {
   try {
-    const result = await api.get<GLAccount[]>('/accounts', undefined, {
+    // The picker list: accounts without balances or transactions.
+    const result = await api.get<GLAccount[]>('/accounts/options', undefined, {
       tags: ['gl-accounts'],
     })
     if (!result.success || !result.data) {
@@ -3153,6 +3072,10 @@ export interface CashInTransitSessionRow {
   sessionId: string
   branchId: string | null
   branchName: string | null
+  /** The caravan whose register this is; its cash posts under the host
+   * (`branchId`) but is deposited on its own. Null for a branch's own counter. */
+  caravanBranchId?: string | null
+  caravanName?: string | null
   terminalCode: string | null
   cashierName: string | null
   closedAt: string
@@ -3175,6 +3098,8 @@ export interface CashInTransitSessionRow {
    * accounting as its own row. `amount` is then only what is still free to
    * deposit. Absent on an older API. */
   pendingDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
+  /** The posted deposits that banked part of it, latest first. */
+  bankedDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
 }
 
 /** A session already banked — Scenario 61's Undeposited Funds table lists
@@ -3183,6 +3108,10 @@ export interface CashInTransitHistoryRow {
   sessionId: string
   branchId: string | null
   branchName: string | null
+  /** The caravan whose register this is; its cash posts under the host
+   * (`branchId`) but is deposited on its own. Null for a branch's own counter. */
+  caravanBranchId?: string | null
+  caravanName?: string | null
   terminalCode: string | null
   cashierName: string | null
   closedAt: string
@@ -3198,6 +3127,13 @@ export interface CashInTransitHistoryRow {
   depositDate: string | null
   /** The deposit record behind it; null for an old direct deposit. */
   posDepositId: string | null
+  /** What the deposit's slips banked of it — with, on one session per
+   * deposit, what the deposit banked beyond its sessions (New Receipts, an
+   * over deposit). Null for a session banked before deposits kept shares;
+   * absent on an older API. */
+  depositedAmount?: number | null
+  /** Whether its deposit has a slip or other proof attached yet. */
+  hasProof?: boolean
 }
 
 export async function getCashInTransitHistory(filters?: {
@@ -3226,11 +3162,11 @@ export async function getCashInTransitReport(filters?: {
       filters as Record<string, string>
     )
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to fetch Undeposited Funds report' }
+      return { success: false, error: result.error || 'Failed to fetch collected funds history' }
     }
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to fetch Undeposited Funds report' }
+    return { success: false, error: 'Failed to fetch collected funds history' }
   }
 }
 
@@ -3249,11 +3185,14 @@ export async function getCashInTransitSummary(): Promise<
       '/pos/sessions/cash-in-transit/summary'
     )
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to fetch Undeposited Funds summary' }
+      return {
+        success: false,
+        error: result.error || 'Failed to fetch the collected funds summary',
+      }
     }
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to fetch Undeposited Funds summary' }
+    return { success: false, error: 'Failed to fetch the collected funds summary' }
   }
 }
 
@@ -3279,18 +3218,19 @@ export async function clearCashInTransit(
       input
     )
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to deposit Undeposited Funds' }
+      return { success: false, error: result.error || 'Failed to record the deposit' }
     }
     revalidateTag(TAGS.cashInTransit, 'max')
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to deposit Undeposited Funds' }
+    return { success: false, error: 'Failed to record the deposit' }
   }
 }
 
 export interface MissingCogsSale {
   transactionId: string
   transactionNumber: string
+  salesInvoiceNumber?: string | null
   occurredAt: string
   /** `zero_cost` — the item has no costed stock to average, so the cost came
    *  back as ₱0 and there was nothing to post. `no_cost_resolved` — the cost

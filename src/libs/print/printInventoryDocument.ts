@@ -84,11 +84,14 @@ export function buildReceivingReportHtml(
   data: unknown,
   opts: { showAmounts?: boolean } = {}
 ): string {
-  const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
+  // Costs reach the document only for whoever may see them — the Business
+  // Owner on the inventory copy, Accounting on its own — so the amounts
+  // print whenever it carries them, quantities only otherwise.
+  const { showAmounts = lines.some((l) => l.unitCost != null) } = opts
 
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
   const fmtMoney = (n: number) =>
@@ -978,7 +981,8 @@ export function printPurchaseOrderDocument(
  * misalign in the first place, and doesn't match the paper form anyway:
  *   1. Lastname / Firstname / Middle / (Sales Invoice No. + SI Date)
  *   2. Brand / Type / Model / Serial
- *   3. Agent / Collector (two cells wide) / FMI
+ *   3. Agent / Sales Commission (only when the viewer may see it) / Collector
+ *      (two cells wide without the commission, one with) / FMI
  *   4. LCP / Down / Amt. Financed / Inst. Diff.
  *   5. Scheme (the paper form's "WIP") / MI / Term / Branch
  *   6. PN / IC / Total Price
@@ -993,8 +997,15 @@ export function printPurchaseOrderDocument(
  * Manager" — no such role exists in this system, and the client asked for
  * it off the Customer Ledger (2026-10-11).
  */
-export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
+export function buildCustomerLedgerHtml(
+  ledger: InstallmentLedger,
+  // The selling agent's commission is agent data, so it is left off the
+  // printout unless the caller says this user may see it. It takes a cell of
+  // the Collector's two-wide slot on the Agent row, keeping four columns.
+  options: { showCommission?: boolean } = {}
+): string {
   const { account, rows } = ledger
+  const showCommission = options.showCommission === true
 
   const fmt = (n: number | string) =>
     Number(n).toLocaleString('en-PH', {
@@ -1006,8 +1017,6 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
     v ? new Date(v).toLocaleDateString('en-PH') : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
-
-  const unitItem = account.unitItems[0]
 
   const cell = (label: string, value: string, colspan = 1) =>
     `<td colspan="${colspan}"><p class="cell-value">${esc(value)}</p><p class="cell-label">${esc(label)}</p></td>`
@@ -1098,23 +1107,35 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
         </td>
       </tr>
       ${
-        unitItem
-          ? `<tr>
+        // One row per item: a sale of several items is one ledger, and the
+        // paper card lists every one of them.
+        account.unitItems
+          .map(
+            (unitItem) => `<tr>
         ${cell('Brand', unitItem.brand ?? '—')}
         ${cell('Type', unitItem.itemType ?? '—')}
         ${cell('Model', unitItem.modelNumber ?? '—')}
         ${cell('Serial', unitItem.serialNumber ?? '—')}
       </tr>`
-          : ''
+          )
+          .join('')
       }
       <tr>
         ${cell('Agent', account.sellingAgent?.name ?? '—')}
+        ${
+          showCommission
+            ? cell(
+                'Sales Commission',
+                Number(account.salesCommission ?? 0) ? fmt(account.salesCommission ?? 0) : '—'
+              )
+            : ''
+        }
         ${cell(
           'Collector',
           account.collector
             ? `${account.collector.stubNumber} — ${account.collector.name}`
             : 'Unassigned',
-          2
+          showCommission ? 1 : 2
         )}
         ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
       </tr>
@@ -1171,10 +1192,13 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
   </body></html>`
 }
 
-export function printCustomerLedgerDocument(ledger: InstallmentLedger): void {
+export function printCustomerLedgerDocument(
+  ledger: InstallmentLedger,
+  options: { showCommission?: boolean } = {}
+): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
-  win.document.write(buildCustomerLedgerHtml(ledger))
+  win.document.write(buildCustomerLedgerHtml(ledger, options))
   win.document.close()
 }
 

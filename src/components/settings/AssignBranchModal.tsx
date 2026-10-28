@@ -29,13 +29,14 @@ export default function AssignBranchModal({
   const currentBranchIds = new Set(user.userBranches.map((ub) => ub.branch.id))
 
   const handleRemove = async (branchId: string, branchName: string) => {
+    if (!confirm(`Remove ${branchName} from ${user.email}?`)) return
     setRemovingBranchId(branchId)
     try {
       const result = await removeBranch(user.id, branchId)
       if (!result.success) {
         showToast({
           title: 'Failed to remove branch',
-          description: result.error ?? 'Please try again.',
+          description: result.message ?? result.error ?? 'Please try again.',
           status: 'error',
         })
         return

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { RecurringExpenseTypes } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { RECURRING_PATH } from './recurringListShared'
 
@@ -25,7 +25,7 @@ export default function RecurringTypeForm({ id }: { id?: string }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    getAccounts({ limit: 500 }).then((r) => {
+    getAccountOptions().then((r) => {
       const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
       // Same accounts an expense line can post to: no headers, no Equity.
       setAccounts(

@@ -48,21 +48,6 @@ export function displayUnitPriceWithTax(
   return line.unitPrice * (1 + rate / 100)
 }
 
-/** The unit price net of VAT — the item's actual (base) price, with any
- * embedded tax stripped back out for an inclusive line. An exclusive line's
- * unitPrice is already the base price, so it's returned as-is. Mirrors the
- * exclBase extraction inside computePricingTotals so this always agrees with
- * the cart's own Subtotal figure. */
-export function displayUnitPriceExclTax(
-  line: PriceableLine,
-  activeTaxRate: { rate: number } | null,
-  inclusivePricing: boolean
-): number {
-  const rate = resolveLineTaxRate(line, activeTaxRate)
-  if (rate == null || rate <= 0 || !isLineInclusive(line, inclusivePricing)) return line.unitPrice
-  return line.unitPrice / (1 + rate / 100)
-}
-
 /** The VAT amount actually attributable to one line — the embedded portion
  * for an inclusive line (extracted out of unitPrice, not added on top of it),
  * or the additive portion for an exclusive line. Mirrors the per-line
@@ -83,9 +68,11 @@ export function lineTaxAmount(
 }
 
 /** What a unit actually costs the customer, given the cart's exemption state.
- * Exempt strips any VAT embedded in an inclusive price; otherwise the price
- * shows tax-inclusive as before. Every money figure on the checkout screen
- * goes through here so a line, the subtotal and the total cannot disagree. */
+ * A VAT-exempt or zero-rated sale charges the listed price as it is — the LCP
+ * is already the gross, nothing is taken out of it and no tax is added;
+ * otherwise the price shows tax-inclusive. Every money figure on the checkout
+ * screen goes through here so a line, the subtotal and the total cannot
+ * disagree. */
 export function effectiveUnitPrice(
   line: PriceableLine,
   activeTaxRate: { rate: number } | null,
@@ -93,7 +80,7 @@ export function effectiveUnitPrice(
   isTaxExempt: boolean
 ): number {
   return isTaxExempt
-    ? displayUnitPriceExclTax(line, activeTaxRate, inclusivePricing)
+    ? line.unitPrice
     : displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing)
 }
 
@@ -142,16 +129,10 @@ export function computePricingTotals({
       }
     }
   } else {
-    // Exempt still has to strip the VAT baked into an inclusive price. The
-    // 12% is a property of the price, put there by whoever set it — the sale
-    // being exempt doesn't take it back out. Summing raw unitPrice here (as
-    // this did) charged the exempt customer the VAT anyway and handed the
-    // backend a gross figure under a name promising it was net.
+    // Exempt and zero-rated charge the listed price as the gross: the LCP is
+    // not VAT-stripped and no tax is added, so the subtotal is the plain sum.
     for (const l of cart) {
-      const lineRaw = l.unitPrice * l.quantity
-      const rate = resolveLineTaxRate(l, activeTaxRate) ?? 0
-      vatExclSubtotalForBackend +=
-        rate > 0 && isLineInclusive(l, inclusivePricing) ? lineRaw / (1 + rate / 100) : lineRaw
+      vatExclSubtotalForBackend += l.unitPrice * l.quantity
     }
   }
 

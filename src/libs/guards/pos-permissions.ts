@@ -5,6 +5,9 @@ export const POS_PERMISSIONS = {
   SESSIONS_OPEN: 'pos:sessions:open',
   SESSIONS_CLOSE: 'pos:sessions:close',
   TRANSACTIONS_READ: 'pos:transactions:read',
+  // The Product Catalog on its own, for inventory roles the client's Access
+  // Levels sheet gives the catalog without the rest of POS.
+  CATALOG_READ: 'pos:catalog:read',
   TRANSACTIONS_CREATE: 'pos:transactions:create',
   TRANSACTIONS_VOID: 'pos:transactions:void',
   TRANSACTIONS_REFUND: 'pos:transactions:refund',
@@ -42,8 +45,6 @@ export const POS_PERMISSIONS = {
   CUSTOMERS_READ: 'pos:customers:read',
   CUSTOMERS_CREATE: 'pos:customers:create',
   CUSTOMERS_UPDATE: 'pos:customers:update',
-  BRANCH_PRICING_READ: 'pos:branch-pricing:read',
-  BRANCH_PRICING_MANAGE: 'pos:branch-pricing:manage',
   FINANCING_TERMS_READ: 'pos:financing-terms:read',
   FINANCING_TERMS_MANAGE: 'pos:financing-terms:manage',
   TPF_PROVIDERS_READ: 'pos:tpf-providers:read',
@@ -83,6 +84,7 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:sessions:open': 'Open a POS session',
   'pos:sessions:close': 'Close a POS session',
   'pos:transactions:read': 'View POS transactions',
+  'pos:catalog:read': 'Browse the POS Product Catalog and its prices without other POS access',
   'pos:reports:read': 'View and export POS sales reports (Branch Manager tier)',
   'pos:daily-collection:read': "View and export a branch's Daily Collection Report",
   'pos:daily-collection:update':
@@ -113,8 +115,6 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:customers:read': 'Search POS customers by phone',
   'pos:customers:create': 'Create a walk-in customer from the POS terminal',
   'pos:customers:update': "Correct a customer's details or co-makers from POS",
-  'pos:branch-pricing:read': 'View branch price overrides',
-  'pos:branch-pricing:manage': 'Create and edit branch price overrides',
   'pos:financing-terms:read': 'View installment financing terms',
   'pos:financing-terms:manage': 'Create and edit installment financing terms',
   'pos:tpf-providers:read': 'View TPF (third-party financing) providers',

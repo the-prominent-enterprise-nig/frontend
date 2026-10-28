@@ -1,7 +1,8 @@
 'use client'
 
 import { Controller, type Control, type FieldErrors } from 'react-hook-form'
-import type { CreateTransferFormValues } from '@/src/schema/inventory/transfers'
+import type { NewCaravanFormValues } from '@/src/schema/inventory/transfers'
+import type { WarehouseBranch } from '@/src/schema/inventory/warehouses'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CONTROL_CHROME } from '../../purchase-orders/_components/procurementTokens'
 
@@ -10,6 +11,21 @@ import { CONTROL_CHROME } from '../../purchase-orders/_components/procurementTok
 // its details are captured here so whoever handles the stock can see, at a
 // glance, that it is meant for that event and where it is being held.
 
+/** Any form that holds the caravan's details under `newCaravan` — New Stock
+ * Transfer, or the Caravan tab's own Edit caravan. */
+export type CaravanFieldsForm = { newCaravan?: NewCaravanFormValues }
+
+/** An existing caravan's details as the fields expect them. */
+export function caravanFormValues(branch: WarehouseBranch): NewCaravanFormValues {
+  return {
+    hostBranchId: branch.hostBranch?.id ?? '',
+    eventName: branch.eventName ?? branch.name,
+    location: branch.addressLine1 ?? '',
+    startDate: (branch.startDate ?? '').slice(0, 10),
+    endDate: (branch.endDate ?? '').slice(0, 10),
+  }
+}
+
 const labelClass = 'mb-1.5 block text-[12px] font-medium text-[#3d3d4a]'
 const inputClass =
   'w-full rounded-lg border border-[#d3d3db] bg-white px-3 py-2 text-[13px] text-[#17171c] outline-none transition-colors focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
@@ -17,8 +33,8 @@ const errorClass = 'mt-1 text-[11.5px] text-[#b42318]'
 const panelClass = 'rounded-[10px] border border-[#ddd0f7] bg-[#fcfaff] p-3.5'
 
 type NewCaravanFieldsProps = {
-  control: Control<CreateTransferFormValues>
-  errors: FieldErrors<CreateTransferFormValues>
+  control: Control<CaravanFieldsForm>
+  errors: FieldErrors<CaravanFieldsForm>
   hostBranchOptions: { value: string; label: string }[]
   // A branch-scoped user can only host a caravan at their own branch.
   hostLocked: boolean
@@ -123,7 +139,7 @@ export function NewCaravanFields({
 }
 
 type DateFieldProps = {
-  control: Control<CreateTransferFormValues>
+  control: Control<CaravanFieldsForm>
   name: 'newCaravan.startDate' | 'newCaravan.endDate'
   label: string
   error?: string

@@ -20,6 +20,7 @@ import {
 } from '@/src/libs/api/crm'
 import { getBranches } from '../../installment-accounts/_actions/get-branches'
 import { Select } from '@/src/components/ui/Select'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import type {
   CollectionsCalendarPayment,
   CollectionsCalendarReminder,
@@ -387,7 +388,7 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
     ...(data?.payments ?? []).map(
       (p): CalendarItem => ({ kind: 'payment', date: p.dueDate.slice(0, 10), data: p })
     ),
-    ...(data?.reminders ?? []).map(
+    ...(REMINDERS_ENABLED ? (data?.reminders ?? []) : []).map(
       (r): CalendarItem => ({ kind: 'reminder', date: r.dueAt.slice(0, 10), data: r })
     ),
   ]
@@ -440,9 +441,9 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Collections Calendar</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Installment dues and reminders, grouped by day. Only shows dues from POS-originated
-              installment plans — manually entered CRM collections accounts aren&apos;t itemized by
-              due date yet.
+              Installment dues{REMINDERS_ENABLED && ' and reminders'}, grouped by day. Only shows
+              dues from POS-originated installment plans — manually entered CRM collections accounts
+              aren&apos;t itemized by due date yet.
             </p>
           </div>
         )}
@@ -526,10 +527,15 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
             </p>
             {data && (
               <p className="text-[11px] text-zinc-400">
-                {data.meta.totalPaymentsDue} due · {formatPeso(data.meta.totalPaymentsAmount)} ·{' '}
-                {data.meta.totalReminders} reminder{data.meta.totalReminders !== 1 ? 's' : ''}
-                {data.meta.totalOverdueReminders > 0 &&
-                  ` (${data.meta.totalOverdueReminders} overdue)`}
+                {data.meta.totalPaymentsDue} due · {formatPeso(data.meta.totalPaymentsAmount)}
+                {REMINDERS_ENABLED && (
+                  <>
+                    {' '}
+                    · {data.meta.totalReminders} reminder{data.meta.totalReminders !== 1 ? 's' : ''}
+                    {data.meta.totalOverdueReminders > 0 &&
+                      ` (${data.meta.totalOverdueReminders} overdue)`}
+                  </>
+                )}
               </p>
             )}
           </div>

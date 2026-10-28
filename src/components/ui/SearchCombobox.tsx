@@ -52,6 +52,20 @@ type Props = {
    * usages are unaffected. Matches CategorySelect's prop of the same name, so
    * the two line up when they sit in the same row. */
   compact?: boolean
+  /** Shows the "×" that resets to no selection once a value is picked. On by
+   * default; turn it off for a required field whose value can change but never
+   * go back to nothing (the checkout's Selling Agent). */
+  clearable?: boolean
+  /** A closing row under the results — "+ Add "<typed>" as new customer" —
+   * shown whenever something is typed and no result already carries exactly
+   * that text. Clicking it closes the list and hands the typed text to the
+   * caller, which decides what "add" means (open an inline form, keep the text
+   * as a free-text reference, ...). Off by default so existing usages are
+   * untouched. */
+  addOption?: {
+    label: (typed: string) => string
+    onAdd: (typed: string) => void
+  }
 }
 
 /**
@@ -74,6 +88,8 @@ export function SearchCombobox({
   disabled,
   initialLabel,
   compact = false,
+  clearable = true,
+  addOption,
 }: Props) {
   // confirmedLabel: what gets shown when the dropdown is closed (only changes on select/clear)
   const [confirmedLabel, setConfirmedLabel] = useState(initialLabel ?? '')
@@ -235,7 +251,7 @@ export function SearchCombobox({
             {confirmedLabel || placeholder || typeToSearchMessage}
           </button>
         )}
-        {value && !disabled && (
+        {clearable && value && !disabled && (
           <button
             type="button"
             onClick={handleClear}
@@ -274,6 +290,7 @@ export function SearchCombobox({
                 <button
                   key={option.id}
                   type="button"
+                  data-testid="search-combobox-option"
                   onClick={() => handleSelect(option)}
                   className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 ${
                     option.id === value
@@ -297,6 +314,24 @@ export function SearchCombobox({
                 </button>
               ))
             )}
+            {addOption &&
+              searchQuery.trim() &&
+              !options.some(
+                (o) => o.primary.trim().toLowerCase() === searchQuery.trim().toLowerCase()
+              ) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const typed = searchQuery.trim()
+                    setSearchQuery('')
+                    setOpen(false)
+                    addOption.onAdd(typed)
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-zinc-100 px-3 py-2 text-left text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+                >
+                  {addOption.label(searchQuery.trim())}
+                </button>
+              )}
           </div>,
           document.body
         )}

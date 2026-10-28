@@ -98,6 +98,11 @@ export const QueryParamsSchema = z.object({
   search: z.string().optional(),
   status: z.string().optional(),
   branchId: z.string().optional(),
+  // Roles-only: defaults to active-only server-side (see roles.service.ts's
+  // findAll) — Roles & Access sets this so its own Active/Inactive filter
+  // has inactive roles to actually filter, instead of a dropdown option
+  // that can never show anything.
+  includeInactive: z.boolean().optional(),
   page: z.number().int().positive().optional().default(1),
   limit: z.number().int().positive().optional().default(10),
   sortBy: z.string().optional(),

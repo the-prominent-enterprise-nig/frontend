@@ -1,7 +1,7 @@
 'use client'
 
 import { X, ChevronRight, ChevronLeft } from 'lucide-react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useState, useEffect } from 'react'
@@ -9,6 +9,14 @@ import { createEmployee } from '@/src/app/(app)/(dashboard)/human-resource/emplo
 import { fetchOrgRelations } from '@/src/app/(app)/(dashboard)/human-resource/employees/_actions/fetch-org-relations'
 import type { OrgRelations } from '@/src/app/(app)/(dashboard)/human-resource/employees/_actions/fetch-org-relations'
 import { showToast } from '@/src/components/ui/toast'
+import { type Permission, type Role } from '@/src/schema/settings/list'
+import {
+  EMPTY_ACCESS_MAP,
+  formatModuleSummary,
+  permissionSlug,
+  summarizeRoles,
+  type AccessMap,
+} from './module-map'
 
 const MARITAL_STATUSES = ['Single', 'Married', 'Widowed', 'Separated'] as const
 
@@ -54,7 +62,44 @@ type CreateUserModalProps = {
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
-  availableRoles?: Array<{ id: string; name: string; description?: string | null }>
+  availableRoles?: Array<
+    Pick<Role, 'id' | 'name' | 'description'> & Partial<Pick<Role, 'permissions'>>
+  >
+  /** For the read-back of what the picked roles give (Scenario 74). */
+  availablePermissions?: Permission[]
+  accessMap?: AccessMap
+}
+
+/** What the picked roles give, module by module, and the branch scope. */
+function RoleReadback({
+  held,
+  branchName,
+  map,
+  available,
+}: {
+  held: string[]
+  branchName: string | null
+  map: AccessMap
+  available: Permission[]
+}): React.JSX.Element | null {
+  const rows = summarizeRoles(map, held, available)
+  if (rows.length === 0) return null
+  return (
+    <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3" data-role-readback>
+      <p className="mb-1.5 text-xs font-semibold text-zinc-700">This user will have</p>
+      <ul className="space-y-0.5 text-xs text-zinc-600">
+        {rows.map(({ module, label, summary }) => (
+          <li key={module}>
+            {label}: {formatModuleSummary(summary)}
+          </li>
+        ))}
+        <li>
+          Branch:{' '}
+          {branchName ? `${branchName} (sees only this branch)` : 'Head Office (sees all branches)'}
+        </li>
+      </ul>
+    </div>
+  )
 }
 
 const STEP_TITLES = ['Personal Info', 'Work & Access']
@@ -64,6 +109,8 @@ export default function CreateUserModal({
   onClose,
   onSuccess,
   availableRoles = [],
+  availablePermissions = [],
+  accessMap = EMPTY_ACCESS_MAP,
 }: CreateUserModalProps) {
   const [step, setStep] = useState(0)
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
@@ -103,6 +150,7 @@ export default function CreateUserModal({
       roleIds: [],
     },
   })
+  const watchedBranchId = useWatch({ control, name: 'branchId' })
 
   if (!isOpen) return null
 
@@ -519,6 +567,19 @@ export default function CreateUserModal({
                 </div>
                 {errors.roleIds && (
                   <p className="mt-1 text-xs text-red-500">{errors.roleIds.message}</p>
+                )}
+                {selectedRoles.length > 0 && (
+                  <RoleReadback
+                    held={availableRoles
+                      .filter((role) => selectedRoles.includes(role.id))
+                      .flatMap((role) => role.permissions ?? [])
+                      .map((rolePermission) => permissionSlug(rolePermission.permission))}
+                    branchName={
+                      orgRelations.branches.find((b) => b.id === watchedBranchId)?.name ?? null
+                    }
+                    map={accessMap}
+                    available={availablePermissions}
+                  />
                 )}
               </div>
             </div>

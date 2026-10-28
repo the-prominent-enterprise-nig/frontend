@@ -8,6 +8,7 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import {
   DrFormSchema,
   isRepairPurpose,
+  isTicketedRepair,
   occasionOf,
   type DrFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
@@ -25,16 +26,19 @@ function toLineBodies(l: DrFormValues['lines'][number]): Record<string, unknown>
 /** Form values → the backend DTO. Empty strings are not sent (the API
  * validates ids as UUIDs and dates as ISO strings). */
 function toBody(v: DrFormValues): Record<string, unknown> {
-  // A repair DR's lines come from its UDS, server-side; sending none keeps
-  // the browser from ever being the source of what leaves.
+  // A ticketed repair DR's lines come from its UDS, server-side; sending none
+  // keeps the browser from ever being the source of what leaves.
   const repair = isRepairPurpose(v.purpose)
+  const ticketed = isTicketedRepair(v)
   return {
     purpose: v.purpose,
     purposeDetail: v.purpose === 'raffle_prize' ? blank(occasionOf(v)) : undefined,
+    giveawayRecipient: v.purpose === 'giveaway' ? v.giveawayRecipient || undefined : undefined,
     issueDate: v.issueDate,
     warehouseId: v.warehouseId,
     departmentId: blank(v.departmentId),
-    udsId: repair ? blank(v.udsId) : undefined,
+    // null, not left out, so clearing the ticket on a saved draft sticks.
+    udsId: repair ? (blank(v.udsId) ?? null) : undefined,
     customerId: blank(v.customerId),
     supplierId: blank(v.supplierId),
     deliveredTo: blank(v.deliveredTo),
@@ -45,7 +49,7 @@ function toBody(v: DrFormValues): Record<string, unknown> {
     referenceDate: blank(v.referenceDate),
     reason: blank(v.reason),
     remarks: blank(v.remarks),
-    lines: repair ? undefined : v.lines.flatMap(toLineBodies),
+    lines: ticketed ? undefined : v.lines.flatMap(toLineBodies),
   }
 }
 

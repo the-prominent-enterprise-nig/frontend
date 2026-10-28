@@ -5,7 +5,6 @@ import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
 import Link from 'next/link'
 import {
   TrendingUp,
-  RefreshCw,
   ArrowUpRight,
   FileText,
   BarChart2,
@@ -29,6 +28,8 @@ import {
   Budgets,
   // Aliased: this file already has a local `apOutstanding` total for the KPI.
   apOutstanding as apBillOutstanding,
+  type AgingBuckets,
+  type ARInvoiceDashboardStats,
 } from '@/src/libs/data/AccountingV2Data'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -95,14 +96,13 @@ const COLORS = [
 
 // ── AgingBuckets helper ───────────────────────────────────────────────────────
 
-// GET /reports/aging/:type returns a flat array of invoice/bill rows, each
-// carrying its own `outstanding` amount and `bucket` label (backend's
-// agingBucket(): 'Current' | '1-30' | '31-60' | '61-90' | '90+') — this
-// used to expect a pre-aggregated `{buckets: [...]}` or bucket-keyed object
-// shape that the endpoint never actually returns, so it always resolved to
-// an empty array regardless of real overdue data. Sum by bucket here instead.
-function extractAging(raw: any) {
-  if (!Array.isArray(raw)) return []
+// GET /reports/aging/:type?view=summary returns the bucket totals
+// (`{ buckets: [{ bucket, outstanding, count }] }`, bucket being the backend's
+// agingBucket(): 'Current' | '1-30' | '31-60' | '61-90' | '90+'). The full
+// endpoint is one row per open invoice/bill — 2.9 MB of AR rows on the dev
+// data — that this chart only ever summed by bucket, so the server sums them.
+function extractAging(raw: AgingBuckets | null) {
+  if (!Array.isArray(raw?.buckets)) return []
   const BUCKET_ORDER: { key: string; label: string; color: string }[] = [
     { key: 'Current', label: 'Current', color: '#10b981' },
     { key: '1-30', label: '1–30 days', color: '#f59e0b' },
@@ -111,7 +111,7 @@ function extractAging(raw: any) {
     { key: '90+', label: '90+ days', color: '#dc2626' },
   ]
   const sums: Record<string, number> = {}
-  raw.forEach((row: any) => {
+  raw.buckets.forEach((row) => {
     const key = row.bucket ?? 'Current'
     sums[key] = (sums[key] ?? 0) + Number(row.outstanding ?? 0)
   })
@@ -293,10 +293,8 @@ const INIT = {
 
 export default function AccountingPage() {
   const [s, setS] = useState(INIT)
-  const [spinning, setSpinning] = useState(false)
 
   const load = useCallback(async () => {
-    setSpinning(true)
     const today = new Date().toISOString().slice(0, 10)
     const yearStart = `${new Date().getFullYear()}-01-01`
     const fiscalYear = new Date().getFullYear()
@@ -305,9 +303,9 @@ export default function AccountingPage() {
       Reports.pnl(yearStart, today), // 0
       Reports.biSummary(), // 1
       Reports.balanceSheet(), // 2
-      Reports.aging('ar'), // 3
-      Reports.aging('ap'), // 4
-      ARInvoices.list({ view: 'summary' }), // 5
+      Reports.agingBuckets('ar'), // 3
+      Reports.agingBuckets('ap'), // 4
+      ARInvoices.dashboardStats(), // 5
       APBills.list(), // 6
       BankAccounts.list(), // 7
       FixedAssetsV2.list(), // 8
@@ -365,7 +363,10 @@ export default function AccountingPage() {
     const apAgingBuckets = extractAging(pick(4))
 
     // ── AR Invoices ───────────────────────────────────────────────────────────
-    const invoiceList = arr(5)
+    // Counted and summed on the server over every invoice (the list is 4.8 MB on
+    // the dev data); the server sends the figures and the few rows listed below.
+    const arStats: ARInvoiceDashboardStats | null = pick(5)
+    // AP bills still decide overdue here, in the browser (AR invoices use the server's one definition).
     const now = new Date()
     const isOverdue = (doc: any) => {
       const st = doc.status?.toUpperCase()
@@ -374,17 +375,9 @@ export default function AccountingPage() {
         (doc.dueDate && new Date(doc.dueDate) < now && st !== 'PAID' && st !== 'VOID')
       )
     }
-    const overdueInvoicesList = invoiceList.filter(isOverdue)
-    const openInvoicesCount = invoiceList.filter((inv) => {
-      const st = inv.status?.toUpperCase()
-      return st !== 'PAID' && st !== 'VOID'
-    }).length
-    const arFromInvoices = invoiceList
-      .filter((inv) => inv.status?.toUpperCase() !== 'PAID' && inv.status?.toUpperCase() !== 'VOID')
-      .reduce(
-        (sum, inv) => sum + ((Number(inv.totalAmount) || 0) - (Number(inv.amountPaid) || 0)),
-        0
-      )
+    const overdueInvoicesCount = arStats?.overdue.count ?? 0
+    const openInvoicesCount = arStats?.open.count ?? 0
+    const arFromInvoices = arStats?.open.outstanding ?? 0
     const arOutstanding = arFromBI || arFromInvoices
 
     // ── AP Bills ──────────────────────────────────────────────────────────────
@@ -441,7 +434,7 @@ export default function AccountingPage() {
       totalCash,
       arOutstanding,
       openInvoicesCount,
-      overdueInvoicesCount: overdueInvoicesList.length,
+      overdueInvoicesCount,
       apOutstanding,
       openBillsCount,
       overdueBillsCount: overdueBillsList.length,
@@ -452,14 +445,13 @@ export default function AccountingPage() {
       pnlBreakdown,
       arAgingBuckets,
       apAgingBuckets,
-      recentInvoices: invoiceList.slice(0, 8),
+      recentInvoices: arStats?.recent ?? [],
       recentBills: billList.slice(0, 8),
-      overdueInvoicesList: overdueInvoicesList.slice(0, 6),
+      overdueInvoicesList: arStats?.overdue.top ?? [],
       overdueBillsList: overdueBillsList.slice(0, 6),
       budgetAlerts: budgetAlerts.slice(0, 6),
       bankAccountsList: bankList.slice(0, 4),
     })
-    setSpinning(false)
   }, [])
 
   // Scenario 29 — this dashboard previously only ever fetched once on
@@ -502,14 +494,6 @@ export default function AccountingPage() {
               <BookOpen className="h-3.5 w-3.5 text-gray-500" />
               Journal
             </Link>
-            <button
-              onClick={load}
-              disabled={spinning}
-              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-60 transition-colors"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${spinning ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
           </div>
         </div>
       </div>

@@ -109,7 +109,7 @@ export default function BankRecon() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="w-full p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-2xl font-bold">Bank Reconciliation</h2>
         <div className="flex flex-wrap gap-2">

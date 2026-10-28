@@ -13,15 +13,23 @@ import {
   type AcknowledgementReceipt,
   PAYMENT_METHOD_OPTIONS,
 } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { downloadElementAsPdf } from '@/src/libs/print/htmlToPdf'
 import SegmentedControl from '@/src/components/ui/SegmentedControl'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { useBranches } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePos'
+import { CLEARED_OPTIONS } from '../../new/_lib/settlement'
 
 function accountLabel(account: AcknowledgementReceipt['account']): string {
   if (!account) return 'Miscellaneous Collections'
+  return account.number ? `${account.number} — ${account.name}` : account.name
+}
+
+// A settlement receipt's subsidy / withholding lines post to a default account
+// when none was picked — name that default rather than showing a blank.
+function deductionAccountLabel(account: AcknowledgementReceipt['account'], fallback: string) {
+  if (!account) return fallback
   return account.number ? `${account.number} — ${account.name}` : account.name
 }
 
@@ -88,6 +96,12 @@ function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] 
  * the matching title renders; a legacy record with no receiptType stored
  * still falls back to showing both. */
 function ReceiptSheet({ receipt, title }: { receipt: AcknowledgementReceipt; title: string }) {
+  // A settlement receipt carries the gross AR amount, with the subsidy and
+  // withholding tax taken out of it; `amount` is then the Net that reached
+  // the bank. A plain receipt has none of these and keeps its one-row table.
+  const isSettlement = receipt.grossAmount != null
+  const subsidy = receipt.subsidyAmount ?? 0
+  const withholding = receipt.withholdingAmount ?? 0
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
       <div className="flex items-start justify-between gap-4">
@@ -102,13 +116,27 @@ function ReceiptSheet({ receipt, title }: { receipt: AcknowledgementReceipt; tit
 
       <div className="mt-6 grid gap-7 md:grid-cols-3">
         <div>
-          <p className="font-bold text-prominent-purple-900">{receipt.payerName}</p>
+          <p className="font-bold text-prominent-purple-900">
+            {receipt.customer?.name ?? receipt.payerName}
+          </p>
+          {receipt.customer?.customerCode && (
+            <p className="text-gray-700">{receipt.customer.customerCode}</p>
+          )}
+          {receipt.invoiceNo && (
+            <p className="mt-2 text-gray-700">
+              Sales Invoice No.{' '}
+              <span className="font-semibold text-gray-900">{receipt.invoiceNo}</span>
+            </p>
+          )}
         </div>
         <div className="text-right">
           <MetaPair label="Date" value={longDate(receipt.paymentDate)} />
           <MetaPair label="Reference" value={receipt.reference || receipt.number || '—'} />
           {receipt.clearedType === 'LATER_DATE' && (
             <MetaPair label="Clearing Date" value={longDate(receipt.clearedDate)} />
+          )}
+          {receipt.clearedType === 'PAST_DATE' && (
+            <MetaPair label="Past date — cleared on" value={longDate(receipt.clearedDate)} />
           )}
         </div>
         <div className="md:border-l md:border-gray-300 md:pl-7">
@@ -147,12 +175,38 @@ function ReceiptSheet({ receipt, title }: { receipt: AcknowledgementReceipt; tit
                 {accountLabel(receipt.account)} — {receipt.payerName}
               </td>
               <td className="border border-gray-300 px-2.5 py-[7px] text-right align-top tabular-nums">
-                {fmtMoney(receipt.amount)}
+                {fmtMoney(isSettlement ? receipt.grossAmount : receipt.amount)}
               </td>
             </tr>
+            {isSettlement && subsidy > 0 && (
+              <tr>
+                <td className="border border-gray-300 px-2.5 py-[7px] text-center align-top">2</td>
+                <td className="border border-gray-300 px-2.5 py-[7px] align-top">
+                  Less: Subsidy —{' '}
+                  {deductionAccountLabel(receipt.subsidyAccount, 'Sales Discounts and Rebates')}
+                </td>
+                <td className="border border-gray-300 px-2.5 py-[7px] text-right align-top tabular-nums">
+                  {fmtMoney(-subsidy)}
+                </td>
+              </tr>
+            )}
+            {isSettlement && withholding > 0 && (
+              <tr>
+                <td className="border border-gray-300 px-2.5 py-[7px] text-center align-top">
+                  {subsidy > 0 ? 3 : 2}
+                </td>
+                <td className="border border-gray-300 px-2.5 py-[7px] align-top">
+                  Less: Withholding Tax —{' '}
+                  {deductionAccountLabel(receipt.withholdingAccount, 'Withholding Tax Receivable')}
+                </td>
+                <td className="border border-gray-300 px-2.5 py-[7px] text-right align-top tabular-nums">
+                  {fmtMoney(-withholding)}
+                </td>
+              </tr>
+            )}
             <tr className="font-bold">
               <td className="border border-gray-300 px-2.5 py-[7px] text-right" colSpan={2}>
-                Total
+                {isSettlement ? 'Net received' : 'Total'}
               </td>
               <td className="border border-gray-300 px-2.5 py-[7px] text-right tabular-nums">
                 {fmtMoney(receipt.amount)}
@@ -228,7 +282,7 @@ function AcknowledgementReceiptDetailBody({
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
   useEffect(() => {
     BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
-    getAccounts({ limit: 500 }).then((res) => {
+    getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))
     })
@@ -380,7 +434,7 @@ function AcknowledgementReceiptDetailBody({
       method: editForm.method,
       clearedType: editForm.clearedType,
       clearedDate:
-        editForm.clearedType === 'LATER_DATE' ? editForm.clearedDate || undefined : undefined,
+        editForm.clearedType === 'SAME_DATE' ? undefined : editForm.clearedDate || undefined,
       bankAccountId: editForm.bankAccountId || undefined,
       reference: editForm.reference || undefined,
       branchId: restrictedBranchId ?? (editForm.branchId || undefined),
@@ -534,19 +588,16 @@ function AcknowledgementReceiptDetailBody({
                     setEditForm({
                       ...editForm,
                       clearedType: value,
-                      clearedDate: value === 'LATER_DATE' ? editForm.clearedDate : '',
+                      clearedDate: value === 'SAME_DATE' ? '' : editForm.clearedDate,
                     })
                   }
-                  options={[
-                    { value: 'SAME_DATE', label: 'Same date' },
-                    { value: 'LATER_DATE', label: 'Later date' },
-                  ]}
+                  options={CLEARED_OPTIONS}
                 />
               </Field>
               <Field label="Clear Date">
                 <input
                   type="date"
-                  disabled={editForm.clearedType !== 'LATER_DATE'}
+                  disabled={editForm.clearedType === 'SAME_DATE'}
                   value={editForm.clearedDate}
                   onChange={(e) => setEditForm({ ...editForm, clearedDate: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
@@ -596,13 +647,17 @@ function AcknowledgementReceiptDetailBody({
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Amount">
+              {/* A settlement receipt's amount is its Net — calculated from
+                  Gross, Subsidy and Withholding Tax at entry — so it isn't
+                  editable here; record the receipt again to change it. */}
+              <Field label={receipt.grossAmount != null ? 'Net amount' : 'Amount'}>
                 <input
                   type="number"
                   step="0.01"
+                  readOnly={receipt.grossAmount != null}
                   value={editForm.amount}
                   onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm read-only:cursor-default read-only:bg-gray-50 read-only:text-gray-700"
                 />
               </Field>
               <Field label="Method">

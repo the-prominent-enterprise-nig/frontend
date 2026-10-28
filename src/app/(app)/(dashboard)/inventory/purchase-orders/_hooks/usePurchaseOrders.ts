@@ -13,12 +13,15 @@ import { approvePurchaseOrder } from '../_actions/approve-purchase-order'
 import { sendPurchaseOrder } from '../_actions/send-purchase-order'
 import { cancelPurchaseOrder } from '../_actions/cancel-purchase-order'
 import { closePurchaseOrder } from '../_actions/close-purchase-order'
+import { procurementHref } from '../_lib/procurementHref'
 import type {
   ConvertPrToPoFormValues,
   CreatePoFormValues,
 } from '@/src/schema/inventory/purchase-orders'
 
-export function usePurchaseOrders() {
+/** `onConverted` — see usePurchaseRequests: replaces the navigation after a
+ * PR is converted into a PO. */
+export function usePurchaseOrders({ onConverted }: { onConverted?: () => void } = {}) {
   const queryClient = useQueryClient()
   const router = useRouter()
   const pathname = usePathname()
@@ -116,7 +119,8 @@ export function usePurchaseOrders() {
         // Same reasoning as the auto-convert-on-approve path in
         // usePurchaseRequests.ts — the source PR just left the default
         // (non-'converted') list, follow the new PO to where it landed.
-        router.replace('/inventory/purchase-orders?tab=orders')
+        if (onConverted) onConverted()
+        else router.replace(procurementHref(pathname, 'orders'))
       } else {
         showToast({
           title: 'Failed to create purchase order',

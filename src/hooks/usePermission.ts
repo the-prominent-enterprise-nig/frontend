@@ -2,6 +2,8 @@ interface SessionUser {
   id: string
   roles: string[]
   permissions: string[]
+  /** The roles' own rows, without what their features bring (Scenario 74). */
+  rolePermissions?: string[]
   primaryRole?: string
   moduleAccess?: string[]
 }
@@ -71,6 +73,18 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
  */
 export function hasExactPermission(session: SessionUser | null, permission: string): boolean {
   return !!session?.permissions.includes(permission)
+}
+
+/** Navigation only (sidebar): the roles' own rows, without what their
+ * features bring, so a pick list never adds a sidebar item (Scenario 74). */
+export function hasNavPermission(session: SessionUser | null, permission: string): boolean {
+  if (!session) return false
+  if (session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner')) {
+    return true
+  }
+  return (session.rolePermissions ?? session.permissions).some((p) =>
+    matchesPermission(p, permission)
+  )
 }
 
 export function hasPermission(session: SessionUser | null, permission: string): boolean {

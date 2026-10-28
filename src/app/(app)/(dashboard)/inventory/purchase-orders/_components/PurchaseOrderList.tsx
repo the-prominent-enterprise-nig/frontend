@@ -34,7 +34,7 @@ import {
   type PurchaseOrderSummary,
 } from '@/src/schema/inventory/purchase-orders'
 import { getSuppliers } from '../_actions/get-suppliers'
-import { getBranches } from '../../price-lists/_actions/get-branches'
+import { getBranches } from '@/src/app/(app)/(dashboard)/pos/catalog/price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
 import { downloadReactNodeAsPdf } from '@/src/libs/print/htmlToPdf'
@@ -53,6 +53,15 @@ import {
   type PoStatus,
 } from './procurementTokens'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import { procurementHref } from '../_lib/procurementHref'
+import {
+  OpenRequestsTable,
+  RequestCards,
+  RequestGridRows,
+  useOpenPurchaseRequests,
+} from './OpenPurchaseRequests'
+import { can, type SessionUser } from '@/src/libs/guards/permission'
+import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // PLEX/MONO and the status-badge/formatting helpers live in procurementTokens
@@ -256,6 +265,7 @@ export function PurchaseOrderList({
   canViewCost,
   canViewApBill,
   currentUserBranchId,
+  session,
 }: {
   /** Gates the "+ New Purchase" button — creating always drafts a Purchase
    * Request (pending approval) now, so this reflects PR_CREATE, not
@@ -277,6 +287,10 @@ export function PurchaseOrderList({
    * field), this just flows through to the backend's own server-side
    * force for a branch-scoped creator. */
   currentUserBranchId?: string | null
+  /** When given (and the user can read purchase requests), a "Requests"
+   * filter lists open requests — drafts and submitted — and manages them
+   * here instead of on a separate Purchase Requests tab. */
+  session?: SessionUser
 }): React.ReactElement {
   const router = useRouter()
   const pathname = usePathname()
@@ -366,6 +380,16 @@ export function PurchaseOrderList({
   }
 
   const [overdueOnly, setOverdueOnly] = useState(false)
+  const requestsSession = session && can(session, PROCUREMENT_PERMISSIONS.PR_READ) ? session : null
+  /** The "Requests" pill — swaps the orders table for open purchase requests. */
+  const [showRequests, setShowRequests] = useState(false)
+  // A request submitted (or converted) from the Requests filter is a PO now:
+  // show it in All, where its next steps are, rather than the Requests list
+  // it just left. A URL change can't do it — this view is local state.
+  const requests = useOpenPurchaseRequests(requestsSession, () => {
+    setShowRequests(false)
+    setStatusFilter(undefined)
+  })
   const [searchFocus, setSearchFocus] = useState(false)
   /** Guards the row's own Download button against a second click while its
    * document is still being fetched. */
@@ -570,8 +594,16 @@ export function PurchaseOrderList({
     ]
   }
 
-  const showTable = !isLoading && rows.length > 0
-  const isNoResults = !isLoading && rows.length === 0
+  const showOrders = !showRequests
+  // Open requests ride at the top of "All" too — but only unfiltered and on
+  // page 1, since search, supplier, location and paging only apply to orders.
+  const inlineRequests =
+    showOrders && statusFilter === undefined && activeFilterCount === 0 && page === 1
+      ? requests.items
+      : []
+  const hasRows = rows.length > 0 || inlineRequests.length > 0
+  const showTable = showOrders && !isLoading && hasRows
+  const isNoResults = showOrders && !isLoading && !hasRows
 
   return (
     <div className={`${PLEX} min-h-screen bg-zinc-50 text-[#17171c] antialiased`}>
@@ -684,13 +716,16 @@ export function PurchaseOrderList({
 
           <div className="flex flex-wrap items-center gap-[7px] border-t border-[#f1f1f4] pt-3">
             {STATUS_FILTERS.map((f) => {
-              const on = statusFilter === f.value
+              const on = showOrders && statusFilter === f.value
               return (
                 <button
                   key={f.label}
                   type="button"
                   aria-pressed={on}
-                  onClick={() => setStatusFilter(f.value)}
+                  onClick={() => {
+                    setShowRequests(false)
+                    setStatusFilter(f.value)
+                  }}
                   className={`rounded-[20px] border px-3 py-[6px] text-[12.5px] transition-colors ${
                     on
                       ? 'border-[#5b21b6] bg-[#5b21b6] font-medium text-white'
@@ -701,6 +736,30 @@ export function PurchaseOrderList({
                 </button>
               )
             })}
+
+            {requestsSession && (
+              <button
+                type="button"
+                aria-pressed={showRequests}
+                onClick={() => setShowRequests(true)}
+                className={`flex items-center gap-1.5 rounded-[20px] border px-3 py-[6px] text-[12.5px] transition-colors ${
+                  showRequests
+                    ? 'border-[#5b21b6] bg-[#5b21b6] font-medium text-white'
+                    : 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490] hover:bg-[#e9dff9]'
+                }`}
+              >
+                Requests
+                {requests.total > 0 && (
+                  <span
+                    className={`${MONO} rounded-full px-1.5 text-[11px] ${
+                      showRequests ? 'bg-white/20' : 'bg-[#5b21b6] text-white'
+                    }`}
+                  >
+                    {requests.total}
+                  </span>
+                )}
+              </button>
+            )}
 
             {filtersActive && (
               <button
@@ -716,7 +775,7 @@ export function PurchaseOrderList({
         </div>
 
         {/* ── Action-required strip ────────────────────────────────────────── */}
-        {!isLoading && overdueOnPage > 0 && (
+        {showOrders && !isLoading && overdueOnPage > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-[14px] rounded-[9px] border border-[#f7dfc0] bg-[#fdf3e7] px-[14px] py-[10px]">
             <span className="flex items-center gap-[9px] text-[12.5px] text-[#8a4b06]">
               <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#b25e09]" />
@@ -740,6 +799,8 @@ export function PurchaseOrderList({
 
         {/* ── Table card ───────────────────────────────────────────────────── */}
         <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
+          {showRequests && <OpenRequestsTable state={requests} />}
+
           {/* Wide: table. The design's layout is a CSS grid rather than a
               <table>, so the table semantics the markup used to carry are
               declared explicitly — assistive tech and the e2e specs both
@@ -764,6 +825,8 @@ export function PurchaseOrderList({
                   Actions
                 </span>
               </div>
+
+              <RequestGridRows items={inlineRequests} actions={requests.actions} gridClass={GRID} />
 
               {rows.map((po) => {
                 const late = daysLate(po)
@@ -820,7 +883,7 @@ export function PurchaseOrderList({
                             onClick={(e) => {
                               e.stopPropagation()
                               router.push(
-                                `/inventory/purchase-orders?tab=requests&pr=${po.fromPr?.id}`
+                                procurementHref(pathname, 'requests', { pr: po.fromPr?.id ?? '' })
                               )
                             }}
                             title={`Open ${po.fromPr.code}`}
@@ -849,8 +912,12 @@ export function PurchaseOrderList({
 
               <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
                 <span className="text-[11.5px] text-[#8b8b9b]">
-                  Showing {(page - 1) * pagination.limit + 1}–
-                  {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} orders
+                  {/* Requests alone can fill the table, so 0 orders is possible. */}
+                  {pagination.total === 0
+                    ? 'No orders yet'
+                    : `Showing ${(page - 1) * pagination.limit + 1}–${Math.min(page * pagination.limit, pagination.total)} of ${pagination.total} orders`}
+                  {inlineRequests.length > 0 &&
+                    ` · ${inlineRequests.length} open ${inlineRequests.length === 1 ? 'request' : 'requests'}`}
                 </span>
                 <div className="flex items-center gap-[10px]">
                   <span className="text-[11.5px] text-[#8b8b9b]">Rows</span>
@@ -889,6 +956,7 @@ export function PurchaseOrderList({
           {/* Narrow: cards */}
           {showTable && (
             <div className="flex flex-col gap-[10px] p-3 min-[1080px]:hidden">
+              <RequestCards items={inlineRequests} actions={requests.actions} />
               {rows.map((po) => {
                 const late = daysLate(po)
                 const { received, ordered, pct } = receiptTotals(po.lines)
@@ -964,7 +1032,7 @@ export function PurchaseOrderList({
                             onClick={(e) => {
                               e.stopPropagation()
                               router.push(
-                                `/inventory/purchase-orders?tab=requests&pr=${po.fromPr?.id}`
+                                procurementHref(pathname, 'requests', { pr: po.fromPr?.id ?? '' })
                               )
                             }}
                             className={`${MONO} truncate text-left text-[11.5px] text-[#5b21b6] underline underline-offset-2`}
@@ -993,7 +1061,7 @@ export function PurchaseOrderList({
           )}
 
           {/* Loading */}
-          {isLoading && (
+          {showOrders && isLoading && (
             <div>
               <div
                 className={`${GRID} ${STOCK_TABLE_HEAD} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] min-[1080px]:grid`}
@@ -1079,10 +1147,10 @@ export function PurchaseOrderList({
         onCreate={async (data) => {
           await createPR(data)
           // Creating here always drafts a Purchase Request, not a Purchase
-          // Order — this list never shows it, so without this it looks
-          // like the submission vanished. Switch to the tab that actually
-          // has it.
-          router.replace('/inventory/purchase-orders?tab=requests')
+          // Order — show it under the Requests filter, or switch to the
+          // separate Requests tab where this list has no such filter.
+          if (requestsSession) setShowRequests(true)
+          else router.replace(procurementHref(pathname, 'requests'))
         }}
         isCreating={isCreating}
         po={editingPo}
@@ -1201,6 +1269,8 @@ export function PurchaseOrderList({
         }}
         onDownload={(po) => void downloadPdf(po)}
       />
+
+      {requests.actions.modals}
 
       <PoReceiptsPanel po={receiptsTarget} onClose={() => setReceiptsTarget(null)} />
       <PoViewPanel po={poViewTarget} onClose={() => setPoViewTarget(null)} />

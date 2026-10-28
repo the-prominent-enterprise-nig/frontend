@@ -143,6 +143,7 @@ const SerialReceiptSchema = z
         id: z.string(),
         code: z.string(),
         receivedAt: z.string(),
+        reason: z.enum(['repair_return', 'repossession', 'other']).nullable().optional(),
         stockTransferId: z.string().nullable().optional(),
         // Scenario 50 Gap 6 — the ST number itself, not just the id. Real
         // Prisma relation on the backend, so this is one nested select away.
@@ -164,6 +165,19 @@ export const SerialNumberSummarySchema = z.object({
   status: SerialStatusSchema,
   soldToCustomerId: z.string().optional().nullable(),
   saleDate: z.string().optional().nullable(),
+  // NIG #10 — who bought it, and the sale it is out on (SI number, else the
+  // POS transaction), for a sold unit's destination.
+  soldToCustomerName: z.string().optional().nullable(),
+  sale: z
+    .object({ transactionId: z.string(), reference: z.string(), date: z.string() })
+    .nullable()
+    .optional(),
+  // NIG #10 — on a repair/return or repossession receipt, who the unit came
+  // back from and the invoice it was sold on: the unit's origin.
+  returnOrigin: z
+    .object({ customerName: z.string().nullable(), reference: z.string().nullable() })
+    .nullable()
+    .optional(),
   // Scenario 08 (Caravan) Part 1 — set when this unit is physically at a
   // host branch for an event while ownership stays with currentWarehouse's
   // own branch.
@@ -245,6 +259,15 @@ export function caravanGroupKey(serial: {
   return `${serial.item?.id ?? ''}|${serial.currentWarehouse?.id ?? ''}`
 }
 
+/** Which caravan a rollup row belongs to — its caravan, or failing that its
+ * warehouse. The Caravan tab lists and picks caravans by this key. */
+export function caravanKeyOf(group: {
+  caravan?: { id: string } | null
+  warehouseId?: string | null
+}): string {
+  return group.caravan?.id ?? group.warehouseId ?? ''
+}
+
 export const CaravanItemGroupListResponseSchema = z
   .object({
     data: z.array(CaravanItemGroupSchema),
@@ -286,6 +309,8 @@ export const SerialMovementEntrySchema = z.object({
   id: z.string(),
   type: SerialMovementTypeSchema,
   occurredAt: z.string(),
+  // A business date with no time of day (transfers, adjustments, memos).
+  dateOnly: z.boolean().optional(),
   label: z.string(),
   description: z.string(),
   referenceCode: z.string().nullable(),

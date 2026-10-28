@@ -183,7 +183,7 @@ export default function StockTab({
     // The drawer lives in the shell store, not the route, so navigating alone
     // would leave it open on top of the Create Transfer modal.
     clearPanels()
-    router.push(`/inventory/transfers?${params.toString()}`)
+    router.push(`/inventory/stock-transaction?tab=transfers&${params.toString()}`)
   }
 
   const onHandTotal = totalOnHand ?? balances.reduce((s, b) => s + Number(b.onHandQty ?? 0), 0)

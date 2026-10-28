@@ -38,7 +38,7 @@ export default function BankAccountsList() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="w-full p-4 md:p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-2xl font-bold">Bank and Cash Accounts</h2>

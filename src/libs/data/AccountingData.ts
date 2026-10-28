@@ -33,9 +33,10 @@ export interface Account {
   isSpecialAccountControl?: boolean
   /** Which extra fields an expense line posting here carries: FUEL (plate,
    * litres), VEHICLE_REPAIR (plate, service type, remarks) or
-   * AGENT_COMMISSION (the sale being released). Null for every other account.
+   * AGENT_COMMISSION (the sale being released) or SMI (the sale the SMI is
+   * paid on). Null for every other account.
    * Set in the database — see ExpenseKind on the API. */
-  expenseKind?: 'FUEL' | 'VEHICLE_REPAIR' | 'AGENT_COMMISSION' | null
+  expenseKind?: 'FUEL' | 'VEHICLE_REPAIR' | 'AGENT_COMMISSION' | 'SMI' | null
   /** Balance-sheet/income-statement classification (REVENUE, ASSET,
    * ACCOUNTS_RECEIVABLE, …) — finer-grained than `type`. Drives whether an
    * expense line posting here gets a Sales Invoice field to pick. */
@@ -135,6 +136,8 @@ export interface JournalEntry {
   /** Scenario 71 — for a POS sale's entry, the sale's price override / typed terms /
    * waiver with its reason and note (only on the single-entry GET). */
   posException?: PosExceptionSummary | null
+  /** The POS deposit a bank entry was posted for (only on the single-entry GET). */
+  posDepositId?: string | null
   createdBy?: string | null
   transactions: Transaction[]
   totalDebit?: number
@@ -166,6 +169,16 @@ export interface PaginatedResponse<T> {
 
 export function getAccounts(params?: ListParams) {
   return api.get<PaginatedResponse<Account>>('/accounts', params, {
+    tags: ['accounting-accounts'],
+  })
+}
+
+/** The chart of accounts for a picker: the accounts alone, no balances or
+ * transactions. Every screen outside the Chart of Accounts picks from this:
+ * GET /accounts carries every posted transaction, and most roles that pick
+ * an account may not read it. */
+export function getAccountOptions(params?: { search?: string }) {
+  return api.get<Account[]>('/accounts/options', params, {
     tags: ['accounting-accounts'],
   })
 }

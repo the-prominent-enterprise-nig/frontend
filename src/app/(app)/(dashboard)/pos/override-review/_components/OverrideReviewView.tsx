@@ -17,7 +17,7 @@ import {
   signOffOverrideDay,
 } from '../../_actions/pos-actions'
 import OverrideEntryRow from './OverrideEntryRow'
-import { formatDay, formatTime, peso, pct } from './override-review-format'
+import { ENTRY_GRID, formatDay, formatTime, peso, pct } from './override-review-format'
 
 type Tab = 'all' | 'flagged' | 'pending'
 
@@ -50,8 +50,8 @@ function Kpi({
     // Granted in a narrow cell) pushes its own figure down without leaving the
     // others out of line.
     <div className="flex flex-col justify-between gap-1" data-testid={testId}>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
-      <p className={`mt-0.5 text-xl font-bold tabular-nums ${tone}`}>{value}</p>
+      <p className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-700">{label}</p>
+      <p className={`text-base font-bold tabular-nums ${tone}`}>{value}</p>
     </div>
   )
 }
@@ -191,12 +191,12 @@ export default function OverrideReviewView({
     !!scopedBranchId && !scopedSignOff && liveCount > 0 && livePending === 0 && !signOff.isPending
 
   return (
-    <div className="space-y-6 px-6 py-6" data-testid="override-review">
+    <div className="space-y-4 px-6 py-5" data-testid="override-review">
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-prominent-purple-900">Override Review</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-lg font-bold text-prominent-purple-900">Override Review</h1>
+          <p className="text-[13px] text-gray-700">
             Price overrides, typed installment terms and waivers taken at the counter
             {scopedBranchName ? ` — ${scopedBranchName}` : ' — all branches'}. Decide each one, then
             sign the day off.
@@ -218,7 +218,7 @@ export default function OverrideReviewView({
         <>
           {/* KPI strip */}
           <div
-            className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-gray-200 py-4 sm:grid-cols-4 lg:grid-cols-7"
+            className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-gray-200 py-3 sm:grid-cols-4 lg:grid-cols-7"
             data-testid="override-kpis"
           >
             <Kpi testId="kpi-entries" label="Entries" value={String(day.kpis.entries)} />
@@ -247,7 +247,7 @@ export default function OverrideReviewView({
           {/* Other days still waiting — the sidebar badge counts them too */}
           {day.pendingDays.length > 0 && (
             <p
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-orange-700"
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-orange-700"
               data-testid="pending-days"
             >
               <span className="font-semibold">Also waiting for a decision:</span>
@@ -257,7 +257,7 @@ export default function OverrideReviewView({
                   type="button"
                   data-testid="pending-day"
                   onClick={() => setDate(d.date)}
-                  className="rounded-md bg-orange-50 px-2 py-0.5 font-medium text-orange-700 hover:bg-orange-100"
+                  className="rounded bg-orange-50 px-1.5 py-0.5 font-medium text-orange-700 hover:bg-orange-100"
                 >
                   {formatDay(`${d.date}T12:00:00`)} · {d.count}
                 </button>
@@ -271,11 +271,11 @@ export default function OverrideReviewView({
               {day.signOffs.map((s) => (
                 <p
                   key={s.branchId}
-                  className="flex flex-wrap items-center gap-x-2 text-sm text-green-700"
+                  className="flex flex-wrap items-center gap-x-2 text-xs text-green-700"
                 >
                   <Lock size={14} />
                   <span className="font-semibold">{s.branchName ?? 'Branch'} signed off</span>
-                  <span className="text-gray-600">
+                  <span className="text-gray-800">
                     by {s.signedByName ?? 'a reviewer'} · {formatDay(s.signedAt)}{' '}
                     {formatTime(s.signedAt)} · {s.approvedCount} approved, {s.rejectedCount}{' '}
                     rejected · Total discount granted {peso(s.totalDifference)}
@@ -296,20 +296,20 @@ export default function OverrideReviewView({
                   aria-selected={tab === t.value}
                   data-testid={`tab-${t.value}`}
                   onClick={() => setTab(t.value)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors ${
                     tab === t.value
                       ? 'bg-white text-prominent-purple-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
+                      : 'text-gray-700 hover:text-gray-900'
                   }`}
                 >
-                  {t.label} <span className="text-xs text-gray-400">{counts[t.value]}</span>
+                  {t.label} <span className="text-xs text-gray-600">{counts[t.value]}</span>
                 </button>
               ))}
             </div>
 
             <div className="flex items-center gap-3">
               {!scopedBranchId && liveCount > 0 && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-700">
                   Pick a branch in the switcher to approve all or sign off — a day is signed off one
                   branch at a time.
                 </p>
@@ -319,7 +319,7 @@ export default function OverrideReviewView({
                 data-testid="approve-all"
                 disabled={livePending === 0 || approveAll.isPending || !!scopedSignOff}
                 onClick={() => approveAll.mutate()}
-                className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {approveAll.isPending ? (
                   <Loader2 size={14} className="animate-spin" />
@@ -333,7 +333,7 @@ export default function OverrideReviewView({
                 data-testid="sign-off"
                 disabled={!canSignOff}
                 onClick={() => signOff.mutate()}
-                className="flex h-9 items-center gap-1.5 rounded-lg bg-prominent-purple-900 px-3 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-prominent-purple-900 px-3 text-[13px] font-semibold text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {signOff.isPending ? (
                   <Loader2 size={14} className="animate-spin" />
@@ -349,7 +349,7 @@ export default function OverrideReviewView({
 
           {/* Entries */}
           {visible.length === 0 ? (
-            <p className="py-16 text-center text-sm text-gray-500" data-testid="override-empty">
+            <p className="py-16 text-center text-sm text-gray-700" data-testid="override-empty">
               {entries.length === 0
                 ? 'No exceptions were taken on this day.'
                 : tab === 'pending'
@@ -357,23 +357,36 @@ export default function OverrideReviewView({
                   : 'No flagged entries.'}
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-              <table className="w-full min-w-[980px] border-collapse text-left">
-                <thead className="bg-gray-50 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                  <tr>
-                    <th className="px-2.5 py-2.5">Time</th>
-                    <th className="px-2.5 py-2.5">Sale</th>
-                    <th className="px-2.5 py-2.5">Item</th>
-                    <th className="px-2.5 py-2.5">Seller</th>
-                    <th className="px-2.5 py-2.5">Plan</th>
-                    <th className="px-2.5 py-2.5 text-right">List</th>
-                    <th className="px-2.5 py-2.5 text-right">Override</th>
-                    <th className="px-2.5 py-2.5 text-right">Discount</th>
-                    <th className="px-2.5 py-2.5">Reason</th>
-                    <th className="px-2.5 py-2.5">Flags</th>
-                    <th className="sticky right-0 bg-gray-50 px-2.5 py-2.5 text-right">Decision</th>
-                  </tr>
-                </thead>
+            <div
+              className="@container overflow-x-auto rounded-xl border border-gray-200 bg-white"
+              data-testid="override-list"
+            >
+              <div className="min-w-[1120px]" role="table">
+                <div
+                  role="row"
+                  className={`${ENTRY_GRID} border-b border-l-[3px] border-gray-200 border-l-transparent bg-gray-50 py-2 text-[10.5px] font-semibold uppercase tracking-wider text-gray-700`}
+                >
+                  {/* sr-only is absolutely positioned and would drop out of the grid,
+                      shifting every label a column left — keep a real, empty cell. */}
+                  <span role="columnheader">
+                    <span className="sr-only">Details</span>
+                  </span>
+                  <span role="columnheader">Sale</span>
+                  <span role="columnheader">Branch</span>
+                  <span role="columnheader">Customer</span>
+                  <span role="columnheader">Item</span>
+                  <span role="columnheader" className="text-right">
+                    Price
+                  </span>
+                  <span role="columnheader" className="text-right">
+                    Discount
+                  </span>
+                  <span role="columnheader">Payment</span>
+                  <span role="columnheader">Flags</span>
+                  <span role="columnheader" className="text-right">
+                    Decision
+                  </span>
+                </div>
                 {visible.map((entry) => {
                   const sale = onSale.get(entry.transactionId)
                   return (
@@ -382,14 +395,13 @@ export default function OverrideReviewView({
                       entry={entry}
                       itemNo={(sale?.order.indexOf(entry.id) ?? 0) + 1}
                       itemsOnSale={sale?.order.length ?? 1}
-                      showBranch={day.branchId === null}
                       thresholdPct={day.flagThresholdPct}
                       busy={decide.isPending && decide.variables?.id === entry.id}
                       onDecide={(status, note) => decide.mutate({ id: entry.id, status, note })}
                     />
                   )
                 })}
-              </table>
+              </div>
             </div>
           )}
         </>

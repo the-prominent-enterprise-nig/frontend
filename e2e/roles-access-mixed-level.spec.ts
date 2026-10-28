@@ -1,147 +1,84 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady, clickStable } from './utils'
 
-// Scenario 22 Part 10 — the "Module Access" badges and the module-toggle
-// buttons in "Manage Role Access" both used to OR every permission's
-// action across an ENTIRE module together, so a single unrelated create
-// permission on a minor resource flipped the whole module's badge to
-// "Manage / Edit" — even when every other resource in it stayed strictly
-// read-only. Branch Manager is a live example: it holds
-// accounting:customer-advances:create (an unrelated POS-reservation-
-// deposit permission) alongside otherwise read-only accounting access
-// (journalEntry, ar-invoices, budget, supplier-debit-memos, etc. are all
-// :read only). The fix groups by resource first, so this now correctly
-// shows as "Mixed Access" instead of falsely claiming uniform manage/edit
-// access across the whole module.
-test('Branch Manager shows Mixed Access for Accounting, not a false Manage / Edit', async ({
-  page,
-}) => {
+// Scenario 22 Part 10, updated for Scenario 74's module map (Modules and
+// Sharing Plan). Roles & Access reads each module as "Module: access level":
+// All access, All access * (everything but protected steps), Partial (k of n
+// features) or nothing. The old per-resource grading ("Mixed", "Manage /
+// Edit") over- or under-stated access: one unrelated create permission read
+// as Manage / Edit, and a leftover row next to a module wildcard read as
+// Mixed. Procurement is no longer its own module (folded into Inventory).
+
+async function openManageAccess(page: import('@playwright/test').Page, role: RegExp) {
+  await gotoReady(page, '/settings/roles')
+  await page.getByRole('row', { name: role }).getByRole('button').last().click()
+  await clickStable(
+    page.getByRole('link', { name: 'Manage Access' }),
+    page.getByRole('heading', { name: 'Module access' })
+  )
+}
+
+// Branch Manager holds accounting:customer-advances:create next to otherwise
+// read-only accounting access — genuinely partial, and named as such.
+test('Branch Manager reads Accounting as Partial, not Manage / Edit or Mixed', async ({ page }) => {
   await gotoReady(page, '/settings/roles')
 
-  const branchManagerRow = page.getByRole('row', { name: /Branch Manager/ })
+  const branchManagerRow = page.getByRole('row', { name: /^Branch Manager/ })
   await expect(branchManagerRow).toBeVisible()
-
-  // The table badge should read "Accounting: Mixed Access", not
-  // "Accounting: Manage / Edit".
   await expect(
-    branchManagerRow.getByText('Accounting: Mixed Access', { exact: true })
+    branchManagerRow.getByText(/^Accounting: Partial \(\d+ of \d+ features\)$/)
   ).toBeVisible()
+  await expect(branchManagerRow.getByText(/: (Mixed|Edit)$/)).toHaveCount(0)
+  // Every Inventory feature is on, with some steps inside them off: said
+  // outright, not "Partial (13 of 13)".
   await expect(
-    branchManagerRow.getByText('Accounting: Manage / Edit', { exact: true })
-  ).toHaveCount(0)
-
-  // Open "Manage Role Access" and confirm the Accounting row itself shows
-  // the mixed-state explanation and doesn't falsely highlight any single
-  // level button as the current state.
-  const modalHeading = page.getByRole('heading', { name: 'Manage Role Access' })
-  await clickStable(branchManagerRow.getByRole('button', { name: /permissions/ }), modalHeading)
-
-  await expect(page.getByText('Different resources in this module').first()).toBeVisible()
-
-  const accountingRow = page.locator('div.rounded-xl', {
-    has: page.getByRole('heading', { name: 'Accounting', exact: true }),
-  })
-  for (const label of ['No Access', 'View Only', 'Manage / Edit', 'Full Access']) {
-    const button = accountingRow.getByRole('button', { name: label, exact: true })
-    await expect(button).toBeVisible()
-    // None of the 4 settable levels should render as the active/selected
-    // button when the true state is mixed — that's the whole point of the
-    // fix (an admin should never see a level look "already confirmed" when
-    // it doesn't uniformly apply).
-    await expect(button).not.toHaveClass(/bg-prominent-purple-700/)
-  }
+    branchManagerRow.getByText(/^Inventory: Partial \((\d+) of \1 features, some steps off\)$/)
+  ).toBeVisible()
 })
 
-// Coverage half of Part 10 — the toggle previously only covered 4 of 8
-// permission modules (accounting/inventory/pos/crm); procurement, admin,
-// sales, and files had no toggle row at all, only reachable via the
-// Advanced permissions search. Branch Manager holds the full
-// procurement:*:* wildcard (Scenario 22 Part 11), so its Procurement row
-// is a real, non-trivial case — not just an empty "No Access" row.
-test('Procurement module now has its own toggle row, not just Accounting/Inventory/POS/CRM', async ({
-  page,
-}) => {
-  await gotoReady(page, '/settings/roles')
+// A role holding a single module-wildcard row (Branch Manager's pos:*:*)
+// grants every capability in that module; the caption counts coverage, not
+// raw rows, and the Full Access button reads as the current level.
+test('A module wildcard grant shows "N of N" coverage and Full Access', async ({ page }) => {
+  await openManageAccess(page, /^Branch Manager/)
 
-  const branchManagerRow = page.getByRole('row', { name: /Branch Manager/ })
-  await expect(branchManagerRow).toBeVisible()
-  await expect(branchManagerRow.getByText(/Procurement:/)).toBeVisible()
-
-  const modalHeading = page.getByRole('heading', { name: 'Manage Role Access' })
-  await clickStable(branchManagerRow.getByRole('button', { name: /permissions/ }), modalHeading)
-
-  const procurementRow = page.locator('div.rounded-xl', {
-    has: page.getByRole('heading', { name: 'Procurement', exact: true }),
+  const posRow = page.locator('div.relative.px-6', {
+    has: page.getByRole('button', { name: /^Point of Sale/ }),
   })
-  await expect(procurementRow).toBeVisible()
-  await expect(procurementRow.getByText(/\d+ of \d+ capabilities enabled/)).toBeVisible()
-})
-
-// A role holding a single module-wildcard permission row (e.g.
-// procurement:*:*) genuinely grants every capability in that module, but
-// the caption used to count raw RolePermission rows, not actual coverage
-// — showing something like "1 of 23 capabilities enabled" right next to a
-// highlighted "Full Access" button, a flatly contradictory pair. Branch
-// Manager's real grant (Part 11) makes this concretely checkable: full
-// wildcard modules should show N of N, not 1 of N.
-test('A module wildcard grant shows accurate "N of N" coverage, not a misleading raw row count', async ({
-  page,
-}) => {
-  await gotoReady(page, '/settings/roles')
-
-  const branchManagerRow = page.getByRole('row', { name: /Branch Manager/ })
-  const modalHeading = page.getByRole('heading', { name: 'Manage Role Access' })
-  await clickStable(branchManagerRow.getByRole('button', { name: /permissions/ }), modalHeading)
-
-  const procurementRow = page.locator('div.rounded-xl', {
-    has: page.getByRole('heading', { name: 'Procurement', exact: true }),
-  })
-  const captionText = await procurementRow
-    .getByText(/\d+ of \d+ capabilities enabled/)
-    .textContent()
-  const match = captionText?.match(/(\d+) of (\d+) capabilities enabled/)
+  await expect(posRow.locator('[data-module-summary="pos"]')).toHaveText('All access')
+  const captionText = await posRow.getByText(/\d+ of \d+ capabilities/).textContent()
+  const match = captionText?.match(/(\d+) of (\d+) capabilities/)
   expect(match).not.toBeNull()
   const [, selected, total] = match!
   expect(selected).toBe(total)
-
-  const fullAccessButton = procurementRow.getByRole('button', { name: 'Full Access', exact: true })
-  await expect(fullAccessButton).toHaveClass(/bg-prominent-purple-700/)
+  await expect(posRow.getByRole('button', { name: 'Full Access', exact: true })).toHaveClass(
+    /bg-prominent-purple-700/
+  )
 })
 
-// Business Owner's grant (`permissions.map((p) => p.id)` in seed.ts) is
-// only recomputed when the seed script actually runs — a Permission row
-// created directly against the live DB (as this scenario's Parts 7 and 11
-// both did, for items:create/update-adjacent grants and the accounting
-// resource-wildcards/files:*:* rows) doesn't automatically backfill onto
-// Business Owner. That gap showed up here first: the table badge read
-// "Accounting: Mixed Access" for a role that's supposed to hold literally
-// every permission. Fixed by backfilling the live DB; this locks in every
-// module reading Full Access, not just Accounting.
-test('Business Owner shows Full Access for every module, never Mixed or partial', async ({
-  page,
-}) => {
+// Business Owner holds every module wildcard; every module reads All access.
+test('Business Owner reads All access for every module, never partial', async ({ page }) => {
   await gotoReady(page, '/settings/roles')
 
-  // Business Owner's permissions are fixed and un-editable (RolesSection.tsx
-  // renders a plain badge, not a clickable "Manage Role Access" button, for
-  // isFounderRole) — so this checks the row-level module badges directly,
-  // the same ones visible in the table without opening any modal.
-  const businessOwnerRow = page.getByRole('row', { name: /Business Owner/ })
+  const businessOwnerRow = page.getByRole('row', { name: /^Business Owner/ })
   await expect(businessOwnerRow).toBeVisible()
-  await expect(businessOwnerRow.getByText(/Mixed Access/)).toHaveCount(0)
-
-  for (const moduleLabel of [
-    'Accounting',
-    'Inventory',
-    'Point of Sale',
-    'CRM',
-    'Procurement',
-    'Admin',
-    'Sales',
-    'Files',
-  ]) {
+  await expect(businessOwnerRow.getByText(/Partial|Mixed/)).toHaveCount(0)
+  for (const moduleLabel of ['Accounting', 'Inventory', 'Point of Sale', 'CRM']) {
     await expect(
-      businessOwnerRow.getByText(`${moduleLabel}: Full Access`, { exact: true })
+      businessOwnerRow.getByText(`${moduleLabel}: All access`, { exact: true })
     ).toBeVisible()
   }
+})
+
+// Scenario 74 review: the Accountant holds accounting:*:* plus rows older
+// backfills added next to it (inventory-debit-memos, restricted VAT). Graded
+// one by one, those made the whole module read "Mixed". Holding the module
+// wildcard is the whole module, so it reads All access.
+test('Accountant reads All access for Accounting, not Mixed', async ({ page }) => {
+  await gotoReady(page, '/settings/roles')
+
+  const accountantRow = page.getByRole('row', { name: /^Accountant/ })
+  await expect(accountantRow).toBeVisible()
+  await expect(accountantRow.getByText('Accounting: All access', { exact: true })).toBeVisible()
+  await expect(accountantRow.getByText(/^Accounting: (Mixed|Partial)/)).toHaveCount(0)
 })

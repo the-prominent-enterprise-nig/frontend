@@ -110,7 +110,7 @@ async function createApprovedApplicationCustomer(
 }
 
 test.describe('POS Checkout — installment down payment floor', () => {
-  test('auto-fills the down payment at 10% on term selection, allows any amount above 0, and blocks submit at 0', async ({
+  test('auto-fills the down payment at 10% on term selection and allows any amount, even 0', async ({
     page,
   }) => {
     const { applicantName, applicationNumber, branchId } = await createApprovedApplicationCustomer(
@@ -163,21 +163,13 @@ test.describe('POS Checkout — installment down payment floor', () => {
     await expect(downPaymentInput).not.toHaveValue('')
     await expect(page.getByText('Nothing to collect at checkout for this cart.')).toHaveCount(0)
 
-    // There is no percentage floor (2026-10-15) — any amount above 0 is fine —
-    // but 0 itself is refused. The submit button is disabled purely on an
-    // unmet "Underpaid" balance (a separate gate), so a payment has to be
-    // added too, just to reach the down payment validation itself.
+    // There is no percentage floor (2026-10-15), and since 2026-10-28 an
+    // in-house plan may take no down payment at all: 0 is accepted, and with
+    // nothing to collect at the register the till says so instead of asking
+    // for a payment.
     await fillStable(downPaymentInput, '0')
-    await clickStable(
-      page.getByRole('button', { name: 'Add payment method' }),
-      page.getByPlaceholder('0.00')
-    )
-    await fillStable(page.getByPlaceholder('0.00'), '1')
-
-    await clickStable(
-      page.getByRole('button', { name: /Create Installment Plan/ }),
-      page.getByText(/needs a down payment — it can be small, but not 0/i)
-    )
+    await expect(page.getByTestId('down-payment-error')).toHaveCount(0)
+    await expect(page.getByText('Nothing to collect for the items at checkout')).toBeVisible()
 
     // Still on checkout — the sale was never submitted.
     await expect(page).toHaveURL(/\/pos\/checkout/)

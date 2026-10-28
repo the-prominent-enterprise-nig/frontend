@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, Wallet, Calculator, FileClock } from 'lucide-react'
+import { Plus, Search, Wallet, FileClock, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
-import PriceCheckModal from '@/src/components/crm/PriceCheckModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import TablePagination from '@/src/components/common/TablePagination'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
@@ -78,6 +78,19 @@ const STATUS_OPTIONS = [
   { value: 'written_off', label: 'Written off' },
 ]
 
+// Scenario 79 — client: "max 20 per page" (the API caps it there too).
+const PAGE_SIZE = 20
+
+/** '' = newest accounts first (the API's default); otherwise by the Due Date column. */
+type DueSort = '' | 'asc' | 'desc'
+
+const SORT_OPTIONS = [
+  // Worded for collections (Kian, 2026-10-28): ascending puts the oldest unpaid
+  // due — the most overdue account — on top.
+  { value: 'asc', label: 'Past Due' },
+  { value: 'desc', label: 'Upcoming Due' },
+]
+
 export default function InstallmentAccountsList({ canCreate }: { canCreate: boolean }) {
   const router = useRouter()
   const [accounts, setAccounts] = useState<InstallmentAccount[]>([])
@@ -92,9 +105,11 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
   const [collectorFilter, setCollectorFilter] = useState('')
   const [dueFrom, setDueFrom] = useState('')
   const [dueTo, setDueTo] = useState('')
+  const [dueSort, setDueSort] = useState<DueSort>('')
+  const [page, setPage] = useState(1)
+  const [meta, setMeta] = useState({ total: 0, lastPage: 1 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [priceCheckOpen, setPriceCheckOpen] = useState(false)
 
   useEffect(() => {
     getBranches().then((res) => {
@@ -118,18 +133,46 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
         collectorId: collectorFilter || undefined,
         dueFrom: dueFrom || undefined,
         dueTo: dueTo || undefined,
-        limit: 50,
+        ...(dueSort && { sortBy: 'dueDate' as const, sortOrder: dueSort }),
+        page,
+        limit: PAGE_SIZE,
       })
       if (controller.signal.aborted) return
-      if (res.success && res.data) setAccounts(res.data.data)
-      else setError(res.error ?? 'Failed to load installment accounts')
+      if (res.success && res.data) {
+        setAccounts(res.data.data)
+        setMeta({ total: res.data.meta.total, lastPage: res.data.meta.lastPage })
+      } else setError(res.error ?? 'Failed to load installment accounts')
       setLoading(false)
     }, 250)
     return () => {
       controller.abort()
       clearTimeout(t)
     }
-  }, [search, categoryFilter, statusFilter, branchFilter, collectorFilter, dueFrom, dueTo])
+  }, [
+    search,
+    categoryFilter,
+    statusFilter,
+    branchFilter,
+    collectorFilter,
+    dueFrom,
+    dueTo,
+    dueSort,
+    page,
+  ])
+
+  // A new search, filter or sort starts back on page 1 — the page it was on
+  // may not exist in the new result, or hold different accounts.
+  const resetting =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v)
+      setPage(1)
+    }
+
+  // The Due Date header cycles past due → upcoming due →
+  // back to the default order (newest accounts).
+  const cycleDueSort = () =>
+    resetting(setDueSort)(dueSort === '' ? 'asc' : dueSort === 'asc' ? 'desc' : '')
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
@@ -141,13 +184,6 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <button
-            onClick={() => setPriceCheckOpen(true)}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
-          >
-            <Calculator className="h-4 w-4" />
-            Price checker
-          </button>
           <Link
             href="/crm/installment-accounts/aging-report"
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
@@ -175,7 +211,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => resetting(setSearch)(e.target.value)}
             placeholder="Search account number…"
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-prominent-orange-400 focus:outline-none"
           />
@@ -183,7 +219,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
         <div className="flex flex-wrap items-center gap-2">
           <SearchableSelect
             value={categoryFilter}
-            onChange={setCategoryFilter}
+            onChange={resetting(setCategoryFilter)}
             options={CATEGORY_OPTIONS}
             placeholder="All categories"
             clearable
@@ -192,7 +228,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
           />
           <SearchableSelect
             value={branchFilter}
-            onChange={setBranchFilter}
+            onChange={resetting(setBranchFilter)}
             options={branches.map((b) => ({ value: b.id, label: b.name }))}
             placeholder="All branches"
             clearable
@@ -201,7 +237,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
           />
           <SearchableSelect
             value={collectorFilter}
-            onChange={setCollectorFilter}
+            onChange={resetting(setCollectorFilter)}
             options={collectors.map((c) => ({ value: c.id, label: `${c.stubNumber} — ${c.name}` }))}
             placeholder="All collector codes"
             clearable
@@ -215,7 +251,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
               aria-label="Due Date from"
               value={dueFrom}
               max={dueTo || undefined}
-              onChange={(e) => setDueFrom(e.target.value)}
+              onChange={(e) => resetting(setDueFrom)(e.target.value)}
               className={`${FILTER_CLASS} w-[8.75rem] shrink-0 !px-2 text-[13px]`}
             />
             <span>to</span>
@@ -224,18 +260,27 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
               aria-label="Due Date to"
               value={dueTo}
               min={dueFrom || undefined}
-              onChange={(e) => setDueTo(e.target.value)}
+              onChange={(e) => resetting(setDueTo)(e.target.value)}
               className={`${FILTER_CLASS} w-[8.75rem] shrink-0 !px-2 text-[13px]`}
             />
           </div>
           <SearchableSelect
             value={statusFilter}
-            onChange={setStatusFilter}
+            onChange={resetting(setStatusFilter)}
             options={STATUS_OPTIONS}
             placeholder="All statuses"
             clearable
             portal
             className="min-w-[9rem] flex-1"
+          />
+          <SearchableSelect
+            value={dueSort}
+            onChange={(v) => resetting(setDueSort)(v as DueSort)}
+            options={SORT_OPTIONS}
+            placeholder="Newest Accounts"
+            clearable
+            portal
+            className="min-w-[13rem] flex-1"
           />
         </div>
       </div>
@@ -316,7 +361,27 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                     <th className="px-4 py-3">SI #</th>
                     <th className="px-4 py-3">Customer / Contact #</th>
                     <th className="px-4 py-3">Collector</th>
-                    <th className="px-4 py-3">Due Date</th>
+                    <th
+                      className="px-4 py-3"
+                      aria-sort={
+                        dueSort === 'asc' ? 'ascending' : dueSort === 'desc' ? 'descending' : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        onClick={cycleDueSort}
+                        className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-gray-800"
+                      >
+                        Due Date
+                        {dueSort === 'asc' ? (
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        ) : dueSort === 'desc' ? (
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-4 py-3 text-right">MI Due</th>
                     <th className="whitespace-nowrap px-4 py-3 text-right">Outstanding Balance</th>
                   </tr>
@@ -390,10 +455,18 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
               </table>
             </div>
           </div>
+
+          <TablePagination
+            page={page}
+            pageCount={meta.lastPage}
+            onPageChange={setPage}
+            pageStart={(page - 1) * PAGE_SIZE}
+            pageSize={accounts.length}
+            totalItems={meta.total}
+            noun="account"
+          />
         </>
       )}
-
-      {priceCheckOpen && <PriceCheckModal onClose={() => setPriceCheckOpen(false)} />}
     </div>
   )
 }

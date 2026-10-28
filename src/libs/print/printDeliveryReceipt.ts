@@ -14,19 +14,26 @@ import type { IdmDetail } from '@/src/schema/accounting/inventory-debit-memos'
 /** What each purpose charges, for the DR's grey system note. */
 const CHARGED_TO: Partial<Record<DrPurpose, string>> = {
   office_use: 'Office equipment, furniture and fixtures',
-  raffle_prize: 'Employee benefits and wellness',
+  raffle_prize: 'Company events and employee engagement',
   giveaway: 'Advertising and promotion',
   donation: 'Donations and charitable contributions',
   redeemed_unit: 'Marketing and sales support',
 }
 
-function systemNote(purpose: DrPurpose): string {
-  const charged = CHARGED_TO[purpose]
+function systemNote(dr: DrDetail): string {
+  const { purpose } = dr
+  const charged =
+    purpose === 'giveaway' && dr.giveawayRecipient === 'partner'
+      ? 'Representation and entertainment'
+      : CHARGED_TO[purpose]
   if (charged) {
     return `Posting its debit memo moves the stock out of the issuing branch and charges ${charged}. Not valid as a sales invoice.`
   }
   if (purpose === 'return_to_supplier') {
     return 'Posting its supplier debit memo moves the stock out of the issuing branch; accounting applies the memo to a supplier invoice. Not valid as a sales invoice.'
+  }
+  if (purpose === 'others') {
+    return 'Approval moves the stock out of the issuing branch; accounting chooses the account and posts its debit memo. Not valid as a sales invoice.'
   }
   if (purpose === 'sales_invoice_to_follow') {
     return 'The units are held for this customer until the sale is rung up at POS, which issues the sales invoice. Not valid as a sales invoice.'
@@ -204,7 +211,7 @@ function deliveryReceiptSheet(data: PrintDocumentEnvelope): string {
     <p style="margin:0">Received the above merchandise in good order and condition.</p>
     ${signatures(['Prepared by', 'Approved by', 'Delivered by', 'Received by'])}
     <div class="note" style="margin-top:28px;background:#f1f1f4;border-radius:6px;padding:10px 14px;font-size:11.5px">
-      <b>System note:</b> ${esc(systemNote(dr.purpose))}
+      <b>System note:</b> ${esc(systemNote(dr))}
     </div>
   </section>`
 }

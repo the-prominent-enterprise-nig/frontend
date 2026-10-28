@@ -1,5 +1,15 @@
 import { api } from '@/src/libs/api/client'
 import type { TaxOverrideEntry } from '@/src/libs/tax/tax-override'
+import {
+  commitAcknowledgementReceiptImport,
+  previewAcknowledgementReceiptImport,
+} from '@/src/libs/data/acknowledgement-import-actions'
+import { humanizeAcknowledgementImportError } from '@/src/libs/data/acknowledgement-import-errors'
+import type {
+  AcknowledgementImportPreview,
+  AcknowledgementImportResult,
+  AcknowledgementImportRowInput,
+} from '@/src/schema/pos/acknowledgement-import'
 
 // ============ Fixed Assets v2 (ACC-21) ============
 export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION'
@@ -191,6 +201,10 @@ export const Reports = {
     api.get<any>('/reports/cash-flow', { startDate, endDate }),
   aging: (type: 'ar' | 'ap', asOf?: string) =>
     api.get<any>(`/reports/aging/${type}`, asOf ? { asOf } : undefined),
+  // Bucket totals only (five numbers) for charts — aging() above is one row per open document
+  // (2.9 MB of AR rows on the dev data).
+  agingBuckets: (type: 'ar' | 'ap', asOf?: string) =>
+    api.get<AgingBuckets>(`/reports/aging/${type}`, { view: 'summary', ...(asOf ? { asOf } : {}) }),
   // Scenario 36 Gap 2 — receipts already posted to the GL but not yet
   // matched to a supplier bill/invoice.
   grni: () => api.get<any>('/reports/grni'),
@@ -409,6 +423,20 @@ export interface ResolveWithholdingVarianceInput {
   notes?: string
 }
 
+/**
+ * One payment of a collection taken with several methods. The CR number is not
+ * here: the collection has one (`reference`), shared by every tender's receipt.
+ */
+export interface ArTenderInput {
+  method: PaymentMethod
+  amount: number
+  paymentMethodConfigId?: string
+  paymentMethodOptionId?: string
+  /** The bank's own transaction reference — a BANK_TRANSFER tender only. */
+  bankReferenceNumber?: string
+  bankAccountId?: string
+}
+
 export interface RecordArPaymentInput {
   amount: number
   paymentDate: string
@@ -437,6 +465,9 @@ export interface RecordArPaymentInput {
    * field collections and Accounting-side entries.
    */
   posSessionId?: string
+  /** The collection taken with SEVERAL methods (two or more); their amounts
+   * add up to the collection's amount. Omit for a single method. */
+  tenders?: ArTenderInput[]
 }
 
 export interface ARInvoiceSerialGoodsReceipt {
@@ -473,6 +504,9 @@ export interface ARInvoiceDue {
 }
 
 export interface ARInvoiceInstallmentDetail {
+  /** The InstallmentSchedule behind this receivable — what the Collections
+   * deep link keys on to land on the plan's next open due. */
+  scheduleId?: string
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
@@ -605,12 +639,64 @@ export interface BulkRecordArPaymentInput {
    * field collections and Accounting-side entries.
    */
   posSessionId?: string
+  /** The collection taken with SEVERAL methods (two or more); their amounts
+   * add up to the collection's amount. Omit for a single method. */
+  tenders?: ArTenderInput[]
 }
 
 export interface BulkRecordPaymentResult {
   payments: RecordPaymentResult[]
   totalCollected: number
   invoiceCount: number
+}
+
+/** An invoice as the dashboard lists show it: the summary list's columns, nothing heavier. */
+export type ARInvoiceDashboardRow = Pick<
+  ARInvoice,
+  | 'id'
+  | 'invoiceNumber'
+  | 'customerId'
+  | 'invoiceDate'
+  | 'dueDate'
+  | 'totalAmount'
+  | 'amountPaid'
+  | 'status'
+> & { customer: { id: string; name: string } | null }
+
+/**
+ * The dashboards' invoice figures, worked out on the server over every invoice (the same filter and
+ * order as the list) so the browser stops downloading the whole list to add it up. Every "overdue"
+ * figure is the same one: a live invoice (sent, partial or overdue — not paid, draft or cancelled)
+ * with a balance owing that is past its due date.
+ */
+export interface ARInvoiceDashboardStats {
+  /** Invoices the list would return, any status. */
+  invoiceCount: number
+  /** Σ max(0, total − paid). */
+  outstanding: number
+  /** Not PAID/VOID: count and Σ(total − paid) (accounting dashboard). */
+  open: { count: number; outstanding: number }
+  /**
+   * Overdue invoices: how many, what they owe, the earliest due date (ISO, null when none) and the
+   * first few in list order.
+   */
+  overdue: {
+    count: number
+    outstanding: number
+    oldestDueDate: string | null
+    top: ARInvoiceDashboardRow[]
+  }
+  /** Positive balance, earliest due first (Outstanding Invoices widget). */
+  outstandingTop: ARInvoiceDashboardRow[]
+  /** The list's first rows (accounting dashboard's recent invoices). */
+  recent: ARInvoiceDashboardRow[]
+  /** Distinct customers across the invoices; only present when a branch was asked for. */
+  customerIds?: string[]
+}
+
+/** Totals per aging bucket, for charting without downloading a row per document. */
+export interface AgingBuckets {
+  buckets: { bucket: string; outstanding: number; count: number }[]
 }
 
 /** One row of the AR Invoices landing: everything a customer owes, rolled up on the server. */
@@ -805,6 +891,11 @@ export const ARInvoices = {
       '/ar-invoices/by-customer',
       params as any
     ),
+  // The home and accounting dashboards' tiles (outstanding, overdue, the few rows their widgets
+  // list), summed on the server — a few KB instead of the whole invoice list. Pass branchId to
+  // scope to one branch (the response then also carries that branch's customerIds).
+  dashboardStats: (params?: { branchId?: string }) =>
+    api.get<ARInvoiceDashboardStats>('/ar-invoices/dashboard-stats', params as any),
   // Scenario 44 — flat cross-customer Receipts register (one row per
   // ARPayment) backing the AR Invoices landing page, distinct from list()
   // above which returns ARInvoice rows for the customer-grouped rollup.
@@ -900,8 +991,9 @@ export interface AcknowledgementReceipt {
    * the detail page. Null on records saved before this field existed. */
   receiptType: 'COLLECTION' | 'ACKNOWLEDGEMENT' | null
   method: PaymentMethod | null
-  /** SAME_DATE | LATER_DATE — whether the payment clears the bank on
-   * paymentDate itself or on a later date. Informational only. */
+  /** SAME_DATE | LATER_DATE | PAST_DATE — whether the payment clears the
+   * bank on paymentDate itself, on a later date, or already cleared on an
+   * earlier date (receipts imported after the fact). Informational only. */
   clearedType: string | null
   clearedDate: string | null
   /** Which of the tenant's own bank/cash accounts this landed in — matches
@@ -914,6 +1006,22 @@ export interface AcknowledgementReceipt {
   collectorId: string | null
   collector?: { id: string; name: string; stubNumber: string } | null
   journalEntryId: string | null
+  /** Settlement receipts — the customer and sales invoice this money is
+   * for. The invoice number is a reference only: it does not change the
+   * invoice's balance. All null on a plain receipt. */
+  customerId?: string | null
+  customer?: { id: string; name: string; customerCode: string } | null
+  invoiceNo?: string | null
+  arInvoiceId?: string | null
+  /** The gross AR amount; `amount` above is then the Net that reached the
+   * bank (gross − subsidy − withholding). Null on a plain receipt. */
+  grossAmount?: number | null
+  subsidyAmount?: number | null
+  subsidyAccountId?: string | null
+  subsidyAccount?: { id: string; name: string; number: string | null } | null
+  withholdingAmount?: number | null
+  withholdingAccountId?: string | null
+  withholdingAccount?: { id: string; name: string; number: string | null } | null
   createdAt: string
   /** Letterhead info for the printed document — only present on get(id), not list(). */
   enterprise?: { companyLegalName?: string | null; address?: string | null } | null
@@ -933,6 +1041,16 @@ export interface CreateAcknowledgementReceiptInput {
   notes?: string
   branchId?: string
   collectorId?: string
+  customerId?: string
+  invoiceNo?: string
+  arInvoiceId?: string
+  /** Settlement receipt: gross AR amount. `amount` is then the Net (gross −
+   * subsidy − withholding), which the backend recomputes. */
+  grossAmount?: number
+  subsidyAmount?: number
+  subsidyAccountId?: string
+  withholdingAmount?: number
+  withholdingAccountId?: string
 }
 /** Everything is editable (developer decision, 2026-09-27). Changing amount
  * and/or accountId requires correctionReason — the backend posts a new
@@ -962,15 +1080,66 @@ export const AcknowledgementReceipts = {
     api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
   get: (id: string) =>
     api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
+  /** The form's "+ Add as new customer" — a name is all a settlement needs, so
+   * this skips the phone and email the CRM form insists on, and needs no CRM
+   * permission. An existing customer of the same name is returned as-is. */
+  createCustomer: (body: { name: string; phone?: string }) =>
+    api.post<{ id: string; name: string; customerCode: string }>(
+      '/accounting/acknowledgement-receipts/customers',
+      body
+    ),
   create: (body: CreateAcknowledgementReceiptInput) =>
     api.post<AcknowledgementReceipt>('/accounting/acknowledgement-receipts', body),
   update: (id: string, body: UpdateAcknowledgementReceiptInput) =>
     api.patch<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`, body),
+  /** Bulk upload, step 1 — reads the CSV and reports what each row would do.
+   * Writes nothing. Multipart, so it goes through a server action rather than
+   * the JSON api client. */
+  importPreview: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return previewAcknowledgementReceiptImport(body)
+  },
+  /** Bulk upload, step 2 — posts every row (all or none). `acceptNetMismatch`
+   * lets rows whose uploaded Net differs from the calculated one post with the
+   * calculated Net. */
+  importCommit: (file: File, acceptNetMismatch: boolean) => {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('acceptNetMismatch', String(acceptNetMismatch))
+    return commitAcknowledgementReceiptImport(body)
+  },
+  /** The review screen's re-check — the same preview as `importPreview`, but
+   * for rows the user has edited on screen instead of a file. Plain JSON, so
+   * it goes through the normal api client. Writes nothing; 500 rows at most. */
+  importPreviewRows: async (rows: AcknowledgementImportRowInput[]) => {
+    const res = await api.post<AcknowledgementImportPreview>(
+      '/accounting/acknowledgement-receipts/import/rows/preview',
+      { rows }
+    )
+    return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
+  },
+  /** The real import for edited rows — all or none, same errors as the file
+   * commit. */
+  importCommitRows: async (rows: AcknowledgementImportRowInput[], acceptNetMismatch: boolean) => {
+    const res = await api.post<AcknowledgementImportResult>(
+      '/accounting/acknowledgement-receipts/import/rows',
+      { rows, acceptNetMismatch }
+    )
+    return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
+  },
 }
 
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
-export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill' | 'x_deal'
+export type CreditMemoType =
+  | 'sales_return'
+  | 'billing_adjustment'
+  | 'goodwill'
+  | 'x_deal'
+  // Scenario 79 — the interest an early settlement forgives; issued with the
+  // payoff from the CRM account page, voided through EarlySettlementMemos.
+  | 'early_settlement'
 export interface CreditMemoLine {
   id: string
   itemId: string
@@ -1056,6 +1225,7 @@ export interface XDealCandidate {
 export interface XDealPreview {
   posTransactionId: string
   transactionNumber: string
+  salesInvoiceNumber?: string | null
   invoiceNumber: string
   xDealReference: string | null
   outstanding: number
@@ -1070,6 +1240,11 @@ export const XDealMemos = {
   issue: (body: { posTransactionId: string; reason?: string; memoDate?: string }) =>
     api.post<CreditMemo>('/credit-memos/x-deal', body),
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/x-deal/${id}/void`, {}),
+}
+
+/** Scenario 79 — voiding one reopens the installment account it settled. */
+export const EarlySettlementMemos = {
+  void: (id: string) => api.post<CreditMemo>(`/credit-memos/early-settlement/${id}/void`, {}),
 }
 
 // ============ Debit Memos ============
@@ -2132,6 +2307,12 @@ export interface SpecialAccountRow {
   entries: number
   lastActivity: string | null
 }
+/** One name on a control account, as the Expense form sees it. */
+export interface SpecialAccountOption {
+  name: string
+  balance: number
+  employee: { id: string; name: string } | null
+}
 export interface SpecialAccountRegister {
   rows: SpecialAccountRow[]
   totals: { people: number; balance: number }
@@ -2247,9 +2428,15 @@ export const Expenses = {
     api.get<ExpenseAgentOption[]>('/expenses/lookups/agents', search ? { search } : undefined),
   agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
     api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
-  /** The sales a commission line can release — one agent's with `agentId`, any agent's without. */
-  commissionSales: (params?: { agentId?: string; search?: string; excludeExpenseId?: string }) =>
-    api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
+  /** The sales a commission line can release — one agent's with `agentId`, any agent's without.
+   * With `kind: 'SMI'`, the sales an SMI line can be paid on: any completed sale, and
+   * `releasedOn` means already on another SMI line. */
+  commissionSales: (params?: {
+    agentId?: string
+    search?: string
+    excludeExpenseId?: string
+    kind?: 'AGENT_COMMISSION' | 'SMI'
+  }) => api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
   list: (params?: {
     search?: string
     status?: string
@@ -2273,6 +2460,10 @@ export const Expenses = {
    * carried against, under the control account carrying it. */
   specialAccounts: (params?: { search?: string; accountId?: string }) =>
     api.get<SpecialAccountRegister>('/expenses/special-accounts', params),
+  /** The names on one control account with their balances — the Expense
+   * form's picker. Open to expense roles; the register above is not. */
+  specialAccountOptions: (params: { accountId: string; search?: string }) =>
+    api.get<SpecialAccountOption[]>('/expenses/special-accounts/options', params),
   /** Open a named balance under a control account, before anything has been
    * posted to it. */
   createSpecialAccount: (body: CreateSpecialAccountBody) =>

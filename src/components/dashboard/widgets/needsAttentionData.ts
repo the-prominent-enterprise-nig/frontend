@@ -15,10 +15,10 @@ import {
   getPendingReturnRefundRequests,
   getMissingCogsReport,
 } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
-import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
 import { getDeliveryReceipts } from '@/src/app/(app)/(dashboard)/inventory/delivery-receipts/_actions/get-delivery-receipts'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
-import { arInvoicesKey } from './dashboardQueryKeys'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
+import { fetchArStats, loadArStats } from './arStats'
 
 export type AttentionItem = {
   id: string
@@ -42,31 +42,34 @@ function fmtMoney(n: number): string {
 
 /**
  * Merges the four separate pending-decision sources (draft POs, void/refund
- * requests, stock transfers awaiting approval) with the two revenue-integrity
- * signals (COGS posting gaps, overdue AR) into one prioritized feed — an
- * owner cares about "what needs a decision from me," not which module it
- * happens to live in. Shared between the Needs Attention widget (full list)
- * and the KPI strip (just the count), so both agree on what counts.
+ * requests, stock transfers awaiting approval) with the revenue-integrity
+ * signal (COGS posting gaps) into one prioritized feed — an owner cares about
+ * "what needs a decision from me," not which module it happens to live in.
+ * Shared between the Needs Attention widget (full list) and the KPI strip
+ * (just the count), so both agree on what counts.
+ *
+ * Overdue AR invoices are ONE summary row ("N overdue invoices", what they
+ * owe), not a row each — nearly every imported invoice is past due, so listing
+ * them would bury everything else (12,702 on the dev data). The row links to
+ * the AR invoices page, where the individual ones are. The count is the same
+ * one the KPI strip and the other dashboard widgets use.
  *
  * `queryClient`, when passed (see `useNeedsAttentionItems`), routes the AR
- * invoices fetch through the same cache key the KPI strip's own "Outstanding
- * AR" tile uses (`arInvoicesKey`) — whichever widget asks first, the other
- * reuses that in-flight/cached request instead of firing a second one.
+ * figures through the same cache key the KPI strip's own "Outstanding AR"
+ * tile uses (`arStatsKey`) — whichever asks first, the other reuses that
+ * in-flight/cached request instead of firing a second one.
  */
 export async function getNeedsAttentionItems(
   branchId?: string,
   queryClient?: QueryClient
 ): Promise<AttentionItem[]> {
-  const fetchArInvoices = () => ARInvoices.list({ branchId, view: 'summary' })
-  const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, arRes, drRes] = await Promise.all([
+  const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, arStats, drRes] = await Promise.all([
     getPurchaseOrders({ status: 'draft', limit: 20, branchId }),
     getPendingReturnRefundRequests(branchId),
     getTransfers({ status: 'pending_manager_approval', limit: 20, branchId }),
     getTransfers({ status: 'pending_hq_approval', limit: 20, branchId }),
     getMissingCogsReport(branchId),
-    queryClient
-      ? queryClient.fetchQuery({ queryKey: arInvoicesKey(branchId), queryFn: fetchArInvoices })
-      : fetchArInvoices(),
+    queryClient ? fetchArStats(queryClient, branchId) : loadArStats(branchId),
     // Scenario 72 — branch-scoped server-side, empty for roles without DR access.
     getDeliveryReceipts({ status: 'pending_approval', limit: 20 }),
   ])
@@ -81,7 +84,7 @@ export async function getNeedsAttentionItems(
         id: `cogs-${sale.transactionId}`,
         icon: Calculator,
         iconStyle: 'text-red-500 bg-red-50',
-        label: `Missing COGS — ${sale.transactionNumber}`,
+        label: `Missing COGS — ${saleDocNo(sale)}`,
         sub: 'Completed sale has no inventory posting',
         timestamp: sale.occurredAt,
         tier: 1,
@@ -92,25 +95,20 @@ export async function getNeedsAttentionItems(
     }
   }
 
-  const now = Date.now()
-  const invoices = arRes.data?.items ?? []
-  for (const inv of invoices) {
-    const balance = (inv.totalAmount ?? 0) - (inv.amountPaid ?? 0)
-    if (balance <= 0) continue
-    const isOverdue =
-      inv.status === 'OVERDUE' || (inv.dueDate ? new Date(inv.dueDate).getTime() < now : false)
-    if (!isOverdue) continue
+  const { overdue } = arStats
+  if (overdue.count > 0 && overdue.oldestDueDate) {
     items.push({
-      id: `ar-${inv.id}`,
+      id: 'ar-overdue',
       icon: Receipt,
       iconStyle: 'text-red-500 bg-red-50',
-      label: `Overdue Invoice — ${inv.invoiceNumber}`,
-      sub: `${inv.customer?.name ?? 'Unknown'} · ${fmtMoney(balance)}`,
-      timestamp: inv.dueDate,
+      label: `${overdue.count.toLocaleString()} overdue invoice${overdue.count === 1 ? '' : 's'}`,
+      sub: `${fmtMoney(overdue.outstanding)} outstanding`,
+      // The longest-overdue due date, so it sorts with the oldest-waiting items.
+      timestamp: overdue.oldestDueDate,
       tier: 1,
       badge: 'Overdue',
       badgeStyle: 'bg-red-100 text-red-700',
-      href: `/accounting/ar-invoices/${inv.id}`,
+      href: '/accounting/ar-invoices',
     })
   }
 
@@ -135,7 +133,7 @@ export async function getNeedsAttentionItems(
       id: `void-${r.id}`,
       icon: XCircle,
       iconStyle: 'text-amber-500 bg-amber-50',
-      label: `Void Request — ${r.transaction?.transactionNumber ?? 'Transaction'}`,
+      label: `Void Request — ${r.transaction ? saleDocNo(r.transaction) : 'Transaction'}`,
       sub: `${r.session?.terminal?.branch?.name ?? '—'} · ${fmtMoney(r.transaction?.totalAmount ?? 0)}`,
       timestamp: r.createdAt,
       tier: 2 as const,
@@ -169,7 +167,7 @@ export async function getNeedsAttentionItems(
     tier: 2,
     badge: 'Transfer',
     badgeStyle: 'bg-purple-100 text-purple-700',
-    href: '/inventory/transfers',
+    href: '/inventory/stock-transaction?tab=transfers',
   }))
 
   const drItems: AttentionItem[] = (drRes.data?.data ?? []).map((dr) => ({

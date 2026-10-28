@@ -25,6 +25,7 @@ import type { PosVoidRequest } from '@/src/schema/pos'
 import { PosDateTime } from '../../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 interface Props {
   isManager: boolean
@@ -318,7 +319,7 @@ export default function VoidRequestsList({ isManager }: Props) {
                     >
                       <td className="px-5 py-3">
                         <span className="text-xs text-purple-700">
-                          {req.transaction?.transactionNumber ?? '—'}
+                          {req.transaction ? saleDocNo(req.transaction) : '—'}
                         </span>
                       </td>
                       <td className="px-5 py-3">
@@ -442,7 +443,7 @@ export default function VoidRequestsList({ isManager }: Props) {
                   >
                     <td className="px-5 py-3">
                       <span className="text-xs text-purple-700">
-                        {req.transaction?.transactionNumber ?? '—'}
+                        {req.transaction ? saleDocNo(req.transaction) : '—'}
                       </span>
                     </td>
                     <td className="px-5 py-3">
@@ -505,7 +506,9 @@ export default function VoidRequestsList({ isManager }: Props) {
                 <div>
                   <h2 className="text-lg font-bold text-gray-900">Void Request</h2>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {detailTarget.transaction?.transactionNumber ?? detailTarget.transactionId}
+                    {detailTarget.transaction
+                      ? saleDocNo(detailTarget.transaction)
+                      : detailTarget.transactionId}
                   </p>
                 </div>
                 <button
@@ -596,7 +599,9 @@ export default function VoidRequestsList({ isManager }: Props) {
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Review Void Request</h2>
                 <p className="font-mono text-xs text-gray-500 mt-0.5">
-                  {reviewTarget.transaction?.transactionNumber ?? reviewTarget.transactionId}
+                  {reviewTarget.transaction
+                    ? saleDocNo(reviewTarget.transaction)
+                    : reviewTarget.transactionId}
                 </p>
               </div>
 
