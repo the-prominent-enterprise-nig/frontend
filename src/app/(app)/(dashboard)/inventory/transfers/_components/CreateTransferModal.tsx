@@ -23,14 +23,17 @@ import {
   isCaravanBranch,
   isCaravanEnded,
   warehouseLabel,
-  type WarehouseBranch,
   type WarehouseSummary,
 } from '@/src/schema/inventory/warehouses'
 import type { ApiResponse } from '@/src/libs/api/client'
 import { getItem } from '../../items/_actions/get-item'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import { NewCaravanFields } from './CaravanDestinationFields'
+import {
+  NewCaravanFields,
+  caravanFormValues,
+  type CaravanFieldsForm,
+} from './CaravanDestinationFields'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
@@ -144,16 +147,6 @@ const EMPTY_NEW_CARAVAN: NewCaravanFormValues = {
 }
 
 /** An existing caravan's details, loaded into the same fields New uses. */
-function caravanFormValues(branch: WarehouseBranch): NewCaravanFormValues {
-  return {
-    hostBranchId: branch.hostBranch?.id ?? '',
-    eventName: branch.eventName ?? branch.name,
-    location: branch.addressLine1 ?? '',
-    startDate: (branch.startDate ?? '').slice(0, 10),
-    endDate: (branch.endDate ?? '').slice(0, 10),
-  }
-}
-
 const inputClass =
   'w-full rounded-lg border border-[#d3d3db] bg-white px-3 py-2 text-[13px] text-[#17171c] outline-none transition-colors focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
 
@@ -831,7 +824,7 @@ export default function CreateTransferModal({
 
                   {isCreatingNewCaravan && (
                     <NewCaravanFields
-                      control={control}
+                      control={control as unknown as Control<CaravanFieldsForm>}
                       errors={errors}
                       hostBranchOptions={hostBranchOptions}
                       hostLocked={!!currentUserBranchId}

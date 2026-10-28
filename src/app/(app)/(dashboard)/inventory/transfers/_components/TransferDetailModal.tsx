@@ -65,9 +65,9 @@ import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbe
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
-import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
+import { VehicleAutocompleteInput, type AutocompleteOption } from './VehicleAutocompleteInput'
 import { searchVehicles } from '../_actions/search-vehicles'
-import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
+import { searchDrivers } from '../_actions/search-drivers'
 import { warehouseLabel } from '@/src/schema/inventory/warehouses'
 import { LocationName } from './transferStatus'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
@@ -1178,7 +1178,7 @@ export default function TransferDetailModal({
       driverName: data.driverName?.trim() || undefined,
       driverPhone: data.driverPhone?.trim() || undefined,
       vehiclePlate: data.vehiclePlate,
-      carrierName: data.carrierName,
+      carrierName: data.carrierName?.trim() || undefined,
     })
     if (result.success) {
       setShowDispatchForm(false)
@@ -1316,30 +1316,35 @@ export default function TransferDetailModal({
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-  // Fleet roster (Vehicle model) lookup for the dispatch form — scoped to
-  // the source branch a vehicle is on file for, same as the branch the
+  // Fleet roster (drivers and vehicles) lookups for the dispatch form — scoped
+  // to the source branch they are on file for, same as the branch the
   // dispatching stock is leaving from. A caravan has no fleet of its own
-  // (vehicles are registered to real branches), so stock leaving a caravan
-  // goes out on its host branch's vehicles.
+  // (drivers and vehicles are registered to real branches), so stock leaving a
+  // caravan goes out on its host branch's drivers and vehicles.
   const fromBranch = transfer?.fromWarehouse?.branch
   const dispatchFromBranchId = fromBranch?.isTemporary
     ? (fromBranch.hostBranch?.id ?? fromBranch.id)
     : fromBranch?.id
-  async function searchDispatchVehicles(query: string) {
+  // Plates come from the vehicle roster, driver names from the driver roster —
+  // two separate lists, neither tied to the other (a driver is not assigned to
+  // a plate; who drives what varies per trip). Phone/license/carrier stay
+  // manual, they are not on either roster.
+  async function searchDispatchVehicles(query: string): Promise<AutocompleteOption[]> {
     const result = await searchVehicles({ q: query, branchId: dispatchFromBranchId })
-    return result.success && result.data ? result.data : []
+    if (!result.success || !result.data) return []
+    return result.data.map((v) => ({ id: v.id, label: v.plateNo, sublabel: v.tag }))
   }
-  // Picking a roster entry from either field fills both — driverName and
-  // vehiclePlate are the only two fields the Vehicle model actually carries
-  // (phone/license/carrier stay manual, they're not in the fleet sheet).
-  // Scenario 71 item 22 — a pick fills the plate only. The driver is no
-  // longer tied to the vehicle: the roster's driverName column is unreliable
-  // (some rows hold a model like "D-MAX"), and who drives varies per trip.
-  function pickDispatchVehicle(vehicle: VehicleSummary) {
-    dispatchForm.setValue('vehiclePlate', vehicle.plateNo, { shouldValidate: true })
+  async function searchDispatchDrivers(query: string): Promise<AutocompleteOption[]> {
+    const result = await searchDrivers({ q: query, branchId: dispatchFromBranchId })
+    if (!result.success || !result.data) return []
+    return result.data.map((d) => ({ id: d.id, label: d.name }))
   }
-  function pickDispatchDriver(vehicle: VehicleSummary) {
-    dispatchForm.setValue('driverName', vehicle.driverName ?? '', { shouldValidate: true })
+  // Scenario 71 item 22 — a pick fills only the field it is for.
+  function pickDispatchVehicle(option: AutocompleteOption) {
+    dispatchForm.setValue('vehiclePlate', option.label, { shouldValidate: true })
+  }
+  function pickDispatchDriver(option: AutocompleteOption) {
+    dispatchForm.setValue('driverName', option.label, { shouldValidate: true })
   }
 
   return (
@@ -2069,11 +2074,11 @@ export default function TransferDetailModal({
                       control={dispatchForm.control}
                       render={({ field }) => (
                         <VehicleAutocompleteInput
-                          mode="driver"
+                          noun="drivers"
                           value={field.value ?? ''}
                           onChange={field.onChange}
-                          onPickVehicle={pickDispatchDriver}
-                          search={searchDispatchVehicles}
+                          onPick={pickDispatchDriver}
+                          search={searchDispatchDrivers}
                           queryKey={`dispatch-driver-search-${transfer?.id}`}
                           placeholder="e.g. Juan dela Cruz"
                           error={dispatchForm.formState.errors.driverName?.message}
@@ -2107,9 +2112,10 @@ export default function TransferDetailModal({
                       control={dispatchForm.control}
                       render={({ field }) => (
                         <VehicleAutocompleteInput
+                          mono
                           value={field.value}
                           onChange={field.onChange}
-                          onPickVehicle={pickDispatchVehicle}
+                          onPick={pickDispatchVehicle}
                           search={searchDispatchVehicles}
                           queryKey={`dispatch-vehicle-search-${transfer?.id}`}
                           placeholder="e.g. ABC 1234"
@@ -2122,7 +2128,7 @@ export default function TransferDetailModal({
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Carrier / Logistics Company <span className="text-red-500">*</span>
+                    Carrier / Logistics Company
                   </label>
                   <Controller
                     name="carrierName"

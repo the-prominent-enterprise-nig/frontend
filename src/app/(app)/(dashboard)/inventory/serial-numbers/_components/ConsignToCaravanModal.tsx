@@ -15,7 +15,10 @@ import {
   type WarehouseSummary,
 } from '@/src/schema/inventory/warehouses'
 import type { ApiResponse } from '@/src/libs/api/client'
-import { NewCaravanFields } from '../../transfers/_components/CaravanDestinationFields'
+import {
+  NewCaravanFields,
+  type CaravanFieldsForm,
+} from '../../transfers/_components/CaravanDestinationFields'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 
 type Props = {
@@ -187,7 +190,7 @@ export default function ConsignToCaravanModal({
           <div className="flex flex-col gap-4 overflow-y-auto px-6 py-5">
             <UnitList serials={serials} />
             <NewCaravanFields
-              control={control}
+              control={control as unknown as Control<CaravanFieldsForm>}
               errors={errors}
               hostBranchOptions={hostOptions(warehouses, currentUserBranchId)}
               hostLocked={!!currentUserBranchId}

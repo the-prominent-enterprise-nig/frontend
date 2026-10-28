@@ -6,7 +6,7 @@ import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions
 import { HubTabs } from '../_shared/HubTabs'
 import { CashInTransitList } from '../../pos/undeposited-funds/_components/CashInTransitList'
 
-export const metadata = { title: 'Undeposited Funds | NIG Central' }
+export const metadata = { title: 'Collected Funds History | NIG Central' }
 
 /**
  * Scenario 53 — Accounting's own view of Cash-in-Transit, labelled Undeposited
@@ -49,7 +49,7 @@ export default async function AccountingCashInTransitPage() {
         <HubTabs hub="cash-banking" session={session} />
       </Suspense>
       <CashInTransitList
-        title="Undeposited Funds"
+        title="Collected Funds History"
         canManage={false}
         canVerify={canVerify}
         canCorrect={canCorrect}

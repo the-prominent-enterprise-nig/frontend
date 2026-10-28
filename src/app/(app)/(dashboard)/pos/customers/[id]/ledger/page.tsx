@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
+import { can, canAccessModule } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import CustomerLedgerView from '@/src/components/crm/CustomerLedgerView'
 
 export const metadata = { title: 'Customer Ledger | POS' }
@@ -25,6 +26,11 @@ export const metadata = { title: 'Customer Ledger | POS' }
  * a side effect of adding a link. A till needs to READ the payment history,
  * not revise it. Wire this to a real permission only if editing from POS is
  * ever actually asked for.
+ *
+ * The "Full account details" link (a CRM page) follows the viewer, not the
+ * door: a business owner or manager reading the ledger from POS gets it, a
+ * cashier — confined to the `pos` module — does not, since the link would only
+ * bounce them off /403.
  */
 export default async function PosCustomerLedgerPage({
   params,
@@ -43,7 +49,9 @@ export default async function PosCustomerLedgerPage({
         backHref={`/pos/customers/${id}`}
         backLabel="Back to customer"
         canEdit={false}
-        showAccountLink={false}
+        showAccountLink={
+          canAccessModule(session, 'crm') && can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_READ)
+        }
       />
     </div>
   )

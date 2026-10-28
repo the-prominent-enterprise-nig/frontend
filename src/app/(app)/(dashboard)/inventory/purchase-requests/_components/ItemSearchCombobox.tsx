@@ -5,7 +5,7 @@ import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/g
 import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { getStockBalances } from '@/src/app/(app)/(dashboard)/inventory/stock/_actions/get-stock-balances'
-import { getSupplierItems } from '@/src/app/(app)/(dashboard)/inventory/suppliers/_actions/get-supplier-items'
+import { getSupplierItems } from '@/src/app/(app)/(dashboard)/accounting/suppliers/_actions/get-supplier-items'
 
 export type ItemSearchMeta = {
   costPrice: number | null

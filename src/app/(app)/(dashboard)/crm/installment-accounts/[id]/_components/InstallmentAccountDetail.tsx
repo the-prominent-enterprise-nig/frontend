@@ -17,10 +17,19 @@ import {
   MapPin,
   MoreHorizontal,
   CalendarClock,
+  BookOpen,
+  Receipt,
+  CalendarCheck2,
+  UserRound,
+  Package,
+  Landmark,
+  Tags,
+  Scale,
 } from 'lucide-react'
 import { installmentAccountsApi, remindersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import CompleteReminderModal from '@/src/components/crm/CompleteReminderModal'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import type {
   InstallmentAccountDetail as DetailType,
   CategoryGraduationRequest,
@@ -71,11 +80,28 @@ const INVOICE_STATUS_COLORS: Record<string, string> = {
 }
 const INVOICE_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
-  SENT: 'Due',
+  SENT: 'To pay',
   PARTIAL: 'Partially paid',
   PAID: 'Paid',
   OVERDUE: 'Overdue',
   CANCELLED: 'Cancelled',
+}
+// The app's shared card recipe (DashboardWidgetWrapper's CARD_SHADOW_RESTING):
+// a soft layered shadow that reads as depth without going heavy.
+const CARD =
+  'rounded-2xl border border-gray-200/80 bg-white shadow-[0_1px_2px_rgba(29,15,56,0.03),0_8px_24px_-8px_rgba(29,15,56,0.08)]'
+
+// A secondary action in the account header.
+const ACTION_BUTTON =
+  'inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-1.5 text-[13px] font-semibold text-gray-700 hover:bg-gray-50'
+
+const INVOICE_STATUS_DOTS: Record<string, string> = {
+  DRAFT: 'bg-gray-300',
+  SENT: 'bg-blue-500',
+  PARTIAL: 'bg-amber-500',
+  PAID: 'bg-emerald-500',
+  OVERDUE: 'bg-red-500',
+  CANCELLED: 'bg-gray-300',
 }
 
 function Badge({ value, colors }: { value?: string | null; colors: Record<string, string> }) {
@@ -89,6 +115,33 @@ function Badge({ value, colors }: { value?: string | null; colors: Record<string
       {value.replace('_', ' ')}
     </span>
   )
+}
+
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' })
+}
+
+/** How the sale was paid for at the register: the method, with the bank or
+ * wallet it went through, and each amount when it was split across several. */
+function paymentMethodOf(
+  tenders: { method: string; option: string | null; amount: number }[]
+): string {
+  if (tenders.length === 0) return '—'
+  return tenders
+    .map((t) => {
+      const name = t.option ? `${t.method} (${t.option})` : t.method
+      return tenders.length > 1 ? `${name} ${peso(t.amount)}` : name
+    })
+    .join(', ')
+}
+
+/** The cashier's CR number for each tender of the down payment — just the
+ * number when there is one tender, the method beside each when it was split. */
+function crNumbersOf(tenders: { method: string; referenceNumber: string | null }[]): string {
+  const withCr = tenders.filter((t) => t.referenceNumber)
+  if (withCr.length === 0) return 'none'
+  if (tenders.length === 1) return withCr[0].referenceNumber as string
+  return withCr.map((t) => `${t.method}: ${t.referenceNumber}`).join(', ')
 }
 
 function peso(amount: number | string): string {
@@ -105,6 +158,7 @@ export default function InstallmentAccountDetail({
   canApproveDamEscalation,
   canManageLegalEscalation,
   canScheduleReminder,
+  canViewCommission,
   currentUserId,
   tenantId,
 }: {
@@ -119,6 +173,9 @@ export default function InstallmentAccountDetail({
   canApproveDamEscalation: boolean
   canManageLegalEscalation: boolean
   canScheduleReminder: boolean
+  /** What the selling agent earns on this sale — agent data, so shown only to
+   * users who can read agents. */
+  canViewCommission: boolean
   currentUserId: string
   tenantId: string
 }) {
@@ -147,6 +204,7 @@ export default function InstallmentAccountDetail({
   const [completingReminderId, setCompletingReminderId] = useState<string | null>(null)
 
   const loadReminders = useCallback(() => {
+    if (!REMINDERS_ENABLED) return
     setRemindersLoading(true)
     remindersApi.list({ installmentAccountId: id, limit: 50 }).then((res) => {
       if (res.success && res.data) setReminders(res.data.data)
@@ -315,507 +373,550 @@ export default function InstallmentAccountDetail({
     account.status === 'active' &&
     !!paymentHref &&
     (account.installmentScheduleId ? canCollectAtPos : canRecordReceipt)
+  // The first payment still to come — the one the billing list points at.
+  const nextBillLine = account.billingHistory.find(
+    (b) => b.status !== 'PAID' && b.status !== 'CANCELLED'
+  )?.lineNumber
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
       <Link
         href="/crm/installment-accounts"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
+        className="mb-3 inline-flex items-center gap-1.5 text-[13px] text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" /> Back to installment accounts
       </Link>
 
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">{account.accountNumber}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-            <span>{account.customer.name}</span>
-            <span>·</span>
-            <Badge value={account.status} colors={STATUS_COLORS} />
-            <Badge value={account.category} colors={CATEGORY_COLORS} />
-            {account.inDam && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-inset ring-red-200">
-                <AlertOctagon className="h-3 w-3" />
-                DAM
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {canPay && paymentHref && (
-            <Link
-              href={paymentHref}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
-            >
-              <Coins className="h-4 w-4" />
-              Record payment
-            </Link>
-          )}
-          {canSettle && (
-            // Scenario 79 — its own page now (the payoff breakdown plus the
-            // receipt it's collected on); it was a modal.
-            <Link
-              href={`/crm/installment-accounts/${id}/settle-early`}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 sm:flex-none"
-            >
-              <Banknote className="h-4 w-4" />
-              Settle early
-            </Link>
-          )}
-          {canEdit && (
-            <Link
-              href={`/crm/installment-accounts/${id}/edit`}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
-            >
-              <Pencil className="h-4 w-4" />
-              Edit
-            </Link>
-          )}
-        </div>
-      </header>
-
-      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Customer & assignment</h2>
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
-          <Row label="Customer" value={account.customer.name} />
-          <Row label="Phone" value={account.customer.phone ?? '—'} />
-          <Row label="Email" value={account.customer.email ?? '—'} />
-          <Row label="Branch" value={account.branch?.name ?? '—'} />
-          <Row
-            label="Collector"
-            value={
-              account.collector
-                ? `${account.collector.stubNumber} — ${account.collector.name}`
-                : '—'
-            }
-          />
-          <Row label="Salesperson" value={account.sellingAgent?.name ?? '—'} />
-        </dl>
-      </section>
-
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Collection tags</h2>
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
-          <Row label="Classification" value={account.classification ?? '—'} />
-          <Row
-            label="DAM entered"
-            value={account.damEnteredAt ? new Date(account.damEnteredAt).toLocaleDateString() : '—'}
-          />
-          <Row label="Months run" value={String(account.monthsRun)} />
-          <Row label="Points" value={String(account.points)} />
-        </dl>
-
-        {account.category !== 'C' &&
-          !pendingGraduation &&
-          canEdit &&
-          account.status === 'active' && (
-            <div className="mt-4 border-t border-gray-100 pt-4">
-              <button
-                onClick={handleRequestGraduation}
-                disabled={requestingGraduation}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                <ArrowUpCircle className="h-4 w-4" />
-                {requestingGraduation ? 'Requesting…' : 'Request graduation to Category C'}
-              </button>
-              {graduationError && (
-                <p className="mt-2 text-[12px] text-red-600">{graduationError}</p>
+      {/* The account at a glance: who and what it is, what can be done to it,
+          and the contract's headline figures — the page's anchor. */}
+      <div className={`${CARD} overflow-hidden`}>
+        <header className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-prominent-purple-900">
+              {account.accountNumber}
+            </h1>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px]">
+              <span className="font-medium text-gray-700">{account.customer.name}</span>
+              <Badge value={account.status} colors={STATUS_COLORS} />
+              <Badge value={account.category} colors={CATEGORY_COLORS} />
+              {account.inDam && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-inset ring-red-200">
+                  <AlertOctagon className="h-3 w-3" />
+                  DAM
+                </span>
               )}
             </div>
-          )}
-
-        {pendingGraduation && (
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <p className="text-[13px] font-medium text-amber-900">
-              Pending graduation to Category C
-            </p>
-            <p className="mt-0.5 text-[12px] text-amber-700">
-              Requires management approval before the category changes.
-            </p>
-            {canApproveGraduation && (
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  onClick={() => handleApproveGraduation(pendingGraduation.id)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  Approve
-                </button>
-                <button
-                  onClick={() => setRejectingRequestId(pendingGraduation.id)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  <XIcon className="h-3.5 w-3.5" />
-                  Reject
-                </button>
-              </div>
-            )}
           </div>
-        )}
-
-        {!account.inDam && !pendingDamEscalation && canEdit && account.status === 'active' && (
-          <div className="mt-4 border-t border-gray-100 pt-4">
-            <button
-              onClick={handleRequestDamEscalation}
-              disabled={requestingDamEscalation}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            {/* The customer ledger narrowed to this plan — the account's own
+                paper-form ledger (the same link the customer page uses). */}
+            <Link
+              href={`/crm/customers/${account.customerId}/ledger?transactionId=acct:${account.id}`}
+              className={`${ACTION_BUTTON} flex-1 sm:flex-none`}
             >
-              <AlertOctagon className="h-4 w-4" />
-              {requestingDamEscalation ? 'Requesting…' : 'Request DAM escalation'}
-            </button>
-            {damEscalationError && (
-              <p className="mt-2 text-[12px] text-red-600">{damEscalationError}</p>
+              <BookOpen className="h-4 w-4" />
+              View ledger
+            </Link>
+            {canPay && paymentHref && (
+              // Scenario 79 — opens where the payment is posted (see paymentHref).
+              <Link href={paymentHref} className={`${ACTION_BUTTON} flex-1 sm:flex-none`}>
+                <Coins className="h-4 w-4" />
+                Record payment
+              </Link>
+            )}
+            {canSettle && (
+              // Scenario 79 — its own page (the payoff breakdown plus the
+              // receipt it's collected on); it was a modal.
+              <Link
+                href={`/crm/installment-accounts/${id}/settle-early`}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700 sm:flex-none"
+              >
+                <Banknote className="h-4 w-4" />
+                Settle early
+              </Link>
+            )}
+            {canEdit && (
+              <Link
+                href={`/crm/installment-accounts/${id}/edit`}
+                className={`${ACTION_BUTTON} flex-1 sm:flex-none`}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Link>
             )}
           </div>
-        )}
+        </header>
 
-        {pendingDamEscalation && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
-            <p className="text-[13px] font-medium text-red-900">Pending DAM escalation</p>
-            <p className="mt-0.5 text-[12px] text-red-700">
-              Requires management approval before the account moves to DAM.
-            </p>
-            {canApproveDamEscalation && (
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  onClick={() => handleApproveDamEscalation(pendingDamEscalation.id)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  Approve
-                </button>
-                <button
-                  onClick={() => setRejectingDamRequestId(pendingDamEscalation.id)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  <XIcon className="h-3.5 w-3.5" />
-                  Reject
-                </button>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-prominent-purple-100 bg-prominent-purple-50 px-5 py-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-x-0 lg:divide-x lg:divide-prominent-purple-200">
+          <Figure label="Listed cash price" value={peso(account.listedCashPrice)} />
+          <Figure label="Down payment" value={peso(account.downPayment)} />
+          <Figure label="Amount financed" value={peso(account.amountFinanced)} />
+          <Figure
+            label="Monthly installment"
+            value={peso(account.monthlyInstallment)}
+            note={`× ${account.termMonths} months`}
+            accent
+          />
+          <Figure label="Total price" value={peso(account.totalPrice)} />
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-x-5 gap-y-4 lg:grid-cols-5">
+        <div className="space-y-4 lg:col-span-3">
+          <Section title="Receipt details" icon={Receipt}>
+            {account.saleReceipt ? (
+              <dl className="grid grid-cols-1 gap-x-5 gap-y-2.5 sm:grid-cols-3">
+                <Row label="Purchased on" value={fmtDateTime(account.saleReceipt.occurredAt)} />
+                <Row label="Cashier" value={account.saleReceipt.cashier ?? '—'} />
+                <Row label="Payment method" value={paymentMethodOf(account.saleReceipt.tenders)} />
+                <Row label="SI / DR no." value={account.saleReceipt.documentNumber ?? 'none'} />
+                <Row
+                  label="CR no. (down payment)"
+                  value={crNumbersOf(account.saleReceipt.tenders)}
+                />
+                <Row
+                  label="Delivery fee CR no."
+                  value={account.saleReceipt.deliveryFeeReferenceNumber ?? 'none'}
+                />
+              </dl>
+            ) : (
+              <p className="text-[13px] text-gray-500">
+                Not available for hand-entered/imported accounts.
+              </p>
+            )}
+          </Section>
+
+          <Section title="Billing history" icon={CalendarCheck2}>
+            {account.billingHistory.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-2 text-[13px] text-gray-600">
+                  {account.billingHistory.filter((b) => b.status === 'PAID').length} of{' '}
+                  {account.billingHistory.length} paid
+                </p>
+                <div className="flex gap-1">
+                  {account.billingHistory.map((bill) => (
+                    <span
+                      key={bill.lineNumber}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        bill.billed
+                          ? (INVOICE_STATUS_DOTS[bill.status] ?? 'bg-gray-200')
+                          : 'bg-gray-200'
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
             )}
-          </div>
-        )}
-      </section>
-
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Unit</h2>
-        {account.unitItems.length > 0 ? (
-          <ul className="divide-y divide-gray-100 text-[13px]" data-testid="unit-items">
-            {account.unitItems.map((unit) => (
-              <li key={unit.id} className="py-1.5">
-                <div className="text-gray-700">
-                  {unit.itemName
-                    ? unit.brand
-                      ? `${unit.itemName} (${unit.brand})`
-                      : unit.itemName
-                    : '—'}
-                </div>
-                <div className="mt-0.5 text-gray-500">
-                  {unit.modelNumber && <div>Model: {unit.modelNumber}</div>}
-                  {unit.serialNumber && (
-                    <div className="font-mono text-[11px] text-purple-600">
-                      SN: {unit.serialNumber}
-                      {unit.secondarySerialNumber && ` / ${unit.secondarySerialNumber}`}
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-gray-400">
-            Not available for hand-entered/imported accounts.
-          </p>
-        )}
-      </section>
-
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Financing</h2>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-          <Row label="Scheme" value={account.priceUseType?.name ?? '—'} />
-          <Row label="Listed cash price" value={peso(account.listedCashPrice)} />
-          <Row label="Down payment" value={peso(account.downPayment)} />
-          <Row label="Amount financed" value={peso(account.amountFinanced)} />
-          <Row label="Term" value={`${account.termMonths} mo`} />
-          <Row label="MI factor" value={String(account.miFactor)} />
-          <Row label="Monthly installment" value={peso(account.monthlyInstallment)} />
-          <Row label="PNV" value={peso(account.pnv)} />
-          <Row label="Total price" value={peso(account.totalPrice)} />
-          <Row label="Interest differential" value={peso(account.interestDifferential)} />
-          <Row label="PPD" value={peso(account.ppd)} />
-          <Row
-            label="IC (Insurance charge)"
-            value={account.insuranceCharge != null ? peso(account.insuranceCharge) : '—'}
-          />
-          <Row
-            label="TMI (Total monthly income)"
-            value={account.totalMonthlyIncome != null ? peso(account.totalMonthlyIncome) : '—'}
-          />
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Ledger balances</h2>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-          <Row label="Opening balance" value={peso(account.openingBalance)} />
-          <Row label="Current balance" value={peso(account.currentBalance)} />
-          <Row label="DP balance" value={peso(account.dpBalance)} />
-          <Row
-            label="Next due"
-            value={
-              account.nextDueDate
-                ? `${peso(account.monthlyInstallment)} due ${new Date(account.nextDueDate).toLocaleDateString()}`
-                : '—'
-            }
-          />
-          {Number(account.partialPaymentOnNextDue) > 0 && (
-            <Row
-              label="Already paid toward next due"
-              value={`${peso(account.partialPaymentOnNextDue)} — ${peso(
-                Number(account.monthlyInstallment) - Number(account.partialPaymentOnNextDue)
-              )} remaining`}
-            />
-          )}
-          <Row label="Arrears" value={peso(account.arrears)} />
-          <Row label="Penalty" value={peso(account.penalty)} />
-          <Row label="Not yet due" value={peso(account.notYetDue)} />
-          <Row label="Total due" value={peso(account.totalDue)} />
-          <Row label="MI due" value={peso(account.miDue)} />
-          <Row label="Uncollected" value={peso(account.uncollected)} />
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Running totals</h2>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-          <Row label="Total billing" value={peso(account.totalBilling)} />
-          <Row label="Total payments" value={peso(account.totalPayments)} />
-          <Row label="Total rebates" value={peso(account.totalRebates)} />
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Last CR</h2>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-          <Row label="CR number" value={account.lastOrNumber ?? '—'} />
-          <Row
-            label="CR date"
-            value={account.lastOrDate ? new Date(account.lastOrDate).toLocaleDateString() : '—'}
-          />
-          <Row
-            label="CR amount"
-            value={account.lastOrAmount != null ? peso(account.lastOrAmount) : '—'}
-          />
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Billing history</h2>
-        {account.billingHistory.length > 0 ? (
-          <ul className="divide-y divide-gray-100" data-testid="billing-history">
-            {/* Keyed on the due, not the invoice: Scenario 47 gave a whole
-                installment sale one ARInvoice, so arInvoiceId now repeats
-                across every row of this list. lineNumber is unique within one
-                account's history. */}
-            {account.billingHistory.map((bill) => {
-              const paid = Number(bill.amountPaid)
-              const remaining = Math.max(
-                Math.round((Number(bill.totalAmount) - paid) * 100) / 100,
-                0
-              )
-              const paidOn = bill.paidOn ? new Date(bill.paidOn).toLocaleDateString() : null
-              return (
-                <li key={bill.lineNumber} className="py-1.5 text-[13px]">
-                  <Link
-                    href={`/accounting/ar-invoices/${bill.arInvoiceId}`}
-                    className={`-mx-1 flex items-center justify-between gap-2 rounded-lg px-1 hover:bg-gray-50 ${
-                      bill.billed ? '' : 'opacity-60'
-                    }`}
-                  >
-                    <span className="text-gray-700">
-                      <span className="font-mono text-[11px] text-gray-400">
-                        {bill.invoiceNumber}
-                      </span>
-                      {' · '}
-                      Payment {bill.lineNumber} of {account.billingHistory.length} · due{' '}
-                      {new Date(bill.dueDate).toLocaleDateString()}
-                      {bill.status === 'PAID' && paidOn && (
-                        <span className="text-emerald-600"> · paid {paidOn}</span>
-                      )}
-                      {bill.status === 'PARTIAL' && (
-                        <span className="block text-[11px] text-amber-600">
-                          {peso(paid)} paid{paidOn ? ` on ${paidOn}` : ''} · {peso(remaining)}{' '}
-                          remaining
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <span className="font-medium text-gray-800">{peso(bill.totalAmount)}</span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          bill.billed
-                            ? (INVOICE_STATUS_COLORS[bill.status] ?? 'bg-gray-100 text-gray-600')
-                            : 'bg-gray-100 text-gray-500'
+            {account.billingHistory.length > 0 ? (
+              <ul className="divide-y divide-gray-100" data-testid="billing-history">
+                {/* Keyed on the due, not the invoice: Scenario 47 gave a whole
+                    installment sale one ARInvoice, so arInvoiceId now repeats
+                    across every row of this list. lineNumber is unique within one
+                    account's history. */}
+                {account.billingHistory.map((bill) => {
+                  const paid = Number(bill.amountPaid)
+                  const remaining = Math.max(
+                    Math.round((Number(bill.totalAmount) - paid) * 100) / 100,
+                    0
+                  )
+                  const paidOn = bill.paidOn ? new Date(bill.paidOn).toLocaleDateString() : null
+                  const isNext = bill.lineNumber === nextBillLine
+                  return (
+                    <li key={bill.lineNumber}>
+                      <Link
+                        href={`/accounting/ar-invoices/${bill.arInvoiceId}`}
+                        className={`-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 ${
+                          isNext ? 'bg-prominent-purple-50' : 'hover:bg-gray-50'
                         }`}
                       >
-                        {bill.billed
-                          ? (INVOICE_STATUS_LABELS[bill.status] ?? bill.status)
-                          : 'Not yet billed'}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-gray-400">
-            Not available for hand-entered/imported accounts.
-          </p>
-        )}
-      </section>
+                        <span
+                          className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                            bill.billed
+                              ? (INVOICE_STATUS_DOTS[bill.status] ?? 'bg-gray-300')
+                              : 'bg-gray-300'
+                          }`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13px] font-medium text-prominent-purple-900">
+                            Payment {bill.lineNumber} of {account.billingHistory.length}
+                            {isNext && (
+                              <span className="ml-2 rounded-full bg-prominent-purple-700 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+                                Next
+                              </span>
+                            )}
+                            <span className="font-normal text-gray-600">
+                              {' · '}due {new Date(bill.dueDate).toLocaleDateString()}
+                            </span>
+                            {bill.status === 'PAID' && paidOn && (
+                              <span className="font-normal text-emerald-600"> · paid {paidOn}</span>
+                            )}
+                          </span>
+                          <span className="block font-mono text-[12px] text-gray-500">
+                            {bill.invoiceNumber}
+                          </span>
+                          {bill.status === 'PARTIAL' && (
+                            <span className="block text-[12px] text-amber-700">
+                              {peso(paid)} paid{paidOn ? ` on ${paidOn}` : ''} · {peso(remaining)}{' '}
+                              remaining
+                            </span>
+                          )}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-3">
+                          <span className="text-[13px] font-semibold text-prominent-purple-900">
+                            {peso(bill.totalAmount)}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[12px] font-medium ${
+                              bill.billed
+                                ? (INVOICE_STATUS_COLORS[bill.status] ??
+                                  'bg-gray-100 text-gray-600')
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {bill.billed
+                              ? (INVOICE_STATUS_LABELS[bill.status] ?? bill.status)
+                              : 'Not yet billed'}
+                          </span>
+                        </span>
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <p className="text-[13px] text-gray-500">
+                Not available for hand-entered/imported accounts.
+              </p>
+            )}
+          </Section>
 
-      {account.inDam && (
-        <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="text-[14px] font-semibold text-gray-900">Legal escalation</h2>
-          <p className="mt-0.5 text-[12px] text-gray-400">
-            Checklist/status tracking only (Scenario 20) — no document generation.
-          </p>
-
-          {canManageLegalEscalation ? (
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[200px_1fr_auto] sm:items-end">
-              <div>
-                <label
-                  htmlFor="legal-escalation-status"
-                  className="block text-[13px] font-medium text-gray-700"
-                >
-                  Status
-                </label>
-                <select
-                  id="legal-escalation-status"
-                  value={legalStatus}
-                  onChange={(e) => setLegalStatus(e.target.value as LegalEscalationStatus)}
-                  className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                >
-                  {Object.entries(LEGAL_ESCALATION_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label
-                  htmlFor="legal-escalation-notes"
-                  className="block text-[13px] font-medium text-gray-700"
-                >
-                  Notes
-                </label>
-                <input
-                  id="legal-escalation-notes"
-                  type="text"
-                  value={legalNotes}
-                  onChange={(e) => setLegalNotes(e.target.value)}
-                  placeholder="e.g. SOA drafted, awaiting BM sign-off"
-                  className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <button
-                onClick={handleSaveLegalEscalation}
-                disabled={savingLegalEscalation}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:opacity-50"
-              >
-                {savingLegalEscalation ? 'Saving…' : 'Update'}
-              </button>
-            </div>
-          ) : (
-            <dl className="mt-3 space-y-2 text-[13px]">
-              <Row
-                label="Status"
-                value={LEGAL_ESCALATION_LABELS[account.legalEscalationStatus ?? 'none']}
-              />
-              <Row label="Notes" value={account.legalEscalationNotes ?? '—'} />
-            </dl>
-          )}
-          {legalEscalationError && (
-            <p className="mt-2 text-[12px] text-red-600">{legalEscalationError}</p>
-          )}
-          {account.legalEscalationUpdatedAt && (
-            <p className="mt-2 text-[11px] text-gray-400">
-              Last updated {new Date(account.legalEscalationUpdatedAt).toLocaleString()}
-            </p>
-          )}
-        </section>
-      )}
-
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-[14px] font-semibold text-gray-900">Collections reminders</h2>
-          {canScheduleReminder && (
-            <button
-              onClick={() => setScheduleReminderOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+          {REMINDERS_ENABLED && (
+            <Section
+              title="Collections reminders"
+              icon={BellRing}
+              action={
+                canScheduleReminder && (
+                  <button
+                    onClick={() => setScheduleReminderOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    <BellRing className="h-3.5 w-3.5" />
+                    Schedule reminder
+                  </button>
+                )
+              }
             >
-              <BellRing className="h-3.5 w-3.5" />
-              Schedule reminder
-            </button>
+              {remindersLoading && <p className="text-[13px] text-gray-500">Loading…</p>}
+
+              {!remindersLoading && reminders.length === 0 && (
+                <p className="text-[13px] text-gray-500">
+                  No reminders logged for this account yet.
+                </p>
+              )}
+
+              {!remindersLoading && reminders.length > 0 && (
+                <ul className="divide-y divide-gray-100">
+                  {reminders.map((r) => {
+                    const Icon = REMINDER_TYPE_ICON[r.reminderType] ?? MoreHorizontal
+                    const isPending = r.status === 'pending' || r.status === 'overdue'
+                    return (
+                      <li key={r.id} className="flex items-center gap-3 py-2 first:pt-0">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+                          <Icon className="h-3.5 w-3.5 text-gray-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-medium text-prominent-purple-900">
+                            {r.note ?? r.reminderType}
+                          </p>
+                          <p className="mt-0.5 flex items-center gap-1 text-[12px] text-gray-500">
+                            <CalendarClock className="h-3 w-3" />
+                            {new Date(r.dueAt).toLocaleString('en-PH', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                            {r.status === 'overdue' && (
+                              <span className="ml-1 font-semibold text-red-600">Overdue</span>
+                            )}
+                          </p>
+                        </div>
+                        {isPending ? (
+                          <button
+                            onClick={() => setCompletingReminderId(r.id)}
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Complete
+                          </button>
+                        ) : (
+                          <span className="shrink-0 text-[12px] font-medium text-gray-500">
+                            Completed
+                          </span>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </Section>
+          )}
+
+          {account.inDam && (
+            <Section title="Legal escalation" icon={Scale} tone="danger">
+              <p className="-mt-1 mb-3 text-[12px] text-gray-500">
+                Checklist/status tracking only (Scenario 20) — no document generation.
+              </p>
+
+              {canManageLegalEscalation ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[200px_1fr_auto] sm:items-end">
+                  <div>
+                    <label
+                      htmlFor="legal-escalation-status"
+                      className="block text-[13px] font-medium text-gray-700"
+                    >
+                      Status
+                    </label>
+                    <select
+                      id="legal-escalation-status"
+                      value={legalStatus}
+                      onChange={(e) => setLegalStatus(e.target.value as LegalEscalationStatus)}
+                      className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    >
+                      {Object.entries(LEGAL_ESCALATION_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="legal-escalation-notes"
+                      className="block text-[13px] font-medium text-gray-700"
+                    >
+                      Notes
+                    </label>
+                    <input
+                      id="legal-escalation-notes"
+                      type="text"
+                      value={legalNotes}
+                      onChange={(e) => setLegalNotes(e.target.value)}
+                      placeholder="e.g. SOA drafted, awaiting BM sign-off"
+                      className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSaveLegalEscalation}
+                    disabled={savingLegalEscalation}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:opacity-50"
+                  >
+                    {savingLegalEscalation ? 'Saving…' : 'Update'}
+                  </button>
+                </div>
+              ) : (
+                <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Row
+                    label="Status"
+                    value={LEGAL_ESCALATION_LABELS[account.legalEscalationStatus ?? 'none']}
+                  />
+                  <Row label="Notes" value={account.legalEscalationNotes ?? '—'} />
+                </dl>
+              )}
+              {legalEscalationError && (
+                <p className="mt-2 text-[12px] text-red-600">{legalEscalationError}</p>
+              )}
+              {account.legalEscalationUpdatedAt && (
+                <p className="mt-2 text-[12px] text-gray-500">
+                  Last updated {new Date(account.legalEscalationUpdatedAt).toLocaleString()}
+                </p>
+              )}
+            </Section>
           )}
         </div>
 
-        {remindersLoading && <p className="mt-3 text-[13px] text-gray-400">Loading…</p>}
+        <aside className="space-y-4 lg:col-span-2">
+          <Section title="Customer & assignment" icon={UserRound}>
+            <dl className="grid grid-cols-2 gap-x-5 gap-y-2.5">
+              <Row label="Customer" value={account.customer.name} />
+              <Row label="Phone" value={account.customer.phone ?? '—'} />
+              <Row label="Email" value={account.customer.email ?? '—'} />
+              <Row label="Branch" value={account.branch?.name ?? '—'} />
+              <Row
+                label="Collector"
+                value={
+                  account.collector
+                    ? `${account.collector.stubNumber} — ${account.collector.name}`
+                    : '—'
+                }
+              />
+              <Row label="Salesperson" value={account.sellingAgent?.name ?? '—'} />
+              {canViewCommission && (
+                <Row
+                  label="Sales commission"
+                  value={
+                    Number(account.salesCommission ?? 0) ? peso(account.salesCommission ?? 0) : '—'
+                  }
+                />
+              )}
+            </dl>
+          </Section>
 
-        {!remindersLoading && reminders.length === 0 && (
-          <p className="mt-3 text-[13px] text-gray-400">
-            No reminders logged for this account yet.
-          </p>
-        )}
-
-        {!remindersLoading && reminders.length > 0 && (
-          <ul className="mt-3 divide-y divide-gray-50">
-            {reminders.map((r) => {
-              const Icon = REMINDER_TYPE_ICON[r.reminderType] ?? MoreHorizontal
-              const isPending = r.status === 'pending' || r.status === 'overdue'
-              return (
-                <li key={r.id} className="flex items-center gap-3 py-2.5">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
-                    <Icon className="h-4 w-4 text-gray-500" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-gray-900">
-                      {r.note ?? r.reminderType}
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-400">
-                      <CalendarClock className="h-3 w-3" />
-                      {new Date(r.dueAt).toLocaleString('en-PH', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                      {r.status === 'overdue' && (
-                        <span className="ml-1 font-semibold text-red-600">Overdue</span>
+          <Section title="Unit" icon={Package}>
+            {account.unitItems.length > 0 ? (
+              <ul className="divide-y divide-gray-100 text-[13px]" data-testid="unit-items">
+                {account.unitItems.map((unit) => (
+                  <li key={unit.id} className="py-2.5 first:pt-0">
+                    <div className="font-medium text-prominent-purple-900">
+                      {unit.itemName
+                        ? unit.brand
+                          ? `${unit.itemName} (${unit.brand})`
+                          : unit.itemName
+                        : '—'}
+                    </div>
+                    <div className="mt-0.5 text-gray-500">
+                      {unit.modelNumber && <div>Model: {unit.modelNumber}</div>}
+                      {unit.serialNumber && (
+                        <div className="font-mono text-[12px] text-prominent-purple-700">
+                          SN: {unit.serialNumber}
+                          {unit.secondarySerialNumber && ` / ${unit.secondarySerialNumber}`}
+                        </div>
                       )}
-                    </p>
-                  </div>
-                  {isPending ? (
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[13px] text-gray-500">
+                Not available for hand-entered/imported accounts.
+              </p>
+            )}
+          </Section>
+
+          <Section title="Financing details" icon={Landmark}>
+            <dl className="grid grid-cols-2 gap-x-5 gap-y-2.5">
+              <Row label="Scheme" value={account.priceUseType?.name ?? '—'} />
+              <Row label="MI factor" value={String(account.miFactor)} />
+              <Row label="PNV" value={peso(account.pnv)} />
+              <Row label="Interest differential" value={peso(account.interestDifferential)} />
+              <Row label="PPD" value={peso(account.ppd)} />
+              <Row
+                label="IC (Insurance charge)"
+                value={account.insuranceCharge != null ? peso(account.insuranceCharge) : '—'}
+              />
+              <Row
+                label="TMI (Total monthly income)"
+                value={account.totalMonthlyIncome != null ? peso(account.totalMonthlyIncome) : '—'}
+              />
+            </dl>
+          </Section>
+
+          <Section title="Collection tags" icon={Tags}>
+            <dl className="grid grid-cols-2 gap-x-5 gap-y-2.5">
+              <Row label="Classification" value={account.classification ?? '—'} />
+              <Row
+                label="DAM entered"
+                value={
+                  account.damEnteredAt ? new Date(account.damEnteredAt).toLocaleDateString() : '—'
+                }
+              />
+              <Row label="Months run" value={String(account.monthsRun)} />
+              <Row label="Points" value={String(account.points)} />
+            </dl>
+
+            {account.category !== 'C' &&
+              !pendingGraduation &&
+              canEdit &&
+              account.status === 'active' && (
+                <div className="mt-4">
+                  <button
+                    onClick={handleRequestGraduation}
+                    disabled={requestingGraduation}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <ArrowUpCircle className="h-4 w-4" />
+                    {requestingGraduation ? 'Requesting…' : 'Request graduation to Category C'}
+                  </button>
+                  {graduationError && (
+                    <p className="mt-2 text-[12px] text-red-600">{graduationError}</p>
+                  )}
+                </div>
+              )}
+
+            {pendingGraduation && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-[13px] font-medium text-amber-900">
+                  Pending graduation to Category C
+                </p>
+                <p className="mt-0.5 text-[12px] text-amber-700">
+                  Requires management approval before the category changes.
+                </p>
+                {canApproveGraduation && (
+                  <div className="mt-2 flex items-center gap-2">
                     <button
-                      onClick={() => setCompletingReminderId(r.id)}
-                      className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                      onClick={() => handleApproveGraduation(pendingGraduation.id)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
                     >
                       <Check className="h-3.5 w-3.5" />
-                      Complete
+                      Approve
                     </button>
-                  ) : (
-                    <span className="shrink-0 text-[11px] font-medium text-gray-400">
-                      Completed
-                    </span>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
+                    <button
+                      onClick={() => setRejectingRequestId(pendingGraduation.id)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!account.inDam && !pendingDamEscalation && canEdit && account.status === 'active' && (
+              <div className="mt-3">
+                <button
+                  onClick={handleRequestDamEscalation}
+                  disabled={requestingDamEscalation}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <AlertOctagon className="h-4 w-4" />
+                  {requestingDamEscalation ? 'Requesting…' : 'Request DAM escalation'}
+                </button>
+                {damEscalationError && (
+                  <p className="mt-2 text-[12px] text-red-600">{damEscalationError}</p>
+                )}
+              </div>
+            )}
+
+            {pendingDamEscalation && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+                <p className="text-[13px] font-medium text-red-900">Pending DAM escalation</p>
+                <p className="mt-0.5 text-[12px] text-red-700">
+                  Requires management approval before the account moves to DAM.
+                </p>
+                {canApproveDamEscalation && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      onClick={() => handleApproveDamEscalation(pendingDamEscalation.id)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => setRejectingDamRequestId(pendingDamEscalation.id)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </Section>
+        </aside>
+      </div>
 
       <ScheduleReminderModal
         open={scheduleReminderOpen}
@@ -899,11 +1000,76 @@ function RejectRequestModal({
   )
 }
 
+/** A titled card — an icon, a heading, and its content. */
+function Section({
+  title,
+  icon: Icon,
+  action,
+  tone,
+  children,
+}: {
+  title: string
+  icon: React.ElementType
+  action?: React.ReactNode
+  tone?: 'danger'
+  children: React.ReactNode
+}) {
+  const danger = tone === 'danger'
+  return (
+    <section className={`${CARD} p-4 ${danger ? 'border-red-200' : ''}`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+              danger
+                ? 'bg-red-50 text-red-600'
+                : 'bg-prominent-purple-100 text-prominent-purple-700'
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <h2 className="text-[14px] font-semibold text-prominent-purple-900">{title}</h2>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** One of the contract's headline figures. */
+function Figure({
+  label,
+  value,
+  note,
+  accent,
+}: {
+  label: string
+  value: string
+  note?: string
+  accent?: boolean
+}) {
+  return (
+    <div className="lg:px-5 lg:first:pl-0">
+      <p className="text-[12px] text-gray-600">{label}</p>
+      <p
+        className={`mt-0.5 text-xl font-semibold tracking-tight ${
+          accent ? 'text-prominent-orange-800' : 'text-prominent-purple-900'
+        }`}
+      >
+        {value}
+      </p>
+      {note && <p className="text-[12px] text-gray-600">{note}</p>}
+    </div>
+  )
+}
+
+/** A label over its value. */
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-3 border-b border-gray-50 py-1 last:border-0 sm:block sm:border-0 sm:py-0">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="text-right font-medium text-gray-800 sm:mt-0.5 sm:text-left">{value}</dd>
+    <div>
+      <dt className="text-[12px] text-gray-600">{label}</dt>
+      <dd className="text-[13px] font-medium text-prominent-purple-900">{value}</dd>
     </div>
   )
 }

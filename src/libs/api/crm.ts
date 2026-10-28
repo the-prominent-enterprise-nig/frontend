@@ -20,7 +20,7 @@ import type {
   CategoryGraduationRequest,
   DamEscalationRequest,
   LegalEscalationStatus,
-  AgentCommission,
+  AgentInvoice,
   DuplicateCheckResult,
   DuplicatePair,
   CollectionsCalendarResponse,
@@ -62,7 +62,6 @@ import type {
   CreateCollectionIncentiveInput,
   RejectCollectionIncentiveInput,
 } from '@/src/schema/crm/collection-incentive'
-import type { PriceCheckInput, PriceCheckResult } from '@/src/schema/crm/installment-account'
 
 // ─── Pipeline Stages ────────────────────────────────────────
 
@@ -182,6 +181,14 @@ export const customersApi = {
       ...(scope === 'all' ? {} : { scope }),
       ...(transactionId ? { transactionId } : {}),
     }),
+  /** Scenario 78 Part 3 — the customer's agent-credited sales with their
+   * commission and the Commissions - Sales voucher that released it. With the
+   * ledger's `transactionId`, only that one purchase's. */
+  commissions: (id: string, transactionId?: string) =>
+    api.get<AgentInvoice[]>(
+      `/crm/customers/${id}/commissions`,
+      transactionId ? { transactionId } : undefined
+    ),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),
@@ -465,7 +472,7 @@ export const agentsApi = {
   create: (body: CreateAgentInput) => api.post<Agent>('/crm/agents', body),
   update: (id: string, body: UpdateAgentInput) => api.patch<Agent>(`/crm/agents/${id}`, body),
   remove: (id: string) => api.delete(`/crm/agents/${id}`),
-  commissions: (id: string) => api.get<AgentCommission[]>(`/crm/agents/${id}/commissions`),
+  invoices: (id: string) => api.get<AgentInvoice[]>(`/crm/agents/${id}/invoices`),
 }
 
 // ─── Collection Incentives ──────────────────────────────────
@@ -499,13 +506,6 @@ export const collectionIncentivesApi = {
       created: CollectionIncentive[]
       skipped: { collectorId: string; reason: string }[]
     }>('/crm/collection-incentives/generate-monthly', body),
-}
-
-// ─── Installment Price Checker ──────────────────────────────
-
-export const priceCheckApi = {
-  check: (params: PriceCheckInput) =>
-    api.get<PriceCheckResult>('/crm/installment-accounts/price-check', params),
 }
 
 // ─── Collections Calendar ───────────────────────────────────

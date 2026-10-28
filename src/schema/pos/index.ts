@@ -67,6 +67,9 @@ export interface PosSession {
   denominationBreakdown?: Record<string, number> | null
   closingNotes?: string | null
   tenderBreakdown?: Record<string, number> | null
+  /** Returned by close only — the session's last sale (null when it sold
+   * nothing). The Daily Collection report files the session on that day. */
+  lastSaleAt?: string | null
   handedOverTo?: string | null
   status: PosSessionStatus
   createdAt: string
@@ -111,6 +114,26 @@ export interface SessionTenderSummary {
   nonCash: Record<string, number>
   totalNonCash: number
   totalTaken: number
+  /** Collections taken over the counter on the session, on any tender — MIs
+   *  and delivery fees. Cash ones are already in the expected drawer. */
+  collections?: SessionCollection[]
+  totalCollections?: number
+  /** What third-party financiers owe on the shift's sales, by provider
+   *  (Tonik, Skyro, Salmon). Not taken at the counter, so in no total above. */
+  tpf?: Record<string, number>
+  totalTpf?: number
+}
+
+export interface SessionCollection {
+  id: string
+  /** The CR number, or the booklet reference when it has none. */
+  number: string | null
+  customerName: string | null
+  kind: 'Delivery fee' | 'Down payment' | 'FMI' | 'MI'
+  /** Same shape as the nonCash keys: 'cash', 'qr::Maya', 'check', … */
+  tenderKey: string
+  isCash: boolean
+  amount: number
 }
 
 export interface SessionReconciliation {
@@ -140,6 +163,22 @@ export interface SessionReconciliation {
    * exceed the shift's own sales.
    */
   totalCollectionsCash: number
+  /** Every transaction rung up on the shift, voids and refunds included. */
+  transactions?: ShiftTransaction[]
+}
+
+export interface ShiftTransaction {
+  id: string
+  /** The SI / DR number, or the transaction number when it has none. */
+  docNo: string
+  occurredAt: string
+  transactionType: string
+  invoiceType: string | null
+  status: string
+  customerName: string | null
+  totalAmount: number
+  /** Keyed like SessionTenderSummary.nonCash: 'cash', 'card::BDO', 'tpf', … */
+  tenders: { key: string; amount: number }[]
 }
 
 export interface SalesSummary {
@@ -1158,43 +1197,6 @@ export interface CrossBranchStockEntry {
   warehouse: { id: string; name: string; code: string; branchId: string | null }
 }
 export type CrossBranchStockResult = CrossBranchStockEntry[]
-
-// Branch Pricing
-export interface BranchPricing {
-  id: string
-  branchId: string
-  itemId: string
-  price: number
-  taxRate?: number | null
-  pricingMode?: 'inclusive' | 'exclusive' | null
-  effectiveFrom?: string | null
-  effectiveTo?: string | null
-  notes?: string | null
-  createdAt: string
-  updatedAt: string
-  branch?: { id: string; name: string }
-  item?: { id: string; name: string } | null
-}
-
-export interface CreateBranchPricingInput {
-  branchId: string
-  itemId: string
-  price: number
-  taxRate?: number
-  pricingMode?: 'inclusive' | 'exclusive'
-  effectiveFrom?: string
-  effectiveTo?: string
-  notes?: string
-}
-
-export interface UpdateBranchPricingInput {
-  price?: number
-  taxRate?: number
-  pricingMode?: 'inclusive' | 'exclusive'
-  effectiveFrom?: string
-  effectiveTo?: string
-  notes?: string
-}
 
 // Financing Terms (Phase 3 — Installment Financing)
 export interface FinancingTerm {

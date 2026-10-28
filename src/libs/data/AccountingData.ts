@@ -33,9 +33,10 @@ export interface Account {
   isSpecialAccountControl?: boolean
   /** Which extra fields an expense line posting here carries: FUEL (plate,
    * litres), VEHICLE_REPAIR (plate, service type, remarks) or
-   * AGENT_COMMISSION (the sale being released). Null for every other account.
+   * AGENT_COMMISSION (the sale being released) or SMI (the sale the SMI is
+   * paid on). Null for every other account.
    * Set in the database — see ExpenseKind on the API. */
-  expenseKind?: 'FUEL' | 'VEHICLE_REPAIR' | 'AGENT_COMMISSION' | null
+  expenseKind?: 'FUEL' | 'VEHICLE_REPAIR' | 'AGENT_COMMISSION' | 'SMI' | null
   /** Balance-sheet/income-statement classification (REVENUE, ASSET,
    * ACCOUNTS_RECEIVABLE, …) — finer-grained than `type`. Drives whether an
    * expense line posting here gets a Sales Invoice field to pick. */

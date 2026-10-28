@@ -5,7 +5,6 @@ import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
 import Link from 'next/link'
 import {
   TrendingUp,
-  RefreshCw,
   ArrowUpRight,
   FileText,
   BarChart2,
@@ -293,10 +292,8 @@ const INIT = {
 
 export default function AccountingPage() {
   const [s, setS] = useState(INIT)
-  const [spinning, setSpinning] = useState(false)
 
   const load = useCallback(async () => {
-    setSpinning(true)
     const today = new Date().toISOString().slice(0, 10)
     const yearStart = `${new Date().getFullYear()}-01-01`
     const fiscalYear = new Date().getFullYear()
@@ -459,7 +456,6 @@ export default function AccountingPage() {
       budgetAlerts: budgetAlerts.slice(0, 6),
       bankAccountsList: bankList.slice(0, 4),
     })
-    setSpinning(false)
   }, [])
 
   // Scenario 29 — this dashboard previously only ever fetched once on
@@ -502,14 +498,6 @@ export default function AccountingPage() {
               <BookOpen className="h-3.5 w-3.5 text-gray-500" />
               Journal
             </Link>
-            <button
-              onClick={load}
-              disabled={spinning}
-              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-60 transition-colors"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${spinning ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
           </div>
         </div>
       </div>

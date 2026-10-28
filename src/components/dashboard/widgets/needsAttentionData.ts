@@ -170,7 +170,7 @@ export async function getNeedsAttentionItems(
     tier: 2,
     badge: 'Transfer',
     badgeStyle: 'bg-purple-100 text-purple-700',
-    href: '/inventory/transfers',
+    href: '/inventory/stock-transaction?tab=transfers',
   }))
 
   const drItems: AttentionItem[] = (drRes.data?.data ?? []).map((dr) => ({

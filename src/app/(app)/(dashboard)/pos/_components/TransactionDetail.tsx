@@ -829,7 +829,7 @@ function installmentInvoiceLabel(inv: PosTransactionInvoice): string {
 
 const INVOICE_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
-  SENT: 'Due',
+  SENT: 'To pay',
   PARTIAL: 'Partially Paid',
   PAID: 'Paid',
   OVERDUE: 'Overdue',

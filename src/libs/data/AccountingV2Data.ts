@@ -419,6 +419,20 @@ export interface ResolveWithholdingVarianceInput {
   notes?: string
 }
 
+/**
+ * One payment of a collection taken with several methods. The CR number is not
+ * here: the collection has one (`reference`), shared by every tender's receipt.
+ */
+export interface ArTenderInput {
+  method: PaymentMethod
+  amount: number
+  paymentMethodConfigId?: string
+  paymentMethodOptionId?: string
+  /** The bank's own transaction reference — a BANK_TRANSFER tender only. */
+  bankReferenceNumber?: string
+  bankAccountId?: string
+}
+
 export interface RecordArPaymentInput {
   amount: number
   paymentDate: string
@@ -447,6 +461,9 @@ export interface RecordArPaymentInput {
    * field collections and Accounting-side entries.
    */
   posSessionId?: string
+  /** The collection taken with SEVERAL methods (two or more); their amounts
+   * add up to the collection's amount. Omit for a single method. */
+  tenders?: ArTenderInput[]
 }
 
 export interface ARInvoiceSerialGoodsReceipt {
@@ -483,6 +500,9 @@ export interface ARInvoiceDue {
 }
 
 export interface ARInvoiceInstallmentDetail {
+  /** The InstallmentSchedule behind this receivable — what the Collections
+   * deep link keys on to land on the plan's next open due. */
+  scheduleId?: string
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
@@ -615,6 +635,9 @@ export interface BulkRecordArPaymentInput {
    * field collections and Accounting-side entries.
    */
   posSessionId?: string
+  /** The collection taken with SEVERAL methods (two or more); their amounts
+   * add up to the collection's amount. Omit for a single method. */
+  tenders?: ArTenderInput[]
 }
 
 export interface BulkRecordPaymentResult {
@@ -2341,9 +2364,15 @@ export const Expenses = {
     api.get<ExpenseAgentOption[]>('/expenses/lookups/agents', search ? { search } : undefined),
   agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
     api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
-  /** The sales a commission line can release — one agent's with `agentId`, any agent's without. */
-  commissionSales: (params?: { agentId?: string; search?: string; excludeExpenseId?: string }) =>
-    api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
+  /** The sales a commission line can release — one agent's with `agentId`, any agent's without.
+   * With `kind: 'SMI'`, the sales an SMI line can be paid on: any completed sale, and
+   * `releasedOn` means already on another SMI line. */
+  commissionSales: (params?: {
+    agentId?: string
+    search?: string
+    excludeExpenseId?: string
+    kind?: 'AGENT_COMMISSION' | 'SMI'
+  }) => api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
   list: (params?: {
     search?: string
     status?: string

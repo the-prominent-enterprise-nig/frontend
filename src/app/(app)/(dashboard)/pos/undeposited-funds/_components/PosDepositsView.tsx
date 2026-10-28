@@ -527,7 +527,7 @@ function DraftActions({
             confirm === 'clear' ? (
               <ClearSummary deposit={deposit} />
             ) : (
-              <p>Its sessions go back to Undeposited Funds and can be put in another deposit.</p>
+              <p>Its sessions go back to Undeposited and can be put in another deposit.</p>
             )
           }
           confirmLabel={confirm === 'clear' ? 'Clear & post' : 'Cancel draft'}

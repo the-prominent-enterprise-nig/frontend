@@ -7,7 +7,7 @@ import { FinanceHub } from './_components/FinanceHub'
 
 export const metadata = {
   title: 'Finance | NIG Central',
-  description: 'Stock costing, price lists, landed costs, and inventory revaluation',
+  description: 'Stock costing, landed costs, and inventory revaluation',
 }
 
 export default async function FinancePage() {
@@ -17,7 +17,6 @@ export default async function FinancePage() {
 
   const hasAccess = canAny(session, [
     INVENTORY_PERMISSIONS.COSTING_READ,
-    INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
     INVENTORY_PERMISSIONS.LANDED_COST_READ,
     INVENTORY_PERMISSIONS.REVALUATION_READ,
   ])

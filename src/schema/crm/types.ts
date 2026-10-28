@@ -249,20 +249,40 @@ export interface Agent {
   updatedAt: string
 }
 
-export interface AgentCommission {
+export type AgentSaleType = 'installment' | 'tpf' | 'cash' | 'charge' | 'mixed'
+
+/** One completed sale an agent is the selling agent on — GET
+ * /crm/agents/:id/invoices. Listed whether or not a commission accrued on it
+ * (`commission` is null when the agent had no rate at the time). */
+export interface AgentInvoice {
   id: string
-  agentId: string
-  posTransactionId: string
-  baseAmount: number
-  rate: number
-  commissionAmount: number
-  createdAt: string
-  posTransaction: {
-    transactionNumber: string
-    salesInvoiceNumber?: string | null
-    totalAmount: number
-    occurredAt: string
-  }
+  date: string
+  salesInvoiceNumber: string | null
+  transactionNumber: string
+  /** Who the sale is credited to — what the customer ledger's commissions
+   * history shows (Scenario 78 Part 3). */
+  agentId: string | null
+  agentName: string | null
+  customerName: string | null
+  type: AgentSaleType
+  /** Pre-VAT, pre-discount. */
+  subtotal: number
+  totalAmount: number
+  /** What accounting recorded in Expenses for this sale's commission — the
+   * Commissions - Sales line's amount. Null until a recorded entry exists (a
+   * draft carries none). */
+  commission: number | null
+  /** The live Commissions - Sales voucher paying this sale's commission. */
+  released: AgentInvoiceRelease | null
+}
+
+export interface AgentInvoiceRelease {
+  expenseId: string
+  voucherNumber: string
+  date: string
+  amount: number
+  /** Still a draft — the sale is taken but not yet paid out. */
+  isDraft: boolean
 }
 
 export interface Interaction {
@@ -415,6 +435,28 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   // Scenario 32 item 3 — the selling agent (manager/salesperson on the
   // paper card) this account was sold under. Same POS-only scoping.
   sellingAgent?: { id: string; name: string } | null
+  // The commission on this sale — what accounting encoded in Expenses
+  // (Commissions - Sales, recorded entries only). Zero until it is encoded.
+  // Shown only to users who can read agents.
+  salesCommission?: number | string
+  // The sale's receipt: when it was rung up, by whom, and how it was paid
+  // for at the register. Null for hand-entered/imported accounts (POS-only).
+  saleReceipt?: {
+    occurredAt: string
+    cashier: string | null
+    // The SI or DR the customer holds; null when neither was entered.
+    documentNumber: string | null
+    // The delivery fee's own CR; null when the sale had no fee.
+    deliveryFeeReferenceNumber: string | null
+    tenders: {
+      id: string
+      method: string
+      option: string | null
+      amount: number
+      // The cashier's CR booklet number for this tender.
+      referenceNumber: string | null
+    }[]
+  } | null
   // Scenario 32 item 4 — running totals, same for both POS-originated and
   // hand-entered accounts (unlike items 1/2/3/5 above, which are POS-only).
   totalPayments: number | string

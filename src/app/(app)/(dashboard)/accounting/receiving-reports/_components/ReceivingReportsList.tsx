@@ -79,7 +79,7 @@ export default function ReceivingReportsList() {
   })
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-2xl font-bold text-prominent-purple-900">Receiving Reports</h2>

@@ -9,7 +9,9 @@ import { gotoReady, loginAs } from './utils'
 const HUBS: {
   name: string
   entry: string
-  tabs: { label: string; path: string }[]
+  // `accountant: false` — the tab is gated on a permission the seeded Accountant
+  // role does not hold, so the Accountant test must not expect to see it.
+  tabs: { label: string; path: string; accountant?: false }[]
   // A form under a tab, where the strip is not rendered but the item stays lit.
   formPath?: string
 }[] = [
@@ -41,6 +43,12 @@ const HUBS: {
       { label: 'Recurring', path: '/accounting/expenses/recurring' },
       { label: 'Special Accounts', path: '/accounting/special-accounts' },
       { label: 'Employee Cash Loans', path: '/accounting/employee-cash-loans' },
+      // Moved from Inventory's Master Data. Still gated on inventory:transfers:read,
+      // which the Accountant role does not hold.
+      { label: 'Drivers', path: '/accounting/drivers', accountant: false },
+      // The roster by plate, with each vehicle's recorded expenses read-only. Reads on
+      // inventory:transfers:read OR accounting:expense:read, so the Accountant sees it.
+      { label: 'Vehicles', path: '/accounting/vehicles' },
     ],
     formPath: '/accounting/expenses/new',
   },
@@ -63,6 +71,8 @@ const HUBS: {
       // Nested under AP Invoices' path — must not light AP Invoices as well.
       { label: 'Payments', path: '/accounting/ap-bills/payments' },
       { label: 'Receiving Reports', path: '/accounting/receiving-reports' },
+      // Moved from Inventory's Master Data; the Accountant holds inventory:suppliers:read.
+      { label: 'Suppliers', path: '/accounting/suppliers' },
     ],
     formPath: '/accounting/ap-bills/new',
   },
@@ -149,8 +159,10 @@ test.describe('Accounting hubs — Accountant', () => {
       await gotoReady(page, hub.entry)
       await expect(page).toHaveURL(new RegExp(`${hub.tabs[0].path}$`), { timeout: 15_000 })
       await expect(sidebar(page).getByRole('link', { name: hub.name, exact: true })).toBeVisible()
-      for (const { label } of hub.tabs) {
-        await expect(tabStrip(page).getByRole('link', { name: label })).toBeVisible()
+      for (const { label, accountant } of hub.tabs) {
+        const link = tabStrip(page).getByRole('link', { name: label })
+        if (accountant === false) await expect(link).toHaveCount(0)
+        else await expect(link).toBeVisible()
       }
     }
   })

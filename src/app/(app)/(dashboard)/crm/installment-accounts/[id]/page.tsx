@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import InstallmentAccountDetail from './_components/InstallmentAccountDetail'
@@ -44,7 +45,8 @@ export default async function InstallmentAccountDetailPage({
         session,
         CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_MANAGE_LEGAL_ESCALATION
       )}
-      canScheduleReminder={can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
+      canScheduleReminder={REMINDERS_ENABLED && can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
+      canViewCommission={can(session, CRM_PERMISSIONS.AGENTS_READ)}
       currentUserId={session.id}
       tenantId={session.enterpriseOwnerId ?? session.id}
     />

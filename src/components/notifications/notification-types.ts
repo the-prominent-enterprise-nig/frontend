@@ -44,7 +44,7 @@ const stockAdjustmentHref = (): string => '/inventory/counting?tab=adjustments'
 // Scenario 26 same-day follow-up — SKU Reservation cancellation lives under
 // /pos/reservations (not /inventory/reservations, a different list).
 const skuReservationHref = (): string => '/pos/reservations'
-const priceListHref = (): string => '/inventory/price-lists'
+const priceListHref = (): string => '/pos/catalog/price-lists'
 const batchHoldHref = (): string => '/inventory/batches'
 const purchaseRequestHref = (): string => '/inventory/purchase-requests'
 const purchaseOrderHref = (): string => '/inventory/purchase-orders'
