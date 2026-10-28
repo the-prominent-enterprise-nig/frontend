@@ -13,26 +13,7 @@ import {
   type PhCity,
   type PhBarangay,
 } from '@/src/libs/data/ph-address'
-
-const CATEGORY_COLORS: Record<string, string> = {
-  A: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  B: 'bg-blue-50 text-blue-700 ring-blue-200',
-  C: 'bg-amber-50 text-amber-700 ring-amber-200',
-  D: 'bg-red-50 text-red-700 ring-red-200',
-}
-
-function CategoryBadge({ category }: { category?: string | null }) {
-  if (!category) return <span className="text-gray-400">—</span>
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
-        CATEGORY_COLORS[category] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
-      }`}
-    >
-      {category}
-    </span>
-  )
-}
+import CollectorAssignedAccounts from './CollectorAssignedAccounts'
 
 function peso(amount: number | string): string {
   return `₱${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
@@ -174,66 +155,7 @@ export default function CollectorDetail({
           </dl>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-2">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Assigned accounts</h2>
-          {collector.installmentAccounts.length === 0 && (
-            <p className="py-6 text-center text-[13px] text-gray-400">
-              No installment accounts assigned yet.
-            </p>
-          )}
-          {collector.installmentAccounts.length > 0 && (
-            <>
-              {/* Mobile: cards */}
-              <ul className="space-y-2 sm:hidden">
-                {collector.installmentAccounts.map((a) => (
-                  <li
-                    key={a.id}
-                    className="flex items-center justify-between rounded-lg border border-gray-100 p-3"
-                  >
-                    <div>
-                      <div className="text-[13px] font-medium text-gray-900">{a.accountNumber}</div>
-                      <div className="text-[12px] text-gray-500">{a.classification ?? '—'}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CategoryBadge category={a.category} />
-                      <span className="text-[13px] font-medium tabular-nums text-gray-900">
-                        {peso(a.currentBalance)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-
-              {/* Desktop: table */}
-              <div className="hidden overflow-x-auto sm:block">
-                <table className="min-w-full divide-y divide-gray-100 text-sm">
-                  <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                    <tr>
-                      <th className="py-2 pr-4">Account #</th>
-                      <th className="py-2 pr-4">Category</th>
-                      <th className="py-2 pr-4">Classification</th>
-                      <th className="py-2 pr-4 text-right">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {collector.installmentAccounts.map((a) => (
-                      <tr key={a.id}>
-                        <td className="py-2.5 pr-4 font-medium text-gray-900">{a.accountNumber}</td>
-                        <td className="py-2.5 pr-4">
-                          <CategoryBadge category={a.category} />
-                        </td>
-                        <td className="py-2.5 pr-4 text-gray-600">{a.classification ?? '—'}</td>
-                        <td className="py-2.5 pr-4 text-right tabular-nums font-medium text-gray-900">
-                          {peso(a.currentBalance)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </section>
+        <CollectorAssignedAccounts collectorId={id} />
       </div>
 
       <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
