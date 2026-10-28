@@ -474,10 +474,10 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
     )
 
     await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
-    await page
-      .getByTestId('dp-payment-mode-toggle')
-      .getByRole('button', { name: 'Cash', exact: true })
-      .click()
+    // With no down payment there is nothing to tender, so no method to choose
+    // (2026-10-28): the till says so instead of asking.
+    await expect(page.getByTestId('dp-payment-mode-toggle')).toHaveCount(0)
+    await expect(page.getByText('Nothing to collect for the items at checkout')).toBeVisible()
 
     // Not clickStable — this submits a real sale.
     await page.getByRole('button', { name: /Create Installment Plan/ }).click()
@@ -504,6 +504,72 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
     expect(String(line.firstDueDate).slice(0, 10)).toBe(fmi)
 
     // The account the collectors see starts on the same date.
+    const accountsRes = await page.request.get('/api/crm/installment-accounts', {
+      params: { customerId: customer.id },
+    })
+    const accountsBody = await accountsRes.json()
+    const account = (
+      (accountsBody.data ?? accountsBody) as {
+        customerId: string
+        nextDueDate: string | null
+      }[]
+    ).find((a) => a.customerId === customer.id)!
+    expect(String(account.nextDueDate).slice(0, 10)).toBe(fmi)
+  })
+
+  // The FMI date is a field of its own: a plain rate-card plan takes it without
+  // typing the plan, and so without the override's reason and note.
+  test('PO2-F08: an FMI date entered on a rate-card plan posts — the schedule starts on it, and it is not an override', async ({
+    page,
+  }) => {
+    const { customer } = await startInstallmentSale(page)
+    const salesInvoiceNumber = `SI-PO2F08-${Date.now()}`
+    const fmi = todayPlus(40)
+
+    // A Financing Term, not a typed plan.
+    await openCustomSelect(page.getByRole('combobox', { name: 'Select a term…' }))
+    await page
+      .getByRole('option', { name: /months/ })
+      .first()
+      .click()
+    await expect(typedPlan(page)).toHaveCount(0)
+
+    await fillStable(page.getByTestId('fmi-date-input'), fmi)
+    await expect(page.getByTestId('fmi-date-note')).toContainText('First installment due')
+    // No reason, no note: the date is not an override.
+    await expect(exceptionSection(page)).toHaveCount(0)
+
+    await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
+    await page
+      .getByTestId('dp-payment-mode-toggle')
+      .getByRole('button', { name: 'Cash', exact: true })
+      .click()
+    // The down payment (10% of the 12,000 item) is collected here.
+    await fillStable(page.getByPlaceholder('0.00').first(), '1200')
+    await fillStable(page.getByPlaceholder('CR Number'), `CR-PO2F08-${Date.now()}`)
+
+    // Not clickStable — this submits a real sale.
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
+      timeout: 25_000,
+    })
+
+    // What posted, read back through the API: a rate-card plan, not a typed one,
+    // with no reason or note on the sale...
+    const listRes = await page.request.get('/api/pos/transactions', {
+      params: { search: salesInvoiceNumber },
+    })
+    const listBody = await listRes.json()
+    const sale = (
+      (listBody.data ?? listBody) as { id: string; salesInvoiceNumber: string | null }[]
+    ).find((t) => t.salesInvoiceNumber === salesInvoiceNumber)!
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    expect(detail.lines[0].manualPlan).toBeFalsy()
+    expect(detail.lines[0].financingTermId).not.toBeNull()
+    expect(detail.exceptionReasonId ?? null).toBeNull()
+    expect(detail.exceptionNote ?? null).toBeNull()
+
+    // ...and the account the collectors see starts on the entered date.
     const accountsRes = await page.request.get('/api/crm/installment-accounts', {
       params: { customerId: customer.id },
     })

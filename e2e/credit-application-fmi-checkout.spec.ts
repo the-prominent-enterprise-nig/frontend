@@ -57,7 +57,7 @@ test.describe('Credit application — the FMI date at the till', () => {
     await expect(note).toBeVisible({ timeout: 15_000 })
     await expect(note).toContainText('First installment due')
     await expect(note).toContainText(await labelFor(page, fmi))
-    await expect(note).toContainText('type the terms yourself')
+    await expect(note).toContainText('enter it in the FMI date field')
   })
 
   test('FC-F02: an FMI date that has already passed is flagged — a month after the sale instead', async ({
@@ -86,5 +86,40 @@ test.describe('Credit application — the FMI date at the till', () => {
     await openWithApplication(page, undefined)
     // The application is picked and the panel is up; there is just no note.
     await expect(page.getByTestId('application-fmi-note')).toHaveCount(0)
+  })
+
+  // The FMI date is a field of its own on the sale: changing the date no longer
+  // means typing the whole plan (an override with a reason).
+
+  test('FC-F05: an FMI date can be entered on its own and replaces the application’s note — no override', async ({
+    page,
+  }) => {
+    const applicationFmi = dateIn(45)
+    const entered = dateIn(20)
+    await openWithApplication(page, applicationFmi)
+    await expect(page.getByTestId('application-fmi-note')).toBeVisible({ timeout: 15_000 })
+
+    const field = page.getByTestId('fmi-date-input')
+    await expect(field).toBeVisible()
+    await expect(page.getByTestId('fmi-date-note')).toContainText('Optional')
+    await field.fill(entered)
+
+    // The entered date speaks for the sale; the application's note steps aside.
+    await expect(page.getByTestId('fmi-date-note')).toContainText('First installment due')
+    await expect(page.getByTestId('fmi-date-note')).toContainText(await labelFor(page, entered))
+    await expect(page.getByTestId('application-fmi-note')).toHaveCount(0)
+
+    // Nothing here asks for a reason or a note: it is not an override.
+    await expect(page.getByTestId('price-override-exception')).toHaveCount(0)
+  })
+
+  test('FC-F06: an FMI date that has passed is flagged where it is entered', async ({ page }) => {
+    await openWithApplication(page, undefined)
+    const field = page.getByTestId('fmi-date-input')
+    await expect(field).toBeVisible({ timeout: 15_000 })
+
+    // A past date cannot be picked from the calendar (min), but can be typed.
+    await field.fill(dateIn(-3))
+    await expect(page.getByTestId('fmi-date-note')).toContainText('cannot be in the past')
   })
 })

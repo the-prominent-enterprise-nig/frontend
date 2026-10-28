@@ -1,9 +1,4 @@
-import type {
-  OverrideFlag,
-  OverrideEntryStatus,
-  OverridePlanKind,
-  OverrideReviewEntry,
-} from '@/src/schema/pos'
+import type { OverrideFlag, OverrideEntryStatus, OverridePlanKind } from '@/src/schema/pos'
 
 export function peso(amount: number | null | undefined): string {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return '—'
@@ -67,9 +62,30 @@ export const STATUS_STYLES: Record<OverrideEntryStatus, string> = {
 
 export const PLAN_LABELS: Record<OverridePlanKind, string> = {
   cash: 'Cash',
-  installment_term: 'Installment — rate card',
-  installment_typed: 'Installment — typed terms',
+  installment_term: 'In-house installment',
+  installment_typed: 'In-house installment',
   tpf: 'Third-party financing',
+}
+
+/** The payment type in a word, for the one-line row; the details say the rest. */
+export const PLAN_SHORT: Record<OverridePlanKind, string> = {
+  cash: 'Cash',
+  installment_term: 'Installment',
+  installment_typed: 'Installment',
+  tpf: 'Financing',
+}
+
+/** One column template for the header and every row, so they line up exactly.
+ * Chevron, Sale, Branch, Customer, Item, Price, Discount, Payment, Flags, Decision. */
+export const ENTRY_GRID =
+  'grid grid-cols-[28px_132px_72px_minmax(0,1fr)_minmax(0,1.6fr)_84px_120px_88px_124px_148px] items-center gap-x-4 px-3'
+
+/** The row's left edge, so a day's worth reads by status before any text does. */
+export const STATUS_ACCENT: Record<OverrideEntryStatus, string> = {
+  pending: 'border-l-orange-400',
+  approved: 'border-l-green-500',
+  rejected: 'border-l-red-500',
+  voided: 'border-l-gray-300',
 }
 
 export function formatTime(iso: string): string {
@@ -90,39 +106,4 @@ export function formatClock(iso: string): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
   return at.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false })
-}
-
-/**
- * The plan in one line, the way a manager reads it across the table:
- * "In-house installment: DP ₱0.00, ₱2,750.00 x 12 months (manual) | Credit
- * application waived | 2 items on one sale".
- */
-export function planText(e: OverrideReviewEntry, itemsOnSale: number): string {
-  const parts: string[] = []
-  if (e.planKind === 'cash') {
-    parts.push('Cash')
-  } else if (e.planKind === 'tpf') {
-    parts.push(
-      e.downPayment !== null
-        ? `Third-party financing: DP ${peso(e.downPayment)}`
-        : 'Third-party financing'
-    )
-  } else {
-    const bits: string[] = []
-    if (e.downPayment !== null) bits.push(`DP ${peso(e.downPayment)}`)
-    if (e.monthlyInstallment !== null && e.termMonths !== null) {
-      bits.push(`${peso(e.monthlyInstallment)} x ${e.termMonths} months`)
-    } else if (e.termMonths !== null) {
-      bits.push(`${e.termMonths} months`)
-    }
-    parts.push(
-      `In-house installment${bits.length ? `: ${bits.join(', ')}` : ''}${
-        e.planKind === 'installment_typed' ? ' (manual)' : ''
-      }`
-    )
-  }
-  if (e.flags.includes('credit_waived')) parts.push('Credit application waived')
-  if (e.flags.includes('credit_overridden')) parts.push('Credit application overridden')
-  if (itemsOnSale > 1) parts.push(`${itemsOnSale} items on one sale`)
-  return parts.join(' | ')
 }

@@ -1762,7 +1762,9 @@ export async function searchUsers(
   }
 }
 
-export async function getSellingAgents(): Promise<
+export async function getSellingAgents(
+  search?: string
+): Promise<
   ApiResponse<{ id: string; name: string; phone?: string | null; email?: string | null }[]>
 > {
   try {
@@ -1772,7 +1774,11 @@ export async function getSellingAgents(): Promise<
     // pointing checkout at it rendered an empty picker for every cashier,
     // which is why the agent field was dropped in 1b82138 rather than fixed.
     // Status is forced to active server-side, so it is not sent here.
+    // The list is capped at 100 by name, so the checkout picker searches
+    // server-side as the cashier types — an agent past the first 100 is only
+    // ever reachable that way.
     const result = await api.get<{ data: AgentRow[] }>('/pos/agents', {
+      search: search?.trim() || undefined,
       limit: 100,
     })
     if (!result.success || !result.data) {
