@@ -469,7 +469,7 @@ export default function AccountingDashboard({
       budgetAlerts: budgetAlerts.slice(0, 6),
       bankAccountsList: bankList.slice(0, 4),
     })
-  }, [])
+  }, [access])
 
   // Scenario 29 — this dashboard previously only ever fetched once on
   // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
