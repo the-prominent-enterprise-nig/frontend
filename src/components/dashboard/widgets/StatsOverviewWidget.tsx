@@ -5,6 +5,9 @@ import { TrendingUp, TrendingDown, Wallet, Receipt, ArrowUpRight } from 'lucide-
 import { useWidgetSize } from '../WidgetSizeContext'
 import { Reports } from '@/src/libs/data/AccountingV2Data'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 
 interface Stat {
   label: string
@@ -77,8 +80,13 @@ export default function StatsOverviewWidget() {
 
   const [stats, setStats] = useState<Stat[]>(PLACEHOLDER)
   const branchId = usePosBranchContext((s) => s.branchId)
+  // The figures come from Accounting's reports; a role without them isn't
+  // asked for them (the server would refuse) and keeps the placeholders.
+  const { data: me } = useMe()
+  const canReadReports = !!me && hasPermission(me, ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ)
 
   useEffect(() => {
+    if (!canReadReports) return
     let cancelled = false
     ;(async () => {
       const now = new Date()
@@ -136,7 +144,7 @@ export default function StatsOverviewWidget() {
     return () => {
       cancelled = true
     }
-  }, [branchId])
+  }, [branchId, canReadReports])
 
   return (
     <div className={`grid gap-2 ${gridCols}`}>

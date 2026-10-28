@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
-import { type BankAccount } from '@/src/libs/data/AccountingV2Data'
+import { type BankAccountOption } from '@/src/libs/data/AccountingV2Data'
 import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -146,7 +146,7 @@ function clearsPatch(value: string): Pick<Slip, 'clearsAccountId' | 'clearsBankA
 
 /** The funds kept in 1-01-010's sub-ledger — every bank and cash fund posts
  * to 1-01-010, told apart by a tag — under its header. */
-function fundOptions(accounts: BankAccount[], excludeId: string): Option[] {
+function fundOptions(accounts: BankAccountOption[], excludeId: string): Option[] {
   return accounts
     .filter((a) => a.isActive && a.id !== excludeId)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -280,7 +280,7 @@ export function SlipEditor({
 }: {
   slips: Slip[]
   onChange: (slips: Slip[]) => void
-  accounts: BankAccount[]
+  accounts: BankAccountOption[]
 }): React.JSX.Element {
   // The chart, for the Deposit from column: a slip empties the branch's own
   // cash, a fund in 1-01-010's sub-ledger, or one of the accounts the client's

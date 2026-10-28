@@ -9,7 +9,7 @@ import {
   BankAccounts,
   type ARInvoice,
   type ARInvoiceCustomerResult,
-  type BankAccount,
+  type BankAccountOption,
   type PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
   fmtMoney,
@@ -82,9 +82,9 @@ export default function NewReceiptForm({
     overpaidAmount: number
     wasClosedAccount: boolean
   } | null>(null)
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   useEffect(() => {
-    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+    BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
   }, [])
 
   useEffect(() => {

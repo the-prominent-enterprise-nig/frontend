@@ -64,6 +64,14 @@ export const POS_PERMISSIONS = {
   // requires) rather than invented, so it starts working the moment the
   // row is seeded instead of silently drifting from the backend.
   COLLECTIONS_MANAGE: 'pos:collections:manage',
+  /** New Receipts for acknowledgment receipts only (Access Levels Part 2). */
+  ACKNOWLEDGEMENT_RECEIPTS_CREATE: 'pos:acknowledgement-receipts:create',
+  /** POS › Reservations; the routes also take Inventory's sku-reservations. */
+  RESERVATIONS_READ: 'pos:reservations:read',
+  RESERVATIONS_CREATE: 'pos:reservations:create',
+  RESERVATIONS_FULFIL: 'pos:reservations:fulfil',
+  RESERVATIONS_CANCEL_REQUEST: 'pos:reservations:cancel-request',
+  RESERVATIONS_CANCEL_APPROVE: 'pos:reservations:cancel-approve',
   SERVICE_DRAFTS_CREATE: 'pos:service-drafts:create',
   SERVICE_DRAFTS_READ: 'pos:service-drafts:read',
   SERVICE_DRAFTS_UPDATE: 'pos:service-drafts:update',
@@ -124,6 +132,14 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
     'Retired (Scenario 53) — the deposit is now accounting:cash-in-transit:manage',
   'pos:collections:manage':
     "Collect payments against a customer's existing installment dues at POS",
+  'pos:acknowledgement-receipts:create':
+    'Create acknowledgment receipts on New Receipts, and no other receipt type',
+  'pos:reservations:read': 'View reservations on POS',
+  'pos:reservations:create': 'Reserve an item by SKU or model at POS',
+  'pos:reservations:fulfil':
+    'Fulfil a reservation at POS: apply the deposit and collect the balance',
+  'pos:reservations:cancel-request': 'Ask to cancel a reservation at POS',
+  'pos:reservations:cancel-approve': 'Approve or reject a reservation cancellation at POS',
   'pos:service-drafts:create': 'Open a new service job / materials estimate',
   'pos:service-drafts:read': 'View service jobs / materials estimates',
   'pos:service-drafts:update': 'Edit a draft service job / materials estimate',

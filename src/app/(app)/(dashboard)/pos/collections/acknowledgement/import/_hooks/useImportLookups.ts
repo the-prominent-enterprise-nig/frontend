@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BankAccounts, type BankAccount } from '@/src/libs/data/AccountingV2Data'
+import { BankAccounts, type BankAccountOption } from '@/src/libs/data/AccountingV2Data'
 import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import type { CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { useBranches } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePos'
@@ -11,7 +11,7 @@ export type ImportLookups = {
   branchNames: string[]
   branchesLoading: boolean
   /** Bank / cash accounts — matched by exact name too. */
-  bankAccounts: Pick<BankAccount, 'name' | 'bankName'>[]
+  bankAccounts: Pick<BankAccountOption, 'name' | 'bankName'>[]
   /** The chart, depth-ordered, with the account NUMBER as the option id —
    * that is what the file carries in the two account columns. Accounts with no
    * number can't be named in a file and are left out. */
@@ -54,7 +54,7 @@ export function useImportLookups(): ImportLookups {
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
 
   useEffect(() => {
-    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+    BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
     getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToNumberOptions(list))

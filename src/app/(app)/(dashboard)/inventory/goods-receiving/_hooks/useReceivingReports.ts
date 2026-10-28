@@ -64,7 +64,7 @@ export function useReceivingReports(options: { includeManual?: boolean } = {}) {
     staleTime: STALE.REALTIME,
   })
 
-  // Header KPI row — a tenant-wide snapshot, not scoped to the filters
+  // Header KPI row — a tenant (or own-branch) snapshot, not scoped to the filters
   // above, so it doesn't need to be in `params` or refetch per keystroke.
   const summaryQuery = useQuery({
     queryKey: ['inventory-receiving-reports-summary'],

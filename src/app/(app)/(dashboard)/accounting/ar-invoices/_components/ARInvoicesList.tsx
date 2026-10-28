@@ -30,7 +30,7 @@ import {
   BankAccounts,
   type ARInvoice,
   type ARPayment,
-  type BankAccount,
+  type BankAccountOption,
   type PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
   fmtMoney,
@@ -790,9 +790,9 @@ function PaymentDialog({
     overpaidAmount: number
     wasClosedAccount: boolean
   } | null>(null)
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   useEffect(() => {
-    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+    BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
   }, [])
   const totalApplied = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
   const wouldOverpay = totalApplied > outstanding + 0.01

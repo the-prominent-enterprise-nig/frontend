@@ -8,7 +8,7 @@ import {
   ARInvoices,
   BankAccounts,
   fmtMoney,
-  type BankAccount,
+  type BankAccountOption,
   type RetentionHistory,
   type RetentionOffsetReason,
 } from '@/src/libs/data/AccountingV2Data'
@@ -125,12 +125,12 @@ export function ReleaseRetentionForm({ id }: { id: string }) {
   const [bankId, setBankId] = useState('')
   const [reference, setReference] = useState('')
   const [notes, setNotes] = useState('')
-  const [banks, setBanks] = useState<BankAccount[]>([])
+  const [banks, setBanks] = useState<BankAccountOption[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    BankAccounts.list().then((r) => setBanks((r.data ?? []).filter((b) => b.isActive)))
+    BankAccounts.options().then((r) => setBanks((r.data ?? []).filter((b) => b.isActive)))
   }, [])
   useEffect(() => {
     if (history && amount === '') setAmount(String(history.held))

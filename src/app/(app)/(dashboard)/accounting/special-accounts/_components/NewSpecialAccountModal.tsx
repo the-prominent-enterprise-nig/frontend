@@ -3,12 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { Expenses, EmployeesApi, type EmployeeLite } from '@/src/libs/data/AccountingV2Data'
-import {
-  getAccountOptions,
-  getCustomers,
-  type Account,
-  type Customer,
-} from '@/src/libs/data/AccountingData'
+import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
 
 /**
  * Opens a named balance under a control account.
@@ -30,7 +25,7 @@ export default function NewSpecialAccountModal({
   onClose: () => void
   onCreated: (name: string) => void
 }) {
-  const [accounts, setAccounts] = useState<Account[]>([])
+  const [accounts, setAccounts] = useState<{ id: string; number: string; name: string }[]>([])
   const [employees, setEmployees] = useState<EmployeeLite[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [form, setForm] = useState({
@@ -46,16 +41,9 @@ export default function NewSpecialAccountModal({
 
   useEffect(() => {
     // Only accounts that keep a subsidiary ledger can carry a named balance,
-    // and the server rejects the rest — so offering the whole chart here
-    // would only invite an error.
-    getAccountOptions().then((r) => {
-      // /accounts answers with a bare array, not the paginated envelope its
-      // return type promises — same unwrap the Expense form does.
-      const list = ((r.data as { items?: Account[] })?.items ??
-        (r.data as unknown as Account[]) ??
-        []) as Account[]
-      setAccounts(list.filter((a) => a.isSpecialAccountControl))
-    })
+    // and only the ones the caller's role may use (Access Levels Part 2) —
+    // the server refuses the rest, so offering them would only invite an error.
+    Expenses.specialAccountControls().then((r) => setAccounts(r.data ?? []))
     EmployeesApi.search().then((r) => setEmployees(r.data ?? []))
     getCustomers({ limit: 200 }).then((r) => {
       const payload = r.data
@@ -135,7 +123,7 @@ export default function NewSpecialAccountModal({
               <option value="">— Select —</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.number ?? a.code} {a.name}
+                  {a.number} {a.name}
                 </option>
               ))}
             </select>
