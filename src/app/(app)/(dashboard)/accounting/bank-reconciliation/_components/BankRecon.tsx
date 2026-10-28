@@ -42,7 +42,17 @@ const STATUS_OPTIONS = [
 
 const EMPTY_FILTERS = { search: '', status: [] as ReconStatus[], startDate: '', endDate: '' }
 
-export default function BankRecon() {
+// Opening a reconciliation, its transactions, and every button here need
+// bank-accounts:reconcile (Adjusting Entry needs :adjust). A role that only
+// reads bank accounts (Expense Clerk, Payables Clerk) gets the list alone,
+// instead of buttons that land on /403.
+export default function BankRecon({
+  canReconcile,
+  canAdjust,
+}: {
+  canReconcile: boolean
+  canAdjust: boolean
+}): React.JSX.Element {
   const router = useRouter()
   const [recs, setRecs] = useState<BankReconciliation[]>([])
   const [settlements, setSettlements] = useState<ClearingSettlement[]>([])
@@ -113,24 +123,30 @@ export default function BankRecon() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-2xl font-bold">Bank Reconciliation</h2>
         <div className="flex flex-wrap gap-2">
-          <Link
-            href="/accounting/bank-reconciliation/adjusting-entry"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm whitespace-nowrap text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-lg"
-          >
-            <FileEdit className="w-3.5 h-3.5" /> Adjusting Entry
-          </Link>
-          <Link
-            href="/accounting/bank-reconciliation/unidentified-credit"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm whitespace-nowrap text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg"
-          >
-            <Plus className="w-3.5 h-3.5" /> Unidentified Credit
-          </Link>
-          <Link
-            href="/accounting/bank-reconciliation/new"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold whitespace-nowrap bg-purple-700 text-white rounded-lg hover:bg-purple-800"
-          >
-            <Plus className="w-3.5 h-3.5" /> New Reconciliation
-          </Link>
+          {canAdjust && (
+            <Link
+              href="/accounting/bank-reconciliation/adjusting-entry"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm whitespace-nowrap text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-lg"
+            >
+              <FileEdit className="w-3.5 h-3.5" /> Adjusting Entry
+            </Link>
+          )}
+          {canReconcile && (
+            <>
+              <Link
+                href="/accounting/bank-reconciliation/unidentified-credit"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm whitespace-nowrap text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg"
+              >
+                <Plus className="w-3.5 h-3.5" /> Unidentified Credit
+              </Link>
+              <Link
+                href="/accounting/bank-reconciliation/new"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold whitespace-nowrap bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+              >
+                <Plus className="w-3.5 h-3.5" /> New Reconciliation
+              </Link>
+            </>
+          )}
         </div>
       </div>
       <div className="mb-3 flex flex-wrap items-end gap-3">
@@ -224,8 +240,12 @@ export default function BankRecon() {
                 return (
                   <tr
                     key={r.id}
-                    onClick={() => router.push(`/accounting/bank-reconciliation/${r.id}`)}
-                    className="cursor-pointer hover:bg-gray-50"
+                    onClick={
+                      canReconcile
+                        ? () => router.push(`/accounting/bank-reconciliation/${r.id}`)
+                        : undefined
+                    }
+                    className={canReconcile ? 'cursor-pointer hover:bg-gray-50' : undefined}
                   >
                     <td className="px-3 py-2">{r.bankAccount?.name}</td>
                     <td className="px-3 py-2 text-xs">{fmtDate(r.statementDate)}</td>
@@ -242,6 +262,10 @@ export default function BankRecon() {
                           every transaction behind the ERP bank balance. */}
                       {awaiting ? (
                         <span className="text-gray-400">—</span>
+                      ) : !canReconcile ? (
+                        <span className={isZero ? 'text-emerald-700' : 'text-amber-700'}>
+                          {fmtMoney(discrepancy)}
+                        </span>
                       ) : (
                         <Link
                           href={`/accounting/bank-reconciliation/${r.id}/transactions`}
@@ -270,26 +294,30 @@ export default function BankRecon() {
                     <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                       <RowActionsMenu
                         horizontal
-                        items={[
-                          // Only offered once the discrepancy is zero — until then the
-                          // worksheet is where cleared items get checked off.
-                          ...(!r.reconciled && !awaiting && isZero
-                            ? [
+                        items={
+                          !canReconcile
+                            ? []
+                            : [
+                                // Only offered once the discrepancy is zero — until then the
+                                // worksheet is where cleared items get checked off.
+                                ...(!r.reconciled && !awaiting && isZero
+                                  ? [
+                                      {
+                                        label: 'Mark reconciled',
+                                        icon: CheckCircle,
+                                        variant: 'success' as const,
+                                        onClick: () => complete(r.id),
+                                      },
+                                    ]
+                                  : []),
                                 {
-                                  label: 'Mark reconciled',
-                                  icon: CheckCircle,
-                                  variant: 'success' as const,
-                                  onClick: () => complete(r.id),
+                                  label: 'Delete reconciliation',
+                                  icon: Trash2,
+                                  variant: 'danger' as const,
+                                  onClick: () => remove(r),
                                 },
                               ]
-                            : []),
-                          {
-                            label: 'Delete reconciliation',
-                            icon: Trash2,
-                            variant: 'danger' as const,
-                            onClick: () => remove(r),
-                          },
-                        ]}
+                        }
                       />
                     </td>
                   </tr>
@@ -418,7 +446,7 @@ export default function BankRecon() {
                                   },
                                 ]
                               : []),
-                            ...(c.status === 'unmatched'
+                            ...(c.status === 'unmatched' && canReconcile
                               ? [
                                   {
                                     label: 'Reclassify',

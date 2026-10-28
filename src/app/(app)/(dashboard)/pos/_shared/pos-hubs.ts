@@ -442,14 +442,15 @@ export const OPERATIONS_ADMIN_HUB: PosHub = {
       permissions: [POS_PERMISSIONS.SERVICE_DRAFTS_READ],
     },
     {
-      // Every POS role needs their own PIN (checkout PIN entry, manager
-      // approvals), so it has no permission — and so the row shows for any POS
-      // role, including a Credit Investigator.
+      // Every role that rings up or approves a sale holds cashier-pin:verify,
+      // which the page and its API require. A role with only a corner of POS
+      // (Deposit Clerk's Daily Collection, Stock Clerk's catalog) doesn't, and
+      // used to see the tab and land on /403.
       id: 'pos-pin',
       label: 'POS PIN',
       href: '/pos/pin',
       icon: Key,
-      permissions: [],
+      permissions: [POS_PERMISSIONS.CASHIER_PIN_VERIFY],
     },
     {
       // Business Owner or Branch Manager only — the layout's guard is

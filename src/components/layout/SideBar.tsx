@@ -171,9 +171,16 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
     // A tab with no permission requirement keeps the item visible to anyone
     // with accounting access — requiresModuleAccess, so it still disappears
     // for someone with no accounting access at all.
+    //
+    // Only Accounting's own permissions show the item. A tab another module
+    // also opens (Account Mapping on POS's config:read, Drivers on Inventory's
+    // transfers:read) stays reachable from that module's screens, but doesn't
+    // put Books or Expenses in the sidebar of a role with no Accounting.
     requiredPermission: hub.tabs.some((tab) => tab.permissions.length === 0)
       ? undefined
-      : hub.tabs.flatMap((tab) => tab.permissions),
+      : hub.tabs
+          .flatMap((tab) => tab.permissions)
+          .filter((permission) => permission.startsWith('accounting:')),
     requiresModuleAccess: hub.tabs.some((tab) => tab.permissions.length === 0)
       ? 'accounting'
       : undefined,
@@ -188,10 +195,15 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
  * page — and lit on the hub's routes.
  */
 function posHubNavItem(hub: PosHub, label: string, icon: LucideIcon): NavItem {
-  const ungated = !hub.permission && hub.tabs.some((tab) => posTabPermissions(tab).length === 0)
+  // A configOnly tab (Settings) lists no permission because its check is the
+  // role (canManagePosSettings), not because anyone may open it. It doesn't
+  // make the hub ungated: the roles that pass that check hold the hub's other
+  // tabs anyway.
+  const tabs = hub.tabs.filter((tab) => !tab.configOnly)
+  const ungated = !hub.permission && tabs.some((tab) => posTabPermissions(tab).length === 0)
   const permissions = ungated
     ? []
-    : (hub.permission ?? hub.tabs.flatMap((tab) => posTabPermissions(tab)))
+    : (hub.permission ?? tabs.flatMap((tab) => posTabPermissions(tab)))
   const { exact, prefix } = posHubActiveHrefs(hub)
   return {
     label,
