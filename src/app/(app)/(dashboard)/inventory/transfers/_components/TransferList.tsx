@@ -455,7 +455,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Requests</h1>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Transfers</h1>
             <p className="text-[13px] text-[#5b5b6b]">
               Move stock between branches with full ledger traceability.
             </p>

@@ -635,7 +635,7 @@ export default function CreateTransferModal({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-[#a3a3b2]`}>
-              Inventory &rsaquo; Stock requests &rsaquo;{' '}
+              Inventory &rsaquo; Stock transfers &rsaquo;{' '}
               {isEditing ? (editing?.transferNumber ?? 'Edit') : 'New'}
             </p>
             <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-[#17171c]">

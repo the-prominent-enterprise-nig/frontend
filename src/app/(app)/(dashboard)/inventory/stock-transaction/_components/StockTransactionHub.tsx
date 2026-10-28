@@ -47,7 +47,7 @@ const TABS: TransactionTab[] = [
   {
     // Kept as 'transfers' so existing ?tab=transfers links still land here.
     id: 'transfers',
-    label: 'Stock Request',
+    label: 'Stock Transfer',
     icon: ArrowLeftRight,
     permissions: [INVENTORY_PERMISSIONS.TRANSFERS_READ],
   },
