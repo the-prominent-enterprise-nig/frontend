@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import {
-  MoreHorizontal,
   Pencil,
   Trash2,
   Shield,
@@ -24,10 +23,9 @@ import { type AccessMap } from './module-map'
 import { setUserStatus } from '@/src/app/(app)/(dashboard)/settings/_actions/set-user-status'
 import { deleteUser } from '@/src/app/(app)/(dashboard)/settings/_actions/delete-user'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
+import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import { adminResetUserPassword } from '@/src/libs/auth/actions/admin-reset-password'
 import { showToast } from '@/src/components/ui/toast'
-
-type OpenMenu = string | null
 
 /** Delete and Deactivate ask first; they used to act on the first click. */
 type PendingConfirm = { kind: 'delete' | 'deactivate'; user: User } | null
@@ -69,7 +67,6 @@ export default function UsersSection({
   const [assignTarget, setAssignTarget] = useState<User | null>(null)
   const [assignBranchTarget, setAssignBranchTarget] = useState<User | null>(null)
   const [editTarget, setEditTarget] = useState<User | null>(null)
-  const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [drawerUser, setDrawerUser] = useState<User | null>(null)
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null)
   const [confirming, setConfirming] = useState(false)
@@ -138,7 +135,6 @@ export default function UsersSection({
   }
 
   const handleToggleActive = async (user: User) => {
-    setOpenMenu(null)
     setDrawerUser(null)
     if (user.isActive) {
       setPendingConfirm({ kind: 'deactivate', user })
@@ -166,7 +162,6 @@ export default function UsersSection({
   }
 
   const handleDelete = (user: User) => {
-    setOpenMenu(null)
     setDrawerUser(null)
     setPendingConfirm({ kind: 'delete', user })
   }
@@ -202,7 +197,6 @@ export default function UsersSection({
   }
 
   const handleResetPassword = async (user: User) => {
-    setOpenMenu(null)
     const result = await adminResetUserPassword(user.id)
     if (result.success) {
       showToast({
@@ -221,19 +215,16 @@ export default function UsersSection({
 
   const handleEdit = (user: User) => {
     setEditTarget(user)
-    setOpenMenu(null)
     setDrawerUser(null)
   }
 
   const handleAssignRole = (user: User) => {
     setAssignTarget(user)
-    setOpenMenu(null)
     setDrawerUser(null)
   }
 
   const handleAssignBranch = (user: User) => {
     setAssignBranchTarget(user)
-    setOpenMenu(null)
     setDrawerUser(null)
   }
 
@@ -322,8 +313,7 @@ export default function UsersSection({
               </thead>
               <tbody>
                 {users.length > 0 ? (
-                  users.map((user, index) => {
-                    const isNearBottom = index >= users.length - 3
+                  users.map((user) => {
                     const displayName =
                       (user.name && user.name.trim()) ||
                       (user.firstName || user.lastName
@@ -396,67 +386,33 @@ export default function UsersSection({
                               —
                             </span>
                           ) : (
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={() => setOpenMenu(openMenu === user.id ? null : user.id)}
-                                className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100"
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </button>
-                              {openMenu === user.id && (
-                                <>
-                                  <div
-                                    className="fixed inset-0 z-40"
-                                    onClick={() => setOpenMenu(null)}
-                                  />
-                                  <div
-                                    className={`absolute right-0 z-50 ${isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'} w-48 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg`}
-                                  >
-                                    <button
-                                      type="button"
-                                      onClick={() => handleEdit(user)}
-                                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleAssignRole(user)}
-                                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
-                                    >
-                                      <UserCog className="h-4 w-4" />
-                                      Assign Role
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleAssignBranch(user)}
-                                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
-                                    >
-                                      <Building2 className="h-4 w-4" />
-                                      Manage Branches
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleActive(user)}
-                                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                      {user.isActive ? 'Deactivate' : 'Activate'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDelete(user)}
-                                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                      Delete
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
+                            <RowActionsMenu
+                              horizontal
+                              items={[
+                                { label: 'Edit', icon: Pencil, onClick: () => handleEdit(user) },
+                                {
+                                  label: 'Assign Role',
+                                  icon: UserCog,
+                                  onClick: () => handleAssignRole(user),
+                                },
+                                {
+                                  label: 'Manage Branches',
+                                  icon: Building2,
+                                  onClick: () => handleAssignBranch(user),
+                                },
+                                {
+                                  label: user.isActive ? 'Deactivate' : 'Activate',
+                                  icon: Pencil,
+                                  onClick: () => handleToggleActive(user),
+                                },
+                                {
+                                  label: 'Delete',
+                                  icon: Trash2,
+                                  variant: 'danger',
+                                  onClick: () => handleDelete(user),
+                                },
+                              ]}
+                            />
                           )}
                         </td>
                       </tr>
