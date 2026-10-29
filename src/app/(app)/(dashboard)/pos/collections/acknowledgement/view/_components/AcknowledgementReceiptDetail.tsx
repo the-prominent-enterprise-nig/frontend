@@ -172,7 +172,8 @@ function ReceiptSheet({ receipt, title }: { receipt: AcknowledgementReceipt; tit
             <tr>
               <td className="border border-gray-300 px-2.5 py-[7px] text-center align-top">1</td>
               <td className="border border-gray-300 px-2.5 py-[7px] align-top">
-                {accountLabel(receipt.account)} — {receipt.payerName}
+                {receipt.creditsAr ? 'Accounts Receivable' : accountLabel(receipt.account)} —{' '}
+                {receipt.payerName}
               </td>
               <td className="border border-gray-300 px-2.5 py-[7px] text-right align-top tabular-nums">
                 {fmtMoney(isSettlement ? receipt.grossAmount : receipt.amount)}
@@ -513,6 +514,14 @@ function AcknowledgementReceiptDetailBody({
         <span>Receipt {receipt.number ?? '—'}</span>
         <span>{longDate(receipt.paymentDate)}</span>
         <span>Received {fmtMoney(receipt.amount)}</span>
+        {(receipt.customer?.id ?? receipt.customerId) && (
+          <Link
+            href={`/pos/customers/${receipt.customer?.id ?? receipt.customerId}/ledger`}
+            className="font-medium text-prominent-purple-700 hover:underline"
+          >
+            View customer ledger
+          </Link>
+        )}
       </div>
 
       {editing && editForm && (

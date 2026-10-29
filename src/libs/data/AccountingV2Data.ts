@@ -980,6 +980,10 @@ export interface AcknowledgementReceipt {
    * matching the client's own reference tool. Null means it fell back to
    * the MISC_COLLECTIONS mapping. */
   accountId: string | null
+  /** Posted as a credit to Accounts Receivable — so it is on the customer's
+   * ledger and in AR Aging. */
+  creditsAr?: boolean
+  receivedInAccountId?: string | null
   account?: { id: string; name: string; number: string | null } | null
   reason: string | null
   amount: number
@@ -1028,6 +1032,12 @@ export interface AcknowledgementReceipt {
 }
 export interface CreateAcknowledgementReceiptInput {
   payerName: string
+  /** The account the money was received in — the debit side. Left out, it is
+   * Cash in Bank / Cash on Hand by the receipt's branch. */
+  receivedInAccountId?: string
+  /** Overrides the credit. Left out, a receipt with a customer credits
+   * Accounts Receivable (their ledger) and one without credits Other /
+   * Miscellaneous Collections. */
   accountId?: string
   reason?: string
   amount: number

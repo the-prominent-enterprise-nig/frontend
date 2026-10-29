@@ -124,7 +124,7 @@ export default function NewAcknowledgementReceiptForm({
     paymentDate: new Date().toISOString().slice(0, 10),
     reference: '',
     bankAccountId: '',
-    accountId: '',
+    receivedInAccountId: '',
     reason: '',
     receiptType: 'ACKNOWLEDGEMENT' as 'COLLECTION' | 'ACKNOWLEDGEMENT',
     clearedType: 'SAME_DATE' as ClearedType,
@@ -171,12 +171,15 @@ export default function NewAcknowledgementReceiptForm({
     // one, a branch's receipt sits in Cash on Hand — Branch Collections until
     // it is banked, and head office's goes straight to the bank.
     cashLabel:
-      (restrictedBranchId ?? form.branchId) && !form.bankAccountId
+      accountLabel(form.receivedInAccountId) ??
+      ((restrictedBranchId ?? form.branchId) && !form.bankAccountId
         ? 'Cash on Hand — Branch Collections'
-        : 'Cash in Bank',
+        : 'Cash in Bank'),
     subsidyAccountLabel: accountLabel(form.subsidyAccountId),
     withholdingAccountLabel: accountLabel(form.withholdingAccountId),
-    creditAccountLabel: accountLabel(form.accountId),
+    // With a customer the gross credits Accounts Receivable, which is what puts
+    // it on their ledger and in AR Aging.
+    creditAccountLabel: customer ? 'Accounts Receivable (customer ledger)' : null,
   })
 
   const changeCustomer = (next: PickedCustomer | null) => {
@@ -226,7 +229,7 @@ export default function NewAcknowledgementReceiptForm({
       invoiceNo: invoice?.number || undefined,
       arInvoiceId: invoice?.id || undefined,
       bankAccountId: form.bankAccountId || undefined,
-      accountId: form.accountId || undefined,
+      receivedInAccountId: form.receivedInAccountId || undefined,
       reason: form.reason || undefined,
       clearedType: form.clearedType,
       clearedDate: form.clearedType === 'SAME_DATE' ? undefined : form.clearedDate || undefined,
@@ -390,13 +393,13 @@ export default function NewAcknowledgementReceiptForm({
 
         <Field
           label="Received in account"
-          hint="The account the receipt is credited to on the journal entry."
+          hint="The account the money was received in (debited). Left empty, it is Cash in Bank, or Cash on Hand for a branch receipt."
         >
           <CategorySelect
-            value={form.accountId || undefined}
-            onChange={(value) => setForm({ ...form, accountId: value ?? '' })}
+            value={form.receivedInAccountId || undefined}
+            onChange={(value) => setForm({ ...form, receivedInAccountId: value ?? '' })}
             options={accountOptions}
-            placeholder="Default: Other / Miscellaneous Collections"
+            placeholder="Default: Cash in Bank"
             noun="accounts"
           />
         </Field>
@@ -419,8 +422,8 @@ export default function NewAcknowledgementReceiptForm({
             label="Gross (AR amount)"
             required
             hint={
-              form.accountId
-                ? `Credited to ${accountLabel(form.accountId) ?? 'the account picked above'}.`
+              customer
+                ? "Credited to Accounts Receivable, so it shows on the customer's ledger and in AR Aging."
                 : "Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
             }
           >
