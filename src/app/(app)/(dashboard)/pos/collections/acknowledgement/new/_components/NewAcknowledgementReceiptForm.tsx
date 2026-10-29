@@ -123,6 +123,7 @@ export default function NewAcknowledgementReceiptForm({
     paymentDate: new Date().toISOString().slice(0, 10),
     reference: '',
     bankAccountId: '',
+    accountId: '',
     reason: '',
     receiptType: 'ACKNOWLEDGEMENT' as 'COLLECTION' | 'ACKNOWLEDGEMENT',
     clearedType: 'SAME_DATE' as ClearedType,
@@ -172,7 +173,7 @@ export default function NewAcknowledgementReceiptForm({
       (restrictedBranchId ?? form.branchId) ? 'Cash on Hand — Branch Collections' : 'Cash in Bank',
     subsidyAccountLabel: accountLabel(form.subsidyAccountId),
     withholdingAccountLabel: accountLabel(form.withholdingAccountId),
-    creditAccountLabel: null,
+    creditAccountLabel: accountLabel(form.accountId),
   })
 
   const changeCustomer = (next: PickedCustomer | null) => {
@@ -218,6 +219,7 @@ export default function NewAcknowledgementReceiptForm({
       invoiceNo: invoice?.number || undefined,
       arInvoiceId: invoice?.id || undefined,
       bankAccountId: form.bankAccountId || undefined,
+      accountId: form.accountId || undefined,
       reason: form.reason || undefined,
       clearedType: form.clearedType,
       clearedDate: form.clearedType === 'SAME_DATE' ? undefined : form.clearedDate || undefined,
@@ -375,6 +377,19 @@ export default function NewAcknowledgementReceiptForm({
           />
         </Field>
 
+        <Field
+          label="Received in account"
+          hint="The account the receipt is credited to on the journal entry."
+        >
+          <CategorySelect
+            value={form.accountId || undefined}
+            onChange={(value) => setForm({ ...form, accountId: value ?? '' })}
+            options={accountOptions}
+            placeholder="Default: Other / Miscellaneous Collections"
+            noun="accounts"
+          />
+        </Field>
+
         <Field label="Description">
           <input
             placeholder="Optional"
@@ -392,7 +407,11 @@ export default function NewAcknowledgementReceiptForm({
           <Field
             label="Gross (AR amount)"
             required
-            hint="Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
+            hint={
+              form.accountId
+                ? `Credited to ${accountLabel(form.accountId) ?? 'the account picked above'}.`
+                : "Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
+            }
           >
             <input
               required
