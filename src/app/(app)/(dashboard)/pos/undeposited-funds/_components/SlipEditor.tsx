@@ -177,13 +177,16 @@ const CLEARING_GROUP_PREFIX = '1-01-04'
  * as dropdown options — nothing another chart left behind, and not the
  * non-postable header itself. */
 function clearingAccountOptions(data: unknown): Option[] {
-  // `/accounts` answers with a bare array, not the paginated shape its type
-  // claims, and includes each account's parent.
+  // `/accounts/options` answers with a bare array and names each account's
+  // parent by id only, so the header is found in the same search and its
+  // children are matched against it.
   const accounts = (
     Array.isArray(data) ? data : ((data as { items?: unknown[] } | undefined)?.items ?? [])
-  ) as (Account & { parentAccount?: { number?: string } | null })[]
+  ) as (Account & { parentAccountId?: string | null })[]
+  const header = accounts.find((a) => a.number === CLEARING_GROUP)
+  if (!header) return []
   return accounts
-    .filter((a) => a.parentAccount?.number === CLEARING_GROUP)
+    .filter((a) => a.parentAccountId === header.id)
     .sort((a, b) => (a.number ?? '').localeCompare(b.number ?? ''))
     .map((a) => ({
       value: a.id,
