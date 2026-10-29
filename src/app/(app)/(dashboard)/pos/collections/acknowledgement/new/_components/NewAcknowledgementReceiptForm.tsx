@@ -89,9 +89,9 @@ function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] 
  * Layout follows the client's own reference receipt tool (Date/Reference,
  * Customer, Received in, Description) rather than this app's usual
  * two-column Field grid — developer-requested, 2026-09-21. "Received in" is
- * the tenant's own bank/cash accounts (which physical drawer/account the
- * money landed in, informational only — same posture as CollectionReceipt's
- * own bankAccountId).
+ * the tenant's own bank/cash accounts. Picking one means the money landed in
+ * the bank itself, so the receipt debits Cash in Bank and is never offered to
+ * a branch deposit; empty, a branch receipt is counter cash to be banked.
  *
  * Settlement (client's proposed receipts template): the receipt carries the
  * customer and sales invoice it is for (the invoice is a reference only —
@@ -166,11 +166,13 @@ export default function NewAcknowledgementReceiptForm({
     subsidy,
     withholding,
     gross,
-    // Which account the cash lands in does not follow "Received in" (that is
-    // informational): a branch's receipt sits in Cash on Hand — Branch
-    // Collections until it is banked, and head office's goes straight to the bank.
+    // A "Received in" bank means the money went straight to the bank. Without
+    // one, a branch's receipt sits in Cash on Hand — Branch Collections until
+    // it is banked, and head office's goes straight to the bank.
     cashLabel:
-      (restrictedBranchId ?? form.branchId) ? 'Cash on Hand — Branch Collections' : 'Cash in Bank',
+      (restrictedBranchId ?? form.branchId) && !form.bankAccountId
+        ? 'Cash on Hand — Branch Collections'
+        : 'Cash in Bank',
     subsidyAccountLabel: accountLabel(form.subsidyAccountId),
     withholdingAccountLabel: accountLabel(form.withholdingAccountId),
     creditAccountLabel: accountLabel(form.accountId),
@@ -364,7 +366,10 @@ export default function NewAcknowledgementReceiptForm({
           </div>
         </div>
 
-        <Field label="Received in">
+        <Field
+          label="Received in"
+          hint="Pick the bank it landed in and the receipt goes straight to Cash in Bank, with no deposit to make. Leave it empty for cash taken over the counter."
+        >
           <SearchableSelect
             value={form.bankAccountId}
             onChange={(value) => setForm({ ...form, bankAccountId: value })}
