@@ -122,6 +122,10 @@ export default function RowEditPanel({
     })),
     cell('receivedIn')
   )
+  const partnerOptions = withCurrent(
+    lookups.financingPartnerNames.map((n) => ({ value: n, label: n })),
+    cell('financingPartner')
+  )
   const subsidyOptions = withCurrentAccount(lookups.accountOptions, cell('subsidyAccount'))
   const withholdingOptions = withCurrentAccount(lookups.accountOptions, cell('withholdingAccount'))
   const optionName = (options: CategorySelectOption[], id: string) =>
@@ -203,6 +207,21 @@ export default function RowEditPanel({
           {text('customer')}
         </Field>
         <Field label="Sales Invoice No.">{text('invoiceNo')}</Field>
+        <Field
+          label="Financing Partner"
+          hint="Fill in when the partner paid it — the credit goes to their receivable, not the customer's."
+          className="@min-[640px]:col-span-2"
+        >
+          <SearchableSelect
+            portal
+            clearable
+            value={cell('financingPartner').trim()}
+            onChange={(value) => onChange({ financingPartner: value })}
+            options={partnerOptions}
+            placeholder="— Paid by the customer —"
+            disabled={disabled}
+          />
+        </Field>
       </Section>
 
       <Section title="Clearing">

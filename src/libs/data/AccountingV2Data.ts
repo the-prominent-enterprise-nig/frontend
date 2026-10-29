@@ -1039,6 +1039,10 @@ export interface CreateAcknowledgementReceiptInput {
    * Accounts Receivable (their ledger) and one without credits Other /
    * Miscellaneous Collections. */
   accountId?: string
+  /** The third-party financing partner this settles (Tonik, Salmon, Skyro…).
+   * The credit goes to that partner's own receivable instead of the customer's
+   * Accounts Receivable, and the receipt stays off the customer's ledger. */
+  tpfProviderId?: string
   reason?: string
   amount: number
   paymentDate: string

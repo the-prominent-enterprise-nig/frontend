@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react'
 import {
   AcknowledgementReceipts,
   BankAccounts,
+  ClearingSettlements,
   fmtMoney,
   type BankAccountOption,
 } from '@/src/libs/data/AccountingV2Data'
@@ -125,6 +126,7 @@ export default function NewAcknowledgementReceiptForm({
     reference: '',
     bankAccountId: '',
     receivedInAccountId: '',
+    tpfProviderId: '',
     reason: '',
     receiptType: 'ACKNOWLEDGEMENT' as 'COLLECTION' | 'ACKNOWLEDGEMENT',
     clearedType: 'SAME_DATE' as ClearedType,
@@ -142,14 +144,17 @@ export default function NewAcknowledgementReceiptForm({
   const [error, setError] = useState<string | null>(null)
   const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
+  const [tpfProviders, setTpfProviders] = useState<{ id: string; name: string }[]>([])
   useEffect(() => {
     BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
+    ClearingSettlements.activeTpfProviders().then((res) => setTpfProviders(res.data ?? []))
     getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))
     })
   }, [])
 
+  const partner = tpfProviders.find((p) => p.id === form.tpfProviderId) ?? null
   const gross = toAmount(form.gross)
   const subsidy = toAmount(form.subsidy)
   const withholding = toAmount(form.withholding)
@@ -178,8 +183,13 @@ export default function NewAcknowledgementReceiptForm({
     subsidyAccountLabel: accountLabel(form.subsidyAccountId),
     withholdingAccountLabel: accountLabel(form.withholdingAccountId),
     // With a customer the gross credits Accounts Receivable, which is what puts
-    // it on their ledger and in AR Aging.
-    creditAccountLabel: customer ? 'Accounts Receivable (customer ledger)' : null,
+    // it on their ledger and in AR Aging. A financing partner's settlement is
+    // owed by the partner instead, so it credits the partner's receivable.
+    creditAccountLabel: partner
+      ? `AR - Third-Party Financing - ${partner.name}`
+      : customer
+        ? 'Accounts Receivable (customer ledger)'
+        : null,
   })
 
   const changeCustomer = (next: PickedCustomer | null) => {
@@ -230,6 +240,7 @@ export default function NewAcknowledgementReceiptForm({
       arInvoiceId: invoice?.id || undefined,
       bankAccountId: form.bankAccountId || undefined,
       receivedInAccountId: form.receivedInAccountId || undefined,
+      tpfProviderId: form.tpfProviderId || undefined,
       reason: form.reason || undefined,
       clearedType: form.clearedType,
       clearedDate: form.clearedType === 'SAME_DATE' ? undefined : form.clearedDate || undefined,
@@ -376,6 +387,19 @@ export default function NewAcknowledgementReceiptForm({
         </div>
 
         <Field
+          label="Financing partner"
+          hint="Pick the third-party financer (Tonik, Salmon, Skyro…) when it paid this one. The money then clears that partner's receivable instead of the customer's, and stays off the customer's ledger. Leave empty when the customer paid."
+        >
+          <SearchableSelect
+            value={form.tpfProviderId}
+            onChange={(value) => setForm({ ...form, tpfProviderId: value })}
+            options={tpfProviders.map((p) => ({ value: p.id, label: p.name }))}
+            placeholder="— Paid by the customer —"
+            clearable
+          />
+        </Field>
+
+        <Field
           label="Received in"
           hint="Pick the bank it landed in and the receipt goes straight to Cash in Bank, with no deposit to make. Leave it empty for cash taken over the counter."
         >
@@ -422,9 +446,11 @@ export default function NewAcknowledgementReceiptForm({
             label="Gross (AR amount)"
             required
             hint={
-              customer
-                ? "Credited to Accounts Receivable, so it shows on the customer's ledger and in AR Aging."
-                : "Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
+              partner
+                ? `Credited to ${partner.name}'s receivable — the partner owes it, so it stays off the customer's ledger.`
+                : customer
+                  ? "Credited to Accounts Receivable, so it shows on the customer's ledger and in AR Aging."
+                  : "Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
             }
           >
             <input

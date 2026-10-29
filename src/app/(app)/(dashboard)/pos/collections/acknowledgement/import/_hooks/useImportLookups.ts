@@ -1,7 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BankAccounts, type BankAccountOption } from '@/src/libs/data/AccountingV2Data'
+import {
+  BankAccounts,
+  ClearingSettlements,
+  type BankAccountOption,
+} from '@/src/libs/data/AccountingV2Data'
 import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import type { CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { useBranches } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePos'
@@ -12,6 +16,8 @@ export type ImportLookups = {
   branchesLoading: boolean
   /** Bank / cash accounts — matched by exact name too. */
   bankAccounts: Pick<BankAccountOption, 'name' | 'bankName'>[]
+  /** Financing partner names (Tonik, Salmon…) — matched by exact name too. */
+  financingPartnerNames: string[]
   /** The chart, depth-ordered, with the account NUMBER as the option id —
    * that is what the file carries in the two account columns. Accounts with no
    * number can't be named in a file and are left out. */
@@ -51,15 +57,19 @@ export function useImportLookups(): ImportLookups {
   const { data: branchesData, isLoading: branchesLoading } = useBranches()
   const branchNames = ((branchesData?.data ?? []) as Array<{ name: string }>).map((b) => b.name)
   const [bankAccounts, setBankAccounts] = useState<ImportLookups['bankAccounts']>([])
+  const [financingPartnerNames, setFinancingPartnerNames] = useState<string[]>([])
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
 
   useEffect(() => {
     BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
+    ClearingSettlements.activeTpfProviders().then((res) =>
+      setFinancingPartnerNames((res.data ?? []).map((p) => p.name))
+    )
     getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToNumberOptions(list))
     })
   }, [])
 
-  return { branchNames, branchesLoading, bankAccounts, accountOptions }
+  return { branchNames, branchesLoading, bankAccounts, financingPartnerNames, accountOptions }
 }
