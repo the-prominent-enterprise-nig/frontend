@@ -4118,6 +4118,36 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, xDealActive])
 
+  // A line's down payment share is written once, when the plan's figure is typed
+  // or seeded; a later quantity, price override or Price Use change does not move
+  // it. When a share ends up above what its line now costs, share the plan's
+  // figure out again (capped at what the items cost) instead of refusing the
+  // sale at submit with "<item>'s down payment must be between 0 and its sale
+  // amount" — the server holds every line to the same cap.
+  useEffect(() => {
+    const overShared = installmentCartLines.some(
+      (l) => lineDownPayment(l) > saleAmountOf(l) + 0.005
+    )
+    if (!overShared) return
+    const split = splitDownPayment(planRows, Math.min(planDownPayment, planSaleAmount), {
+      allowZero: !planIsTpf,
+    })
+    if (!split.ok) return
+    setCart((prev) =>
+      prev.map((l) =>
+        split.byLine.has(l.lineId)
+          ? {
+              ...l,
+              downPaymentInput: split.byLine.get(l.lineId)!.toFixed(2),
+              downPaymentAutoForPriceListItemId: undefined,
+            }
+          : l
+      )
+    )
+    // planRows / planDownPayment / planSaleAmount all derive from `cart`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, activeTaxRate, inclusivePricing, isTaxExempt])
+
   /** "50% down, the balance in 60 days" — the common case in one tap. */
   function applySixtyDayPlan(lineIds: string[]) {
     const ids = new Set(lineIds)
