@@ -282,12 +282,12 @@ export default function RowEditPanel({
               value={cell('withholdingAccount').trim() || undefined}
               onChange={(value) => onChange({ withholdingAccount: value ?? '' })}
               options={withholdingOptions}
-              placeholder="Default: Withholding Tax Receivable"
+              placeholder="Pick the account it is credited to"
               noun="accounts"
               disabled={disabled}
             />
           </div>
-          <span className="hidden text-xs text-gray-500 @min-[1000px]:block">Debit</span>
+          <span className="hidden text-xs text-gray-500 @min-[1000px]:block">Credit</span>
 
           <span className={`${LABEL} mt-3 @min-[1000px]:mt-0`}>Net amount</span>
           {amount('net', 'Net amount')}

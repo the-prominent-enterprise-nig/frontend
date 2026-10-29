@@ -40,7 +40,6 @@ export function useReceiptsImport() {
   const [phase, setPhase] = useState<ImportPhase>('choose')
   // The user's tick on "post these rows using the calculated Net". Reset with
   // every new file so a tick given to one file never carries to the next.
-  const [acceptNetMismatch, setAcceptNetMismatch] = useState(false)
   // True from an edit until the server has answered for the rows as they now
   // are — the preview on screen is stale in between, so Confirm waits.
   const [checking, setChecking] = useState(false)
@@ -103,7 +102,6 @@ export function useReceiptsImport() {
     setRows([])
     setPreview(null)
     setResult(null)
-    setAcceptNetMismatch(false)
     setChecking(false)
     setExpanded(new Set())
     setPhase('choose')
@@ -115,7 +113,6 @@ export function useReceiptsImport() {
     setFile(csv)
     setPreview(null)
     setResult(null)
-    setAcceptNetMismatch(false)
     setChecking(false)
     setPhase('previewing')
     const res = await AcknowledgementReceipts.importPreview(csv)
@@ -176,8 +173,7 @@ export function useReceiptsImport() {
     if (rowsRef.current.length === 0) return
     setPhase('applying')
     const res = await AcknowledgementReceipts.importCommitRows(
-      rowsRef.current.map(({ rowNumber, cells }) => ({ rowNumber, cells })),
-      acceptNetMismatch
+      rowsRef.current.map(({ rowNumber, cells }) => ({ rowNumber, cells }))
     )
     if (!res.success || !res.data) {
       showToast({ title: 'Import failed', description: res.message, status: 'error' })
@@ -196,8 +192,6 @@ export function useReceiptsImport() {
     phase,
     checking,
     expanded,
-    acceptNetMismatch,
-    setAcceptNetMismatch,
     choose,
     updateCells,
     removeRow,
