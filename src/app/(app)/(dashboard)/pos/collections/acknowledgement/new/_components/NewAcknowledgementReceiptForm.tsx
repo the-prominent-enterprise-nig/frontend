@@ -96,8 +96,9 @@ function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] 
  * Settlement (client's proposed receipts template): the receipt carries the
  * customer and sales invoice it is for (the invoice is a reference only —
  * nothing is created and no invoice balance moves), the Gross AR amount, the
- * Subsidy and Withholding Tax taken out of it — each with its own selectable
- * account — and the Net that reached the bank, calculated here. */
+ * Subsidy taken out of it and the Withholding Tax added to the Net (a credit
+ * to a payable) — each with its own selectable account — and the Net that
+ * reached the bank, calculated here. */
 export default function NewAcknowledgementReceiptForm({
   restrictedBranchId,
   acknowledgementOnly = false,
@@ -202,8 +203,12 @@ export default function NewAcknowledgementReceiptForm({
     }
     if (net <= 0) {
       setError(
-        'Net amount must be greater than 0 — Subsidy plus Withholding Tax cannot reach Gross.'
+        'Net amount must be greater than 0 — Subsidy cannot reach Gross plus Withholding Tax.'
       )
+      return
+    }
+    if (withholding > 0 && !form.withholdingAccountId) {
+      setError('Pick the Withholding Tax account the tax is credited to.')
       return
     }
     if (clearErr) {
@@ -254,8 +259,9 @@ export default function NewAcknowledgementReceiptForm({
         New {form.receiptType === 'COLLECTION' ? 'Collection' : 'Acknowledgement'} Receipt
       </h1>
       <p className="mt-1 text-sm text-gray-500">
-        Record money received for a customer&apos;s sale — gross, less any subsidy and withholding
-        tax, with the net that reached the bank. Receipts from earlier dates can be recorded too.
+        Record money received for a customer&apos;s sale — gross, less any subsidy, plus any
+        withholding tax, with the net that reached the bank. Receipts from earlier dates can be
+        recorded too.
       </p>
 
       <form
@@ -454,7 +460,7 @@ export default function NewAcknowledgementReceiptForm({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Withholding Tax">
+          <Field label="Withholding Tax (credit)">
             <input
               type="number"
               step="0.01"
@@ -464,12 +470,12 @@ export default function NewAcknowledgementReceiptForm({
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
             />
           </Field>
-          <Field label="Withholding Tax account">
+          <Field label="Withholding Tax account" required={withholding > 0}>
             <CategorySelect
               value={form.withholdingAccountId || undefined}
               onChange={(value) => setForm({ ...form, withholdingAccountId: value ?? '' })}
               options={accountOptions}
-              placeholder="Default: Withholding Tax Receivable"
+              placeholder="Pick the account it is credited to"
               noun="accounts"
               disabled={!(withholding > 0)}
             />
@@ -478,7 +484,7 @@ export default function NewAcknowledgementReceiptForm({
 
         <Field
           label="Net amount (credited to bank)"
-          hint="Calculated: Gross − Subsidy − Withholding Tax."
+          hint="Calculated: Gross − Subsidy + Withholding Tax."
         >
           <input
             readOnly
@@ -489,7 +495,7 @@ export default function NewAcknowledgementReceiptForm({
           />
           {netInvalid && (
             <span className="mt-1 block text-xs text-red-600">
-              Net must be greater than 0 — Subsidy plus Withholding Tax cannot reach Gross.
+              Net must be greater than 0 — Subsidy cannot reach Gross plus Withholding Tax.
             </span>
           )}
         </Field>

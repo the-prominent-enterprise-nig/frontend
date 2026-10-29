@@ -196,11 +196,11 @@ function ReceiptSheet({ receipt, title }: { receipt: AcknowledgementReceipt; tit
                   {subsidy > 0 ? 3 : 2}
                 </td>
                 <td className="border border-gray-300 px-2.5 py-[7px] align-top">
-                  Less: Withholding Tax —{' '}
-                  {deductionAccountLabel(receipt.withholdingAccount, 'Withholding Tax Receivable')}
+                  Add: Withholding Tax —{' '}
+                  {deductionAccountLabel(receipt.withholdingAccount, 'Withholding Tax Payable')}
                 </td>
                 <td className="border border-gray-300 px-2.5 py-[7px] text-right align-top tabular-nums">
-                  {fmtMoney(-withholding)}
+                  {fmtMoney(withholding)}
                 </td>
               </tr>
             )}
