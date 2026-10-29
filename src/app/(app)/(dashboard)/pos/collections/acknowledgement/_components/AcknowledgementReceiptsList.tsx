@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Download, Eye, Loader2, Pencil, Plus, Upload } from 'lucide-react'
 import {
@@ -105,7 +106,19 @@ export default function AcknowledgementReceiptsList({
                   >
                     <td className="px-4 py-2.5 font-medium text-gray-900">{r.number ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-600">{fmtDate(r.paymentDate)}</td>
-                    <td className="px-4 py-2.5 text-gray-900">{r.payerName}</td>
+                    <td className="px-4 py-2.5 text-gray-900">
+                      {r.customerId ? (
+                        <Link
+                          href={`/pos/customers/${r.customerId}/ledger`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:text-prominent-purple-700 hover:underline"
+                        >
+                          {r.payerName}
+                        </Link>
+                      ) : (
+                        r.payerName
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-gray-600">{accountLabel(r.account)}</td>
                     <td className="px-4 py-2.5 text-gray-600">{r.reason ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-600">{r.branch?.name ?? '—'}</td>

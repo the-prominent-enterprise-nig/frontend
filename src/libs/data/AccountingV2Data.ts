@@ -980,6 +980,10 @@ export interface AcknowledgementReceipt {
    * matching the client's own reference tool. Null means it fell back to
    * the MISC_COLLECTIONS mapping. */
   accountId: string | null
+  /** Posted as a credit to Accounts Receivable — so it is on the customer's
+   * ledger and in AR Aging. */
+  creditsAr?: boolean
+  receivedInAccountId?: string | null
   account?: { id: string; name: string; number: string | null } | null
   reason: string | null
   amount: number
@@ -1028,7 +1032,17 @@ export interface AcknowledgementReceipt {
 }
 export interface CreateAcknowledgementReceiptInput {
   payerName: string
+  /** The account the money was received in — the debit side. Left out, it is
+   * Cash in Bank / Cash on Hand by the receipt's branch. */
+  receivedInAccountId?: string
+  /** Overrides the credit. Left out, a receipt with a customer credits
+   * Accounts Receivable (their ledger) and one without credits Other /
+   * Miscellaneous Collections. */
   accountId?: string
+  /** The third-party financing partner this settles (Tonik, Salmon, Skyro…).
+   * The credit goes to that partner's own receivable instead of the customer's
+   * Accounts Receivable, and the receipt stays off the customer's ledger. */
+  tpfProviderId?: string
   reason?: string
   amount: number
   paymentDate: string
@@ -1100,13 +1114,12 @@ export const AcknowledgementReceipts = {
     body.append('file', file)
     return previewAcknowledgementReceiptImport(body)
   },
-  /** Bulk upload, step 2 — posts every row (all or none). `acceptNetMismatch`
-   * lets rows whose uploaded Net differs from the calculated one post with the
+  /** Bulk upload, step 2 — posts every row (all or none). A row whose uploaded
+   * Net differs from the calculated one is only a warning; it posts with the
    * calculated Net. */
-  importCommit: (file: File, acceptNetMismatch: boolean) => {
+  importCommit: (file: File) => {
     const body = new FormData()
     body.append('file', file)
-    body.append('acceptNetMismatch', String(acceptNetMismatch))
     return commitAcknowledgementReceiptImport(body)
   },
   /** The review screen's re-check — the same preview as `importPreview`, but
@@ -1121,10 +1134,10 @@ export const AcknowledgementReceipts = {
   },
   /** The real import for edited rows — all or none, same errors as the file
    * commit. */
-  importCommitRows: async (rows: AcknowledgementImportRowInput[], acceptNetMismatch: boolean) => {
+  importCommitRows: async (rows: AcknowledgementImportRowInput[]) => {
     const res = await api.post<AcknowledgementImportResult>(
       '/accounting/acknowledgement-receipts/import/rows',
-      { rows, acceptNetMismatch }
+      { rows }
     )
     return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
   },

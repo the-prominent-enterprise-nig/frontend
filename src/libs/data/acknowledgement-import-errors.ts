@@ -3,8 +3,6 @@ const IMPORT_ERROR_MESSAGES: Record<string, string> = {
   invalid_csv_format: 'This file could not be read as a CSV. Save it as CSV and try again.',
   csv_has_no_rows: 'This file has a header row but no data rows.',
   import_has_errors: 'Some rows still have errors. Fix them and try again — nothing was saved.',
-  net_mismatch_not_accepted:
-    'Some rows have a Net that differs from the calculated one. Tick the box to post them with the calculated Net, or fix the rows.',
 }
 
 /**

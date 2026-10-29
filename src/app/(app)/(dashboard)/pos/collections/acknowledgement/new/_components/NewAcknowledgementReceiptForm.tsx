@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react'
 import {
   AcknowledgementReceipts,
   BankAccounts,
+  ClearingSettlements,
   fmtMoney,
   type BankAccountOption,
 } from '@/src/libs/data/AccountingV2Data'
@@ -89,15 +90,16 @@ function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] 
  * Layout follows the client's own reference receipt tool (Date/Reference,
  * Customer, Received in, Description) rather than this app's usual
  * two-column Field grid — developer-requested, 2026-09-21. "Received in" is
- * the tenant's own bank/cash accounts (which physical drawer/account the
- * money landed in, informational only — same posture as CollectionReceipt's
- * own bankAccountId).
+ * the tenant's own bank/cash accounts. Picking one means the money landed in
+ * the bank itself, so the receipt debits Cash in Bank and is never offered to
+ * a branch deposit; empty, a branch receipt is counter cash to be banked.
  *
  * Settlement (client's proposed receipts template): the receipt carries the
  * customer and sales invoice it is for (the invoice is a reference only —
  * nothing is created and no invoice balance moves), the Gross AR amount, the
- * Subsidy and Withholding Tax taken out of it — each with its own selectable
- * account — and the Net that reached the bank, calculated here. */
+ * Subsidy taken out of it and the Withholding Tax added to the Net (a credit
+ * to a payable) — each with its own selectable account — and the Net that
+ * reached the bank, calculated here. */
 export default function NewAcknowledgementReceiptForm({
   restrictedBranchId,
   acknowledgementOnly = false,
@@ -123,7 +125,8 @@ export default function NewAcknowledgementReceiptForm({
     paymentDate: new Date().toISOString().slice(0, 10),
     reference: '',
     bankAccountId: '',
-    accountId: '',
+    receivedInAccountId: '',
+    tpfProviderId: '',
     reason: '',
     receiptType: 'ACKNOWLEDGEMENT' as 'COLLECTION' | 'ACKNOWLEDGEMENT',
     clearedType: 'SAME_DATE' as ClearedType,
@@ -141,14 +144,17 @@ export default function NewAcknowledgementReceiptForm({
   const [error, setError] = useState<string | null>(null)
   const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
+  const [tpfProviders, setTpfProviders] = useState<{ id: string; name: string }[]>([])
   useEffect(() => {
     BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
+    ClearingSettlements.activeTpfProviders().then((res) => setTpfProviders(res.data ?? []))
     getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))
     })
   }, [])
 
+  const partner = tpfProviders.find((p) => p.id === form.tpfProviderId) ?? null
   const gross = toAmount(form.gross)
   const subsidy = toAmount(form.subsidy)
   const withholding = toAmount(form.withholding)
@@ -166,14 +172,24 @@ export default function NewAcknowledgementReceiptForm({
     subsidy,
     withholding,
     gross,
-    // Which account the cash lands in does not follow "Received in" (that is
-    // informational): a branch's receipt sits in Cash on Hand — Branch
-    // Collections until it is banked, and head office's goes straight to the bank.
+    // A "Received in" bank means the money went straight to the bank. Without
+    // one, a branch's receipt sits in Cash on Hand — Branch Collections until
+    // it is banked, and head office's goes straight to the bank.
     cashLabel:
-      (restrictedBranchId ?? form.branchId) ? 'Cash on Hand — Branch Collections' : 'Cash in Bank',
+      accountLabel(form.receivedInAccountId) ??
+      ((restrictedBranchId ?? form.branchId) && !form.bankAccountId
+        ? 'Cash on Hand — Branch Collections'
+        : 'Cash in Bank'),
     subsidyAccountLabel: accountLabel(form.subsidyAccountId),
     withholdingAccountLabel: accountLabel(form.withholdingAccountId),
-    creditAccountLabel: accountLabel(form.accountId),
+    // With a customer the gross credits Accounts Receivable, which is what puts
+    // it on their ledger and in AR Aging. A financing partner's settlement is
+    // owed by the partner instead, so it credits the partner's receivable.
+    creditAccountLabel: partner
+      ? `AR - Third-Party Financing - ${partner.name}`
+      : customer
+        ? 'Accounts Receivable (customer ledger)'
+        : null,
   })
 
   const changeCustomer = (next: PickedCustomer | null) => {
@@ -200,8 +216,12 @@ export default function NewAcknowledgementReceiptForm({
     }
     if (net <= 0) {
       setError(
-        'Net amount must be greater than 0 — Subsidy plus Withholding Tax cannot reach Gross.'
+        'Net amount must be greater than 0 — Subsidy cannot reach Gross plus Withholding Tax.'
       )
+      return
+    }
+    if (withholding > 0 && !form.withholdingAccountId) {
+      setError('Pick the Withholding Tax account the tax is credited to.')
       return
     }
     if (clearErr) {
@@ -219,7 +239,8 @@ export default function NewAcknowledgementReceiptForm({
       invoiceNo: invoice?.number || undefined,
       arInvoiceId: invoice?.id || undefined,
       bankAccountId: form.bankAccountId || undefined,
-      accountId: form.accountId || undefined,
+      receivedInAccountId: form.receivedInAccountId || undefined,
+      tpfProviderId: form.tpfProviderId || undefined,
       reason: form.reason || undefined,
       clearedType: form.clearedType,
       clearedDate: form.clearedType === 'SAME_DATE' ? undefined : form.clearedDate || undefined,
@@ -252,8 +273,9 @@ export default function NewAcknowledgementReceiptForm({
         New {form.receiptType === 'COLLECTION' ? 'Collection' : 'Acknowledgement'} Receipt
       </h1>
       <p className="mt-1 text-sm text-gray-500">
-        Record money received for a customer&apos;s sale — gross, less any subsidy and withholding
-        tax, with the net that reached the bank. Receipts from earlier dates can be recorded too.
+        Record money received for a customer&apos;s sale — gross, less any subsidy, plus any
+        withholding tax, with the net that reached the bank. Receipts from earlier dates can be
+        recorded too.
       </p>
 
       <form
@@ -364,7 +386,23 @@ export default function NewAcknowledgementReceiptForm({
           </div>
         </div>
 
-        <Field label="Received in">
+        <Field
+          label="Financing partner"
+          hint="Pick the third-party financer (Tonik, Salmon, Skyro…) when it paid this one. The money then clears that partner's receivable instead of the customer's, and stays off the customer's ledger. Leave empty when the customer paid."
+        >
+          <SearchableSelect
+            value={form.tpfProviderId}
+            onChange={(value) => setForm({ ...form, tpfProviderId: value })}
+            options={tpfProviders.map((p) => ({ value: p.id, label: p.name }))}
+            placeholder="— Paid by the customer —"
+            clearable
+          />
+        </Field>
+
+        <Field
+          label="Received in"
+          hint="Pick the bank it landed in and the receipt goes straight to Cash in Bank, with no deposit to make. Leave it empty for cash taken over the counter."
+        >
           <SearchableSelect
             value={form.bankAccountId}
             onChange={(value) => setForm({ ...form, bankAccountId: value })}
@@ -379,13 +417,13 @@ export default function NewAcknowledgementReceiptForm({
 
         <Field
           label="Received in account"
-          hint="The account the receipt is credited to on the journal entry."
+          hint="The account the money was received in (debited). Left empty, it is Cash in Bank, or Cash on Hand for a branch receipt."
         >
           <CategorySelect
-            value={form.accountId || undefined}
-            onChange={(value) => setForm({ ...form, accountId: value ?? '' })}
+            value={form.receivedInAccountId || undefined}
+            onChange={(value) => setForm({ ...form, receivedInAccountId: value ?? '' })}
             options={accountOptions}
-            placeholder="Default: Other / Miscellaneous Collections"
+            placeholder="Default: Cash in Bank"
             noun="accounts"
           />
         </Field>
@@ -408,9 +446,11 @@ export default function NewAcknowledgementReceiptForm({
             label="Gross (AR amount)"
             required
             hint={
-              form.accountId
-                ? `Credited to ${accountLabel(form.accountId) ?? 'the account picked above'}.`
-                : "Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
+              partner
+                ? `Credited to ${partner.name}'s receivable — the partner owes it, so it stays off the customer's ledger.`
+                : customer
+                  ? "Credited to Accounts Receivable, so it shows on the customer's ledger and in AR Aging."
+                  : "Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
             }
           >
             <input
@@ -449,7 +489,7 @@ export default function NewAcknowledgementReceiptForm({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Withholding Tax">
+          <Field label="Withholding Tax (credit)">
             <input
               type="number"
               step="0.01"
@@ -459,12 +499,12 @@ export default function NewAcknowledgementReceiptForm({
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
             />
           </Field>
-          <Field label="Withholding Tax account">
+          <Field label="Withholding Tax account" required={withholding > 0}>
             <CategorySelect
               value={form.withholdingAccountId || undefined}
               onChange={(value) => setForm({ ...form, withholdingAccountId: value ?? '' })}
               options={accountOptions}
-              placeholder="Default: Withholding Tax Receivable"
+              placeholder="Pick the account it is credited to"
               noun="accounts"
               disabled={!(withholding > 0)}
             />
@@ -473,7 +513,7 @@ export default function NewAcknowledgementReceiptForm({
 
         <Field
           label="Net amount (credited to bank)"
-          hint="Calculated: Gross − Subsidy − Withholding Tax."
+          hint="Calculated: Gross − Subsidy + Withholding Tax."
         >
           <input
             readOnly
@@ -484,7 +524,7 @@ export default function NewAcknowledgementReceiptForm({
           />
           {netInvalid && (
             <span className="mt-1 block text-xs text-red-600">
-              Net must be greater than 0 — Subsidy plus Withholding Tax cannot reach Gross.
+              Net must be greater than 0 — Subsidy cannot reach Gross plus Withholding Tax.
             </span>
           )}
         </Field>
