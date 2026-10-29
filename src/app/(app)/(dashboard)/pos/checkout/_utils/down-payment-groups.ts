@@ -53,9 +53,11 @@ export function fixedDownPaymentTotal(rows: DpRow[]): number {
  * - Each row's share is to the centavo and the last open row takes the
  *   remainder, so the shares add up to the total exactly.
  * - Inside a row the units share equally, the last one taking the remainder.
- * - Every line gets at least a centavo unless `allowZero` — an in-house plan
- *   may take no down payment at all; a TPF sale never — and no more than it
- *   costs.
+ * - Every line gets at least a centavo unless `allowZero` — the checkout's
+ *   plans (in-house or TPF) may take no down payment at all — and no more
+ *   than it costs.
+ * - A row that costs nothing (overridden to ₱0) takes 0 — it has nothing to
+ *   put down — and the rest of the plan carries the down payment.
  */
 export function splitDownPayment(
   rows: DpRow[],
@@ -63,8 +65,14 @@ export function splitDownPayment(
   { allowZero = false }: { allowZero?: boolean } = {}
 ): DpSplit {
   const byLine = new Map<string, number>()
-  const open = rows.filter((r) => r.fixedPerLine == null)
-  if (open.length === 0) return { ok: true, byLine }
+  const unpriced = rows.filter((r) => r.fixedPerLine == null && r.amount <= 0)
+  unpriced.forEach((row) => row.lineIds.forEach((lineId) => byLine.set(lineId, 0)))
+  const open = rows.filter((r) => r.fixedPerLine == null && r.amount > 0)
+  if (open.length === 0) {
+    return total > fixedDownPaymentTotal(rows) + 0.005
+      ? { ok: false, reason: 'too_large' }
+      : { ok: true, byLine }
+  }
 
   const everything = rows.reduce((sum, r) => sum + r.amount, 0)
   if (total > everything + 0.005) return { ok: false, reason: 'too_large' }

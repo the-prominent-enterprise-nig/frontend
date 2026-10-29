@@ -436,8 +436,7 @@ function sumPreviews(
 /** The one down payment of an installment plan. Typing shares the figure across
  * the plan's items at once (see _utils/down-payment-groups); the text is kept
  * locally while the field has focus so a half-typed "12." is not reformatted
- * under the cashier's fingers. An in-house plan may take 0 (`allowZero`); a TPF
- * sale never. */
+ * under the cashier's fingers. A plan may take 0 (`allowZero`), in-house or TPF. */
 function PlanDownPaymentField({
   total,
   max,
@@ -2074,7 +2073,7 @@ export default function CheckoutPage() {
   /** Shares a typed down payment across the plan's items. A figure that cannot be
    * shared (more than the items cost) changes nothing — the box says why. */
   function setPlanDownPayment(total: number) {
-    const split = splitDownPayment(planRows, total, { allowZero: !planIsTpf })
+    const split = splitDownPayment(planRows, total, { allowZero: true })
     if (!split.ok) return
     // Leaving the box as it was (a click in and out) is not an edit.
     if (Math.abs(total - planDownPayment) > 0.004) posEditedRef.current.dp = true
@@ -2155,7 +2154,7 @@ export default function CheckoutPage() {
       <PlanDownPaymentField
         total={planDownPayment}
         max={planSaleAmount}
-        allowZero={!planIsTpf}
+        allowZero
         badge={planDpBadge}
         hint={
           installmentCartLines.length > 1
@@ -4130,7 +4129,7 @@ export default function CheckoutPage() {
     )
     if (!overShared) return
     const split = splitDownPayment(planRows, Math.min(planDownPayment, planSaleAmount), {
-      allowZero: !planIsTpf,
+      allowZero: true,
     })
     if (!split.ok) return
     setCart((prev) =>
@@ -4801,15 +4800,9 @@ export default function CheckoutPage() {
         setError("Enter the financier's reference number for the TPF-financed item(s).")
         return
       }
-      // A TPF sale never takes 0 down (an inhouse plan may) — the financier
-      // funds only the balance, so a missing down payment isn't "financed in
-      // full", it's unbilled. Scenario 60 — an Employee Appliance Loan waives the
-      // down payment (and this check) entirely. There is no percentage floor
-      // (2026-10-15): any amount above 0 will do.
-      if (!downPaymentWaived && planDownPayment <= 0) {
-        setError('Enter the down payment — TPF sales still collect one at checkout.')
-        return
-      }
+      // A TPF sale may take 0 down, the same as an in-house plan (2026-10-29,
+      // client request) — the financier then funds the whole sale. There is no
+      // percentage floor (2026-10-15) either.
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
@@ -8447,8 +8440,6 @@ export default function CheckoutPage() {
                 !skipsCreditApplication
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
-              const tpfMissingDownPayment =
-                !downPaymentWaived && tpfInstallmentCartLines.length > 0 && planDownPayment <= 0
               const missingHrLoanNumber =
                 employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
               const missingXDealReference = xDealActive && !xDealReference.trim()
@@ -8487,31 +8478,29 @@ export default function CheckoutPage() {
                                   : 'Choose a down payment method'
                                 : saleMode === 'sale' && tpfMissingReference
                                   ? 'Select a TPF provider and enter a reference number'
-                                  : saleMode === 'sale' && tpfMissingDownPayment
-                                    ? 'Enter the down payment for the TPF-financed item(s)'
-                                    : saleMode === 'sale' && missingHrLoanNumber
-                                      ? 'Enter the HR appliance loan application number'
-                                      : saleMode === 'sale' && missingXDealReference
-                                        ? 'Enter the X-Deal reference'
-                                        : saleMode === 'sale' &&
-                                            !hasChargeOrInstallmentLine &&
-                                            !selectedCustomer
-                                          ? 'Select a customer'
-                                          : saleMode === 'sale' && balance > 0.009
-                                            ? `Underpaid by ${fmt(balance)}`
-                                            : saleMode === 'sale' && loyaltyOverBalance
-                                              ? 'Insufficient loyalty points'
-                                              : needsManagerOverride && !managerOverrideApproved
-                                                ? 'Manager override required'
-                                                : cart.some((l) => l.isSerialTracked)
-                                                  ? 'Checkout'
-                                                  : saleMode === 'reserve'
-                                                    ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                    : allCharge
-                                                      ? 'Issue Charge Invoice'
-                                                      : allInstallment
-                                                        ? 'Create Installment Plan'
-                                                        : 'Confirm Sale'
+                                  : saleMode === 'sale' && missingHrLoanNumber
+                                    ? 'Enter the HR appliance loan application number'
+                                    : saleMode === 'sale' && missingXDealReference
+                                      ? 'Enter the X-Deal reference'
+                                      : saleMode === 'sale' &&
+                                          !hasChargeOrInstallmentLine &&
+                                          !selectedCustomer
+                                        ? 'Select a customer'
+                                        : saleMode === 'sale' && balance > 0.009
+                                          ? `Underpaid by ${fmt(balance)}`
+                                          : saleMode === 'sale' && loyaltyOverBalance
+                                            ? 'Insufficient loyalty points'
+                                            : needsManagerOverride && !managerOverrideApproved
+                                              ? 'Manager override required'
+                                              : cart.some((l) => l.isSerialTracked)
+                                                ? 'Checkout'
+                                                : saleMode === 'reserve'
+                                                  ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                  : allCharge
+                                                    ? 'Issue Charge Invoice'
+                                                    : allInstallment
+                                                      ? 'Create Installment Plan'
+                                                      : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'
