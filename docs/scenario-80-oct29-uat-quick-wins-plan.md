@@ -119,3 +119,14 @@ Each part ships with:
 - **Manual:** click-by-click steps with ✅ expected results, in `Scenario-80-Manual-Test.md`.
 
 Suites are run one at a time.
+
+## Notes for the PR
+
+- **CL-05 was fixed on `main` first:** Chloe's BE `0584fa5` (2026-10-29), synced to `development` by BE #247
+  (2026-11-03). Nothing in Scenario 80.
+- **SNL-02 is not met on `development`:** Renz's unmerged BE branch `fix/uat-hide-cost-branch-manager` covers the
+  Branch Manager only; the Stock Controller would still see Cost.
+- **Reverses Chloe's work, for her review:** POS-11 (in-house down payment > 0, her #234) and POS-14 / CC-01 (CR
+  number optional, her AR DTOs and #253). Part 2 also moves her checkout toggles and changes her reference rules.
+- **After the merges:** WH-02 / WH-03 / WH-04 are Karms' #270; SC-02 and POS-20 / CS-01 come with Scenario 82.
+- **Deferred:** POS-16 / 18 / 19 (they need the sale-date override, POS-15).
