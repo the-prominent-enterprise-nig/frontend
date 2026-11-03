@@ -10,6 +10,7 @@ import type { ItemTagLabel, ClassificationOption } from '@/src/schema/inventory/
 import { ALL_TAGS, DIMENSION_FIELDS, NumericInput, FormSection } from './item-form-shared'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
 import { uploadItemFile, addItemImage } from '../_actions/item-images'
 import { addItemTag } from '../_actions/item-tags'
@@ -41,6 +42,7 @@ type Props = {
   categories: CategorySelectOption[]
   uomOptions: UomOption[]
   brandOptions: ClassificationOption[]
+  typeOptions: ClassificationOption[]
 }
 
 export default function CreateItemModal({
@@ -51,6 +53,7 @@ export default function CreateItemModal({
   categories,
   uomOptions,
   brandOptions,
+  typeOptions,
 }: Props) {
   const {
     control,
@@ -69,6 +72,7 @@ export default function CreateItemModal({
       modelNumber: '',
       baseUnitId: '',
       primaryCategoryId: '',
+      typeId: '',
       costingMethod: 'weighted_average',
       isBatchTracked: false,
       isSerialTracked: true,
@@ -244,6 +248,7 @@ export default function CreateItemModal({
     errors.sku,
     errors.baseUnitId,
     errors.primaryCategoryId,
+    errors.typeId,
   ].filter(Boolean).length
 
   const pricingErrors = [errors.costPrice].filter(Boolean).length
@@ -388,17 +393,18 @@ export default function CreateItemModal({
                 name="baseUnitId"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">Select unit…</option>
-                    {uomOptions.map((uom) => (
-                      <option key={uom.id} value={uom.id}>
-                        {uom.code} – {uom.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    portal
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    options={uomOptions.map((uom) => ({
+                      value: uom.id,
+                      label: `${uom.code} – ${uom.name}`,
+                    }))}
+                    placeholder="Select unit…"
+                    loading={uomOptions.length === 0}
+                    loadingLabel="Loading units…"
+                  />
                 )}
               />
               {errors.baseUnitId && (
@@ -407,6 +413,32 @@ export default function CreateItemModal({
             </div>
 
             {/* Category */}
+            {/* Item Type — required: it routes the item's GL lines and its
+                report row (Appliances, Furniture, IT…). */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Item Type <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="typeId"
+                control={control}
+                render={({ field }) => (
+                  <SearchableSelect
+                    portal
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    options={typeOptions.map((t) => ({ value: t.id, label: t.name }))}
+                    placeholder="Select item type…"
+                    loading={typeOptions.length === 0}
+                    loadingLabel="Loading item types…"
+                  />
+                )}
+              />
+              {errors.typeId && (
+                <p className="mt-1 text-xs text-red-600">{errors.typeId.message}</p>
+              )}
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Category <span className="text-red-500">*</span>
@@ -426,9 +458,6 @@ export default function CreateItemModal({
                 <p className="mt-1 text-xs text-red-600">{errors.primaryCategoryId.message}</p>
               )}
             </div>
-
-            {/* empty second column for Category row */}
-            <div className="hidden sm:block" />
 
             {/* Description */}
             <div className="sm:col-span-2">
@@ -455,25 +484,19 @@ export default function CreateItemModal({
                 name="brandId"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
+                  <SearchableSelect
+                    portal
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {brandOptions.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => field.onChange(value || undefined)}
+                    options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
+                    placeholder="Select brand…"
+                    clearable
+                  />
                 )}
               />
             </div>
 
-            {/* Model Number — shares a row with Brand; Item Type is Edit-only
-                since Scenario 56. */}
+            {/* Model Number — shares a row with Brand. */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Model Number</label>
               <Controller
@@ -660,18 +683,17 @@ export default function CreateItemModal({
                 name="initialWarehouseId"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
+                  <SearchableSelect
+                    portal
                     value={field.value ?? ''}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {warehouses.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.branch?.name ?? w.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={field.onChange}
+                    options={warehouses.map((w) => ({
+                      value: w.id,
+                      label: w.branch?.name ?? w.name,
+                    }))}
+                    placeholder="Select branch…"
+                    clearable
+                  />
                 )}
               />
               {errors.initialWarehouseId && (
